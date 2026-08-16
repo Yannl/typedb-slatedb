@@ -19,7 +19,14 @@ use rocksdb::{DB, IteratorMode, Options, ReadOptions, WriteBatch, WriteOptions, 
 use serde::{Deserialize, Serialize};
 
 use super::{IteratorPool, constants, iterator};
-use crate::{key_range::KeyRange, keyspace::rocks_resources::RocksResources, write_batches::WriteBatches};
+use crate::{
+    key_range::KeyRange,
+    keyspace::{
+        engine::{KeyspaceTuningProfile, build_rocks_options},
+        rocks_resources::RocksResources,
+    },
+    write_batches::WriteBatches,
+};
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct KeyspaceId(pub u8);
@@ -47,10 +54,8 @@ pub trait KeyspaceSet: Copy {
     fn iter() -> impl Iterator<Item = Self>;
     fn id(&self) -> KeyspaceId;
     fn name(&self) -> &'static str;
-    fn rocks_configuration(&self, _resources: &RocksResources) -> rocksdb::Options {
-        let mut options = Options::default();
-        options.create_if_missing(true);
-        options
+    fn tuning_profile(&self) -> KeyspaceTuningProfile {
+        KeyspaceTuningProfile::Default
     }
     fn prefix_length(&self) -> Option<usize>;
 }
@@ -78,7 +83,8 @@ impl Keyspaces {
                 .validate_new_keyspace(keyspace)
                 .map_err(|error| KeyspaceOpenError::Validation { source: error })?;
             fail_point!(KEYSPACE_OPEN_FAIL);
-            keyspaces.keyspaces.push(Keyspace::open(path, keyspace, &keyspace.rocks_configuration(resources))?);
+            let options = build_rocks_options(keyspace.tuning_profile(), keyspace.prefix_length(), resources);
+            keyspaces.keyspaces.push(Keyspace::open(path, keyspace, &options)?);
             keyspaces.index[keyspace.id().0 as usize] = Some(KeyspaceId(keyspaces.keyspaces.len() as u8 - 1));
         }
         Ok(keyspaces)

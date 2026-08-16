@@ -25,11 +25,11 @@ impl RocksResources {
         Self { cache, write_buffer_manager, cache_limit, write_buffers_limit }
     }
 
-    pub fn cache(&self) -> Cache {
+    pub(crate) fn cache(&self) -> Cache {
         self.cache.clone()
     }
 
-    pub fn write_buffer_manager(&self) -> WriteBufferManager {
+    pub(crate) fn write_buffer_manager(&self) -> WriteBufferManager {
         self.write_buffer_manager.clone()
     }
 

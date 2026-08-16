@@ -5,6 +5,7 @@
  */
 
 pub(crate) use keyspace::{KEYSPACE_MAXIMUM_COUNT, Keyspace, KeyspaceCheckpointError, KeyspaceError, Keyspaces};
+pub use engine::KeyspaceTuningProfile;
 pub use keyspace::{KeyspaceDeleteError, KeyspaceId, KeyspaceOpenError, KeyspaceSet, KeyspaceValidationError};
 
 use crate::{
@@ -14,6 +15,7 @@ use crate::{
 
 mod constants;
 mod cursor;
+mod engine;
 pub mod iterator;
 mod keyspace;
 mod raw_iterator;

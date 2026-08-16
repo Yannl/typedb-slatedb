@@ -86,9 +86,6 @@ features = {}
 	[dependencies.options]
 		workspace = true
 
-	[dependencies.rocksdb]
-		workspace = true
-
 	[dependencies.typeql]
 		workspace = true
 

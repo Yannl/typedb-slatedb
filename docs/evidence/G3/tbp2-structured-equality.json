@@ -1,0 +1,28 @@
+{
+ "patch": "TB-P2",
+ "targets": [
+  "0.0.0:basic",
+  "0.0.0:crash",
+  "0.0.0:database",
+  "0.0.0:durability",
+  "0.0.0:encoding",
+  "0.0.0:storage",
+  "0.0.0:test_attribute_vertex",
+  "0.0.0:test_database",
+  "0.0.0:test_definitions",
+  "0.0.0:test_diagnostics_posthog_pii",
+  "0.0.0:test_isolation",
+  "0.0.0:test_mvcc",
+  "0.0.0:test_recovery",
+  "0.0.0:test_snapshot",
+  "0.0.0:test_statistics_synchronization",
+  "0.0.0:test_storage",
+  "0.0.0:test_transaction",
+  "0.0.0:test_transaction_isolation",
+  "0.0.0:test_type_vertex",
+  "0.0.0:test_utils_encoding"
+ ],
+ "diffs": [],
+ "verdict": "EQUAL",
+ "note": "storage+encoding+database+durability packages; 19 green, test_recovery pre-existing red unchanged"
+}

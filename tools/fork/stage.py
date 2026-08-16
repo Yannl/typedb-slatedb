@@ -47,15 +47,30 @@ def fork_files():
 
 
 def differing():
-    """(new, changed) relative paths where fork/typedb diverges from sources."""
+    """(new, changed, stale) relative paths.
+
+    new/changed: fork files absent from / different in sources.
+    stale: files a previous staging added to sources (untracked relative to
+    the locked revision) that the fork no longer carries — e.g. a fork patch
+    deleted a module it had introduced. Leaving them makes the tree under
+    test neither upstream nor the fork, so staging removes them and --check
+    reports them.
+    """
     new, changed = [], []
+    fork_set = set()
     for rel in fork_files():
+        fork_set.add(str(rel))
         dst = DEST / rel
         if not dst.exists():
             new.append(rel)
         elif not filecmp.cmp(FORK / rel, dst, shallow=False):
             changed.append(rel)
-    return new, changed
+    r = subprocess.run(
+        ["git", "-C", str(DEST), "ls-files", "--others", "--exclude-standard"],
+        capture_output=True, text=True, check=True)
+    stale = [pathlib.Path(p) for p in r.stdout.splitlines()
+             if p and p not in fork_set]
+    return new, changed, stale
 
 
 def dirty_paths() -> list:
@@ -91,10 +106,10 @@ def main() -> int:
         print("RESTORE: sources/typedb pristine at the locked revision")
         return 0
 
-    new, changed = differing()
+    new, changed, stale = differing()
     if args.check:
         dirty = dirty_paths()
-        if not new and not changed:
+        if not new and not changed and not stale:
             print(f"STAGED: sources/typedb carries every fork patch "
                   f"({len(dirty)} paths differ from the locked revision)")
             return 0
@@ -103,9 +118,12 @@ def main() -> int:
                   f"({len(new) + len(changed)} fork patches not staged)")
             return 0
         print(f"MIXED: {len(new) + len(changed)} fork patches unstaged, "
-              f"{len(dirty)} paths already diverge from the locked revision")
+              f"{len(stale)} stale staged files, "
+              f"{len(dirty)} paths diverge from the locked revision")
         for rel in new + changed:
             print("  - unstaged:", rel)
+        for rel in stale:
+            print("  - stale (in sources, not in fork):", rel)
         return 1
 
     for rel in new + changed:
@@ -113,7 +131,11 @@ def main() -> int:
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(FORK / rel, dst)
         print(f"  {'+' if rel in new else 'M'} {rel}")
-    print(f"STAGE: {len(new)} new, {len(changed)} changed "
+    for rel in stale:
+        (DEST / rel).unlink()
+        print(f"  - {rel} (removed: no longer in fork)")
+    print(f"STAGE: {len(new)} new, {len(changed)} changed, "
+          f"{len(stale)} stale removed "
           f"(sources/typedb is now the fork tree; "
           f"run --restore before the source-lock lint)")
     return 0

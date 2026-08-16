@@ -225,20 +225,42 @@ def ensure_behaviour_fixture():
     The catalogue records this as fixture:typedb-behaviour with exactly that
     destination; upstream's .gitignore covers `bazel-*`, so the link never
     dirties the pinned checkout. Without it every behaviour-driven target
-    fails in ~2s with '0 features / 1 parsing error' — a false red the runner
-    can prevent unconditionally, so it does.
+    fails in ~2s with '0 features / 1 parsing error' — a false red.
+
+    Returns True when the fixture is usable. When it is not, the caller
+    decides: a run that selected behaviour-driven targets must stop (running
+    them would archive false reds), while a run that selected none may
+    proceed — an environment with only the storage checkout materialised can
+    still run `--package storage`.
     """
     behaviour = REPO / "sources" / "typedb-behaviour"
     link = TB / "bazel-typedb" / "external" / "typedb_behaviour+"
+    probe = link / "connection" / "database.feature"
+    if probe.exists():
+        return True  # symlink or a real copy — either serves the features
     if not behaviour.is_dir():
-        sys.exit("sources/typedb-behaviour missing - "
-                 "run tools/source-lock/materialize_sources.py first")
-    if link.resolve() == behaviour.resolve():
-        return
+        return False
     link.parent.mkdir(parents=True, exist_ok=True)
     if link.is_symlink():
-        link.unlink()
+        link.unlink()  # dangling or wrong target
+    elif link.exists():
+        # a real dir/file that does NOT serve the features: refuse to guess
+        sys.exit(f"{link} exists but has no features under it - "
+                 f"remove it (the runner will recreate the symlink)")
     os.symlink(os.path.relpath(behaviour, link.parent), link)
+    return probe.exists()
+
+
+def needs_behaviour_fixture(execs):
+    """Targets whose sources read Cucumber features via the fixture path.
+
+    Every such test lives either in the root package (typedb_server_bin's
+    test_http_* / test_behaviour_* suites) or under tests/behaviour/*;
+    membership by package root is a conservative superset of the exact set.
+    """
+    behaviour_roots = (str(TB), str(TB / "tests" / "behaviour"))
+    return [e for e in execs
+            if str(e.get("package_root", "")).startswith(behaviour_roots)]
 
 
 def main():
@@ -252,12 +274,15 @@ def main():
                     help="restrict cargo compilation/discovery to these packages")
     ap.add_argument("--out", default=str(REPO / "docs" / "evidence" / "G1" / "u0-results"))
     args = ap.parse_args()
-    ensure_behaviour_fixture()
 
     # What this run actually exercised. The output directory name used to be
     # the only record of the profile, which makes a misfiled run
     # indistinguishable from a real one; the archive digest matters for the
     # same reason (assembly tests run whatever binary is packaged there).
+    # Stamped into EVERY ROW this run produces — never onto merged prior rows,
+    # whose provenance is their own (a merged results file may mix runs made
+    # under different archives or commits; per-row stamping keeps each row
+    # telling the truth about itself).
     profile = os.environ.get("TYPEDB_STORAGE_PROFILE") or "U0/U1 (unset: RocksDB oracle)"
     archive = REPO / "sources" / "assembly-artifacts" / "typedb-all-linux-x86_64.tar.gz"
     run_manifest = {
@@ -277,6 +302,17 @@ def main():
         execs = [e for e in execs if args.filter in f"{e['package']}:{e['target']}"]
     execs = [e for e in execs
              if not any(s in f"{e['package']}:{e['target']}" for s in args.skip)]
+    if not ensure_behaviour_fixture():
+        affected = needs_behaviour_fixture(execs)
+        if affected:
+            sys.exit(
+                f"sources/typedb-behaviour missing and {len(affected)} selected "
+                f"target(s) read Cucumber features through it "
+                f"(e.g. {affected[0]['package']}:{affected[0]['target']}) - "
+                f"running them would archive false reds. "
+                f"Run tools/source-lock/materialize_sources.py first.")
+        print("note: behaviour fixture unavailable; no selected target needs it",
+              flush=True)
     print(f"U0: {len(execs)} test executables", flush=True)
     # merge with any prior results in this out dir (latest run per target wins)
     prior = {}
@@ -289,6 +325,7 @@ def main():
         print(f"[{i+1}/{len(execs)}] {e['package']}:{e['target']} ...",
               end=" ", flush=True)
         r = run_one(e, out_dir, args.timeout, reap=args.reap)
+        r["run"] = run_manifest  # provenance travels with the row it belongs to
         results.append(r)
         status = ("TIMEOUT" if r["timed_out"]
                   else "OK" if r["exit_code"] == 0 else f"FAIL({r['exit_code']})")
@@ -298,7 +335,9 @@ def main():
         for rr in results:
             merged[rr["target_id"]] = rr
         (out_dir / "u0-results.json").write_text(
-            json.dumps({**run_manifest,
+            json.dumps({"profile": profile,
+                        "toolchain": run_manifest["toolchain"],
+                        "last_write_run": run_manifest,
                         "results": sorted(merged.values(),
                                           key=lambda x: x["target_id"])}, indent=1) + "\n")
     total = {

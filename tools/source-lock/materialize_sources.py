@@ -160,7 +160,16 @@ def main() -> int:
 
     nodes = {n["id"]: n for n in json.loads(pathlib.Path(args.lock).read_text())["nodes"]}
     selected = set(args.only) if args.only else None
+    if selected:
+        # a typo'd node id must not become a silent no-op success
+        known = set(GIT_DIRS) | set(ARTIFACTS)
+        unknown = selected - known
+        if unknown:
+            raise SystemExit(
+                f"unknown node id(s): {', '.join(sorted(unknown))} "
+                f"(materialisable: {', '.join(sorted(known))})")
     problems = []
+    done_git = done_art = 0
 
     for nid, dirname in GIT_DIRS.items():
         if selected and nid not in selected:
@@ -178,6 +187,7 @@ def main() -> int:
             problems.append(f"{nid}: fetch failed ({' '.join(exc.cmd)})")
             print(f"  {nid:<16} sources/{dirname:<28} FETCH FAILED")
             continue
+        done_git += 1
         node_problems = verify_git(nid, node, dest)
         problems += node_problems
         print(f"  {nid:<16} sources/{dirname:<28} {status}"
@@ -190,7 +200,15 @@ def main() -> int:
         if node is None:
             problems.append(f"{nid}: missing from lock")
             continue
-        status = fetch_artifact(nid, node, rel, args.force)
+        try:
+            status = fetch_artifact(nid, node, rel, args.force)
+        except subprocess.CalledProcessError:
+            # same contract as the git loop: a fetch failure is a reported
+            # problem, and the remaining nodes still get their chance
+            problems.append(f"{nid}: download failed ({node.get('url')})")
+            print(f"  {nid:<16} sources/{rel:<28} FETCH FAILED")
+            continue
+        done_art += 1
         print(f"  {nid:<16} sources/{rel:<28} {status}")
 
     if problems:
@@ -198,7 +216,8 @@ def main() -> int:
         for p in problems:
             print("  -", p)
         return 1
-    print(f"MATERIALISE: OK ({len(GIT_DIRS)} git nodes, {len(ARTIFACTS)} artifacts)")
+    print(f"MATERIALISE: OK ({done_git} git node(s), {done_art} artifact(s)"
+          f"{' — selection via --only' if selected else ''})")
     print("next: python3 tools/source-lock/lint_source_lock.py")
     return 0
 

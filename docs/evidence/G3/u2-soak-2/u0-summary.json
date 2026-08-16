@@ -1,14 +1,15 @@
 {
   "profile": "U2",
   "toolchain": "rust 1.93.0 parity lane",
-  "storage_profile_env": "U2",
-  "assembly_archive_sha256": "db4d44fe46efc63955d5f8943162c33b56f2db617d340f8f0380dd5283015c8b",
-  "repo_commit": "db1c7eaa75d5b0a3bfd74388c7e3140e2055a4a3",
+  "scope": "complete soak-2 sweep (97 prior-session rows + 9 fresh-environment tail rows; per-row provenance in u0-results.json)",
   "executables": 106,
   "green": 105,
   "red": 1,
   "timeout": 0,
   "cases_passed": 452,
   "cases_failed": 2,
-  "cases_ignored": 1
+  "cases_ignored": 1,
+  "red_targets": [
+    "storage:test_recovery (5p/2f - upstream todo!() stubs, baseline-identical to the oracle)"
+  ]
 }

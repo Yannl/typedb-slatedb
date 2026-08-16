@@ -31,7 +31,10 @@ TB = REPO / "sources" / "typedb"
 FIX = REPO / "sources" / "fixtures"
 VERSION = "0.0.0"
 NAME = f"typedb-all-linux-x86_64-{VERSION}"
-OUT = TB / "typedb-all-linux-x86_64.tar.gz"
+# built straight into the install location; nothing is left inside the
+# pinned checkout (an intermediate there reads as staging drift to
+# tools/fork/stage.py and the source-lock lint)
+OUT = REPO / "sources" / "assembly-artifacts" / "typedb-all-linux-x86_64.tar.gz"
 
 CONSOLE_SHA = "058145121f478f2f8ad10991cd17e64e12957b93e0836ac180fe9d095a4c4e40"
 LOADER_SHA = "c46fba13d835701e43778a2ea1e2dbf0e031d206c55c6c8fec28e03c274d37f9"
@@ -104,25 +107,26 @@ def main():
             ti.mtime = 0
             ti.uid = ti.gid = 0
             ti.uname = ti.gname = "root"
+            # modes too: mkdir/copy2 inherit the build machine's umask, and
+            # tar records them — without canonicalisation the digest differs
+            # between umask 022 and 002 machines even for identical bytes.
+            ti.mode = 0o755 if (ti.isdir() or ti.mode & 0o100) else 0o644
             return ti
 
         entries = [(root, NAME)] + [
             (p, f"{NAME}/{p.relative_to(root).as_posix()}")
             for p in sorted(root.rglob("*"), key=lambda p: p.relative_to(root).as_posix())
         ]
+        OUT.parent.mkdir(parents=True, exist_ok=True)
         with open(OUT, "wb") as raw, \
                 gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as gz, \
                 tarfile.open(fileobj=gz, mode="w", format=tarfile.GNU_FORMAT) as tf:
             for path, arcname in entries:
                 tf.add(path, arcname=arcname, recursive=False, filter=normalise)
 
-    print(f"wrote {OUT} sha256={sha256(OUT)}")
-    # install where the corpus runner (run_u0.py) hard-links it from; a
+    # this is the location the corpus runner (run_u0.py) hard-links from; a
     # stale copy here silently runs assembly tests against an old binary
-    installed = REPO / "sources" / "assembly-artifacts" / OUT.name
-    installed.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(OUT, installed)
-    print(f"installed {installed}")
+    print(f"installed {OUT} sha256={sha256(OUT)}")
 
 
 if __name__ == "__main__":

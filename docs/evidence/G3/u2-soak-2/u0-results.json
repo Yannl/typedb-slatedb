@@ -1,9 +1,7 @@
 {
  "profile": "U2",
  "toolchain": "rust 1.93.0 parity lane",
- "storage_profile_env": "U2",
- "assembly_archive_sha256": "db4d44fe46efc63955d5f8943162c33b56f2db617d340f8f0380dd5283015c8b",
- "repo_commit": "db1c7eaa75d5b0a3bfd74388c7e3140e2055a4a3",
+ "provenance_note": "Merged sweep file. Rows carrying a 'run' object were produced by the fresh-environment tail re-run (this repo's bootstrap-tooling session) and record their own profile/archive/commit. Rows without one are the 97 targets of the original soak-2 sweep, run by the prior session before the runner recorded per-row manifests; their binary identity is their executable_sha256 field. An earlier revision of this file stamped a single top-level manifest over all rows - that overstated provenance for the 97 prior rows and is corrected here.",
  "results": [
   {
    "target_id": "answer:answer",
@@ -1428,7 +1426,14 @@
    "measured": 0,
    "filtered_out": 0,
    "raw_log": "docs/evidence/G3/u2-soak-2/typedb_server_bin__test_fail_points.log",
-   "tail": null
+   "tail": null,
+   "run": {
+    "profile": "U2",
+    "toolchain": "rust 1.93.0 parity lane",
+    "storage_profile_env": "U2",
+    "assembly_archive_sha256": "db4d44fe46efc63955d5f8943162c33b56f2db617d340f8f0380dd5283015c8b",
+    "repo_commit": "7ef6c967ed786d1a1f3bd6b5d91df5550b8992d2"
+   }
   },
   {
    "target_id": "typedb_server_bin:test_http_database",
@@ -1443,7 +1448,14 @@
    "measured": 0,
    "filtered_out": 0,
    "raw_log": "docs/evidence/G3/u2-soak-2/typedb_server_bin__test_http_database.log",
-   "tail": null
+   "tail": null,
+   "run": {
+    "profile": "U2",
+    "toolchain": "rust 1.93.0 parity lane",
+    "storage_profile_env": "U2",
+    "assembly_archive_sha256": "db4d44fe46efc63955d5f8943162c33b56f2db617d340f8f0380dd5283015c8b",
+    "repo_commit": "13d7a1447b543a00c6bae163cb43a6f5da1ec132"
+   }
   },
   {
    "target_id": "typedb_server_bin:test_http_debug",
@@ -1458,7 +1470,14 @@
    "measured": 0,
    "filtered_out": 0,
    "raw_log": "docs/evidence/G3/u2-soak-2/typedb_server_bin__test_http_debug.log",
-   "tail": null
+   "tail": null,
+   "run": {
+    "profile": "U2",
+    "toolchain": "rust 1.93.0 parity lane",
+    "storage_profile_env": "U2",
+    "assembly_archive_sha256": "db4d44fe46efc63955d5f8943162c33b56f2db617d340f8f0380dd5283015c8b",
+    "repo_commit": "13d7a1447b543a00c6bae163cb43a6f5da1ec132"
+   }
   },
   {
    "target_id": "typedb_server_bin:test_http_driver_concept",
@@ -1473,7 +1492,14 @@
    "measured": 0,
    "filtered_out": 0,
    "raw_log": "docs/evidence/G3/u2-soak-2/typedb_server_bin__test_http_driver_concept.log",
-   "tail": null
+   "tail": null,
+   "run": {
+    "profile": "U2",
+    "toolchain": "rust 1.93.0 parity lane",
+    "storage_profile_env": "U2",
+    "assembly_archive_sha256": "db4d44fe46efc63955d5f8943162c33b56f2db617d340f8f0380dd5283015c8b",
+    "repo_commit": "13d7a1447b543a00c6bae163cb43a6f5da1ec132"
+   }
   },
   {
    "target_id": "typedb_server_bin:test_http_driver_connection",
@@ -1488,7 +1514,14 @@
    "measured": 0,
    "filtered_out": 0,
    "raw_log": "docs/evidence/G3/u2-soak-2/typedb_server_bin__test_http_driver_connection.log",
-   "tail": null
+   "tail": null,
+   "run": {
+    "profile": "U2",
+    "toolchain": "rust 1.93.0 parity lane",
+    "storage_profile_env": "U2",
+    "assembly_archive_sha256": "db4d44fe46efc63955d5f8943162c33b56f2db617d340f8f0380dd5283015c8b",
+    "repo_commit": "13d7a1447b543a00c6bae163cb43a6f5da1ec132"
+   }
   },
   {
    "target_id": "typedb_server_bin:test_http_driver_http",
@@ -1503,7 +1536,14 @@
    "measured": 0,
    "filtered_out": 0,
    "raw_log": "docs/evidence/G3/u2-soak-2/typedb_server_bin__test_http_driver_http.log",
-   "tail": null
+   "tail": null,
+   "run": {
+    "profile": "U2",
+    "toolchain": "rust 1.93.0 parity lane",
+    "storage_profile_env": "U2",
+    "assembly_archive_sha256": "db4d44fe46efc63955d5f8943162c33b56f2db617d340f8f0380dd5283015c8b",
+    "repo_commit": "13d7a1447b543a00c6bae163cb43a6f5da1ec132"
+   }
   },
   {
    "target_id": "typedb_server_bin:test_http_driver_query",
@@ -1518,7 +1558,14 @@
    "measured": 0,
    "filtered_out": 0,
    "raw_log": "docs/evidence/G3/u2-soak-2/typedb_server_bin__test_http_driver_query.log",
-   "tail": null
+   "tail": null,
+   "run": {
+    "profile": "U2",
+    "toolchain": "rust 1.93.0 parity lane",
+    "storage_profile_env": "U2",
+    "assembly_archive_sha256": "db4d44fe46efc63955d5f8943162c33b56f2db617d340f8f0380dd5283015c8b",
+    "repo_commit": "13d7a1447b543a00c6bae163cb43a6f5da1ec132"
+   }
   },
   {
    "target_id": "typedb_server_bin:test_http_driver_user",
@@ -1533,7 +1580,14 @@
    "measured": 0,
    "filtered_out": 0,
    "raw_log": "docs/evidence/G3/u2-soak-2/typedb_server_bin__test_http_driver_user.log",
-   "tail": null
+   "tail": null,
+   "run": {
+    "profile": "U2",
+    "toolchain": "rust 1.93.0 parity lane",
+    "storage_profile_env": "U2",
+    "assembly_archive_sha256": "db4d44fe46efc63955d5f8943162c33b56f2db617d340f8f0380dd5283015c8b",
+    "repo_commit": "13d7a1447b543a00c6bae163cb43a6f5da1ec132"
+   }
   },
   {
    "target_id": "typedb_server_bin:test_http_transaction",
@@ -1548,7 +1602,14 @@
    "measured": 0,
    "filtered_out": 0,
    "raw_log": "docs/evidence/G3/u2-soak-2/typedb_server_bin__test_http_transaction.log",
-   "tail": null
+   "tail": null,
+   "run": {
+    "profile": "U2",
+    "toolchain": "rust 1.93.0 parity lane",
+    "storage_profile_env": "U2",
+    "assembly_archive_sha256": "db4d44fe46efc63955d5f8943162c33b56f2db617d340f8f0380dd5283015c8b",
+    "repo_commit": "13d7a1447b543a00c6bae163cb43a6f5da1ec132"
+   }
   },
   {
    "target_id": "typedb_server_bin:test_query",

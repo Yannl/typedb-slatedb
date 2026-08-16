@@ -121,8 +121,11 @@ def check_rust(rep: Report, lock: dict) -> None:
                  f"rustup toolchain install {parity}")
     else:
         rep.ok(f"rust {parity} (parity lane)", "installed")
-    rep.ok("rust stable (tools workspace)",
-           "installed" if "stable" in installed else "missing — tools/ lane only")
+    if "stable" in installed:
+        rep.ok("rust stable (tools workspace)", "installed")
+    else:
+        rep.fail("rust stable (tools workspace)", "not installed",
+                 "rustup toolchain install stable")
     # the static lane shells out to the pinned nightly rustfmt
     nightly = re.search(r"RUSTFMT_TOOLCHAIN = \"([^\"]+)\"",
                         (REPO / "tools" / "catalog" / "run_static.py").read_text())

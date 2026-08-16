@@ -45,7 +45,32 @@ Had U0 been assumed green, these two would have surfaced during Phase C and read
 regressions caused by the SlateDB port, in the one area where that diagnosis is most
 plausible and most expensive to chase.
 
-**The 46 environmental failures** all fail at the same place: extracting
+**The 46 packaging failures are resolved.** They were reported as blocked on two unobtainable
+artifacts. They were not.
+
+`MODULE.bazel` L118-132 pulls TypeDB Console and Loader as pre-built artifacts with no URL or
+checksum supplied, and I stopped there — treating "the build downloads a binary" as "the source
+is unavailable". They are one Cargo workspace at `typedb/typedb-console`, tag `console-3.12.0`
+(`0292fddf`), whose members are `["typeql-check", "common", "loader", "tool/runner", "console"]`
+and whose VERSION reads exactly `3.12.0`. Console builds from source in two minutes.
+
+`cargo xtask assemble` now produces `typedb-all-linux-x86_64.tar.gz` from components this lane
+builds itself, with the layout read out of TB's root BUILD rather than guessed. Measured
+against it:
+
+| Target | Cases | Result |
+|---|---:|---|
+| `test_assembly` | 1 | pass |
+| `test_fail_point_always` | 22 | pass |
+| `test_fail_point_chance` | 22 | pass |
+
+Two limits stand. The archive is a **semantic** reproduction — tar ordering, timestamps and
+permission bits differ from Bazel's, so its digest is not upstream's. And the archive must be
+staged as a bare filename in the working directory, because `fail_points.rs` L174-181 builds
+its extract command by string surgery (`tar -xf $A && mv ${A%.tar.gz}-0.0.0 …`): `tar` writes
+to the cwd while the `mv` keeps the variable's path prefix, so an absolute path cannot work.
+
+**Historical note on the earlier reading.** These originally failed at extracting
 `$TYPEDB_ASSEMBLY_ARCHIVE` (`tests/assembly/assembly.rs` L48-51, `fail_points.rs` L185-188).
 
 These are *packaging* tests. They unpack the shippable tarball, start the server from it, and
@@ -53,14 +78,10 @@ drive it with `typedb console --script=…` (`fail_points.rs` L300-302). Console
 CLI used here as a **test client** — not a component this programme changes. The archive
 needs it, so the tests need it, and all that is missing is a pinned URL and SHA-256.
 
-**Scope, stated precisely.** This blocks 46 packaging tests. It does not block the storage
-work: the other 4 711 cases — every behaviour scenario, every unit test, every static check —
-run today, and a SlateDB backend can be developed and measured against them.
-
 TypeDB Loader is bundled in the same archive and is referenced by **no test at all** (0
-occurrences under `tests/`). An earlier draft of this summary listed it as a blocker; that was
-inferred from the packaging rule rather than checked against the tests, and it is wrong.
-`TLOADER` blocks nothing.
+occurrences under `tests/`). An earlier draft listed it as a blocker; that was inferred from
+the packaging rule rather than checked against the tests, and it was wrong twice over — it
+blocks nothing, and its source was available anyway.
 
 **`bench_rocks`** reads required CLI arguments (`bench_rocks.rs` L174,
 `get_arg_as::<String>(&arg_map, "database", true)`) and unwraps them. Bazel declares it
@@ -115,10 +136,19 @@ A runner that refuses to classify what it cannot read produced twelve loud failu
 each of which was real. The cost was nine iterations; the alternative was a baseline that
 looked clean and meant nothing.
 
-## Not yet done
+## The lesson that cost the most
 
-* The 46 packaging failures need the Console CLI pinned by URL + SHA-256 (`TCONSOLE`). They
-  do not block the storage work; 4 711 cases run without it.
+Twelve of the defects above were mine, and the runner caught them because it refuses to
+classify what it cannot read. The thirteenth was different: nothing caught it, because it was
+not a defect in code. I read `native_artifact_files` in `MODULE.bazel`, found no URL, and
+concluded the artifacts were unobtainable — reporting 46 tests as blocked on a missing input
+that was a `git clone` away.
+
+No amount of runner strictness detects that. "The build downloads a binary" is not "the source
+is unavailable", and the failure mode is stopping at the first dead end and reporting it as the
+answer. It surfaced only because someone asked whether the source existed.
+
+## Not yet done
 * The two `todo!()` recovery tests are upstream's to fix, and are the baseline they must be
   held to until then.
 * `bench_rocks` needs either an invocation with its required arguments or a port record

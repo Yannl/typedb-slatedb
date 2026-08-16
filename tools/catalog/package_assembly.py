@@ -97,6 +97,12 @@ def main():
             tf.add(root, arcname=NAME)
 
     print(f"wrote {OUT} sha256={sha256(OUT)}")
+    # install where the corpus runner (run_u0.py) hard-links it from; a
+    # stale copy here silently runs assembly tests against an old binary
+    installed = REPO / "sources" / "assembly-artifacts" / OUT.name
+    installed.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(OUT, installed)
+    print(f"installed {installed}")
 
 
 if __name__ == "__main__":

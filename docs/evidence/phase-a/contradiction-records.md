@@ -337,6 +337,48 @@ dead fixtures, sources alone leak across target boundaries.
 
 ---
 
+## CR-A-11 — The contract requires doctests; its own schema cannot express them
+
+**Contract claim.** The playbook L31 and brief L3972 both specify the work as "enumerate
+libtest, **doctest**, Cucumber, failpoint, script and static cases", and `AGENTS.md` L38
+repeats doctests as a leaf-case expansion route.
+
+**Observed.** `contract/typedb-r2-v14-upstream-test-catalog.schema.json` — the schema the same
+package supplies and which every generated catalogue is validated against — has no doctest
+value in either enum:
+
+* `case_discovery` (L222-228): `LIBTEST_LIST`, `CUCUMBER_SCENARIOS`, `FAILPOINT_REGISTRY`,
+  `SCRIPT`, `STATIC_CHECK`
+* `kind` (L302-308): `LIBTEST`, `CUCUMBER`, `FAILPOINT`, `SCRIPT`, `STATIC_CHECK`
+
+So a catalogue containing a `DOCTEST` leaf case cannot be schema-valid, and a schema-valid
+catalogue cannot mark a case as a doctest. The prose requirement and the machine-readable
+contract disagree.
+
+**Also observed:** the requirement is not hypothetical. Upstream has two doctests that really
+execute — `common/logger/log_panic.rs` L38 and L67, confirmed by
+`cargo test -p logger --doc -- --list` reporting `2 tests`. The four fenced blocks in
+`server/parameters/config.rs` L269-298 are ```` ```ignore ```` and correctly do not run.
+
+**Correction.** Doctests are enumerated and catalogued as `kind = LIBTEST` with
+`case_discovery = LIBTEST_LIST`, under a distinct target id `cargo::doc::<package>`. This is
+not a workaround dressed up: a doctest *is* compiled and run by libtest, listed through the
+same `--list` protocol, and reported in the same output format. Only the Cargo selector
+differs (`--doc` rather than `--lib`). The target id keeps them distinguishable for anyone who
+needs to separate them.
+
+Extending the schema was the alternative. It was rejected because the schema is a normative
+contract artifact, and editing the contract to fit the implementation is the wrong direction —
+the disagreement is recorded here instead.
+
+**Impact.** Two leaf cases were missing from the denominator, and would have stayed missing:
+nothing in the pipeline could have flagged them, because the schema validation the catalogue
+runs against would have *rejected* the correct representation. This is the one gap in this
+programme that the tooling's own strictness could not have caught, which is why the periodic
+re-reading of the specification against the delivered work matters as an independent check.
+
+---
+
 ## CR-A-05 — A decoy Rust version in the dependencies repo (no contract change)
 
 Recorded because it is the kind of anchor that looks authoritative and is not.

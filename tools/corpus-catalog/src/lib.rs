@@ -852,6 +852,52 @@ pub fn generate(inputs: &CatalogInputs<'_>) -> Result<CatalogOutput> {
         });
     }
 
+    // --- Doctests.
+    //
+    // Required by the playbook L31 and brief L3972 ("enumerate libtest, doctest, Cucumber,
+    // failpoint, script and static cases"), but the contract's own catalogue schema has no
+    // DOCTEST value in either `case_discovery` or `kind` (CR-A-11). They are therefore
+    // catalogued as LIBTEST with a distinct `cargo::doc::<pkg>` target id, which is honest:
+    // doctests are compiled and run by libtest, listed with the same `--list` protocol, and
+    // reported in the same format. Only the selector differs (`--doc`).
+    //
+    // Upstream has two that actually run — `common/logger/log_panic.rs` L38 and L67. The
+    // four fenced blocks in `server/parameters/config.rs` are ```ignore and do not.
+    for pkg in meta.workspace_packages() {
+        let has_lib = pkg.targets.iter().any(|t| t.is_lib() && t.doctest);
+        if !has_lib {
+            continue;
+        }
+        let target_id = format!("cargo::doc::{}", pkg.name);
+        let manifest_rel = pkg
+            .manifest_path
+            .strip_prefix(inputs.fork_root)
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_default();
+        targets.push(Target {
+            target_id: target_id.clone(),
+            origin: Origin::Cargo,
+            upstream_label: None,
+            cargo_package: Some(pkg.name.clone()),
+            cargo_target: Some("--doc".into()),
+            source_files: vec![HashedFile {
+                path: manifest_rel.clone(),
+                sha256: sha256_file(&pkg.manifest_path)?,
+            }],
+            case_discovery: CaseDiscovery::LibtestList,
+            platform_predicate: "linux-x86_64".into(),
+            features: Vec::new(),
+            cfg: Vec::new(),
+            env: BTreeMap::new(),
+            fixture_ids: Vec::new(),
+            working_directory: Some(".".into()),
+            timeout_seconds: 600,
+            serial_group: None,
+            port_status: PortStatus::ByteIdentical,
+        });
+        // Cases are filled in by `enrich_libtest_cases` from the harness listing.
+    }
+
     // --- Upstream's own declared skips (Cucumber only at this point; see the note below).
     //
     // A scenario its harness filters out is counted, never passed (§22.3), but the verdict

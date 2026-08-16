@@ -75,7 +75,17 @@ pub fn run(
         extra_path: Some("/opt/protoc/bin".into()),
         // The profile's resolved configuration, set here rather than inherited from the
         // caller's shell. Shared with the catalogue's listing step so the two cannot drift.
-        base_env: conformance_runner::parity_build_env(),
+        base_env: {
+            let mut env = conformance_runner::parity_build_env();
+            let archive = repo_root.join("build/assembly/typedb-all-linux-x86_64.tar.gz");
+            if archive.is_file() {
+                env.insert(
+                    "TYPEDB_ASSEMBLY_ARCHIVE".to_string(),
+                    archive.display().to_string(),
+                );
+            }
+            env
+        },
     };
 
     let selected: Vec<_> = catalog
@@ -120,6 +130,24 @@ pub fn run(
     if !warm_status.success() {
         bail!(
             "pre-build failed ({warm_status}); a run that cannot build its corpus cannot              report coverage over it"
+        );
+    }
+
+    // Point the packaging tests at the assembled archive, if one exists.
+    //
+    // Upstream gets this from Bazel's `data`; here it comes from `cargo xtask assemble`. The
+    // path is absolute and lives under build/, never beside the sources — an archive dropped
+    // in the checkout is exactly the kind of residue that made the source graph digest drift.
+    // Absent, the targets fail on a missing archive, which is the honest result rather than a
+    // skip.
+    let archive = repo_root.join("build/assembly/typedb-all-linux-x86_64.tar.gz");
+    if archive.is_file() {
+        println!("assembly archive: {}", archive.display());
+    } else {
+        println!(
+            "NOTE: no assembly archive at {}; packaging targets will fail on the missing \
+             fixture. Run `cargo xtask assemble` to build one.",
+            archive.display()
         );
     }
 

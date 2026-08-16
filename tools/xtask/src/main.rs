@@ -7,6 +7,7 @@
 mod catalog;
 mod doclint;
 mod evidence;
+mod assemble;
 mod native;
 mod lock;
 mod runner;
@@ -79,6 +80,13 @@ enum Command {
     },
     /// Resolve and digest the native toolchain (the `NATIVE` class-U node, brief §1.3).
     NativeToolchain,
+    /// Assemble the distribution archive the packaging tests need.
+    Assemble {
+        #[arg(long)]
+        typedb_root: Option<std::path::PathBuf>,
+        #[arg(long)]
+        out_dir: Option<std::path::PathBuf>,
+    },
 }
 
 fn default_repo_root() -> Result<PathBuf> {
@@ -133,5 +141,8 @@ fn main() -> Result<()> {
         Command::DocLint => doclint::run(&repo_root),
         Command::Evidence { phase } => evidence::run(&repo_root, &phase),
         Command::NativeToolchain => native::run(&repo_root),
+        Command::Assemble { typedb_root, out_dir } => {
+            assemble::run(&repo_root, typedb_root.as_deref(), out_dir.as_deref())
+        }
     }
 }

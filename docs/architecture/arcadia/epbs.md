@@ -59,7 +59,7 @@ rewritten):
 The ADR set (`../ADR/`), the Arcadia perspective set (this folder), the
 operational docs (`../../development.md`, `../../operations.md`,
 `../../user-guide.md`, `../../local-dev-parity-plan.md`), and the received
-contract (`typedb-r2-implementation-package/`, read-only).
+contract (`../../inception/`, archived read-only — see its `ARCHIVE-NOTE.md`).
 
 ## Reconstruction procedure (product from CIs)
 

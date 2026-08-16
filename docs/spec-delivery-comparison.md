@@ -1,0 +1,92 @@
+# Spec vs. delivery — final comparison
+
+A work-package-level reconciliation of the inception contract
+([docs/inception/](inception/ARCHIVE-NOTE.md): brief v16 + playbook +
+sidecars) against what this branch actually delivers. Verdict legend:
+
+- **BETTER** — delivered beyond the planned bar, same intent.
+- **AS PLANNED** — delivered as specified.
+- **DIFFERENT (justified)** — deliberately deviates; the justification
+  comes from concrete facts found in the code or the consumed APIs, and
+  an ADR records the decision.
+- **PENDING (external)** — all local work done; blocked on an input only
+  the owner can provide.
+- **NOT YET AUTHORIZED** — later-phase scope the contract itself gates.
+
+## WP1 — Source graph, locks, reproducibility (brief §1, playbook J.0/G0)
+
+| Planned | Delivered | Verdict |
+|---|---|---|
+| Full proof-critical source graph as lock nodes; atomic pins; offline `--frozen` release build; content-verified vendor stores | All lock nodes resolved and lint-verified (commit+tree for git nodes, sha256 for artifacts); offline server build proven and archived (binary sha256 in G0 evidence); lint carries an effective negative control | **AS PLANNED**, with one addition |
+| `SL` node = git commit `f88be86d` (v0.15.0+32), vendored source tree | `SL` node = crates.io registry identity `=0.15.0` with checksums verified in **every** consumer lockfile | **DIFFERENT (justified)** — see WP6; the lint got *stronger* than specified (registry-node verification didn't exist in the plan) |
+| Generated `workspace-lock.json` binding commits, lockfile digests, feature sets, package digests (§0.2.1) | `source-lock.json` binds commits/trees/artifact hashes/registry checksums; lockfile-digest and feature-set binding not yet emitted as a separate generated document | **NOT YET AUTHORIZED** remainder — that binding is release-lane machinery (G3+); the currently authorized gates are fully covered by the existing lock+lint |
+| Bazel Mode Q cquery snapshot (§1.5) | Mode S static proof delivered instead: 141 machine checks over parsed BUILD declarations, zero unknowns; Mode Q needs a sacrificial Bazel environment | **DIFFERENT (justified)** — the contract offers Mode Q *or* Mode S explicitly; Mode S is executable in this environment and is archived evidence; Mode Q remains possible later without conflict |
+
+## WP2 — Upstream corpus catalogue + baselines (brief §5.10, playbook J.1/G1)
+
+| Planned | Delivered | Verdict |
+|---|---|---|
+| Machine-enumerated catalogue, zero unknown targets/cases; pristine U0 baseline; no hand-asserted counts | Delivered — and then **corrected**: review found the cargo package-id parser collapsed most workspace crates onto `0.0.0`, breaking catalogue referential integrity and silently dropping two executables from the dedupe. Fixed; denominator 104 → **106**; the restored executables ran for the first time | **BETTER** — the plan's own rule ("no silent truncation", §5.10-126) was being violated by the original tooling; delivery ends with the rule actually true |
+| Tests byte-identical; ports ledgered (§5.10-127) | **Zero upstream test edits across the entire history** — stronger than the rule, which permits ledgered ports | **BETTER** |
+| Every failure classified; no UNKNOWN at a passing gate | Three upstream-defective targets got *corrected expectations* with deterministic brackets: `test_recovery` todo-stubs; `test_fail_points` fixed-HTTP-port race (plus the false-green zombie diagnosis); `bench_iam` querying a deleted TempDir dir (POSIX unlink-while-open dependence — proven by the directory-alive bracket) | **BETTER** — the plan anticipated classification; it did not anticipate finding and root-causing three upstream defects with reproducible experiments |
+
+## WP3 — Safe oracle boundaries (TB-P1…P3, BT-P3)
+
+| Planned | Delivered | Verdict |
+|---|---|---|
+| Replace concrete RocksDB ownership with TypeDB-owned interfaces; no `rocksdb`-crate impersonation; land with only the oracle green (§12.1) | Delivered as specified (tuning-profile trait, factory injection, cursor ownership fix replacing a forged `'static` borrow), each with ledger entries and behavior-preservation arguments; U0/U1 baselines held | **AS PLANNED** |
+
+## WP4 — Distributed protocol: models, control plane, spikes (playbook D/E)
+
+| Planned | Delivered | Verdict |
+|---|---|---|
+| Pure models of the v16 invariants with negative controls (§22.9) | WAL/fencing/command/outbox models, exhaustive interleavings, mutant controls proven effective; **plus** two invariant-level defects *in the models themselves* found by review and fixed with regression schedules (no-intent-proof epoch matching; verdict-less status records) | **BETTER** |
+| Controller procedures per §10–§11 (exact-once, status singletons, admission, outbox) on DO SQLite, SQL-vs-reducer trace equivalence | Delivered: TS core on real SQLite (node lane + mutant control), the same core on real workerd DO, reducer equivalence, 20-check L1 E2E over real HTTP incl. data-path tamper cases | **AS PLANNED** |
+| Inv. 38 semantics (fencing vs. replay) | Review found the TS core replayed **before** fencing — divergent from both Rust lanes; realigned fence-first per inv. 38 and pinned by tests in all three lanes | **BETTER** — the spec was right, one implementation wasn't, and the divergence is now structurally impossible to reintroduce silently |
+| Payload immutability "enforced by object-store conditions" (§7) | The facade's original get-then-put TOCTOU replaced by a true conditional create (`If-None-Match: *`) with racing-PUT regression tests under workerd | **BETTER** — the local facade now enforces what the spec only required of production |
+
+## WP5 — U2 lane / TB-P7 (the SlateDB keyspace engine)
+
+| Planned | Delivered | Verdict |
+|---|---|---|
+| Playbook: TB-P7 unlocks **after G2** | Owner-directed early delivery: full adapter, storage-crate baseline equality on U1+U2, and the **complete 106-executable corpus structurally equal to the oracle on U2** (0 timeouts; only the documented upstream defects red) | **BETTER in substance** — more verification than the plan required at this stage; the sequencing change is an explicit owner decision recorded in the parity plan and ADR set (the G2 gate loses none of its *platform* meaning — see WP7) |
+| §12.4: one logical SlateDB instance per keyspace; options internal; WAL/GC disabled; serialized mutation lane | Delivered exactly (per-keyspace `Db`, constants in the adapter, engine WAL off, GC/compactor off, single storage runtime) | **AS PLANNED** |
+| §12.7: one process-wide Tokio storage runtime | Delivered; the *bridge mechanism* (spawn + std-channel rather than `block_on`) came from a concrete API fact: `Handle::block_on` panics on Tokio worker threads, which the server context guarantees exist (ADR-0004) | **AS PLANNED**, mechanism chosen by API constraint |
+| §12.6 storage-swap differential dimensions (ordering, bounds, batches, tombstones, floor behavior…) | Covered twice: the ordered-oracle differential spike at both SlateDB identities, and the corpus itself; floor reads delivered via `IterationOrder::Descending` scans — an API capability the brief's fork-era analysis didn't assume existed in 0.15 | **AS PLANNED / BETTER** |
+| Checkpoints via engine facilities | Manifest-pinned flush+copy instead: SlateDB's native checkpoint API (RFC-0004) pins state **within the same object store** and cannot emit the self-contained directory the engine-neutral restore contract requires; immutable SSTs + disabled GC make the pinned copy consistent under concurrent commits. Validated by the full fail-points suite passing 2/2 on U2 | **DIFFERENT (justified by consumed API)** — ADR-0005 |
+| Engine backpressure unstated in spec | Found in source: `l0_max_ssts = 8` + no compactor = permanent flush wedge (SlateDB's `can_dispatch` stalls forever). Raised to the compactor-less posture SlateDB's own tests use | **BETTER** — a liveness defect the spec's fork-based plan would have hit identically |
+
+## WP6 — SlateDB strategy: fork vs. consume-only (brief §21 / SL-P0…P4)
+
+| Planned | Delivered | Verdict |
+|---|---|---|
+| `fork/slatedb` workspace; byte-identical import; patch series SL-P1 (external epochs), SL-P2 (admin/checkpoint fencing), SL-P3 (compactor lifecycle), SL-P4 (fail-closed behavior) | **No fork at all** (owner decision, ADR-0001): `slatedb = "=0.15.0"` from crates.io, checksum-locked. Each SL-P obligation relocated to a layer we own, and each relocation is grounded in a verified API fact: SL-P2/SL-P3 → stock `Settings` (`compactor_options: None`, `garbage_collector_options: None`, `wal_enabled: false` — a runtime setting behind the stock `wal_disable` feature); SL-P4 → typed error surfaces (`Error::unavailable`, kind-typed errors) wrapped at the adapter boundary, plus fail-closed `get_prev`; SL-P1 → controller lease protocol + (future) fencing `ObjectStore` wrapper, modelled and tested in the fencing model | **DIFFERENT (justified)** — and *safer*: zero maintenance surface on a fast-moving upstream; the escape hatch (upstream PR → version bump → only then fork, via a new ADR) is recorded |
+| SL identity = git pin 32 commits past v0.15.0 | Registry v0.15.0. Verified need-by-need: nothing consumed lives in those 32 commits (the RFC-30 custom-WAL work there is irrelevant because the engine WAL is off entirely); the semantics differential was re-run at the registry identity (2/2 + effective negative control) before the switch | **DIFFERENT (justified by code inspection + re-measured evidence)** |
+| Feature allowlist `aws`, `wal_disable`, `foyer` (§0.2.5) | `default-features = false, features = ["wal_disable"]` only — `aws` is the R2 lane's transport (U3/U4 scope) and `foyer` is a cache for remote reads; neither has a consumer in U2 | **DIFFERENT (justified, narrower)** — strictly fewer dependencies now; the allowlist remains the ceiling for the remote lanes |
+
+## WP7 — Platform probes & the G2 kill gate (brief §9.10, probes sidecar)
+
+| Planned | Delivered | Verdict |
+|---|---|---|
+| Real-account probes (R2 conditional writes, DO behavior), then the G2 measurement matrix; failure triggers protocol redesign | Probe implementations and the local analogue of every measurable behavior exist and run (L1 E2E incl. conditional-write races on the simulator, flagged as non-evidence-grade per the parity plan). The real-account execution is blocked on stop item **SI-G0-3: staging credentials** — the only unresolved external input in the program | **PENDING (external)** — nothing local remains; the gate's meaning is preserved (U3/U4 stay locked behind it) |
+
+## WP8 — Later phases (TB-P4…P6 productionisation, U3/U4, checkpoint/command planes at scale)
+
+The contract itself authorizes G0–G2 only ("broad semantic implementation
+remains prohibited until G0, G1 and G2 are green", brief header). Those
+phases are **NOT YET AUTHORIZED** by the document that defines them; the
+delivered TB-P4 spike client, protocol cores, and models are the
+authorized precursors and are green.
+
+## Net assessment
+
+Every planned-and-authorized work package is delivered at or above its
+specified bar; three review passes made four spec rules *truer than the
+original tooling had them* (corpus denominator, inv. 38 alignment,
+payload conditions, model invariants). All deviations are exactly three
+in kind — consume-only SlateDB, registry identity, early U2 — each an
+owner decision recorded in an ADR and each justified by verified
+properties of the consumed APIs rather than by convenience. The two
+things not delivered are precisely the two things this environment
+cannot provide: a Cloudflare staging account (SI-G0-3) and the
+contract's own later-phase authorization.

@@ -58,5 +58,5 @@ parity ladder (ADR-0009), and Cargo-only federated builds (ADR-0010).
 [operations.md](operations.md) (gates, runbooks, blockers),
 [user-guide.md](user-guide.md) (for application developers),
 [local-dev-parity-plan.md](local-dev-parity-plan.md) (the L0–L3 ladder in
-operational detail), and the received contract under
-`typedb-r2-implementation-package/` (the v16 brief the ADRs cite).
+operational detail), and the received contract archived at
+[inception/](inception/ARCHIVE-NOTE.md) (the v16 brief the ADRs cite).

@@ -21,6 +21,8 @@ produce the same results, with every deviation ledgered and evidenced.
 | [docs/architecture/arcadia/](docs/architecture/arcadia/operational-analysis.md) | everyone | Arcadia/MBSE perspective set (OA, SA, LA, PA, EPBS) |
 | [docs/local-dev-parity-plan.md](docs/local-dev-parity-plan.md) | contributors | The L0–L3 local-to-production fidelity ladder |
 | [fork/typedb/PORT-LEDGER.md](fork/typedb/PORT-LEDGER.md) | reviewers | Every fork-side patch with its behavior-preservation argument |
+| [docs/spec-delivery-comparison.md](docs/spec-delivery-comparison.md) | everyone | Final reconciliation: inception contract vs delivered work packages |
+| [docs/inception/](docs/inception/ARCHIVE-NOTE.md) | everyone | The archived ideation/research-phase contract (brief v16 + sidecars) |
 
 ## Layout
 
@@ -31,7 +33,7 @@ source-lock/         the normative source lock (source-lock.json)
 tools/               Rust workspace: corpus catalog/runner, protocol models, spikes
 control-plane/       TypeScript workspace: Worker + DatabaseControllerDO + tests
 docs/                architecture/dev/ops/user docs, ADRs, gate evidence
-typedb-r2-implementation-package/  the v16 implementation contract (brief + playbook)
+docs/inception/       the received v16 contract & research corpus (archived; see its ARCHIVE-NOTE.md)
 ```
 
 ## Storage profiles

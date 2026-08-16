@@ -1,0 +1,9 @@
+
+running 1 test
+Failed to parse: Failed to parse feature: Could not read path: bazel-typedb/external/typedb_behaviour+/connection/transaction.feature
+[Summary]
+0 features
+0 scenarios
+0 steps
+1 parsing error
+Failed to parse: Failed to parse feature: Could not read path: bazel-typedb/external/typedb_behaviour+/connection/transaction.feature

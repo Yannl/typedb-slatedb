@@ -37,9 +37,10 @@ ARTIFACTS = {
     "TLOADER": "fixtures/loader/typedb-loader-linux-x86_64-3.12.0.tar.gz",
 }
 
-# lock node id -> Cargo.lock (relative to repo root) that must pin the crates
+# lock node id -> Cargo.lock files (relative to repo root) that must pin the
+# crates — every workspace that consumes the crate is checked
 REGISTRY_NODES = {
-    "SL": "tools/Cargo.lock",
+    "SL": ["tools/Cargo.lock", "fork/typedb/Cargo.lock"],
 }
 
 
@@ -128,7 +129,7 @@ def main() -> int:
         if dirty:
             failures.append(f"{nid}: dirty tree at sources/{dirname}")
 
-    for nid, lock_rel in REGISTRY_NODES.items():
+    for nid, lock_rels in REGISTRY_NODES.items():
         node = nodes.get(nid)
         if node is None:
             failures.append(f"{nid}: missing from lock")
@@ -136,7 +137,8 @@ def main() -> int:
         if node.get("kind") != "registry":
             failures.append(f"{nid}: expected kind 'registry', got {node.get('kind')!r}")
             continue
-        check_registry_node(nid, node, lock_rel, failures)
+        for lock_rel in lock_rels:
+            check_registry_node(nid, node, lock_rel, failures)
 
     for nid, rel in ARTIFACTS.items():
         node = nodes.get(nid)

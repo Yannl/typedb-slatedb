@@ -40,11 +40,16 @@ ASSEMBLY_ENV = {"TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"}
 ORDER_LAST = ("test_behaviour", "test_http", "test_assembly", "test_fail_points")
 
 
-def discover_executables():
+def discover_executables(packages=None):
+    cmd = ["cargo", TOOLCHAIN, "test", "--locked", "--no-run",
+           "--message-format", "json"]
+    if packages:
+        for p in packages:
+            cmd += ["-p", p]
+    else:
+        cmd += ["--workspace"]
     out = subprocess.check_output(
-        ["cargo", TOOLCHAIN, "test", "--workspace", "--locked", "--no-run",
-         "--message-format", "json"],
-        cwd=TB, text=True, stderr=subprocess.DEVNULL, env=ENV_BASE)
+        cmd, cwd=TB, text=True, stderr=subprocess.DEVNULL, env=ENV_BASE)
     execs = []
     for line in out.splitlines():
         try:
@@ -52,12 +57,19 @@ def discover_executables():
         except json.JSONDecodeError:
             continue
         if msg.get("reason") == "compiler-artifact" and msg.get("executable"):
+            # only true libtest harnesses: profile.test == true. Plain bin
+            # artifacts also carry an executable and must never be run here
+            # (running the real server main as a "test" is a false result).
+            if not msg.get("profile", {}).get("test"):
+                continue
             tgt = msg["target"]
             pkg = msg["package_id"].split("#")[-1].split("@")[0]
             if "/" in pkg:
                 pkg = pkg.rsplit("/", 1)[-1]
+            manifest = msg["manifest_path"]
             execs.append({"package": pkg, "target": tgt["name"],
-                          "kind": tgt["kind"], "executable": msg["executable"]})
+                          "kind": tgt["kind"], "executable": msg["executable"],
+                          "package_root": str(pathlib.Path(manifest).parent)})
     seen = {}
     for e in execs:
         seen[(e["package"], e["target"])] = e
@@ -80,17 +92,36 @@ def run_one(e, out_dir, timeout, reap=False):
     exe_sha = sha256_file(e["executable"])
     raw = out_dir / f"{e['package']}__{e['target']}.log"
     env = dict(ENV_BASE)
-    tmp = out_dir / "tmp" / f"{e['package']}__{e['target']}"
+    # short TMPDIR: long paths break SUN_LEN for Unix-domain-socket tests
+    tmp = pathlib.Path("/tmp/u0") / f"{abs(hash(tid)) % 100000}"
     tmp.mkdir(parents=True, exist_ok=True)
     env["TMPDIR"] = str(tmp)
+    # Bazel test threads get generous stacks; deep-recursion behaviour
+    # scenarios (functions/recursion) need more than libtest's default.
+    env["RUST_MIN_STACK"] = str(64 * 1024 * 1024)
+    # cargo semantics: tests run with cwd = package root
+    cwd = pathlib.Path(e.get("package_root") or TB)
     if e["target"] in ASSEMBLY_TARGETS:
         env.update(ASSEMBLY_ENV)
+        # isolated working dir per assembly-family test (Bazel gives each
+        # test a private runfiles tree; extraction into a shared cwd races)
+        iso = out_dir / "iso" / e["target"]
+        if iso.exists():
+            import shutil as _sh
+            _sh.rmtree(iso)
+        (iso / "tests" / "assembly").mkdir(parents=True)
+        os.link(TB / "typedb-all-linux-x86_64.tar.gz",
+                iso / "typedb-all-linux-x86_64.tar.gz")
+        import shutil as _sh
+        _sh.copy2(TB / "tests" / "assembly" / "script.tql",
+                  iso / "tests" / "assembly" / "script.tql")
+        cwd = iso
     start = time.time()
 
     def execute(argv):
         with open(raw, "wb") as logf:
             proc = subprocess.Popen(
-                argv, cwd=TB, env=env, stdout=logf, stderr=subprocess.STDOUT,
+                argv, cwd=cwd, env=env, stdout=logf, stderr=subprocess.STDOUT,
                 start_new_session=True)
             try:
                 return proc.wait(timeout=timeout), False
@@ -99,7 +130,25 @@ def run_one(e, out_dir, timeout, reap=False):
                 proc.wait()
                 return None, True
 
-    code, timed_out = execute([e["executable"], "--format", "terse"])
+    def reap_strays():
+        # v14 runner rule: kill and reap complete process trees. Assembly
+        # tests spawn `typedb-extracted/typedb server`; a panicking test
+        # leaks it, and a zombie server holding the gRPC/diagnostics ports
+        # poisons every later assembly run.
+        # match only the extracted-server process paths, never this runner's
+        # own command line (which carries package names as arguments)
+        subprocess.run(["pkill", "-9", "-f", "typedb-extracted/"],
+                       capture_output=True)
+        time.sleep(0.5)
+
+    argv = [e["executable"], "--format", "terse"]
+    if e["target"] in ASSEMBLY_TARGETS or e["target"] == "test_admin_assembly":
+        reap_strays()
+        # serial group: the tests inside these binaries extract/spawn a
+        # server in the shared per-target cwd; Bazel's sandbox equivalent is
+        # one test at a time (catalogue serial_group assembly-server)
+        argv += ["--test-threads", "1"]
+    code, timed_out = execute(argv)
     # Non-libtest harnesses (harness = false) reject libtest flags; detect the
     # argument error and run the harness bare. This is harness detection, not
     # a retry: a libtest run that FAILED its tests is never re-executed.
@@ -128,6 +177,8 @@ def run_one(e, out_dir, timeout, reap=False):
                     measured += n
                 else:
                     filtered += n
+    if e["target"] in ASSEMBLY_TARGETS or e["target"] == "test_admin_assembly":
+        reap_strays()
     if reap:
         # free disk: the binary is reproducible from the pinned source +
         # toolchain; its digest is recorded above.
@@ -161,17 +212,25 @@ def main():
     ap.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
     ap.add_argument("--reap", action="store_true",
                     help="delete each test executable after running it")
+    ap.add_argument("--package", action="append", default=None,
+                    help="restrict cargo compilation/discovery to these packages")
     ap.add_argument("--out", default=str(REPO / "docs" / "evidence" / "G1" / "u0-results"))
     args = ap.parse_args()
 
-    out_dir = pathlib.Path(args.out)
+    out_dir = pathlib.Path(args.out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    execs = discover_executables()
+    execs = discover_executables(args.package)
     if args.filter:
         execs = [e for e in execs if args.filter in f"{e['package']}:{e['target']}"]
     execs = [e for e in execs
              if not any(s in f"{e['package']}:{e['target']}" for s in args.skip)]
     print(f"U0: {len(execs)} test executables", flush=True)
+    # merge with any prior results in this out dir (latest run per target wins)
+    prior = {}
+    rf = out_dir / "u0-results.json"
+    if rf.exists():
+        for r in json.loads(rf.read_text())["results"]:
+            prior[r["target_id"]] = r
     results = []
     for i, e in enumerate(execs):
         print(f"[{i+1}/{len(execs)}] {e['package']}:{e['target']} ...",
@@ -182,10 +241,14 @@ def main():
                   else "OK" if r["exit_code"] == 0 else f"FAIL({r['exit_code']})")
         print(f"{status} {r['passed']}p/{r['failed']}f/{r['ignored']}i "
               f"in {r['duration_seconds']}s", flush=True)
+        merged = dict(prior)
+        for rr in results:
+            merged[rr["target_id"]] = rr
         (out_dir / "u0-results.json").write_text(
             json.dumps({"profile": "U0",
                         "toolchain": "rust 1.93.0 parity lane",
-                        "results": results}, indent=1) + "\n")
+                        "results": sorted(merged.values(),
+                                          key=lambda x: x["target_id"])}, indent=1) + "\n")
     total = {
         "executables": len(results),
         "green": sum(1 for r in results if r["exit_code"] == 0),

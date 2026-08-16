@@ -1,6 +1,0 @@
-
-running 2 tests
-[2m2026-08-16T01:50:55.978198Z[0m [35mTRACE[0m [2mdatabase::database[0m[2m:[0m Deleting database 'create_delete'.
-..
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
-

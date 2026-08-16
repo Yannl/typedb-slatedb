@@ -16,3 +16,7 @@ bazel-typedb/
 # digested manifests; keep the summaries and the coverage reports.
 /docs/evidence/**/run-*/*.stdout.txt
 /docs/evidence/**/run-*/*.stderr.txt
+
+# A run builds its evidence here and renames it into place only once both reports exist,
+# so the published directory is never missing while a multi-hour run is in progress.
+/docs/evidence/**/.run-*.staging/

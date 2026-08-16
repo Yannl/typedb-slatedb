@@ -46,18 +46,23 @@ pub fn run(
     let staged = conformance_runner::stage_behaviour_corpus(&typedb_root, &behaviour_root)?;
     println!("staged behaviour corpus at {}", staged.display());
 
-    // Clear the previous run's artifacts before starting, rather than merging into them.
+    // Build this run's evidence beside the published directory, and swap it in at the end.
     //
-    // A run writes one stdout/stderr pair per target plus two reports at the end. Merging
-    // would leave logs from targets the catalogue no longer contains sitting beside current
-    // ones, and — worse — a stale `coverage-report.json` would survive a run that crashed
-    // before writing its own, which is exactly the file a later phase would cite as the
-    // baseline. Owning the cleanup here also means no caller has to `rm -rf` the directory
-    // by hand and leave the tree mid-delete if the run is interrupted.
-    let evidence_dir = repo_root.join(format!("docs/evidence/phase-b/run-{profile}"));
+    // Merging into the previous run is wrong: logs from targets the catalogue no longer
+    // contains would sit beside current ones, and a stale `coverage-report.json` would
+    // survive a run that crashed before writing its own — the exact file a later phase would
+    // cite as the baseline.
+    //
+    // Deleting the published directory up front is also wrong, just less obviously. These
+    // reports are committed artifacts, and a run takes hours; deleting first leaves the
+    // repository with its evidence missing for that whole window, so any interruption —
+    // or any commit made meanwhile — captures a tree with the baseline absent. Staging
+    // keeps the last good evidence in place until there is new evidence to replace it.
+    let published_dir = repo_root.join(format!("docs/evidence/phase-b/run-{profile}"));
+    let evidence_dir = repo_root.join(format!("docs/evidence/phase-b/.run-{profile}.staging"));
     if evidence_dir.exists() {
         std::fs::remove_dir_all(&evidence_dir)
-            .with_context(|| format!("clearing {}", evidence_dir.display()))?;
+            .with_context(|| format!("clearing stale staging dir {}", evidence_dir.display()))?;
     }
     std::fs::create_dir_all(&evidence_dir)?;
 
@@ -214,6 +219,15 @@ pub fn run(
     for reason in &verdict.reasons {
         println!("     - {reason}");
     }
-    println!("evidence: {}", report_path.display());
+    // Both reports are written; publish the run. Only now does the previous evidence go.
+    if published_dir.exists() {
+        std::fs::remove_dir_all(&published_dir)
+            .with_context(|| format!("replacing {}", published_dir.display()))?;
+    }
+    std::fs::rename(&evidence_dir, &published_dir).with_context(|| {
+        format!("publishing {} -> {}", evidence_dir.display(), published_dir.display())
+    })?;
+
+    println!("evidence: {}", published_dir.join("coverage-report.json").display());
     Ok(())
 }

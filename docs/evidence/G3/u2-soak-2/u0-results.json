@@ -1449,16 +1449,16 @@
    "target_id": "typedb_server_bin:test_http_driver_concept",
    "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_http_driver_concept-a69fb499f7e3bc60",
    "executable_sha256": "9e2095608781f5a888e65072e79f1fc3ec9e22ba3f8349835e9bae74c4449b86",
-   "exit_code": 1,
+   "exit_code": 0,
    "timed_out": false,
-   "duration_seconds": 1.77,
-   "passed": 0,
+   "duration_seconds": 91.79,
+   "passed": 1,
    "failed": 0,
    "ignored": 0,
    "measured": 0,
    "filtered_out": 0,
    "raw_log": "docs/evidence/G3/u2-soak-2/typedb_server_bin__test_http_driver_concept.log",
-   "tail": "\nrunning 1 test\nFailed to parse: Failed to parse feature: Could not read path: bazel-typedb/external/typedb_behaviour+/driver/concept.feature\n[Summary]\n0 features\n0 scenarios\n0 steps\n1 parsing error\nFailed to parse: Failed to parse feature: Could not read path: bazel-typedb/external/typedb_behaviour+/driver/concept.feature\n"
+   "tail": null
   },
   {
    "target_id": "typedb_server_bin:test_http_driver_connection",

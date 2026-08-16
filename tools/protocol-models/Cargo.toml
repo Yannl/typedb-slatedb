@@ -1,0 +1,11 @@
+[package]
+name = "protocol-models"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "CT-P0: pure deterministic models for the TypeDB/R2 distributed protocol (brief §22.1)"
+
+[dependencies]
+
+[lib]
+path = "src/lib.rs"

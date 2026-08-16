@@ -1,0 +1,32 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.01s
+     Running unittests src/lib.rs (target/debug/deps/protocol_models-3bd054317a44115c)
+
+running 25 tests
+test command_model::tests::broken_no_intent_proof_mutant_is_observable ... ok
+test command_model::tests::expiry_is_availability_not_outcome ... ok
+test command_model::tests::no_reexecution_after_intent_across_crash_points ... ok
+test command_model::tests::no_intent_proof_detects_interleaved_finalisation ... ok
+test command_model::tests::reservation_idempotent_and_conflicting ... ok
+test fencing_model::tests::incarnation_rotation_revokes_old_epochs ... ok
+test fencing_model::tests::ambiguous_open_never_reuses_epoch ... ok
+test fencing_model::tests::paused_stale_writer_cannot_publish_after_fence ... ok
+test journal_model::tests::any_tamper_is_rejected ... ok
+test journal_model::tests::any_gap_is_rejected ... ok
+test journal_model::tests::competing_heads_quarantine ... ok
+test journal_model::tests::forged_anchor_digest_is_caught ... ok
+test journal_model::tests::rollback_below_anchor_is_rejected ... ok
+test fencing_model::tests::weakened_fence_mutant_is_observable ... ok
+test journal_model::tests::valid_history_replays ... ok
+test wal_model::tests::invariant_checker_catches_lsn_hole ... ok
+test wal_model::tests::fixed_iterator_is_immune_to_later_appends ... ok
+test wal_model::tests::invariant_checker_catches_duplicate_status ... ok
+test wal_model::tests::iterator_checker_catches_moving_head ... ok
+test wal_model::tests::lost_response_resolution_by_operation_id ... ok
+test wal_model::tests::status_singleton_dedupe_and_conflict ... ok
+test wal_model::tests::sync_barrier_covers_physical_prefix ... ok
+test wal_model::tests::unsequenced_stamps_previous_sequence ... ok
+test wal_model::tests::no_holes_under_failed_upload_interleavings ... ok
+test wal_model::tests::stale_session_is_fenced_without_allocation ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

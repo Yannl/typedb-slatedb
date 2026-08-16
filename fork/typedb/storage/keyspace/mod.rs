@@ -16,6 +16,11 @@ mod keyspace;
 mod raw_iterator;
 pub mod rocks_resources;
 
+/// The SlateDB lane. Compiled only when the `slatedb-backend` feature selects it, so the
+/// default build is byte-for-byte the upstream RocksDB path.
+#[cfg(feature = "slatedb-backend")]
+pub(crate) mod slate;
+
 impl Poolable for DBRawIterator<'static> {}
 
 #[derive(Default)]

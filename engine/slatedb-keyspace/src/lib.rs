@@ -162,7 +162,7 @@ pub struct Keyspace<'a> {
     id: KeyspaceId,
 }
 
-impl Keyspace<'_> {
+impl<'a> Keyspace<'a> {
     pub fn id(&self) -> KeyspaceId {
         self.id
     }
@@ -207,7 +207,12 @@ impl Keyspace<'_> {
     }
 
     /// A forward iterator positioned at the first key `>= from`, bounded to this keyspace.
-    pub fn iterate_from(&self, from: &[u8]) -> Result<KeyspaceIterator<'_>, KeyspaceError> {
+    ///
+    /// The cursor's lifetime is tied to the *set*, not to this `Keyspace` handle. `Keyspace`
+    /// is a cheap borrow-and-id pair that callers routinely create inline, so binding the
+    /// iterator to `&self` would make `set.keyspace(id).iterate_from(..)` fail to compile —
+    /// the handle is a temporary while the data it points at is not.
+    pub fn iterate_from(&self, from: &[u8]) -> Result<KeyspaceIterator<'a>, KeyspaceError> {
         let start = Bound::Included(physical_key(self.id, from));
         let end = keyspace_end(self.id);
         let iter = self

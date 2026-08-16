@@ -90,6 +90,8 @@ pub fn run(
         let listings =
             collect_libtest_listings(&typedb_root, cargo_bin, &out.catalog, &target_dir)?;
         corpus_catalog::enrich_libtest_cases(&mut out.catalog, &listings)?;
+        // Only now are libtest `#[ignore]` cases known, so ownership is assigned here.
+        corpus_catalog::add_declared_ignored_exclusions(&mut out.catalog);
     }
 
     let evidence = repo_root.join("docs/evidence/phase-b");
@@ -240,7 +242,36 @@ fn collect_libtest_listings(
             );
         }
         let stdout = String::from_utf8_lossy(&output.stdout);
-        out.insert(target.target_id.clone(), corpus_catalog::parse_libtest_list(&stdout)?);
+        let mut cases = corpus_catalog::parse_libtest_list(&stdout)?;
+
+        // `--list` reports every test as `name: test`, whether or not it is `#[ignore]` —
+        // neither the default nor the terse format carries the marker, so every libtest case
+        // was catalogued as runnable. `--list --ignored` lists exactly the ignored ones, and
+        // is the only way libtest exposes the distinction without running anything.
+        //
+        // It matters: `storage/tests/test_isolation.rs` L117 disables `g0_dirty_writes` with
+        // `#[ignore] // TODO: This currently fails because of the behaviour flagged in
+        // typedb#7033`. An upstream test switched off for a known open bug belongs in the
+        // baseline as a declared skip, not as a case that quietly reports nothing.
+        let ignored_out = Command::new(exe)
+            .args(["--list", "--ignored"])
+            .current_dir(typedb_root)
+            .output()
+            .with_context(|| format!("listing ignored cases for {}", target.target_id))?;
+        if ignored_out.status.success() {
+            let ignored: std::collections::BTreeSet<String> =
+                corpus_catalog::parse_libtest_list(&String::from_utf8_lossy(&ignored_out.stdout))
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|c| c.name)
+                    .collect();
+            for case in &mut cases {
+                if ignored.contains(&case.name) {
+                    case.ignored = true;
+                }
+            }
+        }
+        out.insert(target.target_id.clone(), cases);
     }
 
     // A catalogued target whose harness was never built is a hole in the denominator, not

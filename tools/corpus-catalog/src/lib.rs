@@ -812,7 +812,7 @@ pub fn generate(inputs: &CatalogInputs<'_>) -> Result<CatalogOutput> {
         });
     }
 
-    // --- Upstream's own declared skips.
+    // --- Upstream's own declared skips (Cucumber only at this point; see the note below).
     //
     // A scenario its harness filters out is counted, never passed (§22.3), but the verdict
     // also requires each to carry an exclusion naming who owns it. The owner is upstream:
@@ -955,6 +955,35 @@ pub fn generate(inputs: &CatalogInputs<'_>) -> Result<CatalogOutput> {
 /// Kept separate from [`generate`] so the catalogue's structure can be produced without a
 /// build, while the leaf-case count still comes from the real harness rather than a
 /// source-text guess.
+/// Give every declared-ignored leaf case an exclusion naming its owner.
+///
+/// Must run *after* `enrich_libtest_cases`, because a libtest `#[ignore]` is invisible until
+/// the harness is queried with `--list --ignored`: plain `--list` reports every test as
+/// `name: test`. Generating exclusions during `generate()` alone therefore missed them, and
+/// the gate correctly reported one declared skip with no entry.
+pub fn add_declared_ignored_exclusions(catalog: &mut model::Catalog) {
+    let existing: BTreeSet<String> =
+        catalog.exclusions.iter().map(|e| e.subject_id.clone()).collect();
+    let new: Vec<Exclusion> = catalog
+        .leaf_cases
+        .iter()
+        .filter(|c| c.declared_ignored && !existing.contains(&c.leaf_case_id))
+        .map(|c| Exclusion {
+            subject_id: c.leaf_case_id.clone(),
+            predicate: "declared_ignored_upstream".into(),
+            reason: "disabled upstream in the pinned source — an `#[ignore]` attribute or an \
+                     @ignore-family tag; the fork does not get to un-skip it"
+                .into(),
+            owner: "upstream".into(),
+            expiry: "2027-01-01".into(),
+            replacement_test_id: None,
+        })
+        .collect();
+    catalog.exclusions.extend(new);
+    catalog.exclusions.sort_by(|a, b| a.subject_id.cmp(&b.subject_id));
+    catalog.exclusions.dedup_by(|a, b| a.subject_id == b.subject_id);
+}
+
 pub fn enrich_libtest_cases(
     catalog: &mut Catalog,
     listings: &BTreeMap<String, Vec<LibtestCase>>,

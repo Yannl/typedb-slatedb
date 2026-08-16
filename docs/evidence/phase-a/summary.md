@@ -61,13 +61,20 @@ they are not silently deferred:
 | `CF-CTR-PKG` | G0 | npm tarball integrity for `@cloudflare/containers` 0.3.7 |
 | `CF-VITEST` | G0 | npm tarball integrity for `@cloudflare/vitest-pool-workers` |
 | `CF-WORKERD-PKG` | G0 | workerd runtime version selected by the locked Wrangler stack |
-| `NATIVE` | G0 | compiler/linker/CMake/protoc/pkg-config/libc/TLS-root digests |
 | `CF-ACCOUNT` | G1 | real-account probe context and probe evidence |
 
-`NATIVE` is the one that matters most for the current phase, because the U0/U1 comparison
-is only meaningful against a fixed native toolchain. Partial progress: `protoc` is pinned at
-32.1 (`sha256 e9c129c1…04b5dd7e`) and is required by the Cargo build of
-`server/service/admin/proto` (see CR-A-04). The remaining digests are outstanding.
+`NATIVE` is **closed**. `cargo xtask native-toolchain` resolves and digests every native
+input the build invokes — the parity-lane rustc/cargo (1.93.0), the pinned rustfmt
+(nightly-2026-04-15), cc/c++ 13.3.0, ld/ar 2.42, CMake 3.28.3, protoc 32.1, pkg-config 1.8.1
+— plus the four shared objects the built server links and the 152-certificate TLS root
+bundle, under one digest `465f338b916e18c039bfc5b5cbc7da8d1ddd405958e821b3ba4db0343f548be7`
+now carried in the catalogue's `rust_toolchain.native_toolchain_digest`.
+
+The C++ toolchain is the reason this matters: `librocksdb-sys` compiles a large C++ tree, so
+a different `c++` or libstdc++ can change behaviour without a line of Rust changing. A U0/U1
+equality claim that pinned only Rust would be attesting to half the build.
+
+Seven class-U nodes remain, none of them resolvable from inside this environment.
 
 ## Contract lint
 

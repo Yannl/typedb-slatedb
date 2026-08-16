@@ -5,9 +5,16 @@ use std::{collections::BTreeMap, path::Path, process::Command};
 use anyhow::{bail, Context, Result};
 use corpus_catalog::{model::CaseDiscovery, CatalogInputs};
 
+/// Version of a tool *as the lane invokes it*.
+///
+/// Without the toolchain override this reports the machine default — 1.94.1 here — while the
+/// corpus is built on the 1.93.0 parity lane. The catalogue would then attest to a toolchain
+/// nothing in the programme uses, and a reader comparing it against the U0 evidence would
+/// find two different compilers named for one build.
 fn tool_version(bin: &str, args: &[&str]) -> Result<String> {
     let out = Command::new(bin)
         .args(args)
+        .envs(conformance_runner::parity_build_env())
         .output()
         .with_context(|| format!("running {bin} {args:?}"))?;
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
@@ -27,6 +34,16 @@ fn source_lock_digest(repo_root: &Path) -> Result<String> {
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .context("source-lock.json has no source_graph_digest")
+}
+
+/// The `NATIVE` node's digest, once `cargo xtask native-toolchain` has resolved it.
+///
+/// Absent rather than fabricated when the command has not been run: the catalogue schema
+/// makes this nullable precisely so an unpinned toolchain reads as unpinned.
+fn native_toolchain_digest(repo_root: &Path) -> Option<String> {
+    let path = repo_root.join("docs/evidence/phase-a/native-toolchain.json");
+    let value: serde_json::Value = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+    value.get("native_toolchain_digest")?.as_str().map(str::to_string)
 }
 
 fn resolve_typedb_root(repo_root: &Path, given: Option<&Path>) -> std::path::PathBuf {
@@ -58,6 +75,7 @@ pub fn run(
         fork_root: &typedb_root,
         behaviour_root: &behaviour_root,
         source_lock_digest: source_lock_digest(repo_root)?,
+        native_toolchain_digest: native_toolchain_digest(repo_root),
         rustc: tool_version("rustc", &["--version"])?,
         cargo: tool_version(cargo_bin, &["--version"])?,
         target_triple: "x86_64-unknown-linux-gnu".into(),

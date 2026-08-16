@@ -72,6 +72,10 @@ pub struct ResolvedSourceNode {
     pub byte_count: u64,
     /// True when the checkout has modifications beyond fetcher marker files.
     pub dirty: bool,
+    /// Untracked paths present in the checkout. Not pin corruption — see `dirty` — but
+    /// recorded so residue from a run is never invisible.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub untracked: Vec<String>,
     /// True for `--depth 1` checkouts (history not held locally).
     pub shallow: bool,
     /// Set when `declared_pin` is a commit and the checkout does not match it.
@@ -181,7 +185,13 @@ fn resolve_node(sources_root: &Path, spec: &SourceNodeSpec) -> Result<ResolvedSo
     let revision = git(&dir, &["rev-parse", "HEAD"])?;
     let git_tree = git(&dir, &["rev-parse", "HEAD^{tree}"])?;
 
-    let dirty = git(&dir, &["status", "--porcelain"])?
+    // "Dirty" means a *tracked* file differs from the pin, because that is what changes the
+    // content the lock attests to. Untracked paths do not: a U0 run leaves `typedb-logs/` and
+    // the staged `bazel-typedb/` runfiles tree behind, and treating those as pin corruption
+    // would make the source graph unlockable after its first use — while genuinely reporting
+    // a clean pin whose tracked bytes had been edited is the failure that matters.
+    // Untracked paths are still recorded below, so run residue stays visible.
+    let dirty = git(&dir, &["status", "--porcelain", "--untracked-files=no"])?
         .lines()
         .any(|line| {
             let path = line.split_whitespace().last().unwrap_or_default();
@@ -214,6 +224,12 @@ fn resolve_node(sources_root: &Path, spec: &SourceNodeSpec) -> Result<ResolvedSo
         file_count,
         byte_count,
         dirty,
+        untracked: git(&dir, &["status", "--porcelain", "--untracked-files=all"])?
+            .lines()
+            .filter_map(|l| l.strip_prefix("?? "))
+            .map(|p| p.trim().to_string())
+            .take(64)
+            .collect(),
         shallow,
         pin_mismatch,
     })
@@ -329,7 +345,6 @@ pub fn declared_unresolved() -> Vec<UnresolvedNode> {
         u("CF-CTR-PKG", "npm tarball integrity for @cloudflare/containers 0.3.7", "G0"),
         u("CF-VITEST", "npm tarball integrity for @cloudflare/vitest-pool-workers", "G0"),
         u("CF-WORKERD-PKG", "workerd runtime version selected by the locked Wrangler stack", "G0"),
-        u("NATIVE", "compiler/linker/CMake/protoc/pkg-config/libc/TLS-root digests", "G0"),
         u("CF-ACCOUNT", "real-account probe context and probe evidence", "G1"),
     ]
 }

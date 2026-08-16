@@ -1,0 +1,106 @@
+{
+  "target_triple": "x86_64-unknown-linux-gnu",
+  "tools": {
+    "ar": {
+      "role": "archiver",
+      "path": "/usr/bin/ar",
+      "sha256": "6452af2eea333b8c65e1adb92964fc8f97863ab003fa13f9d12bff5345cd7dbe",
+      "version": "GNU ar (GNU Binutils for Ubuntu) 2.42"
+    },
+    "cargo": {
+      "role": "Rust build driver (parity lane)",
+      "path": "/root/.cargo/bin/cargo",
+      "sha256": "4acc9acc76d5079515b46346a485974457b5a79893cfb01112423c89aeb5aa10",
+      "version": "cargo 1.93.0 (083ac5135 2025-12-15)"
+    },
+    "cc": {
+      "role": "C compiler",
+      "path": "/usr/bin/cc",
+      "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+      "version": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
+    },
+    "cmake": {
+      "role": "CMake",
+      "path": "/usr/bin/cmake",
+      "sha256": "1c5227af4edd22d8d689def545e18ee458260c0fd579eba2187967f38817e638",
+      "version": "cmake version 3.28.3"
+    },
+    "cxx": {
+      "role": "C++ compiler (RocksDB)",
+      "path": "/usr/bin/c++",
+      "sha256": "1353e9bdd29a7295c7226bf6c63abccce056d8cac31f112e5cdbecc3f28c2769",
+      "version": "c++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
+    },
+    "git": {
+      "role": "source resolution",
+      "path": "/usr/bin/git",
+      "sha256": "2a8c18fbf43da9f692d75474c72bea9dfd796c260b0f3dfe456376abc3bbd668",
+      "version": "git version 2.43.0"
+    },
+    "ld": {
+      "role": "linker",
+      "path": "/usr/bin/ld",
+      "sha256": "e9ceb054c12207970f2726dfc07e9a66b411602748628baf27399f02a9bbb31b",
+      "version": "GNU ld (GNU Binutils for Ubuntu) 2.42"
+    },
+    "make": {
+      "role": "make",
+      "path": "/usr/bin/make",
+      "sha256": "d78b8f1d099fbcfb6f2f49ab87223b9b68fb3956642f92d6ec6de812e8afa965",
+      "version": "GNU Make 4.3"
+    },
+    "pkg_config": {
+      "role": "pkg-config",
+      "path": "/usr/bin/pkg-config",
+      "sha256": "7e8152db1b0c7e49d47b4b82a70dc9997b557951c5d4d938b0e7f208ce9eb10b",
+      "version": "1.8.1"
+    },
+    "protoc": {
+      "role": "protobuf compiler",
+      "path": "/opt/protoc/bin/protoc",
+      "sha256": "9a757b79f98195a1798e6e5e698360b621121de79a87aac0f7cf4a8a3bd5dfa2",
+      "version": "libprotoc 32.1"
+    },
+    "rustc": {
+      "role": "Rust compiler (parity lane)",
+      "path": "/root/.cargo/bin/rustc",
+      "sha256": "4acc9acc76d5079515b46346a485974457b5a79893cfb01112423c89aeb5aa10",
+      "version": "rustc 1.93.0 (254b59607 2026-01-19)"
+    },
+    "rustfmt_pinned": {
+      "role": "rustfmt pinned by MODULE.bazel L37",
+      "path": "/root/.cargo/bin/rustfmt",
+      "sha256": "4acc9acc76d5079515b46346a485974457b5a79893cfb01112423c89aeb5aa10",
+      "version": "rustfmt 1.9.0-nightly (a5c825cd82 2026-04-14)"
+    }
+  },
+  "linked_libraries": [
+    {
+      "soname": "libstdc++.so.6",
+      "resolved_path": "/lib/x86_64-linux-gnu/libstdc++.so.6",
+      "sha256": "1fd75fe70354a416d75aef22bcae68c47bd25d20e2d0568c30b1a9838cf62f11"
+    },
+    {
+      "soname": "libgcc_s.so.1",
+      "resolved_path": "/lib/x86_64-linux-gnu/libgcc_s.so.1",
+      "sha256": "d93224d2b0dab4247598be683adca02f5cf00586f99c187579cd7e92058fb7cb"
+    },
+    {
+      "soname": "libm.so.6",
+      "resolved_path": "/lib/x86_64-linux-gnu/libm.so.6",
+      "sha256": "1b87a1a50b496cfead2b0ad134c2ff536705c82608db240c7e8aa48d6c0e4217"
+    },
+    {
+      "soname": "libc.so.6",
+      "resolved_path": "/lib/x86_64-linux-gnu/libc.so.6",
+      "sha256": "d8db8739a1633c972cec6a4fe0566bdcec6fd088f98723492ab0361f66238f75"
+    }
+  ],
+  "tls_roots": {
+    "path": "/etc/ssl/certs/ca-certificates.crt",
+    "sha256": "97bcd4636ec5ba9625ddaecc00adaeed53bea4df0c0ba20d34b9798ec7cb1ea6",
+    "certificate_count": 152
+  },
+  "native_toolchain_digest": "465f338b916e18c039bfc5b5cbc7da8d1ddd405958e821b3ba4db0343f548be7",
+  "unresolved": []
+}

@@ -7,6 +7,7 @@
 mod catalog;
 mod doclint;
 mod evidence;
+mod native;
 mod lock;
 mod runner;
 
@@ -76,6 +77,8 @@ enum Command {
         #[arg(long)]
         phase: String,
     },
+    /// Resolve and digest the native toolchain (the `NATIVE` class-U node, brief §1.3).
+    NativeToolchain,
 }
 
 fn default_repo_root() -> Result<PathBuf> {
@@ -129,5 +132,6 @@ fn main() -> Result<()> {
         }
         Command::DocLint => doclint::run(&repo_root),
         Command::Evidence { phase } => evidence::run(&repo_root, &phase),
+        Command::NativeToolchain => native::run(&repo_root),
     }
 }

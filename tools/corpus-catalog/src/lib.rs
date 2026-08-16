@@ -303,6 +303,8 @@ pub struct CatalogInputs<'a> {
     /// Root of the pinned `typedb-behaviour` corpus.
     pub behaviour_root: &'a Path,
     pub source_lock_digest: String,
+    /// Digest of the resolved native toolchain, or `None` while the `NATIVE` node is open.
+    pub native_toolchain_digest: Option<String>,
     pub rustc: String,
     pub cargo: String,
     pub target_triple: String,
@@ -869,7 +871,7 @@ pub fn generate(inputs: &CatalogInputs<'_>) -> Result<CatalogOutput> {
             rust_toolchain: RustToolchain {
                 rustc: inputs.rustc.clone(),
                 cargo: inputs.cargo.clone(),
-                native_toolchain_digest: None,
+                native_toolchain_digest: inputs.native_toolchain_digest.clone(),
             },
             target_triple: inputs.target_triple.clone(),
             bazel_query_oracle: None,

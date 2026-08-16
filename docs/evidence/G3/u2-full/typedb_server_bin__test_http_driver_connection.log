@@ -1,0 +1,422 @@
+
+running 1 test
+Feature: Driver Connection :: Driver can close connection
+  Scenario: Driver can close connection
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  When connection closes
+   ✔  Then connection is open: false
+Feature: Driver Connection :: Driver can connect after an unsuccessful connection attempt
+  Scenario: Driver can connect after an unsuccessful connection attempt
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  When connection closes
+   ✔  When connection opens with a wrong port; fails
+   ✔  Then connection is open: false
+   ✔  When connection opens with a wrong host; fails with a message containing: "failed to lookup address information"
+   ✔  Then connection is open: false
+   ✔  When connection opens with default authentication
+   ✔  Then connection is open: true
+Feature: Driver Connection :: Driver can reconnect multiple times
+  Scenario: Driver can reconnect multiple times
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection is open: true
+   ✔  Given connection has database: typedb
+   ✔  When connection opens with default authentication
+   ✔  Then connection is open: true
+   ✔  Then connection has database: typedb
+   ✔  When connection opens with default authentication
+   ✔  Then connection is open: true
+   ✔  Then connection has database: typedb
+   ✔  When connection closes
+   ✔  Then connection is open: false
+   ✔  When connection closes
+   ✔  Then connection is open: false
+   ✔  When connection opens with default authentication
+   ✔  Then connection is open: true
+   ✔  Then connection has database: typedb
+Feature: Driver Connection :: Driver cannot delete non-existing database
+  Scenario: Driver cannot delete non-existing database
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection does not have database: does-not-exist
+   ✔  Then connection delete database: does-not-exist; fails with a message containing: "Database 'does-not-exist' not found"
+   ✔  Then connection does not have database: does-not-exist
+Feature: Driver Connection :: Driver can create and delete databases
+  Scenario: Driver can create and delete databases
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection does not have database: An0ther-database_with-1onG-Name
+   ✔  When connection create database: An0ther-database_with-1onG-Name
+   ✔  Then connection has 2 databases
+   ✔  Then connection has databases:
+       | typedb                          |
+       | An0ther-database_with-1onG-Name |
+   ✔  Then connection does not have databases:
+       | typedB                          |
+       | Typedb                          |
+       | TYPEDB                          |
+       | An0ther_database_with-1onG-Name |
+       | An0ther-database-with-1onG-Name |
+       | an0ther-database_with-1onG-Name |
+   ✔  When connection closes
+   ✔  Then connection is open: false
+   ✔  When connection opens with default authentication
+   ✔  Then connection is open: true
+   ✔  Then connection has 2 databases
+   ✔  Then connection has databases:
+       | typedb                          |
+       | An0ther-database_with-1onG-Name |
+   ✔  Then connection does not have databases:
+       | typedB                          |
+       | Typedb                          |
+       | TYPEDB                          |
+       | An0ther_database_with-1onG-Name |
+       | An0ther-database-with-1onG-Name |
+       | an0ther-database_with-1onG-Name |
+   ✔  When connection delete database: typedb
+   ✔  Then connection has 1 database
+   ✔  Then connection does not have database: typedb
+   ✔  Then connection has database: An0ther-database_with-1onG-Name
+   ✔  When connection closes
+   ✔  Then connection is open: false
+   ✔  When connection opens with default authentication
+   ✔  Then connection is open: true
+   ✔  Then connection has 1 database
+   ✔  Then connection does not have database: typedb
+   ✔  Then connection has database: An0ther-database_with-1onG-Name
+   ✔  When connection delete database: An0ther-database_with-1onG-Name
+   ✔  Then connection has 0 databases
+   ✔  Then connection does not have database: An0ther-database_with-1onG-Name
+   ✔  Then connection does not have database: typedb
+   ✔  Then connection has 0 databases
+   ✔  When connection closes
+   ✔  Then connection is open: false
+   ✔  When connection opens with default authentication
+   ✔  Then connection is open: true
+   ✔  Then connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  Then connection has database: typedb
+Feature: Driver Connection :: Driver can acquire database schema
+  Scenario: Driver can acquire database schema
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection has database: typedb
+   ✔  Then connection get database(typedb) has schema:
+   ✔  Then connection get database(typedb) has type schema:
+   ✔  When connection open schema transaction for database: typedb
+   ✔  When typeql schema query
+   ✔  Then connection get database(typedb) has schema:
+   ✔  Then connection get database(typedb) has type schema:
+   ✔  When transaction commits
+   ✔  Then connection get database(typedb) has schema:
+   ✔  Then connection get database(typedb) has type schema:
+   ✔  When connection open schema transaction for database: typedb
+   ✔  When typeql schema query
+   ✔  Then connection get database(typedb) has schema:
+   ✔  Then connection get database(typedb) has type schema:
+   ✔  When transaction commits
+   ✔  Then connection get database(typedb) has schema:
+   ✔  Then connection get database(typedb) has type schema:
+Feature: Driver Connection :: Driver sees databases updates done by other drivers in background
+  Scenario: Driver sees databases updates done by other drivers in background
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Then connection does not have database: newbie
+   ✔  Then connection open schema transaction for database: newbie; fails with a message containing: "Database 'newbie' not found"
+   ✔  When in background, connection create database: newbie
+   ✔  Then connection has databases:
+       | newbie |
+       | typedb |
+   ✔  Then connection open schema transaction for database: newbie
+   ✔  Then transaction commits
+   ✔  When connection closes
+   ✔  When connection opens with default authentication
+   ✔  Then connection has databases:
+       | newbie |
+       | typedb |
+   ✔  Then connection open schema transaction for database: newbie
+   ✔  When transaction closes
+   ✔  Then connection has databases:
+       | newbie |
+       | typedb |
+   ✔  When in background, connection delete database: newbie
+   ✔  Then connection does not have database: newbie
+   ✔  Then connection open schema transaction for database: newbie; fails with a message containing: "Database 'newbie' not found"
+   ✔  When connection closes
+   ✔  When connection opens with default authentication
+   ✔  Then connection does not have database: newbie
+   ✔  Then connection open schema transaction for database: newbie; fails with a message containing: "Database 'newbie' not found"
+Feature: Driver Connection :: Driver processes database management errors correctly
+  Scenario: Driver processes database management errors correctly
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Then connection create database with empty name; fails with a message containing: "is not a valid database name"
+Feature: Driver Connection :: Driver cannot open transaction to non-existing database
+  Scenario: Driver cannot open transaction to non-existing database
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection does not have database: does-not-exist
+   ✔  Then transaction is open: false
+   ✔  Then connection open schema transaction for database: does-not-exist; fails with a message containing: "Database 'does-not-exist' not found"
+   ✔  Then transaction is open: false
+   ✔  Then connection open write transaction for database: does-not-exist; fails with a message containing: "Database 'does-not-exist' not found"
+   ✔  Then transaction is open: false
+   ✔  Then connection open read transaction for database: does-not-exist; fails with a message containing: "Database 'does-not-exist' not found"
+   ✔  Then transaction is open: false
+Feature: Driver Connection :: Driver can open and close transactions of different types
+  Scenario: Driver can open and close transactions of different types
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Then transaction is open: false
+   ✔  When connection open schema transaction for database: typedb
+   ✔  Then transaction has type: schema
+   ✔  Then transaction is open: true
+   ✔  When transaction closes
+   ✔  Then transaction is open: false
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction has type: write
+   ✔  Then transaction is open: true
+   ✔  When transaction closes
+   ✔  Then transaction is open: false
+   ✔  When connection open read transaction for database: typedb
+   ✔  Then transaction has type: read
+   ✔  Then transaction is open: true
+   ✔  When transaction closes
+   ✔  Then transaction is open: false
+Feature: Driver Connection :: Driver can commit transactions of schema and write types, cannot commit transaction of type read
+  Scenario: Driver can commit transactions of schema and write types, cannot commit transaction of type read
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  When connection open schema transaction for database: typedb
+   ✔  Then transaction has type: schema
+   ✔  Then transaction is open: true
+   ✔  When transaction commits
+   ✔  Then transaction is open: false
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction has type: write
+   ✔  Then transaction is open: true
+   ✔  When transaction commits
+   ✔  Then transaction is open: false
+   ✔  When connection open read transaction for database: typedb
+   ✔  Then transaction has type: read
+   ✔  Then transaction is open: true
+   ✔  Then transaction commits; fails with a message containing: "Read transactions cannot be committed"
+   ✔  Then transaction is open: false
+Feature: Driver Connection :: Driver can rollback transactions of schema and write types, cannot rollback transaction of type read
+  Scenario: Driver can rollback transactions of schema and write types, cannot rollback transaction of type read
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  When connection open schema transaction for database: typedb
+   ✔  Then transaction has type: schema
+   ✔  Then transaction is open: true
+   ✔  When transaction rollbacks
+   ✔  Then transaction is open: true
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction has type: write
+   ✔  Then transaction is open: true
+   ✔  When transaction rollbacks
+   ✔  Then transaction is open: true
+   ✔  When transaction closes
+   ✔  When connection open read transaction for database: typedb
+   ✔  Then transaction has type: read
+   ✔  Then transaction is open: true
+   ✔  Then transaction rollbacks; fails with a message containing: "Read transactions cannot be rolled back"
+   ✔  Then transaction is open: false
+Feature: Driver Connection :: Driver can open schema transactions with different transaction timeouts
+  Scenario Outline: Driver can open schema transactions with different transaction timeouts
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  When set transaction option transaction_timeout_millis to: 6000
+   ✔  Then transaction is open: false
+   ✔  When connection open schema transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: schema
+   ✔  When wait 3 seconds
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: schema
+   ✔  Then typeql read query
+   ✔  When wait 4 seconds
+   ✔  Then transaction is open: false
+   ✔  Then typeql read query; fails
+Feature: Driver Connection :: Driver can open write transactions with different transaction timeouts
+  Scenario Outline: Driver can open write transactions with different transaction timeouts
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  When set transaction option transaction_timeout_millis to: 6000
+   ✔  Then transaction is open: false
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: write
+   ✔  When wait 3 seconds
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: write
+   ✔  Then typeql read query
+   ✔  When wait 4 seconds
+   ✔  Then transaction is open: false
+   ✔  Then typeql read query; fails
+Feature: Driver Connection :: Driver can open read transactions with different transaction timeouts
+  Scenario Outline: Driver can open read transactions with different transaction timeouts
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  When set transaction option transaction_timeout_millis to: 6000
+   ✔  Then transaction is open: false
+   ✔  When connection open read transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: read
+   ✔  When wait 3 seconds
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: read
+   ✔  Then typeql read query
+   ✔  When wait 4 seconds
+   ✔  Then transaction is open: false
+   ✔  Then typeql read query; fails
+Feature: Driver Connection :: Driver can open a schema transaction when a parallel schema lock is released
+  Scenario: Driver can open a schema transaction when a parallel schema lock is released
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  When set transaction option transaction_timeout_millis to: 5000
+   ✔  When set transaction option schema_lock_acquire_timeout_millis to: 1000
+   ✔  When in background, connection open schema transaction for database: typedb
+   ✔  Then transaction is open: false
+   ✔  Then connection open schema transaction for database: typedb; fails with a message containing: "timeout"
+   ✔  Then transaction is open: false
+   ✔  When wait 5 seconds
+   ✔  When set transaction option transaction_timeout_millis to: 1000
+   ✔  When set transaction option schema_lock_acquire_timeout_millis to: 5000
+   ✔  When in background, connection open schema transaction for database: typedb
+   ✔  Then transaction is open: false
+   ✔  When connection open schema transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: schema
+   ✔  Then typeql read query
+Feature: Driver Connection :: Driver processes transaction commit errors correctly
+  Scenario: Driver processes transaction commit errors correctly
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query
+   ✔  Then transaction commits; fails with a message containing: "Schema transaction commit failed"
+Feature: Driver Connection :: Driver processes multiple failing schema and write transactions correctly
+  Scenario: Driver processes multiple failing schema and write transactions correctly
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query; fails
+   ✔  Then transaction is open: false
+   ✔  Then connection open schema transaction for database: typedb
+   ✔  Then typeql schema query; fails
+   ✔  Then transaction is open: false
+   ✔  Then connection open schema transaction for database: typedb
+   ✔  Then typeql schema query
+   ✔  Then transaction is open: true
+   ✔  Then transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query; fails
+   ✔  Then connection open write transaction for database: typedb
+   ✔  Then typeql write query
+   ✔  Then transaction commits
+   ✔  Then connection open schema transaction for database: typedb
+   ✔  Then typeql schema query; fails
+   ✔  Then connection open write transaction for database: typedb
+   ✔  Then typeql write query
+[Summary]
+18 features
+18 scenarios (18 passed)
+355 steps (355 passed)
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 52.96s
+

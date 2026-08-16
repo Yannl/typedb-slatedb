@@ -10,7 +10,11 @@ upstream TypeDB at the pinned version (3.12.x line, commit `2256711ab`).
 That is not a promise but a measured property: the complete upstream test
 corpus (unit, integration, behaviour/Cucumber, assembly) runs against every
 storage backend this repo ships, and a backend may only ship when its
-results are identical to the RocksDB oracle.
+results are identical to the RocksDB oracle. For `U2` (SlateDB) the full
+sweep is archived: 106 test executables, 450 cases passed, zero timeouts,
+with the only failures being two independently documented upstream test
+defects that fail for reasons unrelated to the storage engine
+(`docs/evidence/G3/u2-vs-oracle-comparison.json`).
 
 What does change is **where your data physically lives**, selected by one
 environment variable at server start.

@@ -10,7 +10,7 @@ is the v16 brief; this page is the operational digest.
 | G0 | Source graph materialised, identities resolved, offline build proven | **green** (evidence: `docs/evidence/G0/`) |
 | G1 | Complete upstream test catalogue + pristine U0 baseline | **green** (`docs/evidence/G1/`) |
 | — | Safe boundaries (TB-P1..P3, BT-P3), pure models, local protocol spikes | **green** (`docs/evidence/G3/`, models in `tools/protocol-models`) |
-| TB-P7 / U2 | SlateDB keyspace engine, corpus parity vs oracle | storage crate baseline-equal; full-corpus evidence under `docs/evidence/G3/u2-full/` |
+| TB-P7 / U2 | SlateDB keyspace engine, corpus parity vs oracle | **green** — full corpus: 106 executables, 104 green, 0 timeouts; the 2 red are documented upstream defects (`u2-vs-oracle-comparison.json`) |
 | G2 | Real-platform measurements (latency/cost/amplification kill gate) | **blocked** on SI-G0-3 |
 | U3/U4, broad TypeDB semantic phases | remote WAL lanes and beyond | gated on G2 |
 

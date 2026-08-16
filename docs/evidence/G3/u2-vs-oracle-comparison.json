@@ -1,0 +1,37 @@
+{
+  "claim": "U2 (SlateDB LocalFS keyspaces + file WAL) runs the complete applicable upstream TypeDB test corpus with a pass/fail profile structurally equal to the U1 RocksDB oracle baseline, under the corrected expectations for known upstream-defective targets",
+  "u2_run": "docs/evidence/G3/u2-full/u0-results.json",
+  "u1_baseline": "docs/evidence/G3/u1-full/u0-results.json",
+  "u2_summary": {
+    "executables": 106,
+    "green": 104,
+    "red": 2,
+    "timeout": 0,
+    "cases_passed": 450,
+    "cases_failed": 4,
+    "cases_ignored": 1
+  },
+  "denominator_note": "106 executables vs the baseline's 104: the cargo package-id discovery fix restored two executables silently dropped by the previous (package,target) dedupe collapse - typedb_server_bin:bench_concurrency (0 cases) and typedb_server_bin:bench_iam. Their first-ever corpus measurements happened on this run.",
+  "red_targets": [
+    {
+      "target": "storage:test_recovery",
+      "profile": "5 passed / 2 failed",
+      "classification": "baseline-identical: the 2 failures are upstream todo!() stubs (wal_missing_records_*) that fail on every backend; U0/U1 record the same 5/2"
+    },
+    {
+      "target": "typedb_server_bin:bench_iam",
+      "profile": "0 passed / 2 failed",
+      "classification": "PRE-EXISTING-UPSTREAM-TEST-DEFECT (environment dependence): the test queries a database whose TempDir storage directory was deleted at the end of setup(); RocksDB tolerates via POSIX unlink-while-open FDs, object-store engines cannot. Deterministic bracket in docs/evidence/G3/finding-bench-iam-deleted-storage-dir.md proves 2/2 PASS on U2 when the directory exists"
+    }
+  ],
+  "profile_diffs_vs_baseline": [
+    {
+      "target": "typedb_server_bin:test_fail_points",
+      "u1_baseline": "timeout at 1800s (and 1 passed / 1 failed at 5400s in the clean remeasure, via the upstream fixed-HTTP-port AddrInUse defect)",
+      "u2": "2 passed / 0 failed in 2098s",
+      "note": "an improvement, consistent with the corrected expectation PRE-EXISTING-UPSTREAM-UNRELIABLE (docs/evidence/G3/finding-failpoints-false-green.md); every checkpoint-class failpoint passed against SlateDB manifest-pinned checkpoints and recursive restore"
+    }
+  ],
+  "everything_else": "identical pass/fail/ignored profile to the oracle baseline across all remaining 103 targets, including behaviour (test_concept 13, test_query 27), all HTTP driver suites, both assembly targets (running the TB-P7 server binary from the repackaged archive under TYPEDB_STORAGE_PROFILE=U2), durability, isolation, MVCC, recovery-from-checkpoint, and encoding vertex-allocation (descending-scan get_prev)",
+  "runtime_note": "U2 wall-clock is 2-5x the oracle on storage-heavy suites (test_concept 841s vs 223s; test_query 497s vs 109s) - the correctness-first local object-store posture (no compactor, sync bridge per op); zero timeouts under the 5400s budget"
+}

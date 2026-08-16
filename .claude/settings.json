@@ -2,7 +2,6 @@
   "permissions": {
     "defaultMode": "bypassPermissions",
     "allow": [
-      "Tool(*)",
       "Bash",
       "Read",
       "Edit",
@@ -14,6 +13,8 @@
       "WebSearch",
       "Agent",
       "Skill",
+      "Workflow",
+      "Artifact",
       "TaskCreate",
       "TaskUpdate",
       "TaskList",
@@ -23,8 +24,15 @@
       "Monitor",
       "ToolSearch",
       "SendUserFile",
+      "SendMessage",
+      "ListAgents",
+      "EnterWorktree",
+      "ExitWorktree",
       "mcp__github",
       "mcp__claude-code-remote"
     ]
-  }
+  },
+  "skipDangerousModePermissionPrompt": true,
+  "skipAutoPermissionPrompt": true,
+  "askUserQuestionTimeout": "never"
 }

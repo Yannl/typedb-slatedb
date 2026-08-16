@@ -8,7 +8,7 @@
 //! upstream's `KeyspaceError` variants (`Put`, `Get`, `BatchWrite`, `Iterate`) so the
 //! substitution does not change what callers can distinguish.
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum KeyspaceError {
     #[error("opening the keyspace set failed: {0}")]
     Open(String),

@@ -147,6 +147,8 @@ impl Keyspaces {
         Ok(())
     }
 
+    /// Clear every keyspace. RocksDB lane only — see `Keyspace::reset`.
+    #[cfg(not(feature = "slatedb-backend"))]
     pub(crate) fn reset(&mut self) -> Result<(), KeyspaceError> {
         for keyspace in self.keyspaces.iter_mut() {
             keyspace.reset()?
@@ -312,6 +314,13 @@ impl Keyspace {
         Ok(())
     }
 
+    /// Delete every entry in this keyspace.
+    ///
+    /// RocksDB-only for now: it walks the store with a native iterator. The SlateDB lane needs
+    /// a range delete over the keyspace prefix, which is a different operation with different
+    /// cost, so it is not faked here — `Keyspace` still owns a `rocksdb::DB` on both lanes and
+    /// this method is unreachable on the SlateDB one.
+    #[cfg(not(feature = "slatedb-backend"))]
     pub(crate) fn reset(&mut self) -> Result<(), KeyspaceError> {
         let iterator = self.kv_storage.iterator(IteratorMode::Start);
         for entry in iterator {
@@ -410,7 +419,10 @@ pub enum KeyspaceError {
     Get { name: &'static str, source: rocksdb::Error },
     Put { name: &'static str, source: rocksdb::Error },
     BatchWrite { name: &'static str, source: rocksdb::Error },
-    Iterate { name: &'static str, source: rocksdb::Error },
+    // The only KeyspaceError variant whose source crosses the backend boundary: it carries
+    // whatever the iterator produced. On the default lane the alias *is* `rocksdb::Error`,
+    // so U0's error type is unchanged.
+    Iterate { name: &'static str, source: super::BackendError },
     DeleteRange { name: &'static str, source: rocksdb::Error },
     Property { name: &'static str, source: rocksdb::Error },
 }

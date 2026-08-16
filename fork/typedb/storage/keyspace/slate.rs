@@ -223,7 +223,9 @@ impl SlateRangeIterator {
     }
 }
 
-#[derive(Debug)]
+/// `Clone` is required because `IteratorItemState` clones the error to preserve it across
+/// `take_value_else_retain` — a state machine that must not lose an error by yielding it once.
+#[derive(Debug, Clone)]
 pub struct SlateKeyspaceError {
     pub name: &'static str,
     pub source: slatedb_keyspace::KeyspaceError,

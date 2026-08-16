@@ -21,6 +21,17 @@ pub mod rocks_resources;
 #[cfg(feature = "slatedb-backend")]
 pub(crate) mod slate;
 
+/// The error type a backend's iterator yields.
+///
+/// On the default lane this *is* `rocksdb::Error`, so the U0 build is unchanged down to the
+/// type — the alias exists so the SlateDB lane can carry its own error without every caller
+/// naming a backend. Introducing a shared wrapper enum instead would have changed U0's
+/// error type too, and U0 is the reference the whole comparison is measured against.
+#[cfg(not(feature = "slatedb-backend"))]
+pub(crate) type BackendError = rocksdb::Error;
+#[cfg(feature = "slatedb-backend")]
+pub(crate) type BackendError = slate::SlateKeyspaceError;
+
 impl Poolable for DBRawIterator<'static> {}
 
 #[derive(Default)]

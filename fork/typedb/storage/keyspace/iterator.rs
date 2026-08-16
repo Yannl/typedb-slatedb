@@ -45,12 +45,31 @@ impl KeyspaceRangeIterator {
                 Bytes::Array(cloned)
             }
         };
-        let raw_iterator = if Self::can_use_prefix(keyspace, range) {
-            iterpool.get_iterator_prefixed(keyspace)
-        } else {
-            iterpool.get_iterator_unprefixed(keyspace)
+        // The pooled RocksDB cursor and the owning SlateDB cursor are constructed differently
+        // — the pool exists to amortise RocksDB iterator creation, which has no analogue when
+        // the cursor owns an `Arc` — so only this construction differs between lanes. From
+        // here down the two are identical.
+        #[cfg(not(feature = "slatedb-backend"))]
+        let mut iterator = {
+            let raw_iterator = if Self::can_use_prefix(keyspace, range) {
+                iterpool.get_iterator_prefixed(keyspace)
+            } else {
+                iterpool.get_iterator_unprefixed(keyspace)
+            };
+            DBIterator::new_from(raw_iterator, start_prefix.as_ref(), storage_counters)
         };
-        let mut iterator = DBIterator::new_from(raw_iterator, start_prefix.as_ref(), storage_counters);
+        // The SlateDB cursor is built (`raw_iterator.rs`, SlateDB lane) but `Keyspace` still
+        // owns a `rocksdb::DB` in both lanes, so there is nothing here to open it from yet.
+        // Swapping that struct is the next step; until it lands this lane stops loudly rather
+        // than silently falling back to RocksDB and reporting a U1 result that is really U0.
+        #[cfg(feature = "slatedb-backend")]
+        let mut iterator: DBIterator = {
+            let _ = (iterpool, &start_prefix, storage_counters);
+            unimplemented!(
+                "SlateDB range iteration needs Keyspace to hold a SharedStore; see \
+                 storage/keyspace/slate.rs"
+            )
+        };
         if matches!(range.start(), RangeStart::ExcludeFirstWithPrefix(_)) {
             Self::may_skip_start(&mut iterator, range.start().get_value());
         }

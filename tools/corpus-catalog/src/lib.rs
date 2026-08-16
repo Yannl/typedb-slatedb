@@ -165,6 +165,12 @@ pub fn scan_build_files(fork_root: &Path) -> Result<(Vec<BuildTestTarget>, Recon
 
     let mut build_files: Vec<_> = walkdir::WalkDir::new(fork_root)
         .into_iter()
+        // `bazel-typedb/` is the runfiles tree the runner stages, not upstream source. The
+        // behaviour corpus inside it carries 12 BUILD files of its own, and scanning them
+        // after a run has staged the fixture produced 157 static targets against a
+        // catalogue of 156 — the denominator silently depending on whether a run had
+        // happened yet.
+        .filter_entry(|e| e.file_name() != "bazel-typedb" && e.file_name() != ".git")
         .filter_map(Result::ok)
         .filter(|e| e.file_type().is_file() && e.file_name() == "BUILD")
         .map(|e| e.path().to_path_buf())
@@ -430,7 +436,17 @@ pub fn generate(inputs: &CatalogInputs<'_>) -> Result<CatalogOutput> {
             }
         }
 
-        let features = build_target.map(|b| b.crate_features.clone()).unwrap_or_default();
+        // `bazel` is a Bazel-only crate feature: no Cargo manifest declares it, so passing
+        // it makes cargo fail with "does not contain this feature" and the target reports
+        // zero cases. It is also exactly the feature that must stay *off* here — upstream
+        // gates the fixture path on it (`tests/behaviour/connection/database.rs` L17-23),
+        // and the Cargo lane deliberately takes the non-Bazel branch, which is why the
+        // runner stages the corpus under `bazel-typedb/external/`. See CR-A-03.
+        //
+        // The BUILD declaration is not lost: `build-test-targets.json` records it verbatim.
+        let features: Vec<String> = build_target
+            .map(|b| b.crate_features.iter().filter(|f| *f != "bazel").cloned().collect())
+            .unwrap_or_default();
         let data = build_target.map(|b| b.data.clone()).unwrap_or_default();
         let feature_files = feature_paths_from_data(&data);
         let env: BTreeMap<String, String> =

@@ -58,27 +58,37 @@ struct Finding {
 
 /// Match one file's opening lines against the MPL header.
 ///
-/// The first pattern is genuinely optional: a file may start with `#!`/`@`/`<?` and then the
-/// comment, or go straight to the comment. Both satisfy upstream, so both satisfy this.
+/// The config sets `multiLines = "1, 2"` (TBD `tool/checkstyle/templates/checkstyle.xml`
+/// L23), which in Checkstyle's `RegexpHeader` means header lines 1 and 2 may each match any
+/// number of file lines *including none*. That optionality is the whole point: line 2 is
+/// `^\/\*`, so without it every `#`-commented file — BUILD, .bzl, shell, TOML — would fail
+/// its own licence check. Only lines 3–5 are mandatory.
 fn check_mpl_header(text: &str) -> Option<String> {
     let lines: Vec<&str> = text.lines().collect();
-    for skip in [0usize, 1] {
-        if matches_from(&lines, skip) {
-            return None;
-        }
-    }
-    Some("missing or malformed MPL licence header".to_string())
-}
 
-fn matches_from(lines: &[&str], skip: usize) -> bool {
-    // Patterns 2..5 are the mandatory comment block.
-    for (i, pattern) in MPL_HEADER_LINES.iter().enumerate().skip(1) {
-        let Some(line) = lines.get(skip + i - 1) else { return false };
+    // Consume the leading run of multi-lines: shebang/annotation/XML prologue (pattern 1)
+    // and comment openers (pattern 2), in any number and any order.
+    let mut i = 0usize;
+    while i < lines.len()
+        && (simple_regex::matches(MPL_HEADER_LINES[0], lines[i])
+            || simple_regex::matches(MPL_HEADER_LINES[1], lines[i]))
+    {
+        i += 1;
+    }
+
+    for (offset, pattern) in MPL_HEADER_LINES[2..].iter().enumerate() {
+        let Some(line) = lines.get(i + offset) else {
+            return Some("file ends before the MPL licence header is complete".to_string());
+        };
         if !simple_regex::matches(pattern, line) {
-            return false;
+            return Some(format!(
+                "MPL licence header line {} does not match at file line {}",
+                offset + 3,
+                i + offset + 1
+            ));
         }
     }
-    true
+    None
 }
 
 fn check_no_tabs(text: &str) -> Option<String> {
@@ -468,6 +478,35 @@ fn main() {}
     fn rejects_a_truncated_header() {
         let text = "/*\n * This Source Code Form is subject to the terms of the Mozilla Public\n */\n";
         assert!(check_mpl_header(text).is_some(), "a partial header must not pass");
+    }
+
+    #[test]
+    fn accepts_a_hash_commented_file_with_no_comment_opener() {
+        // The real `user/BUILD`. Header line 2 (`^\/\*`) is a multiLine, so a file that
+        // never opens a block comment still satisfies the check. Requiring line 2 failed
+        // every BUILD, .bzl, shell and TOML file in the repository against its own licence
+        // rule — 91 checkstyle targets red for a rule upstream passes.
+        let text = "\
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+load(\"@rules_rust//rust:defs.bzl\", \"rust_library\")
+";
+        assert_eq!(check_mpl_header(text), None);
+    }
+
+    #[test]
+    fn accepts_repeated_multilines_before_the_header() {
+        // multiLines may match more than once, not merely zero or one time.
+        let text = format!("#!/bin/sh\n/*\n/*\n{}", &GOOD[3..]);
+        assert_eq!(check_mpl_header(&text), None);
+    }
+
+    #[test]
+    fn still_rejects_a_file_whose_body_never_contains_the_header() {
+        let text = "#!/bin/sh\n/*\n * unrelated comment\n */\necho hi\n";
+        assert!(check_mpl_header(text).is_some());
     }
 
     #[test]

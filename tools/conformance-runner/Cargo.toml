@@ -13,3 +13,4 @@ serde_json.workspace = true
 sha2.workspace = true
 corpus-catalog.workspace = true
 source-lock.workspace = true
+libc = "0.2"

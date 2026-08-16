@@ -17,6 +17,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
+use std::os::unix::process::CommandExt;
 use corpus_catalog::model::{Catalog, CaseDiscovery, ProfileId, Target};
 use serde::{Deserialize, Serialize};
 
@@ -154,6 +155,68 @@ fn walkdir_lite(root: &Path) -> Result<Vec<PathBuf>> {
 }
 
 /// Run one catalogued target and collect its per-case results.
+/// Run a command, killing its whole process group if it outlives `limit`.
+///
+/// `Command::output()` waits forever, so a hung harness would stall the entire run with no
+/// evidence of why. That is not hypothetical: a per-target `cargo test` deadlocked during
+/// catalogue generation with no child process alive and no compiler running. A timeout must
+/// terminate the target and be recorded, because the conformance plan makes a timeout a
+/// non-green outcome rather than something to wait out.
+fn wait_with_timeout(
+    mut cmd: Command,
+    limit: Duration,
+) -> Result<(std::process::Output, bool)> {
+    use std::io::Read;
+
+    let mut child = cmd.spawn()?;
+    let pid = child.id() as i32;
+
+    // Drain both pipes on their own threads; a full pipe buffer would otherwise block the
+    // child and look exactly like a hang.
+    let mut out_pipe = child.stdout.take().context("stdout was not piped")?;
+    let mut err_pipe = child.stderr.take().context("stderr was not piped")?;
+    let out_thread = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = out_pipe.read_to_end(&mut buf);
+        buf
+    });
+    let err_thread = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = err_pipe.read_to_end(&mut buf);
+        buf
+    });
+
+    let deadline = Instant::now() + limit;
+    let mut timed_out = false;
+    let status = loop {
+        match child.try_wait()? {
+            Some(status) => break status,
+            None if Instant::now() >= deadline => {
+                timed_out = true;
+                // Signal the whole group directly. Shelling out to `kill -TERM -<pgid>` is
+                // not equivalent: util-linux `kill` parses the leading `-` as an option, so
+                // the signal is never delivered and the run hangs anyway — which is exactly
+                // how this was first written, and it waited out the full 600s.
+                //
+                // TERM first so a TypeDB server can release its data directory and port,
+                // then KILL whatever ignored it.
+                unsafe { libc::kill(-pid, libc::SIGTERM) };
+                let grace = Instant::now() + Duration::from_secs(5);
+                while child.try_wait()?.is_none() && Instant::now() < grace {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                unsafe { libc::kill(-pid, libc::SIGKILL) };
+                break child.wait()?;
+            }
+            None => std::thread::sleep(Duration::from_millis(200)),
+        }
+    };
+
+    let stdout = out_thread.join().unwrap_or_default();
+    let stderr = err_thread.join().unwrap_or_default();
+    Ok((std::process::Output { status, stdout, stderr }, timed_out))
+}
+
 pub fn run_target(ctx: &RunContext, catalog: &Catalog, target: &Target) -> Result<TargetRun> {
     let (Some(pkg), Some(name)) = (target.cargo_package.as_ref(), target.cargo_target.as_ref())
     else {
@@ -234,12 +297,15 @@ pub fn run_target(ctx: &RunContext, catalog: &Catalog, target: &Target) -> Resul
         }
     }
 
+    // Run in its own process group so a timeout kills the server and any child the test
+    // spawned, not just the cargo wrapper. An orphaned TypeDB server would hold its data
+    // directory and port and make every later target fail for the wrong reason.
+    cmd.process_group(0);
+
     let started = Instant::now();
-    let output = cmd
-        .output()
+    let (output, timed_out) = wait_with_timeout(cmd, Duration::from_secs(target.timeout_seconds))
         .with_context(|| format!("spawning {argv:?} in {}", cwd.display()))?;
     let duration = started.elapsed();
-    let timed_out = duration > Duration::from_secs(target.timeout_seconds);
 
     std::fs::write(&stdout_path, &output.stdout)?;
     std::fs::write(&stderr_path, &output.stderr)?;
@@ -389,6 +455,47 @@ pub fn summarise(catalog: &Catalog, runs: &[TargetRun], profile: ProfileId) -> C
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn piped(program: &str, args: &[&str]) -> Command {
+        let mut c = Command::new(program);
+        c.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+        c.process_group(0);
+        c
+    }
+
+    #[test]
+    fn a_hanging_target_is_killed_and_flagged() {
+        let started = Instant::now();
+        let (_, timed_out) =
+            wait_with_timeout(piped("sleep", &["600"]), Duration::from_secs(1)).unwrap();
+        assert!(timed_out, "a target that outlives its budget must be reported as timed out");
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "the runner must terminate the target rather than wait for it"
+        );
+    }
+
+    #[test]
+    fn a_prompt_target_is_not_flagged_and_keeps_its_output() {
+        let (out, timed_out) =
+            wait_with_timeout(piped("echo", &["hello"]), Duration::from_secs(60)).unwrap();
+        assert!(!timed_out);
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "hello");
+        assert_eq!(out.status.code(), Some(0));
+    }
+
+    #[test]
+    fn output_larger_than_a_pipe_buffer_does_not_stall() {
+        // Behaviour targets emit megabytes with --nocapture. Reading after wait() would
+        // deadlock on a full pipe and be indistinguishable from a hung test.
+        let (out, timed_out) = wait_with_timeout(
+            piped("head", &["-c", "1000000", "/dev/zero"]),
+            Duration::from_secs(60),
+        )
+        .unwrap();
+        assert!(!timed_out);
+        assert_eq!(out.stdout.len(), 1_000_000);
+    }
 
     #[test]
     fn parses_pass_fail_and_ignored_lines() {

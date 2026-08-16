@@ -9,6 +9,7 @@ license = "MPL-2.0"
 publish = false
 
 [workspace.dependencies]
+libc = "0.2"
 corpus-catalog = { path = "corpus-catalog" }
 conformance-runner = { path = "conformance-runner" }
 source-lock = { path = "source-lock" }

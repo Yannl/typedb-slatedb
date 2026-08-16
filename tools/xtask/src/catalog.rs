@@ -170,6 +170,13 @@ fn collect_libtest_listings(
             continue;
         }
         let Some(exe) = msg.get("executable").and_then(|e| e.as_str()) else { continue };
+        // `cargo test --no-run` emits two artifacts for a bin target: the binary itself and
+        // its test harness, under the same package and target name. Only the harness
+        // understands `--list`; keying without this check lets the plain binary win and the
+        // listing fails with "unexpected argument '--list'".
+        if msg.pointer("/profile/test").and_then(|t| t.as_bool()) != Some(true) {
+            continue;
+        }
         // package_id is like `path+file:///…/storage#0.0.0` or `…#storage@0.0.0`.
         let pkg_id = msg.get("package_id").and_then(|p| p.as_str()).unwrap_or_default();
         let pkg = pkg_id

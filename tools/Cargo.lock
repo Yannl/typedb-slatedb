@@ -194,6 +194,7 @@ dependencies = [
  "anyhow",
  "corpus-catalog",
  "hex",
+ "libc",
  "serde",
  "serde_json",
  "sha2",

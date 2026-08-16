@@ -41,6 +41,37 @@ pub const PINNED_RUSTFMT_TOOLCHAIN: &str = "nightly-2026-04-15";
 /// shebangs, annotations and XML prologues; upstream's file begins with that alternation so
 /// that a `#!`-prefixed script still satisfies the header. Reproduced verbatim rather than
 /// paraphrased.
+/// The header regexes for each `license_type` a BUILD rule can name.
+///
+/// TypeDB uses three: `mpl-header` (112 targets), `mpl-fulltext` (4) and `apache-header`
+/// (1, `common/logger:checkstyle-copies` over `log_panic.rs`, which is vendored from the
+/// ASF). Hardcoding the MPL header failed that target for having exactly the licence its
+/// BUILD rule declares.
+pub fn header_lines(license_type: &str) -> Option<&'static [&'static str]> {
+    match license_type {
+        "mpl-header" => Some(&MPL_HEADER_LINES),
+        "apache-header" => Some(&APACHE_HEADER_LINES),
+        // `mpl-fulltext` matches the whole licence text, which only the LICENSE file
+        // carries; its first line is distinctive enough to check without embedding 373 lines.
+        "mpl-fulltext" => Some(&MPL_FULLTEXT_LINES),
+        _ => None,
+    }
+}
+
+/// `checkstyle-file-apache-header.txt`, verbatim.
+const APACHE_HEADER_LINES: [&str; 4] = [
+    r"^(#!.*)|(@.*)|(<\?.*)",
+    r"^(<!--.*)|(/\*.*)",
+    r"^.*Licensed to the Apache Software Foundation \(ASF\) under one$",
+    r"^.*or more contributor license agreements.  See the NOTICE file$",
+];
+
+/// `checkstyle-file-mpl-fulltext.txt`, first lines.
+const MPL_FULLTEXT_LINES: [&str; 2] = [
+    r"^Mozilla Public License Version 2.0$",
+    r"^==================================$",
+];
+
 const MPL_HEADER_LINES: [&str; 5] = [
     r"^(#!.*)|(@.*)|(<\?.*)",
     r"^/\*",
@@ -64,25 +95,32 @@ struct Finding {
 /// `^\/\*`, so without it every `#`-commented file — BUILD, .bzl, shell, TOML — would fail
 /// its own licence check. Only lines 3–5 are mandatory.
 fn check_mpl_header(text: &str) -> Option<String> {
+    check_header(&MPL_HEADER_LINES, text)
+}
+
+/// Match a file's opening lines against `spec`'s header regexes.
+fn check_header(spec: &[&str], text: &str) -> Option<String> {
     let lines: Vec<&str> = text.lines().collect();
 
     // Consume the leading run of multi-lines: shebang/annotation/XML prologue (pattern 1)
     // and comment openers (pattern 2), in any number and any order.
     let mut i = 0usize;
     while i < lines.len()
-        && (simple_regex::matches(MPL_HEADER_LINES[0], lines[i])
-            || simple_regex::matches(MPL_HEADER_LINES[1], lines[i]))
+        && spec
+            .iter()
+            .take(2)
+            .any(|p| simple_regex::matches(p, lines[i]))
     {
         i += 1;
     }
 
-    for (offset, pattern) in MPL_HEADER_LINES[2..].iter().enumerate() {
+    for (offset, pattern) in spec[2.min(spec.len())..].iter().enumerate() {
         let Some(line) = lines.get(i + offset) else {
-            return Some("file ends before the MPL licence header is complete".to_string());
+            return Some("file ends before the licence header is complete".to_string());
         };
         if !simple_regex::matches(pattern, line) {
             return Some(format!(
-                "MPL licence header line {} does not match at file line {}",
+                "licence header line {} does not match at file line {}",
                 offset + 3,
                 i + offset + 1
             ));
@@ -223,6 +261,18 @@ fn glob_matches(pattern: &str, rel: &str) -> bool {
 }
 
 /// Files a `checkstyle_test` covers, resolved from its include/exclude globs.
+/// Bazel `glob()` never crosses a package boundary — a directory containing a BUILD file is
+/// a different package, and its files belong to that package's own rules.
+///
+/// `server/BUILD` globs `*`, `*/*` … `*/*/*/*/*`, which textually reaches
+/// `service/admin/proto/Cargo.toml`. Bazel does not, because
+/// `server/service/admin/proto/BUILD` exists. Ignoring that made `//server:checkstyle` fail
+/// on a file it never inspects — the hand-maintained manifest of CR-A-04, which carries no
+/// licence header and does use tabs.
+fn is_subpackage(root: &Path, dir: &Path) -> bool {
+    dir != root && dir.join("BUILD").is_file()
+}
+
 fn checkstyle_files(
     workspace: &Path,
     package_dir: &str,
@@ -237,7 +287,11 @@ fn checkstyle_files(
     let mut out = Vec::new();
     for entry in walkdir::WalkDir::new(&root)
         .into_iter()
-        .filter_entry(|e| e.file_name() != ".git" && e.file_name() != "bazel-typedb")
+        .filter_entry(|e| {
+            e.file_name() != ".git"
+                && e.file_name() != "bazel-typedb"
+                && !(e.file_type().is_dir() && is_subpackage(&root, e.path()))
+        })
         .filter_map(std::result::Result::ok)
         .filter(|e| e.file_type().is_file())
     {
@@ -265,7 +319,14 @@ fn run_checkstyle(
     package_dir: &str,
     include: &[String],
     exclude: &[String],
+    license_type: &str,
 ) -> Result<Vec<Finding>> {
+    let Some(spec) = header_lines(license_type) else {
+        anyhow::bail!(
+            "checkstyle target declares license_type {license_type:?}, which has no header \
+             spec; refusing to check it against the wrong licence"
+        );
+    };
     let files = checkstyle_files(workspace, package_dir, include, exclude)?;
     let mut findings = Vec::new();
     for file in &files {
@@ -274,7 +335,7 @@ fn run_checkstyle(
             continue;
         };
         let rel = file.strip_prefix(workspace).unwrap_or(file).to_string_lossy().to_string();
-        if let Some(problem) = check_mpl_header(&text) {
+        if let Some(problem) = check_header(spec, &text) {
             findings.push(Finding { file: rel.clone(), problem });
         }
         if let Some(problem) = check_no_tabs(&text) {
@@ -341,6 +402,8 @@ pub struct StaticCheckInputs {
     pub exclude: Vec<String>,
     /// Source files, already resolved from the Bazel targets a `rustfmt_test` names.
     pub sources: Vec<String>,
+    /// `license_type` attribute; selects which header regexes apply.
+    pub license_type: String,
 }
 
 /// Execute a static-check target and produce its single leaf-case result.
@@ -354,9 +417,13 @@ pub fn run_static_target(
 ) -> Result<TargetRun> {
     let started = std::time::Instant::now();
     let findings = match inputs.rule.as_str() {
-        "checkstyle_test" => {
-            run_checkstyle(workspace, &inputs.package_dir, &inputs.include, &inputs.exclude)?
-        }
+        "checkstyle_test" => run_checkstyle(
+            workspace,
+            &inputs.package_dir,
+            &inputs.include,
+            &inputs.exclude,
+            &inputs.license_type,
+        )?,
         "rustfmt_test" => run_rustfmt(workspace, &inputs.sources)?,
         // A static rule with no port is recorded as unknown, never as a pass.
         other => {
@@ -537,5 +604,36 @@ load(\"@rules_rust//rust:defs.bzl\", \"rust_library\")
         assert!(simple_regex::matches(r"^(#!.*)|(@.*)|(<\?.*)", "#!/bin/sh"));
         assert!(simple_regex::matches(r"^(#!.*)|(@.*)|(<\?.*)", "<?xml version=\"1.0\"?>"));
         assert!(!simple_regex::matches(r"^(#!.*)|(@.*)|(<\?.*)", "plain text"));
+    }
+}
+
+#[cfg(test)]
+mod license_type_tests {
+    use super::*;
+
+    #[test]
+    fn the_apache_header_is_accepted_only_under_its_own_license_type() {
+        // common/logger:checkstyle-copies declares license_type = "apache-header" over
+        // log_panic.rs, vendored from the ASF. Hardcoding the MPL spec failed that target
+        // for carrying exactly the licence its BUILD rule declares.
+        let apache = "\
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+";
+        assert_eq!(check_header(header_lines("apache-header").unwrap(), apache), None);
+        assert!(check_header(header_lines("mpl-header").unwrap(), apache).is_some());
+    }
+
+    #[test]
+    fn an_unknown_license_type_has_no_spec_rather_than_a_default() {
+        // Falling back to MPL would check a file against a licence it does not claim.
+        assert!(header_lines("bsd-header").is_none());
+    }
+
+    #[test]
+    fn every_license_type_upstream_uses_has_a_spec() {
+        for t in ["mpl-header", "mpl-fulltext", "apache-header"] {
+            assert!(header_lines(t).is_some(), "{t} is declared in TypeDB's BUILD files");
+        }
     }
 }

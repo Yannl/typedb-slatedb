@@ -154,6 +154,11 @@ pub fn run(
                 Some(bt) => conformance_runner::staticcheck::StaticCheckInputs {
                     rule: bt.rule.clone(),
                     package_dir: bt.build_file.trim_end_matches("BUILD").trim_end_matches('/').to_string(),
+                    license_type: bt
+                        .other_attrs
+                        .get("license_type")
+                        .and_then(|v| v.first().cloned())
+                        .unwrap_or_else(|| "mpl-header".to_string()),
                     include: bt.other_attrs.get("include").cloned().unwrap_or_default(),
                     exclude: bt.other_attrs.get("exclude").cloned().unwrap_or_default(),
                     // `rustfmt_test` names Bazel targets, not files; resolve them to sources.

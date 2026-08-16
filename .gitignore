@@ -10,6 +10,5 @@ docs/evidence/**/tmp/
 docs/evidence/G3/failpoints-remeasure/
 docs/evidence/G3/failpoints-remeasure.log
 sources/vendor-typedb/
-sources/vendor-slatedb/
 sources/assembly-artifacts/
 control-plane/.wrangler/

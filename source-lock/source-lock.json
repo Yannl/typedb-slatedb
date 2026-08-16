@@ -15,20 +15,42 @@
       "tree": "cb3bc132c79e29ab9c8971d4d6f2e3fc0ca7776b",
       "version_provenance": "VERSION file = 3.12.3; git describe = 3.12.3-2-g2256711ab",
       "license": "MPL-2.0",
-      "role": ["shipping_source", "semantic_oracle"],
+      "role": [
+        "shipping_source",
+        "semantic_oracle"
+      ],
       "status": "locked"
     },
     {
       "id": "SL",
-      "kind": "git",
-      "repository": "https://github.com/slatedb/slatedb",
-      "revision": "f88be86d17ac53260d3684edbc8f82811d945b5c",
-      "tree": "6244654eb6755427ff6b7649673184bd465b8635",
-      "version": "0.15.0",
-      "version_provenance": "workspace.package.version in root Cargo.toml L15",
+      "kind": "registry",
+      "registry": "crates.io",
+      "crate": "slatedb",
+      "version": "=0.15.0",
+      "checksum_sha256": "35ca56b01922b15aa69fe3abb62cadc985d86032c9647e4606e211c4da751a76",
+      "companion_crates": {
+        "slatedb-common": {
+          "version": "0.15.0",
+          "checksum_sha256": "0aa8de522ff46a0f9b5a66f45e650d125421d4d91990933591092f9d010c40d1"
+        },
+        "slatedb-txn-obj": {
+          "version": "0.15.0",
+          "checksum_sha256": "d85fd9c0c86dd4954524fa8238d0548bd80f4a9a66983cbde3728402d339993e"
+        }
+      },
       "license": "Apache-2.0",
-      "role": ["shipping_source", "storage_engine"],
-      "status": "locked"
+      "role": [
+        "shipping_source",
+        "storage_engine"
+      ],
+      "status": "locked",
+      "consume_mode": "consume-only from crates.io; no fork (owner decision, ADR-0001)",
+      "supersedes_identity": {
+        "kind": "git",
+        "repository": "https://github.com/slatedb/slatedb",
+        "revision": "f88be86d17ac53260d3684edbc8f82811d945b5c",
+        "note": "prior pin was v0.15.0+32 commits; move to registry v0.15.0 re-validated by tools/storage-diff-spike differential (see docs/evidence/G3/slatedb-differential-registry.json)"
+      }
     },
     {
       "id": "BH",
@@ -37,7 +59,9 @@
       "revision": "ac5d5733a484cea1d8809a2968029a818fdae24f",
       "tree": "8d4f0b44550648cfe53fe703e039d48696b227dd",
       "license": "MPL-2.0",
-      "role": ["test_corpus"],
+      "role": [
+        "test_corpus"
+      ],
       "status": "locked"
     },
     {
@@ -47,7 +71,10 @@
       "revision": "a5c51254088f343fb8b6a9668eaf99b35503dad4",
       "tree": "60ffc7933c6cf67da42a8d1ec4046278504e6655",
       "license": "MPL-2.0",
-      "role": ["build_evidence", "artifact_resolution"],
+      "role": [
+        "build_evidence",
+        "artifact_resolution"
+      ],
       "status": "locked"
     },
     {
@@ -57,7 +84,10 @@
       "revision": "ab5bfc90274e2d34569d5bc22558314b551cdecd",
       "tree": "ae3e8b137fdb23a39ab56b124a74cea6d5f8a501",
       "license": "Apache-2.0",
-      "role": ["build_evidence", "starlark_macro_oracle"],
+      "role": [
+        "build_evidence",
+        "starlark_macro_oracle"
+      ],
       "status": "locked"
     },
     {
@@ -68,7 +98,10 @@
       "resolved_revision": "7f4cac93fa8eee8643aa9f75eb60cacb5a454842",
       "tree": "3d8bdb15310fd49e1c563afcdce1015b4c5f6856",
       "license": "MPL-2.0",
-      "role": ["compiled_dependency", "source_evidence"],
+      "role": [
+        "compiled_dependency",
+        "source_evidence"
+      ],
       "status": "locked"
     },
     {
@@ -79,7 +112,10 @@
       "resolved_revision": "0373c1ae106b1f68e80edb06c1b7375075fe62e2",
       "tree": "6540245f926d263ec4a15037b6cf7e66c796aee4",
       "license": "MPL-2.0",
-      "role": ["compiled_dependency", "protocol_evidence"],
+      "role": [
+        "compiled_dependency",
+        "protocol_evidence"
+      ],
       "status": "locked"
     },
     {
@@ -89,7 +125,9 @@
       "tag": "3.12.3",
       "resolved_revision": "f487d961884010ff305d4395c41e80fa620251c6",
       "license": "Apache-2.0",
-      "role": ["driver_compatibility_gate"],
+      "role": [
+        "driver_compatibility_gate"
+      ],
       "added_by": "v17 addendum A17.5 (release matching TypeDB pin 3.12.3)",
       "status": "locked"
     },
@@ -103,7 +141,9 @@
       "url_provenance": "TBD distribution/artifact/rules.bzl L10 public release base + L57 URL format",
       "sha256": "058145121f478f2f8ad10991cd17e64e12957b93e0836ac180fe9d095a4c4e40",
       "license": "MPL-2.0 (typedb/typedb-console)",
-      "role": ["assembly_fixture"],
+      "role": [
+        "assembly_fixture"
+      ],
       "status": "locked"
     },
     {
@@ -116,7 +156,9 @@
       "sha256": "c46fba13d835701e43778a2ea1e2dbf0e031d206c55c6c8fec28e03c274d37f9",
       "license": "MPL-2.0 (typedb/typedb-loader)",
       "applicability": "APPLICABLE: TB BUILD L73-79 selects loader artifact into assemble targets; loader/typedb_loader_bin is part of the typedb-all archive layout (BUILD L487, L515) consumed by assembly tests",
-      "role": ["assembly_fixture"],
+      "role": [
+        "assembly_fixture"
+      ],
       "status": "locked"
     },
     {
@@ -125,7 +167,9 @@
       "reference": "docker.io/typedb/ubuntu:3.1.0-amd64",
       "digest": "sha256:6ee891897765de29eda0ca251b78def15671821e38c2daf3b444fc465ebddede",
       "digest_provenance": "Docker Hub registry-1.docker.io Docker-Content-Digest header, 2026-08-16",
-      "role": ["upstream_package_provenance"],
+      "role": [
+        "upstream_package_provenance"
+      ],
       "status": "locked"
     },
     {
@@ -136,7 +180,9 @@
       "edition": "2024",
       "rustfmt": "nightly/2026-04-15 (declared by TB; not yet installed - needed only for fmt static checks)",
       "installed_via": "rustup toolchain install 1.93.0 (rustc 1.93.0, cargo 1.93.0)",
-      "role": ["upstream_parity"],
+      "role": [
+        "upstream_parity"
+      ],
       "status": "locked"
     },
     {
@@ -144,7 +190,9 @@
       "kind": "toolchain",
       "name": "rust",
       "version": "1.97.1",
-      "role": ["qualification_candidate"],
+      "role": [
+        "qualification_candidate"
+      ],
       "status": "declared_not_yet_qualified (BT-P6, G1)"
     },
     {
@@ -153,7 +201,9 @@
       "name": "object_store",
       "version": "0.14.0",
       "source_lock": "SL/Cargo.lock",
-      "role": ["r2_s3_client"],
+      "role": [
+        "r2_s3_client"
+      ],
       "status": "locked_by_SL"
     },
     {
@@ -164,7 +214,9 @@
       "tree": "resolved in sources/resolved-sources.json",
       "package_mapping": "npm gitHead of @cloudflare/containers@0.3.7; package.json version at this commit = 0.3.7 (verified)",
       "license": "Apache-2.0",
-      "role": ["shipping_source_if_helper_used"],
+      "role": [
+        "shipping_source_if_helper_used"
+      ],
       "status": "locked"
     },
     {
@@ -174,7 +226,9 @@
       "version": "0.3.7",
       "integrity": "sha512-DM9dm3FnIBSyiSJ1FLavKwl/lk3oAmTaynCzZQ9pZR0ncRPquSxkxd8Nu2MFILxmDDsPkxKsSNEh9mHHMty4Fw==",
       "tarball": "https://registry.npmjs.org/@cloudflare/containers/-/containers-0.3.7.tgz",
-      "role": ["container_lifecycle_helper"],
+      "role": [
+        "container_lifecycle_helper"
+      ],
       "status": "locked"
     },
     {
@@ -184,7 +238,9 @@
       "revision": "c576a8271503cc51babc1a8d0f2ef7d384f78742",
       "full_revision_provenance": "candidate short id c576a82 resolves to this commit ('Version Packages (#15154)'); annotated tag wrangler@4.123.0 (object 203b9f72b4d7f235879fc2938385f808ab71bfd7) targets the same commit; packages/wrangler/package.json at this commit = 4.123.0 (verified)",
       "license": "Apache-2.0",
-      "role": ["tooling_source"],
+      "role": [
+        "tooling_source"
+      ],
       "status": "locked"
     },
     {
@@ -194,7 +250,9 @@
       "version": "4.123.0",
       "integrity": "sha512-VXo2I1oa0x9aGAKIFPRSQPqTh0RBY5Ktl44YOhNmsJQFUdJKDA2vVTU6Xj+FC2koll6orJqWZN8jbXVIk9O67Q==",
       "tarball": "https://registry.npmjs.org/wrangler/-/wrangler-4.123.0.tgz",
-      "role": ["deploy_tool"],
+      "role": [
+        "deploy_tool"
+      ],
       "status": "locked"
     },
     {
@@ -204,7 +262,9 @@
       "version": "0.21.3",
       "integrity": "sha512-jCoGRQ6FlsP5adp1GJISvITOGdTHTpsWOq3KkSGIfeDY/5RKjTUagDwaXjpqBXY5gAk6id/QbgnGuCTAg6lSTQ==",
       "tarball": "https://registry.npmjs.org/@cloudflare/vitest-pool-workers/-/vitest-pool-workers-0.21.3.tgz",
-      "role": ["controller_gateway_tests"],
+      "role": [
+        "controller_gateway_tests"
+      ],
       "status": "locked"
     },
     {
@@ -215,7 +275,9 @@
       "integrity": "sha512-DtOG0BeanIxs2sH0smFvExZD89cBQwGckbHiFkRJrrNAUu3NGClZkUxqu+zy7HYfKBAgq935EMY49vIPm3JVdA==",
       "tarball": "https://registry.npmjs.org/miniflare/-/miniflare-5.20260811.1-alpha.tgz",
       "confirmed_from": "wrangler@4.123.0 dependencies (npm view): miniflare 5.20260811.1-alpha",
-      "role": ["transitive_local_runtime"],
+      "role": [
+        "transitive_local_runtime"
+      ],
       "status": "locked"
     },
     {
@@ -226,7 +288,9 @@
       "integrity": "sha512-kh+FFm55JQ4ssxhHZV9VPdMQq3D1nHxNJgwxMtWGD4dGppJvLySdguTRDKgeNTvgq6heSz+6TTXyPSDGj8Yllw==",
       "tarball": "https://registry.npmjs.org/workerd/-/workerd-1.20260811.1.tgz",
       "confirmed_from": "wrangler@4.123.0 dependencies (npm view): workerd 1.20260811.1",
-      "role": ["local_runtime"],
+      "role": [
+        "local_runtime"
+      ],
       "status": "locked"
     },
     {
@@ -234,7 +298,9 @@
       "kind": "oci_image",
       "reference": null,
       "digest": null,
-      "role": ["shipping_image_base"],
+      "role": [
+        "shipping_image_base"
+      ],
       "status": "architecture_choice_required (G6 decision; not a G0-G2 blocker)"
     },
     {
@@ -253,14 +319,20 @@
         "python": "3.11.15"
       },
       "note": "Recorded from the G0 build environment; binary digests archived in docs/evidence/G0/toolchains.json. Full content-addressed offline store is deferred to BT-P0 completion (release lanes), tracked as SI-G0-2.",
-      "role": ["offline_reproducible_build"],
+      "role": [
+        "offline_reproducible_build"
+      ],
       "status": "recorded_environment_lock"
     }
   ],
   "policies": {
     "artifacts_require_url_sha256_license": true,
     "floating_refs_forbidden": true,
-    "independent_workspaces": ["fork/typedb", "fork/slatedb", "tools", "control-plane"],
+    "independent_workspaces": [
+      "fork/typedb",
+      "tools",
+      "control-plane"
+    ],
     "npm_requires_tarball_integrity_and_source_mapping": true,
     "oci_requires_digest": true,
     "release_build_offline": true,

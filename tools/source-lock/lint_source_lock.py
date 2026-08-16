@@ -22,7 +22,6 @@ SOURCES = REPO / "sources"
 # lock node id -> sources/ directory name
 GIT_DIRS = {
     "TB": "typedb",
-    "SL": "slatedb",
     "BH": "typedb-behaviour",
     "TBD": "typedb-dependencies",
     "TBDIST": "typedb-bazel-distribution",
@@ -37,6 +36,55 @@ ARTIFACTS = {
     "TCONSOLE": "fixtures/console/typedb-console-linux-x86_64-3.12.0.tar.gz",
     "TLOADER": "fixtures/loader/typedb-loader-linux-x86_64-3.12.0.tar.gz",
 }
+
+# lock node id -> Cargo.lock (relative to repo root) that must pin the crates
+REGISTRY_NODES = {
+    "SL": "tools/Cargo.lock",
+}
+
+
+def cargo_lock_packages(path: pathlib.Path) -> dict:
+    """name -> (version, checksum) for registry packages in a Cargo.lock."""
+    pkgs = {}
+    def quoted(line: str):
+        parts = line.split('"')
+        return parts[1] if len(parts) >= 2 else None
+
+    name = version = source = checksum = None
+    in_package = False
+    for line in path.read_text().splitlines() + ["[[package]]"]:
+        if line.strip() == "[[package]]":
+            if in_package and name and source and "registry+" in source:
+                pkgs[name] = (version, checksum)
+            name = version = source = checksum = None
+            in_package = True
+        elif in_package and line.startswith("name = "):
+            name = quoted(line)
+        elif in_package and line.startswith("version = "):
+            version = quoted(line)
+        elif in_package and line.startswith("source = "):
+            source = quoted(line)
+        elif in_package and line.startswith("checksum = "):
+            checksum = quoted(line)
+    return pkgs
+
+
+def check_registry_node(nid: str, node: dict, lock_rel: str, failures: list) -> None:
+    lock_path = REPO / lock_rel
+    if not lock_path.exists():
+        failures.append(f"{nid}: consumer lockfile missing at {lock_rel}")
+        return
+    pkgs = cargo_lock_packages(lock_path)
+    want = {node["crate"]: (node["version"].lstrip("="), node["checksum_sha256"])}
+    for cname, cinfo in node.get("companion_crates", {}).items():
+        want[cname] = (cinfo["version"].lstrip("="), cinfo["checksum_sha256"])
+    for cname, (wver, wsum) in want.items():
+        got = pkgs.get(cname)
+        if got is None:
+            failures.append(f"{nid}: crate {cname} not pinned in {lock_rel}")
+        elif got != (wver, wsum):
+            failures.append(
+                f"{nid}: crate {cname} mismatch want {(wver, wsum)} got {got}")
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -79,6 +127,16 @@ def main() -> int:
                                capture_output=True, text=True).stdout.strip()
         if dirty:
             failures.append(f"{nid}: dirty tree at sources/{dirname}")
+
+    for nid, lock_rel in REGISTRY_NODES.items():
+        node = nodes.get(nid)
+        if node is None:
+            failures.append(f"{nid}: missing from lock")
+            continue
+        if node.get("kind") != "registry":
+            failures.append(f"{nid}: expected kind 'registry', got {node.get('kind')!r}")
+            continue
+        check_registry_node(nid, node, lock_rel, failures)
 
     for nid, rel in ARTIFACTS.items():
         node = nodes.get(nid)

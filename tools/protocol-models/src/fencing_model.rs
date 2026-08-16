@@ -1,11 +1,13 @@
 //! Fencing model: controller incarnation, startup sessions, and exact
-//! external SlateDB publication epochs (SL-P1), including the
-//! `init_with_epoch` ambiguity rule.
+//! external publication epochs (formerly SL-P1; per ADR-0001 the epochs
+//! live in the controller lease protocol and the fencing ObjectStore
+//! wrapper, not inside SlateDB), including the `init_with_epoch`
+//! ambiguity rule.
 //!
 //! Models brief §5.2 (inv. 16–28) and §8:
 //! - every publication carries an exact epoch; stored >= requested fences
-//!   the publisher (SlateDB `FenceableTransactionalObject::check_epoch`
-//!   semantics at the pin, slatedb-txn-obj L355–417);
+//!   the publisher (the same shape as SlateDB's
+//!   `FenceableTransactionalObject::check_epoch` in slatedb-txn-obj 0.15.0);
 //! - an ambiguous open is never retried with the same epoch: the session is
 //!   abandoned and a strictly newer epoch is issued (inv. 26);
 //! - a paused stale actor that resumes after the epoch advanced cannot

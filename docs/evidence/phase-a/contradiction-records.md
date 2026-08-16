@@ -157,6 +157,40 @@ step in TB-P0 would silently break the admin proto crate's Cargo build.
 
 ---
 
+## CR-A-06 — An upstream test file that upstream's own CI never runs
+
+**Contract claim.** Brief Appendix G.2 treats the Cargo `[[test]]`/`[[bench]]` census and the
+Bazel `rust_test` set as two readings of one corpus, and §21.10 frames the reconciliation as
+a drift check between them. The implicit assumption is that the two sets differ only in
+naming.
+
+**Observed.** `executor/tests/execute_comparison_check.rs` exists in the tree. It is not
+named by any rule in `executor/tests/BUILD`, which declares 11 `rust_test` targets covering
+`compile_execute.rs`, `efficiency.rs`, `execute_expression.rs`, `execute_function.rs`,
+`execute_has.rs`, `execute_isa.rs`, `execute_links.rs`, `execute_relation_index.rs`,
+`execute_select.rs`, `pipelines.rs` and `writes.rs` — every sibling except this one. Since
+`executor/tests/` is not a workspace member, Cargo auto-discovers the file as an integration
+test of package `executor`.
+
+So the file is compiled and linted by upstream's `rustfmt_test` / `checkstyle_test` globs,
+but never executed by `bazel test`. It is the only Cargo-visible target in the whole
+workspace for which no BUILD rule of any kind declares the name; the other 28 Cargo-only
+entries are all explained by a `rust_library` or `rust_binary` at the same path
+(`cargo-build-reconciliation.json` → `cargo_only_explained`).
+
+**Correction.** None to the contract's architecture; the reconciler now explains every
+Cargo-only target against the upstream rule that owns it, so this one is visibly different
+in kind rather than buried in a list of names. The case stays in the denominator: the Cargo
+lane will run it, so U0 must record what it does.
+
+**Impact.** Practical and immediate. If this test is stale and fails, the U0 baseline is red
+for a reason that has nothing to do with SlateDB — and a U1 run compared against a green
+assumption would then look like a regression the port caused. Establishing U0 empirically,
+rather than assuming upstream is green, is what makes that distinguishable. Its U0 outcome
+is the baseline it will be held to, whatever that outcome is.
+
+---
+
 ## CR-A-05 — A decoy Rust version in the dependencies repo (no contract change)
 
 Recorded because it is the kind of anchor that looks authoritative and is not.

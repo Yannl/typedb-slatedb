@@ -74,6 +74,15 @@ pub struct Reconciliation {
     /// `rust_test(crate = …)` wrapper. This is extra coverage, not a hole — recorded so the
     /// superset is visible rather than discovered later as a surprise.
     pub cargo_only_lib_units: Vec<String>,
+    /// For each Cargo-only target, what upstream declares for the same sources. Without
+    /// this the list is just names, and "Cargo runs a test Bazel does not" reads the same
+    /// as "the reconciler failed to match a pair".
+    pub cargo_only_explained: BTreeMap<String, String>,
+    /// Every name declared by any BUILD rule, test-producing or not, as
+    /// `name -> "<rule> at <file>"`. This is what lets a Cargo-only target be explained
+    /// rather than merely listed.
+    #[serde(skip_serializing)]
+    pub declared_names: BTreeMap<String, String>,
     /// BUILD `rust_test` targets with no corresponding Cargo target.
     pub build_only: Vec<String>,
     /// Matched on both sides.
@@ -174,6 +183,12 @@ pub fn scan_build_files(fork_root: &Path) -> Result<(Vec<BuildTestTarget>, Recon
         };
 
         for call in calls {
+            if let Some(name) = call.name() {
+                recon
+                    .declared_names
+                    .entry(name.to_string())
+                    .or_insert_with(|| format!("{} at {rel}", call.rule));
+            }
             if !starlark::TEST_PRODUCING_RULES.contains(&call.rule.as_str()) {
                 if !KNOWN_NON_TEST_RULES.contains(&call.rule.as_str()) {
                     unknown.insert(format!("{}: {} (line {})", rel, call.rule, call.line));
@@ -674,6 +689,16 @@ pub fn generate(inputs: &CatalogInputs<'_>) -> Result<CatalogOutput> {
         } else {
             recon.cargo_only.push(t.target_id.clone());
         }
+
+        // Explain it against whatever BUILD rule declares the same name.
+        let name = t.cargo_target.clone().unwrap_or_default();
+        let explanation = match recon.declared_names.get(&name) {
+            Some(decl) => format!("upstream declares {decl}, which produces no test target"),
+            None => "no BUILD rule of any kind declares this name: Cargo auto-discovers the \
+                     source file, Bazel never builds or runs it"
+                .to_string(),
+        };
+        recon.cargo_only_explained.insert(t.target_id.clone(), explanation);
     }
 
     // --- Fixtures that are still unresolved are recorded as exclusions, not omitted.

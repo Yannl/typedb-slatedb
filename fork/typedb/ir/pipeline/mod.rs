@@ -1,0 +1,459 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+use std::{collections::HashMap, fmt, sync::Arc};
+
+use answer::variable::Variable;
+use bytes::byte_array::ByteArray;
+use concept::type_::annotation::{Annotation, AnnotationCategory};
+use encoding::{
+    graph::thing::THING_VERTEX_MAX_LENGTH,
+    value::{ValueEncodable, value::Value},
+};
+use error::typedb_error;
+use itertools::Itertools;
+use storage::snapshot::{SnapshotGetError, iterator::SnapshotIteratorError};
+use typeql::{
+    common::Span,
+    schema::definable::function::{ReturnStatement, Signature},
+};
+
+use crate::{
+    LiteralParseError, RepresentationError,
+    pattern::{
+        BranchID, ParameterID, ValueType,
+        constraint::Constraint,
+        variable_category::{VariableCategory, VariableOptionality},
+    },
+    pipeline::{function_signature::FunctionID, reduce::Reducer},
+};
+
+pub mod block;
+pub mod fetch;
+pub mod function;
+pub mod function_signature;
+pub mod modifier;
+pub mod reduce;
+
+typedb_error! {
+    pub FunctionReadError(component = "Function read", prefix = "FNR") {
+        FunctionIDNotFound(1, "Function '{name}' not found by its internal ID '{id}'.", name: String, id: FunctionID),
+        FunctionRetrieval(2, "Error retrieving function.", source: SnapshotGetError),
+        FunctionsScan(3, "Error scanning functions.", source: Arc<SnapshotIteratorError>),
+        FormatError(4, "Formatting error", source: fmt::Error),
+    }
+}
+
+impl From<fmt::Error> for FunctionReadError {
+    fn from(source: fmt::Error) -> Self {
+        FunctionReadError::FormatError { source }
+    }
+}
+
+typedb_error! {
+    pub FunctionRepresentationError(component = "Function representation", prefix = "FRP") {
+        FunctionArgumentUnused(
+            1,
+            "Function argument variable '{variable}' is unused.",
+            variable: String,
+            source_span: Option<Span>,
+        ),
+        StreamReturnVariableUnavailable(
+            2,
+            "Function return variable '{variable}' is not available or defined.", // TODO: formatted
+            variable: String,
+            source_span: Option<Span>,
+        ),
+        SingleReturnVariableUnavailable(
+            3,
+            "Function return variable '{variable}' is not available or defined.", // TODO: formatted
+            variable: String,
+            source_span: Option<Span>,
+        ),
+        BlockDefinition(
+            4,
+            "Function pattern contains an error.",
+            typedb_source: Box<RepresentationError>,
+        ),
+        ReturnReduction(
+            5,
+            "Error building representation of the return reduction.",
+            typedb_source: Box<RepresentationError>,
+        ),
+        IllegalFetch(
+            6,
+            "Fetch clauses cannot be used inside of functions or function blocks that terminate in a 'return' statement.",
+            source_span: Option<Span>,
+        ),
+        IllegalStages(
+            7,
+            "Functions may not contain write stages.",
+            source_span: Option<Span>,
+        ),
+        InconsistentReturnLengths(
+            8,
+            "The function declares it returns {declared_length} item(s), but the definition returns {actual_length}. \nSignature: {signature}\nDefinition: {return_}",
+            signature: Signature,
+            return_: ReturnStatement,
+            declared_length: usize,
+            actual_length: usize,
+        ),
+        IllegalKeywordAsIdentifier(
+            9,
+            "The reserved keyword '{identifier}' cannot be used as function name",
+            identifier: String,
+            source_span: Option<Span>,
+        ),
+        NonAnonymousVariableExpected(
+            10,
+            "A non-anonymous variable is expected in this context.",
+            source_span: Option<Span>,
+        ),
+        DeclaresStreamReturnsSingle(
+            11,
+            "The function declares it returns a stream but the implementation returns a single row.\nSignature: {signature}\nDefinition: {return_}",
+            signature: Signature,
+            return_: ReturnStatement,
+        ),
+        DeclaresSingleReturnsStream(
+            12,
+            "The function declares it returns a single row but the implementation returns a stream.\nSignature: {signature}\nDefinition: {return_}",
+            signature: Signature,
+            return_: ReturnStatement,
+        ),
+        InconsistentReturnOptionality(
+            13,
+            "The optionality of the value returned by the function at index '{mismatch_index}' does not match that declared in the signature. \nSignature: {signature}\nDefinition: {return_}",
+            signature: Signature,
+            return_: ReturnStatement,
+            mismatch_index: usize,
+        ),
+        LiteralParseError(
+            14,
+            "Error parsing annotation '{annotation}' of function '{function}'.",
+            annotation: typeql::Annotation,
+            function: String,
+            source_span: Option<Span>,
+            typedb_source: LiteralParseError,
+        ),
+        AnnotationNotSupported(
+            15,
+            "Annotation '{annotation}' is not supported on functions.",
+            annotation: Annotation,
+            source_span: Option<Span>,
+        ),
+        DuplicateAnnotationCategory(
+            16,
+            "Annotation category '{category}' is specified multiple times in function '{function}'.",
+            category: AnnotationCategory,
+            function: String,
+            source_span: Option<Span>,
+        ),
+
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct VariableRegistry {
+    branch_id_allocator: u16,
+    variable_names: HashMap<Variable, String>,
+    variable_id_allocator: u16,
+    variable_categories: HashMap<Variable, (VariableCategory, VariableCategorySource)>,
+    variable_optionality: HashMap<Variable, VariableOptionality>,
+    variable_source_spans: HashMap<Variable, Span>,
+}
+
+impl VariableRegistry {
+    pub const UNNAMED_VARIABLE_DISPLAY_NAME: &'static str = "_anonymous";
+
+    pub(crate) fn new() -> VariableRegistry {
+        Self {
+            branch_id_allocator: 0,
+            variable_names: HashMap::new(),
+            variable_id_allocator: 0,
+            variable_categories: HashMap::new(),
+            variable_optionality: HashMap::new(),
+            variable_source_spans: HashMap::new(),
+        }
+    }
+
+    pub fn branch_ids_allocated(&self) -> u16 {
+        self.branch_id_allocator
+    }
+
+    pub(crate) fn next_branch_id(&mut self) -> BranchID {
+        let branch_id = self.branch_id_allocator;
+        self.branch_id_allocator += 1;
+        BranchID(branch_id)
+    }
+
+    fn register_variable_named(
+        &mut self,
+        name: String,
+        source_span: Option<Span>,
+    ) -> Result<Variable, Box<RepresentationError>> {
+        let variable = self.allocate_variable(false, source_span)?;
+        self.variable_names.insert(variable, name);
+        source_span.map(|span| self.variable_source_spans.entry(variable).or_insert(span));
+        Ok(variable)
+    }
+
+    fn register_anonymous_variable(&mut self, source_span: Option<Span>) -> Result<Variable, Box<RepresentationError>> {
+        let variable = self.allocate_variable(true, source_span)?;
+        source_span.map(|span| self.variable_source_spans.entry(variable).or_insert(span));
+        Ok(variable)
+    }
+
+    pub(crate) fn create_anonymous_variable_copying(
+        &mut self,
+        variable: Variable,
+    ) -> Result<Variable, Box<RepresentationError>> {
+        let new_var = self.register_anonymous_variable(None)?;
+        if let Some(category) = self.get_variable_category(variable) {
+            self.set_variable_category(new_var, category, VariableCategorySource::Variable(variable))?;
+        }
+        if let Some(optionality) = self.variable_optionality.get(&variable) {
+            self.set_variable_is_optional(new_var, *optionality == VariableOptionality::Optional);
+        }
+        Ok(new_var)
+    }
+
+    fn allocate_variable(
+        &mut self,
+        anonymous: bool,
+        source_span: Option<Span>,
+    ) -> Result<Variable, Box<RepresentationError>> {
+        let variable = if anonymous {
+            Variable::new_anonymous(self.variable_id_allocator)
+        } else {
+            Variable::new(self.variable_id_allocator)
+        };
+
+        if let Some(variable_id_allocator) = self.variable_id_allocator.checked_add(1) {
+            self.variable_id_allocator = variable_id_allocator;
+            Ok(variable)
+        } else {
+            Err(Box::new(RepresentationError::VariablesOverflow {
+                variable_count: self.variable_id_allocator,
+                source_span,
+            }))
+        }
+    }
+
+    pub fn set_assigned_value_variable_category(
+        &mut self,
+        variable: Variable,
+        category: VariableCategory,
+        source: Constraint<Variable>,
+    ) -> Result<(), Box<RepresentationError>> {
+        self.set_variable_category(variable, category, VariableCategorySource::Constraint(source))
+    }
+
+    pub fn set_deleted_variable_category(&mut self, variable: Variable) -> Result<(), Box<RepresentationError>> {
+        self.set_variable_category(variable, VariableCategory::Thing, VariableCategorySource::Delete)
+    }
+
+    fn set_variable_category(
+        &mut self,
+        variable: Variable,
+        category: VariableCategory,
+        source: VariableCategorySource,
+    ) -> Result<(), Box<RepresentationError>> {
+        let existing_category = self.variable_categories.get_mut(&variable);
+        match existing_category {
+            None => {
+                self.variable_categories.insert(variable, (category, source));
+                Ok(())
+            }
+            Some((existing_category, existing_source)) => {
+                let narrowest = existing_category.narrowest(category);
+                match narrowest {
+                    None => {
+                        if (category == VariableCategory::Attribute && *existing_category == VariableCategory::Value)
+                            || (category == VariableCategory::Value
+                                && *existing_category == VariableCategory::Attribute)
+                        {
+                            Err(Box::new(RepresentationError::VariableCategoryValueAttributeMismatch {
+                                variable_name: self
+                                    .variable_names
+                                    .get(&variable)
+                                    .cloned()
+                                    .unwrap_or_else(|| variable.to_string()),
+                            }))
+                        } else {
+                            Err(Box::new(RepresentationError::VariableCategoryMismatch {
+                                variable_name: self
+                                    .variable_names
+                                    .get(&variable)
+                                    .cloned()
+                                    .unwrap_or_else(|| variable.to_string()),
+                                category_1: category,
+                                category_2: *existing_category,
+                            }))
+                        }
+                    }
+                    Some(narrowed) => {
+                        if narrowed == *existing_category {
+                            Ok(())
+                        } else {
+                            *existing_category = narrowed;
+                            *existing_source = source;
+                            Ok(())
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn variable_categories(&self) -> impl Iterator<Item = (Variable, VariableCategory)> + '_ {
+        self.variable_categories.iter().map(|(&variable, &(category, _))| (variable, category))
+    }
+
+    pub fn variable_names(&self) -> &HashMap<Variable, String> {
+        &self.variable_names
+    }
+
+    pub fn get_variable_name(&self, variable: Variable) -> Option<&String> {
+        self.variable_names.get(&variable)
+    }
+
+    pub fn get_variable_name_or_unnamed(&self, variable: Variable) -> &str {
+        self.variable_names.get(&variable).map(|s| s.as_str()).unwrap_or(Self::UNNAMED_VARIABLE_DISPLAY_NAME)
+    }
+
+    pub fn get_variable_category(&self, variable: Variable) -> Option<VariableCategory> {
+        self.variable_categories.get(&variable).map(|(category, _constraint)| *category)
+    }
+
+    pub fn is_variable_optional(&self, variable: Variable) -> bool {
+        match self.variable_optionality.get(&variable).unwrap_or(&VariableOptionality::Required) {
+            VariableOptionality::Required => false,
+            VariableOptionality::Optional => true,
+        }
+    }
+
+    fn set_variable_is_optional(&mut self, variable: Variable, optional: bool) {
+        match optional {
+            true => self.variable_optionality.insert(variable, VariableOptionality::Optional),
+            false => self.variable_optionality.remove(&variable),
+        };
+    }
+
+    pub fn has_variable_as_named(&self, variable: &Variable) -> bool {
+        self.variable_names.contains_key(variable)
+    }
+
+    pub fn source_span(&self, variable: Variable) -> Option<Span> {
+        self.variable_source_spans.get(&variable).cloned()
+    }
+
+    pub(crate) fn register_input_variable(
+        &mut self,
+        name: &str,
+        category: VariableCategory,
+        optionality: VariableOptionality,
+        source_span: Option<Span>,
+    ) -> Result<Variable, Box<RepresentationError>> {
+        let variable = self.register_variable_named(name.to_owned(), source_span)?;
+        self.set_variable_category(variable, category, VariableCategorySource::ArgumentOrGiven)
+            .expect("Expected a newly created variable");
+        self.set_variable_is_optional(variable, optionality == VariableOptionality::Optional);
+        Ok(variable)
+    }
+
+    pub(crate) fn register_reduce_output_variable(
+        &mut self,
+        name: String,
+        category: VariableCategory,
+        is_optional: bool,
+        source_span: Option<Span>,
+        reducer: Reducer,
+    ) -> Result<Variable, Box<RepresentationError>> {
+        let variable = self.register_variable_named(name, source_span)?;
+        self.set_variable_category(variable, category, VariableCategorySource::Reduce(reducer))
+            .expect("Expected a newly created variable");
+        self.set_variable_is_optional(variable, is_optional);
+        Ok(variable)
+    }
+}
+
+impl fmt::Display for VariableRegistry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Named variables:")?;
+        for var in self.variable_names.keys().sorted_unstable() {
+            writeln!(f, "  {}: ${}", var, self.variable_names[var])?;
+        }
+        writeln!(f, "Variable categories:")?;
+        for var in self.variable_categories.keys().sorted_unstable() {
+            writeln!(f, "  {}: {}", var, self.variable_categories[var].0)?;
+        }
+        writeln!(f, "Optional variables:")?;
+        for var in self.variable_optionality.keys().sorted_unstable() {
+            writeln!(f, "  {}", var)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum VariableCategorySource {
+    Constraint(Constraint<Variable>),
+    Reduce(Reducer),
+    ArgumentOrGiven,
+    Delete,
+    Variable(Variable),
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ParameterRegistry {
+    value_registry: HashMap<ParameterID, Value<'static>>,
+    iid_registry: HashMap<ParameterID, ByteArray<THING_VERTEX_MAX_LENGTH>>,
+    fetch_key_registry: HashMap<ParameterID, String>,
+}
+
+impl ParameterRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn register_value(&mut self, value: Value<'static>, source_span: Span) -> ParameterID {
+        let id = ParameterID::Value(self.value_registry.len(), ValueType::Builtin(value.value_type()), source_span);
+        let _prev = self.value_registry.insert(id.clone(), value);
+        debug_assert_eq!(_prev, None);
+        id
+    }
+
+    pub(crate) fn register_iid(&mut self, iid: ByteArray<THING_VERTEX_MAX_LENGTH>, source_span: Span) -> ParameterID {
+        let id = ParameterID::Iid(self.iid_registry.len(), source_span);
+        let _prev = self.iid_registry.insert(id.clone(), iid);
+        debug_assert_eq!(_prev, None);
+        id
+    }
+
+    pub(crate) fn register_fetch_key(&mut self, key: String, source_span: Span) -> ParameterID {
+        let id = ParameterID::FetchKey(self.fetch_key_registry.len(), source_span);
+        let _prev = self.fetch_key_registry.insert(id.clone(), key);
+        debug_assert_eq!(_prev, None);
+        id
+    }
+
+    pub fn value(&self, id: &ParameterID) -> Option<&Value<'static>> {
+        self.value_registry.get(id)
+    }
+
+    pub fn value_unchecked(&self, id: &ParameterID) -> &Value<'static> {
+        self.value_registry.get(id).unwrap()
+    }
+
+    pub fn iid(&self, id: &ParameterID) -> Option<&ByteArray<THING_VERTEX_MAX_LENGTH>> {
+        self.iid_registry.get(id)
+    }
+
+    pub fn fetch_key(&self, id: &ParameterID) -> Option<&String> {
+        self.fetch_key_registry.get(id)
+    }
+}

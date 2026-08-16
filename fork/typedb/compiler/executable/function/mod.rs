@@ -1,0 +1,82 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+use std::{collections::HashMap, fmt, sync::Arc};
+
+use encoding::graph::definition::definition_key::DefinitionKey;
+use ir::pipeline::{ParameterRegistry, function_signature::FunctionID};
+
+use crate::executable::{function::executable::ExecutableFunction, match_::planner::vertex::Cost};
+
+pub mod executable;
+mod recursion_analyser;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StronglyConnectedComponentID(FunctionID);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FunctionTablingType {
+    Tabled(StronglyConnectedComponentID),
+    Untabled,
+}
+
+pub trait FunctionCallCostProvider {
+    fn get_call_cost(&self, function_id: &FunctionID) -> Cost;
+}
+
+#[derive(Clone)]
+pub struct ExecutableFunctionRegistry {
+    // Keep this abstraction in case we introduce function plan caching.
+    schema_functions: Arc<HashMap<DefinitionKey, ExecutableFunction>>,
+    preamble_functions: HashMap<usize, ExecutableFunction>,
+}
+
+impl fmt::Debug for ExecutableFunctionRegistry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ExecutableFunctionRegistry { omitted }")
+    }
+}
+
+impl ExecutableFunctionRegistry {
+    pub(crate) fn new(
+        schema_functions: Arc<HashMap<DefinitionKey, ExecutableFunction>>,
+        preamble_functions: HashMap<usize, ExecutableFunction>,
+    ) -> Self {
+        Self { schema_functions, preamble_functions }
+    }
+
+    pub fn empty() -> Self {
+        Self::new(Arc::new(HashMap::new()), HashMap::new())
+    }
+
+    pub fn get(&self, function_id: &FunctionID) -> Option<&ExecutableFunction> {
+        match function_id {
+            FunctionID::Builtin(_) => None,
+            FunctionID::Schema(id) => self.schema_functions.get(id),
+            FunctionID::Preamble(id) => self.preamble_functions.get(id),
+        }
+    }
+
+    pub fn replace_preamble_parameters(
+        &mut self,
+        preamble_parameters: impl Iterator<Item = (usize, Arc<ParameterRegistry>)>,
+    ) {
+        preamble_parameters.for_each(|(index, params)| {
+            if let Some(func) = self.preamble_functions.get_mut(&index) {
+                func.parameter_registry = params;
+            }
+        })
+    }
+}
+
+impl FunctionCallCostProvider for ExecutableFunctionRegistry {
+    fn get_call_cost(&self, function_id: &FunctionID) -> Cost {
+        match function_id {
+            FunctionID::Builtin(_) => Cost::in_mem_simple_with_ratio(1.0),
+            FunctionID::Schema(_) | FunctionID::Preamble(_) => self.get(function_id).unwrap().single_call_cost,
+        }
+    }
+}

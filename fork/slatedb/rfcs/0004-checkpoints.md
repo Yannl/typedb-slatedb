@@ -1,0 +1,830 @@
+# SlateDB Checkpoints and Clones
+
+Table of Contents:
+
+<!-- TOC start (generated with https://github.com/derlin/bitdowntoc) -->
+
+- [Current Implementation](#current-implementation)
+- [Problem](#problem)
+- [Goals](#goals)
+   * [Out Of Scope](#out-of-scope)
+- [Proposal](#proposal)
+   * [Manifest Schema](#manifest-schema)
+   * [Public API](#public-api)
+   * [Creating a Checkpoint](#creating-a-checkpoint)
+   * [Writers](#writers)
+      + [Establishing Initial Checkpoint](#establishing-initial-checkpoint)
+      + [Refreshing the Checkpoint](#refreshing-the-checkpoint)
+      + [Clones](#clones)
+         - [SST Path Resolution](#sst-path-resolution)
+         - [Deleting a Database](#deleting-a-database)
+   * [Readers](#readers)
+      + [Establishing the Checkpoint](#establishing-the-checkpoint)
+         - [Checkpoint Maintenance](#checkpoint-maintenance)
+      + [Garbage Collector](#garbage-collector)
+   * [Manifest Projection and Union](#manifest-projection-and-union)
+      + [Projection](#projection)
+      + [Union](#union)
+
+<!-- TOC end -->
+
+Status: Accepted
+
+Authors:
+
+* [Rohan Desai](https://github.com/rodesai)
+* [Roman Khachatryan](https://github.com/rkhachatryan)
+
+## Current Implementation
+
+SlateDB runs a Writer, a Compactor - optionally in a separate process, and a Garbage Collector (GC) - also optionally in
+a separate process. The writer writes data to L0 SSTs. The Compactor then goes and compacts these L0 SSTs into Sorted
+Runs (SR) under the “compacted” directory, and then further compacts those SRs as they accumulate. Updates to the
+current set of L0s and Sorted Runs are synchronized between the Writer and Compactor through updates to the centralized
+manifest. When reading, the Writer gets a reference to a copy of the metadata for the current set of sorted runs and
+searches them for the requested data. Meanwhile, the GC scans the SSTs in Object Storage and deletes any SSTs that are
+not referenced by the current manifest and are older than some threshold.
+
+## Problem
+
+The current implementation poses a few problems and limitations:
+1. There is nothing preventing the GC from deleting SSTs out from the Writer while it’s attempting to read their data.
+   This isn’t a big deal today as we only support key lookups, which are fast. But this could become a more acute
+   problem when we support range scans which can be long.
+1. Currently only the Writer process can interact with the database. We’d like to support additional read-only clients,
+   called Readers that can read data.
+1. Some use cases can benefit from forking the database and establishing a new db that relies on the original DB’s SSTs
+   but writes new data to a different set of SSTs from the original writer.
+
+## Goals
+
+In this RFC, we propose adding checkpoints and clones to address this limitation.
+- Clients will be able to establish cheap db checkpoints that reference the current version of SlateDB’s manifest.
+- Writers will use checkpoints to “pin” a version of the database for reads to avoid the GC from deleting the SSTs.
+- Readers will use checkpoints similarly, and many Reader processes can coexist alongside a Writer.
+- Finally, we will support creating so-called “clones” from a checkpoint to allow spawning new Writers that write to
+  a “fork” of the original database.
+
+### Out Of Scope
+
+This RFC does not propose:
+- Any mechanism to provide isolation guarantees from other concurrent reads/writes to the database.
+
+## Proposal
+
+At a high level, this proposal covers a mechanism for establishing database checkpoints, and reviews how the various
+processes will interact with this mechanism. Logically, a checkpoint refers to a consistent and durable view of the
+database at some point in time. It is consistent in the sense that data read from a checkpoint reflects all writes up
+to some point in time, and durable in the sense that this property holds across process restarts. Physically, a
+checkpoint refers to a version of SlateDB’s manifest.
+
+### Manifest Schema
+
+Checkpoints themselves are also stored in the manifest. We’ll store them using the following schema:
+
+```
+// Reference to an external database.
+table ExternalDb {
+    // Path to root of the external database
+    path: string (required);
+
+    // Checkpoint ID on the external database used to create the initial state of this clone.
+    // For an entry added for the immediate parent, this is the user-supplied (or ephemeral)
+    // checkpoint passed to the clone operation. For entries carried over from the parent's
+    // own `external_dbs` (i.e. nested clones), this is set to the parent's
+    // `final_checkpoint_id` for that grandparent — a slatedb-generated, slatedb-owned id —
+    // rather than the original user-supplied checkpoint. This breaks the chain back to a
+    // user-supplied checkpoint that the user could delete at any time, which would otherwise
+    // invalidate every future clone in the chain.
+    source_checkpoint_id: Uuid (required);
+
+    // Checkpoint ID this database has placed on the external database that prevents referenced
+    // data files from being GC'd. Both final_checkpoint_id and source_checkpoint_id should resolve
+    // to the same manifest_id as long as they both still exist.
+    final_checkpoint_id: Uuid (required);
+
+    // Compacted SST IDs belonging to external DB that are currently being referenced.
+    sst_ids: [Ulid] (required);
+}
+
+// A view referencing a CompactedSsTable by its id. This indirection allows the same
+// physical SST to appear multiple times in the manifest with different visible ranges
+// (e.g. after projection and union), without duplicating SST metadata.
+table CompactedSsTableView {
+    // Reference to a CompactedSsTable by its id (stored at the top level of ManifestV2).
+    id: Ulid (required);
+    visible_range: BytesRange;
+}
+
+table SortedRunV2 {
+    id: uint32;
+    ssts: [CompactedSsTableView] (required);
+}
+
+table ManifestV2 {
+   // List of external databases referenced by this manifest.
+   external_dbs: [ExternalDb];
+
+   // Flag to indicate whether initialization has finished. When creating the initial manifest for
+   // a root db (one that is not a clone), this flag will be set to true. When creating the initial
+   // manifest for a clone db, this flag will be set to false and then updated to true once clone
+   // initialization has completed.
+   initialized: boolean;
+
+   // Optional epoch time in seconds that this database was destroyed
+   destroyed_at_s: u64;
+
+   ...
+
+   // All compacted SSTs referenced by l0 and compacted (sorted runs) views.
+   // This is the single source of truth for SST metadata (id, info, format_version).
+   ssts: [CompactedSsTable] (required);
+
+   // L0 and sorted run entries reference SSTs via CompactedSsTableView, which holds
+   // only the SST id and a visible_range. This allows the same SST to be referenced
+   // multiple times with different visible ranges.
+   l0: [CompactedSsTableView] (required);
+   compacted: [SortedRunV2] (required);
+
+   // A list of current checkpoints that may be active (note: this replaces the existing
+   // snapshots field)
+   checkpoint: [Checkpoints] (required);
+}
+
+
+table WriterCheckpoint {
+   epoch: u64;
+}
+
+union CheckpointMetadata { WriterCheckpoint }
+
+table Uuid {
+   high: uint64;
+   low: uint64;
+}
+
+
+// Checkpoint reference to be included in manifest to record active checkpoints.
+table Checkpoint {
+   // Id that must be unique across all open checkpoints.
+   id: Uuid (required);
+
+   // The manifest ID that this checkpoint is using as its `CoreDbState`.
+   manifest_id: ulong;
+
+   // The UTC unix timestamp seconds that a checkpoint expires at. Clients may update this value.
+   // If `checkpoint_expire_time_s` is older than now(), the checkpoint is considered expired.
+   // If `checkpoint_expire_time_s` is 0, the checkpoint will never expire.
+   checkpoint_expire_time_s: uint;
+
+   // The unix timestamp seconds that a checkpoint was created.
+   checkpoint_create_time_s: uint;
+
+   // Optional metadata associated with the checkpoint. For example, the writer can use this to
+   // clean up checkpoints from older writers.
+   metadata: CheckpointMetadata;
+
+   // Optional name associated with the checkpoint. The name can be used to list the checkpoints.
+   // Note that name may not be unique and the list operation can return multiple checkpoints with
+   // the same name.
+   name: string;
+}
+```
+
+### Manifest V1 to V2 Migration
+
+The introduction of ManifestV2 requires a phased rollout to ensure forward compatibility across
+mixed-version deployments:
+
+1. **Phase 1 (current):** Write V1, read V1+V2. All nodes can read the new V2 format, but manifests
+   are still written in V1 format. This allows older nodes that only understand V1 to continue
+   operating during a rolling upgrade. To support this, a `last_compacted_l0_sst_id` field is
+   maintained alongside `last_compacted_l0_sst_view_id`, since V1 encodes `l0_last_compacted` as an
+   SST ID rather than a view ID.
+
+2. **Phase 2:** Write V2, read V1+V2. Once all nodes are upgraded and can read V2, the writer
+   switches to emitting V2 manifests. V1 reading is retained for backward compatibility with
+   existing manifests on disk.
+
+3. **Phase 3:** Deprecate V1. Once no V1 manifests remain on disk (i.e., all have been superseded),
+   V1 reading support can be removed.
+
+### Public API
+
+We’ll make the following changes to the public API to support creating and using checkpoints:
+
+```rust
+/// Defines the scope targeted by a given checkpoint. If set to All, then the checkpoint will include
+/// all writes that were issued at the time that create_checkpoint is called. SlateDB will flush WALs
+/// (if enabled) and do a best-effort flush of memtables to L0 SSTs in order to optimize for
+/// readers. The memtable flush will not await if blocked by backpressure. If set to Durable, then
+/// the checkpoint includes only writes that were durable at the time of the call. This will be
+/// faster, but may not include data from recent writes.
+enum CheckpointScope {
+    All,
+    Durable
+}
+
+/// Specify options to provide when creating a checkpoint.
+struct CheckpointOptions {
+    /// Optionally specifies the lifetime of the checkpoint to create. The expire time will be set to
+    /// the current wallclock time plus the specified lifetime. If lifetime is None, then the checkpoint
+    /// is created without an expiry time.
+    lifetime: Option<Duration>,
+
+    /// Optionally specifies an existing checkpoint to use as the source for this checkpoint. This is
+    /// useful for users to establish checkpoints from existing checkpoints, but with a different lifecycle
+    /// and/or metadata.
+    source: Option<Uuid>
+
+    /// Optionally specifies a name for the checkpoint. Can be used to list the checkpoints.
+    pub name: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct CheckpointCreateResult {
+    /// The id of the created checkpoint.
+    id: uuid::Uuid,
+    /// The manifest id referenced by the created checkpoint.
+    manifest_id: u64,
+}
+
+impl Db {
+    /// Creates a checkpoint of an opened db using the provided options. Returns the ID of the created
+    /// checkpoint and the id of the referenced manifest.
+    pub async fn create_checkpoint(
+        &self,
+        scope: CheckpointScope,
+        options: &CheckpointOptions,
+    ) -> Result<CheckpointCreateResult, SlateDBError> {
+        …
+    }
+
+    /// Refresh the lifetime of an existing checkpoint. Takes the id of an existing checkpoint
+    /// and a lifetime, and sets the lifetime of the checkpoint to the specified lifetime. If
+    /// there is no checkpoint with the specified id, then this fn fails with
+    /// SlateDBError::InvalidDbState
+    pub async fn refresh_checkpoint(
+        path: &Path,
+        object_store: Arc<dyn ObjectStore>,
+        id: Uuid,
+        lifetime: Option<Duration>,
+    ) -> Result<(), SlateDBError> {}
+
+    /// Deletes the checkpoint with the specified id.
+    pub async fn delete_checkpoint(
+        path: &Path,
+        object_store: Arc<dyn ObjectStore>,
+        id: Uuid,
+    ) -> Result<(), SlateDBError> {}
+
+    /// Called to destroy the database at the given path. If `soft` is true, This method will
+    /// set the destroyed_at_s field in the manifest. The GC will clean up the db after some
+    /// time has passed, and all checkpoints have either been deleted or expired. As part of
+    /// cleaning up the db, the GC will also remove the database’s checkpoint from the parent
+    /// database. If `soft` is false, then all cleanup will be performed by the call to this
+    /// method. If `soft` is false, the destroy will return SlateDbError::InvalidDeletion if
+    /// there are any remaining non-expired checkpoints.
+    pub async fn destroy(path: Path, object_store: Arc<dyn ObjectStore>, soft: bool) -> Result<(), SlateDbError> {
+        …
+    }
+}
+
+mod admin {
+    /// Creates a checkpoint of the db stored in the object store at the specified path using the provided options.
+    /// Note that the scope option does not impact the behaviour of this method. The checkpoint will reference
+    /// the current active manifest of the db.
+    pub async fn create_checkpoint<P: Into<Path>>(
+        path: P,
+        object_store: Arc<dyn ObjectStore>,
+        options: &CheckpointOptions,
+    ) -> Result<CheckpointCreateResult, SlateDBError> {}
+
+    /// Clone a Db from a checkpoint. If no db already exists at the specified path, then this will create
+    /// a new db under the path that is a clone of the db at parent_path. A clone is a shallow copy of the
+    /// parent database - it starts with a manifest that references the same SSTs, but doesn't actually copy
+    /// those SSTs, except for the WAL. New writes will be written to the newly created db and will not be
+    /// reflected in the parent database. The clone can optionally be created from an existing checkpoint. If
+    /// parent_checkpoint is None, then the manifest referenced by parent_checkpoint is used as the base for
+    /// the clone db's manifest. Otherwise, this method creates a new checkpoint for the current version of
+    /// the parent db.
+    pub async fn create_clone<P: Into<Path>>(
+        clone_path: P,
+        parent_path: P,
+        object_store: Arc<dyn ObjectStore>,
+        parent_checkpoint: Option<Uuid>,
+    ) -> Result<(), Box<dyn Error>> {
+        …
+    }
+}
+
+/// Configuration options for the database reader. These options are set on client startup.
+#[derive(Clone)]
+pub struct DbReaderOptions {
+    /// How frequently to poll for new manifest files. Refreshing the manifest file allows readers
+    /// to detect newly compacted data.
+    pub manifest_poll_interval: Duration,
+
+    /// For readers that refresh their checkpoint, this specifies the lifetime to use for the
+    /// created checkpoint. The checkpoint’s expire time will be set to the current time plus
+    /// this value. If not specified, then the checkpoint will be created with no expiry, and
+    /// must be manually removed. This lifetime must always be greater than
+    /// manifest_poll_interval x 2
+    pub checkpoint_lifetime: Option<Duration>,
+
+    /// The max size of a single in-memory table used to buffer WAL entries
+    /// Defaults to 64MB
+    pub max_memtable_bytes: u64
+}
+
+
+pub struct DbReader {
+    …
+}
+
+impl DbReader {
+    /// Creates a database reader that can read the contents of a database (but cannot write any
+    /// data). The caller can provide an optional checkpoint. If the checkpoint is provided, the
+    /// reader will read using the specified checkpoint and will not periodically refresh the
+    /// checkpoint. Otherwise, the reader creates a new checkpoint pointing to the current manifest
+    /// and refreshes it periodically as specified in the options. It also removes the previous
+    /// checkpoint once any ongoing reads have completed.
+    pub async fn open(
+        path: Path,
+        object_store: Arc<dyn ObjectStore>,
+        checkpoint: Option<UUID>,
+        options: DbReaderOptions
+    ) -> Result<Self, SlateDBError> { ... }
+
+    /// Read a key an return the read value, if any.
+    pub async fn get(&self, key: &[u8]) -> Result<Option<Bytes>, SlateDBError> { ... }
+}
+
+pub struct GarbageCollectorOptions {
+    /// Defines a grace period for deletion of a db. A db for which deletion is handled by the GC
+    /// will not be deleted from object storage until this duration has passed after it's deletion
+    /// timestamp.
+    pub db_delete_grace: Duration,
+}
+```
+
+Finally, we’ll also allow users to create/refresh/delete/list checkpoints using the admin CLI:
+
+```bash
+$ slatedb create-checkpoint --help
+Create a new checkpoint pointing to the database's current state
+
+Usage: slatedb --path <PATH> create-checkpoint [OPTIONS]
+
+Options:
+  -l, --lifetime <LIFETIME>  Optionally specify a lifetime for the created checkpoint. You can
+    specify the lifetime in a human-friendly format that uses years/days/min/s, e.g. "7days 30min 10s".
+    The checkpoint's expiry time will be set to the current wallclock time plus the specified
+    lifetime. If the lifetime is not specified, then the checkpoint is set with no expiry and
+    must be explicitly removed
+
+  -s, --source <UUID>       Optionally specify an existing checkpoint to use as the base for the newly
+    created checkpoint. If not provided then the checkpoint will be taken against the latest manifest.
+
+  -n, --name <NAME>         Optionally specify a name for the checkpoint. The name can be used to list
+    the checkpoints. Note that name may not be unique and the list operation can return multiple
+    checkpoints with the same name
+
+$ slatedb refresh-checkpoint --help
+Refresh an existing checkpoint's expiry time. This command will look for an existing checkpoint
+and update its expiry time using the specified lifetime
+
+Usage: slatedb --path <PATH> refresh-checkpoint [OPTIONS] --id <ID>
+
+Options:
+  -i, --id <ID>              The UUID of the checkpoint (e.g. 01740ee5-6459-44af-9a45-85deb6e468e3)
+  -l, --lifetime <LIFETIME>  Optionally specify a new lifetime for the checkpoint. You can specify
+    the lifetime in a human-friendly format that uses years/days/min/s, e.g. "7days 30min 10s". The
+    checkpoint's expiry time will be set to the current wallclock time plus the specified lifetime.
+    If the lifetime is not specified, then the checkpoint is updated with no expiry and must be
+    explicitly removed
+
+$ slatedb delete-checkpoint --help
+Delete an existing checkpoint
+
+Usage: slatedb --path <PATH> delete-checkpoint --id <ID>
+
+Options:
+  -i, --id <ID>  The UUID of the checkpoint (e.g. 01740ee5-6459-44af-9a45-85deb6e468e3)
+
+$ slatedb list-checkpoints --help
+List the current checkpoints of the db
+
+Usage: slatedb --path <PATH> list-checkpoints [OPTIONS]
+
+Options:
+  -n, --name <NAME>  Optionally specify the name to filter the checkpoints. Note that name may not
+    be unique and the list operation can return multiple checkpoints with the same name. If not
+    specified, all checkpoints will be returned.
+
+```
+
+### Creating a Checkpoint
+
+Checkpoints can be created using the `create_checkpoint` API, the `create-checkpoint` CLI command, or by the
+writer/reader clients as part of their normal operations (see below sections).
+
+Checkpoints can be taken from the current manifest, or from an existing checkpoint. Checkpoints cannot be created from
+arbitrary manifest versions.
+
+Generally to take a checkpoint from the current manifest, the client runs a procedure that looks like the following:
+1. Get the current manifest M at version V.
+2. If M.`initialized` is false, or M.`destroyed_at_s` is set, exit with error.
+3. Compute a new v4 UUID id for the checkpoint.
+4. Create a new entry in `checkpoints` with:
+    - `id` set to the id computed in the previous step
+    - `manifest_id` set to V or V+1. We use V+1 to allow addition of the checkpoint to be included with other updates.
+    - other fields set as appropriate (e.g. expiry time based on relevant checkpoint creation params)
+5. Write a new manifest M' at version V+1. If CAS fails, go to step 1.
+
+To take a checkpoint from an existing checkpoint with id S, the client runs the following procedure:
+1. Get the current manifest M at version V.
+2. If `destroyed_at_s` is set, exit with error.
+3. Look for the checkpoint C with id S under `checkpoints`. If there is no such checkpoint, exit with error.
+4. Check that C is not expired. If it is, then exit with error.
+5. Compute a new v4 UUID id for the checkpoint.
+6. Create a new entry in `checkpoints` with:
+    - `id` set to the id computed in the previous step
+    - `manifest_id` set to C.`manifest_id`
+    - other fields set as appropriate (e.g. expiry time based on relevant checkpoint creation params)
+7. Write a new manifest M' at version V+1. If CAS fails, go to step 1.
+
+The `create-checkpoint` CLI and `create_checkpoint` API will run exactly these procedures when called without
+and with a source checkpoint ID, respectively.
+
+Otherwise, the exact procedures used by the writer/reader clients vary slightly depending on the context. For example,
+the writer may include other updates along with the update that adds the checkpoint. These variants are detailed in the
+sections below.
+
+### Writers
+
+Writers will create checkpoints to “pin” the set of SRs currently being used to serve reads. As the writer consumes
+manifest updates, it will re-establish its checkpoint to point to the latest manifest version. Eventually, when we
+support range scans, the writer will retain older checkpoints to ensure that long-lived scans can function without
+interference from the GC.
+
+#### Establishing Initial Checkpoint
+
+The writer first establishes it’s checkpoint against the current manifest when starting up, as part of incrementing the
+epoch:
+1. Read the latest manifest version V.
+2. Compute the writer’s epoch E
+3. Look through the checkpoints under `checkpoint` for any entries with `metadata` of type `WriterCheckpoint`, and
+   remove any such entries.
+4. Create a new checkpoint with:
+   - `id` set to a new v4 uuid
+   - `manifest_id` set to the next manifest version (V + 1)
+   - `checkpoint_expire_time_s` set to None
+   - `metadata` set to `WriterCheckpoint{ epoch: E }`.
+5. Set `writer_epoch` to E
+6. Write the manifest. If this fails with a CAS error, go back to 1.
+
+#### Refreshing the Checkpoint
+
+The writer will periodically re-establish its checkpoint to pin the latest SSTs and SRs. It will run the following
+whenever it detects that the manifest has been updated. This happens either when the manifest is polled
+(at `manifest_poll_interval`), or when the writer detects an update when it goes to update the manifest with it’s local
+view of the core db state:
+1. Read the latest manifest version V. (If the writer is applying an update from the local state then in the first
+   iteration it can assume that it’s local version is the latest. If it’s wrong, the CAS will fail and it should reload
+   the manifest from Object Storage))
+2. Decide whether it needs to re-establish it’s checkpoint. The writer reestablishes the checkpoint whenever the set of
+   L0 SSTs, or Sorted Runs has changed. This includes both changes made locally by the Writer, or by the Compactor.
+    1. If so, create a new checkpoint with
+       - `id` set to a new v4 UUID.
+       - `manifest_id` set to V+1.
+       - `checkpoint_expire_time` set to None.
+       - `metadata` set to `WriterCheckpoint{ epoch: E }`.
+    2. Delete the old checkpoint from `checkpoints`. When we support range scans, we’ll instead want to maintain
+       references to the checkpoint from the range scans and delete the checkpoint when all references are dropped.
+       (We should technically do this for point lookups too, but the likelihood of GC deleting an SST in this case is
+       very low).
+    3. Apply any local changes
+    4. Write the new manifest. If this fails with a CAS error, go back to 1.
+
+#### Clones
+
+The writer will also support initializing a new database from an existing checkpoint. This allows users to “fork” an
+instance of slatedb, allowing it to access all the original db’s data from the checkpoint, but isolate writes to a new
+db instance.
+
+To support this, we add the `Db::open_from_checkpoint` method, which accepts a `parent_path` and `Option<parent_checkpoint>`. When initializing the cloned database, the writer will do the following:
+1. Read the current cloned manifest `Option<M_c>`.
+2. Read the current parent manifest `M_p` at `parent_path`.
+  - If `M_p.initialized` is false, exit with error.
+4. If `Option<M_c>` is present
+  - Validate `parent_path` and `Option<parent_checkpoint>` are contained in `M_c.external_dbs`.
+    - If not, exit with error.
+    - If `Option<parent_checkpoint_id>` is not set, accept any checkpoint.
+  - If `M_c.initialized` is
+    - **True**
+      - Validate all external databases have a final checkpoint. If not, exit with error.
+      - Go to step 11
+    - **False**: Go to step 10
+5. Compute the clone’s `source_checkpoint_id`:
+  - If `Option<parent_checkpoint>` is present use it.
+  - Otherwise, create a new ephemeral checkpoint of parent's latest manifest and use that. Ephemeral checkpoint will have TTL of 5 minutes, giving us an upper bound for retrying the clone operation.
+7. Create a new clone manifest `M_c'`.
+  - Assign `final_checkpoint_id` to a new random v4 UUID.
+  - Resolve parent manifest `M_p'` at `source_checkpoint_id` and use it as the basis for the clone.
+  - Set `M_c.initialized` to **False**.
+8. Write a new clone manifest `M_c'`. If CAS fails, go to step 1. `M_c'` fields are set to:
+  - external_dbs:
+    - initial list copied from `M_p'` (this list is non-empty for nested clones)
+      - for each `entry` in the list:
+        - set `entry.source_checkpoint_id` to `entry.final_checkpoint_id` (the parent's pinned
+          final checkpoint on that grandparent). This breaks the chain back to the original
+          user-supplied checkpoint on the grandparent: that checkpoint can be deleted by the
+          user at any time, and if a later clone tried to re-pin it the operation would fail.
+          The parent's `final_checkpoint_id` is slatedb-generated and pinned by the parent, so
+          it is safe to depend on for future clones.
+        - assign a fresh `entry.final_checkpoint_id` (a new random v4 UUID) for this clone to
+          own.
+    - add an `entry` for `parent_path` with:
+      - `entry.path` set to `parent_path`
+      - `entry.source_checkpoint_id` set to `source_checkpoint_id`
+      - `entry.final_checkpoint_id` set to `final_checkpoint_id`
+  - writer_epoch: set to the epoch from `M_p' + 1`.
+  - compactor_epoch: copied from `M_p'`.
+  - wal_id_last_compacted: copied from `M_p'`
+  - wal_id_last_seen: copied from `M_p'`
+  - l0: copied from `M_p'`
+  - l0_last_compacted: copied from `M_p'`
+  - compacted: copied from `M_p'`
+  - checkpoints: empty
+9. Assign `M_c = M_c'`
+10. For each external database `ED` in `M_c`
+  - Ensure final checkpoint with `ED.final_checkpoint_id` exists. If not, create it with following options:
+    - `CheckpointOptions{ lifetime: None, source: Some(ED.source_checkpoint_id) }`
+    - If checkpoint creation fails, because the source checkpoint does not exist, exit with error. This can happen when ephemeral checkpoint expires.
+11. Copy over all WAL SSTs between `M_c.last_compacted_wal_id` and `M_c.wal_id_last_seen` from `parent_path`.
+12. Update `M_c` with `initialized` set to true. If CAS fails, go to step 1.
+
+##### SST Path Resolution
+
+The DB may now need to look through multiple paths to find SST files, since it may need to open SST files written by an
+external db. To support this, we’ll materialize a map of external SSTs at startup by reading `external_dbs` from the manifest and pass it to the `PathResolver` for use.
+
+##### Deleting a Database
+
+With the addition of clones, we need to be a bit more careful about how we delete a database. Previously we could
+simply remove it's objects from the Object Store and call it a day. With clones, it's possible that a SlateDB instance
+is holding a checkpoint that another database relies upon. So it's not safe to just delete that data. We'll instead
+require that users delete a database by calling the `Db::destroy` method. `Db::destroy` can specify that the delete is
+either a soft or hard delete by using the `soft` parameter. This way we can support both more conservative deletes that
+clean up data from the GC process after some grace period, and a simple path for hard-deleting a db.
+
+A soft delete will simply mark the manifest as deleted, and rely on a separate GC process to delete the db. It requires
+that the GC be running in some other long-lived process from the main writer. The GC process will wait for both some
+grace period, and for all checkpoints to either expire or be deleted. At that point it will delete the db's SSTs and
+exit. This is covered in more detail in the GC section. A soft delete will be processed by the writer as follows:
+1. Claim write-ownership of the DB by bumping the epoch and fencing the WAL. The intent here is to fence any active
+   writer. We assume that the writer will detect that it's fenced and exit by the time the GC goes to delete the data.
+2. Delete the writer's checkpoint, if any.
+3. Update the manifest by setting the `destroyed_at_s` field to the current time.
+
+A hard delete will proceed as follows. It is up to the user to ensure that there is no active writer at the time of
+deletion:
+1. Check that there are no active checkpoints. If there are, return `InvalidDeletion`
+2. If `destroyed_at_s` is not set, then update the manifest by setting `destroyed_at_s` field to the current time. If
+   CAS fails, go to step 1.
+3. Delete all objects under `path` other than the current manifest.
+4. Delete the current manifest.
+
+### Readers
+
+Readers are created by calling `DbReader::open`. `open` takes an optional checkpoint. If a checkpoint is provided,
+`DbReader` uses the checkpoint and does not try to refresh/re-establish it. If no checkpoint is provided, `DbReader`
+establishes its own checkpoint against the latest manifest and periodically polls the manifest at the interval specified
+in `manifest_poll_interval` to see if it needs to re-establish it. If the manifest has not changed in a way that
+requires the reader to re-establish the checkpoint, then the reader will refresh the checkpoint's expiry time once half
+the lifetime has passed. The checkpoints created by `DbReader` use the lifetime specified in  the `checkpoint_lifetime`
+option.
+
+#### Establishing the Checkpoint
+
+To establish the checkpoint, `DbReader` will:
+1. Read the latest manifest M at version V.
+2. Check that M.`initialized` is true and M.`destroyed_at_s` is not set. Otherwise, return error.
+3. Create a new checkpoint with id set to a new v4 uuid, `manifest_id` set to the next manifest version (V + 1),
+   `checkpoint_expire_time_s` set to the current time plus `checkpoint_lifetime`, and `metadata` set to None.
+4. Update the manifest’s `wal_id_last_seen` to the latest WAL id found in the wal directory
+5. Write the manifest. If this fails with a CAS error, go back to 1.
+
+Then, the reader will restore data from the WAL. The reader will just replay the WAL data into an in-memory table.
+The size of the table will be bounded by `max_memtable_bytes`. When the table fills up, it’ll be added to a list and a
+new table will be initialized. The total memory used should be limited by backpressure applied by the writer. This
+could still be a lot of memory (e.g. up to 256MB in the default case). In the future we could have the reader read
+directly from the WAL SSTs, but I’m leaving that out of this proposal.
+
+##### Checkpoint Maintenance
+
+If the reader is opened without a checkpoint, it will periodically poll the manifest and potentially re-establish the
+checkpoint that it creates if the db has changed in a way that requires re-establishing the checkpoint (the set of SSTs
+has changed). It does this by re-running the initialization process described above, with the following modifications:
+- It will delete the checkpoint that it had previously created (when we support range scans, we’ll need to reference
+  count the checkpoint).
+   - It will purge any in-memory tables with content from WAL SSTs lower than the new `wal_id_last_compacted`.
+
+Additionally, if the time until `checkpoint_expire_time_s` is less than half of `checkpoint_lifetime` the Reader will
+update the `checkpoint_expire_time_s` to the current time plus `checkpoint_lifetime`.
+
+#### Compactions
+
+During compaction, if an external SST is dereferenced, we'll remove its entry from the corresponding `external_dbs[].sst_ids` set and update the manifest.
+
+#### Garbage Collector
+
+The GC task will be modified to handle soft deletes and manage checkpoints/clones. The GC tasks's algorithm will now
+look like the following:
+1. Read the current manifest. If no manifest is found, exit.
+2. If `destroyed_at_s` is set, and the current time is after `destroyed_at_s` + `db_delete_grace`, and there are no
+   active checkpoints, then:
+    1. If the db is a clone, update the parent db's manifest by deleting the checkpoint.
+    2. Delete all object's under the db's path other than the current manifest.
+    3. Delete the current manifest.
+    3. Exit.
+3. Garbage collect expired checkpoints
+    1. Find any checkpoints that have expired and remove them
+    2. Write the new manifest version with checkpoints deleted. If CAS fails, go back to 1 to reload checkpoints that
+       may be refreshed or added.
+4. Delete garbage manifests. This includes any manifest that is older than `min_age` and is not referenced by a
+   checkpoint.
+5. Read all manifests referenced by a checkpoint. Call this set M
+6. Clean up WAL SSTs.
+    1. For a given Manifest n Let referenced_wal(n) be the set of all WAL SSTs between n.`wal_id_last_compacted` and
+       n.`wal_id_last_seen`
+    2. Let W be the set of all referenced_wal(n) for all n in M AND all WAL SSTs larger than `wal_id_last_compacted`
+       of the current manifest.
+    2. Delete all WAL SSTs not in W.
+7. Clean up SSTs.
+    1. Let S be the set of all SSTs from all manifests in M.
+    2. Delete all SSTs not in M with age older than `min_age`
+8. Detach the clone if possible. If list of external databases is non-empty, then for each external database `DB`:
+    - If `DB.sst_ids` is empty at the latest version of the manifest and all existing checkpoints, then:
+      - Remove `DB.final_checkpoint_id` from the external db's manifest.
+      - Update the manifest by removing `DB` from the list of external databases.
+
+Observe that users can now configure a single GC process that can manage GC for multiple databases that use soft
+deletes. Whenever a new database is created, the user needs to spawn a new GC task for that database. When the GC
+task completes deleting a database, then the task exits. For now, it's left up to the user to spawn GC tasks for
+databases that they have created.
+
+### Manifest Projection and Union
+
+Clones create new databases that reference SSTs from a parent. In some cases, it is useful to create views over a
+subset of a manifest's key range, or to combine multiple non-overlapping manifest views into a single manifest. In
+particular, this can be useful to implement database rescaling. We introduce two operations on manifests to support 
+this: **projection** and **union**.
+
+#### Projection
+
+Projection creates a filtered view of a manifest restricted to a specific key range specified by the client. Given a 
+source manifest and a target range, projection returns a new manifest containing only the SSTs whose key ranges overlap 
+with the target range. SSTs that fall entirely outside the target range are excluded, and SSTs that partially overlap 
+are annotated with a `visible_range` that constrains which keys are accessible.
+
+Write requests that are fully or partially outside the `visible_range` will fail, as well as read requests completely 
+outside the `visible_range`.
+
+The new SSTs produced by Writer and Compactor do not have `visible_range` attached, although the actual range of keys
+in those SSTs lies inside `visible_range` (in the future, we might want to attach `visible_range` to the whole manifest).
+
+The projection process works as follows:
+
+1. Clone the source manifest.
+2. For each L0 SST view, compute the intersection of the SST's effective range with the projection range. L0 SSTs may
+   overlap with each other, so each SST is evaluated independently against the projection range.
+3. For each sorted run, compute the intersection of each SST's range with the projection range. Since SSTs within
+   a sorted run are non-overlapping and ordered, the range of each SST is bounded by the start key of the next SST
+   in the run (i.e., the range is `[current_start, next_start)`). The last SST in a run extends to the end of its
+   effective range.
+4. For each SST view that has a non-empty intersection with the projection range, create a new view with the
+   `visible_range` set to the intersection. SSTs with an empty intersection are excluded from the result.
+5. Sorted runs whose SSTs were all excluded are removed entirely. Note that removing sorted runs may leave
+   gaps in sorted run IDs (e.g., `[5, 3, 1]` if SR 4 and 2 were removed). This is acceptable because the
+   compactor does not assume contiguous IDs — it matches sorted runs by ID, not by position. Preserving
+   original IDs is important so that union can correctly match the same logical tier across projected
+   manifests.
+6. Remove excluded SST IDs from `external_dbs` entries so that the external database's checkpoint can be released
+   and the SSTs garbage collected once no other manifest references them. Entries whose `sst_ids` list becomes
+   empty are removed entirely, allowing their checkpoint on the external database to be released.
+
+The `visible_range` on an `SsTableView` constrains the keys that are visible when reading the SST. The
+`effective_range` (computed and not stored) is the intersection of the SST's physical range (derived from its first key) 
+and the `visible_range`. Scans and lookups against a projected SST only return keys within the effective range.
+
+Projection is logically equivalent to deleting all entries outside the projected range. Once an SST has been
+projected, its `visible_range` can only be narrowed further, never extended — the entries outside the original
+projection are treated as if they no longer exist.
+
+Note: currently, size estimation for the projected SSTs is not accurate, which might lead to suboptimal compactor
+decisions. This will be improved in the future iterations.
+
+Note: currently, it is the client responsibility to maintain the ranges associated with SlateDB instances and supply
+them to Projection and Union.
+
+#### Union
+
+Union combines multiple non-overlapping manifests into a single manifest. This is the inverse of projection: given
+a set of manifests that each cover a distinct portion of the key space, union produces a manifest that covers the
+combined key space. The source databases don't have to share the root database (e.g. they can be independent shards).
+
+Union does not support merging WAL state at the moment. Input manifests must have their WAL fully compacted before
+performing a union.
+This can be achieved for example by calling `db.flush_with_options(... FlushOptions { flush_type: FlushType::MemTable });` 
+to force a flush to L0 (all writes prior to that flush will be guaranteed to be in L0+ and in the manifest); or setting 
+`wal_enabled: false` from the beginning.
+
+The union process works as follows:
+
+1. Sort the input manifests by the start bound of their key ranges.
+2. Validate that the manifests are non-overlapping. Each manifest's key range is computed from the effective ranges
+   of all its L0 and compacted SSTs and optionally intersected with `visible_range`s for each manifest if they are 
+   provided by the user. If any two manifests have intersecting key ranges, the operation fails.
+   If the `visible_ranges` are explicitly provided then validate that they are adjacent.
+3. Merge the contents of all input manifests:
+   - `external_dbs` entries from all input manifests are merged and deduplicated by
+     `(path, source_checkpoint_id)`. `external_dbs` with the same `(path, source_checkpoint_id)` originated from the 
+     same external_db entry via projection, so their `sst_ids` lists are merged (unioned). Entries with different keys 
+     for the same path represent distinct checkpoints and must be kept separate. Without this deduplication, repeated
+     cycles of projection and union cause exponential growth of duplicated entries: projecting into N parts
+     and unioning back multiplies the entry count by N each cycle. Note that for entries carried
+     over from a clone's parents, `source_checkpoint_id` is the parent's `final_checkpoint_id`
+     on that grandparent (a slatedb-owned, pinned id — see [Clones](#clones)), not the original
+     user-supplied checkpoint; this is what makes the dedup key stable across the union, since
+     all sibling projections share the same slatedb-owned id and the user cannot invalidate it
+     by deleting their own checkpoint. New `final_checkpoint_id` values are
+     generated for all entries — the old ones belong to the source databases' clone relationships and are
+     not valid for the new database.
+   - SSTs with the same ID but __originating__ from different source databases are deduplicated by assigning a new ID
+     (this might happen because ULID is not guaranteed to be globally unique) and updating the corresponding views 
+     accordingly. To preserve the order of ULIDs within the same database, subsequent SSTs might require new IDs as 
+     well. The old ID is kept in `CompactedSsTableV2` as `original_id` and in `external_db.sst_ids` to allow path 
+     resolution 
+   - L0 SST views are copied from the source databases (preserving the order within each source database)
+   - Sorted runs are copied from the source manifests preserving their relative order within each source manifest. Their
+     IDs are regenerated to maintain uniqueness. As an optimization, similarly sized SRs can be merged together to 
+     reduce LSM height and metadata size; only SRs from different manifests can be merged because they are guaranteed to
+     be non-overlapping.
+4. `last_l0_seq` is set to the maximum of `last_l0_seq` across all input manifests. This ensures that the
+   new database's writer assigns sequence numbers higher than any existing data. Without this, new writes
+   could receive sequence numbers that collide with those in the carried-over SSTs, breaking snapshot
+   isolation and MVCC ordering. Note that existing SSTs from independent sources may have overlapping
+   sequence numbers, but this is safe because the non-overlapping key range validation (step 2) guarantees
+   that no two entries for the same key can have conflicting sequence numbers.
+5. The resulting manifest has `initialized` set to `false`. The caller must complete setup (e.g., creating
+   final checkpoints in source databases) before setting `initialized` to `true`.
+6. Each source database is added as an `external_dbs` entry in the resulting manifest, with a new
+   `final_checkpoint_id` and its owned SST IDs recorded so that the new database can resolve SST paths
+   and maintain checkpoints on the source databases to prevent their SSTs from being garbage collected.
+   Owned SST IDs are those in the source manifest that are not already tracked by its own `external_dbs`
+   (i.e., SSTs physically stored under the source's path).
+
+##### Merging SST
+SST views coming from different databases might refer to the same SSTs (but have different `visible_range`s). It might 
+be beneficial to merge such views to achieve the following:
+- reduce the chance of hitting `l0_max_ssts` on writes right after union
+- improve accuracy of size estimates (used by Compactor)
+- reduce the size of the metadata
+
+However, there are a number of constraints that must be met when merging SST views:
+1. Due to compaction, views over the same SST might not be adjacent, i.e. have gaps; preserving those gaps is necessary 
+   to provide correctness; therefore, only the adjacent views can be merged. 
+2. Sorted Run boundaries (and L0/SR boundary) can not be crossed
+3. Within SR, SST views must be sorted by key and can not overlap
+4. L0 ordering: newer SST views must precede views over older SSTs
+
+The last constraint could be met by ordering SST views by their underlying SSTs' logical creation time.
+This time is normally represented by ULID; however, there's a slight chance that due to a wall clock skew, parents' SST
+ULIDs are later than the children's ones. Instead, logical creation time can be inferred from topological order of SST
+(with dependencies implied from the order of SST in L0 lists).
+
+Apart from the above union process, cloning from multiple source databases is the same as clone (see [Clones](#clones)),
+including creation of final checkpoints in source databases (and their source databases, recursively).
+
+There are a few minor differences:
+
+1. **Writer and compactor epochs are 0.** The new database is a fresh instance with no prior writer or
+   compactor history, so both epochs start at 0.
+2. **Default manifest core fields.** Fields such as `next_wal_sst_id` and similar manifest core metadata
+   are initialized to their default values rather than being copied from any source database. An exception
+   is `last_l0_seq`, which is derived from the maximum across all sources during union (see step 5 above).
+3. **WAL is not carried over from any source database.** All source manifests must have their
+   WAL fully compacted before the operation. The new database starts with an empty WAL. That also allows to start with
+   new `wal_id_last_seen` and `replay_after_wal_id` on union
+4. SequenceTracker is re-initialized on union; Sequence Tracking only works for the records added afterwards
+5. Due to a temporary spike in the number of L0 after **union**, **`l0_max_ssts` might be exceeded** blocking the writes 
+   (until compaction). This is partially mitigated by `max_unflushed_bytes` buffer that can absorb the spike. 
+   Alternatively, this can be improved by merging adjacent SST views; and/or checking `l0_max_ssts` against a 
+   maximum number of views per any key.
+
+Note: **union** works correctly starting from Manifest V2 with the introduction of `SstViewRange`. Without it, SST in L0 and
+SortedRuns might be duplicated, which can lead to incorrect results and violates assumptions in Compactor and other 
+places.
+

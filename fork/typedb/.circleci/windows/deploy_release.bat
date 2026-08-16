@@ -1,0 +1,19 @@
+@echo off
+REM This Source Code Form is subject to the terms of the Mozilla Public
+REM License, v. 2.0. If a copy of the MPL was not distributed with this
+REM file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+REM needs to be called such that software installed
+REM by Chocolatey in prepare.bat is accessible
+CALL refreshenv
+
+REM build file
+cargo build --profile=release --features server/published
+cargo build --profile=release -p typedb_admin_bin
+copy target\release\typedb_server_bin.exe  .\
+copy target\release\typedb_admin_bin.exe  .\
+
+SET DEPLOY_ARTIFACT_USERNAME=%REPO_TYPEDB_USERNAME%
+SET DEPLOY_ARTIFACT_PASSWORD=%REPO_TYPEDB_PASSWORD%
+set /p VER=<VERSION
+bazel --output_base=C:\b --windows_enable_symlinks run --config=ci --define version=%VER% --//server:mode=published --enable_runfiles //:deploy-typedb-all -- release

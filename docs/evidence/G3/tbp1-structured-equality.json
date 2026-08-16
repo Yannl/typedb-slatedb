@@ -1,0 +1,13 @@
+{
+ "patch": "TB-P1",
+ "targets": [
+  "0.0.0:storage",
+  "0.0.0:test_isolation",
+  "0.0.0:test_mvcc",
+  "0.0.0:test_recovery",
+  "0.0.0:test_snapshot",
+  "0.0.0:test_storage"
+ ],
+ "diffs": [],
+ "verdict": "EQUAL"
+}

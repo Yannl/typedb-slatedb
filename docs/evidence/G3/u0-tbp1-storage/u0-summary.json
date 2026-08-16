@@ -1,0 +1,9 @@
+{
+  "executables": 6,
+  "green": 5,
+  "red": 1,
+  "timeout": 0,
+  "cases_passed": 47,
+  "cases_failed": 2,
+  "cases_ignored": 1
+}

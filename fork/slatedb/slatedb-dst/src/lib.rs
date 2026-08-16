@@ -1,0 +1,28 @@
+//! Deterministic scenario testing utilities and fault-injecting object stores
+//! for SlateDB.
+//!
+//! The crate re-exports the harness API and the public fault-injection types
+//! used to build deterministic DST scenarios.
+
+#![doc = include_str!("../README.md")]
+#![cfg(tokio_unstable)]
+
+pub mod actors;
+mod clocked_object_store;
+mod deterministic_local_filesystem;
+pub mod failing_object_store;
+mod harness;
+mod prefix_extractor;
+mod rescaling;
+mod scenarios;
+pub mod utils;
+
+pub use self::deterministic_local_filesystem::DeterministicLocalFilesystem;
+pub use self::failing_object_store::{
+    FailingObjectStore, FailingObjectStoreController, HttpFailBefore, HttpStatusError, Operation,
+    StreamDirection, Toxic, ToxicKind,
+};
+pub use self::harness::*;
+pub use self::prefix_extractor::FirstDelimiterPrefixExtractor;
+pub use self::rescaling::RescalingScenario;
+pub use self::scenarios::DeterministicScenario;

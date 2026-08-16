@@ -1,0 +1,44 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+use concept::type_::type_manager::TypeManager;
+use ir::pipeline::VariableRegistry;
+use storage::snapshot::ReadableSnapshot;
+
+use crate::{
+    annotation::pipeline::{AnnotatedPipeline, AnnotatedStage},
+    transformation::{
+        StaticOptimiserError,
+        redundant_constraints::{
+            optimize_away_statically_unsatisfiable_conjunctions, prune_redundant_roleplayer_deduplication,
+        },
+        relation_index::relation_index_transformation,
+        unique_constraint_variables::make_constraint_variables_unique,
+    },
+};
+
+pub fn apply_transformations(
+    snapshot: &impl ReadableSnapshot,
+    type_manager: &TypeManager,
+    variable_registry: &mut VariableRegistry,
+    pipeline: &mut AnnotatedPipeline,
+) -> Result<(), StaticOptimiserError> {
+    for stage in &mut pipeline.annotated_stages {
+        if let AnnotatedStage::Match { block, block_annotations, .. } = stage {
+            optimize_away_statically_unsatisfiable_conjunctions(block.conjunction_mut(), block_annotations);
+            prune_redundant_roleplayer_deduplication(block.conjunction_mut(), block_annotations);
+            relation_index_transformation(block.conjunction_mut(), block_annotations, type_manager, snapshot)?;
+            make_constraint_variables_unique(block.conjunction_mut(), variable_registry, block_annotations)?;
+        }
+    }
+    Ok(())
+
+    // Ideas:
+    // - we should move subtrees/graphs of a query that have no returned variables into a new pattern: "Check", which are only checked for a single answer
+    // - we should push constraints, like comparisons, that apply to variables passed into functions, into the function itself
+    // - function inlining v1: if a function does not have recursion or sort/offset/limit, we could inline the function into the query
+    // - function inlining v2: we could try to inline/lift some constraints from recursive calls into the parent query to dramatically cut the search space
+    // - function inlining v3: we could introduce new sub-patterns that include sort/offset/limit that let us more generally inline functions?
+}

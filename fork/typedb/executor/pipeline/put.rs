@@ -1,0 +1,176 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+use std::{marker::PhantomData, sync::Arc};
+
+use compiler::{
+    VariablePosition,
+    executable::{function::ExecutableFunctionRegistry, insert::VariableSource, put::PutExecutable},
+};
+use resource::constants::traversal::{BATCH_DEFAULT_CAPACITY, CHECK_INTERRUPT_FREQUENCY_ROWS};
+use storage::snapshot::{ReadableSnapshot, WritableSnapshot};
+
+use crate::{
+    ExecutionInterrupt,
+    batch::Batch,
+    error::ReadExecutionError,
+    match_executor::MatchExecutor,
+    pipeline::{
+        PipelineExecutionError, WrittenRowsIterator,
+        stage::{ExecutionContext, StageAPI, StageIterator},
+    },
+    row::MaybeOwnedRow,
+};
+
+pub struct PutStageExecutor<InputIterator> {
+    executable: Arc<PutExecutable>,
+    function_registry: Arc<ExecutableFunctionRegistry>,
+    _input_iterator: PhantomData<InputIterator>,
+}
+
+impl<InputIterator> PutStageExecutor<InputIterator> {
+    pub fn new(executable: Arc<PutExecutable>, function_registry: Arc<ExecutableFunctionRegistry>) -> Self {
+        Self { executable, function_registry, _input_iterator: PhantomData }
+    }
+
+    pub(crate) fn output_width(&self) -> usize {
+        self.executable.output_width()
+    }
+}
+
+impl<Snapshot, InputIterator> StageAPI<Snapshot> for PutStageExecutor<InputIterator>
+where
+    Snapshot: WritableSnapshot + 'static,
+    InputIterator: StageIterator,
+{
+    type InputIterator = InputIterator;
+    type OutputIterator = WrittenRowsIterator;
+
+    fn into_iterator(
+        self,
+        input_iterator: Self::InputIterator,
+        mut context: ExecutionContext<Snapshot>,
+        mut interrupt: ExecutionInterrupt,
+    ) -> Result<
+        (Self::OutputIterator, ExecutionContext<Snapshot>),
+        (Box<PipelineExecutionError>, ExecutionContext<Snapshot>),
+    > {
+        let Self { executable, function_registry, .. } = self;
+        let result = into_iterator_impl(&mut context, &mut interrupt, &executable, function_registry, input_iterator);
+        match result {
+            Ok(written_rows_iterator) => Ok((written_rows_iterator, context)),
+            Err(err) => Err((err, context)),
+        }
+    }
+}
+
+fn into_iterator_impl<Snapshot: WritableSnapshot + 'static>(
+    context: &mut ExecutionContext<Snapshot>,
+    interrupt: &mut ExecutionInterrupt,
+    executable: &PutExecutable,
+    function_registry: Arc<ExecutableFunctionRegistry>,
+    mut previous_iterator: impl StageIterator,
+) -> Result<WrittenRowsIterator, Box<PipelineExecutionError>> {
+    let mut output_batch = Batch::new(executable.output_width() as u32, BATCH_DEFAULT_CAPACITY);
+    let mut must_insert = Vec::new();
+    let input_output_mapping = executable
+        .insert
+        .output_row_schema
+        .iter()
+        .enumerate()
+        .filter_map(|(i, entry_opt)| match entry_opt {
+            Some((_, VariableSource::Input(pos))) => Some((*pos, VariablePosition::new(i as u32))),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    while let Some(input_row_result) = previous_iterator.next() {
+        let input_row = input_row_result?;
+        let size_before = output_batch.len();
+        let mut match_iterator =
+            match_iterator_for_row(context, interrupt, executable, function_registry.clone(), input_row.clone())?;
+        match_iterator
+            .try_for_each(|row_result| {
+                output_batch.append_row(row_result?);
+                must_insert.push(false);
+                Ok(())
+            })
+            .map_err(|typedb_source| Box::new(PipelineExecutionError::ReadPatternExecution { typedb_source }))?;
+
+        if size_before == output_batch.len() {
+            must_insert.extend((0..input_row.multiplicity()).map(|_| true));
+            crate::pipeline::insert::append_row_for_insert_mapped(
+                &mut output_batch,
+                input_row.as_reference(),
+                &input_output_mapping,
+            );
+        }
+    }
+    drop(previous_iterator);
+    debug_assert_eq!(output_batch.len(), must_insert.len());
+    // once the previous iterator is complete, this must be the exclusive owner of Arc's, so we can get mut:
+    perform_inserts(context, interrupt, executable, &mut output_batch, &must_insert)?;
+
+    Ok(WrittenRowsIterator::new(output_batch))
+}
+
+fn match_iterator_for_row<Snapshot: ReadableSnapshot + 'static>(
+    context: &ExecutionContext<Snapshot>,
+    interrupt: &ExecutionInterrupt,
+    put_executable: &PutExecutable,
+    function_registry: Arc<ExecutableFunctionRegistry>,
+    input_row: MaybeOwnedRow<'_>,
+) -> Result<impl Iterator<Item = Result<MaybeOwnedRow<'static>, ReadExecutionError>>, Box<PipelineExecutionError>> {
+    let executor = MatchExecutor::new(
+        &put_executable.match_,
+        &context.snapshot,
+        &context.thing_manager,
+        input_row,
+        function_registry,
+        &context.profile,
+    )
+    .map_err(|err| Box::new(PipelineExecutionError::InitialisingMatchIterator { typedb_source: err }))?;
+    Ok(crate::pipeline::match_::unique_rows(crate::pipeline::match_::as_owned_rows(
+        executor.into_iterator(context.clone(), interrupt.clone()),
+    ))
+    .peekable())
+}
+
+fn perform_inserts<Snapshot: WritableSnapshot>(
+    context: &mut ExecutionContext<Snapshot>,
+    interrupt: &mut ExecutionInterrupt,
+    executable: &PutExecutable,
+    output_batch: &mut Batch,
+    must_insert: &[bool],
+) -> Result<(), Box<PipelineExecutionError>> {
+    let snapshot_mut = Arc::get_mut(&mut context.snapshot).unwrap();
+    let stage_profile = context.profile.profile_stage(|| String::from("Put"), executable.executable_id as _);
+    let pattern_profile = stage_profile.create_or_get_pattern(|| String::from("Put pattern"));
+    let (concept_profiles, connection_profiles, optional_concept_profiles, optional_connection_profiles) =
+        crate::pipeline::insert::build_step_profiles(&executable.insert, &pattern_profile);
+    for index in 0..output_batch.len() {
+        // TODO: parallelise -- though this requires our snapshots support parallel writes!
+        if must_insert[index] {
+            let mut row = output_batch.get_row_mut(index);
+            crate::pipeline::insert::execute_insert(
+                &executable.insert,
+                snapshot_mut,
+                &context.thing_manager,
+                &context.parameters,
+                &mut row,
+                &concept_profiles,
+                &connection_profiles,
+                &optional_concept_profiles,
+                &optional_connection_profiles,
+            )
+            .map_err(|typedb_source| Box::new(PipelineExecutionError::WriteError { typedb_source }))?;
+        }
+        if index % CHECK_INTERRUPT_FREQUENCY_ROWS == 0 {
+            if let Some(interrupt) = interrupt.check() {
+                return Err(Box::new(PipelineExecutionError::Interrupted { interrupt }));
+            }
+        }
+    }
+    Ok(())
+}

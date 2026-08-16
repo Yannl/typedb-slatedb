@@ -130,10 +130,16 @@ impl LendingIterator for KeyspaceRangeIterator {
         if self.is_finished {
             return None;
         }
-        let next = self
-            .iterator
-            .next()
-            .map(|result| result.map_err(|err| KeyspaceError::Iterate { name: self.keyspace_name, source: err }));
+        let next = self.iterator.next().map(|result| {
+            result.map_err(|err| match err {
+                crate::keyspace::CursorError::Rocks(source) => {
+                    KeyspaceError::Iterate { name: self.keyspace_name, source }
+                }
+                crate::keyspace::CursorError::Slate(source) => {
+                    KeyspaceError::Slate { name: self.keyspace_name, op: "iterate", source }
+                }
+            })
+        });
 
         // validate next against the Condition
         let item = match next {

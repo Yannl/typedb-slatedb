@@ -627,6 +627,16 @@ features = {}
 			version = "1.52.3"
 			default-features = false
 
+		# TB-P7 (U2 profile): SlateDB consumed from crates.io per ADR-0001 —
+		# exact version pin, minimal features (wal_disable enables the
+		# `wal_enabled` runtime setting; the U2 lane runs with SlateDB's WAL
+		# off, mirroring the RocksDB keyspaces' disable_wal(true) — TypeDB's
+		# own WAL is the sole durability authority).
+		[workspace.dependencies.slatedb]
+			features = ["wal_disable"]
+			version = "=0.15.0"
+			default-features = false
+
 		[workspace.dependencies.structural_equality]
 			path = "common/structural_equality"
 			features = []

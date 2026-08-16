@@ -20,12 +20,15 @@ use serde::{Deserialize, Serialize};
 
 use super::{IteratorPool, constants, iterator};
 use crate::{
+    factory::{StorageBackendProfile, StorageFactoryError, resolved_backend_profile},
     key_range::KeyRange,
     keyspace::{
+        cursor::RawCursor,
         engine::{KeyspaceTuningProfile, build_rocks_options},
         rocks_resources::RocksResources,
+        slate::SlateKeyspace,
     },
-    write_batches::WriteBatches,
+    write_batches::{KeyspaceWriteBatch, WriteBatches},
 };
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -205,16 +208,26 @@ impl fmt::Display for KeyspaceValidationError {
 
 impl Error for KeyspaceValidationError {}
 
+/// The key-value engine behind one keyspace: RocksDB for the U0/U1 oracle
+/// profiles, SlateDB (TB-P7, ADR-0001) for U2. Both are NON-durable stores —
+/// engine WALs are off and TypeDB's WAL is the durability authority.
+pub(crate) enum KeyspaceEngine {
+    Rocks {
+        // shared with `RawCursor`s handed out via the `IteratorPool`, which
+        // co-own the database so that no cursor can ever observe a closed `DB`
+        db: Arc<DB>,
+        read_options: ReadOptions,
+        write_options: WriteOptions,
+    },
+    Slate(SlateKeyspace),
+}
+
 /// A non-durable key-value store that supports put, get, delete, iterate and checkpointing.
 pub(crate) struct Keyspace {
     path: PathBuf,
     name: &'static str,
     id: KeyspaceId,
-    // shared with `RawCursor`s handed out via the `IteratorPool`, which co-own
-    // the database so that no cursor can ever observe a closed `DB`
-    pub(super) kv_storage: Arc<DB>,
-    read_options: ReadOptions,
-    write_options: WriteOptions,
+    engine: KeyspaceEngine,
     prefix_length: Option<usize>,
 }
 
@@ -224,32 +237,50 @@ impl Keyspace {
         keyspace: impl KeyspaceSet,
         options: &Options,
     ) -> Result<Keyspace, KeyspaceOpenError> {
-        use KeyspaceOpenError::RocksDB;
+        use KeyspaceOpenError::{Factory, ProfileUnavailable, RocksDB, SlateDB};
         let name = keyspace.name();
         let path = storage_path.join(name);
-        let kv_storage = DB::open(options, &path).map_err(|error| RocksDB { name, source: error })?;
-        Ok(Self::new(path, keyspace, kv_storage))
+        let profile = resolved_backend_profile().map_err(|source| Factory { name, source })?;
+        let engine = match profile {
+            StorageBackendProfile::U0PristineUpstream | StorageBackendProfile::U1ForkRocksFileWal => {
+                let db = DB::open(options, &path).map_err(|error| RocksDB { name, source: error })?;
+                // initial read options, should be customised to this storage's properties
+                let read_options = ReadOptions::default();
+                let mut write_options = WriteOptions::default();
+                write_options.disable_wal(true);
+                KeyspaceEngine::Rocks { db: Arc::new(db), read_options, write_options }
+            }
+            StorageBackendProfile::U2SlateLocalFs => {
+                KeyspaceEngine::Slate(SlateKeyspace::open(&path).map_err(|source| SlateDB { name, source })?)
+            }
+            StorageBackendProfile::U3SlateRemoteSim | StorageBackendProfile::U4ProductionRemote => {
+                return Err(ProfileUnavailable { name, profile: profile.code() });
+            }
+        };
+        Ok(Self { path, name, id: keyspace.id(), engine, prefix_length: keyspace.prefix_length() })
     }
 
-    fn new(path: PathBuf, keyspace: impl KeyspaceSet, kv_storage: DB) -> Self {
-        // initial read options, should be customised to this storage's properties
-        let read_options = ReadOptions::default();
-        let mut write_options = WriteOptions::default();
-        write_options.disable_wal(true);
-        let prefix_length = keyspace.prefix_length();
-        Self {
-            path,
-            name: keyspace.name(),
-            id: keyspace.id(),
-            kv_storage: Arc::new(kv_storage),
-            read_options,
-            write_options,
-            prefix_length,
+    pub(super) fn engine(&self) -> &KeyspaceEngine {
+        &self.engine
+    }
+
+    /// Construct an engine cursor for the pool. `prefixed` requests the
+    /// bloom-prefix read path on RocksDB; SlateDB scans are always
+    /// total-order, which is a strict superset of the prefixed contract
+    /// (every prefixed use seeks within one prefix and stops at its end,
+    /// enforced above the cursor by `KeyspaceRangeIterator`).
+    pub(super) fn new_raw_cursor(&self, prefixed: bool) -> RawCursor {
+        match &self.engine {
+            KeyspaceEngine::Rocks { db, .. } => {
+                let mut read_options = self.new_read_options();
+                if prefixed {
+                    read_options.set_prefix_same_as_start(true);
+                    read_options.set_total_order_seek(false);
+                }
+                RawCursor::new_rocks(db.clone(), read_options)
+            }
+            KeyspaceEngine::Slate(slate) => RawCursor::new_slate(slate),
         }
-    }
-
-    pub(super) fn shared_db(&self) -> Arc<DB> {
-        self.kv_storage.clone()
     }
 
     pub(super) fn new_read_options(&self) -> ReadOptions {
@@ -271,28 +302,45 @@ impl Keyspace {
     }
 
     pub(crate) fn put(&self, key: &[u8], value: &[u8]) -> Result<(), KeyspaceError> {
-        self.kv_storage
-            .put_opt(key, value, &self.write_options)
-            .map_err(|error| KeyspaceError::Put { name: self.name, source: error })
+        match &self.engine {
+            KeyspaceEngine::Rocks { db, write_options, .. } => db
+                .put_opt(key, value, write_options)
+                .map_err(|error| KeyspaceError::Put { name: self.name, source: error }),
+            KeyspaceEngine::Slate(slate) => {
+                slate.put(key, value).map_err(|source| KeyspaceError::Slate { name: self.name, op: "put", source })
+            }
+        }
     }
 
-    pub(crate) fn get<M, V>(&self, key: &[u8], mut mapper: M) -> Result<Option<V>, KeyspaceError>
+    pub(crate) fn get<M, V>(&self, key: &[u8], mapper: M) -> Result<Option<V>, KeyspaceError>
     where
         M: FnMut(&[u8]) -> V,
     {
-        self.kv_storage
-            .get_pinned_opt(key, &self.read_options)
-            .map(|option| option.map(|value| mapper(value.as_ref())))
-            .map_err(|error| KeyspaceError::Get { name: self.name, source: error })
+        match &self.engine {
+            KeyspaceEngine::Rocks { db, read_options, .. } => {
+                let mut mapper = mapper;
+                db.get_pinned_opt(key, read_options)
+                    .map(|option| option.map(|value| mapper(value.as_ref())))
+                    .map_err(|error| KeyspaceError::Get { name: self.name, source: error })
+            }
+            KeyspaceEngine::Slate(slate) => {
+                slate.get(key, mapper).map_err(|source| KeyspaceError::Slate { name: self.name, op: "get", source })
+            }
+        }
     }
 
     pub(crate) fn get_prev<M, T>(&self, key: &[u8], mut mapper: M) -> Option<T>
     where
         M: FnMut(&[u8], &[u8]) -> T,
     {
-        let mut iterator = self.kv_storage.raw_iterator_opt(self.new_read_options());
-        iterator.seek_for_prev(key);
-        iterator.item().map(|(k, v)| mapper(k, v))
+        match &self.engine {
+            KeyspaceEngine::Rocks { db, .. } => {
+                let mut iterator = db.raw_iterator_opt(self.new_read_options());
+                iterator.seek_for_prev(key);
+                iterator.item().map(|(k, v)| mapper(k, v))
+            }
+            KeyspaceEngine::Slate(slate) => slate.get_prev(key, mapper),
+        }
     }
 
     pub(crate) fn iterate_range<const PREFIX_INLINE_SIZE: usize>(
@@ -304,63 +352,108 @@ impl Keyspace {
         iterator::KeyspaceRangeIterator::new(self, iterpool, range, storage_counters)
     }
 
-    pub(crate) fn write(&self, write_batch: WriteBatch) -> Result<(), KeyspaceError> {
-        self.kv_storage
-            .write_opt(write_batch, &self.write_options)
-            .map_err(|error| KeyspaceError::BatchWrite { name: self.name, source: error })
+    /// Apply one atomic per-keyspace batch. MVCC commit batches contain only
+    /// puts (MVCC deletes are tombstone-record puts), so the engine-neutral
+    /// batch is a put list applied atomically by both engines.
+    pub(crate) fn write(&self, write_batch: KeyspaceWriteBatch) -> Result<(), KeyspaceError> {
+        match &self.engine {
+            KeyspaceEngine::Rocks { db, write_options, .. } => {
+                let mut rocks_batch = WriteBatch::default();
+                for (key, value) in write_batch.puts() {
+                    rocks_batch.put(key, value);
+                }
+                db.write_opt(rocks_batch, write_options)
+                    .map_err(|error| KeyspaceError::BatchWrite { name: self.name, source: error })
+            }
+            KeyspaceEngine::Slate(slate) => slate.write(write_batch.puts()).map_err(|source| KeyspaceError::Slate {
+                name: self.name,
+                op: "batch write",
+                source,
+            }),
+        }
     }
 
     pub(crate) fn checkpoint(&self, checkpoint_dir: &Path) -> Result<(), KeyspaceCheckpointError> {
-        use KeyspaceCheckpointError::{CheckpointExists, CreateRocksDBCheckpoint};
+        use KeyspaceCheckpointError::{CheckpointExists, CreateRocksDBCheckpoint, CreateSlateDBCheckpoint};
 
         let checkpoint_dir = checkpoint_dir.join(self.name);
         if checkpoint_dir.exists() {
             return Err(CheckpointExists { name: self.name, dir: checkpoint_dir });
         }
 
-        Checkpoint::new(&self.kv_storage)
-            .and_then(|checkpoint| checkpoint.create_checkpoint(&checkpoint_dir))
-            .map_err(|error| CreateRocksDBCheckpoint { name: self.name, source: error })?;
+        match &self.engine {
+            KeyspaceEngine::Rocks { db, .. } => {
+                Checkpoint::new(db)
+                    .and_then(|checkpoint| checkpoint.create_checkpoint(&checkpoint_dir))
+                    .map_err(|error| CreateRocksDBCheckpoint { name: self.name, source: error })?;
+            }
+            KeyspaceEngine::Slate(slate) => {
+                slate
+                    .checkpoint(&checkpoint_dir)
+                    .map_err(|source| CreateSlateDBCheckpoint { name: self.name, source })?;
+            }
+        }
 
         Ok(())
     }
 
     pub(crate) fn delete(self) -> Result<(), KeyspaceDeleteError> {
         // Dropping releases this keyspace's handle; any cursor still pooled in a
-        // live snapshot keeps the `DB` open (and safe) until it is dropped. On
+        // live snapshot keeps the engine open (and safe) until it is dropped. On
         // POSIX the directory removal below succeeds regardless (unlink-while-
         // open); on Windows an outstanding cursor can make removal fail with a
         // sharing violation, surfaced as the typed DirectoryRemove error rather
         // than upstream's undefined behavior on the same race.
-        drop(self.kv_storage);
-        fs::remove_dir_all(self.path.clone())
-            .map_err(|error| KeyspaceDeleteError::DirectoryRemove { name: self.name, source: Arc::new(error) })?;
+        let path = self.path.clone();
+        let name = self.name;
+        drop(self.engine); // SlateKeyspace::drop closes the engine, flushing state
+        fs::remove_dir_all(path)
+            .map_err(|error| KeyspaceDeleteError::DirectoryRemove { name, source: Arc::new(error) })?;
         Ok(())
     }
 
     pub(crate) fn reset(&mut self) -> Result<(), KeyspaceError> {
-        let iterator = self.kv_storage.iterator(IteratorMode::Start);
-        for entry in iterator {
-            let (key, _) = entry.map_err(|err| KeyspaceError::Iterate { name: self.name, source: err })?;
-            self.kv_storage.delete(key).map_err(|err| KeyspaceError::Iterate { name: self.name, source: err })?;
+        match &self.engine {
+            KeyspaceEngine::Rocks { db, .. } => {
+                let iterator = db.iterator(IteratorMode::Start);
+                for entry in iterator {
+                    let (key, _) = entry.map_err(|err| KeyspaceError::Iterate { name: self.name, source: err })?;
+                    db.delete(key).map_err(|err| KeyspaceError::Iterate { name: self.name, source: err })?;
+                }
+                Ok(())
+            }
+            KeyspaceEngine::Slate(slate) => {
+                slate.reset().map_err(|source| KeyspaceError::Slate { name: self.name, op: "reset", source })
+            }
         }
-        Ok(())
     }
 
     pub fn estimate_size_in_bytes(&self) -> Result<u64, KeyspaceError> {
-        let property_name = constants::rocksdb::PROPERTY_ESTIMATE_LIVE_DATA_SIZE;
-        self.kv_storage
-            .property_int_value(property_name)
-            .map_err(|source| KeyspaceError::Property { name: property_name, source })
-            .map(|result_opt| result_opt.unwrap_or(0))
+        match &self.engine {
+            KeyspaceEngine::Rocks { db, .. } => {
+                let property_name = constants::rocksdb::PROPERTY_ESTIMATE_LIVE_DATA_SIZE;
+                db.property_int_value(property_name)
+                    .map_err(|source| KeyspaceError::Property { name: property_name, source })
+                    .map(|result_opt| result_opt.unwrap_or(0))
+            }
+            KeyspaceEngine::Slate(slate) => Ok(slate.estimate_size_in_bytes()),
+        }
     }
 
     pub fn estimate_key_count(&self) -> Result<u64, KeyspaceError> {
-        let property_name = constants::rocksdb::PROPERTY_ESTIMATE_NUM_KEYS;
-        self.kv_storage
-            .property_int_value(property_name)
-            .map_err(|source| KeyspaceError::Property { name: property_name, source })
-            .map(|result_opt| result_opt.unwrap_or(0))
+        match &self.engine {
+            KeyspaceEngine::Rocks { db, .. } => {
+                let property_name = constants::rocksdb::PROPERTY_ESTIMATE_NUM_KEYS;
+                db.property_int_value(property_name)
+                    .map_err(|source| KeyspaceError::Property { name: property_name, source })
+                    .map(|result_opt| result_opt.unwrap_or(0))
+            }
+            KeyspaceEngine::Slate(slate) => slate.estimate_key_count().map_err(|source| KeyspaceError::Slate {
+                name: self.name,
+                op: "estimate key count",
+                source,
+            }),
+        }
     }
 }
 
@@ -373,6 +466,9 @@ impl fmt::Debug for Keyspace {
 #[derive(Debug, Clone)]
 pub enum KeyspaceOpenError {
     RocksDB { name: &'static str, source: rocksdb::Error },
+    SlateDB { name: &'static str, source: Arc<slatedb::Error> },
+    Factory { name: &'static str, source: StorageFactoryError },
+    ProfileUnavailable { name: &'static str, profile: &'static str },
     Validation { source: KeyspaceValidationError },
 }
 
@@ -386,6 +482,9 @@ impl Error for KeyspaceOpenError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::RocksDB { source, .. } => Some(source),
+            Self::SlateDB { source, .. } => Some(source.as_ref()),
+            Self::Factory { source, .. } => Some(source),
+            Self::ProfileUnavailable { .. } => None,
             Self::Validation { source, .. } => Some(source),
         }
     }
@@ -395,6 +494,7 @@ impl Error for KeyspaceOpenError {
 pub enum KeyspaceCheckpointError {
     CheckpointExists { name: &'static str, dir: PathBuf },
     CreateRocksDBCheckpoint { name: &'static str, source: rocksdb::Error },
+    CreateSlateDBCheckpoint { name: &'static str, source: Arc<slatedb::Error> },
 }
 
 impl fmt::Display for KeyspaceCheckpointError {
@@ -408,6 +508,7 @@ impl Error for KeyspaceCheckpointError {
         match self {
             Self::CheckpointExists { .. } => None,
             Self::CreateRocksDBCheckpoint { source, .. } => Some(source),
+            Self::CreateSlateDBCheckpoint { source, .. } => Some(source.as_ref()),
         }
     }
 }
@@ -439,6 +540,7 @@ pub enum KeyspaceError {
     Iterate { name: &'static str, source: rocksdb::Error },
     DeleteRange { name: &'static str, source: rocksdb::Error },
     Property { name: &'static str, source: rocksdb::Error },
+    Slate { name: &'static str, op: &'static str, source: Arc<slatedb::Error> },
 }
 
 impl fmt::Display for KeyspaceError {
@@ -456,6 +558,7 @@ impl Error for KeyspaceError {
             Self::Iterate { source, .. } => Some(source),
             Self::DeleteRange { source, .. } => Some(source),
             Self::Property { source, .. } => Some(source),
+            Self::Slate { source, .. } => Some(source.as_ref()),
         }
     }
 }

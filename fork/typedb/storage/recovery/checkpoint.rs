@@ -191,21 +191,41 @@ fn parse_directory_name_timestamp(path: &PathBuf) -> Option<DateTime<Utc>> {
     Some(timestamp)
 }
 
+/// Mirror the checkpoint tree over the live keyspace directory. Recursive
+/// (TB-P7): RocksDB checkpoints are flat file sets, for which this reduces
+/// exactly to the previous per-file logic; SlateDB object stores are nested
+/// (`manifest/`, `compacted/`, ...), so entries must be synced per directory
+/// level, removing anything the checkpoint does not contain.
 fn restore_storage_from_checkpoint(keyspace_dir: PathBuf, keyspace_checkpoint_dir: PathBuf) -> io::Result<()> {
     fs::create_dir_all(&keyspace_dir)?;
 
     for entry in fs::read_dir(&keyspace_dir)? {
-        let storage_file = entry?.path();
+        let entry = entry?;
+        let storage_file = entry.path();
         let checkpoint_file = keyspace_checkpoint_dir.join(storage_file.file_name().unwrap());
         if !checkpoint_file.exists() {
-            fs::remove_file(storage_file)?;
+            if entry.file_type()?.is_dir() {
+                fs::remove_dir_all(storage_file)?;
+            } else {
+                fs::remove_file(storage_file)?;
+            }
+        } else if entry.file_type()?.is_dir() != checkpoint_file.is_dir() {
+            // a file replaced by a directory (or vice versa) between
+            // checkpoint and live state: remove, the copy pass recreates it
+            if entry.file_type()?.is_dir() {
+                fs::remove_dir_all(storage_file)?;
+            } else {
+                fs::remove_file(storage_file)?;
+            }
         }
     }
 
     for entry in fs::read_dir(&keyspace_checkpoint_dir)? {
         let checkpoint_file = entry?.path();
         let storage_file = keyspace_dir.join(checkpoint_file.file_name().unwrap());
-        if !storage_file.exists() || !is_same_file(&storage_file, &checkpoint_file)? {
+        if checkpoint_file.is_dir() {
+            restore_storage_from_checkpoint(storage_file, checkpoint_file)?;
+        } else if !storage_file.exists() || !is_same_file(&storage_file, &checkpoint_file)? {
             copy_file(&checkpoint_file, &storage_file)?;
         }
     }

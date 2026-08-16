@@ -83,6 +83,13 @@ features = {}
 	[dependencies.rocksdb]
 		workspace = true
 
+	# TB-P7: U2 (SlateDB LocalFS) keyspace engine
+	[dependencies.slatedb]
+		workspace = true
+
+	[dependencies.tokio]
+		workspace = true
+
 	[dependencies.same-file]
 		workspace = true
 

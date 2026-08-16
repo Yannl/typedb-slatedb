@@ -13,15 +13,16 @@
 //! - `U0` — pristine upstream lane (identical runtime backend to `U1`; the
 //!   distinction is which source tree runs, not which backend is selected).
 //! - `U1` — fork lane: RocksDB keyspaces + file WAL (the oracle). Default.
-//! - `U2` — SlateDB LocalFS backend. Not yet available; requesting it is a
-//!   typed, fail-closed error until the SlateDB adapter patch lands.
+//! - `U2` — SlateDB LocalFS keyspaces + file WAL (TB-P7, ADR-0001): the
+//!   candidate engine over a local object store, with TypeDB's WAL remaining
+//!   the durability authority.
 //! - `U3` — SlateDB + remote WAL simulation. Not yet available; fail-closed.
 //! - `U4` — production remote object-store lane. Not yet available; fail-closed.
 //!
 //! Upstream tests that construct backends directly (never edited) are
 //! enumerated in the direct-constructor inventory evidence document.
 
-use std::{env, error::Error, fmt, path::Path};
+use std::{env, error::Error, fmt, path::Path, sync::OnceLock};
 
 use diagnostics::metrics::FsyncMetrics;
 use durability::{DurabilityServiceError, wal::WAL};
@@ -36,7 +37,7 @@ pub enum StorageBackendProfile {
     U0PristineUpstream,
     /// Fork lane: RocksDB + file WAL oracle (default).
     U1ForkRocksFileWal,
-    /// SlateDB LocalFS lane (unavailable until the SlateDB adapter patch).
+    /// SlateDB LocalFS keyspaces + file WAL (TB-P7).
     U2SlateLocalFs,
     /// SlateDB remote-WAL-simulation lane (unavailable).
     U3SlateRemoteSim,
@@ -67,8 +68,18 @@ impl StorageBackendProfile {
     }
 
     fn file_wal_available(&self) -> bool {
-        matches!(self, Self::U0PristineUpstream | Self::U1ForkRocksFileWal)
+        // U2 pairs SlateDB keyspaces with the file WAL: the KV engine swaps,
+        // durability authority does not.
+        matches!(self, Self::U0PristineUpstream | Self::U1ForkRocksFileWal | Self::U2SlateLocalFs)
     }
+}
+
+/// The process-wide backend profile, resolved from the environment exactly
+/// once. Cached deliberately: two engines writing one storage directory would
+/// corrupt it, so a mid-process profile change must be impossible.
+pub fn resolved_backend_profile() -> Result<StorageBackendProfile, StorageFactoryError> {
+    static PROFILE: OnceLock<Result<StorageBackendProfile, StorageFactoryError>> = OnceLock::new();
+    PROFILE.get_or_init(|| StorageFactory::resolve_from_env().map(|factory| factory.profile())).clone()
 }
 
 /// The single decision point for which durability/key-value backend a storage

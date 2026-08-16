@@ -9,7 +9,10 @@ use std::cmp::Ordering;
 use lending_iterator::{LendingIterator, Seekable};
 use resource::profile::StorageCounters;
 
-use crate::{keyspace::cursor::RawCursor, snapshot::pool::PoolRecycleGuard};
+use crate::{
+    keyspace::cursor::{CursorError, RawCursor},
+    snapshot::pool::PoolRecycleGuard,
+};
 
 /// Position of the underlying cursor relative to what has been yielded.
 ///
@@ -23,7 +26,7 @@ enum CursorState {
     /// The cursor is positioned on an item that has not yet been yielded.
     Ready,
     Finished,
-    Err(rocksdb::Error),
+    Err(CursorError),
 }
 
 pub(super) struct DBIterator {
@@ -77,7 +80,7 @@ impl DBIterator {
 
 impl LendingIterator for DBIterator {
     type Item<'a>
-        = Result<(&'a [u8], &'a [u8]), rocksdb::Error>
+        = Result<(&'a [u8], &'a [u8]), CursorError>
     where
         Self: 'a;
 

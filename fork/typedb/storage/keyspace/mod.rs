@@ -4,6 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+pub use cursor::CursorError;
 pub use engine::KeyspaceTuningProfile;
 pub(crate) use keyspace::{KEYSPACE_MAXIMUM_COUNT, Keyspace, KeyspaceCheckpointError, KeyspaceError, Keyspaces};
 pub use keyspace::{KeyspaceDeleteError, KeyspaceId, KeyspaceOpenError, KeyspaceSet, KeyspaceValidationError};
@@ -20,6 +21,7 @@ pub mod iterator;
 mod keyspace;
 mod raw_iterator;
 pub mod rocks_resources;
+mod slate;
 
 #[derive(Default)]
 pub struct IteratorPool {
@@ -34,19 +36,15 @@ impl IteratorPool {
 
     fn get_iterator_unprefixed(&self, keyspace: &Keyspace) -> PoolRecycleGuard<RawCursor> {
         let cursor = self.unprefixed_iterators_per_keyspace[keyspace.id().0 as usize]
-            .get_or_create(|| RawCursor::new(keyspace.shared_db(), keyspace.new_read_options()));
-        debug_assert!(cursor.reads_from(&keyspace.kv_storage), "pooled cursor recycled across database instances");
+            .get_or_create(|| keyspace.new_raw_cursor(false));
+        debug_assert!(cursor.reads_from(keyspace), "pooled cursor recycled across database instances");
         cursor
     }
 
     fn get_iterator_prefixed(&self, keyspace: &Keyspace) -> PoolRecycleGuard<RawCursor> {
-        let cursor = self.prefixed_iterators_per_keyspace[keyspace.id().0 as usize].get_or_create(|| {
-            let mut read_options = keyspace.new_read_options();
-            read_options.set_prefix_same_as_start(true);
-            read_options.set_total_order_seek(false);
-            RawCursor::new(keyspace.shared_db(), read_options)
-        });
-        debug_assert!(cursor.reads_from(&keyspace.kv_storage), "pooled cursor recycled across database instances");
+        let cursor = self.prefixed_iterators_per_keyspace[keyspace.id().0 as usize]
+            .get_or_create(|| keyspace.new_raw_cursor(true));
+        debug_assert!(cursor.reads_from(keyspace), "pooled cursor recycled across database instances");
         cursor
     }
 }

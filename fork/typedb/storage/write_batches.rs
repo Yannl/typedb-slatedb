@@ -10,8 +10,6 @@ use std::{
     sync::atomic::Ordering,
 };
 
-use rocksdb::WriteBatch;
-
 use super::{MVCCKey, StorageOperation};
 use crate::{
     keyspace::KEYSPACE_MAXIMUM_COUNT,
@@ -19,8 +17,29 @@ use crate::{
     snapshot::{buffer::OperationsBuffer, write::Write},
 };
 
+/// One engine-neutral atomic batch for a single keyspace (TB-P7).
+///
+/// MVCC commits are append-only at the keyspace layer: logical deletes are
+/// tombstone-record puts, so a batch is exactly an ordered list of puts. The
+/// keyspace converts it into the engine's native batch (RocksDB `WriteBatch`
+/// or SlateDB `WriteBatch`) at apply time, preserving order and atomicity.
+#[derive(Default)]
+pub(crate) struct KeyspaceWriteBatch {
+    puts: Vec<(Vec<u8>, Vec<u8>)>,
+}
+
+impl KeyspaceWriteBatch {
+    pub(crate) fn put(&mut self, key: impl AsRef<[u8]>, value: impl AsRef<[u8]>) {
+        self.puts.push((key.as_ref().to_vec(), value.as_ref().to_vec()));
+    }
+
+    pub(crate) fn puts(&self) -> &[(Vec<u8>, Vec<u8>)] {
+        &self.puts
+    }
+}
+
 pub(crate) struct WriteBatches {
-    pub(crate) batches: [Option<WriteBatch>; KEYSPACE_MAXIMUM_COUNT],
+    pub(crate) batches: [Option<KeyspaceWriteBatch>; KEYSPACE_MAXIMUM_COUNT],
 }
 
 impl WriteBatches {
@@ -30,7 +49,7 @@ impl WriteBatches {
         for (index, buffer) in operations.write_buffers().enumerate() {
             let writes = buffer.writes();
             if !writes.is_empty() {
-                let write_batch = write_batches[index].insert(WriteBatch::default());
+                let write_batch = write_batches[index].insert(KeyspaceWriteBatch::default());
                 for (key, write) in writes {
                     match write {
                         Write::Insert { value } => {
@@ -53,10 +72,10 @@ impl WriteBatches {
 }
 
 impl IntoIterator for WriteBatches {
-    type Item = (usize, WriteBatch);
+    type Item = (usize, KeyspaceWriteBatch);
     type IntoIter = iter::FilterMap<
-        iter::Enumerate<<[Option<WriteBatch>; KEYSPACE_MAXIMUM_COUNT] as IntoIterator>::IntoIter>,
-        fn((usize, Option<WriteBatch>)) -> Option<(usize, WriteBatch)>,
+        iter::Enumerate<<[Option<KeyspaceWriteBatch>; KEYSPACE_MAXIMUM_COUNT] as IntoIterator>::IntoIter>,
+        fn((usize, Option<KeyspaceWriteBatch>)) -> Option<(usize, KeyspaceWriteBatch)>,
     >;
     fn into_iter(self) -> Self::IntoIter {
         self.batches.into_iter().enumerate().filter_map(|(index, batch)| Some((index, batch?)))
@@ -64,7 +83,7 @@ impl IntoIterator for WriteBatches {
 }
 
 impl Deref for WriteBatches {
-    type Target = [Option<WriteBatch>];
+    type Target = [Option<KeyspaceWriteBatch>];
     fn deref(&self) -> &Self::Target {
         &self.batches
     }

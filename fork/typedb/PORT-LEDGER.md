@@ -37,6 +37,53 @@ modified at any point in this fork's history.
    test calls `request_sync` (verified by grep at the pin); commit-path
    callers inside `storage/storage.rs` were updated in the same patch.
 
+## TB-P7 — SlateDB keyspace engine (U2 profile), consume-only per ADR-0001
+
+Non-test source patches; zero upstream test files touched. SlateDB is an
+unmodified crates.io dependency (`=0.15.0`, `default-features = false`,
+`wal_disable`).
+
+1. `storage/keyspace/slate.rs` (new) — the entire adapter: process-wide
+   Tokio storage runtime + std-channel sync bridge, `SlateKeyspace`
+   (put/get/get_prev/write/checkpoint/reset/estimates over a LocalFS object
+   store; engine WAL off, compactor/GC off, dirty+Memory reads for
+   read-your-writes), `SlateCursor` (RocksDB raw-iterator positioning
+   semantics over forward-seek scans; fresh scan on backward seek).
+2. `storage/keyspace/keyspace.rs` — `Keyspace` holds a `KeyspaceEngine`
+   enum (Rocks | Slate); engine chosen once per process from
+   `TYPEDB_STORAGE_PROFILE` via the BT-P3 factory. Rocks arm is the
+   previous code moved verbatim; new typed error variants
+   (`SlateDB`/`Factory`/`ProfileUnavailable`, `KeyspaceError::Slate`,
+   `CreateSlateDBCheckpoint`).
+3. `storage/keyspace/cursor.rs` — `RawCursor` is now the engine enum
+   (`RocksCursor` unchanged inside); engine-neutral `CursorError`.
+4. `storage/keyspace/raw_iterator.rs` / `iterator.rs` — cursor error type
+   swapped to `CursorError`; mapping to `KeyspaceError` at the range
+   iterator (rocks arm byte-identical behavior).
+5. `storage/write_batches.rs` — engine-neutral `KeyspaceWriteBatch`
+   (ordered put list; MVCC batches are put-only). RocksDB arm rebuilds the
+   identical `WriteBatch` at apply time. Empty batch = no-op on both
+   engines (RocksDB semantics; SlateDB would reject it as `Invalid`).
+6. `storage/recovery/checkpoint.rs` — `restore_storage_from_checkpoint`
+   made recursive. Behavior-preservation: RocksDB checkpoints are flat file
+   sets, for which the recursion reduces exactly to the previous logic
+   (including the `is_same_file` hardlink shortcut); SlateDB object stores
+   are nested and require per-level sync.
+7. `concept/thing/thing_manager.rs` — two type-inference disambiguations
+   (`let vertex_bytes: &[u8] = ...` split) required because the enlarged
+   dependency graph makes the previous `as_ref().try_into()` chain
+   ambiguous. No behavior change (same deref, same conversion).
+8. `storage/factory.rs` — U2 marked available; `resolved_backend_profile()`
+   caches the env-resolved profile process-wide (mixing engines in one
+   process would corrupt keyspace directories); file WAL declared available
+   for U2 (TypeDB WAL remains durability authority under SlateDB).
+9. `Cargo.toml` / `storage/Cargo.toml` / `Cargo.lock` — workspace dep
+   `slatedb =0.15.0` (checksum-locked), storage crate gains
+   `slatedb`/`tokio` deps.
+
+Verified: full `storage` crate suite baseline-equal on U2 vs the U1 oracle
+(8 + 14+1ign + 4 + 5/2-todo-stubs + 10 + 6), and unchanged on U1.
+
 ## Staged runfile arrangements (Bazel-equivalence, no test edits)
 
 Recorded at BT-P2 (see `docs/evidence/G1/u0-baseline.json`):

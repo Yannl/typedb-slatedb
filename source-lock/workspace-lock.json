@@ -1,7 +1,7 @@
 {
   "document": "workspace release binding (brief v16 \u00a70.2.1; generated, never hand-edited)",
   "generated_by": "tools/source-lock/generate_workspace_lock.py",
-  "repo_commit": "4e178391894039b62edfea430f3dc48fb8a2e01d",
+  "repo_commit": "740282d9d98e1c76418a0c1fda70732998fc9e32",
   "source_lock_sha256": "9cf330d8d30de531c94bdb40ecfcde38a84f5dc124d6289a8b61568af8a51860",
   "workspaces": {
     "fork/typedb": {
@@ -43,7 +43,6 @@
   },
   "artifacts": {
     "sources/fixtures/console/typedb-console-linux-x86_64-3.12.0.tar.gz": "058145121f478f2f8ad10991cd17e64e12957b93e0836ac180fe9d095a4c4e40",
-    "sources/fixtures/loader/typedb-loader-linux-x86_64-3.12.0.tar.gz": "c46fba13d835701e43778a2ea1e2dbf0e031d206c55c6c8fec28e03c274d37f9",
-    "sources/assembly-artifacts/typedb-all-linux-x86_64.tar.gz": "4585399aa454c8e5097d2bbceafd2ec8c9a5eb3b87caf63fd76dbb2106122b8b"
+    "sources/fixtures/loader/typedb-loader-linux-x86_64-3.12.0.tar.gz": "c46fba13d835701e43778a2ea1e2dbf0e031d206c55c6c8fec28e03c274d37f9"
   }
 }

@@ -12,7 +12,7 @@ and platform operational behavior cannot be reproduced locally.
 | Lane | What runs | Backend | Fidelity | Status |
 |---|---|---|---|---|
 | **L0** | TypeDB server, native process | `StorageFactory` profile **U1** (RocksDB + file WAL) or **U2** (SlateDB LocalFS) | Storage semantics exact; no distribution | U1 and U2 both live (TB-P7 landed; storage crate baseline-equal, full-corpus evidence under `docs/evidence/G3/u2-full/`) |
-| **L1** | Gateway Worker + `DatabaseControllerDO` under **workerd** (`wrangler dev --local`), payloads through the **local R2 binding**; TypeDB (or the Rust spike client) as native process | Remote WAL protocol against the real DO runtime | DO/Worker semantics = production engine; R2 = API-faithful simulator | **RUNNING — 12/12 E2E green** (`control-plane/scripts/local-stack-e2e.mjs`) |
+| **L1** | Gateway Worker + `DatabaseControllerDO` under **workerd** (`wrangler dev --local`), payloads through the **local R2 binding**; TypeDB (or the Rust spike client) as native process | Remote WAL protocol against the real DO runtime | DO/Worker semantics = production engine; R2 = API-faithful simulator | **RUNNING — 20/20 E2E green** (`control-plane/scripts/local-stack-e2e.mjs`) |
 | **L2** | Full topology: TypeDB in the production container image next to workerd, orchestrated by `wrangler dev` container support | Same as production wiring | Adds container lifecycle | Needs a Docker daemon — available on dev machines; absent in this CI sandbox |
 | **L3** | Real Cloudflare staging account | Real R2/DO/Containers/Bucket Lock | Platform facts, cost/latency envelopes | Blocked on credentials (SI-G0-3); the only lane that can close gate G2 |
 
@@ -53,15 +53,17 @@ envelopes are measured at L3 and stated, not hidden.
 
 - `DatabaseControllerDO` executing on real workerd: SqlStorage +
   `transactionSync` finalisation, replay idempotency, digest conflict,
-  status singleton (vitest-pool-workers, 2/2).
+  status singleton (vitest-pool-workers, 6 tests across 2 files).
 - Full L1 topology over real HTTP (`wrangler dev` + local R2): payload
   upload → data-path SHA-256 receipt verification → DO finalisation →
   exact read-back; lost-response retry replays the identical allocation;
   tampered digests and ghost payloads rejected in the data path (422)
   before the controller; conflicting status 409; fenced session 409; exact
-  read miss typed 404; tail contiguity audit green — **12/12**.
-- The controller logic itself: 12/12 on real SQLite with an EFFECTIVE
-  mutant negative control, and SQL-vs-pure-reducer trace equivalence.
+  read miss typed 404; tail contiguity audit green; outbox
+  peek/redeliver/ack/idempotent-ack — **20/20**.
+- The controller logic itself: 14/14 on real SQLite with an EFFECTIVE
+  mutant negative control (the mutant run fails exactly one test), and
+  SQL-vs-pure-reducer trace equivalence.
 
 ## Remaining local work items (added to the plan)
 
@@ -77,5 +79,5 @@ envelopes are measured at L3 and stated, not hidden.
 3. **L2 bring-up on a Docker-equipped machine**: production container image
    + wrangler dev containers; add a one-command `npm run stack:local`.
 4. **Outbox → consumer path in L1** — DONE: at-least-once peek/ack contract
-   through core/DO/worker; node E2E 18/18 including redelivery-without-ack
+   through core/DO/worker; node E2E 20/20 including redelivery-without-ack
    and idempotent duplicate ack.

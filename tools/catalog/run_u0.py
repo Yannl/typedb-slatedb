@@ -230,6 +230,22 @@ def main():
     ap.add_argument("--out", default=str(REPO / "docs" / "evidence" / "G1" / "u0-results"))
     args = ap.parse_args()
 
+    # What this run actually exercised. The output directory name used to be
+    # the only record of the profile, which makes a misfiled run
+    # indistinguishable from a real one; the archive digest matters for the
+    # same reason (assembly tests run whatever binary is packaged there).
+    profile = os.environ.get("TYPEDB_STORAGE_PROFILE") or "U0/U1 (unset: RocksDB oracle)"
+    archive = REPO / "sources" / "assembly-artifacts" / "typedb-all-linux-x86_64.tar.gz"
+    run_manifest = {
+        "profile": profile,
+        "toolchain": "rust 1.93.0 parity lane",
+        "storage_profile_env": os.environ.get("TYPEDB_STORAGE_PROFILE"),
+        "assembly_archive_sha256": sha256_file(archive) if archive.exists() else None,
+        "repo_commit": subprocess.run(
+            ["git", "-C", str(REPO), "rev-parse", "HEAD"],
+            capture_output=True, text=True).stdout.strip(),
+    }
+
     out_dir = pathlib.Path(args.out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     execs = discover_executables(args.package)
@@ -258,11 +274,11 @@ def main():
         for rr in results:
             merged[rr["target_id"]] = rr
         (out_dir / "u0-results.json").write_text(
-            json.dumps({"profile": "U0",
-                        "toolchain": "rust 1.93.0 parity lane",
+            json.dumps({**run_manifest,
                         "results": sorted(merged.values(),
                                           key=lambda x: x["target_id"])}, indent=1) + "\n")
     total = {
+        **run_manifest,
         "executables": len(results),
         "green": sum(1 for r in results if r["exit_code"] == 0),
         "red": sum(1 for r in results if r["exit_code"] not in (0, None)),

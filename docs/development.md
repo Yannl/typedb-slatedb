@@ -3,6 +3,35 @@
 How to build, test, and change this repository. Read
 [architecture.md](architecture.md) first for what the pieces are.
 
+## Bootstrapping a fresh machine
+
+`sources/` (the pinned upstream checkouts and fixtures) is deliberately not
+committed — it is large and fully determined by
+`source-lock/source-lock.json`. A fresh clone therefore has no checkouts,
+and every Rust lane is unrunnable until they exist. Three commands fix that:
+
+```sh
+python3 tools/dev/doctor.py                        # what's missing, and the fix
+python3 tools/source-lock/materialize_sources.py   # sources/ from the lock
+python3 tools/source-lock/lint_source_lock.py      # LINT: PASS
+```
+
+`doctor.py` checks the native toolchain against lock node
+`NATIVE_TOOLCHAIN` (the corpus build needs `protoc`, `cmake`, and a C/C++
+toolchain — a missing `protoc` otherwise surfaces 20 minutes into a cold
+build), the parity Rust toolchain against `RUST_PARITY`, the checkouts, and
+`control-plane/node_modules`. `materialize_sources.py` is the inverse of the
+lint: it clones every git node at its locked revision (verifying HEAD, tree
+hash and cleanliness) and downloads the pinned fixtures (verifying sha256
+before accepting the bytes). Both are idempotent.
+
+Then, per lane:
+
+```sh
+cd control-plane && npm ci                         # control-plane lanes
+cd sources/typedb && cargo +1.93.0 test --workspace --no-run   # ~40 min cold
+```
+
 ## Toolchains
 
 | Lane | Toolchain | Used for |
@@ -36,13 +65,16 @@ so that the warm build cache and Bazel-equivalent runfile layout are
 preserved:
 
 1. Edit code in `fork/typedb/...`.
-2. Stage: copy changed files over `sources/typedb/...` (checksum copy; see
-   `tools/fork/materialize.sh` for the from-scratch materialisation that
-   reproduces `fork/typedb` from the lock + patches).
+2. Stage: `python3 tools/fork/stage.py` copies every fork file that differs
+   into `sources/typedb` (content comparison, not timestamps).
+   `--check` reports STAGED / PRISTINE / MIXED without writing.
 3. Build/test inside `sources/typedb` with the parity toolchain.
-4. When done, restore `sources/typedb` to pristine
-   (`git -C sources/typedb checkout -- . && git -C sources/typedb clean -fd`
-   for staged new files) so the source-lock lint passes.
+4. When done, `python3 tools/fork/stage.py --restore` puts the checkout back
+   at the locked revision (build outputs are kept, so the warm
+   `target/` cache survives) and the source-lock lint passes again.
+
+(`tools/fork/materialize.sh` goes the other way: it reproduces `fork/typedb`
+from the lock + patch series, for a from-scratch fork rebuild.)
 
 `python3 tools/source-lock/lint_source_lock.py` must PASS before you
 commit: it verifies every lock node (git revision + clean tree for

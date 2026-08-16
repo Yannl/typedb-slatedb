@@ -17,6 +17,7 @@ Layout reproduced from TB root BUILD at the pin (anchors):
 Binary permissions 0744 per binary_permissions (BUILD L59); the wrapper needs
 exec permission for the test to spawn it.
 """
+import gzip
 import hashlib
 import pathlib
 import shutil
@@ -93,8 +94,27 @@ def main():
             if f.is_file() and f.suffix not in (".yml",) and f.name not in ("LICENSE",):
                 f.chmod(f.stat().st_mode | 0o111)
 
-        with tarfile.open(OUT, "w:gz") as tf:
-            tf.add(root, arcname=NAME)
+        # Deterministic packaging: sorted entry order, zeroed mtimes/ownership,
+        # gzip header mtime 0. Two packagings of the same binaries then produce
+        # the same digest, which is what makes the per-run
+        # `assembly_archive_sha256` in the corpus results a usable identity
+        # (the binaries themselves are not bit-reproducible; the packaging
+        # step no longer adds a second source of variance on top).
+        def normalise(ti: tarfile.TarInfo) -> tarfile.TarInfo:
+            ti.mtime = 0
+            ti.uid = ti.gid = 0
+            ti.uname = ti.gname = "root"
+            return ti
+
+        entries = [(root, NAME)] + [
+            (p, f"{NAME}/{p.relative_to(root).as_posix()}")
+            for p in sorted(root.rglob("*"), key=lambda p: p.relative_to(root).as_posix())
+        ]
+        with open(OUT, "wb") as raw, \
+                gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as gz, \
+                tarfile.open(fileobj=gz, mode="w", format=tarfile.GNU_FORMAT) as tf:
+            for path, arcname in entries:
+                tf.add(path, arcname=arcname, recursive=False, filter=normalise)
 
     print(f"wrote {OUT} sha256={sha256(OUT)}")
     # install where the corpus runner (run_u0.py) hard-links it from; a

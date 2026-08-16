@@ -36,10 +36,19 @@ WORKSPACES = {
     "control-plane": {"manifest": "control-plane/package.json", "lockfile": "control-plane/package-lock.json"},
 }
 
+# Pinned *inputs* only. The assembly archive
+# (sources/assembly-artifacts/typedb-all-linux-x86_64.tar.gz) was bound here
+# until it was shown to be a build product, not an input: it repackages
+# locally built debug binaries, which are not bit-reproducible, so binding it
+# made the lint unsatisfiable in any environment that had rebuilt the fork —
+# including every fresh checkout, where it is simply absent. The archive's
+# identity still travels with the evidence that depends on it: each corpus run
+# records `assembly_archive_sha256` of the archive it actually ran against
+# (tools/catalog/run_u0.py), and the packaging step is deterministic given the
+# binaries (tools/catalog/package_assembly.py).
 ARTIFACTS = [
     "sources/fixtures/console/typedb-console-linux-x86_64-3.12.0.tar.gz",
     "sources/fixtures/loader/typedb-loader-linux-x86_64-3.12.0.tar.gz",
-    "sources/assembly-artifacts/typedb-all-linux-x86_64.tar.gz",
 ]
 
 TOOLCHAINS = {

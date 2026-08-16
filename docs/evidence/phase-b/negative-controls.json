@@ -1,0 +1,33 @@
+{
+  "controls": [
+    {
+      "id": "NC-1-source-node-tampered",
+      "what_was_broken": "sources/typedb/VERSION modified (a tracked file in a pinned node)",
+      "expectation": "source-lock refuses: a shipping node must be a clean checkout",
+      "detected": true,
+      "detail": "  - TB: checkout is dirty | Error: source graph is not lockable: | "
+    },
+    {
+      "id": "NC-2-scenario-removed",
+      "what_was_broken": "connection/database.feature: 11 scenario blocks reduced to 10",
+      "expectation": "the enumerator counts fewer leaf cases for that feature",
+      "detected": true,
+      "detail": "damaged=13 restored=16"
+    },
+    {
+      "id": "NC-3-failpoint-removed",
+      "what_was_broken": "one fail_point::ALL registry member deleted",
+      "expectation": "the registry parser reports fewer members",
+      "detected": true,
+      "detail": "before=22 after=21"
+    },
+    {
+      "id": "NC-4-runfile-missing",
+      "what_was_broken": "staged behaviour corpus deleted",
+      "expectation": "stage_behaviour_corpus asserts the probe file exists and fails the run",
+      "detected": true,
+      "detail": "probe present after deletion: false"
+    }
+  ],
+  "all_detected": true
+}

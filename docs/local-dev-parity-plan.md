@@ -65,13 +65,16 @@ envelopes are measured at L3 and stated, not hidden.
 
 ## Remaining local work items (added to the plan)
 
-1. **TB-P4 client spike → L1 wiring**: point the Rust remote-WAL client at
-   the L1 HTTP facade so the same protocol tests run Rust-native against
-   workerd (today the E2E driver is a node script).
-2. **U2 lane (SlateDB LocalFS)** behind `StorageFactory` — then L0
-   differential U1↔U2 becomes the storage-swap proof at the TypeDB test
-   corpus level (G5 pre-work).
+1. **TB-P4 client spike → L1 wiring** — DONE: `tools/remote-wal-spike`
+   `l1_client.rs` + self-booting integration test (1/1 green, leak-free
+   process-group reaping).
+2. **U2 lane (SlateDB LocalFS)** behind `StorageFactory` — semantic ground
+   PROVEN by `tools/storage-diff-spike` (2/2 green: order/range/batch/
+   read-your-writes/reopen-durability vs an ordered oracle, negative control
+   effective). The fork-side adapter (TB-P7) remains gated on G2 per the
+   playbook.
 3. **L2 bring-up on a Docker-equipped machine**: production container image
    + wrangler dev containers; add a one-command `npm run stack:local`.
-4. **Outbox → consumer path in L1**: drain the control outbox to a local
-   queue consumer, closing the event loop locally.
+4. **Outbox → consumer path in L1** — DONE: at-least-once peek/ack contract
+   through core/DO/worker; node E2E 18/18 including redelivery-without-ack
+   and idempotent duplicate ack.

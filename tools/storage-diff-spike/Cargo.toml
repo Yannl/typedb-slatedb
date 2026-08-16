@@ -1,0 +1,10 @@
+[package]
+name = "storage-diff-spike"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "SL-P0 semantics differential: the pinned SlateDB over a LocalFS object store vs an ordered-map oracle - validates the storage-swap assumptions (ordering, range scans, batch atomicity, reopen durability) the U2 lane relies on"
+
+[dependencies]
+slatedb = { path = "../../sources/slatedb/slatedb" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

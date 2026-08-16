@@ -258,9 +258,11 @@ def needs_behaviour_fixture(execs):
     test_http_* / test_behaviour_* suites) or under tests/behaviour/*;
     membership by package root is a conservative superset of the exact set.
     """
-    behaviour_roots = (str(TB), str(TB / "tests" / "behaviour"))
+    tb = str(TB)
+    behaviour_prefix = str(TB / "tests" / "behaviour")
     return [e for e in execs
-            if str(e.get("package_root", "")).startswith(behaviour_roots)]
+            if str(e.get("package_root", "")) == tb  # root pkg exactly, not the whole workspace
+            or str(e.get("package_root", "")).startswith(behaviour_prefix)]
 
 
 def main():

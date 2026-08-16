@@ -11,8 +11,9 @@ account (stop item **SI-G0-3**).
   SlateDB-on-object-store, plus a Durable-Object control plane for the
   remote WAL protocol. Read [README.md](../README.md) then
   [architecture.md](architecture.md).
-- **Branch**: `claude/typedb-r2-implementation-5o64sh` (all work lives
-  here; push to the same branch).
+- **Branch**: `claude/review-continue-previous-zv4wmi` (continues and
+  contains `claude/typedb-r2-implementation-5o64sh`; push to the branch
+  you are on — the session assignment names it).
 - **State**: U2 (SlateDB local) passes the full upstream corpus
   structurally equal to the RocksDB oracle (106 executables, 0 timeouts;
   2 documented upstream defects —
@@ -23,15 +24,20 @@ account (stop item **SI-G0-3**).
 - **What's left**: platform facts + G2 measurements on a real account —
   this document; then the G2-gated phases (U3/U4).
 
-Sanity check before starting (all must pass, no credentials needed):
+Sanity check before starting (all must pass, no credentials needed).
+On a fresh machine `sources/` does not exist yet — materialise it from
+the lock first (docs/development.md §"Bootstrapping a fresh machine"):
 
 ```sh
+python3 tools/dev/doctor.py                            # env preflight + fixes
+python3 tools/source-lock/materialize_sources.py       # sources/ from the lock
 python3 tools/source-lock/lint_source_lock.py          # LINT: PASS
 cd control-plane && npm ci && npm run typecheck && npm run test:controller && npm run test:workerd
 ```
 
-(The Rust corpus needs a one-time cold build, ~40 min:
-`cd sources/typedb && cargo +1.93.0 test --workspace --no-run`.)
+(The Rust corpus needs the fork staged plus a one-time cold build,
+~40 min: `python3 tools/fork/stage.py &&
+cd sources/typedb && cargo +1.93.0 test --workspace --no-run`.)
 
 ## 1. Cloudflare account prerequisites
 
@@ -186,7 +192,8 @@ proceed in parallel.
   matters.
 - **Never edit** upstream tests, `docs/inception/`, or historical
   evidence — new facts get new files.
-- Push to `claude/typedb-r2-implementation-5o64sh`; keep
+- Push to the session's designated branch (currently
+  `claude/review-continue-previous-zv4wmi`); keep
   `python3 tools/source-lock/lint_source_lock.py` green before each
   commit.
 

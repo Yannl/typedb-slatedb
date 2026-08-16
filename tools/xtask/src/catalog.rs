@@ -152,8 +152,8 @@ fn collect_libtest_listings(
         // Never inherit a caller's target dir: a different one would silently rebuild the
         // corpus under different settings and list cases from a build nobody recorded.
         .env("CARGO_TARGET_DIR", target_dir)
-        .env("CARGO_INCREMENTAL", "0")
-        .env("CARGO_PROFILE_TEST_DEBUG", "0")
+        // The same resolved configuration the runner executes under; see PARITY_BUILD_ENV.
+        .envs(conformance_runner::parity_build_env())
         .env("PATH", format!("/opt/protoc/bin:{path}"))
         .stderr(std::process::Stdio::inherit())
         .output()

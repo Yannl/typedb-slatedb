@@ -50,6 +50,32 @@ pub struct CaseResult {
     pub detail: Option<String>,
 }
 
+/// The resolved build configuration for the U0/U1 parity lanes.
+///
+/// Single definition on purpose. Case discovery and execution must use the same settings:
+/// listing cases off a stable-toolchain build and then running a 1.93.0 build compares two
+/// different corpora, and it silently rebuilds the whole workspace at run time. Two copies
+/// of this list would drift, and the drift would be invisible until a U0/U1 diff blamed it
+/// on SlateDB.
+///
+/// `RUSTUP_TOOLCHAIN` is the parity lane from `MODULE.bazel` L34, L49. Debug info is off
+/// because the full DWARF build of the workspace does not fit this machine's disk; it
+/// changes no test semantics, and brief §21.7 requires the setting to be explicit and
+/// attested rather than inherited. `tools/u0-build-env.sh` carries the same values for
+/// manual invocations.
+pub const PARITY_BUILD_ENV: [(&str, &str); 5] = [
+    ("RUSTUP_TOOLCHAIN", "1.93.0"),
+    ("RUST_BACKTRACE", "1"),
+    ("CARGO_INCREMENTAL", "0"),
+    ("CARGO_PROFILE_DEV_DEBUG", "0"),
+    ("CARGO_PROFILE_TEST_DEBUG", "0"),
+];
+
+/// `PARITY_BUILD_ENV` as an owned map, for staging into a child process.
+pub fn parity_build_env() -> BTreeMap<String, String> {
+    PARITY_BUILD_ENV.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+}
+
 /// Where a run's artifacts live and which profile it ran under.
 pub struct RunContext {
     pub profile: ProfileId,

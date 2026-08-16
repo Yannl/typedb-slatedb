@@ -149,16 +149,17 @@
       "purpose": "soft-fork source and RocksDB/file-WAL semantic oracle",
       "revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
       "git_tree": "cb3bc132c79e29ab9c8971d4d6f2e3fc0ca7776b",
-      "content_digest": "11a2e80e8e7093a4081a5a1c5e0898fe2143ff150f8e27ee7bed14eba6863022",
-      "file_count": 1010,
-      "byte_count": 19035575,
+      "content_digest": "e9c716c2b6de548881cb75dea3290c4c74c20c9634747fc09d9cef2e983d9f21",
+      "file_count": 771,
+      "byte_count": 8885270,
       "dirty": false,
       "untracked": [
         "typedb-logs/typedb.log.2026-08-16-01",
         "typedb-logs/typedb.log.2026-08-16-04",
         "typedb-logs/typedb.log.2026-08-16-05",
         "typedb-logs/typedb.log.2026-08-16-06",
-        "typedb-logs/typedb.log.2026-08-16-07"
+        "typedb-logs/typedb.log.2026-08-16-07",
+        "typedb-logs/typedb.log.2026-08-16-09"
       ],
       "shallow": false,
       "pin_mismatch": null
@@ -263,7 +264,7 @@
       "pin_mismatch": null
     }
   ],
-  "source_graph_digest": "91237481f32a1c88e494de9e2caf11ddf0430cb3c06d8f744094d3178ec0f98c",
+  "source_graph_digest": "3b8bd2a72a5534d4f28c236053fcc473ba7b4f02fa3f36645c43b6020d6763ae",
   "unresolved": [
     {
       "alias": "TCONSOLE",

@@ -131,7 +131,18 @@ pub fn hash_tree(root: &Path) -> Result<(String, u64, u64)> {
     for entry in walkdir::WalkDir::new(root)
         .follow_links(false)
         .into_iter()
-        .filter_entry(|e| e.file_name() != ".git")
+        // Exclude the runner's own artifacts. `bazel-typedb/` is the staged runfiles tree and
+        // `typedb-logs/` is written by a server the tests start; neither is pinned content.
+        // Including them made the source graph digest change after every run, so the value
+        // that is supposed to identify an exact upstream checkout instead identified "that
+        // checkout, plus whatever the last run left behind" — and the catalogue is bound to
+        // this digest.
+        .filter_entry(|e| {
+            !matches!(
+                e.file_name().to_str().unwrap_or_default(),
+                ".git" | "bazel-typedb" | "typedb-logs" | "typedb_behaviour+"
+            )
+        })
     {
         let entry = entry?;
         if !entry.file_type().is_file() {

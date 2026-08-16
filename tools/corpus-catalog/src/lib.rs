@@ -793,14 +793,52 @@ pub fn generate(inputs: &CatalogInputs<'_>) -> Result<CatalogOutput> {
             // Ported to a Rust xtask preserving kill points (brief Appendix E.3-19).
             port_status: PortStatus::SemanticPort,
         });
-        leaf_cases.push(LeafCase {
-            leaf_case_id: format!("{target_id}::crash-restart-loop"),
-            target_id,
-            kind: LeafKind::Script,
-            display_name: Some("docker kill/restart durability crash loop".into()),
-            source_hash: sha256_file(&crash_script)?,
-            declared_ignored: false,
-            resource_group: Some("docker".into()),
+        // Not a leaf case: it cannot run here, and a case that cannot run is an exclusion,
+        // not a permanent red. `tool/test/simulate-crash.sh` needs Docker, the Bazel-built
+        // image `bazel:assemble-linux-x86_64` (blocked on TB-BASE) and TypeDB Console
+        // (blocked on TCONSOLE), and it loops for 10 minutes by design. No BUILD rule and no
+        // Rust source references it, so upstream does not run it in CI either — it is a
+        // developer utility. The target stays in the catalogue so the obligation is visible.
+        exclusions.push(Exclusion {
+            subject_id: format!("{target_id}::crash-restart-loop"),
+            predicate: "blocked_on_unresolved_input".into(),
+            reason: "requires Docker plus the Bazel-built OCI image (TB-BASE, unresolved) and \
+                     TypeDB Console (TCONSOLE, unresolved); declared by no BUILD rule or Rust \
+                     source, so upstream CI does not run it either"
+                .into(),
+            owner: "programme".into(),
+            expiry: "2027-01-01".into(),
+            replacement_test_id: None,
+        });
+    }
+
+    // --- Targets blocked on unresolved distribution artifacts.
+    //
+    // `tests/assembly/*` and `test_fail_points` extract $TYPEDB_ASSEMBLY_ARCHIVE and then
+    // drive the server with `typedb console`. That archive is Bazel's `package-typedb-all`
+    // = server + console-repackaged + loader-repackaged (root BUILD L182-188), so it cannot
+    // be produced without TypeDB Console and Loader — both class-U nodes with no URL,
+    // checksum or licence recorded. Building only the server does not help: the test uses
+    // Console to run its script.
+    //
+    // These stay leaf cases and are expected to FAIL rather than be skipped, because "did
+    // not run" and "passed" must never look alike. The exclusion records why, so the red is
+    // owned and traceable to a named unresolved input instead of unexplained.
+    for target in targets.iter().filter(|t| {
+        t.env.contains_key("TYPEDB_ASSEMBLY_ARCHIVE")
+            || t.fixture_ids.iter().any(|f| f == "typedb-assembly-archive")
+    }) {
+        exclusions.push(Exclusion {
+            subject_id: target.target_id.clone(),
+            predicate: "blocked_on_unresolved_input".into(),
+            reason: "needs $TYPEDB_ASSEMBLY_ARCHIVE, which is Bazel's package-typedb-all = \
+                     server + TypeDB Console + TypeDB Loader; TCONSOLE and TLOADER are \
+                     class-U with no URL, SHA-256 or licence, and the test invokes Console \
+                     directly to run its script"
+                .into(),
+            owner: "programme".into(),
+            expiry: "2027-01-01".into(),
+            replacement_test_id: None,
         });
     }
 

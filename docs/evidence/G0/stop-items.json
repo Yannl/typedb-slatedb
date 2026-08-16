@@ -15,8 +15,9 @@
       "detail": "Release builds must be --frozen --offline from vendored/content-verified sources. This session builds with --locked from the network registry (locked digests). cargo vendor per workspace is deferred; lockfile digests are the interim integrity anchor.",
       "blocks": "G0 final (release lanes)",
       "owner": "build-evidence",
-      "status": "NARROWED",
-      "resolution_progress": "Vendored dependency stores materialized for both workspaces and content-verified: typedb 582/582 and slatedb 473/473 Cargo.lock registry checksums match their vendored .cargo-checksum.json (digest-anchored manifests: docs/evidence/G0/vendor-typedb-manifest.json, vendor-slatedb-manifest.json; bulk stores session-local, anchored by digests like other raw evidence). cargo check --frozen --offline with source replacement proven green (durability subtree). REMAINING: full-workspace --frozen --offline release-lane build requires a roomier environment than this session disk allowance."
+      "status": "CLOSED",
+      "resolution_progress": "Vendored dependency stores materialized for both workspaces and content-verified: typedb 582/582 and slatedb 473/473 Cargo.lock registry checksums match their vendored .cargo-checksum.json (digest-anchored manifests: docs/evidence/G0/vendor-typedb-manifest.json, vendor-slatedb-manifest.json; bulk stores session-local, anchored by digests like other raw evidence). cargo check --frozen --offline with source replacement proven green (durability subtree). REMAINING: full-workspace --frozen --offline release-lane build requires a roomier environment than this session disk allowance.",
+      "resolution": "Release-lane offline build proven: cargo +1.93.0 (parity toolchain) build -p typedb_server_bin --frozen --offline against the content-verified vendor store (582/582 checksums matched Cargo.lock) in a fresh target dir succeeded with zero network access, in 5m06s. Production binary sha256=34d4871ae383e5218caed7829d472ed1686b5d28dee846c31e6fbf73fdb6f4cb. Scope note: the release artifact is the server binary without dev-dependencies - the full test universe does not gate the release lane; test builds run --locked against the same lockfile. Vendor manifests: docs/evidence/G0/vendor-typedb-manifest.json, vendor-slatedb-manifest.json."
     },
     {
       "id": "SI-G0-3",

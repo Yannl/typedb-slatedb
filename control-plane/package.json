@@ -7,7 +7,9 @@
     "probes:r2": "node --experimental-strip-types probes/run-r2-probes.ts",
     "test:controller": "node --experimental-strip-types --test src/controller/core/controller-core.test.ts",
     "test:controller:mutant": "CONTROLLER_MUTANT=drop-outbox-event node --experimental-strip-types --test src/controller/core/controller-core.test.ts",
-    "test:workerd": "vitest run"
+    "test:workerd": "vitest run",
+    "stack:local": "wrangler dev --local --port 8787",
+    "stack:e2e": "node scripts/local-stack-e2e.mjs"
   },
   "devDependencies": {
     "@cloudflare/containers": "0.3.7",

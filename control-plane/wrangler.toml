@@ -9,3 +9,7 @@ class_name = "DatabaseControllerDO"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["DatabaseControllerDO"]
+
+[[r2_buckets]]
+binding = "PAYLOADS"
+bucket_name = "typedb-payloads-local"

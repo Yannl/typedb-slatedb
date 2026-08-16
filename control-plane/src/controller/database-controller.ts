@@ -82,6 +82,18 @@ export class DatabaseControllerDO extends DurableObject {
     this.core().fenceSession(databaseId, generation, startupSessionId);
   }
 
+  setBudgets(databaseId: string, budgets: Parameters<ControllerCore["setBudgets"]>[1]): void {
+    this.core().setBudgets(databaseId, budgets);
+  }
+
+  exactLookup(databaseId: string, generation: number, appendLsn: number): ReturnType<ControllerCore["exactLookup"]> {
+    return this.core().exactLookup(databaseId, generation, appendLsn);
+  }
+
+  auditContiguity(databaseId: string, generation: number): ReturnType<ControllerCore["auditContiguity"]> {
+    return this.core().auditContiguity(databaseId, generation);
+  }
+
   private core(): ControllerCore {
     const sql = this.sql;
     const storage = this.ctx.storage;

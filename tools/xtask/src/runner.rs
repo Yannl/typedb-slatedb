@@ -46,7 +46,19 @@ pub fn run(
     let staged = conformance_runner::stage_behaviour_corpus(&typedb_root, &behaviour_root)?;
     println!("staged behaviour corpus at {}", staged.display());
 
+    // Clear the previous run's artifacts before starting, rather than merging into them.
+    //
+    // A run writes one stdout/stderr pair per target plus two reports at the end. Merging
+    // would leave logs from targets the catalogue no longer contains sitting beside current
+    // ones, and — worse — a stale `coverage-report.json` would survive a run that crashed
+    // before writing its own, which is exactly the file a later phase would cite as the
+    // baseline. Owning the cleanup here also means no caller has to `rm -rf` the directory
+    // by hand and leave the tree mid-delete if the run is interrupted.
     let evidence_dir = repo_root.join(format!("docs/evidence/phase-b/run-{profile}"));
+    if evidence_dir.exists() {
+        std::fs::remove_dir_all(&evidence_dir)
+            .with_context(|| format!("clearing {}", evidence_dir.display()))?;
+    }
     std::fs::create_dir_all(&evidence_dir)?;
 
     let ctx = RunContext {

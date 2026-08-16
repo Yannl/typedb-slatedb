@@ -1,0 +1,18 @@
+{
+  "name": "typedb-r2-control-plane",
+  "private": true,
+  "description": "Cloudflare control plane: DatabaseControllerDO / DatabaseContainerDO separation (CF-P1) and real-account probe harness (CF-P0, P-R2-*/P-DO-*)",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "probes:r2": "node --experimental-strip-types probes/run-r2-probes.ts"
+  },
+  "devDependencies": {
+    "@cloudflare/containers": "0.3.7",
+    "@cloudflare/vitest-pool-workers": "0.21.3",
+    "typescript": "5.9.2",
+    "wrangler": "4.123.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

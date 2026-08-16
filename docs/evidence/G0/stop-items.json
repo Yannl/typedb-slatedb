@@ -1,0 +1,39 @@
+{
+  "stop_items": [
+    {
+      "id": "SI-G0-1",
+      "title": "Bazel Mode Q cquery snapshot not yet produced",
+      "detail": "A17.3 requires one isolated sacrificial-environment bazel cquery snapshot per source pin, archived under third_party/bazel-evidence/. Bazel is not installed in this environment by design. Until produced, the catalogue parity auditor uses Mode-S-style static BUILD parsing as reconnaissance; the G0 gate remains open on this item.",
+      "blocks": "G0 final",
+      "owner": "build-evidence"
+    },
+    {
+      "id": "SI-G0-2",
+      "title": "Offline vendored dependency store not yet materialized",
+      "detail": "Release builds must be --frozen --offline from vendored/content-verified sources. This session builds with --locked from the network registry (locked digests). cargo vendor per workspace is deferred; lockfile digests are the interim integrity anchor.",
+      "blocks": "G0 final (release lanes)",
+      "owner": "build-evidence"
+    },
+    {
+      "id": "SI-G0-3",
+      "title": "Cloudflare real-account probes require account credentials",
+      "detail": "P-R2-*/P-DO-*/P-CTR-*/P-WORKER-* probes need a real staging Cloudflare account (R2, DO, Containers). No credentials are available to this agent. Probe harness code is implemented in Phase D; execution remains a stop item per playbook J.3 ('every platform fact has raw evidence or remains a stop item').",
+      "blocks": "G1/G2 platform items",
+      "owner": "programme"
+    },
+    {
+      "id": "SI-G0-4",
+      "title": "rustfmt nightly/2026-04-15 not installed",
+      "detail": "Declared by TB for fmt checks only; not required for build/test correctness. Install before running upstream fmt static checks.",
+      "blocks": "G1 static-check lane",
+      "owner": "build-evidence"
+    },
+    {
+      "id": "SI-G0-5",
+      "title": "Raw bulk evidence artifacts session-archived, digests committed",
+      "detail": "Direct git push is denied by org egress policy (403); the GitHub MCP API path cannot carry multi-MB raw artifacts. Raw Cloudflare doc bytes and full build logs are retained in the session workspace; their SHA-256 digests are committed. See docs/evidence/G0/EVIDENCE-README.md.",
+      "blocks": "none (integrity preserved via digests)",
+      "owner": "build-evidence"
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+SOURCE-LOCK LINT: FAIL
+  - TB: checkout missing at sources/typedb
+exit=1

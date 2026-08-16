@@ -1,0 +1,4 @@
+upstream: https://github.com/slatedb/slatedb
+commit: f88be86d17ac53260d3684edbc8f82811d945b5c
+tree: 6244654eb6755427ff6b7649673184bd465b8635
+imported: byte-identical via git archive (SL-P0 seed)

@@ -1,0 +1,4 @@
+upstream: https://github.com/typedb/typedb
+commit: 2256711abd532742dae8e822a9ad5cce63e69b1a
+tree: cb3bc132c79e29ab9c8971d4d6f2e3fc0ca7776b
+imported: byte-identical via git archive (TB-P0 seed; manifests become fork-owned per brief §21.10)

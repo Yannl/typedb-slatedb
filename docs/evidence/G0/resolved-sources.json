@@ -1,0 +1,75 @@
+[
+  {
+    "dirty": false,
+    "kind": "git",
+    "name": "cloudflare-containers",
+    "revision": "298169f4aaba82e7b712458b7c6b14fc3e40ad78",
+    "tree": "05c4a2435c6ae628dc1c21e513b98e3810a00583"
+  },
+  {
+    "dirty": false,
+    "kind": "git",
+    "name": "cloudflare-workers-sdk",
+    "revision": "c576a8271503cc51babc1a8d0f2ef7d384f78742",
+    "tree": "18d9efd648c2295a1eb1eb35335d74992fa3c333"
+  },
+  {
+    "dirty": false,
+    "kind": "git",
+    "name": "slatedb",
+    "revision": "f88be86d17ac53260d3684edbc8f82811d945b5c",
+    "tree": "6244654eb6755427ff6b7649673184bd465b8635"
+  },
+  {
+    "dirty": false,
+    "kind": "git",
+    "name": "typedb",
+    "revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+    "tree": "cb3bc132c79e29ab9c8971d4d6f2e3fc0ca7776b"
+  },
+  {
+    "dirty": false,
+    "kind": "git",
+    "name": "typedb-bazel-distribution",
+    "revision": "ab5bfc90274e2d34569d5bc22558314b551cdecd",
+    "tree": "ae3e8b137fdb23a39ab56b124a74cea6d5f8a501"
+  },
+  {
+    "dirty": false,
+    "kind": "git",
+    "name": "typedb-behaviour",
+    "revision": "ac5d5733a484cea1d8809a2968029a818fdae24f",
+    "tree": "8d4f0b44550648cfe53fe703e039d48696b227dd"
+  },
+  {
+    "dirty": false,
+    "kind": "git",
+    "name": "typedb-dependencies",
+    "revision": "a5c51254088f343fb8b6a9668eaf99b35503dad4",
+    "tree": "60ffc7933c6cf67da42a8d1ec4046278504e6655"
+  },
+  {
+    "dirty": false,
+    "kind": "git",
+    "name": "typedb-driver",
+    "resolved_from_tag": "3.12.3",
+    "revision": "f487d961884010ff305d4395c41e80fa620251c6",
+    "tree": "d7b1736dd719468fe92a387c320ccdb9e1e84a0d"
+  },
+  {
+    "dirty": false,
+    "kind": "git",
+    "name": "typedb-protocol",
+    "resolved_from_tag": "3.12.0",
+    "revision": "0373c1ae106b1f68e80edb06c1b7375075fe62e2",
+    "tree": "6540245f926d263ec4a15037b6cf7e66c796aee4"
+  },
+  {
+    "dirty": false,
+    "kind": "git",
+    "name": "typeql",
+    "resolved_from_tag": "3.12.2",
+    "revision": "7f4cac93fa8eee8643aa9f75eb60cacb5a454842",
+    "tree": "3d8bdb15310fd49e1c563afcdce1015b4c5f6856"
+  }
+]

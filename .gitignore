@@ -1,0 +1,9 @@
+sources/
+target/
+node_modules/
+*.tar.gz
+fork/typedb/
+fork/slatedb/
+typedb-r2-implementation-package/
+docs/evidence/G0/cloudflare-docs/*.html
+docs/evidence/G0/u0-parity-build.log

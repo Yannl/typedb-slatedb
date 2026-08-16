@@ -414,12 +414,13 @@ pub fn summarise(catalog: &Catalog, runs: &[TargetRun], profile: ProfileId) -> C
     let mut executed_cases: BTreeMap<String, Outcome> = BTreeMap::new();
     for run in runs.iter().filter(|r| r.profile_id == profile) {
         for case in &run.cases {
-            // A later duplicate never upgrades an earlier verdict: retries cannot
-            // manufacture a pass (conformance plan hard-stop 9).
+            // Duplicates merge to the worst verdict, so a retry cannot manufacture a pass
+            // (conformance plan hard-stop 9) and a declared skip cannot mask a later
+            // failure.
             executed_cases
                 .entry(case.leaf_case_id.clone())
                 .and_modify(|existing| {
-                    if *existing == Outcome::Passed && case.outcome != Outcome::Passed {
+                    if case.outcome.severity() > existing.severity() {
                         *existing = case.outcome.clone();
                     }
                 })
@@ -587,6 +588,25 @@ mod tests {
         let report = summarise(&catalog, &[mk(Outcome::Failed), mk(Outcome::Passed)], ProfileId::U0);
         assert_eq!(report.failed, 1, "a retry must not turn a failure into a pass");
         assert_eq!(report.passed, 0);
+
+        // The rule is "keep the worst", not "keep anything that is not a pass". An earlier
+        // declared skip must not mask a later real failure, in either arrival order.
+        let ignored_then_failed =
+            summarise(&catalog, &[mk(Outcome::Ignored), mk(Outcome::Failed)], ProfileId::U0);
+        assert_eq!(ignored_then_failed.failed, 1, "a skip must not mask a failure");
+        assert_eq!(ignored_then_failed.ignored, 0);
+
+        let failed_then_ignored =
+            summarise(&catalog, &[mk(Outcome::Failed), mk(Outcome::Ignored)], ProfileId::U0);
+        assert_eq!(failed_then_ignored.failed, 1, "merging must not depend on arrival order");
+
+        let unknown_then_passed = summarise(
+            &catalog,
+            &[mk(Outcome::Unknown("x".into())), mk(Outcome::Passed)],
+            ProfileId::U0,
+        );
+        assert_eq!(unknown_then_passed.unknown, 1);
+        assert_eq!(unknown_then_passed.passed, 0);
     }
 
     #[test]

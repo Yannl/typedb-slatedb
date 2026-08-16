@@ -19,6 +19,24 @@ pub enum Outcome {
     Unknown(String),
 }
 
+impl Outcome {
+    /// How bad this outcome is, for merging duplicate reports of one leaf case.
+    ///
+    /// Merging must keep the worst verdict, not merely refuse to overwrite a pass. A
+    /// same-run duplicate happens whenever a case is reported by more than one path — a
+    /// retried target, a scenario name appearing under two harnesses — and if `Ignored`
+    /// won over a later `Failed`, a real failure would be reported as a declared skip and
+    /// the gate would call it a hole to be owned rather than a regression.
+    pub fn severity(&self) -> u8 {
+        match self {
+            Outcome::Passed => 0,
+            Outcome::Ignored => 1,
+            Outcome::Unknown(_) => 2,
+            Outcome::Failed => 3,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CoverageReport {
     pub profile: ProfileId,

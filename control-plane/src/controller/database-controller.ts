@@ -19,6 +19,14 @@
 
 import { DurableObject } from "cloudflare:workers";
 
+import {
+  ControllerCore,
+  type FinalizeRequest,
+  type FinalizeResult,
+  type SqlRow,
+  type SyncSql,
+} from "./core/procedures.ts";
+
 export interface Env {
   CONTAINER_LIFECYCLE: DurableObjectNamespace;
 }
@@ -73,45 +81,29 @@ export class DatabaseControllerDO extends DurableObject {
   }
 
   /**
-   * WAL finalisation (CT-P3 skeleton). The payload was already uploaded and
-   * verified through the object data path; this procedure performs the
-   * single-transaction late atomic allocation. All awaited work (receipt
-   * verification against R2) happens BEFORE this synchronous block.
+   * WAL finalisation (CT-P3): delegates to the runtime-agnostic
+   * ControllerCore over an adapter binding DO SqlStorage + transactionSync
+   * to the SyncSql contract (validated by the node test suite over a real
+   * SQLite). The payload was already uploaded and receipt-verified through
+   * the object data path BEFORE this call; the core performs the single
+   * synchronous validate -> allocate -> outbox transaction.
    */
-  finalizeWalRecord(req: {
-    databaseId: string;
-    generation: number;
-    startupSessionId: string;
-    operationId: string;
-    requestDigest: string;
-    sequenced: boolean;
-    logicalKey: string | null;
-    payloadKey: string;
-    payloadDigest: string;
-    payloadLength: number;
-  }): { ok: true; appendLsn: number } | { ok: false; error: string } {
-    // one synchronous SQLite transaction: validate -> allocate -> outbox.
-    // (storage.transactionSync exists on SQLite-backed DOs; no awaits inside.)
-    return this.ctx.storage.transactionSync(() => {
-      const replay = this.sql
-        .exec(
-          `SELECT append_lsn, request_digest FROM wal_tail
-           WHERE database_id=? AND generation=? AND finalization_operation_id=?`,
-          req.databaseId, req.generation, req.operationId,
-        )
-        .toArray();
-      if (replay.length) {
-        if (replay[0].request_digest === req.requestDigest) {
-          return { ok: true as const, appendLsn: Number(replay[0].append_lsn) };
-        }
-        return { ok: false as const, error: "OPERATION_DIGEST_CONFLICT" };
-      }
-      // ... session/epoch/lifecycle revalidation + singleton checks and the
-      // late atomic allocation of TypeSequence/AppendLsn/ControlSeq land
-      // here (CT-P2/CT-P3); the outbox row is inserted in this same
-      // transaction.
-      return { ok: false as const, error: "NOT_IMPLEMENTED_BEFORE_G2" };
-    });
+  finalizeWalRecord(req: FinalizeRequest): FinalizeResult {
+    return this.core().finalizeWalRecord(req);
+  }
+
+  finalizeBatch(reqs: FinalizeRequest[]): ReturnType<ControllerCore["finalizeBatch"]> {
+    return this.core().finalizeBatch(reqs);
+  }
+
+  private core(): ControllerCore {
+    const sql = this.sql;
+    const storage = this.ctx.storage;
+    const adapter: SyncSql = {
+      exec: (query: string, ...params: unknown[]) => sql.exec(query, ...params).toArray() as SqlRow[],
+      transaction: <T,>(fn: () => T): T => storage.transactionSync(fn),
+    };
+    return new ControllerCore(adapter);
   }
 
   /** Alarms: at-least-once wakeups driving an idempotent reducer only. */

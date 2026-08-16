@@ -1,0 +1,28 @@
+{
+ "suite": "controller-core (CT-P1/CT-P3/CT-P5 deterministic lane, better-sqlite3)",
+ "tests": {
+  "pass": 12,
+  "fail": 0
+ },
+ "negative_control": {
+  "mutant": "drop-outbox-event",
+  "pass": 11,
+  "fail": 1,
+  "killed_test": "SQL projection and pure reducer replay are trace-equivalent over a generated schedule",
+  "verdict": "EFFECTIVE"
+ },
+ "coverage": [
+  "contiguous LSN + monotone TypeSequence",
+  "kill-point replay idempotency by operation identity",
+  "digest conflict typed rejection",
+  "status singleton (idempotent duplicate / typed conflict)",
+  "stale-session fencing",
+  "bounded admission fail-closed (payload/outbox-depth/tail) + overload recovery",
+  "outbox exactly-once drain across repeated alarms",
+  "batch all-or-nothing = per-record equivalence",
+  "exact lookup typed NOT_FOUND (never EOF)",
+  "fixed iterator head pinning",
+  "SQL-vs-pure-reducer trace equivalence over seeded 200-event schedule",
+  "reducer contiguity negative control"
+ ]
+}

@@ -4,15 +4,24 @@
   "description": "Cloudflare control plane: DatabaseControllerDO / DatabaseContainerDO separation (CF-P1) and real-account probe harness (CF-P0, P-R2-*/P-DO-*)",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "probes:r2": "node --experimental-strip-types probes/run-r2-probes.ts"
+    "probes:r2": "node --experimental-strip-types probes/run-r2-probes.ts",
+    "test:controller": "node --experimental-strip-types --test src/controller/core/controller-core.test.ts",
+    "test:controller:mutant": "CONTROLLER_MUTANT=drop-outbox-event node --experimental-strip-types --test src/controller/core/controller-core.test.ts"
   },
   "devDependencies": {
     "@cloudflare/containers": "0.3.7",
     "@cloudflare/vitest-pool-workers": "0.21.3",
+    "@cloudflare/workers-types": "^5.20260816.1",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.2.0",
     "typescript": "5.9.2",
     "wrangler": "4.123.0"
   },
   "engines": {
     "node": ">=22"
-  }
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3"
+  },
+  "type": "module"
 }

@@ -138,18 +138,57 @@ fn collect_libtest_listings(
     catalog: &corpus_catalog::model::Catalog,
     target_dir: &Path,
 ) -> Result<BTreeMap<String, Vec<corpus_catalog::LibtestCase>>> {
-    // The catalogue schema is closed, so the Cargo target kind is not a field on it.
-    // Re-read it from metadata: selecting a bin with `--test` (or vice versa) fails, and
-    // the failure would look like a missing target rather than a wrong flag.
-    let meta = corpus_catalog::cargo_meta::load(typedb_root, cargo_bin, Some("/opt/protoc/bin"))?;
-    let mut kinds: BTreeMap<(String, String), Vec<String>> = BTreeMap::new();
-    for pkg in meta.workspace_packages() {
-        for t in &pkg.targets {
-            kinds.insert((pkg.name.clone(), t.name.clone()), t.kind.clone());
+    // One build for the whole workspace, then each harness is invoked directly.
+    //
+    // The obvious alternative — `cargo test -p <pkg> --<kind> <name> -- --list` per target —
+    // costs ~106 cargo invocations, each re-checking freshness for the entire graph, and it
+    // deadlocked in practice: cargo held the build-directory lock while blocked reading a
+    // child pipe. Building once and exec'ing the harnesses removes both problems and makes
+    // the listing depend on nothing but the binaries themselves.
+    let path = std::env::var("PATH").unwrap_or_default();
+    let build = Command::new(cargo_bin)
+        .args(["test", "--locked", "--workspace", "--no-run", "--message-format=json"])
+        .current_dir(typedb_root)
+        // Never inherit a caller's target dir: a different one would silently rebuild the
+        // corpus under different settings and list cases from a build nobody recorded.
+        .env("CARGO_TARGET_DIR", target_dir)
+        .env("CARGO_INCREMENTAL", "0")
+        .env("CARGO_PROFILE_TEST_DEBUG", "0")
+        .env("PATH", format!("/opt/protoc/bin:{path}"))
+        .stderr(std::process::Stdio::inherit())
+        .output()
+        .context("building the test harnesses")?;
+    if !build.status.success() {
+        bail!("`cargo test --no-run` failed; the catalogue cannot list cases it cannot build");
+    }
+
+    // `compiler-artifact` messages carry the built executable for each test target.
+    let mut executables: BTreeMap<(String, String), String> = BTreeMap::new();
+    for line in String::from_utf8_lossy(&build.stdout).lines() {
+        let Ok(msg) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+        if msg.get("reason").and_then(|r| r.as_str()) != Some("compiler-artifact") {
+            continue;
         }
+        let Some(exe) = msg.get("executable").and_then(|e| e.as_str()) else { continue };
+        // package_id is like `path+file:///…/storage#0.0.0` or `…#storage@0.0.0`.
+        let pkg_id = msg.get("package_id").and_then(|p| p.as_str()).unwrap_or_default();
+        let pkg = pkg_id
+            .rsplit_once('#')
+            .map(|(path, frag)| match frag.split_once('@') {
+                Some((name, _)) => name.to_string(),
+                None => path.rsplit('/').next().unwrap_or_default().to_string(),
+            })
+            .unwrap_or_default();
+        let name = msg
+            .pointer("/target/name")
+            .and_then(|n| n.as_str())
+            .unwrap_or_default()
+            .to_string();
+        executables.insert((pkg, name), exe.to_string());
     }
 
     let mut out = BTreeMap::new();
+    let mut missing = Vec::new();
     for target in &catalog.targets {
         if target.case_discovery != CaseDiscovery::LibtestList {
             continue;
@@ -157,53 +196,37 @@ fn collect_libtest_listings(
         let (Some(pkg), Some(name)) = (&target.cargo_package, &target.cargo_target) else {
             continue;
         };
+        let Some(exe) = executables.get(&(pkg.clone(), name.clone())) else {
+            missing.push(target.target_id.clone());
+            continue;
+        };
 
-        let kind = kinds
-            .get(&(pkg.clone(), name.clone()))
-            .map(|k| k.first().cloned().unwrap_or_default())
-            .unwrap_or_default();
-
-        let mut args = vec!["test".to_string(), "--locked".into(), "-p".into(), pkg.clone()];
-        match kind.as_str() {
-            "lib" | "rlib" | "proc-macro" => args.push("--lib".into()),
-            "bin" => {
-                args.push("--bin".into());
-                args.push(name.clone());
-            }
-            "test" => {
-                args.push("--test".into());
-                args.push(name.clone());
-            }
-            other => bail!(
-                "target {} has Cargo kind {other:?}, which the listing step does not know how \
-                 to select; refusing to guess a flag",
-                target.target_id
-            ),
-        }
-        args.extend(["--".into(), "--list".into(), "--format".into(), "terse".into()]);
-
-        let path = std::env::var("PATH").unwrap_or_default();
-        let output = Command::new(cargo_bin)
-            .args(&args)
+        let output = Command::new(exe)
+            .args(["--list", "--format", "terse"])
             .current_dir(typedb_root)
-            // Reuse the already-built U0 artifacts; never inherit a caller's target dir,
-            // which would silently rebuild the corpus under different settings.
-            .env("CARGO_TARGET_DIR", target_dir)
-            .env("CARGO_INCREMENTAL", "0")
-            .env("CARGO_PROFILE_TEST_DEBUG", "0")
-            .env("PATH", format!("/opt/protoc/bin:{path}"))
             .output()
             .with_context(|| format!("listing cases for {}", target.target_id))?;
         if !output.status.success() {
             bail!(
-                "listing cases for {} failed: {}",
+                "{} exited {:?} while listing its cases: {}",
                 target.target_id,
+                output.status.code(),
                 String::from_utf8_lossy(&output.stderr).trim()
             );
         }
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let cases = corpus_catalog::parse_libtest_list(&stdout)?;
-        out.insert(target.target_id.clone(), cases);
+        out.insert(target.target_id.clone(), corpus_catalog::parse_libtest_list(&stdout)?);
+    }
+
+    // A catalogued target whose harness was never built is a hole in the denominator, not
+    // a target with zero cases.
+    if !missing.is_empty() {
+        bail!(
+            "{} catalogued target(s) produced no test executable, so their case lists are \
+             unknown: {}",
+            missing.len(),
+            missing.join(", ")
+        );
     }
     Ok(out)
 }

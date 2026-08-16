@@ -1,0 +1,7 @@
+{
+  "lane": "AddressSanitizer (nightly-2026-04-15, -Zsanitizer=address -Zbuild-std, leaks off for by-design process-lifetime statics)",
+  "scope": "storage crate: unit + all five integration suites, U1 (RocksDB) and U2 (SlateDB) profiles",
+  "U1": "8, 14+1ign, 4, 5+2(todo stubs), 10, 6 - zero AddressSanitizer reports",
+  "U2": "8, 14+1ign, 4, 5+2(todo stubs), 10, 6 - zero AddressSanitizer reports",
+  "verdict": "no memory-safety findings; profile byte-identical to the un-instrumented baseline on both engines (covers the RocksCursor 'static transmute co-ownership invariant and the whole TB-P7 adapter/bridge)"
+}

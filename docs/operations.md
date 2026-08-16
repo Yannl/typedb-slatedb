@@ -11,6 +11,7 @@ is the v16 brief; this page is the operational digest.
 | G1 | Complete upstream test catalogue + pristine U0 baseline | **green** (`docs/evidence/G1/`) |
 | — | Safe boundaries (TB-P1..P3, BT-P3), pure models, local protocol spikes | **green** (`docs/evidence/G3/`, models in `tools/protocol-models`) |
 | TB-P7 / U2 | SlateDB keyspace engine, corpus parity vs oracle | **green** — full corpus: 106 executables, 104 green, 0 timeouts; the 2 red are documented upstream defects (`u2-vs-oracle-comparison.json`) |
+| Local total-quality lanes | soak repeatability, compiler-delta, memory safety | **green** — soak run 2: all 106 targets, red = todo-stubs only (fail-points passed twice); 1.97.1 qualification byte-identical; ASan clean on both engines (`qualification-1.97.1.json`, `asan-storage.json`, `u2-soak-2/`) |
 | G2 | Real-platform measurements (latency/cost/amplification kill gate) | **blocked** on SI-G0-3 |
 | U3/U4, broad TypeDB semantic phases | remote WAL lanes and beyond | gated on G2 |
 

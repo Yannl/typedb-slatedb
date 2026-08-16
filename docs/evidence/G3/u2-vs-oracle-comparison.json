@@ -36,6 +36,12 @@
   "runtime_note": "U2 wall-clock ~1.1-1.2x the oracle on the heaviest suites when measured without concurrent-build contention (soak run 2: test_concept 258s vs 223s, test_query 123s vs 109s; sweep 1's 841s/497s included unrelated compile load) - zero timeouts in both sweeps",
   "soak": {
     "run_2": "docs/evidence/G3/u2-soak-2/u0-results.json",
-    "profile_delta_vs_run_1": "identical red set on the 97 shared targets except bench_iam, which PASSED in run 2 - the upstream deleted-directory defect is nondeterministic on U2 (see finding doc); tail targets re-run separately after a session-tooling log-compressor race (no run_u0.py defect)"
+    "profile_delta_vs_run_1": "identical red set on the 97 shared targets except bench_iam, which PASSED in run 2 - the upstream deleted-directory defect is nondeterministic on U2 (see finding doc); tail targets re-run separately after a session-tooling log-compressor race (no run_u0.py defect)",
+    "tail": "tail re-run complete: test_fail_points PASSED 2/2 again (2308s - two consecutive U2 passes on the target the oracle baseline fails); all 8 http suites green (u2-soak-2/u0-results-tail-*.json). Soak run 2 therefore covers all 106 targets: red set = test_recovery todo stubs only, bench_iam flaky-passed"
+  },
+  "local_total_quality_lanes": {
+    "qualification_1_97_1": "docs/evidence/G3/qualification-1.97.1.json",
+    "asan": "docs/evidence/G3/asan-storage.json",
+    "soak_run_2": "docs/evidence/G3/u2-soak-2/"
   }
 }

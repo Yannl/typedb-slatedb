@@ -1,0 +1,21 @@
+{
+ "profile": "U0",
+ "toolchain": "rust 1.93.0 parity lane",
+ "results": [
+  {
+   "target_id": "typedb_server_bin:test_fail_points",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_fail_points-39f922489ffa7257",
+   "executable_sha256": "578cfbe5712e16527090acd552b7503dbb24ccf4751169bb10c745ba535238b0",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 2308.01,
+   "passed": 2,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "/tmp/u0/u2-soak-2-tail-fp/typedb_server_bin__test_fail_points.log",
+   "tail": null
+  }
+ ]
+}

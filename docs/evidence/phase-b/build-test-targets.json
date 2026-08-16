@@ -122,7 +122,7 @@
       "//:assemble-typedb-all"
     ],
     "env": {
-      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-windows-x86_64.zip"
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "crate_features": [],
     "tags": [],
@@ -3551,7 +3551,7 @@
       ":script.tql"
     ],
     "env": {
-      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-windows-x86_64.zip"
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "crate_features": [],
     "tags": [],
@@ -3572,7 +3572,7 @@
       ":script.tql"
     ],
     "env": {
-      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-windows-x86_64.zip"
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "crate_features": [],
     "tags": [],

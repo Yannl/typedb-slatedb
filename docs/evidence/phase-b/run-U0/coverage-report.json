@@ -8,7 +8,7 @@
     "passed": 4679,
     "failed": 49,
     "ignored": 29,
-    "ignored_without_exclusion": 1,
+    "ignored_without_exclusion": 0,
     "unknown": 0,
     "not_executed": [],
     "unknown_cases": [],
@@ -18,8 +18,7 @@
   "verdict": {
     "green": false,
     "reasons": [
-      "49 leaf case(s) failed",
-      "1 leaf case(s) are declared-ignored with no catalogue exclusion entry"
+      "49 leaf case(s) failed"
     ],
     "target_coverage": 1.0,
     "leaf_case_coverage": 1.0

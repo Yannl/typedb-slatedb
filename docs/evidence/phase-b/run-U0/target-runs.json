@@ -18,10 +18,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 601,
+    "duration_ms": 401,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__concept__bench_thing_write.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__concept__bench_thing_write.stderr.txt",
@@ -53,7 +54,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -88,10 +90,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 401,
+    "duration_ms": 402,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__encoding__benchmark.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__encoding__benchmark.stderr.txt",
@@ -123,10 +126,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 25817,
+    "duration_ms": 26623,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__executor__bench_instructions.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__executor__bench_instructions.stderr.txt",
@@ -158,7 +162,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -193,10 +198,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 19297,
+    "duration_ms": 19732,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__query__bench_insert_queries_multithreaded.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__query__bench_insert_queries_multithreaded.stderr.txt",
@@ -228,7 +234,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 601,
@@ -263,10 +270,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 101,
-    "duration_ms": 401,
+    "duration_ms": 601,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__storage__bench_rocks.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__storage__bench_rocks.stderr.txt",
@@ -301,7 +309,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -332,7 +341,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -363,7 +373,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -394,7 +405,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -425,7 +437,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -456,10 +469,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 402,
+    "duration_ms": 81122,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bin__typedb_server_bin__typedb_server_bin.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bin__typedb_server_bin__typedb_server_bin.stderr.txt",
@@ -486,10 +500,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 401,
+    "duration_ms": 404,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__answer__answer.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__answer__answer.stderr.txt",
@@ -516,7 +531,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 201,
@@ -546,7 +562,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -589,7 +606,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 801,
@@ -680,7 +698,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -710,7 +729,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 201,
@@ -789,7 +809,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -819,7 +840,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -910,10 +932,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 5405,
+    "duration_ms": 5404,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__durability__durability.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__durability__durability.stderr.txt",
@@ -1013,10 +1036,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 402,
+    "duration_ms": 401,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__durability_test_common__durability_test_common.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__durability_test_common__durability_test_common.stderr.txt",
@@ -1043,7 +1067,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 9007,
@@ -1206,7 +1231,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 201,
@@ -1236,7 +1262,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -1266,7 +1293,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 201,
@@ -1296,7 +1324,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -1333,10 +1362,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 401,
+    "duration_ms": 26624,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__http_steps__http_steps.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__http_steps__http_steps.stderr.txt",
@@ -1363,7 +1393,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -1406,7 +1437,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 201,
@@ -1436,7 +1468,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 201,
@@ -1497,7 +1530,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 201,
@@ -1546,7 +1580,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 201,
@@ -1697,7 +1732,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -1727,7 +1763,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 201,
@@ -1757,7 +1794,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 201,
@@ -1800,7 +1838,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -1830,7 +1869,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 201,
@@ -1860,10 +1900,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 401,
+    "duration_ms": 40856,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__server__server.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__server__server.stderr.txt",
@@ -1915,7 +1956,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -1945,10 +1987,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 401,
+    "duration_ms": 76911,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__steps__steps.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__steps__steps.stderr.txt",
@@ -1975,10 +2018,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 601,
+    "duration_ms": 602,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__storage__storage.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__storage__storage.stderr.txt",
@@ -2054,7 +2098,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 201,
@@ -2084,7 +2129,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -2114,7 +2160,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 201,
@@ -2144,7 +2191,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -2174,7 +2222,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -2204,7 +2253,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -2234,7 +2284,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -2313,7 +2364,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -2344,10 +2396,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 1002,
+    "duration_ms": 1001,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__compiler__transformation.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__compiler__transformation.stderr.txt",
@@ -2448,10 +2501,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 802,
+    "duration_ms": 801,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__concept__test_statistics.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__concept__test_statistics.stderr.txt",
@@ -2534,10 +2588,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 1202,
+    "duration_ms": 1001,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__concept__test_thing.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__concept__test_thing.stderr.txt",
@@ -2656,7 +2711,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 601,
@@ -2724,10 +2780,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 402,
+    "duration_ms": 401,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__concept__test_utils_concept.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__concept__test_utils_concept.stderr.txt",
@@ -2755,7 +2812,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 601,
@@ -2799,10 +2857,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 402,
+    "duration_ms": 401,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__database__test_diagnostics_posthog_pii.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__database__test_diagnostics_posthog_pii.stderr.txt",
@@ -2843,10 +2902,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 2421,
+    "duration_ms": 2611,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__database__test_statistics_synchronization.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__database__test_statistics_synchronization.stderr.txt",
@@ -2881,10 +2941,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 107873,
+    "duration_ms": 108475,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__database__test_transaction.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__database__test_transaction.stderr.txt",
@@ -3099,10 +3160,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 1602,
+    "duration_ms": 1802,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__database__test_transaction_isolation.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__database__test_transaction_isolation.stderr.txt",
@@ -3263,7 +3325,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -3327,7 +3390,8 @@
       "RUSTUP_TOOLCHAIN": "1.93.0",
       "RUST_BACKTRACE": "1",
       "TEST_WAL_RECOVERER": "$(rootpath //durability/tests/crash/recoverer:recoverer)",
-      "TEST_WAL_STREAMER": "$(rootpath //durability/tests/crash/streamer:streamer)"
+      "TEST_WAL_STREAMER": "$(rootpath //durability/tests/crash/streamer:streamer)",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -3358,10 +3422,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 1001,
+    "duration_ms": 1002,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__encoding__test_attribute_vertex.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__encoding__test_attribute_vertex.stderr.txt",
@@ -3432,7 +3497,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -3470,10 +3536,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 2202,
+    "duration_ms": 2002,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__encoding__test_type_vertex.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__encoding__test_type_vertex.stderr.txt",
@@ -3520,7 +3587,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -3551,7 +3619,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -3589,7 +3658,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 1002,
@@ -3675,7 +3745,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 1001,
@@ -3761,7 +3832,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -3817,7 +3889,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 601,
@@ -3879,10 +3952,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 801,
+    "duration_ms": 802,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_execute_isa.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_execute_isa.stderr.txt",
@@ -3965,10 +4039,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 801,
+    "duration_ms": 802,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_execute_links.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_execute_links.stderr.txt",
@@ -4045,7 +4120,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 601,
@@ -4096,7 +4172,8 @@
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
       "RUST_BACKTRACE": "1",
-      "RUST_MIN_STACK": "40960000"
+      "RUST_MIN_STACK": "40960000",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 1802,
@@ -4188,10 +4265,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 1002,
+    "duration_ms": 1001,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_pipelines.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_pipelines.stderr.txt",
@@ -4274,10 +4352,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 601,
+    "duration_ms": 602,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_select.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_select.stderr.txt",
@@ -4324,10 +4403,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 802,
+    "duration_ms": 801,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_writes.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_writes.stderr.txt",
@@ -4392,7 +4472,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -4423,7 +4504,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -4545,7 +4627,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -4595,7 +4678,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -4651,7 +4735,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -4713,10 +4798,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 401,
+    "duration_ms": 602,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_define.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_define.stderr.txt",
@@ -4751,10 +4837,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 601,
+    "duration_ms": 602,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_fetch.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_fetch.stderr.txt",
@@ -4789,10 +4876,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 602,
+    "duration_ms": 601,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_pipeline_stages_limit.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_pipeline_stages_limit.stderr.txt",
@@ -4833,10 +4921,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 601,
+    "duration_ms": 602,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_query_cache.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_query_cache.stderr.txt",
@@ -4883,10 +4972,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 602,
+    "duration_ms": 601,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_query_profile.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_query_profile.stderr.txt",
@@ -4921,10 +5011,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 601,
+    "duration_ms": 602,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_unimplemented.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_unimplemented.stderr.txt",
@@ -4965,10 +5056,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 3003,
+    "duration_ms": 29228,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__server__test_admin_service.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__server__test_admin_service.stderr.txt",
@@ -5057,7 +5149,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 601,
@@ -5179,7 +5272,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -5235,7 +5329,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 101,
     "duration_ms": 601,
@@ -5309,7 +5404,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 601,
@@ -5401,7 +5497,8 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
     "duration_ms": 401,
@@ -5508,10 +5605,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 401,
+    "duration_ms": 5621,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__bench_concurrency.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__bench_concurrency.stderr.txt",
@@ -5539,10 +5637,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 4204,
+    "duration_ms": 8410,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__bench_iam.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__bench_iam.stderr.txt",
@@ -5587,7 +5686,7 @@
       "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-windows-x86_64.zip"
     },
     "exit_code": 101,
-    "duration_ms": 601,
+    "duration_ms": 801,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_assembly.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_assembly.stderr.txt",
@@ -5623,10 +5722,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 494289,
+    "duration_ms": 492227,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_concept.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_concept.stderr.txt",
@@ -17752,10 +17852,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 9007,
+    "duration_ms": 12014,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_connection.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_connection.stderr.txt",
@@ -18138,10 +18239,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 5405,
+    "duration_ms": 8006,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_debug.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_debug.stderr.txt",
@@ -18180,7 +18282,7 @@
       "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-windows-x86_64.zip"
     },
     "exit_code": 101,
-    "duration_ms": 602,
+    "duration_ms": 802,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_fail_points.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_fail_points.stderr.txt",
@@ -18474,10 +18576,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 19614,
+    "duration_ms": 26221,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_database.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_database.stderr.txt",
@@ -18602,10 +18705,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 2002,
+    "duration_ms": 8010,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_debug.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_debug.stderr.txt",
@@ -18641,10 +18745,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 80450,
+    "duration_ms": 86679,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_driver_concept.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_driver_concept.stderr.txt",
@@ -19118,10 +19223,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 52237,
+    "duration_ms": 59245,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_driver_connection.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_driver_connection.stderr.txt",
@@ -19271,10 +19377,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 68645,
+    "duration_ms": 75257,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_driver_http.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_driver_http.stderr.txt",
@@ -19544,10 +19651,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 33622,
+    "duration_ms": 40035,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_driver_query.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_driver_query.stderr.txt",
@@ -19775,10 +19883,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 55037,
+    "duration_ms": 62051,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_driver_user.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_driver_user.stderr.txt",
@@ -19970,10 +20079,11 @@
       "CARGO_PROFILE_TEST_DEBUG": "0",
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
-      "RUST_BACKTRACE": "1"
+      "RUST_BACKTRACE": "1",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 45430,
+    "duration_ms": 52062,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_transaction.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_transaction.stderr.txt",
@@ -20262,10 +20372,11 @@
       "CARGO_TARGET_DIR": "/home/user/typedb-slatedb/build/u0",
       "RUSTUP_TOOLCHAIN": "1.93.0",
       "RUST_BACKTRACE": "1",
-      "RUST_MIN_STACK": "40960000"
+      "RUST_MIN_STACK": "40960000",
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
     },
     "exit_code": 0,
-    "duration_ms": 320783,
+    "duration_ms": 329812,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_query.stdout.txt",
     "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_query.stderr.txt",
@@ -31320,7 +31431,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 1,
+    "duration_ms": 35,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static_____checkstyle.stdout.txt",
     "stderr_path": "",
@@ -31364,7 +31475,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 18,
+    "duration_ms": 32,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static_____rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -31760,7 +31871,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 0,
+    "duration_ms": 1,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_lending_iterator_checkstyle.stdout.txt",
     "stderr_path": "",
@@ -32024,7 +32135,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 20,
+    "duration_ms": 19,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____compiler_tests_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -32112,7 +32223,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 16,
+    "duration_ms": 15,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____concept_benches_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -32178,7 +32289,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 10,
+    "duration_ms": 11,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____concept_checkstyle.stdout.txt",
     "stderr_path": "",
@@ -32266,7 +32377,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 31,
+    "duration_ms": 33,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____database_tests_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -32310,7 +32421,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 16,
+    "duration_ms": 17,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____database_tools_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -32464,7 +32575,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 16,
+    "duration_ms": 15,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____durability_benches_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -32596,7 +32707,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 14,
+    "duration_ms": 12,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____durability_tests_crash_streamer_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -32728,7 +32839,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 14,
+    "duration_ms": 15,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____encoding_benches_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -32904,7 +33015,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 111,
+    "duration_ms": 114,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____executor_tests_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -32926,7 +33037,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 10,
+    "duration_ms": 8,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____executor_checkstyle.stdout.txt",
     "stderr_path": "",
@@ -32992,7 +33103,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 13,
+    "duration_ms": 15,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____function_tests_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -33080,7 +33191,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 20,
+    "duration_ms": 19,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____ir_tests_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -33102,7 +33213,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 4,
+    "duration_ms": 5,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____ir_checkstyle.stdout.txt",
     "stderr_path": "",
@@ -33168,7 +33279,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 20,
+    "duration_ms": 19,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____query_benches_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -33212,7 +33323,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 20,
+    "duration_ms": 19,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____query_tests_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -33278,7 +33389,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 0,
+    "duration_ms": 1,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____resource_checkstyle.stdout.txt",
     "stderr_path": "",
@@ -33344,7 +33455,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 7,
+    "duration_ms": 8,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____server_checkstyle.stdout.txt",
     "stderr_path": "",
@@ -33410,7 +33521,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 19,
+    "duration_ms": 20,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____storage_benches_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -33454,7 +33565,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 32,
+    "duration_ms": 30,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____storage_tests_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -33586,7 +33697,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 14,
+    "duration_ms": 15,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_assembly_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -33608,7 +33719,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 0,
+    "duration_ms": 1,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_concept_checkstyle.stdout.txt",
     "stderr_path": "",
@@ -33630,7 +33741,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 16,
+    "duration_ms": 19,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_concept_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -33718,7 +33829,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 13,
+    "duration_ms": 14,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_debug_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -33762,7 +33873,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 16,
+    "duration_ms": 17,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_query_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -33806,7 +33917,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 13,
+    "duration_ms": 17,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_service_http_connection_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -33850,7 +33961,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 12,
+    "duration_ms": 15,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_service_http_debug_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -33894,7 +34005,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 14,
+    "duration_ms": 16,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_service_http_driver_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -34136,7 +34247,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 18,
+    "duration_ms": 20,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_benchmarks_concurrent_ops_rustfmt_test.stdout.txt",
     "stderr_path": "",
@@ -34180,7 +34291,7 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 15,
+    "duration_ms": 17,
     "timed_out": false,
     "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_benchmarks_iam_rustfmt_test.stdout.txt",
     "stderr_path": "",

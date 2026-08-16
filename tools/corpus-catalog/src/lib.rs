@@ -274,15 +274,55 @@ pub fn scan_build_files(fork_root: &Path) -> Result<(Vec<BuildTestTarget>, Recon
 ///
 /// Every `select` branch is kept: the archive path differs per platform and the
 /// catalogue must record the whole predicate space, not the host's branch.
+/// The platform constraint whose `select()` branch applies to this lane.
+///
+/// `tests/assembly/BUILD` L8-14 selects `TYPEDB_ASSEMBLY_ARCHIVE` across five platforms.
+/// Walking every branch into one map let the last one win, so a Linux run was told to extract
+/// `typedb-all-windows-x86_64.zip` — and because the target's env is applied after the
+/// runner's, it silently overrode the archive the runner had staged. All 46 packaging tests
+/// stayed red against an archive that was present and correct.
+///
+/// This is the collapse ADR-0002 says the reader avoids. It does avoid it in the *parse* —
+/// `Value::Call` keeps the select intact — but the consumer flattened it anyway, which is the
+/// same bug one layer down.
+const PLATFORM_CONSTRAINT: &str = "is_linux_x86_64";
+
+/// True for a dict key that names a Bazel platform constraint rather than an env variable.
+fn is_platform_key(key: &str) -> bool {
+    key.contains("//platform:is_") || key == "//conditions:default"
+}
+
 fn collect_env(value: &starlark::Value, out: &mut BTreeMap<String, String>) {
     match value {
         starlark::Value::Dict(pairs) => {
+            // A select() branch dict: take only the branch for this lane's platform, falling
+            // back to //conditions:default when no platform branch matches.
+            let is_select = pairs
+                .iter()
+                .filter_map(|(k, _)| k.as_str())
+                .any(is_platform_key);
+            if is_select {
+                let mut matched = false;
+                for (k, v) in pairs {
+                    if k.as_str().is_some_and(|k| k.contains(PLATFORM_CONSTRAINT)) {
+                        collect_env(v, out);
+                        matched = true;
+                    }
+                }
+                if !matched {
+                    for (k, v) in pairs {
+                        if k.as_str() == Some("//conditions:default") {
+                            collect_env(v, out);
+                        }
+                    }
+                }
+                return;
+            }
             for (k, v) in pairs {
                 match (k.as_str(), v) {
                     (Some(key), starlark::Value::Str(val)) => {
                         out.insert(key.to_string(), val.clone());
                     }
-                    // A select() maps configuration labels to nested env dicts.
                     (_, nested) => collect_env(nested, out),
                 }
             }
@@ -1077,5 +1117,57 @@ mod tests {
             "//tests/behaviour:script.tql".to_string(),
         ]);
         assert_eq!(paths, vec!["connection/database.feature"]);
+    }
+}
+
+#[cfg(test)]
+mod select_resolution_tests {
+    use super::*;
+
+    /// The real `tests/assembly/BUILD` L8-14 select, abbreviated to three platforms.
+    const BUILD: &str = r#"
+env = select({
+    "@typedb_bazel_distribution//platform:is_linux_x86_64": {"TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"},
+    "@typedb_bazel_distribution//platform:is_mac_arm64": {"TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-mac-arm64.zip"},
+    "@typedb_bazel_distribution//platform:is_windows_x86_64": {"TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-windows-x86_64.zip"},
+})
+
+rust_test(name = "test_assembly", env = env)
+"#;
+
+    #[test]
+    fn a_select_resolves_to_this_lane_not_the_last_branch() {
+        let calls = starlark::parse_build_file(BUILD).unwrap();
+        let call = calls.iter().find(|c| c.rule == "rust_test").unwrap();
+        let mut env = BTreeMap::new();
+        collect_env(call.attrs.get("env").unwrap(), &mut env);
+        assert_eq!(
+            env.get("TYPEDB_ASSEMBLY_ARCHIVE").map(String::as_str),
+            Some("typedb-all-linux-x86_64.tar.gz"),
+            "walking every branch let Windows win and pointed a Linux run at a .zip"
+        );
+        assert_eq!(env.len(), 1, "only the matching branch contributes");
+    }
+
+    #[test]
+    fn a_plain_env_dict_is_untouched() {
+        let calls =
+            starlark::parse_build_file("rust_test(name = \"t\", env = {\"A\": \"1\", \"B\": \"2\"})")
+                .unwrap();
+        let mut env = BTreeMap::new();
+        collect_env(calls[0].attrs.get("env").unwrap(), &mut env);
+        assert_eq!(env.len(), 2);
+        assert_eq!(env.get("A").map(String::as_str), Some("1"));
+    }
+
+    #[test]
+    fn a_select_with_no_matching_platform_falls_back_to_default() {
+        let calls = starlark::parse_build_file(
+            "rust_test(name = \"t\", env = select({\"@x//platform:is_mac_arm64\": {\"A\": \"mac\"}, \"//conditions:default\": {\"A\": \"other\"}}))",
+        )
+        .unwrap();
+        let mut env = BTreeMap::new();
+        collect_env(calls[0].attrs.get("env").unwrap(), &mut env);
+        assert_eq!(env.get("A").map(String::as_str), Some("other"));
     }
 }

@@ -5,10 +5,10 @@
   "assembly_archive_sha256": "db4d44fe46efc63955d5f8943162c33b56f2db617d340f8f0380dd5283015c8b",
   "repo_commit": "13d7a1447b543a00c6bae163cb43a6f5da1ec132",
   "executables": 8,
-  "green": 1,
-  "red": 7,
+  "green": 8,
+  "red": 0,
   "timeout": 0,
-  "cases_passed": 1,
+  "cases_passed": 8,
   "cases_failed": 0,
   "cases_ignored": 0
 }

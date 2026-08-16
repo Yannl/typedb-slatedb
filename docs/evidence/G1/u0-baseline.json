@@ -1579,7 +1579,9 @@
    "filtered_out": 0,
    "raw_log": "docs/evidence/G1/u0-results-pass2-fixedenv/typedb_server_bin__test_fail_points.log",
    "tail": null,
-   "source_pass": "pass2-fixedenv"
+   "source_pass": "pass2-fixedenv",
+   "classification": "FALSE-GREEN-ENVIRONMENT-POISONED",
+   "note": "invalidated: zombie server on port 1729 answered the readiness probe and console during this measurement; see docs/evidence/G3/finding-failpoints-false-green.md; corrected expectation comes from docs/evidence/G3/failpoints-remeasure"
   },
   {
    "target_id": "typedb_server_bin:test_http_database",
@@ -1740,6 +1742,14 @@
    "raw_log": "docs/evidence/G1/u0-results-pass2-fixedenv/typedb_server_bin__typedb_server_bin.log",
    "tail": null,
    "source_pass": "pass2-fixedenv"
+  }
+ ],
+ "baseline_corrections": [
+  {
+   "target": "typedb_server_bin:test_fail_points",
+   "was": "2 passed in 84.24s (pass2-fixedenv)",
+   "correction": "FALSE-GREEN-ENVIRONMENT-POISONED; re-measured at the upstream Bazel eternal ceiling (3600s) in a clean environment",
+   "evidence": "docs/evidence/G3/finding-failpoints-false-green.md"
   }
  ]
 }

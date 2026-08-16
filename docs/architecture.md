@@ -44,6 +44,14 @@ is the main way this documentation could mislead.
 | [0004](architecture/ADR/0004-porting-the-static-checks.md) | Port the static checks rather than exclude them |
 | [0005](architecture/ADR/0005-local-stack-and-dev-prod-parity.md) | Local stack in three layers; which parity is free |
 
+## Other documentation
+
+| Folder | Audience |
+|---|---|
+| [`docs/dev/`](dev/) | People working on this repository |
+| [`docs/ops/`](ops/) | People running the gates and handling evidence |
+| [`docs/user/`](user/) | People using the system — currently near-empty, and honest about why |
+
 ## Where the facts come from
 
 Architecture documents make claims about upstream behaviour. Those claims are anchored, not

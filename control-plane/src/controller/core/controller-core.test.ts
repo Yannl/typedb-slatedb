@@ -254,6 +254,32 @@ test("SQL projection and pure reducer replay are trace-equivalent over a generat
   }
 });
 
+test("status recovery is never blocked by budgets: duplicate status retry succeeds at full tail", () => {
+  const core = boot();
+  // write one status record, then fill the tail to its budget
+  const status = req({ sequencingKind: "UNSEQUENCED", logicalKey: "status:cp", payloadDigest: "pd-s" });
+  const original = core.finalizeWalRecord(status);
+  assert.ok(original.ok);
+  core.setBudgets("db1", { maxUnpublishedOutbox: 1000, maxPayloadLength: 1000, maxTailRecords: 3 });
+  assert.ok(core.finalizeWalRecord(req()).ok);
+  assert.ok(core.finalizeWalRecord(req()).ok); // tail now at 3 = budget
+  // lost-response recovery: identical status content, fresh operation id -
+  // must replay the original allocation despite the exhausted tail budget
+  const retry = core.finalizeWalRecord(
+    req({ sequencingKind: "UNSEQUENCED", logicalKey: "status:cp", payloadDigest: "pd-s" }),
+  );
+  assert.ok(retry.ok && retry.replayed, `expected replay, got ${JSON.stringify(retry)}`);
+  assert.equal(retry.ok && retry.appendLsn, original.ok && original.appendLsn);
+  // a genuinely NEW write is still rejected by the budget
+  const fresh = core.finalizeWalRecord(req());
+  assert.ok(!fresh.ok && fresh.error === "ADMISSION_REJECTED_TAIL_BUDGET");
+  // and a CONFLICTING status is still a typed conflict, not an admission error
+  const conflicting = core.finalizeWalRecord(
+    req({ sequencingKind: "UNSEQUENCED", logicalKey: "status:cp", payloadDigest: "pd-DIFFERENT" }),
+  );
+  assert.deepEqual(conflicting, { ok: false, error: "STATUS_CONFLICT" });
+});
+
 test("negative control: reducer refuses LSN holes (mutant must fail equivalence)", () => {
   const events: WalRecordEvent[] = [
     { databaseId: "db1", generation: 1, appendLsn: 0, typeSequence: 1, sequencingKind: "SEQUENCED",

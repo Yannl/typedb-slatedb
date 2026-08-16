@@ -200,7 +200,7 @@ def run_one(e, out_dir, timeout, reap=False):
         "ignored": ignored,
         "measured": measured,
         "filtered_out": filtered,
-        "raw_log": str(raw.relative_to(REPO)),
+        "raw_log": str(raw.relative_to(REPO)) if raw.is_relative_to(REPO) else str(raw),
         "tail": tail if (code != 0 or timed_out) else None,
     }
 

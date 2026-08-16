@@ -326,9 +326,12 @@ impl Keyspace {
     }
 
     pub(crate) fn delete(self) -> Result<(), KeyspaceDeleteError> {
-        // dropping releases this keyspace's handle; any cursor still pooled in a
-        // live snapshot keeps the `DB` open (and safe) until it is dropped, while
-        // the directory unlink below succeeds regardless
+        // Dropping releases this keyspace's handle; any cursor still pooled in a
+        // live snapshot keeps the `DB` open (and safe) until it is dropped. On
+        // POSIX the directory removal below succeeds regardless (unlink-while-
+        // open); on Windows an outstanding cursor can make removal fail with a
+        // sharing violation, surfaced as the typed DirectoryRemove error rather
+        // than upstream's undefined behavior on the same race.
         drop(self.kv_storage);
         fs::remove_dir_all(self.path.clone())
             .map_err(|error| KeyspaceDeleteError::DirectoryRemove { name: self.name, source: Arc::new(error) })?;

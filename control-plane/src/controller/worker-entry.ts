@@ -50,6 +50,17 @@ export default {
       const key = decodeURIComponent(path.slice("/payload/".length));
       const bytes = await request.arrayBuffer();
       const digest = await sha256hex(bytes);
+      // payload immutability: puts are create-or-identical, never overwrite.
+      // (In production this is enforced by object-store conditions/credential
+      // policy; the facade must uphold the same contract.)
+      const existing = await env.PAYLOADS.get(key);
+      if (existing !== null) {
+        const existingDigest = await sha256hex(await existing.arrayBuffer());
+        if (existingDigest !== digest) {
+          return json({ ok: false, error: "PAYLOAD_IMMUTABILITY_VIOLATION", key, existing: existingDigest }, 409);
+        }
+        return json({ key, sha256hex: digest, length: bytes.byteLength, deduplicated: true });
+      }
       await env.PAYLOADS.put(key, bytes);
       return json({ key, sha256hex: digest, length: bytes.byteLength });
     }
@@ -119,7 +130,17 @@ export default {
         // error - never EOF (§exact-index rules)
         return json({ ok: false, error: "PAYLOAD_MISSING_FOR_CATALOGUED_RECORD", record }, 500);
       }
-      const bytes = new Uint8Array(await object.arrayBuffer());
+      const buffer = await object.arrayBuffer();
+      // exact reads re-verify bytes against the catalogued digest: serving
+      // corrupted payload under valid metadata is worse than failing
+      const observedDigest = await sha256hex(buffer);
+      if (observedDigest !== String(record.payloadDigest)) {
+        return json(
+          { ok: false, error: "PAYLOAD_INTEGRITY_VIOLATION", record, observed: observedDigest },
+          500,
+        );
+      }
+      const bytes = new Uint8Array(buffer);
       let binary = "";
       for (const b of bytes) binary += String.fromCharCode(b);
       return json({ ...record, payloadBase64: btoa(binary) });

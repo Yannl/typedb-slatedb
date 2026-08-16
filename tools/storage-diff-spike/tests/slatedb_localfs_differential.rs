@@ -91,13 +91,23 @@ async fn slatedb_localfs_matches_ordered_oracle() {
 
     // prefix-range scans: every prefix range equals the oracle's view,
     // in byte order, half-open bounds
-    for prefix in 0u8..10 {
+    for prefix in [0u8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0xFF] {
         let (start, end) = prefix_bounds(prefix);
-        let scanned = range_scan(&db, start.clone(), end.clone()).await;
-        let expected: Vec<_> = oracle
-            .range(start..end)
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let (scanned, expected): (Vec<_>, Vec<_>) = match end {
+            Some(end) => (
+                range_scan(&db, start.clone(), end.clone()).await,
+                oracle.range(start..end).map(|(k, v)| (k.clone(), v.clone())).collect(),
+            ),
+            None => {
+                // top prefix: unbounded upper end
+                let mut out = Vec::new();
+                let mut iter = db.scan(start.clone()..).await.expect("open");
+                while let Some(kv) = iter.next().await.expect("next") {
+                    out.push((kv.key.to_vec(), kv.value.to_vec()));
+                }
+                (out, oracle.range(start..).map(|(k, v)| (k.clone(), v.clone())).collect())
+            }
+        };
         assert_eq!(scanned, expected, "prefix {prefix} range equivalence");
     }
 

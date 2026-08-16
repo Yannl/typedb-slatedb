@@ -293,10 +293,20 @@ impl<Durability> MVCCStorage<Durability> {
 
         let result = match validate_result {
             Ok(ValidatedCommit::Write(write_batches)) => {
-                // Ensure WAL is persisted before inserting to the KV store; a closed
-                // channel means the durability service can no longer acknowledge syncs
-                Self::confirm_sync(&sync_notifier)
-                    .map_err(|error| Durability { name: self.name.clone(), typedb_source: error })?;
+                // Ensure WAL is persisted before inserting to the KV store. A sync
+                // failure here is FATAL by design in the file-WAL lane: the record's
+                // durability is ambiguous (it may or may not reach disk), and the
+                // committed/aborted decision can only be re-derived by crash recovery
+                // replaying the WAL. Returning an error instead would strand this
+                // sequence number in Validated state and wedge the watermark forever,
+                // while marking it aborted could diverge from what recovery later
+                // replays as committed. The remote-WAL lane resolves this properly via
+                // finalisation; until then, fail-stop is the only sound policy - the
+                // same observable behavior as upstream's expect(), reached through the
+                // fallible interface.
+                if let Err(error) = Self::confirm_sync(&sync_notifier) {
+                    Self::fatal_commit_durability_ambiguity(&self.name, &error);
+                }
                 // Write to the k-v store
                 commit_profile.snapshot_durable_write_data_confirmed();
 
@@ -319,8 +329,11 @@ impl<Durability> MVCCStorage<Durability> {
                 Ok(commit_sequence_number)
             }
             Ok(ValidatedCommit::Conflict(conflict)) => {
-                Self::confirm_sync(&sync_notifier)
-                    .map_err(|error| Durability { name: self.name.clone(), typedb_source: error })?;
+                // same fatality rationale as the Write branch: an unacknowledged sync
+                // before the abort is persisted leaves recovery ambiguity
+                if let Err(error) = Self::confirm_sync(&sync_notifier) {
+                    Self::fatal_commit_durability_ambiguity(&self.name, &error);
+                }
                 commit_profile.snapshot_durable_write_data_confirmed();
 
                 fail_point!(COMMIT_REJECTED_WITHOUT_PERSISTING_STATUS);
@@ -409,6 +422,16 @@ impl<Durability> MVCCStorage<Durability> {
     /// Wait for a requested durability sync and surface its outcome as a typed
     /// error. A disconnected channel means the durability service shut down (or
     /// died) without acknowledging - never a success.
+    /// Fail-stop on commit-path sync ambiguity (see call sites for rationale).
+    fn fatal_commit_durability_ambiguity(name: &str, error: &DurabilityClientError) -> ! {
+        use tracing::error;
+        error!(
+            "FATAL: WAL sync could not be confirmed while committing to storage '{name}': {error:?}. \
+             Commit durability is ambiguous; aborting so recovery can re-derive state from the WAL."
+        );
+        std::process::abort()
+    }
+
     fn confirm_sync(
         sync_notifier: &mpsc::Receiver<Result<(), DurabilityServiceError>>,
     ) -> Result<(), DurabilityClientError> {

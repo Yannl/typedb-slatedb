@@ -96,7 +96,10 @@ pub fn apply_to_oracle(oracle: &mut Oracle, op: &Op) {
     }
 }
 
-/// The prefix ranges TypeDB-style readers scan: [prefix, prefix+1).
-pub fn prefix_bounds(prefix: u8) -> (Vec<u8>, Vec<u8>) {
-    (vec![prefix], vec![prefix + 1])
+/// The prefix ranges TypeDB-style readers scan: [prefix, next) where `next`
+/// is `None` for the top prefix byte (an unbounded upper end) - `0xFF + 1`
+/// does not exist as a single-byte bound.
+pub fn prefix_bounds(prefix: u8) -> (Vec<u8>, Option<Vec<u8>>) {
+    let end = prefix.checked_add(1).map(|next| vec![next]);
+    (vec![prefix], end)
 }

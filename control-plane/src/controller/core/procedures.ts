@@ -191,6 +191,33 @@ export class ControllerCore {
     if (!session.length) return { ok: false as const, error: "SESSION_UNKNOWN" as const };
     if (Number(session[0].fenced)) return { ok: false as const, error: "SESSION_FENCED" as const };
 
+    // status singleton dedupe MUST precede admission: a duplicate identical
+    // status (lost-response recovery under a fresh operationId) allocates
+    // nothing, so budget pressure must never block it - otherwise the
+    // documented recovery path wedges permanently once the tail reaches its
+    // budget.
+    if (req.logicalKey !== null) {
+      const existing = this.sql.exec(
+        `SELECT append_lsn, type_sequence, control_seq, payload_digest FROM wal_tail
+         WHERE database_id=? AND generation=? AND unsequenced_logical_key=?`,
+        req.databaseId, req.generation, req.logicalKey,
+      );
+      if (existing.length) {
+        // duplicate identical status: idempotent accept of the original;
+        // conflicting status: typed rejection. Never both accepted.
+        if (existing[0].payload_digest === req.payloadDigest) {
+          return {
+            ok: true as const,
+            appendLsn: Number(existing[0].append_lsn),
+            typeSequence: Number(existing[0].type_sequence),
+            controlSeq: Number(existing[0].control_seq),
+            replayed: true,
+          };
+        }
+        return { ok: false as const, error: "STATUS_CONFLICT" as const };
+      }
+    }
+
     // bounded admission, fail-closed, BEFORE any allocation
     const budget = this.sql.exec(`SELECT * FROM budgets WHERE database_id=?`, req.databaseId)[0];
     if (budget) {
@@ -214,29 +241,6 @@ export class ControllerCore {
       );
       if (tail >= Number(budget.max_tail_records)) {
         return { ok: false as const, error: "ADMISSION_REJECTED_TAIL_BUDGET" as const, limit: Number(budget.max_tail_records) };
-      }
-    }
-
-    // status singleton semantics for unsequenced logical keys
-    if (req.logicalKey !== null) {
-      const existing = this.sql.exec(
-        `SELECT append_lsn, type_sequence, control_seq, payload_digest FROM wal_tail
-         WHERE database_id=? AND generation=? AND unsequenced_logical_key=?`,
-        req.databaseId, req.generation, req.logicalKey,
-      );
-      if (existing.length) {
-        // duplicate identical status: idempotent accept of the original;
-        // conflicting status: typed rejection. Never both accepted.
-        if (existing[0].payload_digest === req.payloadDigest) {
-          return {
-            ok: true as const,
-            appendLsn: Number(existing[0].append_lsn),
-            typeSequence: Number(existing[0].type_sequence),
-            controlSeq: Number(existing[0].control_seq),
-            replayed: true,
-          };
-        }
-        return { ok: false as const, error: "STATUS_CONFLICT" as const };
       }
     }
 

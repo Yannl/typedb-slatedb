@@ -43,6 +43,24 @@ describe("DatabaseControllerDO on workerd", () => {
     });
   });
 
+  it("alarm always re-arms into the future and backs off failing tasks", async () => {
+    const stub = testEnv.CONTROLLER.get(testEnv.CONTROLLER.idFromName("t-alarm"));
+    await runInDurableObject(stub, async (instance: DatabaseControllerDO) => {
+      const before = Date.now();
+      await instance.scheduleTask("unknown-task", 60_000);
+      // force the row due, then fire: the unknown task throws, so the backoff
+      // path must advance next_due_at into the future and count the attempt
+      const sql = (instance as unknown as { sql: SqlStorage }).sql;
+      sql.exec(`UPDATE alarm_schedule SET next_due_at = ? WHERE task = 'unknown-task'`, before - 1);
+      await instance.alarm();
+      const row = sql
+        .exec(`SELECT next_due_at, attempts FROM alarm_schedule WHERE task = 'unknown-task'`)
+        .one() as { next_due_at: number; attempts: number };
+      expect(row.attempts).toBe(1);
+      expect(Number(row.next_due_at)).toBeGreaterThan(before); // never re-armed into the past
+    });
+  });
+
   it("enforces the status singleton inside real transactionSync", async () => {
     const stub = testEnv.CONTROLLER.get(testEnv.CONTROLLER.idFromName("t2"));
     await runInDurableObject(stub, async (instance: DatabaseControllerDO) => {

@@ -123,6 +123,20 @@ def libtest_cases():
         ignored = subprocess.run(
             [exe, "--list", "--format", "terse", "--ignored"],
             capture_output=True, text=True, cwd=TB)
+        # completeness contract: an executable that cannot even be listed must
+        # fail the generation loudly, never contribute zero cases silently.
+        # (harness=false binaries reject libtest flags with a nonzero exit and
+        # a usage error on the flag - that is expected and handled downstream;
+        # any other failure mode, e.g. loader errors/exit 127, is fatal.)
+        for run in (listing, ignored):
+            if run.returncode != 0:
+                combined = (run.stdout + run.stderr)
+                if not ("Unrecognized option" in combined
+                        or "unexpected argument" in combined
+                        or "error: Found argument" in combined):
+                    raise RuntimeError(
+                        f"--list failed for {pkg}:{tname} ({exe}) rc={run.returncode}: "
+                        f"{combined[:400]}")
         names = []
         for line in listing.stdout.splitlines():
             if line.endswith(": test"):

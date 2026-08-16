@@ -33,14 +33,22 @@ export interface Env {
 
 export class DatabaseControllerDO extends DurableObject {
   private sql: SqlStorage;
+  private readonly controllerCore: ControllerCore;
 
   constructor(state: DurableObjectState, env: Env) {
     super(state, env);
     this.sql = state.storage.sql;
     // authoritative projection tables (wal_tail/control_outbox/budgets/
     // sessions) are owned by ControllerCore's SCHEMA - single source of truth
-    // shared with the node test lane; only DO-runtime tables live here
-    this.core();
+    // shared with the node test lane; built ONCE per DO instantiation (the
+    // constructor runs the schema DDL). Only DO-runtime tables live here.
+    const sql = this.sql;
+    const storage = this.ctx.storage;
+    const adapter: SyncSql = {
+      exec: (query: string, ...params: unknown[]) => sql.exec(query, ...params).toArray() as SqlRow[],
+      transaction: <T,>(fn: () => T): T => storage.transactionSync(fn),
+    };
+    this.controllerCore = new ControllerCore(adapter);
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS databases(
         database_id TEXT PRIMARY KEY,
@@ -53,6 +61,7 @@ export class DatabaseControllerDO extends DurableObject {
       CREATE TABLE IF NOT EXISTS alarm_schedule(
         task TEXT PRIMARY KEY,
         next_due_at INTEGER NOT NULL,
+        interval_ms INTEGER NOT NULL DEFAULT 60000,
         attempts INTEGER NOT NULL DEFAULT 0
       );
     `);
@@ -103,36 +112,64 @@ export class DatabaseControllerDO extends DurableObject {
   }
 
   private core(): ControllerCore {
-    const sql = this.sql;
-    const storage = this.ctx.storage;
-    const adapter: SyncSql = {
-      exec: (query: string, ...params: unknown[]) => sql.exec(query, ...params).toArray() as SqlRow[],
-      transaction: <T,>(fn: () => T): T => storage.transactionSync(fn),
-    };
-    return new ControllerCore(adapter);
+    return this.controllerCore;
   }
 
-  /** Alarms: at-least-once wakeups driving an idempotent reducer only. */
+  /** Register (or reschedule) a periodic task and arm the alarm. */
+  async scheduleTask(task: string, intervalMs: number): Promise<void> {
+    const now = Date.now();
+    this.sql.exec(
+      `INSERT OR REPLACE INTO alarm_schedule(task, next_due_at, interval_ms, attempts)
+       VALUES (?,?,?,0)`,
+      task, now + intervalMs, intervalMs,
+    );
+    await this.armAlarm();
+  }
+
+  /**
+   * Alarms: at-least-once wakeups driving idempotent reducers only. Progress
+   * is re-derived from durable state, never from the invocation count. Every
+   * pass MUST advance next_due_at (success: now+interval; failure: bounded
+   * exponential backoff) so the alarm is always re-armed into the future -
+   * an unchanged past timestamp would busy-loop the DO.
+   */
   async alarm(): Promise<void> {
+    const now = Date.now();
     const due = this.sql
-      .exec(`SELECT task, next_due_at, attempts FROM alarm_schedule`)
+      .exec(`SELECT task, interval_ms, attempts FROM alarm_schedule WHERE next_due_at <= ?`, now)
       .toArray();
     for (const row of due) {
       try {
-        // idempotent: outbox flush / archival step; progress is re-derived
-        // from durable state, never from the alarm invocation count.
+        this.runScheduledTask(String(row.task));
+        this.sql.exec(
+          `UPDATE alarm_schedule SET attempts = 0, next_due_at = ? WHERE task = ?`,
+          now + Number(row.interval_ms), row.task,
+        );
       } catch {
         this.sql.exec(
-          `UPDATE alarm_schedule SET attempts = attempts + 1, next_due_at = ?
-           WHERE task = ?`,
-          Date.now() + Math.min(60_000 * 2 ** Number(row.attempts), 3_600_000),
+          `UPDATE alarm_schedule SET attempts = attempts + 1, next_due_at = ? WHERE task = ?`,
+          now + Math.min(60_000 * 2 ** Number(row.attempts), 3_600_000),
           row.task,
         );
       }
     }
+    await this.armAlarm();
+  }
+
+  /** Dispatch table for scheduled work; all handlers must be idempotent. */
+  private runScheduledTask(task: string): void {
+    switch (task) {
+      // outbox delivery is consumer-driven (peek/ack); no push tasks are
+      // scheduled yet. Unknown tasks throw so the backoff path bounds them.
+      default:
+        throw new Error(`unknown scheduled task: ${task}`);
+    }
+  }
+
+  private async armAlarm(): Promise<void> {
     const next = this.sql
       .exec(`SELECT MIN(next_due_at) AS n FROM alarm_schedule`)
       .one() as { n: number | null };
-    if (next.n !== null) await this.ctx.storage.setAlarm(next.n);
+    if (next.n !== null) await this.ctx.storage.setAlarm(Number(next.n));
   }
 }

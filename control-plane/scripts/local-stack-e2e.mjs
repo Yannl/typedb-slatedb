@@ -107,6 +107,13 @@ check("fenced session rejected", fenced.status === 409 && fenced.body.error === 
 const audit = await api("GET", `/wal/${DB}/${GEN}/audit`);
 check("tail contiguous", audit.body.contiguous === true && audit.body.count === 2, JSON.stringify(audit.body));
 
+// 8b. payload immutability on the data path
+const overwrite = await api("PUT", `/payload/${DB}/g1/p1`, Buffer.from("DIFFERENT BYTES"), true);
+check("payload overwrite with different bytes rejected",
+  overwrite.status === 409 && overwrite.body.error === "PAYLOAD_IMMUTABILITY_VIOLATION");
+const idempotentPut = await api("PUT", `/payload/${DB}/g1/p1`, payload1, true);
+check("identical re-upload is idempotent", idempotentPut.status === 200 && idempotentPut.body.deduplicated === true);
+
 // 9. outbox consumer loop: at-least-once peek/ack with redelivery
 const peek1 = await api("GET", `/outbox/${DB}?limit=10`);
 check("outbox peek returns finalized events", peek1.body.ok && peek1.body.events.length === 2,

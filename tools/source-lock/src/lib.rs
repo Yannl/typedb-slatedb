@@ -141,6 +141,7 @@ pub fn hash_tree(root: &Path) -> Result<(String, u64, u64)> {
             !matches!(
                 e.file_name().to_str().unwrap_or_default(),
                 ".git" | "bazel-typedb" | "typedb-logs" | "typedb_behaviour+"
+                    | "typedb-extracted" | "typedb-all-linux-x86_64.tar.gz"
             )
         })
     {

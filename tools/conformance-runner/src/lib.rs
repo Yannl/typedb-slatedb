@@ -168,6 +168,44 @@ pub fn stage_behaviour_corpus(workspace_root: &Path, behaviour_root: &Path) -> R
     Ok(dest)
 }
 
+/// Stage the distribution archive where the packaging tests can actually find it.
+///
+/// `tests/assembly/fail_points.rs` L174-181 builds its extract command by string surgery:
+///
+/// ```text
+/// tar -xf $TYPEDB_ASSEMBLY_ARCHIVE && mv ${TYPEDB_ASSEMBLY_ARCHIVE%.tar.gz}-0.0.0 typedb-extracted
+/// ```
+///
+/// `tar` extracts into the working directory, but the `mv` source keeps whatever path prefix
+/// the variable had. So an absolute path extracts to `./typedb-all-linux-x86_64-0.0.0` and
+/// then tries to move `/abs/path/typedb-all-linux-x86_64-0.0.0`, which does not exist. The
+/// variable must therefore be a **bare filename in the working directory** — an assumption
+/// Bazel satisfied by placing the archive in the target's runfiles root.
+///
+/// Copying it in is the same launcher adaptation already used for the behaviour corpus: the
+/// runner supplies what Bazel used to, and no upstream source changes. The canonical copy
+/// still lives under `build/`; this is a staged duplicate, and it is excluded from the source
+/// graph digest for the same reason the runfiles tree is.
+pub fn stage_assembly_archive(workspace_root: &Path, archive: &Path) -> Result<String> {
+    let name = archive
+        .file_name()
+        .and_then(|n| n.to_str())
+        .context("assembly archive has no file name")?
+        .to_string();
+    let dest = workspace_root.join(&name);
+    // Copy only when the content differs, so repeated runs do not re-write 40 MB.
+    let needs_copy = match (std::fs::metadata(&dest), std::fs::metadata(archive)) {
+        (Ok(d), Ok(s)) => d.len() != s.len(),
+        _ => true,
+    };
+    if needs_copy {
+        std::fs::copy(archive, &dest).with_context(|| {
+            format!("staging {} -> {}", archive.display(), dest.display())
+        })?;
+    }
+    Ok(name)
+}
+
 /// Every distinct corpus root the behaviour test sources refer to, as absolute paths.
 ///
 /// Reads the string literals rather than assuming a convention: upstream has three different

@@ -79,10 +79,14 @@ pub fn run(
             let mut env = conformance_runner::parity_build_env();
             let archive = repo_root.join("build/assembly/typedb-all-linux-x86_64.tar.gz");
             if archive.is_file() {
-                env.insert(
-                    "TYPEDB_ASSEMBLY_ARCHIVE".to_string(),
-                    archive.display().to_string(),
-                );
+                // Must be a bare filename in the working directory — see
+                // `stage_assembly_archive` for why an absolute path breaks the extract.
+                match conformance_runner::stage_assembly_archive(&typedb_root, &archive) {
+                    Ok(name) => {
+                        env.insert("TYPEDB_ASSEMBLY_ARCHIVE".to_string(), name);
+                    }
+                    Err(e) => println!("WARNING: could not stage the assembly archive: {e}"),
+                }
             }
             env
         },

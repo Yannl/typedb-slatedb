@@ -310,6 +310,33 @@ inheriting one.
 
 ---
 
+## CR-A-10 — Bazel `data` says what is available, not what runs
+
+**Contract claim.** Appendix E.3-15 asks for the Bazel `data`/`env`/runfiles matrix as the
+way to know which fixtures a target consumes, which reads as though `data` defines a target's
+corpus.
+
+**Observed.** `data` defines *availability*. `test_query` declares
+`@typedb_behaviour//query/functions:negation.feature` as data, but nothing opens it: the
+directory `tests/behaviour/query/functions/` contains `basic.rs`, `definition.rs`,
+`recursion.rs`, `signature.rs`, `structure.rs` and `usage.rs`, and no `negation.rs`. The
+feature itself carries `# TODO: Port to 3.0` at L5 and 6 scenarios (one already `@ignore`).
+
+Counting from `data` therefore placed 6 scenarios in the denominator that no entry point can
+reach, and they sat in `not_executed` permanently.
+
+**Correction.** A target's features are the intersection of its `data` and the
+`Context::test("…")` string literals found in its source tree. Sources alone are not
+sufficient either: the catalogue deliberately hashes sibling modules, and those belong to
+neighbouring targets — using the source-derived set unfiltered inflated the Cucumber count
+from 4 164 to 5 052. Available **and** opened gives 4 158.
+
+**Impact.** Six phantom denominator entries removed. The general point is that the two
+readings answer different questions, and the migration needs both: `data` alone over-counts
+dead fixtures, sources alone leak across target boundaries.
+
+---
+
 ## CR-A-05 — A decoy Rust version in the dependencies repo (no contract change)
 
 Recorded because it is the kind of anchor that looks authoritative and is not.

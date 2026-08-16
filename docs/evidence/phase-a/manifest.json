@@ -1,11 +1,11 @@
 {
   "phase": "phase-a",
-  "artifact_count": 5,
+  "artifact_count": 6,
   "artifacts": [
     {
       "path": "docs/evidence/phase-a/contradiction-records.md",
-      "sha256": "7f881d5f56cc369bb694ff113932d3a0460d2f73601a831396f43bbd2457a465",
-      "bytes": 18836
+      "sha256": "f84959bf699f3a3e663261eccd762fa3bb1d4f1dd51d423ffb1ea39d388054cf",
+      "bytes": 20317
     },
     {
       "path": "docs/evidence/phase-a/doc-lint.json",
@@ -23,10 +23,15 @@
       "bytes": 131347
     },
     {
+      "path": "docs/evidence/phase-a/native-toolchain.json",
+      "sha256": "6f64d396f70ca9dd1a5f64253e7e43a750e7b9f7f8ec2023ea0d6cf6c354d8b6",
+      "bytes": 3817
+    },
+    {
       "path": "docs/evidence/phase-a/summary.md",
-      "sha256": "1c298677d4004a46bd113e8dada1ceb9490e446c5b948e4e61bcf1641bb90ba0",
-      "bytes": 5269
+      "sha256": "90b78c016a6fea311002b536ca2185888623a702026f188dd0fb35475a41d691",
+      "bytes": 6147
     }
   ],
-  "manifest_digest": "93746a2b4d22b2b7ee98d224400614b627001202fe775d007d738eeda1a3241c"
+  "manifest_digest": "7693f53d15411d7a81ca631f0d9da52dd1b518f4a051ae7dc07cb3a565733fd5"
 }

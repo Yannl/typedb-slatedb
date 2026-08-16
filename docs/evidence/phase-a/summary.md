@@ -7,10 +7,11 @@ Every claim here points at a generated artifact in this directory or at
 
 | Artifact | What it is |
 |---|---|
-| `source-lock/source-lock.json` | 13 resolved upstream nodes + 8 unresolved, with per-node content digests |
+| `source-lock/source-lock.json` | 13 resolved upstream nodes + 7 unresolved, with per-node content digests |
 | `docs/evidence/phase-a/doc-lint.json` | digest of all 16 contract documents; patch/gate id audit; schema compilability |
-| `docs/evidence/phase-a/contradiction-records.md` | 5 contract/source disagreements with anchors and corrections |
-| `docs/ADR/0001..0003` | topology, Bazel evidence mode, composite-harness attribution |
+| `docs/evidence/phase-a/contradiction-records.md` | 10 contract/source disagreements with anchors and corrections |
+| `docs/evidence/phase-a/native-toolchain.json` | every native build input, digested (the `NATIVE` node) |
+| `docs/ADR/0001..0004` | topology, Bazel evidence mode, composite-harness attribution, static-check porting |
 
 ## Source graph
 
@@ -49,7 +50,7 @@ mismatch is intentional.
 
 ## Unresolved (class U)
 
-Eight nodes are unresolved and each is recorded against the gate it blocks, in
+Seven nodes are unresolved and each is recorded against the gate it blocks, in
 `sources/UNRESOLVED.md` and in the lock's `unresolved` array. They are not assumed away and
 they are not silently deferred:
 
@@ -89,7 +90,11 @@ usage. Result: **0 findings**.
 
 ## Contradictions
 
-Five recorded, in full in `contradiction-records.md`. The two that change work:
+Ten recorded, in full in `contradiction-records.md`. Four are upstream defects rather than
+contract errors — CR-A-06 through CR-A-08 and CR-A-10 — and all four live in the seam between
+Bazel's conventions and Cargo's, which is exactly the ground the migration has to cross.
+
+The two that most change work:
 
 * **CR-A-01** — the workspace has **42** members, not the 41 asserted in Appendix G.1 and
   restated in A17.1 and `AGENTS.md`. `cargo metadata` reports 43 packages (42 members plus
@@ -105,5 +110,6 @@ Five recorded, in full in `contradiction-records.md`. The two that change work:
 Met: source graph locked and digested; topology established with ADRs; contract lint clean;
 Bazel/Cargo parity audit reports zero unknown rules over 76 BUILD files.
 
-Not met: the `NATIVE` toolchain digest set, and the Mode Q Bazel snapshot that ADR-0002
-defers. Both are tracked as residuals, not closed.
+`NATIVE` is closed (above). Not met: the Mode Q Bazel snapshot that ADR-0002 defers, which
+needs a Bazel-capable sacrificial environment this one is not. Tracked as a residual, not
+closed and not quietly dropped.

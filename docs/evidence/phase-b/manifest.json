@@ -1874,9 +1874,9 @@
     },
     {
       "path": "docs/evidence/phase-b/upstream-test-catalog-U0.json",
-      "sha256": "615b2f54b10dc931c7b6d41dc9e69afa61a5d99a4bd818207e36042b55cf4dfb",
-      "bytes": 5223058
+      "sha256": "f19ca89bfe6ac707dafff2c0b18bf562d86931be518f2144c8064b3ae2d00f17",
+      "bytes": 5223157
     }
   ],
-  "manifest_digest": "3c4f43a08d37bd56b440eadd98ccddf91e4003c9c39dcb060032c6beb4b9a5f7"
+  "manifest_digest": "4328a500b6e1975cad64e9653da7d30d112780d3bee6aa27f81206a75d6d3fe1"
 }

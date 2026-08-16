@@ -1,0 +1,855 @@
+{
+ "total": 141,
+ "pass": 141,
+ "fail": 0,
+ "error": 0,
+ "rustfmt_toolchain": "nightly-2026-04-15",
+ "results": [
+  {
+   "target_id": "static:BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 10,
+   "failures": []
+  },
+  {
+   "target_id": "static:BUILD:checkstyle_license",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:admin/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 3,
+   "failures": []
+  },
+  {
+   "target_id": "static:admin/client/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 11,
+   "failures": []
+  },
+  {
+   "target_id": "static:answer/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 4,
+   "failures": []
+  },
+  {
+   "target_id": "static:binary/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 4,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/bytes/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 4,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/cache/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/concurrency/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 4,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/error/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 3,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/fail_point/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/iterator/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/lending_iterator/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 5,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/logger/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 3,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/logger/BUILD:checkstyle-copies",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/options/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 3,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/primitive/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 5,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/structural_equality/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 3,
+   "failures": []
+  },
+  {
+   "target_id": "static:compiler/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 62,
+   "failures": []
+  },
+  {
+   "target_id": "static:compiler/tests/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:concept/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 41,
+   "failures": []
+  },
+  {
+   "target_id": "static:concept/benches/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:concept/tests/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 5,
+   "failures": []
+  },
+  {
+   "target_id": "static:config/brew/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 3,
+   "failures": []
+  },
+  {
+   "target_id": "static:database/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 8,
+   "failures": []
+  },
+  {
+   "target_id": "static:database/tests/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 6,
+   "failures": []
+  },
+  {
+   "target_id": "static:database/tools/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 3,
+   "failures": []
+  },
+  {
+   "target_id": "static:diagnostics/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 17,
+   "failures": []
+  },
+  {
+   "target_id": "static:docker/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:durability/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 3,
+   "failures": []
+  },
+  {
+   "target_id": "static:durability/benches/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:durability/tests/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 3,
+   "failures": []
+  },
+  {
+   "target_id": "static:durability/tests/common/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:durability/tests/crash/recoverer/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:durability/tests/crash/streamer/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:encoding/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 47,
+   "failures": []
+  },
+  {
+   "target_id": "static:encoding/benches/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:encoding/tests/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 5,
+   "failures": []
+  },
+  {
+   "target_id": "static:executor/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 58,
+   "failures": []
+  },
+  {
+   "target_id": "static:executor/benches/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:executor/tests/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 13,
+   "failures": []
+  },
+  {
+   "target_id": "static:function/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 5,
+   "failures": []
+  },
+  {
+   "target_id": "static:function/tests/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:ir/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 31,
+   "failures": []
+  },
+  {
+   "target_id": "static:ir/tests/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 5,
+   "failures": []
+  },
+  {
+   "target_id": "static:query/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 12,
+   "failures": []
+  },
+  {
+   "target_id": "static:query/benches/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 3,
+   "failures": []
+  },
+  {
+   "target_id": "static:query/tests/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 7,
+   "failures": []
+  },
+  {
+   "target_id": "static:resource/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 7,
+   "failures": []
+  },
+  {
+   "target_id": "static:server/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 69,
+   "failures": []
+  },
+  {
+   "target_id": "static:server/service/admin/proto/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 4,
+   "failures": []
+  },
+  {
+   "target_id": "static:storage/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 32,
+   "failures": []
+  },
+  {
+   "target_id": "static:storage/benches/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 5,
+   "failures": []
+  },
+  {
+   "target_id": "static:storage/tests/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 8,
+   "failures": []
+  },
+  {
+   "target_id": "static:system/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 6,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/assembly/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 3,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/concept/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 18,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/connection/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 4,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/debug/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 3,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/query/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 32,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/service/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/service/http/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/service/http/connection/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 3,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/service/http/debug/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 3,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/service/http/driver/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 6,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/service/http/http_steps/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 10,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/steps/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 25,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/steps/params/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/benchmarks/concurrent_ops/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/benchmarks/iam/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 5,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/distribution/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:tool/release/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:tool/rust/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:tool/test/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:user/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 5,
+   "failures": []
+  },
+  {
+   "target_id": "static:util/project/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:util/test/BUILD:checkstyle",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:answer/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 3,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/bytes/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 3,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/cache/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/concurrency/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 3,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/error/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/fail_point/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/iterator/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/lending_iterator/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 4,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/logger/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 3,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/options/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/primitive/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 4,
+   "failures": []
+  },
+  {
+   "target_id": "static:common/structural_equality/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:compiler/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 61,
+   "failures": []
+  },
+  {
+   "target_id": "static:compiler/tests/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:concept/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 40,
+   "failures": []
+  },
+  {
+   "target_id": "static:concept/benches/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:concept/tests/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 4,
+   "failures": []
+  },
+  {
+   "target_id": "static:database/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 7,
+   "failures": []
+  },
+  {
+   "target_id": "static:database/tests/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 5,
+   "failures": []
+  },
+  {
+   "target_id": "static:database/tools/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:diagnostics/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 16,
+   "failures": []
+  },
+  {
+   "target_id": "static:durability/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:durability/benches/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:durability/tests/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:durability/tests/common/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:durability/tests/crash/recoverer/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:durability/tests/crash/streamer/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:encoding/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 46,
+   "failures": []
+  },
+  {
+   "target_id": "static:encoding/benches/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:encoding/tests/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 4,
+   "failures": []
+  },
+  {
+   "target_id": "static:executor/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 57,
+   "failures": []
+  },
+  {
+   "target_id": "static:executor/benches/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:executor/tests/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 12,
+   "failures": []
+  },
+  {
+   "target_id": "static:function/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 4,
+   "failures": []
+  },
+  {
+   "target_id": "static:function/tests/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:ir/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 30,
+   "failures": []
+  },
+  {
+   "target_id": "static:ir/tests/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 4,
+   "failures": []
+  },
+  {
+   "target_id": "static:query/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 11,
+   "failures": []
+  },
+  {
+   "target_id": "static:query/benches/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:query/tests/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 6,
+   "failures": []
+  },
+  {
+   "target_id": "static:resource/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 6,
+   "failures": []
+  },
+  {
+   "target_id": "static:server/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 67,
+   "failures": []
+  },
+  {
+   "target_id": "static:storage/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 31,
+   "failures": []
+  },
+  {
+   "target_id": "static:storage/benches/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 4,
+   "failures": []
+  },
+  {
+   "target_id": "static:storage/tests/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 7,
+   "failures": []
+  },
+  {
+   "target_id": "static:system/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 4,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/assembly/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/concept/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 17,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/connection/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 3,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/debug/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/query/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 31,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/service/http/connection/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 2,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/service/http/debug/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/service/http/driver/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 5,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/service/http/http_steps/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 9,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/steps/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 24,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/behaviour/steps/params/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/benchmarks/concurrent_ops/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:tests/benchmarks/iam/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:user/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 4,
+   "failures": []
+  },
+  {
+   "target_id": "static:util/project/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  },
+  {
+   "target_id": "static:util/test/BUILD:rustfmt_test",
+   "status": "PASS",
+   "files_checked": 1,
+   "failures": []
+  }
+ ]
+}

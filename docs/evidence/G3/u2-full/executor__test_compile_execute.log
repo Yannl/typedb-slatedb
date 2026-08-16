@@ -1,0 +1,20 @@
+
+running 9 tests
+[2m2026-08-16T16:04:57.060628Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running schema query:
+define relation set-membership, relates set, relates item; entity set, plays set-membership:set; entity item, plays set-membership:item;
+[2m2026-08-16T16:04:57.079941Z[0m [32m INFO[0m [2mquery::query_manager[0m[2m:[0m Schema query done.
+Query profile[measurements_enabled=true, total micros: 0]
+  CompileIR[enabled=true, total micros=0]
+    validation micros: 0
+    annotation micros: 0
+    compilation micros: 0
+  -----
+  Stage[root pattern id=0]
+    Define ~~ 0 us
+    Define pattern
+    [0] Define execution
+        ==> batches: 0, rows: 0, micros: 0, micros/row: NaN (raw seeks: 2, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+
+.........
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.07s
+

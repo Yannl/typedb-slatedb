@@ -23,8 +23,8 @@
     "exit_code": 0,
     "duration_ms": 601,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bench__concept__bench_thing_write.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bench__concept__bench_thing_write.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__concept__bench_thing_write.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__concept__bench_thing_write.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::bench::concept::bench_thing_write::harness",
@@ -58,8 +58,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bench__durability__throughput.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bench__durability__throughput.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__durability__throughput.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__durability__throughput.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::bench::durability::throughput::harness",
@@ -93,8 +93,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bench__encoding__benchmark.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bench__encoding__benchmark.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__encoding__benchmark.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__encoding__benchmark.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::bench::encoding::benchmark::harness",
@@ -126,10 +126,10 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 26216,
+    "duration_ms": 25616,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bench__executor__bench_instructions.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bench__executor__bench_instructions.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__executor__bench_instructions.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__executor__bench_instructions.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::bench::executor::bench_instructions::harness",
@@ -163,8 +163,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bench__query__bench_insert_queries.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bench__query__bench_insert_queries.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__query__bench_insert_queries.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__query__bench_insert_queries.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::bench::query::bench_insert_queries::harness",
@@ -196,10 +196,10 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 20538,
+    "duration_ms": 19105,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bench__query__bench_insert_queries_multithreaded.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bench__query__bench_insert_queries_multithreaded.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__query__bench_insert_queries_multithreaded.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__query__bench_insert_queries_multithreaded.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::bench::query::bench_insert_queries_multithreaded::harness",
@@ -233,8 +233,8 @@
     "exit_code": 0,
     "duration_ms": 601,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bench__storage__bench_mvcc_storage.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bench__storage__bench_mvcc_storage.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__storage__bench_mvcc_storage.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__storage__bench_mvcc_storage.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::bench::storage::bench_mvcc_storage::harness",
@@ -266,10 +266,10 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 101,
-    "duration_ms": 601,
+    "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bench__storage__bench_rocks.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bench__storage__bench_rocks.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__storage__bench_rocks.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bench__storage__bench_rocks.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::bench::storage::bench_rocks::harness",
@@ -306,8 +306,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bin__database-tools__read_wal.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bin__database-tools__read_wal.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bin__database-tools__read_wal.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bin__database-tools__read_wal.stderr.txt",
     "cases": []
   },
   {
@@ -337,8 +337,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bin__database-tools__replay_wal.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bin__database-tools__replay_wal.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bin__database-tools__replay_wal.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bin__database-tools__replay_wal.stderr.txt",
     "cases": []
   },
   {
@@ -368,8 +368,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bin__recoverer__recoverer.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bin__recoverer__recoverer.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bin__recoverer__recoverer.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bin__recoverer__recoverer.stderr.txt",
     "cases": []
   },
   {
@@ -399,8 +399,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bin__streamer__streamer.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bin__streamer__streamer.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bin__streamer__streamer.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bin__streamer__streamer.stderr.txt",
     "cases": []
   },
   {
@@ -430,8 +430,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bin__typedb_admin_bin__typedb_admin_bin.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bin__typedb_admin_bin__typedb_admin_bin.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bin__typedb_admin_bin__typedb_admin_bin.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bin__typedb_admin_bin__typedb_admin_bin.stderr.txt",
     "cases": []
   },
   {
@@ -459,10 +459,10 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 601,
+    "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bin__typedb_server_bin__typedb_server_bin.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__bin__typedb_server_bin__typedb_server_bin.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bin__typedb_server_bin__typedb_server_bin.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__bin__typedb_server_bin__typedb_server_bin.stderr.txt",
     "cases": []
   },
   {
@@ -491,8 +491,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__answer__answer.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__answer__answer.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__answer__answer.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__answer__answer.stderr.txt",
     "cases": []
   },
   {
@@ -521,8 +521,8 @@
     "exit_code": 0,
     "duration_ms": 201,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__bytes__bytes.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__bytes__bytes.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__bytes__bytes.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__bytes__bytes.stderr.txt",
     "cases": []
   },
   {
@@ -551,8 +551,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__cache__cache.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__cache__cache.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__cache__cache.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__cache__cache.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::lib::cache::cache::tests::test_delete_insert_duplicates",
@@ -592,15 +592,15 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 801,
+    "duration_ms": 802,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__compiler__compiler.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__compiler__compiler.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__compiler__compiler.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__compiler__compiler.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::lib::compiler::compiler::annotation::inference::match_inference::tests::basic_binary_edges",
         "outcome": {
-          "UNKNOWN": "unreadable status for annotation::inference::match_inference::tests::basic_binary_edges: \u001b[2m2026-08-16T05:36:07.617438Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for annotation::inference::match_inference::tests::basic_binary_edges: \u001b[2m2026-08-16T06:02:49.719910Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -687,8 +687,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__concept__concept.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__concept__concept.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__concept__concept.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__concept__concept.stderr.txt",
     "cases": []
   },
   {
@@ -717,8 +717,8 @@
     "exit_code": 0,
     "duration_ms": 201,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__concurrency__concurrency.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__concurrency__concurrency.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__concurrency__concurrency.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__concurrency__concurrency.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::lib::concurrency::concurrency::tokio_task::tests::aborting_handle_cancels_task_and_tracker_still_completes",
@@ -796,8 +796,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__database__database.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__database__database.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__database__database.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__database__database.stderr.txt",
     "cases": []
   },
   {
@@ -826,8 +826,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__diagnostics__diagnostics.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__diagnostics__diagnostics.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__diagnostics__diagnostics.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__diagnostics__diagnostics.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::lib::diagnostics::diagnostics::metrics::histogram_metrics::histogram_tests::bucketing_picks_the_smallest_upper_bound_that_includes_the_observation",
@@ -915,10 +915,10 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 5204,
+    "duration_ms": 5404,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__durability__durability.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__durability__durability.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__durability__durability.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__durability__durability.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::lib::durability::durability::wal::test::test_wal_find_last",
@@ -1020,8 +1020,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__durability_test_common__durability_test_common.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__durability_test_common__durability_test_common.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__durability_test_common__durability_test_common.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__durability_test_common__durability_test_common.stderr.txt",
     "cases": []
   },
   {
@@ -1050,8 +1050,8 @@
     "exit_code": 0,
     "duration_ms": 9007,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__encoding__encoding.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__encoding__encoding.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__encoding__encoding.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__encoding__encoding.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::lib::encoding::encoding::value::decimal_value::tests::div",
@@ -1213,8 +1213,8 @@
     "exit_code": 0,
     "duration_ms": 201,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__error__error.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__error__error.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__error__error.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__error__error.stderr.txt",
     "cases": []
   },
   {
@@ -1243,8 +1243,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__executor__executor.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__executor__executor.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__executor__executor.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__executor__executor.stderr.txt",
     "cases": []
   },
   {
@@ -1273,8 +1273,8 @@
     "exit_code": 0,
     "duration_ms": 201,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__fail_point__fail_point.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__fail_point__fail_point.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__fail_point__fail_point.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__fail_point__fail_point.stderr.txt",
     "cases": []
   },
   {
@@ -1303,13 +1303,13 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__function__function.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__function__function.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__function__function.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__function__function.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::lib::function::function::function_manager::tests::test_define_functions",
         "outcome": {
-          "UNKNOWN": "unreadable status for function_manager::tests::test_define_functions: \u001b[2m2026-08-16T05:36:25.249589Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for function_manager::tests::test_define_functions: \u001b[2m2026-08-16T06:03:07.550404Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -1342,8 +1342,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__http_steps__http_steps.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__http_steps__http_steps.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__http_steps__http_steps.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__http_steps__http_steps.stderr.txt",
     "cases": []
   },
   {
@@ -1372,8 +1372,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__ir__ir.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__ir__ir.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__ir__ir.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__ir__ir.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::lib::ir::ir::translation::expression::tests::basic",
@@ -1415,8 +1415,8 @@
     "exit_code": 0,
     "duration_ms": 201,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__iterator__iterator.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__iterator__iterator.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__iterator__iterator.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__iterator__iterator.stderr.txt",
     "cases": []
   },
   {
@@ -1445,8 +1445,8 @@
     "exit_code": 0,
     "duration_ms": 201,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__lending_iterator__lending_iterator.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__lending_iterator__lending_iterator.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__lending_iterator__lending_iterator.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__lending_iterator__lending_iterator.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::lib::lending_iterator::lending_iterator::kmerge::tests::double_seek",
@@ -1506,8 +1506,8 @@
     "exit_code": 0,
     "duration_ms": 201,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__logger__logger.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__logger__logger.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__logger__logger.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__logger__logger.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::lib::logger::logger::log_panic::tests::panic_has_no_backtrace",
@@ -1555,8 +1555,8 @@
     "exit_code": 0,
     "duration_ms": 201,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__options__options.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__options__options.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__options__options.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__options__options.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::lib::options::options::byte_size::tests::deserialize_from_integer",
@@ -1706,8 +1706,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__params__params.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__params__params.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__params__params.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__params__params.stderr.txt",
     "cases": []
   },
   {
@@ -1736,8 +1736,8 @@
     "exit_code": 0,
     "duration_ms": 201,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__primitive__primitive.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__primitive__primitive.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__primitive__primitive.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__primitive__primitive.stderr.txt",
     "cases": []
   },
   {
@@ -1766,8 +1766,8 @@
     "exit_code": 0,
     "duration_ms": 201,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__project__project.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__project__project.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__project__project.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__project__project.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::lib::project::project::test::enum_projection_test",
@@ -1809,8 +1809,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__query__query.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__query__query.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__query__query.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__query__query.stderr.txt",
     "cases": []
   },
   {
@@ -1839,8 +1839,8 @@
     "exit_code": 0,
     "duration_ms": 201,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__resource__resource.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__resource__resource.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__resource__resource.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__resource__resource.stderr.txt",
     "cases": []
   },
   {
@@ -1869,8 +1869,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__server__server.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__server__server.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__server__server.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__server__server.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::lib::server::server::parameters::config::tests::config_file_accepts_old_and_new_address_names",
@@ -1924,8 +1924,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__server_admin_proto__server_admin_proto.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__server_admin_proto__server_admin_proto.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__server_admin_proto__server_admin_proto.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__server_admin_proto__server_admin_proto.stderr.txt",
     "cases": []
   },
   {
@@ -1954,8 +1954,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__steps__steps.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__steps__steps.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__steps__steps.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__steps__steps.stderr.txt",
     "cases": []
   },
   {
@@ -1984,8 +1984,8 @@
     "exit_code": 0,
     "duration_ms": 601,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__storage__storage.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__storage__storage.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__storage__storage.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__storage__storage.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::lib::storage::storage::isolation_manager::tests::test_highly_concurrent_correctness",
@@ -2020,7 +2020,7 @@
       {
         "leaf_case_id": "cargo::lib::storage::storage::tests::test_mixed_legacy_and_current_commit_records",
         "outcome": {
-          "UNKNOWN": "unreadable status for tests::test_mixed_legacy_and_current_commit_records: \u001b[2m2026-08-16T05:36:29.998021Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for tests::test_mixed_legacy_and_current_commit_records: \u001b[2m2026-08-16T06:03:12.283256Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -2065,8 +2065,8 @@
     "exit_code": 0,
     "duration_ms": 201,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__structural_equality__structural_equality.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__structural_equality__structural_equality.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__structural_equality__structural_equality.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__structural_equality__structural_equality.stderr.txt",
     "cases": []
   },
   {
@@ -2095,8 +2095,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__system__system.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__system__system.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__system__system.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__system__system.stderr.txt",
     "cases": []
   },
   {
@@ -2125,8 +2125,8 @@
     "exit_code": 0,
     "duration_ms": 201,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__test_utils__test_utils.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__test_utils__test_utils.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__test_utils__test_utils.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__test_utils__test_utils.stderr.txt",
     "cases": []
   },
   {
@@ -2155,8 +2155,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__test_utils_concept__test_utils_concept.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__test_utils_concept__test_utils_concept.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__test_utils_concept__test_utils_concept.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__test_utils_concept__test_utils_concept.stderr.txt",
     "cases": []
   },
   {
@@ -2185,8 +2185,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__test_utils_encoding__test_utils_encoding.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__test_utils_encoding__test_utils_encoding.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__test_utils_encoding__test_utils_encoding.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__test_utils_encoding__test_utils_encoding.stderr.txt",
     "cases": []
   },
   {
@@ -2215,8 +2215,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__test_utils_storage__test_utils_storage.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__test_utils_storage__test_utils_storage.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__test_utils_storage__test_utils_storage.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__test_utils_storage__test_utils_storage.stderr.txt",
     "cases": []
   },
   {
@@ -2245,8 +2245,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__typedb-admin__typedb_admin.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__typedb-admin__typedb_admin.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__typedb-admin__typedb_admin.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__typedb-admin__typedb_admin.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::lib::typedb-admin::typedb_admin::transport::unix::tests::accepts_socket_mode_0o600",
@@ -2324,8 +2324,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__user__user.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__lib__user__user.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__user__user.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__lib__user__user.stderr.txt",
     "cases": []
   },
   {
@@ -2353,15 +2353,15 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 1002,
+    "duration_ms": 802,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__compiler__transformation.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__compiler__transformation.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__compiler__transformation.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__compiler__transformation.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::compiler::transformation::test_optimise_away_read_snapshot",
         "outcome": {
-          "UNKNOWN": "unreadable status for test_optimise_away_read_snapshot: \u001b[2m2026-08-16T05:36:33.333879Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for test_optimise_away_read_snapshot: \u001b[2m2026-08-16T06:03:15.595105Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -2459,15 +2459,15 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 802,
+    "duration_ms": 801,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__concept__test_statistics.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__concept__test_statistics.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__concept__test_statistics.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__concept__test_statistics.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::concept::test_statistics::create_entity",
         "outcome": {
-          "UNKNOWN": "unreadable status for create_entity: \u001b[2m2026-08-16T05:36:34.311852Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for create_entity: \u001b[2m2026-08-16T06:03:16.414157Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -2547,15 +2547,15 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 1002,
+    "duration_ms": 1001,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__concept__test_thing.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__concept__test_thing.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__concept__test_thing.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__concept__test_thing.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::concept::test_thing::attribute_cleanup_on_concurrent_detach",
         "outcome": {
-          "UNKNOWN": "unreadable status for attribute_cleanup_on_concurrent_detach: \u001b[2m2026-08-16T05:36:35.114015Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for attribute_cleanup_on_concurrent_detach: \u001b[2m2026-08-16T06:03:17.214316Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -2673,13 +2673,13 @@
     "exit_code": 0,
     "duration_ms": 601,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__concept__test_type.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__concept__test_type.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__concept__test_type.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__concept__test_type.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::concept::test_type::annotations_with_range_arguments",
         "outcome": {
-          "UNKNOWN": "unreadable status for annotations_with_range_arguments: \u001b[2m2026-08-16T05:36:36.129067Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for annotations_with_range_arguments: \u001b[2m2026-08-16T06:03:18.257047Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -2743,8 +2743,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__concept__test_utils_concept.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__concept__test_utils_concept.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__concept__test_utils_concept.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__concept__test_utils_concept.stderr.txt",
     "cases": []
   },
   {
@@ -2772,15 +2772,15 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 602,
+    "duration_ms": 601,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__database__test_database.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__database__test_database.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__database__test_database.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__database__test_database.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::database::test_database::create_delete_database",
         "outcome": {
-          "UNKNOWN": "unreadable status for create_delete_database: \u001b[2m2026-08-16T05:36:37.156656Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mdatabase::database\u001b[0m\u001b[2m:\u001b[0m Deleting database 'create_delete'."
+          "UNKNOWN": "unreadable status for create_delete_database: \u001b[2m2026-08-16T06:03:19.311456Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mdatabase::database\u001b[0m\u001b[2m:\u001b[0m Deleting database 'create_delete'."
         },
         "duration_ms": null,
         "detail": null
@@ -2818,10 +2818,10 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 401,
+    "duration_ms": 601,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__database__test_diagnostics_posthog_pii.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__database__test_diagnostics_posthog_pii.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__database__test_diagnostics_posthog_pii.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__database__test_diagnostics_posthog_pii.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::database::test_diagnostics_posthog_pii::posthog_full_report_carries_hash_not_name",
@@ -2862,15 +2862,15 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 2421,
+    "duration_ms": 2414,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__database__test_statistics_synchronization.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__database__test_statistics_synchronization.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__database__test_statistics_synchronization.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__database__test_statistics_synchronization.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::database::test_statistics_synchronization::statistics_synchronization_under_concurrent_load",
         "outcome": {
-          "UNKNOWN": "unreadable status for statistics_synchronization_under_concurrent_load: \u001b[2m2026-08-16T05:36:38.167732Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
+          "UNKNOWN": "unreadable status for statistics_synchronization_under_concurrent_load: \u001b[2m2026-08-16T06:03:20.512151Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
         },
         "duration_ms": null,
         "detail": null
@@ -2902,10 +2902,10 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 107868,
+    "duration_ms": 108473,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__database__test_transaction.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__database__test_transaction.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__database__test_transaction.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__database__test_transaction.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::database::test_transaction::blocked_schema_and_write_transactions_can_progress_in_different_orders",
@@ -3122,13 +3122,13 @@
     "exit_code": 0,
     "duration_ms": 1802,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__database__test_transaction_isolation.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__database__test_transaction_isolation.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__database__test_transaction_isolation.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__database__test_transaction_isolation.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::database::test_transaction_isolation::concurrent_deletes_of_identical_entity_one_fails",
         "outcome": {
-          "UNKNOWN": "unreadable status for concurrent_deletes_of_identical_entity_one_fails: \u001b[2m2026-08-16T05:38:28.496019Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
+          "UNKNOWN": "unreadable status for concurrent_deletes_of_identical_entity_one_fails: \u001b[2m2026-08-16T06:05:11.382563Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
         },
         "duration_ms": null,
         "detail": null
@@ -3288,8 +3288,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__durability__basic.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__durability__basic.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__durability__basic.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__durability__basic.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::durability::basic::added_junk",
@@ -3352,8 +3352,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__durability__crash.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__durability__crash.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__durability__crash.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__durability__crash.stderr.txt",
     "cases": []
   },
   {
@@ -3383,8 +3383,8 @@
     "exit_code": 0,
     "duration_ms": 1002,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__encoding__test_attribute_vertex.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__encoding__test_attribute_vertex.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__encoding__test_attribute_vertex.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__encoding__test_attribute_vertex.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::encoding::test_attribute_vertex::attribute_id_deterministic_bytes",
@@ -3457,13 +3457,13 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__encoding__test_definitions.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__encoding__test_definitions.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__encoding__test_definitions.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__encoding__test_definitions.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::encoding::test_definitions::test_struct_definition",
         "outcome": {
-          "UNKNOWN": "unreadable status for test_struct_definition: \u001b[2m2026-08-16T05:38:32.000892Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for test_struct_definition: \u001b[2m2026-08-16T06:05:14.898422Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -3497,13 +3497,13 @@
     "exit_code": 0,
     "duration_ms": 2002,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__encoding__test_type_vertex.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__encoding__test_type_vertex.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__encoding__test_type_vertex.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__encoding__test_type_vertex.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::encoding::test_type_vertex::entity_type_vertexes_are_reused",
         "outcome": {
-          "UNKNOWN": "unreadable status for entity_type_vertexes_are_reused: \u001b[2m2026-08-16T05:38:32.394715Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for entity_type_vertexes_are_reused: \u001b[2m2026-08-16T06:05:15.295238Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -3549,8 +3549,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__encoding__test_utils_encoding.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__encoding__test_utils_encoding.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__encoding__test_utils_encoding.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__encoding__test_utils_encoding.stderr.txt",
     "cases": []
   },
   {
@@ -3580,13 +3580,13 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__execute_comparison_check.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__execute_comparison_check.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__execute_comparison_check.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__execute_comparison_check.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::executor::execute_comparison_check::attribute_equality",
         "outcome": {
-          "UNKNOWN": "unreadable status for attribute_equality: \u001b[2m2026-08-16T05:38:34.840643Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for attribute_equality: \u001b[2m2026-08-16T06:05:17.755441Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -3620,13 +3620,13 @@
     "exit_code": 0,
     "duration_ms": 1001,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_compile_execute.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_compile_execute.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_compile_execute.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_compile_execute.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::executor::test_compile_execute::test_disjunction_planning_traversal",
         "outcome": {
-          "UNKNOWN": "unreadable status for test_disjunction_planning_traversal: \u001b[2m2026-08-16T05:38:35.245418Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
+          "UNKNOWN": "unreadable status for test_disjunction_planning_traversal: \u001b[2m2026-08-16T06:05:18.155896Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
         },
         "duration_ms": null,
         "detail": null
@@ -3706,15 +3706,15 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 1001,
+    "duration_ms": 1002,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_efficiency.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_efficiency.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_efficiency.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_efficiency.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::executor::test_efficiency::intersection_seeks",
         "outcome": {
-          "UNKNOWN": "unreadable status for intersection_seeks: \u001b[2m2026-08-16T05:38:36.278347Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for intersection_seeks: \u001b[2m2026-08-16T06:05:19.174726Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -3796,8 +3796,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_execute_expression.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_execute_expression.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_execute_expression.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_execute_expression.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::executor::test_execute_expression::list_ops",
@@ -3852,13 +3852,13 @@
     "exit_code": 0,
     "duration_ms": 601,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_execute_has.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_execute_has.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_execute_has.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_execute_has.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::executor::test_execute_has::traverse_has_bounded_sorted_from_chain_intersect",
         "outcome": {
-          "UNKNOWN": "unreadable status for traverse_has_bounded_sorted_from_chain_intersect: \u001b[2m2026-08-16T05:38:37.655049Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for traverse_has_bounded_sorted_from_chain_intersect: \u001b[2m2026-08-16T06:05:20.571242Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -3916,13 +3916,13 @@
     "exit_code": 0,
     "duration_ms": 801,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_execute_isa.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_execute_isa.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_execute_isa.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_execute_isa.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::executor::test_execute_isa::traverse_isa_bounded_thing",
         "outcome": {
-          "UNKNOWN": "unreadable status for traverse_isa_bounded_thing: \u001b[2m2026-08-16T05:38:38.251896Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for traverse_isa_bounded_thing: \u001b[2m2026-08-16T06:05:21.164749Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -4002,15 +4002,15 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 801,
+    "duration_ms": 802,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_execute_links.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_execute_links.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_execute_links.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_execute_links.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::executor::test_execute_links::traverse_links_bounded_relation",
         "outcome": {
-          "UNKNOWN": "unreadable status for traverse_links_bounded_relation: \u001b[2m2026-08-16T05:38:39.067324Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for traverse_links_bounded_relation: \u001b[2m2026-08-16T06:05:21.967275Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -4086,13 +4086,13 @@
     "exit_code": 0,
     "duration_ms": 601,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_execute_relation_index.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_execute_relation_index.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_execute_relation_index.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_execute_relation_index.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::executor::test_execute_relation_index::traverse_index_bound_role_type_filtered_correctly",
         "outcome": {
-          "UNKNOWN": "unreadable status for traverse_index_bound_role_type_filtered_correctly: \u001b[2m2026-08-16T05:38:39.878583Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for traverse_index_bound_role_type_filtered_correctly: \u001b[2m2026-08-16T06:05:22.804018Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -4139,13 +4139,13 @@
     "exit_code": 0,
     "duration_ms": 1802,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_functions.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_functions.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_functions.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_functions.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::executor::test_functions::fibonacci",
         "outcome": {
-          "UNKNOWN": "unreadable status for fibonacci: \u001b[2m2026-08-16T05:38:40.460512Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
+          "UNKNOWN": "unreadable status for fibonacci: \u001b[2m2026-08-16T06:05:23.382378Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
         },
         "duration_ms": null,
         "detail": null
@@ -4231,15 +4231,15 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 801,
+    "duration_ms": 1002,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_pipelines.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_pipelines.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_pipelines.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_pipelines.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::executor::test_pipelines::test_insert",
         "outcome": {
-          "UNKNOWN": "unreadable status for test_insert: \u001b[2m2026-08-16T05:38:42.263731Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
+          "UNKNOWN": "unreadable status for test_insert: \u001b[2m2026-08-16T06:05:25.168940Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
         },
         "duration_ms": null,
         "detail": null
@@ -4321,13 +4321,13 @@
     "exit_code": 0,
     "duration_ms": 601,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_select.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_select.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_select.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_select.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::executor::test_select::anonymous_vars_not_enumerated_or_counted",
         "outcome": {
-          "UNKNOWN": "unreadable status for anonymous_vars_not_enumerated_or_counted: \u001b[2m2026-08-16T05:38:43.082172Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for anonymous_vars_not_enumerated_or_counted: \u001b[2m2026-08-16T06:05:26.178791Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -4371,15 +4371,15 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 601,
+    "duration_ms": 802,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_writes.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__executor__test_writes.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_writes.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__executor__test_writes.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::executor::test_writes::delete_has",
         "outcome": {
-          "UNKNOWN": "unreadable status for delete_has: \u001b[2m2026-08-16T05:38:43.676580Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for delete_has: \u001b[2m2026-08-16T06:05:26.788813Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -4443,8 +4443,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__function__test_definition.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__function__test_definition.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__function__test_definition.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__function__test_definition.stderr.txt",
     "cases": []
   },
   {
@@ -4474,8 +4474,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__ir__binding_modes.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__ir__binding_modes.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__ir__binding_modes.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__ir__binding_modes.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::ir::binding_modes::problematic_is",
@@ -4596,8 +4596,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__ir__pattern.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__ir__pattern.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__ir__pattern.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__ir__pattern.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::ir::pattern::build_conjunction_constraints",
@@ -4646,8 +4646,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__ir__pipeline.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__ir__pipeline.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__ir__pipeline.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__ir__pipeline.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::ir::pipeline::build_with_functions",
@@ -4702,8 +4702,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__ir__test_structural_equality.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__ir__test_structural_equality.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__ir__test_structural_equality.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__ir__test_structural_equality.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::ir::test_structural_equality::test_anonymous_non_equivalence",
@@ -4764,13 +4764,13 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__query__test_define.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__query__test_define.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_define.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_define.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::query::test_define::basic",
         "outcome": {
-          "UNKNOWN": "unreadable status for basic: \u001b[2m2026-08-16T05:38:46.277077Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
+          "UNKNOWN": "unreadable status for basic: \u001b[2m2026-08-16T06:05:29.605380Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
         },
         "duration_ms": null,
         "detail": null
@@ -4804,13 +4804,13 @@
     "exit_code": 0,
     "duration_ms": 601,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__query__test_fetch.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__query__test_fetch.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_fetch.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_fetch.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::query::test_fetch::fetch",
         "outcome": {
-          "UNKNOWN": "unreadable status for fetch: \u001b[2m2026-08-16T05:38:46.686924Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
+          "UNKNOWN": "unreadable status for fetch: \u001b[2m2026-08-16T06:05:29.999858Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
         },
         "duration_ms": null,
         "detail": null
@@ -4844,13 +4844,13 @@
     "exit_code": 0,
     "duration_ms": 601,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__query__test_pipeline_stages_limit.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__query__test_pipeline_stages_limit.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_pipeline_stages_limit.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_pipeline_stages_limit.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::query::test_pipeline_stages_limit::pipeline_at_limit_is_accepted",
         "outcome": {
-          "UNKNOWN": "unreadable status for pipeline_at_limit_is_accepted: \u001b[2m2026-08-16T05:38:47.279295Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
+          "UNKNOWN": "unreadable status for pipeline_at_limit_is_accepted: \u001b[2m2026-08-16T06:05:30.592653Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
         },
         "duration_ms": null,
         "detail": null
@@ -4890,13 +4890,13 @@
     "exit_code": 0,
     "duration_ms": 601,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__query__test_query_cache.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__query__test_query_cache.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_query_cache.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_query_cache.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::query::test_query_cache::identical_query_string_hits_parse_cache",
         "outcome": {
-          "UNKNOWN": "unreadable status for identical_query_string_hits_parse_cache: \u001b[2m2026-08-16T05:38:47.885038Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
+          "UNKNOWN": "unreadable status for identical_query_string_hits_parse_cache: \u001b[2m2026-08-16T06:05:31.197755Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
         },
         "duration_ms": null,
         "detail": null
@@ -4942,13 +4942,13 @@
     "exit_code": 0,
     "duration_ms": 601,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__query__test_query_profile.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__query__test_query_profile.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_query_profile.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_query_profile.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::query::test_query_profile::query_profile_tree_structure",
         "outcome": {
-          "UNKNOWN": "unreadable status for query_profile_tree_structure: \u001b[2m2026-08-16T05:38:48.494415Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
+          "UNKNOWN": "unreadable status for query_profile_tree_structure: \u001b[2m2026-08-16T06:05:31.807632Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
         },
         "duration_ms": null,
         "detail": null
@@ -4982,13 +4982,13 @@
     "exit_code": 0,
     "duration_ms": 601,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__query__test_unimplemented.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__query__test_unimplemented.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_unimplemented.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__query__test_unimplemented.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::query::test_unimplemented::illegal_stages_in_function",
         "outcome": {
-          "UNKNOWN": "unreadable status for illegal_stages_in_function: \u001b[2m2026-08-16T05:38:49.105934Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
+          "UNKNOWN": "unreadable status for illegal_stages_in_function: \u001b[2m2026-08-16T06:05:32.402407Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mquery::query_manager\u001b[0m\u001b[2m:\u001b[0m Running schema query:"
         },
         "duration_ms": null,
         "detail": null
@@ -5028,8 +5028,8 @@
     "exit_code": 0,
     "duration_ms": 3003,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__server__test_admin_service.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__server__test_admin_service.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__server__test_admin_service.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__server__test_admin_service.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::server::test_admin_service::admin_server_status_reports_endpoint",
@@ -5120,13 +5120,13 @@
     "exit_code": 0,
     "duration_ms": 601,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__storage__test_isolation.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__storage__test_isolation.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__storage__test_isolation.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__storage__test_isolation.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::storage::test_isolation::commits_isolated",
         "outcome": {
-          "UNKNOWN": "unreadable status for commits_isolated: \u001b[2m2026-08-16T05:38:52.674041Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for commits_isolated: \u001b[2m2026-08-16T06:05:35.998958Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -5244,13 +5244,13 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__storage__test_mvcc.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__storage__test_mvcc.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__storage__test_mvcc.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__storage__test_mvcc.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::storage::test_mvcc::test_commit_increments_watermark",
         "outcome": {
-          "UNKNOWN": "unreadable status for test_commit_increments_watermark: \u001b[2m2026-08-16T05:38:53.278409Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for test_commit_increments_watermark: \u001b[2m2026-08-16T06:05:36.591291Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -5302,13 +5302,13 @@
     "exit_code": 101,
     "duration_ms": 601,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__storage__test_recovery.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__storage__test_recovery.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__storage__test_recovery.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__storage__test_recovery.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::storage::test_recovery::no_wal_and_checkpoint_illegal",
         "outcome": {
-          "UNKNOWN": "unreadable status for no_wal_and_checkpoint_illegal: \u001b[2m2026-08-16T05:38:53.671423Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for no_wal_and_checkpoint_illegal: \u001b[2m2026-08-16T06:05:36.989645Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -5378,13 +5378,13 @@
     "exit_code": 0,
     "duration_ms": 601,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__storage__test_snapshot.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__storage__test_snapshot.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__storage__test_snapshot.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__storage__test_snapshot.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::storage::test_snapshot::preloaded_snapshot_load_from_at_sequence_number",
         "outcome": {
-          "UNKNOWN": "unreadable status for preloaded_snapshot_load_from_at_sequence_number: \u001b[2m2026-08-16T05:38:54.289129Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
+          "UNKNOWN": "unreadable status for preloaded_snapshot_load_from_at_sequence_number: \u001b[2m2026-08-16T06:05:37.594413Z\u001b[0m \u001b[34mDEBUG\u001b[0m \u001b[2mdurability::wal\u001b[0m\u001b[2m:\u001b[0m Writing unsequenced record with SeqNr[1]"
         },
         "duration_ms": null,
         "detail": null
@@ -5472,8 +5472,8 @@
     "exit_code": 0,
     "duration_ms": 601,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__storage__test_storage.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__storage__test_storage.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__storage__test_storage.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__storage__test_storage.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::storage::test_storage::create_delete",
@@ -5541,8 +5541,8 @@
     "exit_code": 101,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_admin_bin__test_admin_assembly.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_admin_bin__test_admin_assembly.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_admin_bin__test_admin_assembly.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_admin_bin__test_admin_assembly.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::typedb_admin_bin::test_admin_assembly::test_admin_assembly",
@@ -5579,8 +5579,8 @@
     "exit_code": 0,
     "duration_ms": 401,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__bench_concurrency.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__bench_concurrency.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__bench_concurrency.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__bench_concurrency.stderr.txt",
     "cases": []
   },
   {
@@ -5608,10 +5608,10 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 4203,
+    "duration_ms": 4204,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__bench_iam.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__bench_iam.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__bench_iam.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__bench_iam.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::typedb_server_bin::bench_iam::has_permission",
@@ -5655,8 +5655,8 @@
     "exit_code": 101,
     "duration_ms": 601,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_assembly.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_assembly.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_assembly.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_assembly.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::typedb_server_bin::test_assembly::test_assembly",
@@ -5692,10 +5692,10 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 491280,
+    "duration_ms": 490479,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_concept.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_concept.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_concept.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_concept.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::typedb_server_bin::test_concept::concept/migration/data-validation.feature::Entity types that have instances cannot be deleted",
@@ -17821,10 +17821,10 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 9808,
+    "duration_ms": 10208,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_connection.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_connection.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_connection.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_connection.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::typedb_server_bin::test_connection::connection/database.feature::create one database with name alice#1",
@@ -18209,8 +18209,8 @@
     "exit_code": 0,
     "duration_ms": 5405,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_debug.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_debug.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_debug.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_debug.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::typedb_server_bin::test_debug::test",
@@ -18250,8 +18250,8 @@
     "exit_code": 101,
     "duration_ms": 602,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_fail_points.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_fail_points.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_fail_points.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_fail_points.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::typedb_server_bin::test_fail_points::test_fail_point_always::CHECKPOINT_CLEANUP_FAIL",
@@ -18547,8 +18547,8 @@
     "exit_code": 0,
     "duration_ms": 19413,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_http_database.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_http_database.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_database.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_database.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::typedb_server_bin::test_http_database::connection/database.feature::create one database with name alice#1",
@@ -18675,8 +18675,8 @@
     "exit_code": 0,
     "duration_ms": 2002,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_http_debug.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_http_debug.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_debug.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_debug.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::typedb_server_bin::test_http_debug::test",
@@ -18714,10 +18714,10 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 79849,
+    "duration_ms": 80051,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_http_driver_concept.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_http_driver_concept.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_driver_concept.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_driver_concept.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::typedb_server_bin::test_http_driver_concept::driver/concept.feature::Driver processes empty concepts correctly",
@@ -19193,8 +19193,8 @@
     "exit_code": 0,
     "duration_ms": 52434,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_http_driver_connection.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_http_driver_connection.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_driver_connection.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_driver_connection.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::typedb_server_bin::test_http_driver_connection::driver/connection.feature::Driver can close connection",
@@ -19332,10 +19332,10 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 68442,
+    "duration_ms": 68846,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_http_driver_http.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_http_driver_http.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_driver_http.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_driver_http.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::typedb_server_bin::test_http_driver_http::driver/http/http.feature::Health check works for both authenticated and non-authenticated connection",
@@ -19605,10 +19605,10 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 33231,
+    "duration_ms": 33422,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_http_driver_query.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_http_driver_query.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_driver_query.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_driver_query.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::typedb_server_bin::test_http_driver_query::driver/query.feature::Read rows queries can include and exclude instance types",
@@ -19818,10 +19818,10 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 54634,
+    "duration_ms": 54835,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_http_driver_user.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_http_driver_user.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_driver_user.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_driver_user.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::typedb_server_bin::test_http_driver_user::driver/user.feature::Users can be created and deleted, connection is only available for existing users",
@@ -20013,10 +20013,10 @@
       "RUST_BACKTRACE": "1"
     },
     "exit_code": 0,
-    "duration_ms": 45029,
+    "duration_ms": 45428,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_http_transaction.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_http_transaction.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_transaction.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_http_transaction.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::typedb_server_bin::test_http_transaction::connection/transaction.feature::one database, one read transaction#1",
@@ -20305,10 +20305,10 @@
       "RUST_MIN_STACK": "40960000"
     },
     "exit_code": 0,
-    "duration_ms": 320012,
+    "duration_ms": 320599,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_query.stdout.txt",
-    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/cargo__test__typedb_server_bin__test_query.stderr.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_query.stdout.txt",
+    "stderr_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/cargo__test__typedb_server_bin__test_query.stderr.txt",
     "cases": [
       {
         "leaf_case_id": "cargo::test::typedb_server_bin::test_query::query/analyze/annotations.feature::Analyze returns the annotations of variables in the query",
@@ -21871,22 +21871,22 @@
         "detail": null
       },
       {
-        "leaf_case_id": "cargo::test::typedb_server_bin::test_query::<uncatalogued>::cannot set annotation @regex(\"A\") to owns of attribute type of wrong",
+        "leaf_case_id": "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set annotation @regex(\"A\") to owns of attribute type of wrong#9",
         "outcome": "PASSED",
         "duration_ms": null,
-        "detail": "scenario reported by the harness but absent from the catalogue"
+        "detail": null
       },
       {
-        "leaf_case_id": "cargo::test::typedb_server_bin::test_query::<uncatalogued>::cannot set annotation @range(\"A\"..\"B\") to owns of attribute type of wrong",
+        "leaf_case_id": "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set annotation @range(\"A\"..\"B\") to owns of attribute type of wrong#10",
         "outcome": "PASSED",
         "duration_ms": null,
-        "detail": "scenario reported by the harness but absent from the catalogue"
+        "detail": null
       },
       {
-        "leaf_case_id": "cargo::test::typedb_server_bin::test_query::<uncatalogued>::cannot set annotation @range(1..2) to owns of attribute type of wrong",
+        "leaf_case_id": "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set annotation @range(1..2) to owns of attribute type of wrong#11",
         "outcome": "PASSED",
         "duration_ms": null,
-        "detail": "scenario reported by the harness but absent from the catalogue"
+        "detail": null
       },
       {
         "leaf_case_id": "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set annotation @range(\"A\"..\"B\") to owns of attribute type of wrong , value integer#12",
@@ -21949,28 +21949,28 @@
         "detail": null
       },
       {
-        "leaf_case_id": "cargo::test::typedb_server_bin::test_query::<uncatalogued>::cannot set annotation @values(\"A\", 2) to owns of attribute type of wrong",
+        "leaf_case_id": "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set annotation @values(\"A\", 2) to owns of attribute type of wrong#22",
         "outcome": "PASSED",
         "duration_ms": null,
-        "detail": "scenario reported by the harness but absent from the catalogue"
+        "detail": null
       },
       {
-        "leaf_case_id": "cargo::test::typedb_server_bin::test_query::<uncatalogued>::cannot set annotation @values(\"A\") to owns of attribute type of wrong",
+        "leaf_case_id": "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set annotation @values(\"A\") to owns of attribute type of wrong#23",
         "outcome": "PASSED",
         "duration_ms": null,
-        "detail": "scenario reported by the harness but absent from the catalogue"
+        "detail": null
       },
       {
-        "leaf_case_id": "cargo::test::typedb_server_bin::test_query::<uncatalogued>::cannot set annotation @values(false) to owns of attribute type of wrong",
+        "leaf_case_id": "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set annotation @values(false) to owns of attribute type of wrong#24",
         "outcome": "PASSED",
         "duration_ms": null,
-        "detail": "scenario reported by the harness but absent from the catalogue"
+        "detail": null
       },
       {
-        "leaf_case_id": "cargo::test::typedb_server_bin::test_query::<uncatalogued>::cannot set annotation @values(0) to owns of attribute type of wrong",
+        "leaf_case_id": "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set annotation @values(0) to owns of attribute type of wrong#25",
         "outcome": "PASSED",
         "duration_ms": null,
-        "detail": "scenario reported by the harness but absent from the catalogue"
+        "detail": null
       },
       {
         "leaf_case_id": "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set annotation @values(\"A\", 2) to owns of attribute type of wrong , value integer#26",
@@ -23089,10 +23089,10 @@
         "detail": null
       },
       {
-        "leaf_case_id": "cargo::test::typedb_server_bin::test_query::<uncatalogued>::cannot set @card annotation with invalid arguments",
+        "leaf_case_id": "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set @card annotation with invalid arguments#1",
         "outcome": "PASSED",
         "duration_ms": null,
-        "detail": "scenario reported by the harness but absent from the catalogue"
+        "detail": null
       },
       {
         "leaf_case_id": "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set @card annotation with invalid arguments 1, 2#2",
@@ -23239,10 +23239,10 @@
         "detail": null
       },
       {
-        "leaf_case_id": "cargo::test::typedb_server_bin::test_query::<uncatalogued>::cannot set @range annotation with invalid arguments",
+        "leaf_case_id": "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set @range annotation with invalid arguments#1",
         "outcome": "PASSED",
         "duration_ms": null,
-        "detail": "scenario reported by the harness but absent from the catalogue"
+        "detail": null
       },
       {
         "leaf_case_id": "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set @range annotation with invalid arguments 1, 2#2",
@@ -31160,7 +31160,7 @@
     "command": [
       "<static:unported>"
     ],
-    "working_directory": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0",
+    "working_directory": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging",
     "env": {},
     "exit_code": null,
     "duration_ms": 0,
@@ -31184,7 +31184,7 @@
     "command": [
       "<static:unported>"
     ],
-    "working_directory": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0",
+    "working_directory": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging",
     "env": {},
     "exit_code": null,
     "duration_ms": 0,
@@ -31208,7 +31208,7 @@
     "command": [
       "<static:unported>"
     ],
-    "working_directory": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0",
+    "working_directory": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging",
     "env": {},
     "exit_code": null,
     "duration_ms": 0,
@@ -31235,9 +31235,9 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 5,
+    "duration_ms": 6,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static_____checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static_____checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31259,7 +31259,7 @@
     "exit_code": 1,
     "duration_ms": 2,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static_____checkstyle_license.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static_____checkstyle_license.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31279,9 +31279,9 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 17,
+    "duration_ms": 19,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static_____rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static_____rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31303,7 +31303,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____admin_client_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____admin_client_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31325,7 +31325,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____admin_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____admin_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31347,7 +31347,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____answer_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____answer_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31369,7 +31369,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____answer_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____answer_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31391,7 +31391,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____binary_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____binary_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31413,7 +31413,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_bytes_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_bytes_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31435,7 +31435,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_bytes_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_bytes_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31457,7 +31457,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_cache_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_cache_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31479,7 +31479,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_cache_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_cache_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31501,7 +31501,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_concurrency_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_concurrency_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31523,7 +31523,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_concurrency_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_concurrency_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31545,7 +31545,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_error_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_error_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31567,7 +31567,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_error_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_error_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31589,7 +31589,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_fail_point_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_fail_point_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31611,7 +31611,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_fail_point_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_fail_point_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31633,7 +31633,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_iterator_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_iterator_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31655,7 +31655,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_iterator_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_iterator_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31677,7 +31677,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_lending_iterator_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_lending_iterator_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31699,7 +31699,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_lending_iterator_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_lending_iterator_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31721,7 +31721,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_logger_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_logger_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31743,7 +31743,7 @@
     "exit_code": 1,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_logger_checkstyle-copies.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_logger_checkstyle-copies.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31765,7 +31765,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_logger_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_logger_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31787,7 +31787,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_options_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_options_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31809,7 +31809,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_options_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_options_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31831,7 +31831,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_primitive_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_primitive_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31853,7 +31853,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_primitive_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_primitive_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31875,7 +31875,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_structural_equality_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_structural_equality_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31897,7 +31897,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____common_structural_equality_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____common_structural_equality_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31919,7 +31919,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____compiler_tests_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____compiler_tests_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31939,9 +31939,9 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 17,
+    "duration_ms": 19,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____compiler_tests_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____compiler_tests_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31963,7 +31963,7 @@
     "exit_code": 0,
     "duration_ms": 9,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____compiler_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____compiler_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -31985,7 +31985,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____compiler_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____compiler_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32007,7 +32007,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____concept_benches_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____concept_benches_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32029,7 +32029,7 @@
     "exit_code": 0,
     "duration_ms": 15,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____concept_benches_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____concept_benches_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32051,7 +32051,7 @@
     "exit_code": 0,
     "duration_ms": 1,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____concept_tests_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____concept_tests_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32071,9 +32071,9 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 63,
+    "duration_ms": 61,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____concept_tests_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____concept_tests_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32095,7 +32095,7 @@
     "exit_code": 0,
     "duration_ms": 10,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____concept_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____concept_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32117,7 +32117,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____concept_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____concept_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32139,7 +32139,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____config_brew_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____config_brew_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32161,7 +32161,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____database_tests_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____database_tests_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32181,9 +32181,9 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 31,
+    "duration_ms": 33,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____database_tests_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____database_tests_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32205,7 +32205,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____database_tools_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____database_tools_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32225,9 +32225,9 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 16,
+    "duration_ms": 18,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____database_tools_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____database_tools_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32249,7 +32249,7 @@
     "exit_code": 0,
     "duration_ms": 1,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____database_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____database_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32271,7 +32271,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____database_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____database_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32293,7 +32293,7 @@
     "exit_code": 0,
     "duration_ms": 2,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____diagnostics_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____diagnostics_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32315,7 +32315,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____diagnostics_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____diagnostics_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32337,7 +32337,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____docker_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____docker_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32359,7 +32359,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____durability_benches_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____durability_benches_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32381,7 +32381,7 @@
     "exit_code": 0,
     "duration_ms": 15,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____durability_benches_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____durability_benches_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32403,7 +32403,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____durability_tests_common_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____durability_tests_common_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32425,7 +32425,7 @@
     "exit_code": 0,
     "duration_ms": 13,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____durability_tests_common_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____durability_tests_common_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32447,7 +32447,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____durability_tests_crash_recoverer_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____durability_tests_crash_recoverer_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32469,7 +32469,7 @@
     "exit_code": 0,
     "duration_ms": 13,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____durability_tests_crash_recoverer_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____durability_tests_crash_recoverer_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32491,7 +32491,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____durability_tests_crash_streamer_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____durability_tests_crash_streamer_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32511,9 +32511,9 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 12,
+    "duration_ms": 13,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____durability_tests_crash_streamer_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____durability_tests_crash_streamer_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32535,7 +32535,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____durability_tests_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____durability_tests_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32557,7 +32557,7 @@
     "exit_code": 0,
     "duration_ms": 15,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____durability_tests_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____durability_tests_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32579,7 +32579,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____durability_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____durability_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32601,7 +32601,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____durability_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____durability_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32623,7 +32623,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____encoding_benches_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____encoding_benches_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32645,7 +32645,7 @@
     "exit_code": 0,
     "duration_ms": 13,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____encoding_benches_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____encoding_benches_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32667,7 +32667,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____encoding_tests_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____encoding_tests_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32687,9 +32687,9 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 23,
+    "duration_ms": 22,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____encoding_tests_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____encoding_tests_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32711,7 +32711,7 @@
     "exit_code": 0,
     "duration_ms": 4,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____encoding_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____encoding_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32733,7 +32733,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____encoding_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____encoding_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32755,7 +32755,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____executor_benches_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____executor_benches_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32777,7 +32777,7 @@
     "exit_code": 0,
     "duration_ms": 18,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____executor_benches_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____executor_benches_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32799,7 +32799,7 @@
     "exit_code": 0,
     "duration_ms": 3,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____executor_tests_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____executor_tests_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32821,7 +32821,7 @@
     "exit_code": 0,
     "duration_ms": 109,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____executor_tests_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____executor_tests_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32843,7 +32843,7 @@
     "exit_code": 0,
     "duration_ms": 11,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____executor_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____executor_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32865,7 +32865,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____executor_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____executor_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32887,7 +32887,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____function_tests_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____function_tests_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32907,9 +32907,9 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 14,
+    "duration_ms": 15,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____function_tests_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____function_tests_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32931,7 +32931,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____function_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____function_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32953,7 +32953,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____function_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____function_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32975,7 +32975,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____ir_tests_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____ir_tests_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -32995,9 +32995,9 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 17,
+    "duration_ms": 19,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____ir_tests_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____ir_tests_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33019,7 +33019,7 @@
     "exit_code": 0,
     "duration_ms": 5,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____ir_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____ir_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33041,7 +33041,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____ir_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____ir_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33063,7 +33063,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____query_benches_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____query_benches_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33083,9 +33083,9 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 23,
+    "duration_ms": 19,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____query_benches_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____query_benches_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33107,7 +33107,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____query_tests_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____query_tests_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33127,9 +33127,9 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 19,
+    "duration_ms": 20,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____query_tests_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____query_tests_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33151,7 +33151,7 @@
     "exit_code": 0,
     "duration_ms": 2,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____query_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____query_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33173,7 +33173,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____query_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____query_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33195,7 +33195,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____resource_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____resource_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33217,7 +33217,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____resource_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____resource_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33239,7 +33239,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____server_service_admin_proto_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____server_service_admin_proto_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33259,9 +33259,9 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 1,
-    "duration_ms": 8,
+    "duration_ms": 7,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____server_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____server_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33283,7 +33283,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____server_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____server_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33305,7 +33305,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____storage_benches_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____storage_benches_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33325,9 +33325,9 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 18,
+    "duration_ms": 19,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____storage_benches_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____storage_benches_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33349,7 +33349,7 @@
     "exit_code": 0,
     "duration_ms": 1,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____storage_tests_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____storage_tests_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33369,9 +33369,9 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 30,
+    "duration_ms": 29,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____storage_tests_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____storage_tests_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33393,7 +33393,7 @@
     "exit_code": 0,
     "duration_ms": 3,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____storage_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____storage_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33415,7 +33415,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____storage_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____storage_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33437,7 +33437,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____system_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____system_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33459,7 +33459,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____system_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____system_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33481,7 +33481,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_assembly_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_assembly_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33501,9 +33501,9 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 13,
+    "duration_ms": 14,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_assembly_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_assembly_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33525,7 +33525,7 @@
     "exit_code": 0,
     "duration_ms": 1,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_concept_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_concept_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33547,7 +33547,7 @@
     "exit_code": 0,
     "duration_ms": 14,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_concept_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_concept_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33569,7 +33569,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_connection_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_connection_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33591,7 +33591,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_connection_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_connection_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33613,7 +33613,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_debug_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_debug_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33633,9 +33633,9 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 12,
+    "duration_ms": 13,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_debug_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_debug_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33657,7 +33657,7 @@
     "exit_code": 0,
     "duration_ms": 1,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_query_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_query_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33679,7 +33679,7 @@
     "exit_code": 0,
     "duration_ms": 15,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_query_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_query_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33701,7 +33701,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_service_http_connection_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_service_http_connection_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33723,7 +33723,7 @@
     "exit_code": 0,
     "duration_ms": 13,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_service_http_connection_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_service_http_connection_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33745,7 +33745,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_service_http_debug_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_service_http_debug_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33767,7 +33767,7 @@
     "exit_code": 0,
     "duration_ms": 12,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_service_http_debug_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_service_http_debug_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33789,7 +33789,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_service_http_driver_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_service_http_driver_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33809,9 +33809,9 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 13,
+    "duration_ms": 14,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_service_http_driver_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_service_http_driver_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33833,7 +33833,7 @@
     "exit_code": 0,
     "duration_ms": 1,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_service_http_http_steps_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_service_http_http_steps_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33855,7 +33855,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_service_http_http_steps_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_service_http_http_steps_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33877,7 +33877,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_service_http_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_service_http_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33899,7 +33899,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_service_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_service_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33921,7 +33921,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_steps_params_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_steps_params_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33943,7 +33943,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_steps_params_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_steps_params_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33965,7 +33965,7 @@
     "exit_code": 0,
     "duration_ms": 3,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_steps_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_steps_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -33987,7 +33987,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_steps_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_steps_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -34009,7 +34009,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_behaviour_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_behaviour_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -34031,7 +34031,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_benchmarks_concurrent_ops_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_benchmarks_concurrent_ops_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -34051,9 +34051,9 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 17,
+    "duration_ms": 21,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_benchmarks_concurrent_ops_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_benchmarks_concurrent_ops_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -34075,7 +34075,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_benchmarks_iam_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_benchmarks_iam_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -34095,9 +34095,9 @@
     "working_directory": "/home/user/typedb-slatedb/sources/typedb",
     "env": {},
     "exit_code": 0,
-    "duration_ms": 14,
+    "duration_ms": 16,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_benchmarks_iam_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_benchmarks_iam_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -34119,7 +34119,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tests_distribution_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tests_distribution_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -34141,7 +34141,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tool_release_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tool_release_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -34163,7 +34163,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tool_rust_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tool_rust_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -34185,7 +34185,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____tool_test_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____tool_test_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -34207,7 +34207,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____user_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____user_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -34229,7 +34229,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____user_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____user_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -34251,7 +34251,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____util_project_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____util_project_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -34273,7 +34273,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____util_project_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____util_project_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -34295,7 +34295,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____util_test_checkstyle.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____util_test_checkstyle.stdout.txt",
     "stderr_path": "",
     "cases": [
       {
@@ -34317,7 +34317,7 @@
     "exit_code": 0,
     "duration_ms": 0,
     "timed_out": false,
-    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/run-U0/static____util_test_rustfmt_test.stdout.txt",
+    "stdout_path": "/home/user/typedb-slatedb/docs/evidence/phase-b/.run-U0.staging/static____util_test_rustfmt_test.stdout.txt",
     "stderr_path": "",
     "cases": [
       {

@@ -142,6 +142,29 @@ pub fn attribute(
         }
     }
 
+    // Scenarios the harness filtered out never appear in its output at all — cucumber's
+    // `.filter_run` predicate drops them before reporting. A catalogued case that is
+    // declared-ignored and went unreported is therefore accounted for: it is `Ignored`,
+    // which §22.3 counts and never treats as a pass. Leaving it unreported would put it in
+    // `not_executed` alongside genuine holes, which is where 29 of the 34 remaining entries
+    // came from — and it would make a declared skip indistinguishable from a scenario that
+    // silently failed to run.
+    let reported: BTreeMap<&str, ()> =
+        results.iter().map(|r| (r.leaf_case_id.as_str(), ())).collect();
+    let mut skipped: Vec<CaseResult> = catalog
+        .leaf_cases
+        .iter()
+        .filter(|c| c.target_id == target.target_id)
+        .filter(|c| c.declared_ignored && !reported.contains_key(c.leaf_case_id.as_str()))
+        .map(|c| CaseResult {
+            leaf_case_id: c.leaf_case_id.clone(),
+            outcome: Outcome::Ignored,
+            duration_ms: None,
+            detail: Some("filtered out by the harness's ignore-tag predicate".into()),
+        })
+        .collect();
+    results.append(&mut skipped);
+
     // Independent cross-check. A mismatch means the parser missed scenarios, so no result
     // from this target may stand as a pass.
     let declared = summary_scenario_total(stdout);
@@ -159,6 +182,11 @@ pub fn attribute(
             format!("harness exited {exit_code:?} (timed_out={timed_out}) with no failing scenario")
         };
         for r in &mut results {
+            // A declared skip is already fully explained; downgrading it to Unknown would
+            // turn a known, catalogued exclusion into an unexplained one.
+            if r.outcome == Outcome::Ignored {
+                continue;
+            }
             r.outcome = Outcome::Unknown(reason.clone());
             r.detail = Some(reason.clone());
         }

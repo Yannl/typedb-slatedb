@@ -21,15 +21,6 @@
       "cargo::test::typedb_server_bin::test_query::query/functions/negation.feature::when evaluating negation blocks, global subgoals are not updated",
       "cargo::test::typedb_server_bin::test_query::query/functions/negation.feature::when negating a conjunction, all the conjuction statements must be met for the negation to be met",
       "cargo::test::typedb_server_bin::test_query::query/functions/negation.feature::when nesting multiple negations and conjunctions, they are correctly resolved",
-      "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set @card annotation with invalid arguments #1",
-      "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set @range annotation with invalid arguments #1",
-      "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set annotation @range(\"A\"..\"B\") to owns of attribute type of wrong #10",
-      "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set annotation @range(1..2) to owns of attribute type of wrong #11",
-      "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set annotation @regex(\"A\") to owns of attribute type of wrong #9",
-      "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set annotation @values(\"A\") to owns of attribute type of wrong #23",
-      "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set annotation @values(\"A\", 2) to owns of attribute type of wrong #22",
-      "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set annotation @values(0) to owns of attribute type of wrong #25",
-      "cargo::test::typedb_server_bin::test_query::query/language/define.feature::cannot set annotation @values(false) to owns of attribute type of wrong #24",
       "cargo::test::typedb_server_bin::test_query::query/language/delete.feature::deleting everything in a complex pattern",
       "cargo::test::typedb_server_bin::test_query::query/language/delete.feature::deletion of a complex pattern",
       "cargo::test::typedb_server_bin::test_query::query/language/delete.feature::repeated role players can be deleted from a relation",
@@ -54,17 +45,7 @@
       "cargo::test::typedb_server_bin::test_query::query/language/metadata.feature::structs can have doc annotations",
       "cargo::test::typedb_server_bin::test_query::query/language/metadata.feature::structs can have metadata annotations"
     ],
-    "unknown_cases": [
-      "cargo::test::typedb_server_bin::test_query::<uncatalogued>::cannot set @card annotation with invalid arguments",
-      "cargo::test::typedb_server_bin::test_query::<uncatalogued>::cannot set @range annotation with invalid arguments",
-      "cargo::test::typedb_server_bin::test_query::<uncatalogued>::cannot set annotation @range(\"A\"..\"B\") to owns of attribute type of wrong",
-      "cargo::test::typedb_server_bin::test_query::<uncatalogued>::cannot set annotation @range(1..2) to owns of attribute type of wrong",
-      "cargo::test::typedb_server_bin::test_query::<uncatalogued>::cannot set annotation @regex(\"A\") to owns of attribute type of wrong",
-      "cargo::test::typedb_server_bin::test_query::<uncatalogued>::cannot set annotation @values(\"A\") to owns of attribute type of wrong",
-      "cargo::test::typedb_server_bin::test_query::<uncatalogued>::cannot set annotation @values(\"A\", 2) to owns of attribute type of wrong",
-      "cargo::test::typedb_server_bin::test_query::<uncatalogued>::cannot set annotation @values(0) to owns of attribute type of wrong",
-      "cargo::test::typedb_server_bin::test_query::<uncatalogued>::cannot set annotation @values(false) to owns of attribute type of wrong"
-    ],
+    "unknown_cases": [],
     "timed_out_targets": [],
     "zero_case_targets": []
   },
@@ -73,8 +54,7 @@
     "reasons": [
       "52 leaf case(s) failed",
       "38 leaf case(s) reported an outcome the runner does not classify",
-      "43 catalogued leaf case(s) never executed (first: cargo::test::typedb_server_bin::test_http_driver_connection::driver/connection.feature::Driver can configure request timeout)",
-      "9 executed case(s) are absent from the catalogue: the denominator is wrong (first: cargo::test::typedb_server_bin::test_query::<uncatalogued>::cannot set @card annotation with invalid arguments)",
+      "34 catalogued leaf case(s) never executed (first: cargo::test::typedb_server_bin::test_http_driver_connection::driver/connection.feature::Driver can configure request timeout)",
       "1 leaf case(s) are declared-ignored and need a catalogue exclusion entry"
     ],
     "target_coverage": 1.0,

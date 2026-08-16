@@ -326,6 +326,38 @@ fn feature_paths_from_data(data: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// Feature files a target's own sources actually open.
+///
+/// Bazel `data` says what is *available* to a target, not what it runs. `test_query`
+/// declares `@typedb_behaviour//query/functions:negation.feature` as data, but no Rust entry
+/// point references it — `tests/behaviour/query/functions/` has basic, definition, recursion,
+/// signature, structure and usage, and no `negation.rs`. Upstream marks that feature
+/// `# TODO: Port to 3.0` at L5. Counting it from `data` put six scenarios in the denominator
+/// that nothing can ever execute.
+///
+/// The paths are read from `Context::test("…")` string literals instead, which is what
+/// decides execution. Everything after the corpus root is kept, so both the `../` and
+/// `bazel-typedb/external/` spellings — and the two misspellings of CR-A-08 — resolve to the
+/// same corpus-relative path.
+fn feature_paths_from_sources(fork_root: &Path, src_files: &[String]) -> Result<Vec<String>> {
+    let mut out = BTreeSet::new();
+    for rel in src_files {
+        let path = fork_root.join(rel);
+        let Ok(text) = std::fs::read_to_string(&path) else { continue };
+        for literal in text.split('"').skip(1).step_by(2) {
+            if !literal.ends_with(".feature") {
+                continue;
+            }
+            // Strip whichever corpus-root spelling precedes the corpus-relative part.
+            let Some(idx) = literal.find("typedb_behaviour") else { continue };
+            let after = &literal[idx..];
+            let Some(slash) = after.find('/') else { continue };
+            out.insert(after[slash + 1..].to_string());
+        }
+    }
+    Ok(out.into_iter().collect())
+}
+
 pub fn generate(inputs: &CatalogInputs<'_>) -> Result<CatalogOutput> {
     let meta = cargo_meta::load(inputs.fork_root, &inputs.cargo_bin, inputs.extra_path.as_deref())?;
     let (build_targets, mut recon) = scan_build_files(inputs.fork_root)?;
@@ -458,7 +490,26 @@ pub fn generate(inputs: &CatalogInputs<'_>) -> Result<CatalogOutput> {
             .map(|b| b.crate_features.iter().filter(|f| *f != "bazel").cloned().collect())
             .unwrap_or_default();
         let data = build_target.map(|b| b.data.clone()).unwrap_or_default();
-        let feature_files = feature_paths_from_data(&data);
+        // Intersect the two readings: `data` is what Bazel makes available to this target,
+        // the sources are what some file in its tree actually opens. Neither alone is right.
+        //
+        // `data` alone counts `query/functions/negation.feature` for `test_query` — declared
+        // available, but no Rust entry point references it (there is no `negation.rs`, and
+        // upstream marks the feature `# TODO: Port to 3.0` at L5), so six scenarios sat in
+        // the denominator that nothing could execute. Sources alone over-collect, because
+        // `source_files` deliberately includes sibling modules for hashing and those belong
+        // to neighbouring targets — it inflated the Cucumber count from 4164 to 5052.
+        //
+        // Available AND opened is the set a target can actually run.
+        let src_rels: Vec<String> = source_files.iter().map(|f| f.path.clone()).collect();
+        let from_sources = feature_paths_from_sources(inputs.fork_root, &src_rels)?;
+        let from_data = feature_paths_from_data(&data);
+        let feature_files: Vec<String> = if from_sources.is_empty() {
+            from_data
+        } else {
+            let opened: BTreeSet<&str> = from_sources.iter().map(String::as_str).collect();
+            from_data.into_iter().filter(|d| opened.contains(d.as_str())).collect()
+        };
         let env: BTreeMap<String, String> =
             build_target.map(|b| b.env.clone()).unwrap_or_default();
 

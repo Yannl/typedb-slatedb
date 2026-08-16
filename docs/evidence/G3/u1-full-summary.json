@@ -1,0 +1,23 @@
+{
+ "lane": "U1 (fork tree: TB-P1..P3 + BT-P3 applied)",
+ "executables": 104,
+ "green": 102,
+ "red": [
+  {
+   "target": "0.0.0:test_recovery",
+   "status": "EXPECTED (pre-existing upstream todo!() pair, equal to U0 baseline)"
+  }
+ ],
+ "timeout": [
+  {
+   "target": "typedb_server_bin:test_fail_points",
+   "case": "test_fail_point_chance",
+   "status": "UNDER-INVESTIGATION",
+   "note": "baseline 84s / both tests green; fork run: first test green, second exceeded 1800s. Assembly archive contains U0-era server binaries, so a fork-binary regression is not the default explanation; live reproduction in progress."
+  }
+ ],
+ "cases_passed": 448,
+ "cases_failed": 2,
+ "structured_equality_diffs": [],
+ "environment_note": "built with CARGO_PROFILE_DEV_DEBUG=0 (debuginfo stripped to fit session disk allowance; debug_assertions unchanged); sources rustfmt-formatted (whitespace-only) after the U0 baseline"
+}

@@ -1,0 +1,76 @@
+
+running 4 tests
+parameters::config::tests::server_toml_parser_properly --- FAILED
+parameters::config::tests::fields_can_be_overridden --- FAILED
+parameters::config::tests::config_file_accepts_old_and_new_address_names --- FAILED
+parameters::config::tests::enabling_encryption_without_setting_cert_and_key_is_flagged --- FAILED
+
+failures:
+
+---- parameters::config::tests::server_toml_parser_properly stdout ----
+
+thread 'parameters::config::tests::server_toml_parser_properly' (28790) panicked at server/parameters/config.rs:495:9:
+assertion failed: load_and_parse(config_path(), vec![]).is_ok()
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::panicking::panic
+   3: server::parameters::config::tests::server_toml_parser_properly
+   4: server::parameters::config::tests::server_toml_parser_properly::{{closure}}
+   5: core::ops::function::FnOnce::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- parameters::config::tests::fields_can_be_overridden stdout ----
+
+thread 'parameters::config::tests::fields_can_be_overridden' (28789) panicked at server/parameters/config.rs:501:93:
+called `Result::unwrap()` on an `Err` value: [CFG1] Error reading config file '"/home/user/typedb-slatedb/sources/typedb/config.yml"'.
+Cause: 
+      Os { code: 2, kind: NotFound, message: "No such file or directory" }
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::result::unwrap_failed
+   3: server::parameters::config::tests::fields_can_be_overridden
+   4: server::parameters::config::tests::fields_can_be_overridden::{{closure}}
+   5: core::ops::function::FnOnce::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- parameters::config::tests::config_file_accepts_old_and_new_address_names stdout ----
+
+thread 'parameters::config::tests::config_file_accepts_old_and_new_address_names' (28787) panicked at server/parameters/config.rs:514:60:
+called `Result::unwrap()` on an `Err` value: [CFG1] Error reading config file '"/home/user/typedb-slatedb/sources/typedb/config.yml"'.
+Cause: 
+      Os { code: 2, kind: NotFound, message: "No such file or directory" }
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::result::unwrap_failed
+   3: server::parameters::config::tests::config_file_accepts_old_and_new_address_names
+   4: server::parameters::config::tests::config_file_accepts_old_and_new_address_names::{{closure}}
+   5: core::ops::function::FnOnce::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- parameters::config::tests::enabling_encryption_without_setting_cert_and_key_is_flagged stdout ----
+
+thread 'parameters::config::tests::enabling_encryption_without_setting_cert_and_key_is_flagged' (28788) panicked at server/parameters/config.rs:549:64:
+called `Result::unwrap()` on an `Err` value: [CFG1] Error reading config file '"/home/user/typedb-slatedb/sources/typedb/config.yml"'.
+Cause: 
+      Os { code: 2, kind: NotFound, message: "No such file or directory" }
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::result::unwrap_failed
+   3: server::parameters::config::tests::enabling_encryption_without_setting_cert_and_key_is_flagged
+   4: server::parameters::config::tests::enabling_encryption_without_setting_cert_and_key_is_flagged::{{closure}}
+   5: core::ops::function::FnOnce::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+
+failures:
+    parameters::config::tests::config_file_accepts_old_and_new_address_names
+    parameters::config::tests::enabling_encryption_without_setting_cert_and_key_is_flagged
+    parameters::config::tests::fields_can_be_overridden
+    parameters::config::tests::server_toml_parser_properly
+
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+

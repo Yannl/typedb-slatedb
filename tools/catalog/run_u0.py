@@ -66,8 +66,18 @@ def discover_executables():
     return ordered
 
 
-def run_one(e, out_dir, timeout):
+def sha256_file(p):
+    import hashlib
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for c in iter(lambda: f.read(1 << 20), b""):
+            h.update(c)
+    return h.hexdigest()
+
+
+def run_one(e, out_dir, timeout, reap=False):
     tid = f"{e['package']}:{e['target']}"
+    exe_sha = sha256_file(e["executable"])
     raw = out_dir / f"{e['package']}__{e['target']}.log"
     env = dict(ENV_BASE)
     tmp = out_dir / "tmp" / f"{e['package']}__{e['target']}"
@@ -76,19 +86,28 @@ def run_one(e, out_dir, timeout):
     if e["target"] in ASSEMBLY_TARGETS:
         env.update(ASSEMBLY_ENV)
     start = time.time()
-    with open(raw, "wb") as logf:
-        proc = subprocess.Popen(
-            [e["executable"], "--format", "terse"],
-            cwd=TB, env=env, stdout=logf, stderr=subprocess.STDOUT,
-            start_new_session=True)
-        try:
-            code = proc.wait(timeout=timeout)
-            timed_out = False
-        except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, signal.SIGKILL)
-            proc.wait()
-            code = None
-            timed_out = True
+
+    def execute(argv):
+        with open(raw, "wb") as logf:
+            proc = subprocess.Popen(
+                argv, cwd=TB, env=env, stdout=logf, stderr=subprocess.STDOUT,
+                start_new_session=True)
+            try:
+                return proc.wait(timeout=timeout), False
+            except subprocess.TimeoutExpired:
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.wait()
+                return None, True
+
+    code, timed_out = execute([e["executable"], "--format", "terse"])
+    # Non-libtest harnesses (harness = false) reject libtest flags; detect the
+    # argument error and run the harness bare. This is harness detection, not
+    # a retry: a libtest run that FAILED its tests is never re-executed.
+    if code not in (0, None):
+        head = raw.read_text(errors="replace")[:400]
+        if "Unrecognized option" in head or "unexpected argument" in head \
+                or "error: Found argument" in head:
+            code, timed_out = execute([e["executable"]])
     dur = time.time() - start
     text = raw.read_text(errors="replace")
     tail = text[-2000:]
@@ -109,9 +128,19 @@ def run_one(e, out_dir, timeout):
                     measured += n
                 else:
                     filtered += n
+    if reap:
+        # free disk: the binary is reproducible from the pinned source +
+        # toolchain; its digest is recorded above.
+        try:
+            os.unlink(e["executable"])
+        except OSError:
+            pass
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)
     return {
         "target_id": tid,
         "executable": e["executable"],
+        "executable_sha256": exe_sha,
         "exit_code": code,
         "timed_out": timed_out,
         "duration_seconds": round(dur, 2),
@@ -130,6 +159,8 @@ def main():
     ap.add_argument("--filter", default=None)
     ap.add_argument("--skip", action="append", default=[])
     ap.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
+    ap.add_argument("--reap", action="store_true",
+                    help="delete each test executable after running it")
     ap.add_argument("--out", default=str(REPO / "docs" / "evidence" / "G1" / "u0-results"))
     args = ap.parse_args()
 
@@ -145,7 +176,7 @@ def main():
     for i, e in enumerate(execs):
         print(f"[{i+1}/{len(execs)}] {e['package']}:{e['target']} ...",
               end=" ", flush=True)
-        r = run_one(e, out_dir, args.timeout)
+        r = run_one(e, out_dir, args.timeout, reap=args.reap)
         results.append(r)
         status = ("TIMEOUT" if r["timed_out"]
                   else "OK" if r["exit_code"] == 0 else f"FAIL({r['exit_code']})")

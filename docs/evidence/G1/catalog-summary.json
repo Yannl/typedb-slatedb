@@ -1,0 +1,15 @@
+{
+  "targets": 303,
+  "explicit_cargo_test_targets": 62,
+  "explicit_cargo_bench_targets": 8,
+  "unit_test_capable_targets": 44,
+  "libtest_cases": 455,
+  "cucumber_cases": 4103,
+  "failpoint_cases": 44,
+  "script_cases": 1,
+  "static_checks": 141,
+  "leaf_cases_total": 4744,
+  "declared_ignored": 1,
+  "fixtures": 4,
+  "build_recon_targets": 226
+}

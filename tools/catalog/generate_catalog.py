@@ -21,10 +21,15 @@ pinned checkout must reproduce the output byte-for-byte (ordering is sorted).
 """
 import hashlib
 import json
+import os
 import pathlib
 import re
 import subprocess
 import sys
+
+ENV = {**os.environ, "CARGO_INCREMENTAL": "0",
+       "CARGO_PROFILE_DEV_DEBUG": "false",
+       "CARGO_PROFILE_TEST_DEBUG": "false"}
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 TB = REPO / "sources" / "typedb"
@@ -58,7 +63,7 @@ def cargo_metadata():
     out = subprocess.check_output(
         ["cargo", TOOLCHAIN, "metadata", "--locked", "--format-version", "1",
          "--no-deps"],
-        cwd=TB, text=True)
+        cwd=TB, text=True, env=ENV)
     return json.loads(out)
 
 
@@ -97,7 +102,7 @@ def libtest_cases():
     out = subprocess.check_output(
         ["cargo", TOOLCHAIN, "test", "--workspace", "--locked", "--no-run",
          "--message-format", "json"],
-        cwd=TB, text=True, stderr=subprocess.DEVNULL)
+        cwd=TB, text=True, stderr=subprocess.DEVNULL, env=ENV)
     cases = {}
     execs = {}
     for line in out.splitlines():

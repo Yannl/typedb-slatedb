@@ -72,3 +72,35 @@ its deleted data dir was hit), documented in the U0 baseline notes.
    prevents recurrence of this poisoning class.
 4. No retry-green: the U1 timeout stands in the record; the corrected
    expectation comes from the re-measurement, not from rerunning until green.
+
+## Addendum: clean re-measurement outcome (upstream ceiling, 3600s)
+
+Result (`failpoints-remeasure/u0-results.json`): **FAIL in 1753s** —
+`test_fail_point_chance` PASSED; `test_fail_point_always` FAILED with:
+
+    Server process crashed for an unrelated reason:
+    Exited with error: [SRO18] Could not serve HTTP on 0.0.0.0:8000.
+    Cause: Os { AddrInUse }
+
+Diagnosis: a second upstream harness defect. `build_server_cmd` varies the
+gRPC port on retry (`--server.address=0.0.0.0:{port}`) but the HTTP listener
+is always `0.0.0.0:8000`; consecutive server boots inside one test race on
+that fixed port, and `start_server_with_env` treats the resulting AddrInUse
+as an "unrelated" crash and panics. Ports 8000/1729 were verified free of
+any non-test process (serial runner, stray reaping active), so the collision
+was strictly between the test's own consecutive boots.
+
+## Corrected baseline expectation
+
+`typedb_server_bin:test_fail_points` at the pin =
+**PRE-EXISTING-UPSTREAM-UNRELIABLE**, on two independent grounds:
+1. fixed HTTP port 8000 across in-test server reboots → nondeterministic
+   AddrInUse panic (observed in the clean re-measurement);
+2. true runtime (~29min observed for the two tests; checkpoint-class
+   failpoints inherently 60–125s each) rides near CI budgets.
+
+Carried forward like the `test_recovery` todo!() pair: U1+ equality for this
+target is measured structurally against this corrected expectation, not
+against the poisoned 84s green. A fix (per-iteration HTTP port) would be an
+upstream-test edit and is therefore deferred to the port ledger if ever
+needed; the fork does not modify upstream tests.

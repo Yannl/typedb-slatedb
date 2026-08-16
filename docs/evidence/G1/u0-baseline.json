@@ -1749,7 +1749,8 @@
    "target": "typedb_server_bin:test_fail_points",
    "was": "2 passed in 84.24s (pass2-fixedenv)",
    "correction": "FALSE-GREEN-ENVIRONMENT-POISONED; re-measured at the upstream Bazel eternal ceiling (3600s) in a clean environment",
-   "evidence": "docs/evidence/G3/finding-failpoints-false-green.md"
+   "evidence": "docs/evidence/G3/finding-failpoints-false-green.md",
+   "remeasured_outcome": "FAIL 1753s at 3600s ceiling: chance PASSED; always FAILED on upstream fixed-HTTP-port-8000 AddrInUse race (SRO18). Corrected classification: PRE-EXISTING-UPSTREAM-UNRELIABLE."
   }
  ]
 }

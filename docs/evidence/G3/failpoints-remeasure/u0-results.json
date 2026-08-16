@@ -1,0 +1,21 @@
+{
+ "profile": "U0",
+ "toolchain": "rust 1.93.0 parity lane",
+ "results": [
+  {
+   "target_id": "typedb_server_bin:test_fail_points",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_fail_points-413e58346abbaf97",
+   "executable_sha256": "8cc8ea0bfe9a736b463395ee50a220bf8808f98585507d6c1e2b8fdff6b3b36a",
+   "exit_code": 101,
+   "timed_out": false,
+   "duration_seconds": 1753.25,
+   "passed": 1,
+   "failed": 1,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/failpoints-remeasure/typedb_server_bin__test_fail_points.log",
+   "tail": "\nrunning 2 tests\ntest_fail_point_always --- FAILED\n.\nfailures:\n\n---- test_fail_point_always stdout ----\n\nthread 'test_fail_point_always' (22650) panicked at tests/assembly/fail_points.rs:83:17:\nServer process crashed for an unrelated reason: 2026-08-16T05:33:51.904628Z  INFO ThreadId(01) server/lib.rs:485: \nReady!\nExited with error: [SRO18] Could not serve HTTP on 0.0.0.0:8000.\nCause: \n      Os { code: 98, kind: AddrInUse, message: \"Address already in use\" }\n\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: test_fail_points::start_server_with_env\n   3: test_fail_points::test_fail_point_always\n   4: test_fail_points::test_fail_point_always::{{closure}}\n   5: core::ops::function::FnOnce::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n\n\nfailures:\n    test_fail_point_always\n\ntest result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1752.72s\n\n"
+  }
+ ]
+}

@@ -812,6 +812,28 @@ pub fn generate(inputs: &CatalogInputs<'_>) -> Result<CatalogOutput> {
         });
     }
 
+    // --- Upstream's own declared skips.
+    //
+    // A scenario its harness filters out is counted, never passed (§22.3), but the verdict
+    // also requires each to carry an exclusion naming who owns it. The owner is upstream:
+    // these are `@ignore` / `@ignore-typedb` / `@ignore-typedb-http` tags in the pinned
+    // behaviour corpus, and which of them applies depends on the harness (CR-A-09). The
+    // fork does not get to un-skip them, so the entry records the fact rather than claiming
+    // a plan to fix it.
+    for case in leaf_cases.iter().filter(|c| c.declared_ignored) {
+        exclusions.push(Exclusion {
+            subject_id: case.leaf_case_id.clone(),
+            predicate: "declared_ignored_upstream".into(),
+            reason: "tagged @ignore / @ignore-typedb / @ignore-typedb-http in the pinned \
+                     behaviour corpus; the harness's own filter_run predicate drops it before \
+                     reporting"
+                .into(),
+            owner: "upstream".into(),
+            expiry: "2027-01-01".into(),
+            replacement_test_id: None,
+        });
+    }
+
     // --- Targets blocked on unresolved distribution artifacts.
     //
     // `tests/assembly/*` and `test_fail_points` extract $TYPEDB_ASSEMBLY_ARCHIVE and then

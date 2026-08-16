@@ -617,6 +617,15 @@ pub fn summarise(catalog: &Catalog, runs: &[TargetRun], profile: ProfileId) -> C
         passed: executed_cases.values().filter(|o| **o == Outcome::Passed).count(),
         failed: executed_cases.values().filter(|o| **o == Outcome::Failed).count(),
         ignored: executed_cases.values().filter(|o| **o == Outcome::Ignored).count(),
+        ignored_without_exclusion: {
+            let excluded: BTreeSet<&str> =
+                catalog.exclusions.iter().map(|e| e.subject_id.as_str()).collect();
+            executed_cases
+                .iter()
+                .filter(|(_, o)| **o == Outcome::Ignored)
+                .filter(|(id, _)| !excluded.contains(id.as_str()))
+                .count()
+        },
         unknown: executed_cases
             .values()
             .filter(|o| matches!(o, Outcome::Unknown(_)))

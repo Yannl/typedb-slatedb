@@ -47,6 +47,9 @@ pub struct CoverageReport {
     pub passed: usize,
     pub failed: usize,
     pub ignored: usize,
+    /// Declared skips that no exclusion entry accounts for. These fail the gate; owned ones
+    /// do not.
+    pub ignored_without_exclusion: usize,
     pub unknown: usize,
     /// Catalogued cases that never ran.
     pub not_executed: Vec<String>,
@@ -122,11 +125,13 @@ impl CoverageReport {
                 self.zero_case_targets.len()
             ));
         }
-        if self.ignored > 0 {
-            // Not a failure by itself — it is a visible hole that must be owned.
+        // A declared skip is not a failure, and it is not a hole once it carries an
+        // exclusion naming its owner — that is exactly what the exclusion mechanism is for.
+        // It only counts against the gate when it is unowned.
+        if self.ignored_without_exclusion > 0 {
             reasons.push(format!(
-                "{} leaf case(s) are declared-ignored and need a catalogue exclusion entry",
-                self.ignored
+                "{} leaf case(s) are declared-ignored with no catalogue exclusion entry",
+                self.ignored_without_exclusion
             ));
         }
 
@@ -153,6 +158,7 @@ mod tests {
             passed: 1,
             failed: 0,
             ignored: 0,
+            ignored_without_exclusion: 0,
             unknown: 0,
             not_executed: vec![],
             unknown_cases: vec![],
@@ -201,6 +207,25 @@ mod tests {
         let mut r = base();
         r.timed_out_targets = vec!["t".into()];
         assert!(!r.verdict().green);
+    }
+
+    #[test]
+    fn an_owned_declared_skip_does_not_block_the_gate() {
+        // 29 upstream @ignore scenarios carry exclusions naming upstream as owner. Holding
+        // the gate red for skips the fork cannot un-skip would make NOT GREEN permanent and
+        // meaningless — the exclusion mechanism exists precisely to own them.
+        let mut r = base();
+        r.ignored = 29;
+        r.ignored_without_exclusion = 0;
+        assert!(r.verdict().green);
+    }
+
+    #[test]
+    fn an_unowned_declared_skip_still_blocks_the_gate() {
+        let mut r = base();
+        r.ignored = 1;
+        r.ignored_without_exclusion = 1;
+        assert!(!r.verdict().green, "a skip nobody owns is a hole");
     }
 
     #[test]

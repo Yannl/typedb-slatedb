@@ -1,0 +1,32 @@
+{
+  "phase": "phase-a",
+  "artifact_count": 5,
+  "artifacts": [
+    {
+      "path": "docs/evidence/phase-a/contradiction-records.md",
+      "sha256": "7f881d5f56cc369bb694ff113932d3a0460d2f73601a831396f43bbd2457a465",
+      "bytes": 18836
+    },
+    {
+      "path": "docs/evidence/phase-a/doc-lint.json",
+      "sha256": "445717420767aa71a7716cd8864e49a1052dc0824111bd3add4b7fea4c82ffc5",
+      "bytes": 5044
+    },
+    {
+      "path": "docs/evidence/phase-a/fetch-sources-extended.log",
+      "sha256": "75e26e7d45b1d01177d7a1de3ab2dcfad43c06e969dd264aa2dda42b7c33c5a8",
+      "bytes": 19612
+    },
+    {
+      "path": "docs/evidence/phase-a/fetch-sources.log",
+      "sha256": "49e3a2ba5ef93463f4c29ecb8c0986812eab9b04955e9e73be8d4af3baea7ea2",
+      "bytes": 131347
+    },
+    {
+      "path": "docs/evidence/phase-a/summary.md",
+      "sha256": "1c298677d4004a46bd113e8dada1ceb9490e446c5b948e4e61bcf1641bb90ba0",
+      "bytes": 5269
+    }
+  ],
+  "manifest_digest": "93746a2b4d22b2b7ee98d224400614b627001202fe775d007d738eeda1a3241c"
+}

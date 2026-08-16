@@ -5,8 +5,8 @@
     "targets_executed": 114,
     "leaf_cases_total": 4758,
     "leaf_cases_executed": 4758,
-    "passed": 4674,
-    "failed": 52,
+    "passed": 4677,
+    "failed": 49,
     "ignored": 29,
     "unknown": 3,
     "not_executed": [],
@@ -17,7 +17,7 @@
   "verdict": {
     "green": false,
     "reasons": [
-      "52 leaf case(s) failed",
+      "49 leaf case(s) failed",
       "3 leaf case(s) reported an outcome the runner does not classify",
       "29 leaf case(s) are declared-ignored and need a catalogue exclusion entry"
     ],

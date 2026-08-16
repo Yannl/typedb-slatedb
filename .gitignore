@@ -20,3 +20,4 @@ bazel-typedb/
 # A run builds its evidence here and renames it into place only once both reports exist,
 # so the published directory is never missing while a multi-hour run is in progress.
 /docs/evidence/**/.run-*.staging/
+/engine/*/target/

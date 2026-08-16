@@ -1,0 +1,15 @@
+[package]
+name = "slatedb-keyspace"
+version = "0.1.0"
+edition = "2021"
+license = "MPL-2.0"
+
+[dependencies]
+slatedb = { path = "../../sources/slatedb/slatedb" }
+object_store = { version = "0.14", features = ["aws"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+bytes = "1"
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"

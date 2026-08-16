@@ -78,6 +78,34 @@ pub fn run(
         );
     }
 
+    // Build everything before timing anything.
+    //
+    // Per-target timeouts are meant to bound *execution*. `run_target` invokes `cargo test`,
+    // which compiles first, so any target still needing a build spends that time inside its
+    // own budget — and `cargo test --no-run` does not cover `--bench` targets, so the eight
+    // criterion benches were compiling inside a 900s window and would have been killed and
+    // recorded as timeouts they never earned.
+    println!("pre-building all harnesses so timeouts measure execution, not compilation");
+    let mut warm = std::process::Command::new(cargo_bin);
+    warm.args(["test", "--locked", "--workspace", "--no-run"])
+        .arg("--benches")
+        .arg("--tests")
+        .arg("--bins")
+        .arg("--lib")
+        .current_dir(&typedb_root)
+        .env("CARGO_TARGET_DIR", &ctx.target_dir)
+        .envs(conformance_runner::parity_build_env());
+    if let Some(extra) = &ctx.extra_path {
+        let path = std::env::var("PATH").unwrap_or_default();
+        warm.env("PATH", format!("{extra}:{path}"));
+    }
+    let warm_status = warm.status().context("pre-building the corpus")?;
+    if !warm_status.success() {
+        bail!(
+            "pre-build failed ({warm_status}); a run that cannot build its corpus cannot              report coverage over it"
+        );
+    }
+
     let mut runs: Vec<TargetRun> = Vec::new();
     for (i, target) in selected.iter().enumerate() {
         println!("[{}/{}] {}", i + 1, selected.len(), target.target_id);
@@ -90,6 +118,62 @@ pub fn run(
             run.duration_ms
         );
         runs.push(run);
+    }
+
+    // Static checks have no Cargo entry point, so they are executed directly. Skipping them
+    // would leave 154 of 271 targets permanently in `not_executed`; excusing them would be
+    // 154 exclusions. Both are worse than porting the checks (ADR-0004).
+    if only.is_none() {
+        let static_targets: Vec<_> =
+            catalog.targets.iter().filter(|t| t.cargo_package.is_none()).collect();
+        let (build_targets, recon) = corpus_catalog::scan_build_files(&typedb_root)?;
+        let by_label: std::collections::BTreeMap<&str, &corpus_catalog::BuildTestTarget> =
+            build_targets.iter().map(|b| (b.label.as_str(), b)).collect();
+
+        for (i, target) in static_targets.iter().enumerate() {
+            let label = target.upstream_label.as_deref().unwrap_or_default();
+            println!("[static {}/{}] {}", i + 1, static_targets.len(), target.target_id);
+            let inputs = match by_label.get(label) {
+                Some(bt) => conformance_runner::staticcheck::StaticCheckInputs {
+                    rule: bt.rule.clone(),
+                    package_dir: bt.build_file.trim_end_matches("BUILD").trim_end_matches('/').to_string(),
+                    include: bt.other_attrs.get("include").cloned().unwrap_or_default(),
+                    exclude: bt.other_attrs.get("exclude").cloned().unwrap_or_default(),
+                    // `rustfmt_test` names Bazel targets, not files; resolve them to sources.
+                    sources: bt
+                        .other_attrs
+                        .get("targets")
+                        .map(|labels| {
+                            labels
+                                .iter()
+                                .flat_map(|l| {
+                                    let full = if l.starts_with("//") {
+                                        l.clone()
+                                    } else {
+                                        format!("//{}{}", bt.build_file.trim_end_matches("BUILD").trim_end_matches('/'), l)
+                                    };
+                                    recon.rule_srcs.get(&full).cloned().unwrap_or_default()
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                },
+                None => conformance_runner::staticcheck::StaticCheckInputs {
+                    rule: "unresolved".into(),
+                    ..Default::default()
+                },
+            };
+            let run = conformance_runner::staticcheck::run_static_target(
+                &typedb_root,
+                &evidence_dir,
+                profile,
+                &catalog,
+                target,
+                &inputs,
+            )?;
+            println!("        exit={:?} cases={}", run.exit_code, run.cases.len());
+            runs.push(run);
+        }
     }
 
     let runs_path = evidence_dir.join("target-runs.json");

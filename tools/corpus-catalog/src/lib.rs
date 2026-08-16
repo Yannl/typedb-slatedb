@@ -83,6 +83,11 @@ pub struct Reconciliation {
     /// rather than merely listed.
     #[serde(skip_serializing)]
     pub declared_names: BTreeMap<String, String>,
+    /// `srcs` of every rule, keyed by Bazel label. A `rustfmt_test` names the *targets* it
+    /// formats rather than files, so resolving it needs the sources of ordinary
+    /// `rust_library`/`rust_binary` rules that are not themselves test producers.
+    #[serde(skip_serializing)]
+    pub rule_srcs: BTreeMap<String, Vec<String>>,
     /// BUILD `rust_test` targets with no corresponding Cargo target.
     pub build_only: Vec<String>,
     /// Matched on both sides.
@@ -188,6 +193,15 @@ pub fn scan_build_files(fork_root: &Path) -> Result<(Vec<BuildTestTarget>, Recon
                     .declared_names
                     .entry(name.to_string())
                     .or_insert_with(|| format!("{} at {rel}", call.rule));
+                // Sources are package-relative in BUILD; store them workspace-relative.
+                let srcs: Vec<String> = call
+                    .attr_strings("srcs")
+                    .into_iter()
+                    .map(|s| if pkg.is_empty() { s.to_string() } else { format!("{pkg}/{s}") })
+                    .collect();
+                if !srcs.is_empty() {
+                    recon.rule_srcs.insert(format!("//{pkg}:{name}"), srcs);
+                }
             }
             if !starlark::TEST_PRODUCING_RULES.contains(&call.rule.as_str()) {
                 if !KNOWN_NON_TEST_RULES.contains(&call.rule.as_str()) {

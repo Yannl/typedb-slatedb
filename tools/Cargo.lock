@@ -199,6 +199,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "source-lock",
+ "walkdir",
 ]
 
 [[package]]

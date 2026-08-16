@@ -6,6 +6,7 @@
 //! (brief §21.11, §22.3, conformance plan steps 5–10).
 
 pub mod cucumber;
+pub mod staticcheck;
 pub mod failpoint;
 pub mod verdict;
 

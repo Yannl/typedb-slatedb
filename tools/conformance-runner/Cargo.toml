@@ -14,3 +14,4 @@ sha2.workspace = true
 corpus-catalog.workspace = true
 source-lock.workspace = true
 libc = "0.2"
+walkdir.workspace = true

@@ -6,7 +6,8 @@
     "typecheck": "tsc --noEmit",
     "probes:r2": "node --experimental-strip-types probes/run-r2-probes.ts",
     "test:controller": "node --experimental-strip-types --test src/controller/core/controller-core.test.ts",
-    "test:controller:mutant": "CONTROLLER_MUTANT=drop-outbox-event node --experimental-strip-types --test src/controller/core/controller-core.test.ts"
+    "test:controller:mutant": "CONTROLLER_MUTANT=drop-outbox-event node --experimental-strip-types --test src/controller/core/controller-core.test.ts",
+    "test:workerd": "vitest run"
   },
   "devDependencies": {
     "@cloudflare/containers": "0.3.7",
@@ -15,6 +16,7 @@
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.2.0",
     "typescript": "5.9.2",
+    "vitest": "^4.1.10",
     "wrangler": "4.123.0"
   },
   "engines": {

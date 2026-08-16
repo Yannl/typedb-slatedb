@@ -37,6 +37,10 @@ export class DatabaseControllerDO extends DurableObject {
   constructor(state: DurableObjectState, env: Env) {
     super(state, env);
     this.sql = state.storage.sql;
+    // authoritative projection tables (wal_tail/control_outbox/budgets/
+    // sessions) are owned by ControllerCore's SCHEMA - single source of truth
+    // shared with the node test lane; only DO-runtime tables live here
+    this.core();
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS databases(
         database_id TEXT PRIMARY KEY,
@@ -45,32 +49,6 @@ export class DatabaseControllerDO extends DurableObject {
         controller_incarnation_id INTEGER NOT NULL,
         control_head_seq INTEGER NOT NULL,
         journal_durable_seq INTEGER NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS wal_tail(
-        database_id TEXT NOT NULL,
-        generation INTEGER NOT NULL,
-        append_lsn INTEGER NOT NULL,
-        type_sequence BLOB NOT NULL,          -- exact 8-byte big-endian
-        sequencing_kind TEXT NOT NULL,
-        payload_key TEXT NOT NULL,
-        payload_digest TEXT NOT NULL,
-        payload_length INTEGER NOT NULL,
-        finalization_operation_id TEXT NOT NULL,
-        request_digest TEXT NOT NULL,
-        unsequenced_logical_key TEXT,
-        startup_session_id TEXT NOT NULL,
-        control_seq INTEGER NOT NULL,
-        PRIMARY KEY(database_id, generation, append_lsn),
-        UNIQUE(database_id, generation, finalization_operation_id)
-      );
-      CREATE UNIQUE INDEX IF NOT EXISTS wal_tail_status_singleton
-        ON wal_tail(database_id, generation, unsequenced_logical_key)
-        WHERE unsequenced_logical_key IS NOT NULL;
-      CREATE TABLE IF NOT EXISTS control_outbox(
-        control_seq INTEGER PRIMARY KEY,
-        canonical_body BLOB NOT NULL,
-        signing_key_id TEXT NOT NULL,         -- selected at commit time (§7.4)
-        published INTEGER NOT NULL DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS alarm_schedule(
         task TEXT PRIMARY KEY,
@@ -94,6 +72,14 @@ export class DatabaseControllerDO extends DurableObject {
 
   finalizeBatch(reqs: FinalizeRequest[]): ReturnType<ControllerCore["finalizeBatch"]> {
     return this.core().finalizeBatch(reqs);
+  }
+
+  registerSession(databaseId: string, generation: number, startupSessionId: string): void {
+    this.core().registerSession(databaseId, generation, startupSessionId);
+  }
+
+  fenceSession(databaseId: string, generation: number, startupSessionId: string): void {
+    this.core().fenceSession(databaseId, generation, startupSessionId);
   }
 
   private core(): ControllerCore {

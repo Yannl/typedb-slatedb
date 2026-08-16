@@ -1,0 +1,11 @@
+name = "typedb-r2-control-plane"
+main = "src/controller/worker-entry.ts"
+compatibility_date = "2025-11-01"
+
+[[durable_objects.bindings]]
+name = "CONTROLLER"
+class_name = "DatabaseControllerDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["DatabaseControllerDO"]

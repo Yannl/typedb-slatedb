@@ -24,5 +24,17 @@
   "fixed iterator head pinning",
   "SQL-vs-pure-reducer trace equivalence over seeded 200-event schedule",
   "reducer contiguity negative control"
- ]
+ ],
+ "workerd_runtime_validation": {
+  "runner": "@cloudflare/vitest-pool-workers 0.21.3 (workerd via wrangler 4.123.0, pinned in source-lock)",
+  "tests": {
+   "pass": 2,
+   "fail": 0
+  },
+  "facts": [
+   "DatabaseControllerDO runs the shared ControllerCore over real DO SqlStorage + storage.transactionSync",
+   "finalisation, replay idempotency, digest conflict, and status-singleton semantics verified inside the actual Durable Object runtime",
+   "ControllerCore SCHEMA is the single source of truth for projection tables in both lanes"
+  ]
+ }
 }

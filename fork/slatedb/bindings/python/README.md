@@ -1,0 +1,152 @@
+# SlateDB Python Binding
+
+`bindings/python` contains the official UniFFI-based Python package for SlateDB.
+
+## Requirements
+
+- Python 3.10 or newer
+
+## Install
+
+```bash
+pip install slatedb
+```
+
+## API Model
+
+- `ObjectStore.resolve(...)` opens an object store from a URL such as `memory:///`
+- `DbBuilder` opens a writable database and `DbReaderBuilder` opens a read-only reader
+- most database operations are `async` and should be used with `asyncio`
+- `WriteBatch` is mutated synchronously and then consumed by `db.write(...)`
+- `db.shutdown()` and `reader.shutdown()` explicitly close native resources
+
+## Quick Start
+
+```python
+import asyncio
+
+from slatedb.uniffi import (
+    DbBuilder,
+    IsolationLevel,
+    KeyRange,
+    ObjectStore,
+    WriteBatch,
+)
+
+
+async def main() -> None:
+    store = ObjectStore.resolve("memory:///")
+    builder = DbBuilder("demo-db", store)
+    db = await builder.build()
+
+    try:
+        await db.put(b"user:1", b"Alice")
+        value = await db.get(b"user:1")
+        assert value == b"Alice"
+
+        batch = WriteBatch()
+        batch.put(b"user:2", b"Bob")
+        batch.put(b"user:3", b"Carol")
+        await db.write(batch)
+
+        scan = await db.scan_prefix(
+            b"user:",
+            KeyRange(
+                start=None,
+                start_inclusive=False,
+                end=None,
+                end_inclusive=False,
+            ),
+        )
+        while (row := await scan.next()) is not None:
+            print(row.key, row.value)
+
+        tx = await db.begin(IsolationLevel.SERIALIZABLE_SNAPSHOT)
+        await tx.put(b"user:4", b"Dora")
+        await tx.commit()
+    finally:
+        await db.shutdown()
+
+
+asyncio.run(main())
+```
+
+## Metrics
+
+The Python binding exposes both custom metrics callbacks and the built-in
+`DefaultMetricsRecorder`:
+
+- `DbBuilder.with_metrics_recorder(...)`
+- `DbReaderBuilder.with_metrics_recorder(...)`
+- `DefaultMetricsRecorder.snapshot()`
+- `DefaultMetricsRecorder.metrics_by_name(...)`
+- `DefaultMetricsRecorder.metric_by_name_and_labels(...)`
+
+Example:
+
+```python
+from slatedb.uniffi import DbBuilder, DefaultMetricsRecorder, ObjectStore
+
+store = ObjectStore.resolve("memory:///")
+recorder = DefaultMetricsRecorder()
+builder = DbBuilder("metrics-demo", store)
+
+builder.with_metrics_recorder(recorder)
+db = await builder.build()
+
+try:
+    await db.put(b"hello", b"world")
+
+    metric = recorder.metric_by_name_and_labels("slatedb.db.write_ops", [])
+    if metric is not None and metric.value.is_counter():
+        print(metric.value[0])
+finally:
+    await db.shutdown()
+```
+
+## Runtime Notes
+
+Writable databases and readers enter a dedicated multi-threaded Tokio runtime while opening so SlateDB's long-lived background tasks capture a multi-threaded Tokio handle. Foreground binding calls are still awaited through the normal Python async API. By default, the runtime uses the host's available parallelism. Set `SLATEDB_UNIFFI_RUNTIME_THREADS` to a positive integer before the first `DbBuilder.build()` or `DbReaderBuilder.build()` call to override the worker thread count for the lifetime of the process.
+
+## Local Development
+
+This package reuses the shared Rust UniFFI crate at `../uniffi/Cargo.toml`. The generated Python module under `slatedb/uniffi/_slatedb_uniffi/` is build output and should not be edited by hand.
+
+### Editable Build
+
+From the repository root:
+
+```bash
+cd bindings/python
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install maturin "uniffi-bindgen==0.31.0" ruff
+maturin develop
+ruff check .
+python -c "import slatedb; import slatedb.uniffi; from slatedb.uniffi import *"
+```
+
+### Run Tests
+
+From `bindings/python` after building the extension with test extras:
+
+```bash
+maturin develop --extras test
+pytest
+```
+
+### Build Release Artifacts
+
+From `bindings/python`:
+
+```bash
+maturin build
+maturin sdist
+```
+
+Editable builds generate `slatedb/uniffi/_slatedb_uniffi/` in-tree. If you switch from `maturin develop` to `maturin build` in the same checkout, remove that generated directory first or run the artifact build from a fresh checkout.
+
+## License
+
+SlateDB is licensed under the Apache License, Version 2.0.

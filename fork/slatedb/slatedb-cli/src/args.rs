@@ -1,0 +1,596 @@
+use crate::scan::{KeyMode, ValueMode};
+use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
+use slatedb::compactor::CompactionRequest;
+use slatedb::seq_tracker::FindOption;
+use std::collections::HashMap;
+use std::time::Duration;
+use uuid::Uuid;
+
+#[derive(Parser)]
+#[command(name = "slatedb")]
+#[command(version = "0.1.0")]
+#[command(about, long_about = None)]
+pub(crate) struct CliArgs {
+    #[arg(
+        short,
+        long,
+        help = "A .env file to use to supply environment variables"
+    )]
+    pub(crate) env_file: Option<String>,
+    #[arg(
+        short,
+        long,
+        help = "The path in the object store to the root directory, starting from within the object store bucket (specified when configuring the object store provider)"
+    )]
+    pub(crate) path: String,
+
+    #[command(subcommand)]
+    pub(crate) command: CliCommands,
+}
+
+#[derive(Subcommand, Debug)]
+pub(crate) enum CliCommands {
+    /// Reads the latest manifest file and outputs JSON serialized from a typed manifest.
+    ReadManifest {
+        /// Specify a specific manifest id to read. If omitted, the latest manifest is returned.
+        #[arg(short, long)]
+        id: Option<u64>,
+    },
+
+    /// Lists manifests in a range and outputs JSON serialized from typed manifest payloads.
+    ListManifests {
+        /// Optionally specify a start id for the range of manifests to lookup
+        #[arg(short, long)]
+        start: Option<u64>,
+
+        /// Optionally specify an end id for the range of manifests to lookup
+        #[arg(short, long)]
+        end: Option<u64>,
+    },
+
+    /// Reads the latest compactions file and outputs JSON serialized from typed compactions.
+    ReadCompactions {
+        /// Specify a specific compactions id to read. If omitted, the latest compactions are returned.
+        #[arg(short, long)]
+        id: Option<u64>,
+    },
+
+    /// Lists compactions files in a range and outputs JSON serialized from typed payloads.
+    ListCompactions {
+        /// Optionally specify a start id for the range of compactions to lookup
+        #[arg(short, long)]
+        start: Option<u64>,
+
+        /// Optionally specify an end id for the range of compactions to lookup
+        #[arg(short, long)]
+        end: Option<u64>,
+    },
+
+    /// Reads a specific compaction by ULID from a compactions file
+    ReadCompaction {
+        /// The ULID of the compaction to read
+        #[arg(short, long)]
+        id: String,
+
+        /// Optional compactions file id to read from. If not set, uses the latest file.
+        #[arg(long)]
+        compactions_id: Option<u64>,
+    },
+
+    /// Create a new checkpoint pointing to the database's current state.
+    CreateCheckpoint {
+        /// Optionally specify a lifetime for the created checkpoint. You can specify the lifetime
+        /// in a human-friendly format that uses years/days/min/s, e.g. "7days 30min 10s". The
+        /// checkpoint's expiry time will be set to the current wallclock time plus the specified
+        /// lifetime. If the lifetime is not specified, then the checkpoint is set with no expiry
+        /// and must be explicitly removed.
+        #[arg(short, long)]
+        #[clap(value_parser = humantime::parse_duration)]
+        lifetime: Option<Duration>,
+
+        /// Optionally specify the id (e.g. 01740ee5-6459-44af-9a45-85deb6e468e3) of an existing
+        /// checkpoint to use as the base for the newly created checkpoint. If not provided then
+        /// the checkpoint will be taken against the latest manifest.
+        #[arg(short, long)]
+        #[clap(value_parser = uuid::Uuid::parse_str)]
+        source: Option<Uuid>,
+
+        /// Optionally specify a name for the checkpoint. The name can be used to list the checkpoints.
+        /// Note that name may not be unique and the list operation can return multiple checkpoints with
+        /// the same name.
+        #[arg(short, long)]
+        name: Option<String>,
+    },
+
+    /// Refresh an existing checkpoint's expiry time. This command will look for an existing
+    /// checkpoint and update its expiry time using the specified lifetime.
+    RefreshCheckpoint {
+        /// The id of the checkpoint (e.g. 01740ee5-6459-44af-9a45-85deb6e468e3) to refresh.
+        #[arg(short, long)]
+        #[clap(value_parser = uuid::Uuid::parse_str)]
+        id: Uuid,
+
+        /// Optionally specify a new lifetime for the checkpoint. You can specify the lifetime in a
+        /// human-friendly format that uses years/days/min/s, e.g. "7days 30min 10s". The
+        /// checkpoint's expiry time will be set to the current wallclock time plus the specified
+        /// lifetime. If the lifetime is not specified, then the checkpoint is updated with no
+        /// expiry and must be explicitly removed.
+        #[arg(short, long)]
+        #[clap(value_parser = humantime::parse_duration)]
+        lifetime: Option<Duration>,
+    },
+
+    /// Delete an existing checkpoint.
+    DeleteCheckpoint {
+        /// The id of the checkpoint (e.g. 01740ee5-6459-44af-9a45-85deb6e468e3) to delete.
+        #[arg(short, long)]
+        #[clap(value_parser = uuid::Uuid::parse_str)]
+        id: Uuid,
+    },
+
+    /// Delete a database: strip any checkpoints it pinned in parent databases,
+    /// then delete its own objects. Without --confirm, prints what it would
+    /// delete and does nothing.
+    DeleteDb {
+        /// Actually delete. Without it, this is a dry run.
+        #[arg(long)]
+        confirm: bool,
+    },
+
+    /// List the current checkpoints of the db.
+    ListCheckpoints {
+        /// Optionally specify the name to filter the checkpoints. Note that name may not be unique
+        /// and the list operation can return multiple checkpoints with the same name. If not specified,
+        /// all checkpoints will be returned.
+        #[arg(short, long)]
+        name: Option<String>,
+    },
+
+    /// Dumps the key/value pairs of the database to stdout, in the spirit of RocksDB's
+    /// `ldb scan`.
+    ///
+    /// Output is one entry per line as `<key>\t<value>` (or `<key>` with
+    /// `--value none`). Logs go to stderr, so stdout is exactly the scan output.
+    ///
+    /// Opens the database as a non-fencing reader, so it is safe to run against a
+    /// database that a service is actively writing.
+    Scan {
+        /// Restrict the scan to keys starting with these bytes. Parsed according to
+        /// `--key`. Conflicts with `--from`/`--to`.
+        #[arg(long, conflicts_with_all = ["from", "to"])]
+        prefix: Option<String>,
+
+        /// Inclusive lower bound of the scanned key range. Parsed according to `--key`.
+        #[arg(long)]
+        from: Option<String>,
+
+        /// Exclusive upper bound of the scanned key range. Parsed according to `--key`.
+        #[arg(long)]
+        to: Option<String>,
+
+        /// How keys are rendered, and how `--prefix`/`--from`/`--to` are parsed.
+        #[arg(long, value_enum, default_value = "auto")]
+        key: KeyMode,
+
+        /// How each value is rendered.
+        #[arg(long, value_enum, default_value = "auto")]
+        value: ValueMode,
+
+        /// Stop after emitting this many entries.
+        #[arg(long)]
+        max_keys: Option<u64>,
+
+        /// Print only the number of matching entries and their total byte size, not the
+        /// entries themselves. When combined with `--max-keys`, only the entries up to
+        /// that cap are counted.
+        #[arg(long)]
+        count: bool,
+
+        /// Scan an existing checkpoint by its UUID, rather than following the latest
+        /// manifest. This provides a point-in-time view protected from garbage collection.
+        /// Without it, the scan remains read-only but concurrent garbage collection may
+        /// delete objects referenced by the scan.
+        #[arg(long)]
+        #[clap(value_parser = uuid::Uuid::parse_str)]
+        checkpoint: Option<Uuid>,
+    },
+
+    /// Runs a garbage collection for a specific resource type once
+    RunGarbageCollection {
+        /// the type of resource to clean up (manifest, wal, wal-fence, compacted, compactions)
+        #[arg(short, long)]
+        resource: GcResource,
+
+        /// the minimum age of the resource before considering it for GC
+        #[arg(short, long)]
+        #[clap(value_parser = humantime::parse_duration)]
+        min_age: Duration,
+
+        /// Delete eligible metadata without advancing boundary files.
+        #[arg(long, default_value_t = false)]
+        disable_boundary_files: bool,
+    },
+
+    /// Runs the compactor coordinator until interrupted (Ctrl-C).
+    ///
+    /// By default an embedded worker is also spawned in the same process. Pass
+    /// `--no-embedded-worker` when you want to run workers as separate
+    /// `run-worker` processes instead.
+    RunCompactor {
+        /// Disable the in-process compaction worker. The Compactor can run an embedded worker
+        /// alongside distributed workers or disable the embedded worker and use only distributed workers.
+        #[arg(long, default_value_t = false)]
+        no_embedded_worker: bool,
+    },
+
+    /// Runs a standalone compaction worker until interrupted (Ctrl-C).
+    ///
+    /// The worker polls `.compactions` for `Scheduled` entries, claims them
+    /// via the optimistic CAS protocol, executes the compaction, and writes
+    /// `Compacted` back. Multiple workers can run concurrently against the
+    /// same database — each will claim a disjoint set of jobs.
+    RunWorker,
+
+    /// Converts a sequence number to its corresponding timestamp using the latest manifest's sequence tracker.
+    SeqToTs {
+        seq: u64,
+        #[arg(long, value_parser = parse_find_option, default_value = "down")]
+        round: FindOption,
+    },
+
+    /// Converts a timestamp (in seconds) to its corresponding sequence number using the latest manifest's sequence tracker.
+    TsToSeq {
+        ts_secs: i64,
+        #[arg(long, value_parser = parse_find_option, default_value = "down")]
+        round: FindOption,
+    },
+
+    /// Submit a compaction request.
+    #[command(group(
+        ArgGroup::new("compaction_request")
+            .args(["request"])
+            .required(true)
+    ))]
+    SubmitCompaction {
+        /// Compaction scheduler name (only "size-tiered" is supported).
+        #[arg(long, default_value = "size-tiered")]
+        scheduler: String,
+
+        /// Submit a JSON-encoded compaction request.
+        ///
+        /// `"Full"` sweeps every tree in the DB (root + every named segment)
+        /// best-effort, skipping trees that have no compacted sorted runs.
+        ///
+        /// `FullSegment` targets a single tree. Its `segment` field is a byte
+        /// array — an empty array `[]` targets the compatibility-encoded root
+        /// tree (the only valid segment on an unsegmented DB); a non-empty
+        /// array names a segment by prefix.
+        ///
+        /// ## Examples
+        /// ```json
+        /// "Full"
+        /// ```
+        /// ```json
+        /// {"FullSegment":{"segment":[]}}
+        /// ```
+        /// ```json
+        /// {"FullSegment":{"segment":[104,111,117,114,61,49,50,47]}}
+        /// ```
+        /// ```json
+        /// {"Spec":{"sources":[{"SortedRun":3},{"Sst":"01H8FQ5K6K7QK6EJ0E9HNF1J2B"}],"destination":7}}
+        /// ```
+        #[arg(long, value_parser = parse_compaction_request)]
+        request: CompactionRequest,
+    },
+
+    /// Schedules a period garbage collection job
+    #[command(group(
+        ArgGroup::new("gc_config")
+            .args(["manifest", "wal", "wal_fence", "compacted", "compactions"])
+            .multiple(true)
+            .required(true)
+    ))]
+    ScheduleGarbageCollection {
+        /// Configuration for manifest garbage collection should be set in the
+        /// format min_age=<duration>,period=<duration> -- the min_age is the
+        /// minimum manifest age that should be considered for collection and
+        /// the period is how often to attempt a GC
+        #[arg(long, value_parser = parse_gc_schedule)]
+        manifest: Option<GcSchedule>,
+
+        /// Configuration for WAL garbage collection should be set in the
+        /// format min_age=<duration>,period=<duration> -- the min_age is the
+        /// minimum WAL age that should be considered for collection and
+        /// the period is how often to attempt a GC
+        #[arg(long, value_parser = parse_gc_schedule)]
+        wal: Option<GcSchedule>,
+
+        /// Configuration for WAL fence garbage collection should be set in the
+        /// format min_age=<duration>,period=<duration> -- the min_age is the
+        /// minimum WAL fence age that should be considered for collection and
+        /// the period is how often to attempt a GC
+        #[arg(long, value_parser = parse_gc_schedule)]
+        wal_fence: Option<GcSchedule>,
+
+        /// Configuration for compacted SST garbage collection should be set in the
+        /// format min_age=<duration>,period=<duration> -- the min_age is the
+        /// minimum SST age that should be considered for collection and
+        /// the period is how often to attempt a GC
+        #[arg(long, value_parser = parse_gc_schedule)]
+        compacted: Option<GcSchedule>,
+
+        /// Configuration for compactions file garbage collection should be set in the
+        /// format min_age=<duration>,period=<duration> -- the min_age is the
+        /// minimum file age that should be considered for collection and
+        /// the period is how often to attempt a GC
+        #[arg(long, value_parser = parse_gc_schedule)]
+        compactions: Option<GcSchedule>,
+
+        /// Delete eligible metadata without advancing boundary files.
+        #[arg(long, default_value_t = false)]
+        disable_boundary_files: bool,
+    },
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+pub(crate) enum GcResource {
+    Manifest,
+    Wal,
+    WalFence,
+    Compacted,
+    Compactions,
+}
+
+fn parse_gc_schedule(s: &str) -> Result<GcSchedule, String> {
+    let parts: HashMap<String, String> = s
+        .split(',')
+        .filter_map(|kv| {
+            let mut parts = kv.splitn(2, '=');
+            match (parts.next(), parts.next()) {
+                (Some(key), Some(value)) => Some((key.to_string(), value.to_string())),
+                _ => None,
+            }
+        })
+        .collect();
+
+    let min_age = parts
+        .get("min_age")
+        .ok_or_else(|| "Missing or invalid 'min_age'".to_string())
+        .and_then(|v| {
+            humantime::parse_duration(v).map_err(|e| {
+                "Could not parse min_age as duration: ".to_string() + e.to_string().as_str()
+            })
+        })?;
+    let period = parts
+        .get("period")
+        .ok_or_else(|| "Missing or invalid 'period'".to_string())
+        .and_then(|v| humantime::parse_duration(v).map_err(|e| e.to_string()))?;
+
+    Ok(GcSchedule { min_age, period })
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct GcSchedule {
+    /// Minimum age of resources to collect
+    pub(crate) min_age: Duration,
+
+    /// How often to run the garbage collection
+    pub(crate) period: Duration,
+}
+
+pub(crate) fn parse_args() -> CliArgs {
+    CliArgs::parse()
+}
+
+fn parse_compaction_request(s: &str) -> Result<CompactionRequest, String> {
+    serde_json::from_str(s).map_err(|e| format!("Invalid compaction request JSON: {e}"))
+}
+
+fn parse_find_option(s: &str) -> Result<FindOption, String> {
+    match s.to_ascii_lowercase().as_str() {
+        "up" | "roundup" => Ok(FindOption::RoundUp),
+        "down" | "rounddown" => Ok(FindOption::RoundDown),
+        _ => Err("Invalid find option".to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_gc_schedule, CliArgs, CliCommands, GcResource};
+    use crate::scan::{KeyMode, ValueMode};
+    use clap::Parser;
+    use rstest::rstest;
+    use std::time::Duration;
+
+    #[rstest]
+    #[case(
+        "min_age=10m,period=1m",
+        Some(Duration::from_secs(600)),
+        Some(Duration::from_secs(60)),
+        None
+    )]
+    #[case(
+        "min_age=10m,period=1m,ignored=5m",
+        Some(Duration::from_secs(600)),
+        Some(Duration::from_secs(60)),
+        None
+    )]
+    #[case("period=1m", None, None, Some("Missing or invalid 'min_age'"))]
+    #[case("min_age=10m", None, None, Some("Missing or invalid 'period'"))]
+    #[case(
+        "min_age=invalid,period=1m",
+        None,
+        None,
+        Some("Could not parse min_age as duration")
+    )]
+    #[case(
+        "min_age=,period=1m",
+        None,
+        None,
+        Some("Could not parse min_age as duration: value was empty")
+    )]
+    fn parse_gc_schedule_tests(
+        #[case] input: &str,
+        #[case] expected_min_age: Option<Duration>,
+        #[case] expected_period: Option<Duration>,
+        #[case] expected_error: Option<&str>,
+    ) {
+        let result = parse_gc_schedule(input);
+
+        match (result, expected_min_age, expected_period, expected_error) {
+            // Valid case: min_age and period are parsed correctly
+            (Ok(schedule), Some(min_age), Some(period), None) => {
+                assert_eq!(schedule.min_age, min_age);
+                assert_eq!(schedule.period, period);
+            }
+            // Error case: check if the error message matches
+            (Err(err), None, None, Some(expected_msg)) => {
+                assert!(
+                    err.contains(expected_msg),
+                    "Expected error to contain '{}', got '{}'",
+                    expected_msg,
+                    err
+                );
+            }
+            // Any unexpected combination fails the test
+            result => panic!("Unexpected test case result. {:?}", result),
+        }
+    }
+
+    #[test]
+    fn parses_wal_fence_gc_resource() {
+        let args = CliArgs::try_parse_from([
+            "slatedb",
+            "--path",
+            "/tmp/slatedb",
+            "run-garbage-collection",
+            "--resource",
+            "wal-fence",
+            "--min-age",
+            "1m",
+        ])
+        .unwrap();
+
+        match args.command {
+            CliCommands::RunGarbageCollection {
+                resource,
+                min_age,
+                disable_boundary_files,
+            } => {
+                assert!(matches!(resource, GcResource::WalFence));
+                assert_eq!(min_age, Duration::from_secs(60));
+                assert!(!disable_boundary_files);
+            }
+            command => panic!("unexpected command: {command:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_scan_defaults() {
+        let args = CliArgs::try_parse_from(["slatedb", "--path", "/tmp/slatedb", "scan"]).unwrap();
+
+        match args.command {
+            CliCommands::Scan {
+                prefix,
+                from,
+                to,
+                key,
+                value,
+                max_keys,
+                count,
+                checkpoint,
+            } => {
+                assert!(prefix.is_none());
+                assert!(from.is_none());
+                assert!(to.is_none());
+                assert_eq!(key, KeyMode::Auto);
+                assert_eq!(value, ValueMode::Auto);
+                assert!(max_keys.is_none());
+                assert!(!count);
+                assert!(checkpoint.is_none());
+            }
+            command => panic!("unexpected command: {command:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_scan_flags() {
+        let args = CliArgs::try_parse_from([
+            "slatedb",
+            "--path",
+            "/tmp/slatedb",
+            "scan",
+            "--from",
+            "00",
+            "--to",
+            "ff",
+            "--key",
+            "hex",
+            "--value",
+            "len",
+            "--max-keys",
+            "10",
+            "--count",
+        ])
+        .unwrap();
+
+        match args.command {
+            CliCommands::Scan {
+                from,
+                to,
+                key,
+                value,
+                max_keys,
+                count,
+                ..
+            } => {
+                assert_eq!(from.as_deref(), Some("00"));
+                assert_eq!(to.as_deref(), Some("ff"));
+                assert_eq!(key, KeyMode::Hex);
+                assert_eq!(value, ValueMode::Len);
+                assert_eq!(max_keys, Some(10));
+                assert!(count);
+            }
+            command => panic!("unexpected command: {command:?}"),
+        }
+    }
+
+    #[test]
+    fn scan_prefix_conflicts_with_bounds() {
+        let result = CliArgs::try_parse_from([
+            "slatedb",
+            "--path",
+            "/tmp/slatedb",
+            "scan",
+            "--prefix",
+            "40",
+            "--from",
+            "00",
+        ]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parses_wal_fence_gc_schedule() {
+        let args = CliArgs::try_parse_from([
+            "slatedb",
+            "--path",
+            "/tmp/slatedb",
+            "schedule-garbage-collection",
+            "--wal-fence",
+            "min_age=10m,period=1m",
+        ])
+        .unwrap();
+
+        match args.command {
+            CliCommands::ScheduleGarbageCollection {
+                wal_fence: Some(schedule),
+                ..
+            } => {
+                assert_eq!(schedule.min_age, Duration::from_secs(600));
+                assert_eq!(schedule.period, Duration::from_secs(60));
+            }
+            command => panic!("unexpected command: {command:?}"),
+        }
+    }
+}

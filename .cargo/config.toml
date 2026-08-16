@@ -1,0 +1,3 @@
+# Normative command boundary (brief §21.2): `cargo xtask <cmd>` from the repository root.
+[alias]
+xtask = "run --locked --manifest-path tools/Cargo.toml --package xtask --"

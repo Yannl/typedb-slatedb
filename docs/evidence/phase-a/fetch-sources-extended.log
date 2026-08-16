@@ -1,0 +1,337 @@
+Cloning into '/home/user/typedb-slatedb/sources/typedb-driver'...
+HEAD is now at f487d961 Trigger CI (#919)
+dangling commit f300f28f20c006cb383dd436ead4937981d06113
+dangling tree 90037e5ccf51f3c02125d130800f7ef3a3c96d1d
+dangling tree 9205c6a41fc05755e4ec017c68cc56a3c23cb6b3
+dangling commit c805b66b6763d576cfa917278f3cb38a1aeb55b5
+dangling tree 800780635656d12210d15ec72bea4a3f013025ff
+dangling tree bd0ae49fcd162a2d6d67bb1ae16c09c3ee5b8bf7
+dangling tree de0bbc7078c71724f4bd5d13fe1d4c05e07470a4
+dangling commit 380f58329ae202fc739b2f398c5391ecc35d105e
+dangling tree 921574b6ce5aaf30f70f92cdf894c4a59f066a04
+dangling commit 281a8aade480833409f8758694498d9c054406da
+dangling commit 8a1cac5f933cceebb508e81831b2ee02306d9870
+dangling commit ae1fccf99db9e067726b619d1ef78061956b06da
+dangling commit 1320f828d26e340d15619b30ecb6d6fb8ae6aef4
+dangling tree f720283754f46fe954ade5122016edc0f3cd3a0d
+dangling tree 0f21b0d833c920b536474c81933248fd9c0d9c6f
+dangling commit 152342cfc86d69963a2b7a2355ed7c3f504db1ac
+dangling tree 0c250ccc5c853d52e8e33cb5275cc74e32d9c20e
+dangling tree 8b259ce1836144ba4e34f08521e257040730b333
+dangling commit c326ca4bfe7e1a14f906f9ec766865e4dfa9cea2
+dangling tree d4263ec161f3e474504352e41c63c25cf4c09619
+dangling tree d82852066001d78c7a1cc3b01a499e6724389f34
+dangling tree 6729f036d69f6c5013f6de54cd146b04fa82adba
+dangling commit 7b29cc5ce6a2e06b62178b778bd76f6649af39f4
+dangling commit d129e0bc6f32a9f1bf0960f61f143dd63736b8e3
+dangling tree 772e2a1ef147962900ed01db323e85313c0236d3
+dangling commit 1f396a691ec447327e7f1bf9d61298bb53bc9141
+dangling tree a93b6c9de5acd240f462e136301540a0cbf316ce
+dangling commit c641d251e1c0548b56446279aba93d4a922209cf
+dangling tree 66449aa37697a461953e937818da0db3a0bee228
+dangling commit d2446c05b70bc111bbeaee890d08306638941f70
+dangling commit d74b0ed465581159edafc4431d8fdf87d95039c1
+dangling tree 604f98264a1cb1d6a6a4a2fe75be4ddbd407a41e
+dangling tree 35558c009b7a228b8259194a34aa8150771bd750
+dangling tree 065788934e36191f20d0054e71631cf3bd8a007f
+dangling commit 2e5c2ac79ff1d0ae7ee2a15ca2f72e86080384e0
+dangling commit 725f7c01a6feb3ff659fd10869c4824401228e9c
+dangling commit ec5f92cee24f848e29f8aee127812acf97ac5b6c
+dangling commit 2760a28327881a11ce90964fc7efd8e237bc1948
+dangling commit 7c6116e8aacae05b67c1a71311779f2dcf1dac46
+dangling tree b2627499c6fd0ff42af74f95fc9dc10b399c385d
+dangling commit c467bc869e8562e03c7997237751eb54d6abc3b0
+dangling commit 19695844948e61a43690f190eda82c6f1d4f66d6
+dangling commit 2769369bd93985eb548ffdb6ab795caaf096bed3
+dangling commit c76942ff0acaba2d3998d33355856f86e8e67700
+dangling commit f36a1e461019a3a59aac41d95281cd87b4ef3ed9
+dangling tree c07354ca95cfa9cce8d9cdfffcfef1f3d995a398
+dangling tree c473ce271c91f9fd48981a7cb4ddddca32819261
+dangling tree 9b75485bcedadeb63bafcc39c59d499970ae30a4
+dangling commit 7077ca701fb4d83e17c480bc0d3f79eefcc7c4a0
+dangling tree 347c4cd9e492073378c4829135754a6fd14107cc
+dangling tree 3b7f60143bc23fd4046703c1d07c1b2d5f923b54
+dangling tree 4d805ab2c501cc83dc2e98fa33b1fdf14e03e9c2
+dangling tree e3802c5cbf6e9152ca0e03285da0fd9304f2716b
+dangling commit da8138ec468d61519ca759dea8f54bf19f2c8da9
+dangling tree f88344dcc92130773ffc2062ee4f7318557c56d7
+dangling commit 33881a7381cbd2c75072faa2da1ad9c3234ec963
+dangling commit 678944a2d1310edd4b7528bfc150e053f70f8e79
+dangling commit 0f8bd44603eaa7649391fa516f2e92b65e0f339b
+dangling tree 6d8fd2e98e247e94a29e2fd3ff4acd78435fe0a5
+dangling commit 569614981aa8d71950e0165de5663afdf681ec44
+dangling commit 389a8c97f535a50e3ea6b78a91bcca7b9a4f197b
+dangling commit f4a1e2e0f0ddf5e1f4a2084e498b0826263ec9d5
+dangling tree 47a3c017b431eddccac834078f42b703d0070cfa
+dangling tree caa3524b826dae121a8cf1e72d5e73029b4f37df
+dangling commit 6fa4c2da6b1e2cf7afa539452fe743266ee89f02
+dangling tree 1ea688280a9f3f57c583665c2f6b74d2ccd7e70b
+dangling tree 8ba682363133a76de1fd0553db0db3762e5610b7
+dangling tree eba852d8479a1a9fba404501f41ec0a01cf1f179
+dangling tree 9eae70922007e98df59c6f15c7bba8a97b657acd
+dangling tree 75aff4d3efd469ae3d91214594af733a6b263b46
+dangling tree 0db2606b8d8dab94f3f54866145f1e7e9d2f920f
+dangling commit a0b63cdde6b9cd1a6606302c09f23af8d7339f1a
+dangling commit 5cb7fa90e92b779bd0398c59e2f25e8cb32dd70f
+dangling tree e0b9de3a2796d494964d3f2954d6d0e071268ab6
+dangling tree baba7c00cd5b4e864a6ba8024c68be07a3b867f6
+dangling tree 67bba60a64992b73d0ba53a4fd5d151b67fc20dd
+dangling commit bfbc58dc50659c3db0b8a0d2c5209e3ee024d782
+dangling tree 16c0d8738a59f9d067b14eaa0617b3d301301353
+dangling commit 35c0bcf1baa1d7b0ecc14dc11236df5f2f6de2ae
+dangling tree 25c5a016017b1ffa7a28ee836ca65c0053366ba1
+dangling commit e1c5783281522663127f785935b42d64359bb766
+dangling tree b2c8f88011a7bf985702b200ef7963dee864645a
+dangling commit d0c87edb3ac6164dc2c95da55a38e4cb17c8d753
+dangling commit 0cc9f85f1fc55d05c1173411386258712bd1bfb1
+dangling commit 36ce7674a4d1cfba7208cd922a93a8182091cb95
+dangling commit ddd11840e7b1568a306cbfd479be7a2da8a888fa
+dangling commit c4d6085518345b39769cdcf21dfb651019133c3c
+dangling tree 94d75af09b2b80c0e34b42b9f817e70f7788cc54
+dangling commit 1fda4879608f0741c46f95fd91e540e7be8703ac
+dangling commit 46daaeff21dda2d28b747ac1b300c4b7158772c4
+dangling tree 34e190944db6a3571be8a17ad0503dafcaf8c39b
+dangling commit 7ee12efecc10ed17dca05a4de94256325056c466
+dangling commit 6ce4d248c8b34d234f342311d7d071923cd38891
+dangling commit c4e4f07e514dae8767c8793983dbedf488e41f7a
+dangling commit 91e518b1cf8d78060bea7b99172077bbf2429b4b
+dangling tree c7e8f247259da39c58579a0ed94d6ee2bdad2145
+dangling commit 37e9c8c4d2347efd1ad68dece507029b4963bc8c
+dangling commit 68e9a47ec6b38cc539b846a5a6822ae2a99ba0f0
+dangling tree 3feb48e17221f7313b6fe1415a8b0dd6975880ed
+dangling commit efef68b6a636ab520f046389e87dc0508c46a179
+dangling tree a1f202173b48baf38e21655a0770a9e974fe4859
+dangling tree daf2a68492db74fc9db9e514766c4eb599334417
+dangling commit 64f5bcd4cdfb0fe28442ff45c05a2a08a6a1593b
+dangling tree 86f598aa2f68b381f915a906cba985b94d00cd5a
+dangling commit a8f58c94dde0787f59aca9ac5301c88581aedaf7
+dangling commit 48f7d80a4fb014c249520a853fa0d80ea00cbbd7
+dangling tree ddfbd4c9a22418c1bca8e05d70164db3f8ce8edd
+dangling tree b0fccee23e31e0109a9c80854370e162540697f6
+dangling commit 48ff5e1a4ae125ce922a6496a779196a959ceeb1
+dangling tree 8fffb0335e51d46e23eeb65a91a5cb56cc2e41b2
+dangling tree d5004b2fb55e6d6134b9d840fa03153781d00203
+dangling tree bb039b926e97b8b4ec94ef0c37a18389ed655ceb
+dangling tree 68045d443bd75954b990b8cfee581ba9287cd727
+dangling tree 5406670a147e1595501fb3ad319a255b76f988a5
+dangling tree 9e0641ad29f4d499c826958caa5f1bc20f11bd63
+dangling tree 5108e588e5a17b88cc1b2d47c022eca6c95d88d0
+dangling tree f40aa1e8b746b6ca25777288752386431d4d4fc1
+dangling commit 8e0c6ddccf7dc3b4a2cefe6980d7b091a939b733
+dangling commit 7a0ef305aa94897edaa0b8ffd94ce75853651f69
+dangling tree 7110dfa57330822813327d37df5d6d3c80fdfc11
+dangling commit 32152553cea3e8af6e1ef616ea626693d76e6228
+dangling commit b5154566e80c4a505babb615c415c86ed4f181e4
+dangling tree d419b1dc351c8a66710c9576850fab2ace811a85
+dangling commit ee19c77e434afb0a1e1fceae9663948b638e0592
+dangling commit 8c1a4396d1566fa42d3d2ff90e8e192870ff26de
+dangling tree 021cc90997e03259032fe51109041c926aa74f9f
+dangling commit d21efde6da45e4ae0a5e23bb46eae655a0c25ac9
+dangling commit dd1e25741a56be7946336a867163f7e7ce8afc35
+dangling commit 0c1fe52e095f20446fca19881a6a5e7e99beba56
+dangling tree 631f7d24a63f1245d0a98cc44426c2409e8c97ef
+dangling commit cd20a761e960df6a741fc3876c5579fc9fda538c
+dangling commit 3922911e844ef5b4a120b78abae210ea214721c8
+dangling commit d923711fee4dd45ba72d1d36d11752b5b1457598
+dangling commit b52681031cf73d7bda2d56555c26e84ba3316d9e
+dangling tree 8630e1a81a5a3c5d7ab018bf3d68496c6e261dcf
+dangling commit 213123f42622887e872e12d9ac6604a4010e000a
+dangling tree d832199190c63674af1c17aff923626aede31060
+dangling commit 8633697419e20e2b1402cb23ed685be8f5046ceb
+dangling commit a8353b1f6eae85388fd5bbc3fdba80fd2db95276
+dangling tree 4b36dda2087dd4d86109bd7715e305cc95cdf7bd
+dangling commit d136a748ef6ec862ed361019ec266e299ce81e8a
+dangling tree 043733bfbb092202c30aefe896db6e80daca98ad
+dangling tree 1d3ab9eadf24d1219be9009cca38b6eb10269917
+dangling commit a73a0b0c8dcd6ddf32d346dc849dd9c23440e7ea
+dangling commit 503eb9d52f5e2cfad5040781ec0972d4f8cc2df4
+dangling commit e83f2fc331b00f3d4a5cc43bf8dd84ae3691196c
+dangling commit 4b405de45a8e0b3c4e288ce985acd08557e08af6
+dangling commit 244173609c363dae367a59083a7a338ef5650c1b
+dangling tree cf413584bdbcaa07636b25262d883d4a5cf33803
+dangling commit 1a4407e3f33d52c7c7f526d9f7a493b9bcdb5cbe
+dangling tree 3a449b7fe753c893b513b53762bb0ca429d832f7
+dangling tree ff45f58723737958f14a41ce7aa5e49176575893
+dangling commit 70487b7e50a8e67fff7f6931d18f8619a023e420
+dangling commit c149af42d0428c142529a97c4e18b0489a789252
+dangling commit 4e4a374d7ff649ab171fab61c57c38252805290a
+dangling tree be4f4f0f3f238c70cc81331dbcbe24a570dc010e
+dangling tree 1053613356fb408195e47d07c3cfc46724cf2b9c
+dangling tree e35431fb378cc88da25ce717cde3a8271787c103
+dangling tree 0455dfa06de83bb85b1eb6746dd1dcc76718c68f
+dangling commit d5559dd7751abd12099c885043e287044fafbab2
+dangling tree 9356fd4592ab5b76514041299b9ff4d8dd3b7990
+dangling commit 9b561f25901d3c75d79689e5642dc848378db302
+dangling tree 41572322ecf4987cc14f2f66f6d0cdcf93aed483
+dangling tree ae5fa7cbf524ee3010c3e530940b4fa1282b2593
+dangling tree 7f62cf9199c41efc238d2b9ab17419e37b18c2b7
+dangling commit 7669ab1f967553585470d450d2d2f32013ea6f43
+dangling tree c86959781e072873c20bcc03a9899cd07fbceb7f
+dangling tree f069a9196d5c663cc4bf5bbb0addd899ea05e87e
+dangling tree 926a3983ff6a0bfe224395dfcc62166772426db0
+dangling commit 476cdf2bc7dbbc7c3d1a4cdcaa7a6aa569a51087
+dangling commit d16de77c9afc7475067f3289413ef88e5391047a
+dangling commit b670ad9be10d386a8a71bc8a6d17d6d60012ebe1
+dangling commit bb7143b1ce3a3d0708742be43b964eedb902fc9d
+dangling tree 6374ed6c9799d1ac44884d0ce3574a47e2d935c6
+dangling tree a0743fc764d4270726cb5c521158ad23abe6d446
+dangling commit c477cd9c3868d075714f200a36d41326455c80b9
+dangling tree 527b7f2f22dade1da2b6900e12ab014b6ed9d051
+dangling commit 227fc7a248586168fe66a76c9f79acc702b31070
+dangling commit 7e881910056c3645db6b0f82b0d653529899d0be
+dangling commit a488618aed0321d784b235f9c224986317a36ec5
+dangling tree 218981dbfc9549af735146306a0df517389004bc
+dangling commit 418a33dad80defe83157c8523a2ce5544e54cc42
+dangling commit 3b8b5f8fcc440b032de62e6b4e5673e1397b89dc
+dangling commit d08b5d43d526507c127d47c81a0c89770e512edf
+dangling commit 3f9005776611e8f75c980cf1bda1239f80cd9e43
+dangling commit f99025f2330b73a0be2d1b1fcd7b4af1a651edd7
+dangling tree 6991135ce597daf36f2606e0443d7dbba4d8450b
+dangling tree b892f99831e110937863c49bb53526ad0ee6dcbe
+dangling tree 279c27c85036d319363cafe98c737b064eb10ce7
+dangling commit c09d45d1bb80ef91fbf39ea85fe9cb368cb72919
+dangling commit 0ea317d389b507c91a1e727eebd1a1da1c6a8d00
+dangling tree c5a5397e7c7f1ec02f98deff77e78233690db758
+dangling tree d9aadbb953c80d0f3558186dc97464b067f19f26
+dangling tree 4dae57417dd55c35f2f3ca2b091dada54b45ce12
+dangling tree 4db3c3c24da9238b5dc10a58ea52211142b973ea
+dangling tree 9db3b949621e967162fae2b60121351355d583d4
+dangling tree a1b3e19ea412266c139f18f0004162bace2aa5f8
+dangling tree 30b6f7b8b839f63fad529d338586ec35c6e38bab
+dangling commit 4eb66561be016a41baca1fc8047ebc035d596d39
+dangling commit 6db6f947bbc8f47181f81f458f1f09e1985fb514
+dangling commit 72b6b77b74900354b8c6f1edee4f2c113be9448e
+dangling commit 8bb6ff0924b528e0653c601eae33db011f20ede2
+dangling commit 8bba177c38045ac2a395cfc177ff5d54b5b45170
+dangling tree 5abc7d7bb3c37d9b82765e06dbcdf5ef9b7a1a7d
+dangling tree 3dc24d73189985f2f18d7938cbda9687a8090763
+dangling commit eac383ef8dd4b61dd779c36b32785a48b67807d7
+dangling tree 2fc6a5bb740087ce9b20a463276c9eb51fdddf14
+dangling commit cbca812c71a3e26142ac853b261ee24e61444232
+dangling tree a8cc8d6c8947dfcd139c085f7a46db2bf05a188f
+dangling tree 74cdf134757181159ea8d264cdfad1d2637c0ef9
+dangling commit 94cfbb1ec14babe76bb5355e4b3fb94adbe2432f
+dangling commit bfd66729a29ab4df7e23cf118b040c9f5af78b2e
+dangling commit 4ddc6f09960138e77c2e478511ec7f4bc00f5c18
+dangling tree c6def54a21b5ab6154285b4d5a4a62f1ee7bdf88
+dangling commit 63df336de4beaeeb430e6cfb8a4afd8391a77331
+dangling commit 4fe227299c0a1ff1b11d6001ba551eca65ffddcc
+dangling commit b7e2f9ccf3303e9946e106ad0d3437214f8f8453
+dangling tree 9ce563dba0c7cf5622355ccc03e6c5a3b903ac17
+dangling tree 60e613714b72c701b72110388eeb7392c40b90ce
+dangling tree ece6217dd102e6f490af3fb36ae7991ed0a63096
+dangling commit 1aeb5ba4adb44857160a2eee50da56bd000c544a
+dangling tree 54ec916b5e8470b857d0943a00b96ca51d61667e
+dangling commit 06edaf1e3d127959bf1b6a89af8255af0f3bfd21
+dangling commit e8eddbee3182f84ec90b71addf3aac280fe1294b
+dangling commit 07f02115bc9138826d5adf94c6e685587bd11d94
+dangling commit 78f037b31ed24ed51938e89f98fc0ace0b72ceee
+dangling commit d1f041dc419694b4984b9a6cea6e92618b3d5639
+dangling commit c8f10d8e36ec7c750ef0bf74f817161abd8e8ee7
+dangling tree 7bf6095eae2d60a7a43dc52cc5a59d69c22629ac
+dangling commit b3f689925575c927839a5fcf3c1a4c774c255de1
+dangling commit caf65f1493b04814cb4fb37c3dff02195ff71b1e
+dangling tree 86f7a536cca8e5b6c1f96fd8be158206b54630c4
+dangling commit 40f88320b439009b7888599ed3e6253321430f89
+dangling tree 71ff4337a9c946170f50166996baf58ea0d481c4
+Cloning into '/home/user/typedb-slatedb/sources/cloudflare-workerd'...
+Cloning into '/home/user/typedb-slatedb/sources/cloudflare-docs'...
+Updating files:   4% (546/13230)Updating files:   5% (662/13230)Updating files:   5% (768/13230)Updating files:   6% (794/13230)Updating files:   7% (927/13230)Updating files:   8% (1059/13230)Updating files:   9% (1191/13230)Updating files:   9% (1265/13230)Updating files:  10% (1323/13230)Updating files:  11% (1456/13230)Updating files:  12% (1588/13230)Updating files:  12% (1665/13230)Updating files:  13% (1720/13230)Updating files:  14% (1853/13230)Updating files:  15% (1985/13230)Updating files:  16% (2117/13230)Updating files:  17% (2250/13230)Updating files:  17% (2334/13230)Updating files:  18% (2382/13230)Updating files:  19% (2514/13230)Updating files:  20% (2646/13230)Updating files:  21% (2779/13230)Updating files:  22% (2911/13230)Updating files:  23% (3043/13230)Updating files:  24% (3176/13230)Updating files:  25% (3308/13230)Updating files:  26% (3440/13230)Updating files:  27% (3573/13230)Updating files:  28% (3705/13230)Updating files:  29% (3837/13230)Updating files:  30% (3969/13230)Updating files:  31% (4102/13230)Updating files:  32% (4234/13230)Updating files:  33% (4366/13230)Updating files:  34% (4499/13230)Updating files:  35% (4631/13230)Updating files:  36% (4763/13230)Updating files:  37% (4896/13230)Updating files:  38% (5028/13230)Updating files:  39% (5160/13230)Updating files:  40% (5292/13230)Updating files:  41% (5425/13230)Updating files:  42% (5557/13230)Updating files:  43% (5689/13230)Updating files:  44% (5822/13230)Updating files:  45% (5954/13230)Updating files:  46% (6086/13230)Updating files:  47% (6219/13230)Updating files:  48% (6351/13230)Updating files:  49% (6483/13230)Updating files:  50% (6615/13230)Updating files:  51% (6748/13230)Updating files:  52% (6880/13230)Updating files:  53% (7012/13230)Updating files:  54% (7145/13230)Updating files:  55% (7277/13230)Updating files:  56% (7409/13230)Updating files:  57% (7542/13230)Updating files:  58% (7674/13230)Updating files:  59% (7806/13230)Updating files:  60% (7938/13230)Updating files:  61% (8071/13230)Updating files:  62% (8203/13230)Updating files:  63% (8335/13230)Updating files:  64% (8468/13230)Updating files:  65% (8600/13230)Updating files:  66% (8732/13230)Updating files:  67% (8865/13230)Updating files:  68% (8997/13230)Updating files:  69% (9129/13230)Updating files:  70% (9261/13230)Updating files:  71% (9394/13230)Updating files:  72% (9526/13230)Updating files:  73% (9658/13230)Updating files:  74% (9791/13230)Updating files:  75% (9923/13230)Updating files:  76% (10055/13230)Updating files:  77% (10188/13230)Updating files:  78% (10320/13230)Updating files:  79% (10452/13230)Updating files:  80% (10584/13230)Updating files:  81% (10717/13230)Updating files:  82% (10849/13230)Updating files:  83% (10981/13230)Updating files:  84% (11114/13230)Updating files:  85% (11246/13230)Updating files:  86% (11378/13230)Updating files:  87% (11511/13230)Updating files:  88% (11643/13230)Updating files:  89% (11775/13230)Updating files:  90% (11907/13230)Updating files:  91% (12040/13230)Updating files:  92% (12172/13230)Updating files:  93% (12304/13230)Updating files:  94% (12437/13230)Updating files:  95% (12569/13230)Updating files:  96% (12701/13230)Updating files:  97% (12834/13230)Updating files:  98% (12966/13230)Updating files:  98% (13028/13230)Updating files:  99% (13098/13230)Updating files: 100% (13230/13230)Updating files: 100% (13230/13230), done.
+Cloning into '/home/user/typedb-slatedb/sources/cloudflare-api-schemas'...
+[
+  {
+    "dirty": false,
+    "name": "cloudflare-api-schemas",
+    "revision": "2ac8369e9b63dccacee1a2284e95bb819f05b307",
+    "shallow": true,
+    "tree": "7a38a2f09cef75e9d6677ea68274f8d1e090d41d"
+  },
+  {
+    "dirty": false,
+    "name": "cloudflare-containers",
+    "revision": "78913f0e66b5a62b2c2ad79c77d0fb0c06e18cc7",
+    "shallow": false,
+    "tree": "45ab8e6a9a930c89d47e4d5c588653ea48cff754"
+  },
+  {
+    "dirty": false,
+    "name": "cloudflare-docs",
+    "revision": "dec26351feea27b8200556dcdf8dfc17970170c6",
+    "shallow": true,
+    "tree": "b2d9ad3391698f8f6e28d69be06444e15cfe0291"
+  },
+  {
+    "dirty": false,
+    "name": "cloudflare-workerd",
+    "revision": "562ac20f79508540e0a5b8e21b8f6df93ed7a589",
+    "shallow": true,
+    "tree": "60930594826b47a364f7541e144c3785cda863cc"
+  },
+  {
+    "dirty": false,
+    "name": "cloudflare-workers-sdk",
+    "revision": "c576a8271503cc51babc1a8d0f2ef7d384f78742",
+    "shallow": false,
+    "tree": "18d9efd648c2295a1eb1eb35335d74992fa3c333"
+  },
+  {
+    "dirty": false,
+    "name": "slatedb",
+    "revision": "f88be86d17ac53260d3684edbc8f82811d945b5c",
+    "shallow": false,
+    "tree": "6244654eb6755427ff6b7649673184bd465b8635"
+  },
+  {
+    "dirty": false,
+    "name": "typedb",
+    "revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+    "shallow": false,
+    "tree": "cb3bc132c79e29ab9c8971d4d6f2e3fc0ca7776b"
+  },
+  {
+    "dirty": false,
+    "name": "typedb-bazel-distribution",
+    "revision": "ab5bfc90274e2d34569d5bc22558314b551cdecd",
+    "shallow": false,
+    "tree": "ae3e8b137fdb23a39ab56b124a74cea6d5f8a501"
+  },
+  {
+    "dirty": false,
+    "name": "typedb-behaviour",
+    "revision": "ac5d5733a484cea1d8809a2968029a818fdae24f",
+    "shallow": false,
+    "tree": "8d4f0b44550648cfe53fe703e039d48696b227dd"
+  },
+  {
+    "dirty": false,
+    "name": "typedb-dependencies",
+    "revision": "a5c51254088f343fb8b6a9668eaf99b35503dad4",
+    "shallow": false,
+    "tree": "60ffc7933c6cf67da42a8d1ec4046278504e6655"
+  },
+  {
+    "dirty": false,
+    "name": "typedb-driver",
+    "revision": "f487d961884010ff305d4395c41e80fa620251c6",
+    "shallow": false,
+    "tag": "3.12.3",
+    "tree": "d7b1736dd719468fe92a387c320ccdb9e1e84a0d"
+  },
+  {
+    "dirty": false,
+    "name": "typedb-protocol",
+    "revision": "0373c1ae106b1f68e80edb06c1b7375075fe62e2",
+    "shallow": false,
+    "tag": "3.12.0",
+    "tree": "6540245f926d263ec4a15037b6cf7e66c796aee4"
+  },
+  {
+    "dirty": false,
+    "name": "typeql",
+    "revision": "7f4cac93fa8eee8643aa9f75eb60cacb5a454842",
+    "shallow": false,
+    "tag": "3.12.2",
+    "tree": "3d8bdb15310fd49e1c563afcdce1015b4c5f6856"
+  }
+]
+EXIT=0

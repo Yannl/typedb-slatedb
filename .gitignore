@@ -1,0 +1,18 @@
+# Pinned upstream checkouts. Reproduced exactly by
+# `contract/fetch-pinned-sources-v16.sh` + `contract/fetch-sources-extended.sh`, and their
+# identities are locked in `source-lock/source-lock.json`, so the bytes are recoverable
+# without carrying every upstream .git in this repository.
+/sources/
+
+# Build outputs.
+/build/
+/tools/target/
+target/
+
+# Fixture staged into the pristine checkout to stand in for Bazel's runfiles tree.
+bazel-typedb/
+
+# Raw per-target stdout/stderr from conformance runs. Large, and superseded by the
+# digested manifests; keep the summaries and the coverage reports.
+/docs/evidence/**/run-*/*.stdout.txt
+/docs/evidence/**/run-*/*.stderr.txt

@@ -1,0 +1,14 @@
+[bindings.go]
+go_mod = "slatedb.io/slatedb-go"
+package_name = "slatedb"
+c_module_filename = "slatedb"
+
+[bindings.java]
+package_name = "io.slatedb.uniffi"
+cdylib_name = "slatedb_uniffi"
+
+[bindings.node]
+package_name = "@slatedb/uniffi"
+node_engine = ">=20"
+bundled_prebuilds = true
+manual_load = false

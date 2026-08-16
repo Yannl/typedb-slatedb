@@ -1,0 +1,106 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+#![deny(unused_must_use)]
+#![deny(elided_lifetimes_in_paths)]
+
+use std::path::Path;
+
+use clap::Parser;
+use logger::initialise_logging_global;
+use resource::constants::server::{DEFAULT_CONFIG_PATH, DISTRIBUTION_INFO, SENTRY_REPORTING_URI};
+use sentry::ClientInitGuard as SentryGuard;
+use server::{
+    ServerBuilder,
+    parameters::{
+        cli::CLIArgs,
+        config::{Config, ConfigBuilder},
+    },
+};
+use tokio::runtime::Runtime;
+
+fn main() {
+    #[cfg(not(debug_assertions))]
+    if std::env::var(fail_point::FAIL_POINT_ENV).is_ok() {
+        tracing::warn!(
+            "{} is set, but `debug_assertions` are not enabled; fail points will not trigger",
+            fail_point::FAIL_POINT_ENV
+        );
+    }
+
+    initialise_abort_on_panic();
+    let cli_args: CLIArgs = CLIArgs::parse();
+    let config_file = match cli_args.config_file_override.as_ref() {
+        None => ConfigBuilder::resolve_path_from_executable(Path::new(DEFAULT_CONFIG_PATH)),
+        Some(path) => CLIArgs::resolve_path_from_pwd(Path::new(path)),
+    };
+    let mut config_builder = ConfigBuilder::from_file(config_file).unwrap_or_else(|err| {
+        eprintln!("Error reading from config file: {:?}", err);
+        std::process::exit(1);
+    });
+    config_builder.override_with_cliargs(cli_args).unwrap_or_else(|err| {
+        eprintln!("Error applying CLI overrides: {:?}", err);
+        std::process::exit(1);
+    });
+    let config = config_builder.build().unwrap_or_else(|err| {
+        eprintln!("Error validating config file overridden with cli args: {:?}", err);
+        std::process::exit(1);
+    });
+    initialise_logging_global(&config.logging.directory);
+
+    ServerApplication::new(config).run();
+}
+
+struct ServerApplication {
+    runtime: Runtime,
+    config: Config,
+    // This guard sends Sentry reports when it's dropped. It has to be alive for the lifetime of the app.
+    _error_reporting_guard: Option<SentryGuard>,
+}
+
+impl ServerApplication {
+    fn new(config: Config) -> Self {
+        let error_reporting_guard = may_initialise_error_reporting(&config);
+        Self { config, runtime: create_tokio_runtime(), _error_reporting_guard: error_reporting_guard }
+    }
+
+    fn run(self) {
+        self.runtime.block_on(async {
+            let server =
+                ServerBuilder::default().distribution_info(DISTRIBUTION_INFO).build(self.config).await.unwrap();
+            match server.serve().await {
+                Ok(_) => eprintln!("Exited."),
+                Err(err) => eprintln!("Exited with error: {:?}", err),
+            }
+        })
+    }
+}
+
+fn initialise_abort_on_panic() {
+    std::panic::set_hook({
+        let default_panic = std::panic::take_hook();
+        Box::new(move |info| {
+            default_panic(info);
+            std::process::exit(1);
+        })
+    });
+}
+
+fn may_initialise_error_reporting(config: &Config) -> Option<SentryGuard> {
+    if config.diagnostics.reporting.report_errors && !config.development_mode.enabled {
+        let options = (
+            SENTRY_REPORTING_URI,
+            sentry::ClientOptions { release: Some(DISTRIBUTION_INFO.version.into()), ..Default::default() },
+        );
+        Some(sentry::init(options))
+    } else {
+        None
+    }
+}
+
+fn create_tokio_runtime() -> Runtime {
+    tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("Expected a main tokio runtime")
+}

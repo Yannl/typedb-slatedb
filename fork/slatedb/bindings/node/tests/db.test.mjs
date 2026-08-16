@@ -1,0 +1,479 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  AdminBuilder,
+  CacheTarget,
+  CloseReason,
+  FlushType,
+  IsolationLevel,
+  SsTableId,
+  WriteBatch,
+} from "../index.js";
+import {
+  ConcatMergeOperator,
+  FixedThreeByteSegmentExtractor,
+  TEST_DB_PATH,
+  bytes,
+  createCleanup,
+  drainIterator,
+  expectClosed,
+  expectInvalid,
+  fullRange,
+  mergeOptions,
+  newMemoryStore,
+  openDb,
+  putOptions,
+  readOptions,
+  requireRows,
+  scanOptions,
+  writeOptions,
+} from "./support.mjs";
+
+test("db lifecycle and status", async (t) => {
+  const cleanup = createCleanup(t);
+  const store = cleanup.track(newMemoryStore());
+  const db = await openDb(store, { cleanup });
+
+  assert.equal(db.status().close_reason, undefined);
+  await db.put(bytes("lifecycle"), bytes("value"));
+  await db.shutdown();
+
+  assert.equal(db.status().close_reason, CloseReason.Clean);
+
+  await expectClosed(
+    () => db.put(bytes("after-shutdown"), bytes("value")),
+    {
+      reason: CloseReason.Clean,
+      message: "Closed error: db is closed",
+    },
+  );
+});
+
+function requireSegments(segments, ...want) {
+  assert.equal(segments.length, want.length, `unexpected segment count: ${JSON.stringify(segments)}`);
+  for (const [index, prefix] of want.entries()) {
+    assert.deepEqual(segments[index].prefix, bytes(prefix), `unexpected segment at index ${index}`);
+  }
+}
+
+test("db status segments without extractor", async (t) => {
+  const cleanup = createCleanup(t);
+  const store = cleanup.track(newMemoryStore());
+  const db = await openDb(store, { cleanup });
+
+  await db.put(bytes("aaa-1"), bytes("value"));
+
+  requireSegments(db.status().segments);
+});
+
+test("db status segments with extractor", async (t) => {
+  const cleanup = createCleanup(t);
+  const store = cleanup.track(newMemoryStore());
+  const db = await openDb(store, {
+    cleanup,
+    configure(builder) {
+      builder.with_segment_extractor(new FixedThreeByteSegmentExtractor());
+    },
+  });
+
+  requireSegments(db.status().segments);
+
+  await db.put(bytes("bbb-1"), bytes("value"));
+  await db.put(bytes("aaa-1"), bytes("value"));
+
+  // Unflushed writes are reported from the memtable, sorted by prefix.
+  requireSegments(db.status().segments, "aaa", "bbb");
+
+  // Another write in an existing segment must not produce a duplicate.
+  await db.put(bytes("aaa-2"), bytes("value"));
+  requireSegments(db.status().segments, "aaa", "bbb");
+
+  // Segments survive the flush from memtable to manifest.
+  await db.flush_with_options({ flush_type: FlushType.MemTable });
+  requireSegments(db.status().segments, "aaa", "bbb");
+
+  // A key the extractor cannot route to a segment is rejected.
+  await expectInvalid(() => db.put(bytes("xy"), bytes("value")));
+});
+
+test("db crud and metadata", async (t) => {
+  const cleanup = createCleanup(t);
+  const store = cleanup.track(newMemoryStore());
+  const db = await openDb(store, { cleanup });
+
+  const firstWrite = cleanup.track(await db.put_with_options(
+    bytes("alpha"),
+    bytes("one"),
+    putOptions(),
+    writeOptions(false),
+  ));
+  await firstWrite.await_durable();
+  assert.ok(firstWrite.seqnum() > 0);
+  assert.ok(firstWrite.create_ts() > 0);
+
+  assert.deepEqual(await db.get(bytes("alpha")), bytes("one"));
+  assert.deepEqual(
+    await db.get_with_options(bytes("alpha"), readOptions()),
+    bytes("one"),
+  );
+
+  const metadata = await db.get_key_value(bytes("alpha"));
+  assert.notEqual(metadata, undefined);
+  assert.deepEqual(metadata.key, bytes("alpha"));
+  assert.deepEqual(metadata.value, bytes("one"));
+  assert.deepEqual(metadata.seq, firstWrite.seqnum());
+  assert.deepEqual(metadata.create_ts, firstWrite.create_ts());
+
+  const metadataWithOptions = await db.get_key_value_with_options(bytes("alpha"), readOptions());
+  assert.notEqual(metadataWithOptions, undefined);
+  assert.deepEqual(metadataWithOptions.value, bytes("one"));
+
+  const secondWrite = cleanup.track(await db.put_with_options(
+    bytes("beta"),
+    bytes("two"),
+    putOptions(),
+    writeOptions(false),
+  ));
+  assert.ok(secondWrite.seqnum() > firstWrite.seqnum());
+  assert.ok(secondWrite.create_ts() > 0);
+  assert.deepEqual(await db.get(bytes("beta")), bytes("two"));
+
+  await db.put_with_options(
+    bytes("empty"),
+    bytes(""),
+    putOptions(),
+    writeOptions(false),
+  );
+  assert.deepEqual(await db.get(bytes("empty")), bytes(""));
+  assert.equal(await db.get(bytes("missing")), undefined);
+
+  const deleteAlpha = cleanup.track(await db.delete_with_options(bytes("alpha"), writeOptions(false)));
+  assert.ok(deleteAlpha.seqnum() > secondWrite.seqnum());
+  assert.equal(await db.get(bytes("alpha")), undefined);
+
+  const deleteBeta = cleanup.track(await db.delete_with_options(bytes("beta"), writeOptions(false)));
+  assert.ok(deleteBeta.seqnum() > secondWrite.seqnum());
+  assert.equal(await db.get(bytes("beta")), undefined);
+});
+
+test("db scan variants", async (t) => {
+  const cleanup = createCleanup(t);
+  const store = cleanup.track(newMemoryStore());
+  const db = await openDb(store, { cleanup });
+
+  const batch = cleanup.track(new WriteBatch());
+  batch.put(bytes("item:01"), bytes("first"));
+  batch.put(bytes("item:02"), bytes("second"));
+  batch.put(bytes("item:03"), bytes("third"));
+  batch.put(bytes("other:01"), bytes("other"));
+  await db.write_with_options(batch, writeOptions(false));
+
+  const fullScan = cleanup.track(await db.scan(fullRange()));
+  requireRows(
+    await drainIterator(fullScan),
+    ["item:01", "item:02", "item:03", "other:01"],
+    ["first", "second", "third", "other"],
+  );
+
+  const boundedScan = cleanup.track(await db.scan({
+    start: bytes("item:02"),
+    start_inclusive: true,
+    end: bytes("item:03"),
+    end_inclusive: true,
+  }));
+  requireRows(
+    await drainIterator(boundedScan),
+    ["item:02", "item:03"],
+    ["second", "third"],
+  );
+
+  const scanWithOptions = cleanup.track(await db.scan_with_options(
+    {
+      start: bytes("item:01"),
+      start_inclusive: true,
+      end: bytes("item:99"),
+      end_inclusive: false,
+    },
+    scanOptions(64, true, 2),
+  ));
+  requireRows(
+    await drainIterator(scanWithOptions),
+    ["item:01", "item:02", "item:03"],
+    ["first", "second", "third"],
+  );
+
+  const prefixScan = cleanup.track(await db.scan_prefix(bytes("item:"), fullRange()));
+  requireRows(
+    await drainIterator(prefixScan),
+    ["item:01", "item:02", "item:03"],
+    ["first", "second", "third"],
+  );
+
+  const boundedPrefixScan = cleanup.track(await db.scan_prefix(bytes("item:"), {
+    start: bytes("02"),
+    start_inclusive: false,
+    end: bytes("03"),
+    end_inclusive: true,
+  }));
+  requireRows(
+    await drainIterator(boundedPrefixScan),
+    ["item:03"],
+    ["third"],
+  );
+
+  const prefixScanWithOptions = cleanup.track(await db.scan_prefix_with_options(
+    bytes("item:"),
+    fullRange(),
+    scanOptions(32, false, 1),
+  ));
+  requireRows(
+    await drainIterator(prefixScanWithOptions),
+    ["item:01", "item:02", "item:03"],
+    ["first", "second", "third"],
+  );
+});
+
+test("db batch write and consumption", async (t) => {
+  const cleanup = createCleanup(t);
+  const store = cleanup.track(newMemoryStore());
+  const db = await openDb(store, { cleanup });
+
+  await db.put_with_options(
+    bytes("remove-me"),
+    bytes("old"),
+    putOptions(),
+    writeOptions(false),
+  );
+
+  const batch = cleanup.track(new WriteBatch());
+  batch.put(bytes("batch-put"), bytes("value"));
+  batch.delete(bytes("remove-me"));
+
+  const batchWrite = cleanup.track(await db.write(batch));
+  assert.ok(batchWrite.seqnum() > 0);
+  assert.deepEqual(await db.get(bytes("batch-put")), bytes("value"));
+  assert.equal(await db.get(bytes("remove-me")), undefined);
+
+  await expectInvalid(
+    () => db.write(batch),
+    { message: "write batch has already been consumed" },
+  );
+
+  const secondBatch = cleanup.track(new WriteBatch());
+  secondBatch.put_with_options(bytes("batch-put-2"), bytes("value-2"), putOptions());
+  const secondBatchWrite = cleanup.track(await db.write_with_options(secondBatch, writeOptions()));
+  await secondBatchWrite.await_durable();
+  assert.deepEqual(await db.get(bytes("batch-put-2")), bytes("value-2"));
+});
+
+test("db flush", async (t) => {
+  const cleanup = createCleanup(t);
+  const store = cleanup.track(newMemoryStore());
+  const db = await openDb(store, { cleanup });
+
+  await db.put_with_options(
+    bytes("flush-key"),
+    bytes("value"),
+    putOptions(),
+    writeOptions(false),
+  );
+  await db.flush();
+  await db.flush_with_options({ flush_type: FlushType.Wal });
+  await db.flush_with_options({ flush_type: FlushType.MemTable });
+  assert.deepEqual(await db.get(bytes("flush-key")), bytes("value"));
+});
+
+test("db merge and merge_with_options", async (t) => {
+  const cleanup = createCleanup(t);
+  const store = cleanup.track(newMemoryStore());
+  const db = await openDb(store, {
+    cleanup,
+    configure(builder) {
+      builder.with_merge_operator(new ConcatMergeOperator());
+    },
+  });
+
+  await db.put_with_options(
+    bytes("merge"),
+    bytes("base"),
+    putOptions(),
+    writeOptions(false),
+  );
+  await db.merge(bytes("merge"), bytes(":one"));
+  assert.deepEqual(await db.get(bytes("merge")), bytes("base:one"));
+
+  const mergeWrite = cleanup.track(await db.merge_with_options(
+    bytes("merge"),
+    bytes(":two"),
+    mergeOptions(),
+    writeOptions(),
+  ));
+  await mergeWrite.await_durable();
+  assert.deepEqual(await db.get(bytes("merge")), bytes("base:one:two"));
+});
+
+test("db snapshot isolation", async (t) => {
+  const cleanup = createCleanup(t);
+  const store = cleanup.track(newMemoryStore());
+  const db = await openDb(store, { cleanup });
+
+  await db.put_with_options(
+    bytes("snapshot"),
+    bytes("old"),
+    putOptions(),
+    writeOptions(false),
+  );
+
+  const snapshot = cleanup.track(await db.snapshot());
+  await db.put_with_options(
+    bytes("snapshot"),
+    bytes("new"),
+    putOptions(),
+    writeOptions(false),
+  );
+
+  assert.deepEqual(await snapshot.get(bytes("snapshot")), bytes("old"));
+  assert.deepEqual(await db.get(bytes("snapshot")), bytes("new"));
+});
+
+test("db transactions", async (t) => {
+  const cleanup = createCleanup(t);
+  const store = cleanup.track(newMemoryStore());
+  const db = await openDb(store, { cleanup });
+
+  const transaction = cleanup.track(await db.begin(IsolationLevel.Snapshot));
+  assert.notEqual(transaction.id(), "");
+
+  await transaction.put(bytes("txn-key"), bytes("pending"));
+  assert.deepEqual(await transaction.get(bytes("txn-key")), bytes("pending"));
+  assert.equal(await db.get(bytes("txn-key")), undefined);
+
+  const commitHandle = cleanup.track(await transaction.commit());
+  assert.notEqual(commitHandle, undefined);
+  assert.ok(commitHandle.seqnum() > 0);
+  assert.deepEqual(await db.get(bytes("txn-key")), bytes("pending"));
+
+  const rollbackTx = cleanup.track(await db.begin(IsolationLevel.Snapshot));
+  await rollbackTx.put(bytes("rolled-back"), bytes("value"));
+  await rollbackTx.rollback();
+  assert.equal(await db.get(bytes("rolled-back")), undefined);
+});
+
+test("db invalid inputs map to typed errors", async (t) => {
+  const cleanup = createCleanup(t);
+  const store = cleanup.track(newMemoryStore());
+  const db = await openDb(store, { cleanup });
+
+  await expectInvalid(
+    () => db.put(bytes(""), bytes("value")),
+    { message: "key cannot be empty" },
+  );
+
+  await expectInvalid(
+    () => db.delete(bytes("")),
+    { message: "key cannot be empty" },
+  );
+
+  await expectInvalid(
+    () => db.scan({
+      start: bytes("z"),
+      start_inclusive: true,
+      end: bytes("a"),
+      end_inclusive: true,
+    }),
+    { message: "range start must not be greater than range end" },
+  );
+
+  await expectInvalid(
+    () => db.scan({
+      start: bytes("a"),
+      start_inclusive: true,
+      end: bytes("a"),
+      end_inclusive: false,
+    }),
+    { message: "range must be non-empty" },
+  );
+
+  // Scan with empty start bound should succeed and be treated as unbounded start.
+  await db.put(bytes("seed"), bytes("value"));
+  const emptyStartScan = cleanup.track(await db.scan({
+    start: bytes(""),
+    start_inclusive: true,
+    end: undefined,
+    end_inclusive: false,
+  }));
+  requireRows(await drainIterator(emptyStartScan), ["seed"], ["value"]);
+});
+
+test("db writer fencing reports closed reason", async (t) => {
+  const cleanup = createCleanup(t);
+  const store = cleanup.track(newMemoryStore());
+  const primary = await openDb(store, { cleanup });
+  await primary.put_with_options(
+    bytes("primary"),
+    bytes("value"),
+    putOptions(),
+    writeOptions(false),
+  );
+
+  const secondary = await openDb(store, { cleanup });
+  await secondary.put_with_options(
+    bytes("secondary"),
+    bytes("value"),
+    putOptions(),
+    writeOptions(false),
+  );
+
+  const error = await expectClosed(
+    async () => {
+      const write = cleanup.track(await primary.put(bytes("stale"), bytes("value")));
+      await write.await_durable();
+    },
+    { reason: CloseReason.Fenced },
+  );
+  assert.match(error.message, /detected newer DB client/);
+});
+
+test("db warm_sst and evict_cached_sst", async (t) => {
+  const cleanup = createCleanup(t);
+  const store = cleanup.track(newMemoryStore());
+  const db = await openDb(store, { cleanup });
+  const admin = cleanup.track(new AdminBuilder(TEST_DB_PATH, store).build(), {
+    shutdown: false,
+  });
+
+  await db.put_with_options(
+    bytes("alpha"),
+    bytes("one"),
+    putOptions(),
+    writeOptions(false),
+  );
+  await db.flush_with_options({ flush_type: FlushType.MemTable });
+
+  const manifest = await admin.read_manifest(undefined);
+  assert.ok(manifest.l0.length > 0);
+  const sstId = manifest.l0[0].sst.id;
+
+  await db.warm_sst(sstId, [
+    CacheTarget.Filters(),
+    CacheTarget.Index(),
+    CacheTarget.Stats(),
+    CacheTarget.Data(fullRange()),
+  ]);
+
+  // Empty-range Data target is a no-op (not an invalid-range error).
+  await db.warm_sst(sstId, [
+    CacheTarget.Data({
+      start: bytes("z"),
+      start_inclusive: true,
+      end: bytes("a"),
+      end_inclusive: true,
+    }),
+  ]);
+
+  // Unknown SST is a no-op, not an error.
+  await db.warm_sst(SsTableId.Wal(999_999n), [CacheTarget.Index()]);
+
+  await db.evict_cached_sst(sstId);
+});

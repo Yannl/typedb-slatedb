@@ -1,0 +1,26 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+config:
+  dependencies:
+    dependencies: [build]
+
+build:
+  correctness:
+    build:
+      image: typedb-ubuntu-22.04
+      command: |
+        bazel build //... --test_output=errors
+        bazel run @typedb_dependencies//tool/checkstyle:test-coverage
+        bazel test $(bazel query 'kind(checkstyle_test, //...)') --test_output=errors
+    sync-dependencies:
+      image: typedb-ubuntu-22.04
+      filter:
+        owner: typedb
+        branch: [master, development]
+      dependencies: [build]
+      command: |
+          export SYNC_DEPENDENCIES_TOKEN=$REPO_GITHUB_TOKEN
+          bazel run @typedb_dependencies//tool/sync:dependencies -- --source ${FACTORY_REPO}@${FACTORY_COMMIT}
+      

@@ -1,0 +1,206 @@
+name: Nightly Benchmarks
+
+on:
+  schedule:
+    # Run at midnight Pacific (8 AM UTC)
+    - cron: "0 8 * * *"
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  # Required for storing benchmark results
+  contents: write
+  # Required for reading ZeroFS's main action status
+  actions: read
+
+jobs:
+  # Run and save nightly microbenchmark data so PRs have a fresh baseline to compare against
+  microbenchmarks:
+    runs-on: warp-ubuntu-latest-arm64-8x
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run microbenchmark
+        run: cargo bench --features bench-internal -- --output-format bencher | tee output.txt
+
+      - name: Download nightly microbenchmark data
+        uses: actions/cache/restore@v4
+        with:
+          path: ./microbenchmarks-cache
+          key: ${{ runner.os }}-microbenchmarks-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-microbenchmarks-
+
+      - name: Update microbenchmark result
+        id: update_microbenchmark_result
+        continue-on-error: true
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: cargo bench
+          tool: "cargo"
+          output-file-path: output.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          external-data-json-path: ./microbenchmarks-cache/benchmark-data.json
+          fail-on-alert: true
+          summary-always: true
+          max-items-in-chart: 30
+
+      - name: Save nightly microbenchmark data
+        uses: actions/cache/save@v4
+        with:
+          path: ./microbenchmarks-cache
+          key: ${{ runner.os }}-microbenchmarks-${{ github.run_id }}
+
+      - name: Fail on microbenchmark alert
+        if: steps.update_microbenchmark_result.outcome == 'failure'
+        run: exit 1
+
+  microbenchmark-pprofs:
+    runs-on: warp-ubuntu-latest-arm64-8x
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y linux-tools-common linux-tools-generic linux-tools-`uname -r`
+
+      - name: Configure perf
+        run: |
+          echo -1 | sudo tee /proc/sys/kernel/perf_event_paranoid
+          echo 0 | sudo tee /proc/sys/kernel/kptr_restrict
+
+      - name: Generate pprofs
+        env:
+          CARGO_PROFILE_BENCH_DEBUG: true
+          SLATE_BENCH_PROFILE: true
+        run: |
+          BENCHMARKS=$(cargo bench --no-run --message-format=json | jq -r 'select(.profile.test == true and (.target.kind | contains(["bench"]))) | .target.name' | sort -u)
+          for bench in $BENCHMARKS; do
+            cargo bench --bench $bench -- --profile-time 10
+          done
+          find . -name "*.pb" -exec gzip {} \;
+
+      # install instructions from https://github.com/polarsignals/pprofme/tree/main
+      - name: Install pprofme
+        run: |
+          PPROFME_ARCH=$(uname -m)
+          if [ "$PPROFME_ARCH" = "aarch64" ]; then
+            PPROFME_ARCH=arm64
+          fi
+          PPROFME_BINARY="pprofme_$(uname)_${PPROFME_ARCH}"
+          curl -fLO "https://github.com/polarsignals/pprofme/releases/latest/download/${PPROFME_BINARY}"
+          curl -sL https://github.com/polarsignals/pprofme/releases/latest/download/pprofme_checksums.txt | shasum --ignore-missing -a 256 --check
+          chmod a+x "${PPROFME_BINARY}"
+          sudo mv "${PPROFME_BINARY}" /usr/local/bin/pprofme
+
+      - name: Upload pprofs and add links to summary
+        run: |
+          echo "## 🔥 Microbenchmark Performance Profiles" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The following pprof profiles were generated from nightly microbenchmarks:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          PPROF_FILES=$(find . -name "*.pb.gz" -type f 2>/dev/null || true)
+          if [ -z "$PPROF_FILES" ]; then
+            echo "⚠️ No pprof files found" >> $GITHUB_STEP_SUMMARY
+          else
+            for pprof_file in $PPROF_FILES; do
+              bench_name=$(basename "$pprof_file" .pb.gz)
+              description="SlateDB Nightly Microbenchmark: $bench_name ($(date -u +%Y-%m-%d))"
+              upload_url=$(pprofme upload -d "$description" "$pprof_file" 2>&1 | grep -o 'https://pprof.me/[a-zA-Z0-9]*' | head -1)
+              if [ -n "$upload_url" ]; then
+                echo "- [$bench_name]($upload_url)" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "- ❌ Failed to upload $bench_name" >> $GITHUB_STEP_SUMMARY
+              fi
+            done
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+  detect-flaky-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9.98
+      - name: Install gdb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gdb
+      - name: Run tests in a loop for 15 minutes
+        run: |
+          set -euo pipefail
+          SECONDS=0
+          deadline=$((15 * 60))
+          iteration=1
+          while [ $SECONDS -lt $deadline ]; do
+            echo "=== Iteration $iteration (elapsed ${SECONDS}s) ==="
+            if ! cargo nextest run --workspace --lib --all-features --all-targets --profile ci; then
+              echo "Tests failed during iteration $iteration"
+              exit 1
+            fi
+            iteration=$((iteration + 1))
+          done
+          completed=$((iteration - 1))
+          echo "Completed $completed iteration(s) in ${SECONDS}s without failures"
+
+  chaos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl maven
+          sudo snap install aws-cli --classic
+
+      - name: Start chaos services (docker compose)
+        run: |
+          docker compose -f scripts/run_chaos_scenarios.compose.yaml up -d --wait
+
+      - name: Configure S3 toxiproxy proxy
+        run: |
+          # Create s3 toxiproxy if not exist (TCP-level path only)
+          curl -sf -X POST http://127.0.0.1:8474/proxies \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"s3","listen":"0.0.0.0:9001","upstream":"localstack:4566"}' || true
+
+      - name: Run chaos scenarios
+        id: chaos
+        env:
+          SLATEDB_TEST_NUM_WRITERS: "2"
+          SLATEDB_TEST_NUM_READERS: "2"
+          SLATEDB_TEST_WRITES_PER_TASK: "250"
+          SLATEDB_TEST_KEY_LENGTH: "256"
+          RUST_BACKTRACE: "1"
+        run: |
+          chmod +x scripts/run_chaos_scenarios.sh
+          if scripts/run_chaos_scenarios.sh; then
+            echo "ok=true" >> $GITHUB_OUTPUT
+          else
+            echo "ok=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: Summarize results
+        if: always()
+        run: |
+          echo "## 🌪️ SlateDB Toxiproxy Chaos" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.chaos.outputs.ok }}" = "true" ]; then
+            echo "All scenarios passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "One or more scenarios failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          echo "--- Docker Compose PS ---"; docker compose -f scripts/run_chaos_scenarios.compose.yaml ps || true
+          echo "--- LocalStack logs ---"; docker logs --tail 500 localstack || true
+          echo "--- lowdown logs ---"; docker logs --tail 500 lowdown || true
+          echo "--- Toxiproxy logs ---"; docker logs --tail 500 toxiproxy || true
+          echo "--- Toxiproxy proxies ---"; curl -sf http://127.0.0.1:8474/proxies || true

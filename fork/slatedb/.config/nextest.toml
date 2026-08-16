@@ -1,0 +1,51 @@
+experimental = ["wrapper-scripts"]
+
+# PR unit/CI profile
+[profile.ci]
+slow-timeout = { period = "30s", terminate-after = 4 }
+
+[scripts.wrapper.backtrace-on-timeout]
+command = [
+  "sh",
+  "-c",
+  """
+ workspace_manifest=$(cargo locate-project --workspace --message-format plain)
+ root=$(dirname "$workspace_manifest")
+ exec "$root/scripts/backtrace-on-timeout.sh" "$@"
+""",
+  "sh",
+]
+
+[[profile.ci.scripts]]
+filter = "all()"
+run-wrapper = "backtrace-on-timeout"
+
+# Cross-platform PR profile (no wrapper script so it works on Windows/macOS).
+[profile.ci-cross]
+slow-timeout = { period = "30s", terminate-after = 4 }
+
+# PR DST profile
+[profile.dst]
+slow-timeout = { period = "30m", terminate-after = 1 }
+default-filter = "package(slatedb-dst) & test(test_dst)"
+
+[[profile.dst.scripts]]
+filter = "all()"
+run-wrapper = "backtrace-on-timeout"
+
+# Nightly DST profile
+[profile.dst-nightly]
+slow-timeout = { period = "90m", terminate-after = 1 }
+default-filter = "package(slatedb-dst) & test(test_dst)"
+
+[[profile.dst-nightly.scripts]]
+filter = "all()"
+run-wrapper = "backtrace-on-timeout"
+
+# Nightly Chaos profile
+[profile.chaos-nightly]
+slow-timeout = { period = "10m", terminate-after = 1 }
+
+[[profile.chaos-nightly.scripts]]
+filter = "all()"
+run-wrapper = "backtrace-on-timeout"

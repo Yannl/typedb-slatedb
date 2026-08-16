@@ -218,6 +218,29 @@ def run_one(e, out_dir, timeout, reap=False):
     }
 
 
+def ensure_behaviour_fixture():
+    """Bazel-equivalent runfiles: behaviour suites read Cucumber features via
+    the literal path `bazel-typedb/external/typedb_behaviour+/...` relative to
+    the workspace root (the convenience-symlink layout Bazel would create).
+    The catalogue records this as fixture:typedb-behaviour with exactly that
+    destination; upstream's .gitignore covers `bazel-*`, so the link never
+    dirties the pinned checkout. Without it every behaviour-driven target
+    fails in ~2s with '0 features / 1 parsing error' — a false red the runner
+    can prevent unconditionally, so it does.
+    """
+    behaviour = REPO / "sources" / "typedb-behaviour"
+    link = TB / "bazel-typedb" / "external" / "typedb_behaviour+"
+    if not behaviour.is_dir():
+        sys.exit("sources/typedb-behaviour missing - "
+                 "run tools/source-lock/materialize_sources.py first")
+    if link.resolve() == behaviour.resolve():
+        return
+    link.parent.mkdir(parents=True, exist_ok=True)
+    if link.is_symlink():
+        link.unlink()
+    os.symlink(os.path.relpath(behaviour, link.parent), link)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--filter", default=None)
@@ -229,6 +252,7 @@ def main():
                     help="restrict cargo compilation/discovery to these packages")
     ap.add_argument("--out", default=str(REPO / "docs" / "evidence" / "G1" / "u0-results"))
     args = ap.parse_args()
+    ensure_behaviour_fixture()
 
     # What this run actually exercised. The output directory name used to be
     # the only record of the profile, which makes a misfiled run

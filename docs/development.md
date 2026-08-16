@@ -107,8 +107,13 @@ TYPEDB_STORAGE_PROFILE=U2 python3 tools/catalog/run_u0.py --reap \
 
 The runner reproduces Bazel semantics (serial groups for assembly-family
 targets, isolated staging cwds, archive mode via `TYPEDB_ASSEMBLY_ARCHIVE`,
-generous stacks, short `TMPDIR`), reaps stray server processes, and writes
-one JSON row per executable. The assembly archive must contain a
+generous stacks, short `TMPDIR`, and the
+`bazel-typedb/external/typedb_behaviour+` convenience symlink that
+behaviour suites read their Cucumber features through — created
+unconditionally at startup, covered by upstream's `bazel-*` gitignore),
+reaps stray server processes, and writes one JSON row per executable.
+If you run behaviour suites via bare `cargo test` instead of the runner,
+create that symlink once yourself (point it at `sources/typedb-behaviour`). The assembly archive must contain a
 **current** server binary — rebuild it after fork changes:
 
 ```sh

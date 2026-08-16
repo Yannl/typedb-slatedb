@@ -94,6 +94,14 @@ export class DatabaseControllerDO extends DurableObject {
     return this.core().auditContiguity(databaseId, generation);
   }
 
+  outboxPeek(limit: number): ReturnType<ControllerCore["outboxPeek"]> {
+    return this.core().outboxPeek(limit);
+  }
+
+  outboxAck(upToControlSeq: number): number {
+    return this.core().outboxAck(upToControlSeq);
+  }
+
   private core(): ControllerCore {
     const sql = this.sql;
     const storage = this.ctx.storage;

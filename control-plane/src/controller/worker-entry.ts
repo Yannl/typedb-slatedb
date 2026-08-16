@@ -17,6 +17,8 @@
  *   POST /wal/finalize             FinalizeRequest → FinalizeResult (verifies R2 object + digest first)
  *   GET  /wal/{db}/{generation}/{lsn}  exact lookup; returns record metadata + payload bytes (base64)
  *   GET  /wal/{db}/{generation}/audit  contiguity audit
+ *   GET  /outbox/{db}?limit=N      peek unpublished control events (no marking)
+ *   POST /outbox/{db}/ack          {upToControlSeq} - ack after durable processing
  */
 
 export { DatabaseControllerDO } from "./database-controller.ts";
@@ -121,6 +123,20 @@ export default {
       let binary = "";
       for (const b of bytes) binary += String.fromCharCode(b);
       return json({ ...record, payloadBase64: btoa(binary) });
+    }
+
+    const outboxPeek = path.match(/^\/outbox\/([^/]+)$/);
+    if (request.method === "GET" && outboxPeek) {
+      const limit = Number(url.searchParams.get("limit") ?? "100");
+      const stub = stubFor(outboxPeek[1]) as unknown as { outboxPeek(limit: number): Promise<unknown[]> };
+      return json({ ok: true, events: await stub.outboxPeek(limit) });
+    }
+
+    const outboxAck = path.match(/^\/outbox\/([^/]+)\/ack$/);
+    if (request.method === "POST" && outboxAck) {
+      const b = (await request.json()) as { upToControlSeq: number };
+      const stub = stubFor(outboxAck[1]) as unknown as { outboxAck(seq: number): Promise<number> };
+      return json({ ok: true, acked: await stub.outboxAck(b.upToControlSeq) });
     }
 
     const walAudit = path.match(/^\/wal\/([^/]+)\/(\d+)\/audit$/);

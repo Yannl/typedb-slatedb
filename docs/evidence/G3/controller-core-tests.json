@@ -36,5 +36,11 @@
    "finalisation, replay idempotency, digest conflict, and status-singleton semantics verified inside the actual Durable Object runtime",
    "ControllerCore SCHEMA is the single source of truth for projection tables in both lanes"
   ]
+ },
+ "l1_local_stack": {
+  "topology": "gateway Worker -> local R2 data path -> DatabaseControllerDO, served by wrangler dev (workerd)",
+  "node_e2e": "18/18 PASS (scripts/local-stack-e2e.mjs): protocol 12 + outbox consumer loop 6 (at-least-once peek/ack, redelivery without ack, idempotent duplicate ack)",
+  "rust_client": "tools/remote-wal-spike tests/l1_stack.rs 1/1 PASS - TB-P4 transport skeleton (ureq) drives upload/finalize/ambiguous-retry/digest-conflict 409/data-path 422/exact read/typed 404/fencing 409/contiguity against real workerd; self-boots the stack (process-group reaped, per-run port+namespace)",
+  "outbox_consumer_contract": "peek returns unpublished without marking; ack after durable processing; lost ack => redelivery; dedupe key = control_seq"
  }
 }

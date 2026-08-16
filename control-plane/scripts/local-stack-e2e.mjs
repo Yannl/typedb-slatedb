@@ -11,7 +11,7 @@
 import { createHash } from "node:crypto";
 
 const BASE = process.argv[2] ?? "http://127.0.0.1:8787";
-const DB = "e2e-db";
+const DB = `e2e-db-${process.pid}-${Date.now()}`;
 const GEN = 1;
 const SESSION = "sess-e2e";
 
@@ -106,6 +106,23 @@ check("fenced session rejected", fenced.status === 409 && fenced.body.error === 
 // 8. contiguity audit
 const audit = await api("GET", `/wal/${DB}/${GEN}/audit`);
 check("tail contiguous", audit.body.contiguous === true && audit.body.count === 2, JSON.stringify(audit.body));
+
+// 9. outbox consumer loop: at-least-once peek/ack with redelivery
+const peek1 = await api("GET", `/outbox/${DB}?limit=10`);
+check("outbox peek returns finalized events", peek1.body.ok && peek1.body.events.length === 2,
+  `events=${peek1.body.events?.length}`);
+const peek2 = await api("GET", `/outbox/${DB}?limit=10`);
+check("unacked events are redelivered", peek2.body.events.length === peek1.body.events.length);
+const kinds = new Set(peek1.body.events.map((e) => e.kind));
+check("events carry canonical bodies", kinds.has("WAL_RECORD_FINALIZED") &&
+  peek1.body.events.every((e) => JSON.parse(e.body).databaseId === DB));
+const maxSeq = Math.max(...peek1.body.events.map((e) => e.controlSeq));
+const ack = await api("POST", `/outbox/${DB}/ack`, { upToControlSeq: maxSeq });
+check("ack marks events", ack.body.ok && ack.body.acked === 2, JSON.stringify(ack.body));
+const peek3 = await api("GET", `/outbox/${DB}?limit=10`);
+check("acked events are not redelivered", peek3.body.events.length === 0);
+const ackAgain = await api("POST", `/outbox/${DB}/ack`, { upToControlSeq: maxSeq });
+check("duplicate ack is idempotent", ackAgain.body.acked === 0);
 
 console.log(failures === 0 ? "\nL1 LOCAL STACK E2E: ALL PASS" : `\nL1 LOCAL STACK E2E: ${failures} FAILURES`);
 process.exit(failures === 0 ? 0 : 1);

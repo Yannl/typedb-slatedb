@@ -291,6 +291,27 @@ export class ControllerCore {
     return published;
   }
 
+  /**
+   * At-least-once consumer contract: peek returns unpublished rows WITHOUT
+   * marking; the consumer acks after durable processing. A lost ack response
+   * redelivers on the next peek; consumers dedupe by control_seq.
+   */
+  outboxPeek(limit: number): { controlSeq: number; kind: string; body: string }[] {
+    return this.sql
+      .exec(`SELECT control_seq, kind, canonical_body FROM control_outbox
+             WHERE published=0 ORDER BY control_seq LIMIT ?`, limit)
+      .map((row) => ({ controlSeq: Number(row.control_seq), kind: String(row.kind), body: String(row.canonical_body) }));
+  }
+
+  outboxAck(upToControlSeq: number): number {
+    return this.sql.transaction(() => {
+      const before = Number(this.sql.exec(
+        `SELECT COUNT(*) AS n FROM control_outbox WHERE published=0 AND control_seq <= ?`, upToControlSeq)[0].n);
+      this.sql.exec(`UPDATE control_outbox SET published=1 WHERE published=0 AND control_seq <= ?`, upToControlSeq);
+      return before;
+    });
+  }
+
   /** Exact lookup (CT-P5): missing rows are typed NOT_FOUND, never EOF. */
   exactLookup(databaseId: string, generation: number, appendLsn: number):
     Typed<{ payloadKey: string; payloadDigest: string; typeSequence: number }> | TypedErr {

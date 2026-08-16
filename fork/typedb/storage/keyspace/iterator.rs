@@ -80,14 +80,21 @@ impl KeyspaceRangeIterator {
                     ContinueCondition::EndPrefixInclusive(end_inclusive) => {
                         // if the key is shorter than the end, and the end starts with the key, then it must be OK
                         //  example: A will be included when searching up to and including AA
-                        // otherwise, the key is longer and we check the corresponding ranges
-                        end_inclusive.starts_with(key) || &key[0..end_inclusive.len()] <= &**end_inclusive
+                        // otherwise compare the overlapping prefixes; a key SHORTER than the
+                        // end that is not a prefix of it must not be sliced to end.len()
+                        // (that would panic) — its own length decides the comparison
+                        end_inclusive.starts_with(key)
+                            || (key.len() >= end_inclusive.len() && &key[0..end_inclusive.len()] <= &**end_inclusive)
+                            || (key.len() < end_inclusive.len() && **key < end_inclusive[0..key.len()])
                     }
                     ContinueCondition::EndPrefixExclusive(end_exclusive) => {
                         // if the key is shorter than the end, and the end starts with the key, then it must be OK
                         //  example: A will be included when searching up to but not including AA
-                        // otherwise, the key is longer and we check the corresponding ranges
-                        end_exclusive.starts_with(key) || &key[0..end_exclusive.len()] < &**end_exclusive
+                        // otherwise compare the overlapping prefixes (see inclusive arm for
+                        // the short-key guard)
+                        end_exclusive.starts_with(key)
+                            || (key.len() >= end_exclusive.len() && &key[0..end_exclusive.len()] < &**end_exclusive)
+                            || (key.len() < end_exclusive.len() && **key < end_exclusive[0..key.len()])
                     }
                     ContinueCondition::Always => true,
                 }

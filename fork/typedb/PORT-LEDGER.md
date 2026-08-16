@@ -81,8 +81,34 @@ unmodified crates.io dependency (`=0.15.0`, `default-features = false`,
    `slatedb =0.15.0` (checksum-locked), storage crate gains
    `slatedb`/`tokio` deps.
 
+Post-review hardening (same patch series):
+
+10. `slate.rs` — `l0_max_ssts`/`l0_max_ssts_per_key` raised to 1M: with the
+    compactor disabled the default 8-SST L0 backpressure would permanently
+    stall flush dispatch (and then all puts) — liveness over read
+    amplification, matching SlateDB's own compactor-less test settings.
+11. `slate.rs` — checkpoints are manifest-pinned: flush, pin the latest
+    manifest file, copy the store excluding the manifest dir, then copy
+    exactly the pinned manifest. Immutable SSTs + disabled GC make the
+    pinned state complete under concurrent commits (a naive full copy could
+    capture a newer manifest whose SSTs the copy missed).
+12. `slate.rs` — `get_prev` fails closed (panic) on scan errors: the
+    Option-only signature cannot carry errors, and silent absence would
+    reseed vertex ID allocators over live data.
+13. `slate.rs` — `reset` deletes in 10k-key chunks (bounded memory);
+    `Drop` wraps close in `catch_unwind` (a drop during another panic's
+    unwind must not abort the process).
+14. `keyspace.rs` — RocksDB tuning options are only built when a RocksDB
+    profile is selected.
+15. `iterator.rs` — `accept_value` end-bound comparison guards short keys:
+    a key shorter than the end bound and not a prefix of it previously
+    panicked on slicing (`key[0..end.len()]`); it now compares the
+    overlapping prefix. Reachable on both engines (total-order cursors);
+    behavior unchanged for every input that did not panic.
+
 Verified: full `storage` crate suite baseline-equal on U2 vs the U1 oracle
-(8 + 14+1ign + 4 + 5/2-todo-stubs + 10 + 6), and unchanged on U1.
+(8 + 14+1ign + 4 + 5/2-todo-stubs + 10 + 6), re-verified after the
+hardening pass on both profiles; U1 unchanged.
 
 ## Staged runfile arrangements (Bazel-equivalence, no test edits)
 

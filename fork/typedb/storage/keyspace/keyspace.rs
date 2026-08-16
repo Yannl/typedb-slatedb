@@ -86,7 +86,17 @@ impl Keyspaces {
                 .validate_new_keyspace(keyspace)
                 .map_err(|error| KeyspaceOpenError::Validation { source: error })?;
             fail_point!(KEYSPACE_OPEN_FAIL);
-            let options = build_rocks_options(keyspace.tuning_profile(), keyspace.prefix_length(), resources);
+            // engine options are only built for the engine actually selected:
+            // under U2 the RocksDB tuning (block cache wiring, bloom setup)
+            // would be constructed and discarded per keyspace
+            let profile = resolved_backend_profile()
+                .map_err(|source| KeyspaceOpenError::Factory { name: keyspace.name(), source })?;
+            let options = match profile {
+                StorageBackendProfile::U0PristineUpstream | StorageBackendProfile::U1ForkRocksFileWal => {
+                    build_rocks_options(keyspace.tuning_profile(), keyspace.prefix_length(), resources)
+                }
+                _ => Options::default(),
+            };
             keyspaces.keyspaces.push(Keyspace::open(path, keyspace, &options)?);
             keyspaces.index[keyspace.id().0 as usize] = Some(KeyspaceId(keyspaces.keyspaces.len() as u8 - 1));
         }

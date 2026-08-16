@@ -93,6 +93,13 @@ fn settings() -> Settings {
     settings.compactor_options = None;
     settings.garbage_collector_options = None;
     settings.compression_codec = None;
+    // With the compactor disabled, L0 only ever grows; the default
+    // l0_max_ssts=8 backpressure would permanently stall memtable flush
+    // dispatch (and eventually every put) once reached. Trade read
+    // amplification for liveness — the same posture SlateDB's own
+    // compactor-less tests take (settings.l0_max_ssts = 10_000).
+    settings.l0_max_ssts = 1_000_000;
+    settings.l0_max_ssts_per_key = 1_000_000;
     settings
 }
 
@@ -153,9 +160,15 @@ impl SlateKeyspace {
         });
         match result {
             Ok(Some(kv)) => Some(mapper(kv.key.as_ref(), kv.value.as_ref())),
-            // a floor-read failure surfaces as absence, matching the RocksDB
-            // path's Option-only signature; callers treat it as "no allocation"
-            Ok(None) | Err(_) => None,
+            Ok(None) => None,
+            // FAIL CLOSED: the Option-only signature cannot carry an error,
+            // and the caller (vertex ID allocator seeding) would treat a
+            // silent None as "nothing allocated" and re-issue existing IDs —
+            // data corruption. A storage-engine failure here must stop the
+            // process, exactly like an unreadable RocksDB would.
+            Err(error) => {
+                panic!("SlateDB floor scan (get_prev) failed; refusing to report absence: {error}")
+            }
         }
     }
 
@@ -179,31 +192,73 @@ impl SlateKeyspace {
             .map_err(Arc::new)
     }
 
-    /// Flush the memtable, then copy the quiescent object-store directory:
-    /// with compactor/GC disabled nothing rewrites files between flushes, so
-    /// the copy is a consistent point-in-time checkpoint (same contract as
-    /// the RocksDB `Checkpoint` hardlink tree, which also flushes first).
+    /// Point-in-time checkpoint under concurrent commits, via manifest
+    /// pinning (RocksDB's `Checkpoint` is atomic; a naive directory copy is
+    /// not, because a concurrent memtable auto-flush can land a new manifest
+    /// whose SSTs the copy misses):
+    ///
+    /// 1. flush the memtable (the checkpoint watermark was captured by the
+    ///    caller before this, so the flush covers it);
+    /// 2. pin the CURRENT latest manifest file — SSTs are immutable and GC
+    ///    is disabled, so everything the pinned manifest references keeps
+    ///    existing;
+    /// 3. copy the whole store EXCEPT the manifest directory (extra SSTs
+    ///    from later concurrent flushes are unreferenced and harmless);
+    /// 4. copy exactly the pinned manifest file, making it the checkpoint's
+    ///    latest — restore opens the pinned state, and WAL replay from the
+    ///    watermark covers the rest (idempotent, same as RocksDB).
     pub(super) fn checkpoint(&self, checkpoint_keyspace_dir: &Path) -> Result<(), Arc<slatedb::Error>> {
         let db = self.db.clone();
         bridge(async move { db.flush().await }).map_err(Arc::new)?;
-        copy_dir_recursive(&self.path, checkpoint_keyspace_dir).map_err(|error| Arc::new(io_error(error)))?;
+
+        let manifest_dir = find_manifest_dir(&self.path).map_err(|error| Arc::new(io_error(error)))?;
+        let pinned_manifest = match &manifest_dir {
+            Some(dir) => {
+                let mut entries: Vec<PathBuf> = fs::read_dir(dir)
+                    .map_err(|error| Arc::new(io_error(error)))?
+                    .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+                    .filter(|path| path.is_file())
+                    .collect();
+                entries.sort();
+                entries.into_iter().next_back()
+            }
+            None => None,
+        };
+
+        copy_dir_recursive_excluding(&self.path, checkpoint_keyspace_dir, manifest_dir.as_deref())
+            .map_err(|error| Arc::new(io_error(error)))?;
+
+        if let (Some(dir), Some(pinned)) = (&manifest_dir, &pinned_manifest) {
+            let relative = dir.strip_prefix(&self.path).expect("manifest dir is under the keyspace path");
+            let target_dir = checkpoint_keyspace_dir.join(relative);
+            fs::create_dir_all(&target_dir).map_err(|error| Arc::new(io_error(error)))?;
+            fs::copy(pinned, target_dir.join(pinned.file_name().expect("manifest file name")))
+                .map_err(|error| Arc::new(io_error(error)))?;
+        }
         Ok(())
     }
 
     pub(super) fn reset(&self) -> Result<(), Arc<slatedb::Error>> {
+        // chunked: one batch per CHUNK keys, so memory stays bounded by the
+        // chunk rather than the store size
+        const CHUNK: usize = 10_000;
         let db = self.db.clone();
         bridge(async move {
             let mut iterator = db.scan_with_options(.., &scan_options()).await?;
             let mut batch = SlateWriteBatch::new();
-            let mut any = false;
+            let mut in_batch = 0usize;
             while let Some(kv) = iterator.next().await? {
                 batch.delete(kv.key);
-                any = true;
+                in_batch += 1;
+                if in_batch == CHUNK {
+                    db.write_with_options(std::mem::take(&mut batch), &write_options()).await?;
+                    in_batch = 0;
+                }
             }
-            if !any {
-                return Ok(()); // resetting an empty store is a no-op
+            if in_batch > 0 {
+                db.write_with_options(batch, &write_options()).await?;
             }
-            db.write_with_options(batch, &write_options()).await.map(|_write_handle| ())
+            Ok(())
         })
         .map_err(Arc::new)
     }
@@ -244,11 +299,13 @@ impl SlateKeyspace {
 
 impl Drop for SlateKeyspace {
     fn drop(&mut self) {
-        // Arc'd db may still be co-owned by pooled cursors; close only when
-        // this is the last keyspace-side owner. Cursor-held Arcs never call
-        // close, so closing here is single-shot in practice; failures are
-        // ignored — reopen rebuilds from the TypeDB WAL.
-        let _ = self.close();
+        // Failures (and panics from the bridged close task) are swallowed:
+        // this drop can run during another panic's unwind, where a second
+        // panic would abort the process. The store is rebuilt from the
+        // TypeDB WAL on reopen, so an unclean close loses nothing durable.
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = self.close();
+        }));
     }
 }
 
@@ -391,18 +448,31 @@ fn io_error(error: io::Error) -> slatedb::Error {
     slatedb::Error::unavailable(format!("keyspace object store I/O: {error}"))
 }
 
-fn copy_dir_recursive(from: &Path, to: &Path) -> io::Result<()> {
+fn copy_dir_recursive_excluding(from: &Path, to: &Path, exclude_dir: Option<&Path>) -> io::Result<()> {
     fs::create_dir_all(to)?;
     for entry in fs::read_dir(from)? {
         let entry = entry?;
+        let path = entry.path();
+        if Some(path.as_path()) == exclude_dir {
+            continue;
+        }
         let target = to.join(entry.file_name());
         if entry.file_type()?.is_dir() {
-            copy_dir_recursive(&entry.path(), &target)?;
+            copy_dir_recursive_excluding(&path, &target, exclude_dir)?;
         } else {
-            fs::copy(entry.path(), &target)?;
+            fs::copy(&path, &target)?;
         }
     }
     Ok(())
+}
+
+/// Locate the SlateDB manifest directory under the keyspace path (the store
+/// lives at `<path>/keyspace/`, manifests at `<path>/keyspace/manifest/`).
+/// Discovered rather than hardcoded so a layout change fails loudly in
+/// tests, not silently: no manifest dir means nothing to pin.
+fn find_manifest_dir(keyspace_path: &Path) -> io::Result<Option<PathBuf>> {
+    let candidate = keyspace_path.join("keyspace").join("manifest");
+    if candidate.is_dir() { Ok(Some(candidate)) } else { Ok(None) }
 }
 
 fn dir_size(path: &Path) -> io::Result<u64> {

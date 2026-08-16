@@ -129,25 +129,29 @@ pub fn stage_behaviour_corpus(workspace_root: &Path, behaviour_root: &Path) -> R
     std::fs::create_dir_all(&dest)?;
     copy_tree(behaviour_root, &dest)?;
 
-    // Two behaviour tests resolve their fixture the Bazel way and only the Bazel way.
+    // Stage the corpus at every path the test sources actually reference.
     //
-    // `tests/behaviour/concept/migration/data_validation.rs` L11-14 and `migration.rs`
-    // L11-14 call `Context::test("../typedb_behaviour+/…")` under a comment that says
-    // "Bazel specific path: … a directory that is a sibling to the working directory".
-    // Every other behaviour entry point carries a `#[cfg(not(feature = "bazel"))]`
-    // alternative; these two do not, so under Cargo they can never find their feature files
-    // and fail with "Could not read path" no matter what is staged under `bazel-typedb/`.
+    // Hardcoding one location does not work, because upstream's fixture paths are not
+    // uniform. Three separate deviations exist at TB `2256711a`, all of them in the
+    // `#[cfg(not(feature = "bazel"))]` branch that Bazel CI never compiles:
     //
-    // Staging the same corpus at the sibling path as well satisfies both conventions and
-    // keeps every upstream test source byte-identical. See CR-A-07.
-    if let Some(parent) = workspace_root.parent() {
-        let sibling = parent.join("typedb_behaviour+");
-        if sibling.exists() {
-            std::fs::remove_dir_all(&sibling)
-                .with_context(|| format!("clearing stale fixture at {}", sibling.display()))?;
+    //   * `concept/migration/data_validation.rs` and `migration.rs` have no non-Bazel branch
+    //     at all and read `../typedb_behaviour+/…` unconditionally (CR-A-07);
+    //   * `query/language/variables.rs` L20 reads `typedb_behaviour++` — one `+` too many;
+    //   * `query/language/given.rs` L20 reads `typedb_behaviour` — no `+` at all.
+    //
+    // Rather than encode that list, the referenced roots are read out of the sources, so a
+    // fourth spelling stages itself instead of failing a run. See CR-A-08.
+    for root in referenced_fixture_roots(workspace_root)? {
+        if root == dest {
+            continue;
         }
-        std::fs::create_dir_all(&sibling)?;
-        copy_tree(behaviour_root, &sibling)?;
+        if root.exists() {
+            std::fs::remove_dir_all(&root)
+                .with_context(|| format!("clearing stale fixture at {}", root.display()))?;
+        }
+        std::fs::create_dir_all(&root)?;
+        copy_tree(behaviour_root, &root)?;
     }
 
     // Prove the staging worked rather than assuming it: a missing fixture must fail the
@@ -161,6 +165,49 @@ pub fn stage_behaviour_corpus(workspace_root: &Path, behaviour_root: &Path) -> R
         );
     }
     Ok(dest)
+}
+
+/// Every distinct corpus root the behaviour test sources refer to, as absolute paths.
+///
+/// Reads the string literals rather than assuming a convention: upstream has three different
+/// spellings, two of which are typos that only exist on the Cargo path (CR-A-08). Returning
+/// what the sources say means a run stages what the tests will actually open.
+pub fn referenced_fixture_roots(workspace_root: &Path) -> Result<BTreeSet<PathBuf>> {
+    let behaviour_dir = workspace_root.join("tests/behaviour");
+    let mut roots = BTreeSet::new();
+    if !behaviour_dir.is_dir() {
+        return Ok(roots);
+    }
+
+    for file in walkdir_lite(&behaviour_dir)? {
+        if file.extension().is_none_or(|e| e != "rs") {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&file) else { continue };
+        for literal in text.split('"').skip(1).step_by(2) {
+            let Some(idx) = literal.find("typedb_behaviour") else { continue };
+            // Keep the prefix and the trailing run of `+`, drop everything from the first
+            // path separator after it.
+            let end = literal[idx..]
+                .find('/')
+                .map(|f| idx + f)
+                .unwrap_or(literal.len());
+            let root_rel = &literal[..end];
+            // Only the two prefixes upstream uses are meaningful; anything else is not a
+            // fixture path.
+            let path = if let Some(rest) = root_rel.strip_prefix("../") {
+                workspace_root.parent().map(|p| p.join(rest))
+            } else if root_rel.starts_with("bazel-typedb/") {
+                Some(workspace_root.join(root_rel))
+            } else {
+                None
+            };
+            if let Some(path) = path {
+                roots.insert(path);
+            }
+        }
+    }
+    Ok(roots)
 }
 
 fn copy_tree(from: &Path, to: &Path) -> Result<()> {
@@ -411,21 +458,40 @@ pub fn run_target(ctx: &RunContext, catalog: &Catalog, target: &Target) -> Resul
 
 /// Parse libtest's `test <name> ... ok|FAILED|ignored` result lines.
 pub fn parse_libtest_results(target_id: &str, stdout: &str) -> Result<Vec<CaseResult>> {
+    // libtest's own `failures:` block is the authority on which cases failed.
+    //
+    // The per-line status is not always readable: anything writing straight to fd 1 — the
+    // `tracing` subscriber several crates install, for instance — lands between `test foo
+    // ... ` and its verdict, so the status token becomes an ANSI-coloured log record. That
+    // produced Unknowns for `compiler`, `function` and `storage`, whose unit tests all
+    // passed. Reading the failure list instead resolves those without inventing a pass:
+    // a case is failed if libtest listed it as failed, and passed only if libtest ran it and
+    // did not.
+    let failed_names = parse_failure_block(stdout);
+
     let mut out = Vec::new();
     for line in stdout.lines() {
         let line = line.trim();
         let Some(rest) = line.strip_prefix("test ") else { continue };
-        let Some((name, status)) = rest.rsplit_once(" ... ") else { continue };
+        let Some((name, status)) = rest.split_once(" ... ") else { continue };
         let name = name.trim();
         if name.is_empty() {
             continue;
         }
-        let outcome = match status.trim() {
-            "ok" => Outcome::Passed,
-            "FAILED" => Outcome::Failed,
-            // libtest prints `ignored` with an optional reason.
-            s if s == "ignored" || s.starts_with("ignored,") => Outcome::Ignored,
-            other => Outcome::Unknown(other.to_string()),
+        let status = status.trim();
+        let outcome = if status == "ok" {
+            Outcome::Passed
+        } else if status == "FAILED" {
+            Outcome::Failed
+        } else if status == "ignored" || status.starts_with("ignored,") {
+            Outcome::Ignored
+        } else if failed_names.contains(name) {
+            Outcome::Failed
+        } else if status.is_empty() || stdout.contains(&format!("test {name} ... ok")) {
+            Outcome::Passed
+        } else {
+            // Ran, not listed as failed, but no readable verdict either.
+            Outcome::Unknown(format!("unreadable status for {name}: {status}"))
         };
         out.push(CaseResult {
             leaf_case_id: format!("{target_id}::{name}"),
@@ -435,6 +501,31 @@ pub fn parse_libtest_results(target_id: &str, stdout: &str) -> Result<Vec<CaseRe
         });
     }
     Ok(out)
+}
+
+/// Names listed under libtest's `failures:` summary block.
+fn parse_failure_block(stdout: &str) -> BTreeSet<&str> {
+    let mut names = BTreeSet::new();
+    let mut in_block = false;
+    for line in stdout.lines() {
+        if line.trim() == "failures:" {
+            in_block = true;
+            continue;
+        }
+        if !in_block {
+            continue;
+        }
+        let trimmed = line.trim();
+        // The block is an indented list; it ends at the blank line or the result summary.
+        if trimmed.is_empty() || trimmed.starts_with("test result:") {
+            in_block = false;
+            continue;
+        }
+        if line.starts_with("    ") && !trimmed.contains(' ') {
+            names.insert(trimmed);
+        }
+    }
+    names
 }
 
 /// Fold a set of runs into the coverage report the release gate reads.
@@ -499,9 +590,17 @@ pub fn summarise(catalog: &Catalog, runs: &[TargetRun], profile: ProfileId) -> C
             .filter(|r| r.profile_id == profile && r.timed_out)
             .map(|r| r.target_id.clone())
             .collect(),
+        // A target that ran nothing is only a hole if the catalogue expected cases from it.
+        // 34 of the 114 Cargo targets are bins and helper libs with no `#[test]` at all —
+        // `read_wal`, `typedb_server_bin`, `test_utils` — and the catalogue records zero
+        // leaf cases for them because `--list` genuinely reported none. Flagging those as
+        // zero-case failures would make the gate permanently red for targets that have
+        // nothing to run, which trains people to ignore the signal that exists to catch a
+        // harness silently filtering itself to nothing.
         zero_case_targets: runs
             .iter()
             .filter(|r| r.profile_id == profile && r.cases.is_empty())
+            .filter(|r| catalog.leaf_cases.iter().any(|c| c.target_id == r.target_id))
             .map(|r| r.target_id.clone())
             .collect(),
     }
@@ -641,5 +740,63 @@ mod tests {
     fn refuses_a_filtered_environment() {
         // Guard the guard: the check must actually look at the variable.
         assert!(DENOMINATOR_POISONING_ENV.contains(&"SCENARIO_FILTER"));
+    }
+}
+
+#[cfg(test)]
+mod libtest_parsing_tests {
+    use super::*;
+
+    #[test]
+    fn a_log_line_between_name_and_verdict_does_not_become_the_status() {
+        // `tracing` writes straight to fd 1, so its records land inside the status field.
+        // The case passed; only the transcript is messy.
+        let out = "\
+running 1 test
+test wal::tests::round_trips ... \u{1b}[2m2026-08-16T04:44:42Z\u{1b}[0m DEBUG durability::wal
+test wal::tests::round_trips ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
+";
+        let cases = parse_libtest_results("t", out).unwrap();
+        assert!(
+            cases.iter().all(|c| c.outcome == Outcome::Passed),
+            "a noisy transcript must not turn a pass into an unknown: {cases:?}"
+        );
+    }
+
+    #[test]
+    fn the_failures_block_is_authoritative_when_the_status_is_unreadable() {
+        let out = "\
+running 1 test
+test broken::case ... \u{1b}[2mnoise\u{1b}[0m
+
+failures:
+    broken::case
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out;
+";
+        let cases = parse_libtest_results("t", out).unwrap();
+        assert_eq!(cases[0].outcome, Outcome::Failed);
+    }
+
+    #[test]
+    fn the_failure_block_parser_stops_at_the_summary() {
+        let out = "failures:\n    a::b\n\ntest result: FAILED. 0 passed; 1 failed;\n";
+        let names = parse_failure_block(out);
+        assert_eq!(names.len(), 1);
+        assert!(names.contains("a::b"));
+    }
+
+    #[test]
+    fn an_ordinary_run_still_parses_exactly() {
+        let cases = parse_libtest_results(
+            "t",
+            "test a ... ok\ntest b ... FAILED\ntest c ... ignored, needs a server\n",
+        )
+        .unwrap();
+        assert_eq!(cases[0].outcome, Outcome::Passed);
+        assert_eq!(cases[1].outcome, Outcome::Failed);
+        assert_eq!(cases[2].outcome, Outcome::Ignored);
     }
 }

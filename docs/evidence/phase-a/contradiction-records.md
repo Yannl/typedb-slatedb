@@ -229,6 +229,51 @@ behaviour targets rather than failing quietly on their own.
 
 ---
 
+## CR-A-08 — Two upstream fixture paths are misspelled, and only Cargo can see it
+
+**Contract claim.** Brief §22.5 and CR-A-03 both proceed on the basis that the non-Bazel
+fixture path in each behaviour test is a working alternative to the Bazel one — that the
+`#[cfg(not(feature = "bazel"))]` branch is maintained code.
+
+**Observed.** It is not. Across `tests/behaviour/**`, the corpus is referenced by three
+different names, and the run found each of them:
+
+| Source | Non-Bazel path | Correct? |
+|---|---|---|
+| 92 files, e.g. `connection/database.rs` L20-21 | `bazel-typedb/external/typedb_behaviour+/…` | yes |
+| `query/language/variables.rs` **L20** | `bazel-typedb/external/typedb_behaviour**++**/…` | **no** — one `+` too many |
+| `query/language/given.rs` **L20** | `bazel-typedb/external/typedb_behaviour/…` | **no** — no `+` at all |
+
+A count over the tree gives 94 occurrences of `typedb_behaviour+` and exactly 1 of
+`typedb_behaviour++`.
+
+Both defects sit in the branch selected when the `bazel` feature is **off**. Bazel builds
+with `crate_features = ["bazel"]`, so upstream CI compiles the other branch and has never
+executed either line. That is what allowed two typos to survive in a released tag: the Cargo
+path is not merely a convenience, it is unexercised.
+
+Observed effect in the third U0 run: `test_query` exits 101 with
+`Failed to parse feature: Could not read path:
+bazel-typedb/external/typedb_behaviour++/query/language/variables.feature`, failing
+`language::variables::test_read_variables` and `language::given::test_write_given`. Because a
+non-zero exit with no failing scenario is deliberately unattributable, all 1 773 catalogued
+scenarios of that target were reported `Unknown` rather than passed.
+
+**Correction.** No source edit — U0 is defined on the pristine pin, and patching it would
+make it something else. The runner instead reads the fixture roots out of the test sources
+and stages the pinned corpus at every one it finds, so the tests open what they ask for. The
+implementation deliberately derives the list rather than hardcoding these three spellings, so
+a fourth stages itself instead of failing a run.
+
+**Impact.** Two upstream test files cannot pass under Cargo at this pin without launcher
+help. More broadly, this is direct evidence for how much the migration rests on unexercised
+code: the very branch the Cargo lane depends on contains bugs upstream CI cannot see. It also
+argues that the fork should eventually fix these paths — a one-character change in each —
+rather than carry the staging workaround forever. Tracked for the fork's patch series, not
+applied to U0.
+
+---
+
 ## CR-A-05 — A decoy Rust version in the dependencies repo (no contract change)
 
 Recorded because it is the kind of anchor that looks authoritative and is not.

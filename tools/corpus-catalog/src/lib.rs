@@ -526,14 +526,38 @@ pub fn generate(inputs: &CatalogInputs<'_>) -> Result<CatalogOutput> {
                 // and the second run of each name came back as an uncatalogued case.
                 // Disambiguating by line keeps the id stable across runs and distinct per
                 // declaration.
-                let mut seen_names: BTreeMap<&str, usize> = BTreeMap::new();
+                // Disambiguate on the whole (name, example row) key, not the name alone.
+                // `define.feature` declares three *different* `Scenario Outline`s all called
+                // "cannot define different annotations of the same category on owns"
+                // (L1608, L1810, L1905), each with its own Examples rows — so row 1 of each
+                // collided, the catalogue under-counted, and Cucumber's extra runs came back
+                // as uncatalogued cases. The declaration line separates them and is stable
+                // across runs.
+                let mut seen: BTreeMap<(&str, usize), usize> = BTreeMap::new();
                 for s in list {
-                    let occurrence = seen_names.entry(s.name.as_str()).or_default();
+                    if s.no_example_rows {
+                        exclusions.push(Exclusion {
+                            subject_id: format!("{target_id}::{}::{}", feature, s.name),
+                            predicate: "generates_no_cases".into(),
+                            reason: format!(
+                                "Scenario Outline at {}:{} has an Examples header but no data \
+                                 rows (all commented out upstream), so Cucumber generates zero \
+                                 scenarios for it",
+                                s.feature_path, s.line
+                            ),
+                            owner: "upstream".into(),
+                            expiry: "2027-01-01".into(),
+                            replacement_test_id: None,
+                        });
+                        continue;
+                    }
+                    let occurrence = seen.entry((s.name.as_str(), s.example_row)).or_default();
                     *occurrence += 1;
-                    let suffix = match (s.example_row, *occurrence) {
-                        (row, _) if row > 0 => format!("#{row}"),
-                        (_, 1) => String::new(),
-                        (_, n) => format!("@{}#{n}", s.line),
+                    let row = if s.example_row > 0 { format!("#{}", s.example_row) } else { String::new() };
+                    let suffix = if *occurrence == 1 {
+                        row
+                    } else {
+                        format!("{row}@{}", s.line)
                     };
                     leaf_cases.push(LeafCase {
                         leaf_case_id: format!("{target_id}::{}::{}{}", feature, s.name, suffix),

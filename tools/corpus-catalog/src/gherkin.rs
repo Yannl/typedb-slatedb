@@ -31,6 +31,10 @@ pub struct Scenario {
     pub tags: Vec<String>,
     /// Zero for a plain scenario; 1-based row index for an outline expansion.
     pub example_row: usize,
+    /// True for a `Scenario Outline` whose `Examples` block has a header but no data rows.
+    /// Cucumber generates nothing for it; it is neither a runnable case nor something to
+    /// drop silently.
+    pub no_example_rows: bool,
     /// True when a tag makes the upstream harness skip it.
     pub ignored: bool,
 }
@@ -78,8 +82,11 @@ pub fn parse_feature(feature_path: &str, text: &str) -> Result<Vec<Scenario>> {
         let Some(o) = outline else { return };
         let ignored = o.tags.iter().any(|t| is_ignore(t));
         if o.rows.is_empty() {
-            // An outline with no Examples rows runs zero cases upstream. Record it as one
-            // case so it cannot vanish from the denominator unnoticed.
+            // An outline whose Examples block is all comments generates zero scenarios —
+            // `relationtype.feature` L1120-1156 is one, its only rows commented out. It is
+            // surfaced as an exclusion by the caller rather than as a leaf case: a case that
+            // can never execute would sit in `not_executed` forever and hold the gate red
+            // for something upstream never intended to run.
             out.push(Scenario {
                 feature_path: feature_path.to_string(),
                 feature_name: feature_name.to_string(),
@@ -87,6 +94,7 @@ pub fn parse_feature(feature_path: &str, text: &str) -> Result<Vec<Scenario>> {
                 line: o.line,
                 tags: o.tags,
                 example_row: 0,
+                no_example_rows: true,
                 ignored,
             });
             return;
@@ -103,6 +111,7 @@ pub fn parse_feature(feature_path: &str, text: &str) -> Result<Vec<Scenario>> {
                 line: o.line,
                 tags: o.tags.clone(),
                 example_row: idx + 1,
+                no_example_rows: false,
                 ignored,
             });
         }
@@ -167,6 +176,7 @@ pub fn parse_feature(feature_path: &str, text: &str) -> Result<Vec<Scenario>> {
                     line: line_no,
                     tags,
                     example_row: 0,
+                    no_example_rows: false,
                     ignored,
                 });
             }
@@ -290,5 +300,53 @@ mod tests {
         )
         .unwrap();
         assert_eq!(s.len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod outline_edge_cases {
+    use super::*;
+
+    #[test]
+    fn an_examples_block_with_only_comments_generates_nothing() {
+        // relationtype.feature L1120-1156: a header row, then only commented-out data.
+        // Cucumber generates zero scenarios; recording one leaf case for it would hold the
+        // gate red forever on something upstream never intended to run.
+        let s = parse_feature(
+            "f.feature",
+            "\
+Feature: F
+  Scenario Outline: cannot set inherited @<annotation>
+    When set annotation: @<annotation>
+    Examples:
+      | annotation |
+      # abstract is not inherited
+#      | cascade    |
+",
+        )
+        .unwrap();
+        assert_eq!(s.len(), 1);
+        assert!(s[0].no_example_rows, "an all-comment Examples block has no data rows");
+    }
+
+    #[test]
+    fn a_populated_outline_is_unaffected() {
+        let s = parse_feature(
+            "f.feature",
+            "\
+Feature: F
+  Scenario Outline: sets @<annotation>
+    When set annotation: @<annotation>
+    Examples:
+      | annotation |
+      | abstract   |
+      | unique     |
+",
+        )
+        .unwrap();
+        assert_eq!(s.len(), 2);
+        assert!(s.iter().all(|x| !x.no_example_rows));
+        assert_eq!(s[0].name, "sets @abstract");
+        assert_eq!(s[1].name, "sets @unique");
     }
 }

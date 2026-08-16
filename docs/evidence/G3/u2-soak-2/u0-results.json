@@ -3,7 +3,7 @@
  "toolchain": "rust 1.93.0 parity lane",
  "storage_profile_env": "U2",
  "assembly_archive_sha256": "db4d44fe46efc63955d5f8943162c33b56f2db617d340f8f0380dd5283015c8b",
- "repo_commit": "13d7a1447b543a00c6bae163cb43a6f5da1ec132",
+ "repo_commit": "db1c7eaa75d5b0a3bfd74388c7e3140e2055a4a3",
  "results": [
   {
    "target_id": "answer:answer",
@@ -1413,6 +1413,21 @@
    "measured": 0,
    "filtered_out": 0,
    "raw_log": "/tmp/u0/u2-soak-2/typedb_server_bin__test_debug.log",
+   "tail": null
+  },
+  {
+   "target_id": "typedb_server_bin:test_fail_points",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_fail_points-0a3d9925f9655656",
+   "executable_sha256": "dbdf5f80a1b12b7c466b6e254385b187ecde196c34a04f802c05b3327f14d7a1",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 2173.63,
+   "passed": 2,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2-soak-2/typedb_server_bin__test_fail_points.log",
    "tail": null
   },
   {

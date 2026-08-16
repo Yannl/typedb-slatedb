@@ -36,6 +36,9 @@
   "runtime_note": "U2 wall-clock ~1.1-1.2x the oracle on the heaviest suites when measured without concurrent-build contention (soak run 2: test_concept 258s vs 223s, test_query 123s vs 109s; sweep 1's 841s/497s included unrelated compile load) - zero timeouts in both sweeps",
   "soak": {
     "run_2": "docs/evidence/G3/u2-soak-2/u0-results.json",
-    "profile_delta_vs_run_1": "identical red set on the 97 shared targets except bench_iam, which PASSED in run 2 - the upstream deleted-directory defect is nondeterministic on U2 (see finding doc); tail targets re-run separately after a session-tooling log-compressor race (no run_u0.py defect)"
+    "run_2_status": "COMPLETE: 106 executables, 105 green, 0 timeouts, 452 cases passed / 2 failed / 1 ignored",
+    "profile_delta_vs_run_1": "identical red set except two upgrades: bench_iam PASSED 2/2 (the upstream deleted-directory defect is nondeterministic on U2 - see finding doc) and the sole remaining red is storage:test_recovery (the two upstream todo!() stubs, baseline-identical to the oracle). test_fail_points passed 2/2 in 2173s (vs 2099s in run 1), reconfirming the corrected PRE-EXISTING-UPSTREAM-UNRELIABLE expectation against the oracle's fixed-port timeout",
+    "run_2_environment": "fresh container reconstructed from the source lock (materialize_sources.py + stage.py + doctor.py); the 9-target tail (test_http_* family + test_fail_points) re-ran after the behaviour-fixture symlink fix landed in run_u0.py - the original tail loss was a session-tooling log-compressor race, not a runner defect",
+    "run_2_manifest": "per-run profile/archive-digest/commit now recorded in u0-results.json and u0-summary.json (runner change, this session)"
   }
 }

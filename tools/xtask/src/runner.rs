@@ -56,9 +56,19 @@ pub fn run(
         cargo_bin: cargo_bin.to_string(),
         target_dir: repo_root.join("build").join(profile.to_string().to_lowercase()),
         extra_path: Some("/opt/protoc/bin".into()),
+        // The profile's resolved configuration, set here rather than inherited.
+        //
+        // RUSTUP_TOOLCHAIN especially: the parity lane is Rust 1.93.0 (MODULE.bazel L34,
+        // L49), and if the runner takes whatever the caller's shell happens to have, a U1
+        // run on a different toolchain would be compared against a U0 run on this one and
+        // the difference would be attributed to SlateDB. Brief §21.7 requires these to be
+        // explicit and attested; `tools/u0-build-env.sh` carries the same values for
+        // manual invocations.
         base_env: BTreeMap::from([
+            ("RUSTUP_TOOLCHAIN".to_string(), "1.93.0".to_string()),
             ("RUST_BACKTRACE".to_string(), "1".to_string()),
             ("CARGO_INCREMENTAL".to_string(), "0".to_string()),
+            ("CARGO_PROFILE_DEV_DEBUG".to_string(), "0".to_string()),
             ("CARGO_PROFILE_TEST_DEBUG".to_string(), "0".to_string()),
         ]),
     };

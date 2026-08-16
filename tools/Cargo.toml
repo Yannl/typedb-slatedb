@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "protocol-models",
+    "remote-wal-spike",
 ]
 
 [workspace.package]

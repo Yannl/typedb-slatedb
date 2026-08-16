@@ -425,6 +425,14 @@ pub fn run_static_target(
             &inputs.license_type,
         )?,
         "rustfmt_test" => run_rustfmt(workspace, &inputs.sources)?,
+        // The semantic port of CR-A-02's Kotlin/JVM pair.
+        "release_validate_deps" => {
+            let v = crate::validate_deps::validate(workspace)?;
+            v.findings
+                .into_iter()
+                .map(|problem| Finding { file: "MODULE.bazel + VERSION".into(), problem })
+                .collect()
+        }
         // A static rule with no port is recorded as unknown, never as a pass.
         other => {
             return Ok(unresolved_run(

@@ -180,6 +180,14 @@ pub fn run(
                         })
                         .unwrap_or_default(),
                 },
+                // The two release_validate_deps expansions carry synthetic labels that no
+                // BUILD rule declares, so they resolve by target id rather than by label.
+                None if target.target_id.starts_with("bazel-macro::") => {
+                    conformance_runner::staticcheck::StaticCheckInputs {
+                        rule: "release_validate_deps".into(),
+                        ..Default::default()
+                    }
+                }
                 None => conformance_runner::staticcheck::StaticCheckInputs {
                     rule: "unresolved".into(),
                     ..Default::default()

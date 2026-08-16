@@ -7,6 +7,7 @@
 
 pub mod cucumber;
 pub mod staticcheck;
+pub mod validate_deps;
 pub mod failpoint;
 pub mod verdict;
 

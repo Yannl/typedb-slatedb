@@ -19,7 +19,8 @@ fork/slatedb/       working copy of SlateDB, upstream layout preserved
 fixtures/           vendored typedb-behaviour corpus (read-only test data)
 tools/              fork-owned Cargo workspace: xtask, corpus-catalog, conformance-runner, source-lock
 source-lock/        generated source-graph lock
-docs/ADR/           architecture decisions
+docs/architecture.md  architecture entry point (Arcadia perspectives + ADRs)
+docs/architecture/    ADR/ and arcadia/ subfolders
 docs/evidence/      per-phase artifacts and manifests
 ```
 
@@ -68,7 +69,7 @@ The programme's central claim is that a SlateDB-backed TypeDB passes the same te
 RocksDB-backed original. That claim is only as good as the denominator it is measured
 against, so the denominator is generated, not asserted:
 
-* **`source-lock`** resolves 13 upstream nodes to full commits and hashes their contents
+* **`source-lock`** resolves 14 upstream nodes to full commits and hashes their contents
   independently of git, then refuses to lock a graph containing a dirty checkout, a pin
   that does not match its tag, or a shallow clone of anything that ships.
 
@@ -94,8 +95,17 @@ composite harness is attributed the way it is.
 `docs/evidence/<phase>/` holds raw artifacts and a `manifest.json` digesting them. Phase
 summaries cite digests; they do not restate conclusions. Disagreements between the contract
 and the pinned source are written up in `docs/evidence/phase-a/contradiction-records.md`
-with source anchors — five are recorded so far, including a workspace-member miscount and a
-test-producing Bazel macro that no Cargo-only reading can see.
+with source anchors — ten are recorded, four of them upstream defects rather than contract
+errors, including two fixture paths misspelled in the branch Bazel CI never compiles.
 
-Eight source-graph nodes are explicitly unresolved (`sources/UNRESOLVED.md`), each recorded
-against the gate it blocks rather than assumed away.
+Five source-graph nodes remain unresolved, each recorded against the gate it blocks rather
+than assumed away. Three that were unresolved at the start — the native toolchain, TypeDB
+Console and TypeDB Loader — have since been closed.
+
+## Architecture
+
+`docs/architecture.md` is the entry point. It routes to the five Arcadia perspectives
+(`docs/architecture/arcadia/`) describing what the system does, and to the ADRs
+(`docs/architecture/ADR/`) recording why it is shaped that way. The two do not repeat each
+other. Levels 3 and 4 are marked provisional: no storage-engine work has begun, and reading
+them as settled is the main way that documentation could mislead.

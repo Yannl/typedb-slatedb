@@ -11,7 +11,7 @@ Every claim here points at a generated artifact in this directory or at
 | `docs/evidence/phase-a/doc-lint.json` | digest of all 16 contract documents; patch/gate id audit; schema compilability |
 | `docs/evidence/phase-a/contradiction-records.md` | 10 contract/source disagreements with anchors and corrections |
 | `docs/evidence/phase-a/native-toolchain.json` | every native build input, digested (the `NATIVE` node) |
-| `docs/ADR/0001..0004` | topology, Bazel evidence mode, composite-harness attribution, static-check porting |
+| `docs/architecture/ADR/0001..0005` | topology, Bazel evidence mode, composite-harness attribution, static-check porting, local stack |
 
 ## Source graph
 

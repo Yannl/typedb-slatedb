@@ -42,9 +42,10 @@ rule makes an unclean close lossless).
 ## Consequences
 
 - Every adapter operation costs one spawn + channel round-trip (~µs).
-  Measured corpus impact: storage-heavy suites run 2–5× the oracle's
-  wall-clock — accepted for the correctness-first local lane; zero
-  timeouts in the full sweep.
+  Measured corpus impact: ~1.1–1.2× the oracle's wall-clock on the
+  heaviest suites once measured without build contention (soak run 2:
+  behaviour-concept 258s vs 223s oracle; behaviour-query 123s vs 109s);
+  zero timeouts in either full sweep.
 - Blocking a network-runtime worker is as (un)acceptable as it was for
   RocksDB — no regression in kind, and the server's existing threading
   assumptions hold unchanged.

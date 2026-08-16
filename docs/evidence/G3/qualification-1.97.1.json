@@ -1,0 +1,20 @@
+{
+  "lane": "qualification toolchain (brief \u00a71.6)",
+  "toolchain": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "workspace_check": "cargo +1.97.1 check --workspace --locked: exit 0",
+  "storage_suite_U1": [
+    "ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s",
+    "ok. 14 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.07s",
+    "ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+    "FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s"
+  ],
+  "storage_suite_U2": [
+    "ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s",
+    "ok. 14 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.07s",
+    "ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+    "FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s"
+  ],
+  "additional_suites": "test_snapshot 10/0 and test_storage 6/0 on both profiles (run separately after the expected todo-stub abort)",
+  "verdict": "byte-identical pass/fail profile to the 1.93.0 parity lane on both storage profiles, including the two upstream todo!() stub failures; zero compiler-delta behavior change observed at the storage layer",
+  "scope_note": "storage crate suites + full workspace check; the full-corpus qualification run remains release-lane scope"
+}

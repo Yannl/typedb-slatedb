@@ -51,6 +51,19 @@ expectation. A fix (holding `TempDir` alive for the test's lifetime, one
 line in `setup()`) would be an upstream-test edit and is deferred to the
 port ledger policy; the fork does not modify upstream tests.
 
+## Soak observation: the failure is nondeterministic on U2
+
+The second full-corpus sweep (soak run 2) saw `bench_iam` **pass 2/2 on
+U2** (2.0s) where run 1 failed 0/2 (14.9s). Consistent with the
+mechanism: after the reopen, the replayed data sits in the SlateDB
+memtable; the queries only lose sight of it if a checkpoint-interval
+flush moves the memtable into (deleted) on-disk files before they run.
+Whether that flush wins the race against the queries is timing-dependent
+— i.e. on object-store engines this upstream defect degrades from
+deterministic-fail to **flaky**, the same class as the `test_fail_points`
+port-race on the oracle. The corrected expectation is unchanged (the
+directory-alive bracket remains the decisive experiment).
+
 ## Note on observed failure shape
 
 With the directory deleted, reads surface as empty results rather than

@@ -33,5 +33,9 @@
     }
   ],
   "everything_else": "identical pass/fail/ignored profile to the oracle baseline across all remaining 103 targets, including behaviour (test_concept 13, test_query 27), all HTTP driver suites, both assembly targets (running the TB-P7 server binary from the repackaged archive under TYPEDB_STORAGE_PROFILE=U2), durability, isolation, MVCC, recovery-from-checkpoint, and encoding vertex-allocation (descending-scan get_prev)",
-  "runtime_note": "U2 wall-clock is 2-5x the oracle on storage-heavy suites (test_concept 841s vs 223s; test_query 497s vs 109s) - the correctness-first local object-store posture (no compactor, sync bridge per op); zero timeouts under the 5400s budget"
+  "runtime_note": "U2 wall-clock ~1.1-1.2x the oracle on the heaviest suites when measured without concurrent-build contention (soak run 2: test_concept 258s vs 223s, test_query 123s vs 109s; sweep 1's 841s/497s included unrelated compile load) - zero timeouts in both sweeps",
+  "soak": {
+    "run_2": "docs/evidence/G3/u2-soak-2/u0-results.json",
+    "profile_delta_vs_run_1": "identical red set on the 97 shared targets except bench_iam, which PASSED in run 2 - the upstream deleted-directory defect is nondeterministic on U2 (see finding doc); tail targets re-run separately after a session-tooling log-compressor race (no run_u0.py defect)"
+  }
 }

@@ -853,10 +853,13 @@ pub fn generate(inputs: &CatalogInputs<'_>) -> Result<CatalogOutput> {
         exclusions.push(Exclusion {
             subject_id: target.target_id.clone(),
             predicate: "blocked_on_unresolved_input".into(),
-            reason: "needs $TYPEDB_ASSEMBLY_ARCHIVE, which is Bazel's package-typedb-all = \
-                     server + TypeDB Console + TypeDB Loader; TCONSOLE and TLOADER are \
-                     class-U with no URL, SHA-256 or licence, and the test invokes Console \
-                     directly to run its script"
+            reason: "packaging test: extracts $TYPEDB_ASSEMBLY_ARCHIVE and drives the server \
+                     with `typedb console --script=…`. Blocked only on TCONSOLE — the Console \
+                     CLI is a released binary used here as a test *client*, not a component \
+                     under change, and needs only a pinned URL + SHA-256. TLOADER is bundled \
+                     in the same archive but referenced by no test (0 occurrences under \
+                     tests/), so it blocks nothing. Nothing about the storage backend depends \
+                     on either."
                 .into(),
             owner: "programme".into(),
             expiry: "2027-01-01".into(),

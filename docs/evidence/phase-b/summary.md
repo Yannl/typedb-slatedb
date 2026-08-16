@@ -12,15 +12,15 @@ Source graph digest: `3b8bd2a72a5534d4f28c236053fcc473ba7b4f02fa3f36645c43b6020d
 
 ```
 targets    : 114/114
-leaf cases : 4758/4758
-passed=4677  failed=49  ignored=29  unknown=3
+leaf cases : 4757/4757
+passed=4679  failed=49  ignored=29  unknown=0
 verdict    : NOT GREEN
 ```
 
-Every catalogued leaf case is accounted for: 4677 + 49 + 29 + 3 = 4758. No case is
-unexecuted, and no executed case is missing from the catalogue. That reconciliation is the
-part that took nine runs to earn — the counts themselves are easy to produce and worthless
-until they close.
+Every catalogued leaf case is accounted for: 4679 + 49 + 29 = 4757. No case is unexecuted,
+no executed case is missing from the catalogue, and nothing is unclassified. That
+reconciliation is the part that took twelve runs to earn — the counts themselves are easy to
+produce and worthless until they close.
 
 `NOT GREEN` is the correct verdict, and it is not a defect in the port. Nothing has been
 ported yet.
@@ -46,11 +46,21 @@ regressions caused by the SlateDB port, in the one area where that diagnosis is 
 plausible and most expensive to chase.
 
 **The 46 environmental failures** all fail at the same place: extracting
-`$TYPEDB_ASSEMBLY_ARCHIVE` (`tests/assembly/assembly.rs` L48-51,
-`fail_points.rs` L185-188). The archive is produced by Bazel's `//:assemble-typedb-all`,
-which this lane cannot run. They need a Cargo-native assembly step before they can report
-anything; until then they are honest failures rather than skips, and they are not counted as
-passes.
+`$TYPEDB_ASSEMBLY_ARCHIVE` (`tests/assembly/assembly.rs` L48-51, `fail_points.rs` L185-188).
+
+These are *packaging* tests. They unpack the shippable tarball, start the server from it, and
+drive it with `typedb console --script=…` (`fail_points.rs` L300-302). Console is a released
+CLI used here as a **test client** — not a component this programme changes. The archive
+needs it, so the tests need it, and all that is missing is a pinned URL and SHA-256.
+
+**Scope, stated precisely.** This blocks 46 packaging tests. It does not block the storage
+work: the other 4 711 cases — every behaviour scenario, every unit test, every static check —
+run today, and a SlateDB backend can be developed and measured against them.
+
+TypeDB Loader is bundled in the same archive and is referenced by **no test at all** (0
+occurrences under `tests/`). An earlier draft of this summary listed it as a blocker; that was
+inferred from the packaging rule rather than checked against the tests, and it is wrong.
+`TLOADER` blocks nothing.
 
 **`bench_rocks`** reads required CLI arguments (`bench_rocks.rs` L174,
 `get_arg_as::<String>(&arg_map, "database", true)`) and unwraps them. Bazel declares it
@@ -60,14 +70,20 @@ does not supply.
 ## The 29 declared-ignored
 
 Scenarios their harness's own ignore predicate filters out. Which predicate applies depends
-on the target, not the scenario — see CR-A-09. They are counted, never passed, and each
-needs a catalogue exclusion entry with an owner before G1.
+on the target, not the scenario — see CR-A-09. Each now carries an exclusion naming upstream
+as owner, because the fork cannot un-skip a tag in the pinned corpus.
 
-## The 3 unknowns
+The gate distinguishes owned skips from unowned ones rather than counting every skip against
+it. Holding U0 red forever for upstream's own decisions would teach people to read NOT GREEN
+as the normal state, which is how a real regression gets waved through. A skip still never
+counts as a pass, and an unowned skip still fails the gate.
 
-`release_validate_deps` (two expansions) and `tool/test/simulate-crash.sh` have no port yet.
-The runner reports `Unknown` rather than guessing, which is the intended behaviour: an
-unported check is not a passing check.
+## No unknowns
+
+`release_validate_deps` is ported — the two checks `ValidateDeps.kt` actually makes, read
+from `MODULE.bazel` and `VERSION`. `tool/test/simulate-crash.sh` is excluded: it needs
+Docker, a Bazel-built image and Console, loops for ten minutes by design, and is referenced
+by no BUILD rule or Rust source, so upstream CI does not run it either.
 
 ## What the nine runs cost, and bought
 
@@ -101,7 +117,11 @@ looked clean and meant nothing.
 
 ## Not yet done
 
-* The 46 assembly-dependent failures need a Cargo-native assembly step (Phase C).
-* The 29 declared-ignored need exclusion entries with owners.
-* `release_validate_deps` and `simulate-crash.sh` need ports.
-* `NATIVE` toolchain digests and the Mode Q Bazel snapshot remain open from G0.
+* The 46 packaging failures need the Console CLI pinned by URL + SHA-256 (`TCONSOLE`). They
+  do not block the storage work; 4 711 cases run without it.
+* The two `todo!()` recovery tests are upstream's to fix, and are the baseline they must be
+  held to until then.
+* `bench_rocks` needs either an invocation with its required arguments or a port record
+  saying it is a manual tool.
+* The Mode Q Bazel snapshot remains open from G0 (ADR-0002); it needs a Bazel-capable
+  environment this one is not. `NATIVE` is closed.

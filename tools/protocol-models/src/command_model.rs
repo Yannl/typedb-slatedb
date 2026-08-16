@@ -101,12 +101,21 @@ impl CommandLedger {
         if captured_head != self.wal_head {
             return Err(CmdError::NoIntentProofStale); // repeat with fresh capture
         }
-        if self.intents.iter().any(|(c, e)| *c == id && *e == epoch) {
+        // ANY durable intent for this CommandId — under any epoch — refutes
+        // the proof: the command's execution is decided forever (inv. 92).
+        // Matching on (id, epoch) would let a proof run under a later epoch
+        // overlook an earlier epoch's intent and re-open the command.
+        if self.intents.iter().any(|(c, _)| *c == id) {
             return Err(CmdError::AlreadyIntent);
         }
-        // proof holds: the attempt closes retryable; a new epoch may assign
+        // proof holds: close exactly the attempt that was proven intent-free.
+        // Only Assigned{this epoch} may collapse back to Reserved — a proof
+        // must never rewrite IntentFinalized/Terminal (inv. 92/97) nor an
+        // assignment belonging to a different attempt.
         if let Some((_, s)) = self.entries.get_mut(&id) {
-            *s = ExecState::Reserved;
+            if matches!(*s, ExecState::Assigned { epoch: e } if e == epoch) {
+                *s = ExecState::Reserved;
+            }
         }
         Ok(())
     }
@@ -229,6 +238,46 @@ mod tests {
         assert!(matches!(l.state(9),
             Some(ExecState::Terminal { outcome: Outcome::FailedFinal, available: false })));
         assert_eq!(l.finalize_intent(9, 2), Err(CmdError::AlreadyIntent));
+    }
+
+    /// Regression (review finding): a no-intent proof run under a LATER
+    /// epoch must still see an earlier epoch's intent — and must never
+    /// rewrite a Terminal outcome back to Reserved (inv. 92/97).
+    #[test]
+    fn later_epoch_proof_cannot_erase_terminal_outcome() {
+        let mut l = CommandLedger::default();
+        l.reserve(1, 100).unwrap();
+        l.assign(1, 1).unwrap();
+        l.finalize_intent(1, 1).unwrap();
+        l.terminalize(1, Outcome::Succeeded);
+        let head = l.wal_head;
+        // proof for epoch 2: the epoch-1 intent refutes it
+        assert_eq!(l.no_intent_proof(1, 2, head), Err(CmdError::AlreadyIntent));
+        // the terminal outcome is untouched and re-assignment stays closed
+        assert!(matches!(l.state(1),
+            Some(ExecState::Terminal { outcome: Outcome::Succeeded, available: true })));
+        assert_eq!(l.assign(1, 2), Err(CmdError::NotAssignable));
+        // idempotent reserve still reports the terminal state, not Reserved
+        assert!(matches!(l.reserve(1, 100).unwrap(),
+            ExecState::Terminal { outcome: Outcome::Succeeded, available: true }));
+    }
+
+    /// Regression companion: a successful proof collapses ONLY the exact
+    /// Assigned{epoch} attempt it proved; a different epoch's assignment is
+    /// left untouched.
+    #[test]
+    fn proof_closes_only_the_proven_attempt() {
+        let mut l = CommandLedger::default();
+        l.reserve(7, 5).unwrap();
+        l.assign(7, 3).unwrap();
+        let head = l.wal_head;
+        // proof for a different epoch succeeds (no intent exists at all)
+        // but must not collapse epoch 3's live assignment
+        assert_eq!(l.no_intent_proof(7, 9, head), Ok(()));
+        assert!(matches!(l.state(7), Some(ExecState::Assigned { epoch: 3 })));
+        // proof for the exact assigned epoch closes it retryable
+        assert_eq!(l.no_intent_proof(7, 3, head), Ok(()));
+        assert!(matches!(l.state(7), Some(ExecState::Reserved)));
     }
 
     // negative control: a broken proof that skips the head recheck would

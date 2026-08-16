@@ -249,15 +249,18 @@ impl WalState {
                 return Err(format!("TypeSequence hole: expected {}, got {s}", i + 1));
             }
         }
-        // one verdict per status key (inv. 49)
-        let mut verdicts: BTreeMap<StatusKey, bool> = BTreeMap::new();
+        // one physical record per status key (inv. 49/50). Verdict-less
+        // status records are admissible (finalize dedupes them by
+        // None == None), so this must not unwrap the verdict — a second
+        // record for the same key is the violation regardless of verdicts.
+        let mut status_records: BTreeMap<StatusKey, Option<bool>> = BTreeMap::new();
         for r in &self.records {
             if let SequencingKind::Unsequenced { logical_key: Some(k) } = &r.sequencing {
-                if let Some(v) = verdicts.insert(*k, r.verdict.unwrap()) {
-                    if Some(v) != r.verdict {
-                        return Err(format!("two verdicts for status key {k:?}"));
-                    }
-                    return Err(format!("two physical records for status key {k:?}"));
+                if let Some(prev) = status_records.insert(*k, r.verdict) {
+                    return Err(format!(
+                        "two physical records for status key {k:?} (verdicts {prev:?} / {:?})",
+                        r.verdict
+                    ));
                 }
             }
         }
@@ -408,6 +411,24 @@ mod tests {
         w.check_invariants().unwrap();
     }
 
+    /// inv. 38: a fenced session retrying the IDENTICAL operation it had
+    /// already durably finalised gets Fenced, never the replayed receipt —
+    /// fencing revokes reporting to the old holder, not durability. (This is
+    /// the schedule the TS controller core once ordered differently; all
+    /// lanes must agree.)
+    #[test]
+    fn fenced_replay_of_durable_record_is_fenced_not_replayed() {
+        let mut w = WalState::new();
+        let s1 = w.open_session();
+        w.finalize(s1, 1, 1, seq(), None).unwrap();
+        let _s2 = w.open_session(); // fence s1
+        // identical (operation_id, digest) retry from the fenced holder
+        assert_eq!(w.finalize(s1, 1, 1, seq(), None), Err(FinalizeError::Fenced));
+        // durable history untouched
+        assert_eq!(w.records().len(), 1);
+        w.check_invariants().unwrap();
+    }
+
     // ---- negative controls (brief §22.9): the checkers must FAIL when the
     // protected invariant is deliberately broken. ----
 
@@ -442,6 +463,20 @@ mod tests {
         w.next_control_seq += 1;
         w.records.push(dup);
         assert!(w.check_invariants().is_err(), "checker must catch conflicting status records");
+    }
+
+    /// Regression (review finding): finalize admits a verdict-less status
+    /// record, so the invariant checker must report on it — never panic on a
+    /// None verdict.
+    #[test]
+    fn checker_handles_verdictless_status_record_without_panicking() {
+        let mut w = WalState::new();
+        let s = w.open_session();
+        w.finalize(s, 1, 1, status(0), None).unwrap();
+        assert!(w.check_invariants().is_ok());
+        // and its idempotent duplicate stays a single physical record
+        w.finalize(s, 2, 2, status(0), None).unwrap();
+        assert!(w.check_invariants().is_ok());
     }
 
     #[test]

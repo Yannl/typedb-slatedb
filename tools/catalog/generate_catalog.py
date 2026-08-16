@@ -51,6 +51,21 @@ SERIAL_GROUPS = {
 DEFAULT_TIMEOUT = 1800
 
 
+def package_name_from_id(package_id: str) -> str:
+    """Package name from a cargo package-id spec (`url[#[name@]version]`).
+
+    Cargo omits the `name@` part of the fragment when the name equals the
+    final path segment of the url, so `...typedb/concept#0.0.0` means package
+    `concept` while `...storage/tests#test_utils_storage@0.0.0` means package
+    `test_utils_storage`. Parsing the fragment alone collapses most workspace
+    crates onto the bare version string.
+    """
+    url, _, frag = package_id.partition("#")
+    if "@" in frag:
+        return frag.split("@")[0]
+    return url.rstrip("/").rsplit("/", 1)[-1]
+
+
 def sha256_bytes(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
@@ -112,9 +127,7 @@ def libtest_cases():
             continue
         if msg.get("reason") == "compiler-artifact" and msg.get("executable"):
             tgt = msg["target"]
-            pkg_name = msg["package_id"].split("#")[-1].split("@")[0]
-            if "/" in pkg_name:
-                pkg_name = pkg_name.rsplit("/", 1)[-1]
+            pkg_name = package_name_from_id(msg["package_id"])
             execs[(pkg_name, tgt["name"])] = (msg["executable"], tgt)
     for (pkg, tname), (exe, tgt) in sorted(execs.items()):
         listing = subprocess.run(

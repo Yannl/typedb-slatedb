@@ -164,6 +164,19 @@ export class ControllerCore {
 
   /** One finalisation step; assumes the caller holds the open transaction. */
   private finalizeStep(req: FinalizeRequest): FinalizeResult {
+    // session revalidation (stale-actor fencing) MUST precede the replay
+    // lookup: brief inv. 38 — fencing cannot revoke a durable record, but it
+    // DOES prevent the old holder from having it reported back. A fenced
+    // session retrying a lost-response finalize therefore gets SESSION_FENCED,
+    // never the replayed receipt (matches remote-wal-spike Controller::finalize
+    // and protocol-models WalState::finalize, which both fence first).
+    const session = this.sql.exec(
+      `SELECT fenced FROM sessions WHERE database_id=? AND generation=? AND startup_session_id=?`,
+      req.databaseId, req.generation, req.startupSessionId,
+    );
+    if (!session.length) return { ok: false as const, error: "SESSION_UNKNOWN" as const };
+    if (Number(session[0].fenced)) return { ok: false as const, error: "SESSION_FENCED" as const };
+
     // exact-once replay by operation identity
     const replay = this.sql.exec(
       `SELECT append_lsn, type_sequence, control_seq, request_digest FROM wal_tail
@@ -182,14 +195,6 @@ export class ControllerCore {
       }
       return { ok: false as const, error: "OPERATION_DIGEST_CONFLICT" as const };
     }
-
-    // session revalidation (stale-actor fencing)
-    const session = this.sql.exec(
-      `SELECT fenced FROM sessions WHERE database_id=? AND generation=? AND startup_session_id=?`,
-      req.databaseId, req.generation, req.startupSessionId,
-    );
-    if (!session.length) return { ok: false as const, error: "SESSION_UNKNOWN" as const };
-    if (Number(session[0].fenced)) return { ok: false as const, error: "SESSION_FENCED" as const };
 
     // status singleton dedupe MUST precede admission: a duplicate identical
     // status (lost-response recovery under a fresh operationId) allocates

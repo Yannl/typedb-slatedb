@@ -148,12 +148,23 @@ impl L1Client {
         response.body_mut().read_json().map_err(|e| L1Error::Decode(e.to_string()))
     }
 
+    /// POST where the only success shape is HTTP 200 with `{"ok": true}`.
+    /// Anything else (non-200 status, `ok:false`, missing `ok`) is a typed
+    /// protocol error: register/fence callers act on the *effect* having been
+    /// applied, so silently accepting an error body would let a caller
+    /// believe a fence exists that was never installed.
     fn post_json(&self, path: &str, body: &serde_json::Value) -> Result<serde_json::Value, L1Error> {
         let mut response = self
             .agent
             .post(format!("{}{}", self.base, path))
             .send_json(body)
             .map_err(|e| L1Error::Http(e.to_string()))?;
-        response.body_mut().read_json().map_err(|e| L1Error::Decode(e.to_string()))
+        let status = response.status().as_u16();
+        let parsed: serde_json::Value =
+            response.body_mut().read_json().map_err(|e| L1Error::Decode(e.to_string()))?;
+        if status != 200 || parsed["ok"] != serde_json::Value::Bool(true) {
+            return Err(L1Error::Protocol { status, body: parsed.to_string() });
+        }
+        Ok(parsed)
     }
 }

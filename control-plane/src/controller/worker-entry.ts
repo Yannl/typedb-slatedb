@@ -51,18 +51,29 @@ export default {
       const bytes = await request.arrayBuffer();
       const digest = await sha256hex(bytes);
       // payload immutability: puts are create-or-identical, never overwrite.
-      // (In production this is enforced by object-store conditions/credential
-      // policy; the facade must uphold the same contract.)
-      const existing = await env.PAYLOADS.get(key);
-      if (existing !== null) {
+      // The create is a CONDITIONAL put (If-None-Match: *), not get-then-put:
+      // two concurrent puts of different bytes must never both succeed, and a
+      // read-then-write window would allow exactly that (last-writer-wins over
+      // a digest another client may already have receipt-verified). On
+      // precondition failure the existing object is compared by digest.
+      // (In production the same contract is enforced by object-store
+      // conditions/credential policy; the facade upholds it locally.)
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const created = await env.PAYLOADS.put(key, bytes, {
+          onlyIf: new Headers({ "if-none-match": "*" }),
+        });
+        if (created !== null) {
+          return json({ key, sha256hex: digest, length: bytes.byteLength });
+        }
+        const existing = await env.PAYLOADS.get(key);
+        if (existing === null) continue; // lost a delete/create race; retry the conditional create
         const existingDigest = await sha256hex(await existing.arrayBuffer());
         if (existingDigest !== digest) {
           return json({ ok: false, error: "PAYLOAD_IMMUTABILITY_VIOLATION", key, existing: existingDigest }, 409);
         }
         return json({ key, sha256hex: digest, length: bytes.byteLength, deduplicated: true });
       }
-      await env.PAYLOADS.put(key, bytes);
-      return json({ key, sha256hex: digest, length: bytes.byteLength });
+      return json({ ok: false, error: "PAYLOAD_RACE_UNRESOLVED", key }, 503);
     }
 
     // controller routing: one DO per database

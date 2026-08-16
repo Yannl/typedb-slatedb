@@ -34,10 +34,25 @@ ENV_BASE = {
 }
 
 # targets that need the assembly archive staged in cwd
-ASSEMBLY_TARGETS = {"test_assembly", "test_fail_points"}
+ASSEMBLY_TARGETS = {"test_assembly", "test_fail_points", "test_admin_assembly"}
 ASSEMBLY_ENV = {"TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"}
 # execution order: fast crates first, server-binding suites last
 ORDER_LAST = ("test_behaviour", "test_http", "test_assembly", "test_fail_points")
+
+
+def package_name_from_id(package_id):
+    """Package name from a cargo package-id spec (`url[#[name@]version]`).
+
+    Cargo omits the `name@` part of the fragment when the name equals the
+    final path segment of the url, so `...typedb/concept#0.0.0` means package
+    `concept` while `...storage/tests#test_utils_storage@0.0.0` means package
+    `test_utils_storage`. Parsing the fragment alone collapses most workspace
+    crates onto the bare version string.
+    """
+    url, _, frag = package_id.partition("#")
+    if "@" in frag:
+        return frag.split("@")[0]
+    return url.rstrip("/").rsplit("/", 1)[-1]
 
 
 def discover_executables(packages=None):
@@ -63,9 +78,7 @@ def discover_executables(packages=None):
             if not msg.get("profile", {}).get("test"):
                 continue
             tgt = msg["target"]
-            pkg = msg["package_id"].split("#")[-1].split("@")[0]
-            if "/" in pkg:
-                pkg = pkg.rsplit("/", 1)[-1]
+            pkg = package_name_from_id(msg["package_id"])
             manifest = msg["manifest_path"]
             execs.append({"package": pkg, "target": tgt["name"],
                           "kind": tgt["kind"], "executable": msg["executable"],

@@ -11,8 +11,15 @@
 # There is no fork/slatedb workspace to materialize.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# The revision comes from the lock, never from this script: drift between the
+# lock and the materialized tree is exactly what the lock exists to prevent.
+TB_REV="$(python3 -c "
+import json
+nodes = json.load(open('$ROOT/source-lock/source-lock.json'))['nodes']
+print(next(n['revision'] for n in nodes if n['id'] == 'TB'))
+")"
 mkdir -p "$ROOT/fork/typedb"
-git -C "$ROOT/sources/typedb" archive 2256711abd532742dae8e822a9ad5cce63e69b1a | tar -x -C "$ROOT/fork/typedb"
+git -C "$ROOT/sources/typedb" archive "$TB_REV" | tar -x -C "$ROOT/fork/typedb"
 # Apply fork patch series in stable order once they exist.
 for series in "$ROOT"/fork/patches/typedb/*.patch; do
   [ -e "$series" ] || break

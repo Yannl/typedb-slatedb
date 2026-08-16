@@ -118,6 +118,25 @@ test("stale session fencing: fenced or unknown sessions cannot finalise", () => 
   assert.equal(core.auditContiguity("db1", 3).count, 0);
 });
 
+test("fenced replay: a fenced session retrying a durable finalize gets SESSION_FENCED, not the receipt (inv. 38)", () => {
+  // brief inv. 38: fencing cannot revoke the durable record, but it DOES
+  // prevent the old holder from having it reported back. Both Rust reference
+  // lanes (remote-wal-spike Controller::finalize, wal_model WalState::finalize)
+  // fence before the replay lookup; the core must match that trace exactly.
+  const core = boot();
+  const first = req();
+  const r1 = core.finalizeWalRecord(first);
+  assert.ok(r1.ok && !r1.replayed);
+  core.fenceSession("db1", 3, "sess-1");
+  // identical retry (lost-response recovery) after the fence
+  assert.deepEqual(core.finalizeWalRecord(first), { ok: false, error: "SESSION_FENCED" });
+  // the record itself is untouched durable history (fencing revokes reporting,
+  // never durability): still exactly one record, still contiguous
+  const audit = core.auditContiguity("db1", 3);
+  assert.equal(audit.count, 1);
+  assert.ok(audit.contiguous);
+});
+
 test("bounded admission fail-closed: payload, outbox depth, tail budget", () => {
   const core = boot();
   core.setBudgets("db1", { maxUnpublishedOutbox: 2, maxPayloadLength: 1000, maxTailRecords: 5 });
@@ -158,19 +177,12 @@ test("outbox drain is exactly-once per control_seq across repeated alarms", () =
 test("batch candidate: all-or-nothing equivalence with per-record finalisation", () => {
   const perRecord = boot();
   const batched = boot();
-  const build = (): FinalizeRequest[] => {
-    const saved = opCounter;
-    const reqs = [req(), req({ sequencingKind: "UNSEQUENCED" }), req()];
-    opCounter = saved; // second core sees identical operation ids
-    const reqs2 = [req(), req({ sequencingKind: "UNSEQUENCED" }), req()];
-    return [reqs, reqs2] as unknown as FinalizeRequest[];
-  };
-  // build identical request triples for both cores
+  // build identical request triples for both cores (opCounter rewind gives
+  // the second core the same operation ids)
   const savedCounter = opCounter;
   const triple1 = [req(), req({ sequencingKind: "UNSEQUENCED" }), req()];
   opCounter = savedCounter;
   const triple2 = [req(), req({ sequencingKind: "UNSEQUENCED" }), req()];
-  void build;
 
   for (const r of triple1) assert.ok(perRecord.finalizeWalRecord(r).ok);
   const batchResult = batched.finalizeBatch(triple2);

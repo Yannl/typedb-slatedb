@@ -145,7 +145,18 @@ impl SlateKeyspace {
     }
 
     /// Apply a batch to this keyspace atomically.
+    ///
+    /// An empty batch is a successful no-op, because that is what RocksDB does. SlateDB
+    /// instead rejects it ("empty write batch not allowed"), and the difference is not
+    /// hypothetical: `WriteBatches::from_operations` creates a batch for any keyspace that has
+    /// writes, but a batch whose writes are all `Write::Put` with `reinsert == false` emits no
+    /// puts at all (`write_batches.rs` L38-42). Under RocksDB that commits as a no-op; without
+    /// this guard it fails the commit outright, which is how it surfaced — three concurrency
+    /// tests failing with a storage error rather than the conflict they were testing for.
     pub(crate) fn write(&self, batch: SlateWriteBatch) -> Result<(), SlateKeyspaceError> {
+        if batch.is_empty() {
+            return Ok(());
+        }
         let mut inner = SlateBatch::new();
         for (key, value) in &batch.puts {
             inner.put(self.slate_id(), key, value);

@@ -840,8 +840,9 @@ impl ThingManager {
                             }
                             Bound::Excluded(start) => {
                                 // increment and treat as included
-                                let mut bytes: [u8; TypeVertex::LENGTH] =
-                                    start.vertex().to_bytes().as_ref().try_into().unwrap();
+                                let start_bytes = start.vertex().to_bytes();
+                                let start_slice: &[u8] = &start_bytes;
+                                let mut bytes: [u8; TypeVertex::LENGTH] = start_slice.try_into().unwrap();
                                 increment(&mut bytes).unwrap();
                                 let start_type = TypeVertex::decode(Bytes::Reference(&bytes));
                                 RangeStart::Inclusive(ThingEdgeHasReverse::prefix_from_attribute_to_type(
@@ -889,8 +890,9 @@ impl ThingManager {
                             }
                             Bound::Excluded(start) => {
                                 // increment and treat as included
-                                let mut bytes: [u8; TypeVertex::LENGTH] =
-                                    start.vertex().to_bytes().as_ref().try_into().unwrap();
+                                let start_bytes = start.vertex().to_bytes();
+                                let start_slice: &[u8] = &start_bytes;
+                                let mut bytes: [u8; TypeVertex::LENGTH] = start_slice.try_into().unwrap();
                                 increment(&mut bytes).unwrap();
                                 let start_type = TypeVertex::decode(Bytes::Reference(&bytes));
                                 RangeStart::Inclusive(ThingEdgeHasReverse::prefix_from_attribute_to_type(

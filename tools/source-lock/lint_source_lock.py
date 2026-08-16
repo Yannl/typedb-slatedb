@@ -140,6 +140,13 @@ def main() -> int:
         for lock_rel in lock_rels:
             check_registry_node(nid, node, lock_rel, failures)
 
+    # workspace release binding must exist and match reality
+    ws_check = subprocess.run(
+        [sys.executable, str(REPO / "tools" / "source-lock" / "generate_workspace_lock.py"), "--check"],
+        capture_output=True, text=True)
+    if ws_check.returncode != 0:
+        failures.append(f"workspace-lock: {ws_check.stdout.strip() or ws_check.stderr.strip()}")
+
     for nid, rel in ARTIFACTS.items():
         node = nodes.get(nid)
         if node is None:

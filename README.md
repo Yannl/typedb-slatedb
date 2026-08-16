@@ -23,6 +23,7 @@ produce the same results, with every deviation ledgered and evidenced.
 | [fork/typedb/PORT-LEDGER.md](fork/typedb/PORT-LEDGER.md) | reviewers | Every fork-side patch with its behavior-preservation argument |
 | [docs/spec-delivery-comparison.md](docs/spec-delivery-comparison.md) | everyone | Final reconciliation: inception contract vs delivered work packages |
 | [docs/inception/](docs/inception/ARCHIVE-NOTE.md) | everyone | The archived ideation/research-phase contract (brief v16 + sidecars) |
+| [docs/handoff-live-validation.md](docs/handoff-live-validation.md) | next session | Cloudflare minimal-token setup + empty-context pickup guide for the live test |
 
 ## Layout
 

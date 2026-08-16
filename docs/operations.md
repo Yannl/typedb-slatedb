@@ -16,7 +16,9 @@ is the v16 brief; this page is the operational digest.
 
 ### Open blockers
 
-- **SI-G0-3 — Cloudflare staging credentials.** The only unresolved stop
+- **SI-G0-3 — Cloudflare staging credentials.** See
+  [handoff-live-validation.md](handoff-live-validation.md) for the exact
+  minimal-scope token setup and the live execution plan. The only unresolved stop
   item. Without a staging account there is no L3 lane, no G2 measurement,
   and no platform-fact validation (real R2 conditional-write behavior,
   throttling, cost envelopes). Everything local is done and green.

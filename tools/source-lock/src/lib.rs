@@ -315,6 +315,16 @@ pub fn declared_graph() -> Vec<SourceNodeSpec> {
         n("TBDIST", "typedb-bazel-distribution", "typedb/bazel-distribution", PinKind::Commit,
           Some("ab5bfc90274e2d34569d5bc22558314b551cdecd"), NodeRole::Proof, "Apache-2.0",
           "static target/macro/query audit oracle"),
+        // TypeDB Console and Loader ship as pre-built artifacts in Bazel
+        // (`MODULE.bazel` L118-132, `native_artifact_files`), which is why they were first
+        // recorded as unresolved: no URL, checksum or licence was supplied. They are one
+        // Cargo workspace at `console-3.12.0`, whose members are
+        // ["typeql-check", "common", "loader", "tool/runner", "console"] and whose VERSION
+        // reads 3.12.0 — so the source the artifacts are built from was reachable all along.
+        // "The build downloads a binary" does not mean "the source is unavailable".
+        n("TCONSOLE", "typedb-console", "typedb/typedb-console", PinKind::Tag,
+          Some("console-3.12.0"), NodeRole::Compiles, "MPL-2.0",
+          "TypeDB Console and Loader source; Console is the client the assembly tests drive"),
         n("TQL", "typeql", "typedb/typeql", PinKind::Tag, Some("3.12.2"),
           NodeRole::Ships, "MPL-2.0", "TypeQL source/dependency identity"),
         n("TPROTO", "typedb-protocol", "typedb/typedb-protocol", PinKind::Tag, Some("3.12.0"),
@@ -350,8 +360,6 @@ pub fn declared_unresolved() -> Vec<UnresolvedNode> {
         blocks_gate: gate.into(),
     };
     vec![
-        u("TCONSOLE", "TypeDB Console 3.12.0 linux-x86_64 URL, SHA-256 and licence", "G1"),
-        u("TLOADER", "TypeDB Loader 3.12.0 applicability to the selected corpus", "G1"),
         u("TB-BASE", "OCI digest for typedb/ubuntu:3.1.0-amd64 and the production base", "G0"),
         u("CF-CTR-PKG", "npm tarball integrity for @cloudflare/containers 0.3.7", "G0"),
         u("CF-VITEST", "npm tarball integrity for @cloudflare/vitest-pool-workers", "G0"),

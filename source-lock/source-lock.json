@@ -159,7 +159,8 @@
         "typedb-logs/typedb.log.2026-08-16-05",
         "typedb-logs/typedb.log.2026-08-16-06",
         "typedb-logs/typedb.log.2026-08-16-07",
-        "typedb-logs/typedb.log.2026-08-16-09"
+        "typedb-logs/typedb.log.2026-08-16-09",
+        "typedb-logs/typedb.log.2026-08-16-10"
       ],
       "shallow": false,
       "pin_mismatch": null
@@ -196,6 +197,24 @@
       "content_digest": "a95d0ecf750d518c6ec2720614ed52fe0f1d99277e9d5c0eff8e166e31223bb0",
       "file_count": 159,
       "byte_count": 725929,
+      "dirty": false,
+      "shallow": false,
+      "pin_mismatch": null
+    },
+    {
+      "alias": "TCONSOLE",
+      "name": "typedb-console",
+      "origin": "typedb/typedb-console",
+      "pin_kind": "TAG",
+      "declared_pin": "console-3.12.0",
+      "role": "COMPILES",
+      "licence": "MPL-2.0",
+      "purpose": "TypeDB Console and Loader source; Console is the client the assembly tests drive",
+      "revision": "0292fddf6ca16e54da198f90d3c369b2d9546855",
+      "git_tree": "bdf7e0b64517f57474f84de5188ca127ba9b2939",
+      "content_digest": "d352eb6c8e42bd4e62a5248a7ae95cb0c199dadb60979e52b49600be3316b700",
+      "file_count": 109,
+      "byte_count": 1152290,
       "dirty": false,
       "shallow": false,
       "pin_mismatch": null
@@ -264,18 +283,8 @@
       "pin_mismatch": null
     }
   ],
-  "source_graph_digest": "3b8bd2a72a5534d4f28c236053fcc473ba7b4f02fa3f36645c43b6020d6763ae",
+  "source_graph_digest": "49c30012a5cb78daae533e35951aa4e2cdf9a68c4d2a4ca45534730e2ef4e6fb",
   "unresolved": [
-    {
-      "alias": "TCONSOLE",
-      "what": "TypeDB Console 3.12.0 linux-x86_64 URL, SHA-256 and licence",
-      "blocks_gate": "G1"
-    },
-    {
-      "alias": "TLOADER",
-      "what": "TypeDB Loader 3.12.0 applicability to the selected corpus",
-      "blocks_gate": "G1"
-    },
     {
       "alias": "TB-BASE",
       "what": "OCI digest for typedb/ubuntu:3.1.0-amd64 and the production base",

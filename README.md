@@ -13,11 +13,12 @@ produce the same results, with every deviation ledgered and evidenced.
 
 | Doc | Audience | Contents |
 |---|---|---|
-| [docs/architecture.md](docs/architecture.md) | everyone | System design: planes, storage profiles, engine seam, remote WAL protocol, control plane |
+| [docs/architecture.md](docs/architecture.md) | everyone | Architecture entry point: map of the Arcadia perspective set and the ADR index, with reading paths |
 | [docs/development.md](docs/development.md) | contributors | Repo layout, building, running every test lane, patch discipline |
 | [docs/operations.md](docs/operations.md) | operators | Gates and evidence, deployment ladder, runbooks, open blockers |
 | [docs/user-guide.md](docs/user-guide.md) | TypeDB users | What changes (nothing at the query surface), storage profiles, limitations |
-| [docs/ADR-0001-slatedb-consume-only.md](docs/ADR-0001-slatedb-consume-only.md) | everyone | Decision: SlateDB is a pinned crates.io dependency, never a fork |
+| [docs/architecture/ADR/](docs/architecture/ADR/README.md) | everyone | Architecture Decision Records (ADR-0001…0010: consume-only SlateDB, engine seam, durability authority, …) |
+| [docs/architecture/arcadia/](docs/architecture/arcadia/operational-analysis.md) | everyone | Arcadia/MBSE perspective set (OA, SA, LA, PA, EPBS) |
 | [docs/local-dev-parity-plan.md](docs/local-dev-parity-plan.md) | contributors | The L0–L3 local-to-production fidelity ladder |
 | [fork/typedb/PORT-LEDGER.md](fork/typedb/PORT-LEDGER.md) | reviewers | Every fork-side patch with its behavior-preservation argument |
 

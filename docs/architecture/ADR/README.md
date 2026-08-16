@@ -1,0 +1,22 @@
+# Architecture Decision Records
+
+Nygard-style records of the decisions that shaped this system. Each ADR
+states its context, the decision, and the consequences we accepted.
+Perspective documents (../arcadia/) describe the resulting architecture;
+ADRs explain *why it is that way and what else was on the table*.
+
+| ADR | Decision | Status |
+|---|---|---|
+| [ADR-0001](ADR-0001-slatedb-consume-only.md) | SlateDB is a pinned crates.io dependency — no fork; SL-P* patch obligations relocated to owned layers | accepted |
+| [ADR-0002](ADR-0002-engine-seam-at-keyspace-layer.md) | Storage-engine seam at the keyspace layer as an enum; profile selected once per process | accepted |
+| [ADR-0003](ADR-0003-typedb-wal-sole-durability-authority.md) | TypeDB's WAL is the sole durability authority; engine WALs disabled; keyspace stores disposable | accepted |
+| [ADR-0004](ADR-0004-sync-bridge-storage-runtime.md) | One process-wide storage runtime; spawn + std-channel sync bridge | accepted |
+| [ADR-0005](ADR-0005-u2-slatedb-configuration-and-checkpoints.md) | U2 posture: no compactor/GC, unbounded L0, manifest-pinned checkpoints | accepted |
+| [ADR-0006](ADR-0006-fencing-precedes-replay.md) | Finalisation fences before replaying; all lanes trace-equivalent (brief inv. 38) | accepted |
+| [ADR-0007](ADR-0007-payload-immutability-conditional-create.md) | Payload objects are create-or-identical via conditional create | accepted |
+| [ADR-0008](ADR-0008-upstream-corpus-as-oracle.md) | Upstream corpus is the conformance oracle; upstream defects get corrected expectations, never edits | accepted |
+| [ADR-0009](ADR-0009-local-first-parity-ladder.md) | Local-first on the L0–L3 fidelity ladder; Cloudflare is the last step | accepted |
+| [ADR-0010](ADR-0010-cargo-only-federated-workspaces.md) | Cargo-only builds, federated workspaces, machine-verified source lock | accepted |
+
+Numbering is chronological by decision, not by importance. A decision is
+reversed only by a new ADR that names the one it supersedes.

@@ -12,6 +12,7 @@ use options::byte_size::ByteSize;
 use storage::{
     MVCCStorage, StorageOpenError,
     durability_client::WALClient,
+    factory::StorageFactory,
     keyspace::{KeyspaceSet, rocks_resources::RocksResources},
     recovery::checkpoint::{CheckpointReader, CheckpointWriter},
 };
@@ -44,7 +45,10 @@ macro_rules! test_keyspace_set {
 }
 
 pub fn create_storage<KS: KeyspaceSet>(path: &Path) -> Result<Arc<MVCCStorage<WALClient>>, StorageOpenError> {
-    let wal = WAL::create(path, FsyncMetrics::disabled()).unwrap();
+    let wal = StorageFactory::resolve_from_env()
+        .expect("invalid storage backend profile")
+        .create_wal(path, FsyncMetrics::disabled())
+        .expect("factory failed to create WAL");
     let resources = create_rocks_resources();
     let storage = MVCCStorage::create::<KS>("storage", path, WALClient::new(wal), &resources)?;
     Ok(Arc::new(storage))

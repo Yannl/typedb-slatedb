@@ -13,7 +13,7 @@ use std::{
     fs, io,
     path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, mpsc,
         atomic::{AtomicU64, Ordering},
     },
     thread::sleep,
@@ -22,7 +22,7 @@ use std::{
 
 use ::error::typedb_error;
 use bytes::{Bytes, byte_array::ByteArray};
-use durability::DurabilitySequenceNumber;
+use durability::{DurabilitySequenceNumber, DurabilityServiceError, wal::WALError};
 use fail_point::{
     COMMIT_APPLIED_WITHOUT_PERSISTING_STATUS, COMMIT_DATA_UNSYNC_IN_WAL, COMMIT_REJECTED_WITHOUT_PERSISTING_STATUS,
     STORAGE_DELETED_KEYSPACES_BUT_NOT_WAL, STORAGE_EMPTY_STORAGE_DIR, STORAGE_MISSING_STORAGE_DIR, fail_point,
@@ -62,6 +62,7 @@ use crate::{
 
 pub mod durability_client;
 pub mod error;
+pub mod factory;
 pub mod isolation_manager;
 pub mod iterator;
 pub mod key_range;
@@ -291,7 +292,10 @@ impl<Durability> MVCCStorage<Durability> {
 
         let result = match validate_result {
             Ok(ValidatedCommit::Write(write_batches)) => {
-                sync_notifier.recv().unwrap(); // Ensure WAL is persisted before inserting to the KV store
+                // Ensure WAL is persisted before inserting to the KV store; a closed
+                // channel means the durability service can no longer acknowledge syncs
+                Self::confirm_sync(&sync_notifier)
+                    .map_err(|error| Durability { name: self.name.clone(), typedb_source: error })?;
                 // Write to the k-v store
                 commit_profile.snapshot_durable_write_data_confirmed();
 
@@ -314,7 +318,8 @@ impl<Durability> MVCCStorage<Durability> {
                 Ok(commit_sequence_number)
             }
             Ok(ValidatedCommit::Conflict(conflict)) => {
-                sync_notifier.recv().unwrap();
+                Self::confirm_sync(&sync_notifier)
+                    .map_err(|error| Durability { name: self.name.clone(), typedb_source: error })?;
                 commit_profile.snapshot_durable_write_data_confirmed();
 
                 fail_point!(COMMIT_REJECTED_WITHOUT_PERSISTING_STATUS);
@@ -325,7 +330,9 @@ impl<Durability> MVCCStorage<Durability> {
                 Err(StorageCommitError::Isolation { name: self.name.clone(), conflict })
             }
             Err(error) => {
-                sync_notifier.recv().unwrap();
+                // best-effort wait so the WAL settles; the validation error below is
+                // the one the caller must see even if the sync also failed
+                let _ = sync_notifier.recv();
                 commit_profile.snapshot_durable_write_data_confirmed();
                 Err(Durability { name: self.name.clone(), typedb_source: error })
             }
@@ -396,6 +403,18 @@ impl<Durability> MVCCStorage<Durability> {
             }
         }
         Ok(false)
+    }
+
+    /// Wait for a requested durability sync and surface its outcome as a typed
+    /// error. A disconnected channel means the durability service shut down (or
+    /// died) without acknowledging - never a success.
+    fn confirm_sync(
+        sync_notifier: &mpsc::Receiver<Result<(), DurabilityServiceError>>,
+    ) -> Result<(), DurabilityClientError> {
+        sync_notifier
+            .recv()
+            .unwrap_or_else(|_disconnected| Err(WALError::SyncAcknowledgementLost.into()))
+            .map_err(|error| DurabilityClientError::ServiceError { source: error })
     }
 
     fn persist_commit_status(

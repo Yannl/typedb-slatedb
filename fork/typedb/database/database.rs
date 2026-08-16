@@ -48,6 +48,7 @@ use resource::constants::database::{CHECKPOINT_INTERVAL, STATISTICS_UPDATE_INTER
 use storage::{
     MVCCStorage, StorageDeleteError, StorageOpenError, StorageResetError,
     durability_client::{DurabilityClient, DurabilityClientError, WALClient},
+    factory::{StorageFactory, StorageFactoryError},
     keyspace::rocks_resources::RocksResources,
     recovery::checkpoint::{CheckpointCreateError, CheckpointLoadError, CheckpointReader, CheckpointWriter},
     sequence_number::SequenceNumber,
@@ -287,7 +288,12 @@ impl Database<WALClient> {
 
         fs::create_dir(path).map_err(|source| DirectoryCreate { name: name.to_string(), source: Arc::new(source) })?;
 
-        let wal = WAL::create(path, wal_metrics).map_err(|source| WALOpen { source })?;
+        let factory = StorageFactory::resolve_from_env()
+            .map_err(|source| DatabaseOpenError::StorageFactory { source })?;
+        let wal = factory.create_wal(path, wal_metrics).map_err(|error| match error {
+            StorageFactoryError::WalOpen { source } => WALOpen { source },
+            other => DatabaseOpenError::StorageFactory { source: other },
+        })?;
         let mut wal_client = WALClient::new(wal);
         wal_client.register_record_type::<Statistics>();
 
@@ -363,12 +369,17 @@ impl Database<WALClient> {
         );
 
         event!(Level::TRACE, "Loading database '{}' WAL.", &name);
-        let wal = match WAL::load(path, wal_metrics) {
+        let factory = StorageFactory::resolve_from_env()
+            .map_err(|source| DatabaseOpenError::StorageFactory { source })?;
+        let wal = match factory.load_wal(path, wal_metrics) {
             Ok(wal) => wal,
-            Err(DurabilityServiceError::WAL { source: WALError::LoadDirectoryMissing { .. } }) => {
+            Err(StorageFactoryError::WalOpen {
+                source: DurabilityServiceError::WAL { source: WALError::LoadDirectoryMissing { .. } },
+            }) => {
                 return Err(NotADatabase { name: name.to_owned() });
             }
-            Err(source) => return Err(WALOpen { source }),
+            Err(StorageFactoryError::WalOpen { source }) => return Err(WALOpen { source }),
+            Err(other) => return Err(DatabaseOpenError::StorageFactory { source: other }),
         };
 
         let wal_last_sequence_number = wal.previous();
@@ -624,6 +635,7 @@ typedb_error! {
         DirectoryDelete(15, "Error while deleting directory of '{name}'", name: String, source: Arc<io::Error>),
         NotADatabase(16, "Directory '{name}' already exists and does not contain a database.", name: String),
         PrepareForWrites(17, "Failed to prepare database '{name}' for writes. In-memory allocators may collide with storage on the next allocation.", name: String, source: EncodingError),
+        StorageFactory(18, "Error resolving storage backend profile.", source: StorageFactoryError),
     }
 }
 

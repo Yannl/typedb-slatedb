@@ -45,7 +45,10 @@ pub trait DurabilityClient {
     where
         Record: UnsequencedDurabilityRecord;
 
-    fn request_sync(&self) -> mpsc::Receiver<()>;
+    /// Request a durability sync; the receiver yields the sync outcome. A
+    /// closed channel means the durability service can no longer acknowledge
+    /// syncs and must be treated as an error by the caller.
+    fn request_sync(&self) -> mpsc::Receiver<Result<(), DurabilityServiceError>>;
 
     fn iter_from(
         &self,
@@ -125,7 +128,7 @@ impl WALClient {
 }
 
 impl DurabilityClient for WALClient {
-    fn request_sync(&self) -> mpsc::Receiver<()> {
+    fn request_sync(&self) -> mpsc::Receiver<Result<(), DurabilityServiceError>> {
         self.wal.request_sync(COMMIT_WAIT_FOR_FSYNC)
     }
 

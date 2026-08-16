@@ -65,10 +65,10 @@ impl WAL {
         let files = Files::open(wal_dir.clone())?;
 
         let files = Arc::new(RwLock::new(files));
-        let next = RecordIterator::new(files.read().unwrap(), DurabilitySequenceNumber::MIN)?
-            .last()
-            .map(|rr| rr.unwrap().sequence_number.next())
-            .unwrap_or(DurabilitySequenceNumber::MIN.next());
+        let mut next = DurabilitySequenceNumber::MIN.next();
+        for record in RecordIterator::new(files.read().unwrap(), DurabilitySequenceNumber::MIN)? {
+            next = record?.sequence_number.next();
+        }
         let mut fsync_thread = FsyncThread::new(files.clone(), metrics.clone());
         FsyncThread::start(&mut fsync_thread.handle, fsync_thread.context.clone());
         Ok(Self {
@@ -91,10 +91,10 @@ impl WAL {
         let start_seq_nr = files.files.iter().map(|f| f.start).max().unwrap_or(DurabilitySequenceNumber::MIN);
 
         let files = Arc::new(RwLock::new(files));
-        let next = RecordIterator::new(files.read().unwrap(), start_seq_nr)?
-            .last()
-            .map(|rr| rr.unwrap().sequence_number.next())
-            .unwrap_or(DurabilitySequenceNumber::MIN.next());
+        let mut next = DurabilitySequenceNumber::MIN.next();
+        for record in RecordIterator::new(files.read().unwrap(), start_seq_nr)? {
+            next = record?.sequence_number.next();
+        }
 
         let mut fsync_thread = FsyncThread::new(files.clone(), metrics.clone());
         FsyncThread::start(&mut fsync_thread.handle, fsync_thread.context.clone());
@@ -119,7 +119,7 @@ impl WAL {
         DurabilitySequenceNumber::from(self.next_sequence_number.load(Ordering::Relaxed) - 1)
     }
 
-    pub fn request_sync(&self, ack_waits_for_sync: bool) -> mpsc::Receiver<()> {
+    pub fn request_sync(&self, ack_waits_for_sync: bool) -> mpsc::Receiver<Result<(), DurabilityServiceError>> {
         self.fsync_thread.schedule_next_sync_may_subscribe(ack_waits_for_sync)
     }
 }
@@ -236,6 +236,8 @@ pub enum WALError {
     Compression { source: Arc<io::Error> },
     Decompression { source: Arc<io::Error> },
     Sync { source: Arc<io::Error> },
+    UnrecognizedWalFilename { path: PathBuf },
+    SyncAcknowledgementLost,
 }
 
 impl fmt::Display for WALError {
@@ -254,6 +256,8 @@ impl Error for WALError {
             Self::Compression { source, .. } => Some(source),
             Self::Decompression { source, .. } => Some(source),
             Self::Sync { source, .. } => Some(source),
+            Self::UnrecognizedWalFilename { .. } => None,
+            Self::SyncAcknowledgementLost => None,
         }
     }
 }
@@ -332,11 +336,13 @@ impl Files {
     }
 
     pub(crate) fn sync_all(&mut self) -> Result<(), DurabilityServiceError> {
-        self.files
-            .last_mut()
-            .expect("Expected at least one file")
-            .writer()
-            .expect("Expected file writer on sync all")
+        let Some(last) = self.files.last_mut() else {
+            // nothing has been written yet: no file data to sync, but the (new)
+            // directory entry may still need it
+            return self.sync_directory_best_effort();
+        };
+        last.writer()
+            .map_err(|err| WALError::Sync { source: Arc::new(err) })?
             .get_mut()
             .sync_all()
             .map_err(|err| WALError::Sync { source: Arc::new(err) })?;
@@ -437,9 +443,13 @@ impl File {
         Ok(Self { start, len, path })
     }
 
-    fn open(path: PathBuf) -> io::Result<Self> {
-        let num: u64 =
-            path.file_name().and_then(|s| s.to_str()).and_then(|s| s.split('-').nth(1)).unwrap().parse().unwrap();
+    fn open(path: PathBuf) -> Result<Self, DurabilityServiceError> {
+        let num: u64 = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .and_then(|s| s.split('-').nth(1))
+            .and_then(|s| s.parse().ok())
+            .ok_or_else(|| WALError::UnrecognizedWalFilename { path: path.clone() })?;
         let len = fs::metadata(&path).map(|md| md.len()).unwrap_or(0);
         Ok(Self { start: DurabilitySequenceNumber::from(num), len, path })
     }
@@ -666,7 +676,7 @@ impl Iterator for FileRecordIterator<'_> {
 pub struct FsyncThreadContext {
     files: Arc<RwLock<Files>>,
     shutting_down: AtomicBool,
-    signalling: [Mutex<Vec<Option<mpsc::Sender<()>>>>; 2],
+    signalling: [Mutex<Vec<Option<mpsc::Sender<Result<(), DurabilityServiceError>>>>>; 2],
     current_signal: AtomicU8,
     metrics: FsyncMetrics,
 }
@@ -689,7 +699,7 @@ impl FsyncThread {
         Self { handle: None, context: Arc::new(context) }
     }
 
-    fn schedule_next_sync_may_subscribe(&self, subscribe: bool) -> mpsc::Receiver<()> {
+    fn schedule_next_sync_may_subscribe(&self, subscribe: bool) -> mpsc::Receiver<Result<(), DurabilityServiceError>> {
         let (sender, recv) = mpsc::channel();
         let mut vec = self
             .context
@@ -702,7 +712,9 @@ impl FsyncThread {
             vec.push(Some(sender));
         } else {
             vec.push(None);
-            sender.send(()).unwrap();
+            // the receiver is still held by this function's caller, so this cannot fail;
+            // stay lenient anyway - an unsubscribed caller may drop the receiver at any time
+            let _ = sender.send(Ok(()));
         }
         recv
     }
@@ -732,11 +744,21 @@ impl FsyncThread {
         let mut vec = vec_lock.unwrap();
         if !vec.is_empty() {
             let started = Instant::now();
-            context.files.write().unwrap().sync_all().expect("Expected sync all");
-            context.metrics.record_fsync_duration(started.elapsed());
+            let sync_result = context.files.write().unwrap().sync_all();
+            match &sync_result {
+                Ok(()) => context.metrics.record_fsync_duration(started.elapsed()),
+                Err(error) => {
+                    // surface the typed error to every waiting subscriber instead of
+                    // panicking the fsync thread; the thread stays alive so later
+                    // syncs can succeed if the environment recovers
+                    warn!("WAL fsync failed; reporting the error to all sync subscribers: {error}");
+                }
+            }
             while let Some(sender_opt) = vec.pop() {
                 if let Some(sender) = sender_opt {
-                    sender.send(()).unwrap();
+                    // a subscriber that gave up and dropped its receiver must not
+                    // bring down the fsync thread
+                    let _ = sender.send(sync_result.clone());
                 }
             }
         }

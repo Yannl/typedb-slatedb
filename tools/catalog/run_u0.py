@@ -110,7 +110,7 @@ def run_one(e, out_dir, timeout, reap=False):
             import shutil as _sh
             _sh.rmtree(iso)
         (iso / "tests" / "assembly").mkdir(parents=True)
-        os.link(TB / "typedb-all-linux-x86_64.tar.gz",
+        os.link(REPO / "sources" / "assembly-artifacts" / "typedb-all-linux-x86_64.tar.gz",
                 iso / "typedb-all-linux-x86_64.tar.gz")
         import shutil as _sh
         _sh.copy2(TB / "tests" / "assembly" / "script.tql",

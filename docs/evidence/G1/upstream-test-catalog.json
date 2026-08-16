@@ -68896,9 +68896,10 @@
     }
    ],
    "target_id": "cargo:typedb_server_bin:test:test_fail_points",
-   "timeout_seconds": 1800,
+   "timeout_seconds": 3600,
    "upstream_label": null,
-   "working_directory": null
+   "working_directory": null,
+   "timeout_note": "corrected to mirror upstream Bazel timeout=\"eternal\" (3600s); prior 1800s default was tighter than upstream declares"
   },
   {
    "cargo_package": "typedb_server_bin",

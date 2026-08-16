@@ -165,10 +165,6 @@ def run_checkstyle(target_id: str):
     for rel in files:
         if pathlib.Path(rel).parts and pathlib.Path(rel).parts[0] in NON_SOURCE_DIRS:
             continue
-        if rel == "typedb-all-linux-x86_64.tar.gz":
-            # session-staged assembly archive, not a source file at the pin;
-            # verified absent from the pinned tree (git status untracked)
-            continue
         path = package_dir / rel
         if not path.is_file():
             continue

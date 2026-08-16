@@ -12,7 +12,9 @@
       "title": "Offline vendored dependency store not yet materialized",
       "detail": "Release builds must be --frozen --offline from vendored/content-verified sources. This session builds with --locked from the network registry (locked digests). cargo vendor per workspace is deferred; lockfile digests are the interim integrity anchor.",
       "blocks": "G0 final (release lanes)",
-      "owner": "build-evidence"
+      "owner": "build-evidence",
+      "status": "NARROWED",
+      "resolution_progress": "Vendored dependency stores materialized for both workspaces and content-verified: typedb 582/582 and slatedb 473/473 Cargo.lock registry checksums match their vendored .cargo-checksum.json (digest-anchored manifests: docs/evidence/G0/vendor-typedb-manifest.json, vendor-slatedb-manifest.json; bulk stores session-local, anchored by digests like other raw evidence). cargo check --frozen --offline with source replacement proven green (durability subtree). REMAINING: full-workspace --frozen --offline release-lane build requires a roomier environment than this session disk allowance."
     },
     {
       "id": "SI-G0-3",

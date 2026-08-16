@@ -458,47 +458,84 @@ pub fn run_target(ctx: &RunContext, catalog: &Catalog, target: &Target) -> Resul
 
 /// Parse libtest's `test <name> ... ok|FAILED|ignored` result lines.
 pub fn parse_libtest_results(target_id: &str, stdout: &str) -> Result<Vec<CaseResult>> {
-    // libtest's own `failures:` block is the authority on which cases failed.
+    // libtest writes `test <name> ... ` without a newline, then the verdict. Anything that
+    // writes straight to fd 1 in between — the `tracing` subscriber several crates install —
+    // lands inside that gap, so the verdict is pushed onto a later line and the status field
+    // holds an ANSI log record instead. The verdict is still there, on its own line, once
+    // the noise stops:
     //
-    // The per-line status is not always readable: anything writing straight to fd 1 — the
-    // `tracing` subscriber several crates install, for instance — lands between `test foo
-    // ... ` and its verdict, so the status token becomes an ANSI-coloured log record. That
-    // produced Unknowns for `compiler`, `function` and `storage`, whose unit tests all
-    // passed. Reading the failure list instead resolves those without inventing a pass:
-    // a case is failed if libtest listed it as failed, and passed only if libtest ran it and
-    // did not.
+    //     test create_entity ... 2026-08-16T06:29:39Z DEBUG durability::wal: Writing …
+    //     … more log …
+    //     ok
+    //
+    // So an unreadable status is resolved by scanning forward to the next bare verdict,
+    // with libtest's own `failures:` block as the cross-check. Guessing "probably passed"
+    // instead would be exactly the false green the runner exists to prevent.
     let failed_names = parse_failure_block(stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+
+    let verdict_of = |token: &str| match token {
+        "ok" => Some(Outcome::Passed),
+        "FAILED" => Some(Outcome::Failed),
+        t if t == "ignored" || t.starts_with("ignored,") => Some(Outcome::Ignored),
+        _ => None,
+    };
 
     let mut out = Vec::new();
-    for line in stdout.lines() {
-        let line = line.trim();
-        let Some(rest) = line.strip_prefix("test ") else { continue };
+    for (i, line) in lines.iter().enumerate() {
+        let Some(rest) = line.trim_start().strip_prefix("test ") else { continue };
         let Some((name, status)) = rest.split_once(" ... ") else { continue };
         let name = name.trim();
         if name.is_empty() {
             continue;
         }
-        let status = status.trim();
-        let outcome = if status == "ok" {
-            Outcome::Passed
-        } else if status == "FAILED" {
-            Outcome::Failed
-        } else if status == "ignored" || status.starts_with("ignored,") {
-            Outcome::Ignored
-        } else if failed_names.contains(name) {
-            Outcome::Failed
-        } else if status.is_empty() || stdout.contains(&format!("test {name} ... ok")) {
-            Outcome::Passed
-        } else {
-            // Ran, not listed as failed, but no readable verdict either.
-            Outcome::Unknown(format!("unreadable status for {name}: {status}"))
+
+        let outcome = match verdict_of(status.trim()) {
+            Some(v) => v,
+            None => {
+                // Scan forward for the verdict this line was interrupted before printing.
+                // Stop at the next `test <name> ... ` line: past that, any verdict belongs
+                // to a different case.
+                let mut found = None;
+                for next in &lines[i + 1..] {
+                    let t = next.trim();
+                    if let Some(rest) = t.strip_prefix("test ") {
+                        if let Some((other, other_status)) = rest.split_once(" ... ") {
+                            // libtest sometimes re-prints the same name once its output
+                            // settles. A different name means this case never got a verdict.
+                            if other.trim() != name {
+                                break;
+                            }
+                            if let Some(v) = verdict_of(other_status.trim()) {
+                                found = Some(v);
+                                break;
+                            }
+                            continue;
+                        }
+                    }
+                    if let Some(v) = verdict_of(t) {
+                        found = Some(v);
+                        break;
+                    }
+                }
+                match found {
+                    // Trust the failures block over a scanned verdict when they disagree.
+                    Some(v) if !failed_names.contains(name) => v,
+                    Some(_) => Outcome::Failed,
+                    None if failed_names.contains(name) => Outcome::Failed,
+                    None => Outcome::Unknown(format!(
+                        "no verdict found for {name} after an unreadable status"
+                    )),
+                }
+            }
         };
-        out.push(CaseResult {
-            leaf_case_id: format!("{target_id}::{name}"),
-            outcome,
-            duration_ms: None,
-            detail: None,
-        });
+
+        // A name re-printed after its output settled must not become a second case.
+        let id = format!("{target_id}::{name}");
+        if out.iter().any(|c: &CaseResult| c.leaf_case_id == id) {
+            continue;
+        }
+        out.push(CaseResult { leaf_case_id: id, outcome, duration_ms: None, detail: None });
     }
     Ok(out)
 }
@@ -746,6 +783,53 @@ mod tests {
 #[cfg(test)]
 mod libtest_parsing_tests {
     use super::*;
+
+    #[test]
+    fn a_verdict_pushed_onto_a_later_line_is_still_found() {
+        // The real shape from concept::test_statistics: the log ran long enough that libtest
+        // printed `ok` on its own line eight lines below the test name.
+        let out = "\
+running 1 test
+test create_entity ... \u{1b}[2m2026-08-16T06:29:39Z\u{1b}[0m DEBUG durability::wal: writing
+more log output
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
+";
+        let cases = parse_libtest_results("t", out).unwrap();
+        assert_eq!(cases.len(), 1);
+        assert_eq!(cases[0].outcome, Outcome::Passed);
+    }
+
+    #[test]
+    fn a_verdict_is_not_stolen_from_the_next_case() {
+        // If the interrupted case never gets a verdict, the scan must stop at the next
+        // `test … ... ` line rather than adopting that case's result.
+        let out = "\
+test a ... \u{1b}[2mnoise\u{1b}[0m
+test b ... ok
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out;
+";
+        let cases = parse_libtest_results("t", out).unwrap();
+        assert!(matches!(cases[0].outcome, Outcome::Unknown(_)), "a must not borrow b's ok");
+        assert_eq!(cases[1].outcome, Outcome::Passed);
+    }
+
+    #[test]
+    fn the_failures_block_overrides_a_scanned_verdict() {
+        let out = "\
+test a ... noise
+ok
+
+failures:
+    a
+
+test result: FAILED. 0 passed; 1 failed;
+";
+        let cases = parse_libtest_results("t", out).unwrap();
+        assert_eq!(cases[0].outcome, Outcome::Failed, "the failures list wins");
+    }
 
     #[test]
     fn a_log_line_between_name_and_verdict_does_not_become_the_status() {

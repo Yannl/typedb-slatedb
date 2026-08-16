@@ -39,8 +39,31 @@ pub struct Scenario {
     pub ignored: bool,
 }
 
-fn is_ignore(tag: &str) -> bool {
-    tag == "ignore" || tag == "ignore-typedb"
+/// Which harness a behaviour target runs under, because the two disagree about tags.
+///
+/// This is not a stylistic difference. TB `2256711a` has two ignore predicates:
+///
+/// * `tests/behaviour/steps/lib.rs` L268-269 — `tag == "ignore" || tag == "ignore-typedb"`
+/// * `tests/behaviour/service/http/http_steps/lib.rs` L243-245 —
+///   `t == "ignore" || t == "ignore-typedb-http"`
+///
+/// So `@ignore-typedb-http` suppresses a scenario under the HTTP driver harness and *runs*
+/// it under the native one, and `@ignore-typedb` does the reverse. "Is this scenario
+/// ignored?" therefore has no answer until you say which target is asking. Treating the two
+/// as one predicate silently mis-sizes the denominator in both directions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Harness {
+    /// `tests/behaviour/steps` — the gRPC/native suites.
+    Native,
+    /// `tests/behaviour/service/http/http_steps` — the HTTP driver suites.
+    Http,
+}
+
+pub fn is_ignore_for(harness: Harness, tag: &str) -> bool {
+    match harness {
+        Harness::Native => tag == "ignore" || tag == "ignore-typedb",
+        Harness::Http => tag == "ignore" || tag == "ignore-typedb-http",
+    }
 }
 
 fn parse_tags(line: &str) -> Vec<String> {
@@ -62,6 +85,15 @@ fn split_table_row(line: &str) -> Vec<String> {
 
 /// Parse one `.feature` file into its leaf scenarios.
 pub fn parse_feature(feature_path: &str, text: &str) -> Result<Vec<Scenario>> {
+    parse_feature_for(Harness::Native, feature_path, text)
+}
+
+/// Parse a feature file, resolving ignore tags the way `harness` resolves them.
+pub fn parse_feature_for(
+    harness: Harness,
+    feature_path: &str,
+    text: &str,
+) -> Result<Vec<Scenario>> {
     let mut out = Vec::new();
     let mut feature_name = String::new();
     let mut feature_tags: Vec<String> = Vec::new();
@@ -80,7 +112,7 @@ pub fn parse_feature(feature_path: &str, text: &str) -> Result<Vec<Scenario>> {
 
     let flush = |outline: Option<Outline>, out: &mut Vec<Scenario>, feature_name: &str| {
         let Some(o) = outline else { return };
-        let ignored = o.tags.iter().any(|t| is_ignore(t));
+        let ignored = o.tags.iter().any(|t| is_ignore_for(harness, t));
         if o.rows.is_empty() {
             // An outline whose Examples block is all comments generates zero scenarios —
             // `relationtype.feature` L1120-1156 is one, its only rows commented out. It is
@@ -104,6 +136,13 @@ pub fn parse_feature(feature_path: &str, text: &str) -> Result<Vec<Scenario>> {
             for (h, v) in o.headers.iter().zip(row.iter()) {
                 name = name.replace(&format!("<{h}>"), v);
             }
+            // Substituting an empty cell leaves the name with the placeholder's surrounding
+            // whitespace. `define.feature`'s "cannot set @card annotation with invalid
+            // arguments <args>" has an empty first row, giving a name with a trailing space,
+            // and Cucumber reports the trimmed form — so nine catalogued cases never matched
+            // a result and nine reported scenarios looked uncatalogued, one pair per empty
+            // cell. Match the harness: trim.
+            let name = name.trim().to_string();
             out.push(Scenario {
                 feature_path: feature_path.to_string(),
                 feature_name: feature_name.to_string(),
@@ -168,7 +207,7 @@ pub fn parse_feature(feature_path: &str, text: &str) -> Result<Vec<Scenario>> {
                     in_examples: false,
                 });
             } else {
-                let ignored = tags.iter().any(|t| is_ignore(t));
+                let ignored = tags.iter().any(|t| is_ignore_for(harness, t));
                 out.push(Scenario {
                     feature_path: feature_path.to_string(),
                     feature_name: feature_name.clone(),
@@ -214,6 +253,11 @@ pub fn parse_feature(feature_path: &str, text: &str) -> Result<Vec<Scenario>> {
 
 /// Parse every `.feature` file under `root`, in sorted path order.
 pub fn parse_corpus(root: &std::path::Path) -> Result<Vec<Scenario>> {
+    parse_corpus_for(Harness::Native, root)
+}
+
+/// Parse the whole corpus, resolving ignore tags the way `harness` resolves them.
+pub fn parse_corpus_for(harness: Harness, root: &std::path::Path) -> Result<Vec<Scenario>> {
     let mut files: Vec<_> = walkdir::WalkDir::new(root)
         .into_iter()
         .filter_map(Result::ok)
@@ -227,7 +271,7 @@ pub fn parse_corpus(root: &std::path::Path) -> Result<Vec<Scenario>> {
     for path in files {
         let rel = path.strip_prefix(root)?.to_string_lossy().replace('\\', "/");
         let text = std::fs::read_to_string(&path)?;
-        out.extend(parse_feature(&rel, &text)?);
+        out.extend(parse_feature_for(harness, &rel, &text)?);
     }
     Ok(out)
 }
@@ -348,5 +392,58 @@ Feature: F
         assert!(s.iter().all(|x| !x.no_example_rows));
         assert_eq!(s[0].name, "sets @abstract");
         assert_eq!(s[1].name, "sets @unique");
+    }
+}
+
+#[cfg(test)]
+mod harness_specific_ignores {
+    use super::*;
+
+    const FEATURE: &str = "\
+Feature: F
+  @ignore-typedb-http
+  Scenario: http only skips this
+    Given a
+  @ignore-typedb
+  Scenario: native only skips this
+    Given b
+  @ignore
+  Scenario: both skip this
+    Given c
+";
+
+    #[test]
+    fn each_harness_honours_only_its_own_ignore_tag() {
+        // TB 2256711a has two predicates: steps/lib.rs L268-269 and
+        // http_steps/lib.rs L243-245. A scenario tagged @ignore-typedb-http RUNS under the
+        // native harness, and @ignore-typedb RUNS under the HTTP one. Collapsing them into
+        // one predicate mis-sizes the denominator in both directions — under HTTP targets
+        // the @ignore-typedb-http scenarios showed up as never-executed.
+        let native = parse_feature_for(Harness::Native, "f.feature", FEATURE).unwrap();
+        let http = parse_feature_for(Harness::Http, "f.feature", FEATURE).unwrap();
+
+        let ignored = |v: &[Scenario], name: &str| {
+            v.iter().find(|s| s.name == name).expect("scenario present").ignored
+        };
+
+        assert!(!ignored(&native, "http only skips this"), "native runs @ignore-typedb-http");
+        assert!(ignored(&http, "http only skips this"));
+
+        assert!(ignored(&native, "native only skips this"));
+        assert!(!ignored(&http, "native only skips this"), "http runs @ignore-typedb");
+
+        assert!(ignored(&native, "both skip this"));
+        assert!(ignored(&http, "both skip this"), "plain @ignore suppresses everywhere");
+    }
+
+    #[test]
+    fn an_empty_examples_cell_matches_the_trimmed_name_cucumber_reports() {
+        let s = parse_feature(
+            "f.feature",
+            "Feature: F\n  Scenario Outline: cannot set @card with <args>\n    Given a\n    Examples:\n      | args |\n      |      |\n      | 1, 2 |\n",
+        )
+        .unwrap();
+        assert_eq!(s[0].name, "cannot set @card with", "no trailing space");
+        assert_eq!(s[1].name, "cannot set @card with 1, 2");
     }
 }

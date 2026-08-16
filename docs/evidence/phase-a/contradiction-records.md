@@ -274,6 +274,42 @@ applied to U0.
 
 ---
 
+## CR-A-09 — "Is this scenario ignored?" has no answer without naming the harness
+
+**Contract claim.** Brief §22.2 treats `declared_ignored` as a property of a leaf case, and
+the catalogue schema carries it as one boolean per scenario. That presumes a single ignore
+predicate over the corpus.
+
+**Observed.** There are two, and they disagree:
+
+| Harness | Source | Predicate |
+|---|---|---|
+| native (gRPC) | `tests/behaviour/steps/lib.rs` L268-269 | `tag == "ignore" \|\| tag == "ignore-typedb"` |
+| HTTP driver | `tests/behaviour/service/http/http_steps/lib.rs` L243-245 | `t == "ignore" \|\| t == "ignore-typedb-http"` |
+
+A scenario tagged `@ignore-typedb-http` is skipped by the HTTP suites and **executed** by the
+native ones; `@ignore-typedb` does the reverse. Only bare `@ignore` suppresses everywhere.
+The same feature files are consumed by both harnesses, so the same scenario is
+simultaneously ignored and not ignored depending on which target is asking.
+
+Observed effect: the fifth U0 run reported `driver/connection.feature` scenarios such as
+"Driver can configure request timeout" (tagged `@ignore-typedb-http` at L63) as
+**never executed** under `test_http_driver_connection`, because the catalogue — using a
+single native predicate — counted them as runnable.
+
+**Correction.** The corpus is parsed once per harness and behaviour targets under
+`tests/behaviour/service/http` take the HTTP reading. `declared_ignored` is therefore
+resolved per `(scenario, target)` rather than per scenario. Count moves from 26 to 31.
+
+**Impact.** Mis-sizes the denominator in *both* directions if collapsed: HTTP-ignored
+scenarios appear as unexecuted holes, and native-ignored ones would be written off as
+declared skips under HTTP targets that really do run them — the second being the more
+dangerous, since it hides real coverage loss behind an expected-skip label. Any future
+harness added to the behaviour tree needs its own predicate registered here rather than
+inheriting one.
+
+---
+
 ## CR-A-05 — A decoy Rust version in the dependencies repo (no contract change)
 
 Recorded because it is the kind of anchor that looks authoritative and is not.

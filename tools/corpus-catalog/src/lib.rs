@@ -336,7 +336,17 @@ pub fn generate(inputs: &CatalogInputs<'_>) -> Result<CatalogOutput> {
     let mut exclusions: Vec<Exclusion> = Vec::new();
 
     // --- Behaviour corpus: parsed once, indexed by feature path.
-    let scenarios = gherkin::parse_corpus(inputs.behaviour_root)?;
+    // The corpus is parsed once per harness, because the two disagree about which tags
+    // suppress a scenario (see `gherkin::Harness`). A single parse would either count
+    // `@ignore-typedb-http` scenarios as runnable under HTTP targets — they showed up as
+    // never-executed — or mark them ignored under native targets, which do run them.
+    let scenarios_native = gherkin::parse_corpus_for(gherkin::Harness::Native, inputs.behaviour_root)?;
+    let scenarios_http = gherkin::parse_corpus_for(gherkin::Harness::Http, inputs.behaviour_root)?;
+    let mut by_feature_http: BTreeMap<String, Vec<&gherkin::Scenario>> = BTreeMap::new();
+    for s in &scenarios_http {
+        by_feature_http.entry(s.feature_path.clone()).or_default().push(s);
+    }
+    let scenarios = scenarios_native;
     let mut by_feature: BTreeMap<String, Vec<&gherkin::Scenario>> = BTreeMap::new();
     for s in &scenarios {
         by_feature.entry(s.feature_path.clone()).or_default().push(s);
@@ -512,7 +522,14 @@ pub fn generate(inputs: &CatalogInputs<'_>) -> Result<CatalogOutput> {
         // --- Leaf cases.
         if is_behaviour {
             for feature in &feature_files {
-                let Some(list) = by_feature.get(feature) else {
+                // HTTP driver targets live under tests/behaviour/service/http and link
+                // http_steps, whose ignore predicate differs.
+                let is_http = target
+                    .src_path
+                    .to_string_lossy()
+                    .contains("behaviour/service/http");
+                let source = if is_http { &by_feature_http } else { &by_feature };
+                let Some(list) = source.get(feature) else {
                     bail!(
                         "target {target_id} declares behaviour data {feature}, which is not in \
                          the pinned corpus at {}",

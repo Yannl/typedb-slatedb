@@ -64,6 +64,21 @@ impl SlateKeyspace {
         }
     }
 
+    /// A view onto an already-attached `Keyspace`.
+    ///
+    /// `Keyspace` holds the store directly rather than a `SlateKeyspace`, so that its field
+    /// layout and its `Debug` output stay lane-symmetric. This rebuilds the richer handle for
+    /// the duration of one call; the only cost is an `Arc` refcount bump.
+    pub(crate) fn from_parts(keyspace: &super::keyspace::Keyspace) -> Self {
+        Self {
+            store: Arc::clone(&keyspace.store),
+            name: keyspace.name(),
+            id: keyspace.id(),
+            prefix_length: keyspace.prefix_length(),
+            path: keyspace.path.clone(),
+        }
+    }
+
     fn slate_id(&self) -> SlateKeyspaceId {
         SlateKeyspaceId(self.id.0)
     }
@@ -129,6 +144,20 @@ impl SlateKeyspace {
             .map(|(k, v)| mapper(&k, v.as_ref()))
     }
 
+    /// Apply a batch to this keyspace atomically.
+    pub(crate) fn write(&self, batch: SlateWriteBatch) -> Result<(), SlateKeyspaceError> {
+        let mut inner = SlateBatch::new();
+        for (key, value) in &batch.puts {
+            inner.put(self.slate_id(), key, value);
+        }
+        self.store.write(inner).map_err(|source| SlateKeyspaceError { name: self.name, source })
+    }
+
+    /// Force everything acknowledged so far to durable storage.
+    pub(crate) fn flush(&self) -> Result<(), SlateKeyspaceError> {
+        self.store.flush().map_err(|source| SlateKeyspaceError { name: self.name, source })
+    }
+
     /// Forward cursor positioned at the first key `>= from`, bounded to this keyspace.
     pub(crate) fn iterate_from(&self, from: &[u8]) -> Result<SlateRangeIterator, SlateKeyspaceError> {
         let store = Arc::clone(&self.store);
@@ -138,32 +167,33 @@ impl SlateKeyspace {
     }
 }
 
-/// A batch that can span keyspaces and applies atomically.
+/// A batch of writes destined for a single keyspace.
+///
+/// Shaped to match the subset of `rocksdb::WriteBatch` that `write_batches.rs` actually uses —
+/// `default()` and `put()` — so that file needs only its import switched.
+///
+/// Deliberately *not* cross-keyspace, even though SlateDB could do that. Upstream's
+/// `Keyspaces::write` loops over keyspaces and writes each batch separately
+/// (`keyspace.rs` L119-125), so RocksDB gives no cross-keyspace atomicity either; TypeDB
+/// gets that from its own WAL in the `durability` crate. Making the SlateDB lane atomic
+/// where the RocksDB lane is not would be an upgrade, and an upgrade is still a behaviour
+/// difference — the comparison would stop measuring the backend and start measuring my
+/// improvement. Matching upstream is the whole job.
+///
+/// Note also that deletes never appear here: MVCC encodes a delete as a put of a tombstone
+/// key with an empty value (`write_batches.rs` L45), so `put` is the only operation needed.
+#[derive(Default)]
 pub(crate) struct SlateWriteBatch {
-    inner: SlateBatch,
-}
-
-impl Default for SlateWriteBatch {
-    fn default() -> Self {
-        Self::new()
-    }
+    puts: Vec<(Vec<u8>, Vec<u8>)>,
 }
 
 impl SlateWriteBatch {
-    pub(crate) fn new() -> Self {
-        Self { inner: SlateBatch::new() }
+    pub(crate) fn put(&mut self, key: impl AsRef<[u8]>, value: impl AsRef<[u8]>) {
+        self.puts.push((key.as_ref().to_vec(), value.as_ref().to_vec()));
     }
 
-    pub(crate) fn put(&mut self, keyspace: KeyspaceId, key: &[u8], value: &[u8]) {
-        self.inner.put(SlateKeyspaceId(keyspace.0), key, value);
-    }
-
-    pub(crate) fn delete(&mut self, keyspace: KeyspaceId, key: &[u8]) {
-        self.inner.delete(SlateKeyspaceId(keyspace.0), key);
-    }
-
-    pub(crate) fn apply(self, store: &SharedStore) -> Result<(), slatedb_keyspace::KeyspaceError> {
-        store.write(self.inner)
+    pub(crate) fn is_empty(&self) -> bool {
+        self.puts.is_empty()
     }
 }
 

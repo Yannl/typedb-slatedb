@@ -27,19 +27,49 @@ pub(crate) mod slate;
 /// type — the alias exists so the SlateDB lane can carry its own error without every caller
 /// naming a backend. Introducing a shared wrapper enum instead would have changed U0's
 /// error type too, and U0 is the reference the whole comparison is measured against.
+/// The batch type callers build writes into.
+///
+/// Aliased rather than abstracted behind a trait: the only surface `write_batches.rs` uses is
+/// `default()` and `put()`, and a trait for two methods would add a vtable and a generic
+/// parameter to every caller for no gain.
+#[cfg(not(feature = "slatedb-backend"))]
+pub(crate) use rocksdb::WriteBatch;
+#[cfg(feature = "slatedb-backend")]
+pub(crate) use slate::SlateWriteBatch as WriteBatch;
+
 #[cfg(not(feature = "slatedb-backend"))]
 pub(crate) type BackendError = rocksdb::Error;
 #[cfg(feature = "slatedb-backend")]
 pub(crate) type BackendError = slate::SlateKeyspaceError;
 
+#[cfg(not(feature = "slatedb-backend"))]
 impl Poolable for DBRawIterator<'static> {}
 
+/// Reuses RocksDB iterators, which are expensive to construct.
+///
+/// On the SlateDB lane this is deliberately an empty struct rather than a removed parameter:
+/// a SlateDB cursor is an `Arc` clone plus a scan, so there is nothing to amortise, but every
+/// caller still threads an `&IteratorPool` through. Keeping the type means those callers —
+/// and the upstream test files that construct one — are identical on both lanes.
+#[cfg(not(feature = "slatedb-backend"))]
 #[derive(Default)]
 pub struct IteratorPool {
     unprefixed_iterators_per_keyspace: [SinglePool<DBRawIterator<'static>>; KEYSPACE_MAXIMUM_COUNT],
     prefixed_iterators_per_keyspace: [SinglePool<DBRawIterator<'static>>; KEYSPACE_MAXIMUM_COUNT],
 }
 
+#[cfg(feature = "slatedb-backend")]
+#[derive(Default)]
+pub struct IteratorPool;
+
+#[cfg(feature = "slatedb-backend")]
+impl IteratorPool {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+#[cfg(not(feature = "slatedb-backend"))]
 impl IteratorPool {
     pub fn new() -> Self {
         Self::default()

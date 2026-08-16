@@ -10,11 +10,10 @@ use std::{
     sync::atomic::Ordering,
 };
 
-use rocksdb::WriteBatch;
 
 use super::{MVCCKey, StorageOperation};
 use crate::{
-    keyspace::KEYSPACE_MAXIMUM_COUNT,
+    keyspace::{KEYSPACE_MAXIMUM_COUNT, WriteBatch},
     sequence_number::SequenceNumber,
     snapshot::{buffer::OperationsBuffer, write::Write},
 };

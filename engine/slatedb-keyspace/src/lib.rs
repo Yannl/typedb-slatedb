@@ -84,6 +84,20 @@ impl KeyspaceSet {
     /// Local development passes a filesystem or in-memory store; production passes R2 through
     /// `AmazonS3Builder`, since R2 speaks the S3 API. The call site is identical, which is
     /// where dev/production parity for the storage seam actually comes from.
+    /// Open against a local directory.
+    ///
+    /// Exists so callers can run the SlateDB lane without taking an `object_store` dependency
+    /// of their own, and without credentials. It is the same code path as `open` — a local
+    /// filesystem is just another `ObjectStore` — so a bug here is a bug in the cloud path
+    /// too, which is exactly the property that makes local testing worth anything.
+    pub fn open_local(path: &std::path::Path) -> Result<Self, KeyspaceError> {
+        std::fs::create_dir_all(path)
+            .map_err(|error| KeyspaceError::Open(format!("could not create {}: {error}", path.display())))?;
+        let store = object_store::local::LocalFileSystem::new_with_prefix(path)
+            .map_err(|error| KeyspaceError::Open(error.to_string()))?;
+        Self::open("typedb", Arc::new(store))
+    }
+
     pub fn open(
         path: &str,
         object_store: Arc<dyn object_store::ObjectStore>,

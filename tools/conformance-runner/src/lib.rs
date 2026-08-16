@@ -129,6 +129,27 @@ pub fn stage_behaviour_corpus(workspace_root: &Path, behaviour_root: &Path) -> R
     std::fs::create_dir_all(&dest)?;
     copy_tree(behaviour_root, &dest)?;
 
+    // Two behaviour tests resolve their fixture the Bazel way and only the Bazel way.
+    //
+    // `tests/behaviour/concept/migration/data_validation.rs` L11-14 and `migration.rs`
+    // L11-14 call `Context::test("../typedb_behaviour+/…")` under a comment that says
+    // "Bazel specific path: … a directory that is a sibling to the working directory".
+    // Every other behaviour entry point carries a `#[cfg(not(feature = "bazel"))]`
+    // alternative; these two do not, so under Cargo they can never find their feature files
+    // and fail with "Could not read path" no matter what is staged under `bazel-typedb/`.
+    //
+    // Staging the same corpus at the sibling path as well satisfies both conventions and
+    // keeps every upstream test source byte-identical. See CR-A-07.
+    if let Some(parent) = workspace_root.parent() {
+        let sibling = parent.join("typedb_behaviour+");
+        if sibling.exists() {
+            std::fs::remove_dir_all(&sibling)
+                .with_context(|| format!("clearing stale fixture at {}", sibling.display()))?;
+        }
+        std::fs::create_dir_all(&sibling)?;
+        copy_tree(behaviour_root, &sibling)?;
+    }
+
     // Prove the staging worked rather than assuming it: a missing fixture must fail the
     // run, not turn into a test that quietly asserts on an absent file.
     let probe = dest.join("connection/database.feature");
@@ -286,13 +307,19 @@ pub fn run_target(ctx: &RunContext, catalog: &Catalog, target: &Target) -> Resul
         argv.push(target.features.join(","));
     }
     if !is_bench {
-        // libtest's own arguments: exact, machine-readable, no capture.
-        argv.extend([
-            "--".into(),
-            "--test-threads".into(),
-            "1".into(),
-            "--nocapture".into(),
-        ]);
+        argv.extend(["--".into(), "--test-threads".into(), "1".into()]);
+        // `--nocapture` only where the output *is* the data.
+        //
+        // Cucumber targets need it: the scenario results exist nowhere else. Plain libtest
+        // targets must not have it, because it interleaves a test's own stdout into the
+        // status line — `test foo ... ` followed by whatever the test printed, with the real
+        // verdict lines away. That parsed as a case whose status was "Insert Vertex:" and
+        // produced 15 spurious Unknowns across the executor suites. With capture on, libtest
+        // prints `test foo ... ok` cleanly and still reports failure output under
+        // `failures:`, so nothing diagnostic is lost.
+        if target.case_discovery == CaseDiscovery::CucumberScenarios {
+            argv.push("--nocapture".into());
+        }
     }
 
     let cwd = ctx.workspace_root.clone();

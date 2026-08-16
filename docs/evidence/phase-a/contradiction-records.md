@@ -191,6 +191,44 @@ is the baseline it will be held to, whatever that outcome is.
 
 ---
 
+## CR-A-07 — Two behaviour tests resolve fixtures the Bazel way and only the Bazel way
+
+**Contract claim.** CR-A-03 established that behaviour tests carry both a Bazel and a
+non-Bazel fixture path, and that staging the corpus at
+`bazel-typedb/external/typedb_behaviour+/` therefore satisfies the Cargo lane while keeping
+every upstream source byte-identical. Brief §22.5 depends on that being true corpus-wide.
+
+**Observed.** It is not true of two of them. `tests/behaviour/concept/migration/
+data_validation.rs` L11-14 and `migration.rs` L11-14 read:
+
+```rust
+// Bazel specific path: when running the test in bazel, the external data from
+// @typedb_behaviour is stored in a directory that is a sibling to
+// the working directory.
+assert!(Context::test("../typedb_behaviour+/concept/migration/data-validation.feature", true).await);
+```
+
+There is no `#[cfg(not(feature = "bazel"))]` alternative — unlike, say,
+`connection/database.rs` L17-23, which has both. Under Cargo these two can never find their
+feature files, and the first corrected U0 run failed them with `Failed to parse feature:
+Could not read path: ../typedb_behaviour+/concept/migration/data-validation.feature`. The
+harness exits 101 and produces zero scenarios, so the 1 877 catalogued scenarios of
+`test_concept` and 1 773 of `test_query` were reported as unattributable rather than as
+passes.
+
+**Correction.** The runner stages the same pinned corpus at both conventions: under
+`bazel-typedb/external/typedb_behaviour+/` for the non-Bazel branch, and as a sibling of the
+workspace directory for these two. No upstream source is edited, so the byte-identical
+classification survives; the launcher supplies what Bazel used to, which is what launcher
+adaptation means.
+
+**Impact.** Without it, two features (`concept/migration/data-validation.feature` and
+`migration.feature`) are unreachable under Cargo, and — because a non-zero exit with no
+failing scenario is deliberately unattributable — they poison the verdict for the two largest
+behaviour targets rather than failing quietly on their own.
+
+---
+
 ## CR-A-05 — A decoy Rust version in the dependencies repo (no contract change)
 
 Recorded because it is the kind of anchor that looks authoritative and is not.

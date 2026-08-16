@@ -519,11 +519,21 @@ pub fn generate(inputs: &CatalogInputs<'_>) -> Result<CatalogOutput> {
                         inputs.behaviour_root.display()
                     );
                 };
+                // A scenario name is not unique within a feature file. `relationtype.feature`
+                // declares "Relation type cannot unset ordering if @distinct annotation is
+                // set" at both L3008 and L3036, and Cucumber runs both. Keying the leaf id
+                // on the name alone collapsed them into one, so the catalogue under-counted
+                // and the second run of each name came back as an uncatalogued case.
+                // Disambiguating by line keeps the id stable across runs and distinct per
+                // declaration.
+                let mut seen_names: BTreeMap<&str, usize> = BTreeMap::new();
                 for s in list {
-                    let suffix = if s.example_row > 0 {
-                        format!("#{}", s.example_row)
-                    } else {
-                        String::new()
+                    let occurrence = seen_names.entry(s.name.as_str()).or_default();
+                    *occurrence += 1;
+                    let suffix = match (s.example_row, *occurrence) {
+                        (row, _) if row > 0 => format!("#{row}"),
+                        (_, 1) => String::new(),
+                        (_, n) => format!("@{}#{n}", s.line),
                     };
                     leaf_cases.push(LeafCase {
                         leaf_case_id: format!("{target_id}::{}::{}{}", feature, s.name, suffix),

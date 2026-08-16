@@ -34,7 +34,7 @@ Every WAL/MVCCStorage construction site in the fork, with routing classification
 | storage/tests/test_recovery.rs | 138 | `let wal_result = WAL::load(&storage_path, FsyncMetrics::disabled());` | UPSTREAM-TEST-PINNED (direct construction inside an upstream test; profile switching for these lands via port ledger at TB-P7/BT-P5) |
 | storage/tests/test_recovery.rs | 165 | `let wal_result = WAL::load(&storage_path, FsyncMetrics::disabled());` | UPSTREAM-TEST-PINNED (direct construction inside an upstream test; profile switching for these lands via port ledger at TB-P7/BT-P5) |
 | storage/tests/test_recovery.rs | 194 | `let wal_result = WAL::load(&storage_path, FsyncMetrics::disabled());` | UPSTREAM-TEST-PINNED (direct construction inside an upstream test; profile switching for these lands via port ledger at TB-P7/BT-P5) |
-| encoding/benches/benchmark.rs | 45 | `let wal = WAL::create(&storage_path, FsyncMetrics::disabled()).unwrap();` | UNCLASSIFIED |
+| encoding/benches/benchmark.rs | 45 | `let wal = WAL::create(&storage_path, FsyncMetrics::disabled()).unwrap();` | BENCH |
 | encoding/tests/test_utils_encoding.rs | 19 | `let wal = WAL::create(&storage_path, FsyncMetrics::disabled()).unwrap();` | UPSTREAM-TEST-PINNED (direct construction inside an upstream test; profile switching for these lands via port ledger at TB-P7/BT-P5) |
 | encoding/tests/test_utils_encoding.rs | 22 | `MVCCStorage::create::<EncodingKeyspace>("db_storage", &storage_path, WALClient::new(wal), ` | UPSTREAM-TEST-PINNED (direct construction inside an upstream test; profile switching for these lands via port ledger at TB-P7/BT-P5) |
 | encoding/tests/test_attribute_vertex.rs | 430 | `let wal = WAL::create(&storage_path, FsyncMetrics::disabled()).unwrap();` | UPSTREAM-TEST-PINNED (direct construction inside an upstream test; profile switching for these lands via port ledger at TB-P7/BT-P5) |
@@ -48,9 +48,9 @@ Every WAL/MVCCStorage construction site in the fork, with routing classification
 | encoding/tests/test_type_vertex.rs | 173 | `let wal = WAL::load(&storage_path, FsyncMetrics::disabled()).unwrap();` | UPSTREAM-TEST-PINNED (direct construction inside an upstream test; profile switching for these lands via port ledger at TB-P7/BT-P5) |
 | encoding/tests/test_type_vertex.rs | 196 | `let wal = WAL::load(&storage_path, FsyncMetrics::disabled()).unwrap();` | UPSTREAM-TEST-PINNED (direct construction inside an upstream test; profile switching for these lands via port ledger at TB-P7/BT-P5) |
 | encoding/tests/test_type_vertex.rs | 234 | `let wal = WAL::load(&storage_path, FsyncMetrics::disabled()).unwrap();` | UPSTREAM-TEST-PINNED (direct construction inside an upstream test; profile switching for these lands via port ledger at TB-P7/BT-P5) |
-| function/function_manager.rs | 625 | `let wal = WAL::create(&storage_path, FsyncMetrics::disabled()).unwrap();` | UNCLASSIFIED |
-| compiler/annotation/mod.rs | 387 | `let wal = WAL::create(&storage_path, FsyncMetrics::disabled()).unwrap();` | UNCLASSIFIED |
+| function/function_manager.rs | 625 | `let wal = WAL::create(&storage_path, FsyncMetrics::disabled()).unwrap();` | UPSTREAM-TEST-PINNED (cfg(test) unit test) |
+| compiler/annotation/mod.rs | 387 | `let wal = WAL::create(&storage_path, FsyncMetrics::disabled()).unwrap();` | UPSTREAM-TEST-PINNED (cfg(test) unit test) |
 
-Unclassified: 3
+Unclassified: 0 (gate satisfied)
 
 Profile matrix: U0/U1 available (RocksDB + file WAL oracle); U2/U3/U4 fail closed with StorageFactoryError::ProfileUnavailable. Selection env: TYPEDB_STORAGE_PROFILE (invalid values are a typed error, never a silent default).

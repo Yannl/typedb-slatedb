@@ -26,7 +26,9 @@
       "title": "rustfmt nightly/2026-04-15 not installed",
       "detail": "Declared by TB for fmt checks only; not required for build/test correctness. Install before running upstream fmt static checks.",
       "blocks": "G1 static-check lane",
-      "owner": "build-evidence"
+      "owner": "build-evidence",
+      "status": "CLOSED",
+      "resolution": "rustup toolchain nightly-2026-04-15 (rustc 1.97.0-nightly a5c825cd8) installed; all 141 catalogue STATIC_CHECK cases executed in the cargo lane via tools/catalog/run_static.py - 141 PASS, 0 FAIL (docs/evidence/G3/static-checks.json). checkstyle semantics (RegexpHeader multiLines=[1,2] + FileTabCharacter) reimplemented from the pinned typedb_dependencies rule; rustfmt via rules_rust-equivalent per-package --check with the workspace rustfmt.toml."
     },
     {
       "id": "SI-G0-5",

@@ -288,8 +288,8 @@ impl Database<WALClient> {
 
         fs::create_dir(path).map_err(|source| DirectoryCreate { name: name.to_string(), source: Arc::new(source) })?;
 
-        let factory = StorageFactory::resolve_from_env()
-            .map_err(|source| DatabaseOpenError::StorageFactory { source })?;
+        let factory =
+            StorageFactory::resolve_from_env().map_err(|source| DatabaseOpenError::StorageFactory { source })?;
         let wal = factory.create_wal(path, wal_metrics).map_err(|error| match error {
             StorageFactoryError::WalOpen { source } => WALOpen { source },
             other => DatabaseOpenError::StorageFactory { source: other },
@@ -369,8 +369,8 @@ impl Database<WALClient> {
         );
 
         event!(Level::TRACE, "Loading database '{}' WAL.", &name);
-        let factory = StorageFactory::resolve_from_env()
-            .map_err(|source| DatabaseOpenError::StorageFactory { source })?;
+        let factory =
+            StorageFactory::resolve_from_env().map_err(|source| DatabaseOpenError::StorageFactory { source })?;
         let wal = match factory.load_wal(path, wal_metrics) {
             Ok(wal) => wal,
             Err(StorageFactoryError::WalOpen {

@@ -13,8 +13,9 @@ use std::{
     fs, io,
     path::{Path, PathBuf},
     sync::{
-        Arc, mpsc,
+        Arc,
         atomic::{AtomicU64, Ordering},
+        mpsc,
     },
     thread::sleep,
     time::Duration,

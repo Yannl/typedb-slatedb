@@ -39,8 +39,7 @@ impl RawCursor {
         // SAFETY: see the type invariant above — the iterator borrows the
         // heap-stable `DB` owned by `db`, which is moved into `self` alongside
         // it and strictly outlives it.
-        let iterator =
-            unsafe { std::mem::transmute::<DBRawIterator<'_>, DBRawIterator<'static>>(iterator) };
+        let iterator = unsafe { std::mem::transmute::<DBRawIterator<'_>, DBRawIterator<'static>>(iterator) };
         Self { iterator, db }
     }
 

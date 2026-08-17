@@ -173,10 +173,20 @@ impl SlateKeyspace {
     }
 
     /// Exact `(key_count, total_bytes)` for this keyspace. O(n) — see the engine's `stats`.
+    ///
+    /// Use [`Self::estimated_stats`] for anything polled on a timer.
     pub(crate) fn stats(&self) -> Result<(u64, u64), SlateKeyspaceError> {
         self.store
             .keyspace(self.slate_id())
             .stats()
+            .map_err(|source| SlateKeyspaceError { name: self.name, source })
+    }
+
+    /// `(key_count, total_bytes)` for this keyspace, memoized by the engine.
+    pub(crate) fn estimated_stats(&self) -> Result<(u64, u64), SlateKeyspaceError> {
+        self.store
+            .keyspace(self.slate_id())
+            .estimated_stats()
             .map_err(|source| SlateKeyspaceError { name: self.name, source })
     }
 
@@ -201,6 +211,44 @@ impl SlateKeyspace {
         // The iterator borrows the store, so the guard keeps it alive for the cursor's life.
         SlateRangeIterator::new(store, id, from, self.name)
     }
+}
+
+/// Apply the batches for every keyspace a commit touches as a *single* store write.
+///
+/// This is the difference between one Class A operation per commit and one per keyspace the
+/// commit happens to touch, and it is the highest-frequency path in the system.
+///
+/// Upstream loops: `Keyspaces::write` calls `Keyspace::write` once per keyspace, because on
+/// RocksDB each keyspace is a separate database and there is no other option. Reproducing that
+/// loop against SlateDB would keep the shape while discarding the reason for it — every
+/// keyspace here lives in one store, so N calls are N writes to the same place. TypeDB defines
+/// eight keyspaces and a schema-touching commit writes several at once, so the loop costs
+/// close to an order of magnitude in write operations on the hottest path, and buys nothing.
+///
+/// The resulting cross-keyspace atomicity is a consequence rather than a goal. It is safe in
+/// the direction that matters: a commit landing whole rather than in pieces leaves strictly
+/// less for TypeDB's WAL replay to reconcile, and no correct caller can depend on observing a
+/// partial commit it would have had to repair anyway.
+pub(crate) fn write_coalesced(
+    store: &SharedStore,
+    batches: impl IntoIterator<Item = (SlateKeyspaceId, SlateWriteBatch)>,
+) -> Result<(), SlateKeyspaceError> {
+    let mut combined = SlateBatch::new();
+    for (id, batch) in batches {
+        for (key, value) in &batch.puts {
+            combined.put(id, key, value);
+        }
+    }
+    // An all-empty commit is a successful no-op, as it is on RocksDB. `WriteBatches` really
+    // does produce them: a batch whose writes are all `Write::Put` with `reinsert == false`
+    // emits no puts at all (`write_batches.rs` L38-42). The engine's `write` absorbs this, but
+    // relying on that silently would leave the guarantee undocumented at the site that needs
+    // it — without it, three concurrency tests fail with a storage error rather than the
+    // conflict they were written to detect.
+    //
+    // The write spans keyspaces, so no single one is at fault when it fails; naming the store
+    // is more honest than attributing the failure to whichever keyspace happened to be first.
+    store.write(combined).map_err(|source| SlateKeyspaceError { name: "<store>", source })
 }
 
 /// A batch of writes destined for a single keyspace.
@@ -236,14 +284,20 @@ impl SlateWriteBatch {
 /// Owning cursor over one keyspace.
 ///
 /// Upstream's `DBIterator` pools `DBRawIterator<'static>` and reaches `'static` through an
-/// `unsafe transmute` of a borrow into the pool (`keyspace/mod.rs` L36-45). That trick is not
-/// reproduced: it is sound there only because the pool outlives every iterator it hands out,
-/// and re-deriving that argument for a different store is exactly the kind of reasoning that
-/// silently stops holding. This cursor owns an `Arc` to the store instead, which costs one
-/// refcount per iterator and needs no unsafe at all.
+/// `unsafe transmute` of a borrow into the pool (`keyspace/mod.rs` L36-45). Nothing equivalent
+/// is needed here, and the reason is worth stating because the obvious reading of the engine's
+/// API suggests otherwise: `slatedb::DbIterator` carries no lifetime parameter at all — it
+/// borrows nothing from the `Db` that produced it — so the engine's cursor owns an `Arc` to
+/// the runtime and is already `'static`. There is no borrow to launder.
+///
+/// An earlier version of this file did transmute a `&KeyspaceSet` to `&'static` to satisfy a
+/// lifetime the engine no longer asks for. It was sound, by an argument about field drop
+/// order that had to be re-derived by every future reader. Deleting the borrow was cheaper
+/// than maintaining the argument.
 pub(crate) struct SlateRangeIterator {
-    // Field order matters: `iterator` borrows from `store`, so it must drop first.
-    iterator: slatedb_keyspace::KeyspaceIterator<'static>,
+    iterator: slatedb_keyspace::KeyspaceIterator,
+    /// Keeps the store open for the cursor's life. The cursor no longer borrows from it, but
+    /// dropping the last handle would still close the database out from under an open scan.
     _store: SharedStore,
     keyspace_name: &'static str,
     finished: bool,
@@ -256,12 +310,7 @@ impl SlateRangeIterator {
         from: &[u8],
         keyspace_name: &'static str,
     ) -> Result<Self, SlateKeyspaceError> {
-        // SAFETY: `iterator` borrows from the `KeyspaceSet` inside `store`, and `store` is an
-        // owned `Arc` field of this struct that is dropped *after* `iterator` (declaration
-        // order above). The referent therefore outlives the borrow. The `Arc` is never handed
-        // out or mutated, so the address is stable for the struct's lifetime.
-        let borrowed: &'static KeyspaceSet = unsafe { std::mem::transmute(store.as_ref()) };
-        let iterator = borrowed
+        let iterator = store
             .keyspace(id)
             .iterate_from(from)
             .map_err(|source| SlateKeyspaceError { name: keyspace_name, source })?;

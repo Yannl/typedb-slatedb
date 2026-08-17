@@ -12,6 +12,8 @@
 pub enum KeyspaceError {
     #[error("opening the keyspace set failed: {0}")]
     Open(String),
+    #[error("storage configuration is invalid: {0}")]
+    Config(String),
     #[error("put failed: {0}")]
     Put(String),
     #[error("get failed: {0}")]

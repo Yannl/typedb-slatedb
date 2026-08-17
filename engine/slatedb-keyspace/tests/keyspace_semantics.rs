@@ -11,7 +11,7 @@
 use std::sync::Arc;
 
 use object_store::{local::LocalFileSystem, ObjectStore};
-use slatedb_keyspace::{Batch, KeyspaceId, KeyspaceSet};
+use slatedb_keyspace::{Backend, Batch, KeyspaceId, KeyspaceSet, StoreConfig, Tuning};
 
 fn open() -> (KeyspaceSet, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
@@ -268,4 +268,145 @@ fn a_write_is_visible_immediately_and_survives_dropping_its_durability_handle() 
         64,
         "writes acknowledged before flush must survive the explicit barrier"
     );
+}
+
+// ---------------------------------------------------------------------------------------
+// Cost and lifetime properties.
+//
+// These check the shape of the work done rather than the answer produced. That is unusual for
+// a test suite, and deliberate: against object storage the difference between an O(1) and an
+// O(n) implementation of the same correct function is the difference between a viable service
+// and an unaffordable one, and nothing else in the corpus would notice the substitution.
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn store_size_is_answered_from_the_manifest_without_scanning() {
+    // A small L0 threshold so a modest write actually produces an SST; the default is 64 MB,
+    // which no reasonable test would reach.
+    let dir = tempfile::tempdir().unwrap();
+    let mut tuning = Tuning::local();
+    tuning.l0_sst_size_bytes = 64 * 1024;
+    let set = KeyspaceSet::open_with(
+        StoreConfig { backend: Backend::Local { path: dir.path().to_path_buf() }, tuning },
+    )
+    .unwrap();
+
+    assert_eq!(set.size_bytes(), 0, "an empty store occupies nothing");
+
+    let mut batch = Batch::new();
+    for i in 0u32..4000 {
+        batch.put(KeyspaceId(0), &i.to_be_bytes(), &[b'v'; 64]);
+    }
+    set.write(batch).unwrap();
+    set.flush().unwrap();
+
+    // The memtable is promoted to an L0 SST asynchronously, so poll rather than assume it has
+    // happened by the time `flush` returns.
+    let mut size = 0;
+    for _ in 0..100 {
+        size = set.size_bytes();
+        if size > 0 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(size > 0, "a store holding 4000 entries should report a non-zero size, got {size}");
+}
+
+#[test]
+fn a_polled_estimate_is_memoized_while_the_exact_count_is_not() {
+    // The property that matters for cost: TypeDB polls this every 15 seconds, so repeating the
+    // scan on every call is what must not happen. A long TTL makes "did it recompute?"
+    // observable — the estimate must ignore writes the exact scan still sees.
+    let dir = tempfile::tempdir().unwrap();
+    let set = KeyspaceSet::open_local(dir.path())
+        .unwrap()
+        .with_estimate_ttl(std::time::Duration::from_secs(3600));
+    let keyspace = set.keyspace(KeyspaceId(0));
+
+    for i in 0u8..3 {
+        keyspace.put(&[i], b"v").unwrap();
+    }
+    assert_eq!(keyspace.estimated_stats().unwrap().0, 3);
+
+    for i in 3u8..8 {
+        keyspace.put(&[i], b"v").unwrap();
+    }
+    assert_eq!(
+        keyspace.estimated_stats().unwrap().0,
+        3,
+        "a memoized estimate inside its TTL must not pay for a second scan"
+    );
+    assert_eq!(
+        keyspace.stats().unwrap().0,
+        8,
+        "the exact count is never memoized, so it sees every write"
+    );
+}
+
+#[test]
+fn an_expired_estimate_is_recomputed() {
+    let dir = tempfile::tempdir().unwrap();
+    let set =
+        KeyspaceSet::open_local(dir.path()).unwrap().with_estimate_ttl(std::time::Duration::ZERO);
+    let keyspace = set.keyspace(KeyspaceId(0));
+
+    keyspace.put(b"a", b"v").unwrap();
+    assert_eq!(keyspace.estimated_stats().unwrap().0, 1);
+    keyspace.put(b"b", b"v").unwrap();
+    assert_eq!(
+        keyspace.estimated_stats().unwrap().0,
+        2,
+        "a zero TTL means every call recomputes, so the memo must not become a leak"
+    );
+}
+
+#[test]
+fn clearing_more_than_one_chunk_removes_everything_and_spares_siblings() {
+    // Above the engine's per-batch chunk limit, so the clear must span several batches. A
+    // single-batch implementation passes every smaller test and then holds an entire keyspace
+    // in memory the first time one gets large.
+    const KEYS: u32 = 25_000;
+
+    let dir = tempfile::tempdir().unwrap();
+    let set = KeyspaceSet::open_local(dir.path()).unwrap();
+
+    let mut batch = Batch::new();
+    for i in 0..KEYS {
+        batch.put(KeyspaceId(0), &i.to_be_bytes(), b"v");
+    }
+    batch.put(KeyspaceId(1), b"survivor", b"v");
+    set.write(batch).unwrap();
+
+    let cleared = set.keyspace(KeyspaceId(0)).clear().unwrap();
+    assert_eq!(cleared as u32, KEYS, "every key must be counted exactly once across chunks");
+    assert_eq!(set.keyspace(KeyspaceId(0)).stats().unwrap().0, 0);
+    assert_eq!(
+        set.keyspace(KeyspaceId(1)).get(b"survivor").unwrap().as_deref(),
+        Some(&b"v"[..]),
+        "a chunked clear must still respect the keyspace boundary"
+    );
+}
+
+#[test]
+fn a_cursor_is_independent_of_the_handle_that_opened_it() {
+    // `set.keyspace(id)` is a temporary. A cursor that borrowed it would not survive the end of
+    // the expression, which is what previously forced a caller wanting to store one to
+    // transmute a borrow to `'static`. Holding cursors in a collection is the cheapest way to
+    // state that the borrow is gone: this does not compile if `KeyspaceIterator` regains a
+    // lifetime parameter.
+    let dir = tempfile::tempdir().unwrap();
+    let set = KeyspaceSet::open_local(dir.path()).unwrap();
+    for i in 0u8..4 {
+        set.keyspace(KeyspaceId(0)).put(&[i], b"v").unwrap();
+        set.keyspace(KeyspaceId(1)).put(&[i], b"w").unwrap();
+    }
+
+    let mut cursors: Vec<slatedb_keyspace::KeyspaceIterator> = vec![
+        set.keyspace(KeyspaceId(0)).iterate_from(&[]).unwrap(),
+        set.keyspace(KeyspaceId(1)).iterate_from(&[]).unwrap(),
+    ];
+
+    assert_eq!(cursors[0].advance().unwrap(), Some((&[0u8][..], &b"v"[..])));
+    assert_eq!(cursors[1].advance().unwrap(), Some((&[0u8][..], &b"w"[..])));
 }

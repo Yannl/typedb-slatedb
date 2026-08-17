@@ -19,7 +19,11 @@ use resource::profile::StorageCounters;
 use rocksdb::{DB, IteratorMode, Options, ReadOptions, WriteOptions, checkpoint::Checkpoint};
 use serde::{Deserialize, Serialize};
 
-use super::{IteratorPool, WriteBatch, constants, iterator};
+use super::{IteratorPool, WriteBatch, iterator};
+// Only the RocksDB lane reads store properties by name; the SlateDB lane answers the same two
+// questions from its manifest and its memo.
+#[cfg(not(feature = "slatedb-backend"))]
+use super::constants;
 use crate::{key_range::KeyRange, keyspace::rocks_resources::RocksResources, write_batches::WriteBatches};
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -87,12 +91,19 @@ impl Keyspaces {
         // and opening N stores would multiply object-store round trips and manifest traffic
         // for no benefit.
         //
-        // A local filesystem object store is used here so the lane is runnable without cloud
-        // credentials. Pointing this at R2 is a one-line change at exactly this call site —
-        // which is the point of routing everything through `object_store`.
+        // R2 when the environment configures it, a local filesystem object store otherwise, so
+        // the lane stays runnable without cloud credentials and the two differ only in which
+        // `ObjectStore` is constructed. `storage_dir` names the prefix within the bucket as
+        // well as the local directory, which is what lets several databases share one bucket
+        // without either seeing the other's objects.
+        //
+        // A half-configured environment fails here rather than falling back — see
+        // `StoreConfig::from_env`. A deployment that meant to use R2 and mistyped one variable
+        // would otherwise come up on the container's local disk, pass every health check, and
+        // lose the database when the container was replaced.
         #[cfg(feature = "slatedb-backend")]
         let store: super::slate::SharedStore = std::sync::Arc::new(
-            slatedb_keyspace::KeyspaceSet::open_local(path)
+            slatedb_keyspace::KeyspaceSet::open_from_env(path, &Self::store_prefix(path))
                 .map_err(|error| KeyspaceOpenError::SlateDB { source: error.to_string() })?,
         );
 
@@ -113,6 +124,22 @@ impl Keyspaces {
             keyspaces.index[keyspace.id().0 as usize] = Some(KeyspaceId(keyspaces.keyspaces.len() as u8 - 1));
         }
         Ok(keyspaces)
+    }
+
+    /// The prefix a database's objects live under inside the bucket.
+    ///
+    /// Derived from the storage directory's final component — the database name — so that the
+    /// bucket layout mirrors the on-disk layout and two databases in one bucket cannot collide.
+    /// A directory with no final component (a bare root) falls back to a fixed name rather than
+    /// an empty prefix, because an empty prefix would place one database's objects at the
+    /// bucket root where every other database's `LIST` would see them.
+    #[cfg(feature = "slatedb-backend")]
+    fn store_prefix(path: &Path) -> String {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .filter(|name| !name.is_empty())
+            .unwrap_or("typedb")
+            .to_string()
     }
 
     fn validate_new_keyspace(&self, keyspace_id: impl KeyspaceSet) -> Result<(), KeyspaceValidationError> {
@@ -147,12 +174,26 @@ impl Keyspaces {
         &self.keyspaces[keyspace_index.0 as usize]
     }
 
+    #[cfg(not(feature = "slatedb-backend"))]
     pub(crate) fn write(&self, write_batches: WriteBatches) -> Result<(), KeyspaceError> {
         for (index, write_batch) in write_batches.into_iter() {
             debug_assert!(index < KEYSPACE_MAXIMUM_COUNT);
             self.get(KeyspaceId(index as u8)).write(write_batch)?;
         }
         Ok(())
+    }
+
+    /// One commit, one store write — see `slate::write_coalesced` for why the loop above is
+    /// not reproduced here.
+    #[cfg(feature = "slatedb-backend")]
+    pub(crate) fn write(&self, write_batches: WriteBatches) -> Result<(), KeyspaceError> {
+        let Some(first) = self.keyspaces.first() else { return Ok(()) };
+        let batches = write_batches.into_iter().map(|(index, write_batch)| {
+            debug_assert!(index < KEYSPACE_MAXIMUM_COUNT);
+            (slatedb_keyspace::KeyspaceId(index as u8), write_batch)
+        });
+        super::slate::write_coalesced(&first.store, batches)
+            .map_err(|source| KeyspaceError::BatchWrite { name: source.name, source })
     }
 
     #[cfg(not(feature = "slatedb-backend"))]
@@ -217,11 +258,23 @@ impl Keyspaces {
         Ok(())
     }
 
+    #[cfg(not(feature = "slatedb-backend"))]
     pub fn estimate_size_in_bytes(&self) -> Result<u64, KeyspaceError> {
         self.keyspaces.iter().try_fold(0, |total, keyspace| {
             let size = keyspace.estimate_size_in_bytes()?;
             Ok(total + size)
         })
+    }
+
+    /// The store's size, read once from the manifest rather than summed over keyspaces.
+    ///
+    /// Summing per-keyspace figures is the right shape on RocksDB, where each keyspace is its
+    /// own database with its own properties. Here they share one store and one manifest, so
+    /// asking it once is both cheaper and the only version that cannot double-count.
+    #[cfg(feature = "slatedb-backend")]
+    pub fn estimate_size_in_bytes(&self) -> Result<u64, KeyspaceError> {
+        let Some(first) = self.keyspaces.first() else { return Ok(0) };
+        Ok(first.store.size_bytes())
     }
 
     pub fn estimate_key_count(&self) -> Result<u64, KeyspaceError> {
@@ -543,24 +596,37 @@ impl Keyspace {
             .map(|result_opt| result_opt.unwrap_or(0))
     }
 
-    /// RocksDB answers both from table properties in constant time and calls them estimates.
-    /// SlateDB exposes no equivalent property, so these scan and are exact.
+    /// This keyspace's share of the store, by scanning it.
     ///
-    /// Exact-but-O(n) rather than a fabricated constant: these feed diagnostics, where a wrong
-    /// number is indistinguishable from a right one and so silently misleads. The cost is real
-    /// and documented on the engine's `stats` rather than hidden behind the word "estimate".
+    /// Prefer `Keyspaces::estimate_size_in_bytes`, which answers for the whole store from the
+    /// manifest without touching the data at all. This per-keyspace form has no such shortcut
+    /// — the manifest records each SST's size but does not expose its key range, so there is
+    /// nothing to attribute a share from — and it is kept only for symmetry with the RocksDB
+    /// lane. Nothing in TypeDB calls it on this lane.
     #[cfg(feature = "slatedb-backend")]
     pub fn estimate_size_in_bytes(&self) -> Result<u64, KeyspaceError> {
         super::slate::SlateKeyspace::from_parts(self)
-            .stats()
+            .estimated_stats()
             .map(|(_, bytes)| bytes)
             .map_err(|source| KeyspaceError::Get { name: self.name, source })
     }
 
+    /// Live keys in this keyspace, memoized.
+    ///
+    /// RocksDB answers this from table properties in constant time and calls it an estimate.
+    /// SlateDB records per-SST row counts in each SST's stats block but does not expose them
+    /// publicly, so from outside the crate the only way to count live keys is to scan.
+    ///
+    /// That makes *when* it is asked the design question rather than how it is computed.
+    /// TypeDB's diagnostics loop polls it every 15 seconds (`DATABASE_METRICS_UPDATE_INTERVAL`),
+    /// and a scan on that schedule is a permanent full-speed pass over the database — free
+    /// enough against RocksDB's local files to go unnoticed, and against object storage a
+    /// continuous transfer of the whole store, billed per request. The engine therefore
+    /// memoizes the result; see `slatedb-keyspace`'s `estimated_stats`.
     #[cfg(feature = "slatedb-backend")]
     pub fn estimate_key_count(&self) -> Result<u64, KeyspaceError> {
         super::slate::SlateKeyspace::from_parts(self)
-            .stats()
+            .estimated_stats()
             .map(|(keys, _)| keys)
             .map_err(|source| KeyspaceError::Get { name: self.name, source })
     }

@@ -4,6 +4,15 @@ version = "0.1.0"
 edition = "2021"
 license = "MPL-2.0"
 
+[features]
+default = ["compression"]
+# SlateDB's WAL can be switched off entirely, leaving TypeDB's `durability` WAL as the only
+# log — matching upstream's `disable_wal(true)` on RocksDB. See `config::Tuning::wal_enabled`.
+wal_disable = ["slatedb/wal_disable"]
+# Zstd for SST blocks. Worth its cost on a text-heavy knowledge base: it shrinks stored bytes,
+# transfer time and block-cache footprint alike.
+compression = ["slatedb/zstd"]
+
 [dependencies]
 slatedb = { path = "../../sources/slatedb/slatedb" }
 uuid = "1"

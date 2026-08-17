@@ -1,0 +1,42 @@
+{
+  "audited_a_commit": "e20cff50081b9ae4b3c5f88e6d4ef89a88b06585",
+  "a_fork": {
+    "targets": 296,
+    "leaf_cases": 4353,
+    "leaf_kinds": {
+      "STATIC_CHECK": 143,
+      "SCRIPT": 8,
+      "CUCUMBER": 4158,
+      "FAILPOINT": 44
+    },
+    "exclusions": 40,
+    "source_lock_digest": "3e360b23842d602d60a0ccae6b638124a3f97f4e4667e6403acf7dac325d9575",
+    "provenance": "fork-tree (hash_tree of A/fork/typedb)"
+  },
+  "donor_fork_baseline": {
+    "targets": 296,
+    "leaf_cases": 4353,
+    "leaf_kinds": {
+      "STATIC_CHECK": 143,
+      "SCRIPT": 8,
+      "CUCUMBER": 4158,
+      "FAILPOINT": 44
+    }
+  },
+  "delta": {
+    "targets_a_only": 0,
+    "targets_donor_only": 0,
+    "leaves_a_only": 0,
+    "leaves_donor_only": 0
+  },
+  "unknown_macros": 0,
+  "unparsed_build_files": 0,
+  "profiles": [
+    "U0",
+    "U1",
+    "U2",
+    "U3",
+    "U4"
+  ],
+  "note": "Target and leaf SETS are identical between A fork and donor fork (zero semantic delta at the denominator level). Counts are the STATIC denominator; pass/fail requires the executing stage, not run here."
+}

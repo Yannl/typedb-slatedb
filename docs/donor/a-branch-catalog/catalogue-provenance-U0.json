@@ -1,0 +1,6 @@
+{
+  "source_lock_digest": "3e360b23842d602d60a0ccae6b638124a3f97f4e4667e6403acf7dac325d9575",
+  "provenance": "fork-tree",
+  "note": "digest is hash_tree(fork_root), a recomputable content hash of the fork checkout — NOT the 14-node pinned source-graph digest",
+  "fork_root": "/home/user/a-branch/fork/typedb"
+}

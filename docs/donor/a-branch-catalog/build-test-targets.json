@@ -1,0 +1,4847 @@
+[
+  {
+    "label": "//:release-validate-deps",
+    "rule": "release_validate_deps",
+    "build_file": "BUILD",
+    "line": 647,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [
+      "manual"
+    ],
+    "other_attrs": {
+      "refs": [
+        "@typedb_workspace_refs//:refs.json"
+      ],
+      "tagged_deps": [
+        "@typeql+",
+        "@typedb_protocol+"
+      ],
+      "version_file": [
+        "VERSION"
+      ]
+    }
+  },
+  {
+    "label": "//:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "BUILD",
+    "line": 658,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":typedb_server_bin"
+      ]
+    }
+  },
+  {
+    "label": "//:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "BUILD",
+    "line": 669,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "*.md",
+        ".circleci/windows/*",
+        "docs/**",
+        "tools/**",
+        "Cargo.*",
+        ".bazelversion",
+        ".bazel-remote-cache.rc",
+        ".bazel-cache-credential.json",
+        ".git",
+        "LICENSE",
+        "MODULE.bazel.lock",
+        "VERSION",
+        "WORKSPACE.bazel"
+      ],
+      "include": [
+        "*",
+        ".cargo/*",
+        ".factory/*",
+        "bin/*",
+        ".circleci/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//:checkstyle_license",
+    "rule": "checkstyle_test",
+    "build_file": "BUILD",
+    "line": 691,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "include": [
+        "LICENSE"
+      ],
+      "license_type": [
+        "mpl-fulltext"
+      ]
+    }
+  },
+  {
+    "label": "//admin:test_admin_assembly",
+    "rule": "rust_test",
+    "build_file": "admin/BUILD",
+    "line": 21,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "tests/admin_assembly.rs"
+    ],
+    "data": [
+      "//:assemble-typedb-all"
+    ],
+    "env": {
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
+    },
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//admin:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "admin/BUILD",
+    "line": 37,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*",
+        "client/**"
+      ],
+      "include": [
+        "**/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//admin/client:test_crate_client",
+    "rule": "rust_test",
+    "build_file": "admin/client/BUILD",
+    "line": 34,
+    "crate_under_test": "client",
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//admin/client:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "admin/client/BUILD",
+    "line": 42,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "**/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//answer:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "answer/BUILD",
+    "line": 27,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":answer"
+      ]
+    }
+  },
+  {
+    "label": "//answer:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "answer/BUILD",
+    "line": 35,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//binary:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "binary/BUILD",
+    "line": 12,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//common/bytes:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "common/bytes/BUILD",
+    "line": 24,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":bytes"
+      ]
+    }
+  },
+  {
+    "label": "//common/bytes:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "common/bytes/BUILD",
+    "line": 32,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//common/cache:test_crate_cache",
+    "rule": "rust_test",
+    "build_file": "common/cache/BUILD",
+    "line": 27,
+    "crate_under_test": "cache",
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//common/cache:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "common/cache/BUILD",
+    "line": 35,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":cache",
+        ":test_crate_cache"
+      ]
+    }
+  },
+  {
+    "label": "//common/cache:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "common/cache/BUILD",
+    "line": 44,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//common/concurrency:test_crate_concurrency",
+    "rule": "rust_test",
+    "build_file": "common/concurrency/BUILD",
+    "line": 23,
+    "crate_under_test": "concurrency",
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//common/concurrency:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "common/concurrency/BUILD",
+    "line": 29,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":concurrency"
+      ]
+    }
+  },
+  {
+    "label": "//common/concurrency:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "common/concurrency/BUILD",
+    "line": 35,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//common/error:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "common/error/BUILD",
+    "line": 23,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":error"
+      ]
+    }
+  },
+  {
+    "label": "//common/error:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "common/error/BUILD",
+    "line": 29,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//common/fail_point:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "common/fail_point/BUILD",
+    "line": 23,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":fail_point"
+      ]
+    }
+  },
+  {
+    "label": "//common/fail_point:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "common/fail_point/BUILD",
+    "line": 31,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*",
+        "README.md"
+      ],
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//common/iterator:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "common/iterator/BUILD",
+    "line": 19,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":iterator"
+      ]
+    }
+  },
+  {
+    "label": "//common/iterator:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "common/iterator/BUILD",
+    "line": 27,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//common/lending_iterator:test_crate_lending_iterator",
+    "rule": "rust_test",
+    "build_file": "common/lending_iterator/BUILD",
+    "line": 17,
+    "crate_under_test": "lending_iterator",
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//common/lending_iterator:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "common/lending_iterator/BUILD",
+    "line": 23,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":lending_iterator"
+      ]
+    }
+  },
+  {
+    "label": "//common/lending_iterator:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "common/lending_iterator/BUILD",
+    "line": 31,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//common/logger:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "common/logger/BUILD",
+    "line": 23,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":logger"
+      ]
+    }
+  },
+  {
+    "label": "//common/logger:test_crate_logger",
+    "rule": "rust_test",
+    "build_file": "common/logger/BUILD",
+    "line": 31,
+    "crate_under_test": "logger",
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//common/logger:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "common/logger/BUILD",
+    "line": 36,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "log_panic.rs",
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//common/logger:checkstyle-copies",
+    "rule": "checkstyle_test",
+    "build_file": "common/logger/BUILD",
+    "line": 46,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [],
+      "include": [
+        "log_panic.rs"
+      ],
+      "license_type": [
+        "apache-header"
+      ]
+    }
+  },
+  {
+    "label": "//common/options:test_crate_options",
+    "rule": "rust_test",
+    "build_file": "common/options/BUILD",
+    "line": 22,
+    "crate_under_test": "options",
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//common/options:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "common/options/BUILD",
+    "line": 30,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":options",
+        ":test_crate_options"
+      ]
+    }
+  },
+  {
+    "label": "//common/options:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "common/options/BUILD",
+    "line": 39,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//common/primitive:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "common/primitive/BUILD",
+    "line": 21,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":primitive"
+      ]
+    }
+  },
+  {
+    "label": "//common/primitive:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "common/primitive/BUILD",
+    "line": 29,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//common/structural_equality:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "common/structural_equality/BUILD",
+    "line": 26,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":structural_equality"
+      ]
+    }
+  },
+  {
+    "label": "//common/structural_equality:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "common/structural_equality/BUILD",
+    "line": 34,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//compiler:test_crate_compiler",
+    "rule": "rust_test",
+    "build_file": "compiler/BUILD",
+    "line": 39,
+    "crate_under_test": "compiler",
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//compiler:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "compiler/BUILD",
+    "line": 50,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":compiler",
+        ":test_crate_compiler"
+      ]
+    }
+  },
+  {
+    "label": "//compiler:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "compiler/BUILD",
+    "line": 59,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "annotation/**/*.rs",
+        "executable/**/*.rs",
+        "transformation/**/*.rs"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//compiler/tests:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "compiler/tests/BUILD",
+    "line": 9,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":transformation"
+      ]
+    }
+  },
+  {
+    "label": "//compiler/tests:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "compiler/tests/BUILD",
+    "line": 17,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//compiler/tests:transformation",
+    "rule": "rust_test",
+    "build_file": "compiler/tests/BUILD",
+    "line": 26,
+    "crate_under_test": null,
+    "crate_root": "transformation.rs",
+    "srcs": [
+      "transformation.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//concept:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "concept/BUILD",
+    "line": 6,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":concept",
+        ":test_crate_concept"
+      ]
+    }
+  },
+  {
+    "label": "//concept:test_crate_concept",
+    "rule": "rust_test",
+    "build_file": "concept/BUILD",
+    "line": 67,
+    "crate_under_test": "concept",
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//concept:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "concept/BUILD",
+    "line": 73,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "thing/*",
+        "thing/thing_manager/**/*",
+        "type_/*",
+        "type_/type_manager/**/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//concept/benches:bench_thing_write",
+    "rule": "rust_test",
+    "build_file": "concept/benches/BUILD",
+    "line": 11,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "bench_thing_write.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "use_libtest_harness": []
+    }
+  },
+  {
+    "label": "//concept/benches:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "concept/benches/BUILD",
+    "line": 33,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":bench_thing_write"
+      ]
+    }
+  },
+  {
+    "label": "//concept/benches:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "concept/benches/BUILD",
+    "line": 41,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//concept/tests:test_statistics",
+    "rule": "rust_test",
+    "build_file": "concept/tests/BUILD",
+    "line": 40,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "test_statistics.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//concept/tests:test_thing",
+    "rule": "rust_test",
+    "build_file": "concept/tests/BUILD",
+    "line": 48,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "test_thing.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//concept/tests:test_type",
+    "rule": "rust_test",
+    "build_file": "concept/tests/BUILD",
+    "line": 56,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "test_type.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//concept/tests:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "concept/tests/BUILD",
+    "line": 67,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":test_statistics",
+        ":test_thing",
+        ":test_type",
+        ":test_utils_concept"
+      ]
+    }
+  },
+  {
+    "label": "//concept/tests:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "concept/tests/BUILD",
+    "line": 78,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//config/brew:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "config/brew/BUILD",
+    "line": 8,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//database:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "database/BUILD",
+    "line": 6,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":database",
+        ":test_crate_database"
+      ]
+    }
+  },
+  {
+    "label": "//database:test_crate_database",
+    "rule": "rust_test",
+    "build_file": "database/BUILD",
+    "line": 52,
+    "crate_under_test": "database",
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//database:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "database/BUILD",
+    "line": 58,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "migration/*.rs"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//database/tests:test_database",
+    "rule": "rust_test",
+    "build_file": "database/tests/BUILD",
+    "line": 9,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "database.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//database/tests:test_transaction",
+    "rule": "rust_test",
+    "build_file": "database/tests/BUILD",
+    "line": 30,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "transaction.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//database/tests:test_statistics_synchronization",
+    "rule": "rust_test",
+    "build_file": "database/tests/BUILD",
+    "line": 50,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "statistics_synchronization.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//database/tests:test_transaction_isolation",
+    "rule": "rust_test",
+    "build_file": "database/tests/BUILD",
+    "line": 68,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "test_transaction_isolation.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//database/tests:test_diagnostics_posthog_pii",
+    "rule": "rust_test",
+    "build_file": "database/tests/BUILD",
+    "line": 87,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "diagnostics_posthog_pii.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//database/tests:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "database/tests/BUILD",
+    "line": 99,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":test_database",
+        ":test_transaction",
+        ":test_statistics_synchronization",
+        ":test_transaction_isolation",
+        ":test_diagnostics_posthog_pii"
+      ]
+    }
+  },
+  {
+    "label": "//database/tests:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "database/tests/BUILD",
+    "line": 111,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//database/tools:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "database/tools/BUILD",
+    "line": 36,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":read_wal",
+        ":replay_wal"
+      ]
+    }
+  },
+  {
+    "label": "//database/tools:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "database/tools/BUILD",
+    "line": 45,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//diagnostics:test_crate_diagnostics",
+    "rule": "rust_test",
+    "build_file": "diagnostics/BUILD",
+    "line": 39,
+    "crate_under_test": "diagnostics",
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//diagnostics:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "diagnostics/BUILD",
+    "line": 44,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":diagnostics"
+      ]
+    }
+  },
+  {
+    "label": "//diagnostics:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "diagnostics/BUILD",
+    "line": 52,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//docker:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "docker/BUILD",
+    "line": 35,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//durability:test_crate_durability",
+    "rule": "rust_test",
+    "build_file": "durability/BUILD",
+    "line": 29,
+    "crate_under_test": "durability",
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//durability:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "durability/BUILD",
+    "line": 35,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":durability",
+        ":test_crate_durability"
+      ]
+    }
+  },
+  {
+    "label": "//durability:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "durability/BUILD",
+    "line": 44,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//durability/benches:throughput",
+    "rule": "rust_test",
+    "build_file": "durability/benches/BUILD",
+    "line": 10,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "throughput.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "use_libtest_harness": []
+    }
+  },
+  {
+    "label": "//durability/benches:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "durability/benches/BUILD",
+    "line": 25,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":throughput"
+      ]
+    }
+  },
+  {
+    "label": "//durability/benches:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "durability/benches/BUILD",
+    "line": 33,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//durability/tests:basic",
+    "rule": "rust_test",
+    "build_file": "durability/tests/BUILD",
+    "line": 9,
+    "crate_under_test": null,
+    "crate_root": "basic.rs",
+    "srcs": [
+      "basic.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//durability/tests:crash",
+    "rule": "rust_test",
+    "build_file": "durability/tests/BUILD",
+    "line": 24,
+    "crate_under_test": null,
+    "crate_root": "crash.rs",
+    "srcs": [
+      "crash.rs"
+    ],
+    "data": [
+      "//durability/tests/crash/streamer:streamer",
+      "//durability/tests/crash/recoverer:recoverer"
+    ],
+    "env": {
+      "TEST_WAL_RECOVERER": "$(rootpath //durability/tests/crash/recoverer:recoverer)",
+      "TEST_WAL_STREAMER": "$(rootpath //durability/tests/crash/streamer:streamer)"
+    },
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "use_libtest_harness": []
+    }
+  },
+  {
+    "label": "//durability/tests:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "durability/tests/BUILD",
+    "line": 42,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":basic",
+        ":crash"
+      ]
+    }
+  },
+  {
+    "label": "//durability/tests:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "durability/tests/BUILD",
+    "line": 51,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//durability/tests/common:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "durability/tests/common/BUILD",
+    "line": 21,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":durability_test_common"
+      ]
+    }
+  },
+  {
+    "label": "//durability/tests/common:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "durability/tests/common/BUILD",
+    "line": 29,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//durability/tests/crash/recoverer:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "durability/tests/crash/recoverer/BUILD",
+    "line": 21,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":recoverer"
+      ]
+    }
+  },
+  {
+    "label": "//durability/tests/crash/recoverer:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "durability/tests/crash/recoverer/BUILD",
+    "line": 29,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//durability/tests/crash/streamer:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "durability/tests/crash/streamer/BUILD",
+    "line": 21,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":streamer"
+      ]
+    }
+  },
+  {
+    "label": "//durability/tests/crash/streamer:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "durability/tests/crash/streamer/BUILD",
+    "line": 29,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//encoding:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "encoding/BUILD",
+    "line": 6,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":encoding",
+        ":test_crate_encoding"
+      ]
+    }
+  },
+  {
+    "label": "//encoding:test_crate_encoding",
+    "rule": "rust_test",
+    "build_file": "encoding/BUILD",
+    "line": 64,
+    "crate_under_test": "encoding",
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//encoding:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "encoding/BUILD",
+    "line": 72,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "graph/*",
+        "graph/common/*",
+        "graph/definition/*",
+        "graph/thing/*",
+        "graph/type_/*",
+        "layout/*",
+        "value/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//encoding/benches:benchmark",
+    "rule": "rust_test",
+    "build_file": "encoding/benches/BUILD",
+    "line": 11,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "benchmark.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "use_libtest_harness": []
+    }
+  },
+  {
+    "label": "//encoding/benches:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "encoding/benches/BUILD",
+    "line": 30,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":benchmark"
+      ]
+    }
+  },
+  {
+    "label": "//encoding/benches:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "encoding/benches/BUILD",
+    "line": 38,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//encoding/tests:test_type_vertex",
+    "rule": "rust_test",
+    "build_file": "encoding/tests/BUILD",
+    "line": 41,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "test_type_vertex.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//encoding/tests:test_attribute_vertex",
+    "rule": "rust_test",
+    "build_file": "encoding/tests/BUILD",
+    "line": 49,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "test_attribute_vertex.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//encoding/tests:test_definitions",
+    "rule": "rust_test",
+    "build_file": "encoding/tests/BUILD",
+    "line": 59,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "test_definitions.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//encoding/tests:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "encoding/tests/BUILD",
+    "line": 67,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":test_attribute_vertex",
+        ":test_definitions",
+        ":test_type_vertex",
+        ":test_utils_encoding"
+      ]
+    }
+  },
+  {
+    "label": "//encoding/tests:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "encoding/tests/BUILD",
+    "line": 78,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//executor:test_crate_executor",
+    "rule": "rust_test",
+    "build_file": "executor/BUILD",
+    "line": 49,
+    "crate_under_test": "executor",
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//executor:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "executor/BUILD",
+    "line": 55,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":executor",
+        ":test_crate_executor"
+      ]
+    }
+  },
+  {
+    "label": "//executor:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "executor/BUILD",
+    "line": 64,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "**/*.rs"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//executor/benches:bench_instructions",
+    "rule": "rust_test",
+    "build_file": "executor/benches/BUILD",
+    "line": 20,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "bench_instructions.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "use_libtest_harness": []
+    }
+  },
+  {
+    "label": "//executor/benches:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "executor/benches/BUILD",
+    "line": 45,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":bench_instructions"
+      ]
+    }
+  },
+  {
+    "label": "//executor/benches:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "executor/benches/BUILD",
+    "line": 53,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//executor/tests:test_compile_execute",
+    "rule": "rust_test",
+    "build_file": "executor/tests/BUILD",
+    "line": 30,
+    "crate_under_test": null,
+    "crate_root": "compile_execute.rs",
+    "srcs": [
+      "compile_execute.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//executor/tests:test_execute_isa",
+    "rule": "rust_test",
+    "build_file": "executor/tests/BUILD",
+    "line": 40,
+    "crate_under_test": null,
+    "crate_root": "execute_isa.rs",
+    "srcs": [
+      "execute_isa.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//executor/tests:test_execute_has",
+    "rule": "rust_test",
+    "build_file": "executor/tests/BUILD",
+    "line": 47,
+    "crate_under_test": null,
+    "crate_root": "execute_has.rs",
+    "srcs": [
+      "execute_has.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//executor/tests:test_execute_links",
+    "rule": "rust_test",
+    "build_file": "executor/tests/BUILD",
+    "line": 54,
+    "crate_under_test": null,
+    "crate_root": "execute_links.rs",
+    "srcs": [
+      "execute_links.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//executor/tests:test_execute_relation_index",
+    "rule": "rust_test",
+    "build_file": "executor/tests/BUILD",
+    "line": 61,
+    "crate_under_test": null,
+    "crate_root": "execute_relation_index.rs",
+    "srcs": [
+      "execute_relation_index.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//executor/tests:test_select",
+    "rule": "rust_test",
+    "build_file": "executor/tests/BUILD",
+    "line": 68,
+    "crate_under_test": null,
+    "crate_root": "execute_select.rs",
+    "srcs": [
+      "execute_select.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//executor/tests:test_writes",
+    "rule": "rust_test",
+    "build_file": "executor/tests/BUILD",
+    "line": 75,
+    "crate_under_test": null,
+    "crate_root": "writes.rs",
+    "srcs": [
+      "writes.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//executor/tests:test_execute_expression",
+    "rule": "rust_test",
+    "build_file": "executor/tests/BUILD",
+    "line": 84,
+    "crate_under_test": null,
+    "crate_root": "execute_expression.rs",
+    "srcs": [
+      "execute_expression.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//executor/tests:test_pipelines",
+    "rule": "rust_test",
+    "build_file": "executor/tests/BUILD",
+    "line": 91,
+    "crate_under_test": null,
+    "crate_root": "pipelines.rs",
+    "srcs": [
+      "pipelines.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//executor/tests:test_functions",
+    "rule": "rust_test",
+    "build_file": "executor/tests/BUILD",
+    "line": 101,
+    "crate_under_test": null,
+    "crate_root": "execute_function.rs",
+    "srcs": [
+      "execute_function.rs"
+    ],
+    "data": [],
+    "env": {
+      "RUST_MIN_STACK": "40960000"
+    },
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//executor/tests:test_efficiency",
+    "rule": "rust_test",
+    "build_file": "executor/tests/BUILD",
+    "line": 112,
+    "crate_under_test": null,
+    "crate_root": "efficiency.rs",
+    "srcs": [
+      "efficiency.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//executor/tests:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "executor/tests/BUILD",
+    "line": 119,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":test_compile_execute",
+        ":test_efficiency",
+        ":test_execute_expression",
+        ":test_execute_has",
+        ":test_execute_isa",
+        ":test_execute_links",
+        ":test_execute_relation_index",
+        ":test_functions",
+        ":test_pipelines",
+        ":test_select",
+        ":test_writes"
+      ]
+    }
+  },
+  {
+    "label": "//executor/tests:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "executor/tests/BUILD",
+    "line": 137,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//function:test_crate_function",
+    "rule": "rust_test",
+    "build_file": "function/BUILD",
+    "line": 34,
+    "crate_under_test": "function",
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//function:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "function/BUILD",
+    "line": 44,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":function",
+        ":test_crate_function"
+      ]
+    }
+  },
+  {
+    "label": "//function:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "function/BUILD",
+    "line": 53,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//function/tests:test_definition",
+    "rule": "rust_test",
+    "build_file": "function/tests/BUILD",
+    "line": 9,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "test_definition.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//function/tests:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "function/tests/BUILD",
+    "line": 31,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":test_definition"
+      ]
+    }
+  },
+  {
+    "label": "//function/tests:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "function/tests/BUILD",
+    "line": 39,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//ir:test_crate_ir",
+    "rule": "rust_test",
+    "build_file": "ir/BUILD",
+    "line": 46,
+    "crate_under_test": "ir",
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//ir:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "ir/BUILD",
+    "line": 51,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":ir",
+        ":test_crate_ir"
+      ]
+    }
+  },
+  {
+    "label": "//ir:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "ir/BUILD",
+    "line": 60,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "*/*.rs",
+        "expressions/builtins/*.rs"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//ir/tests:pattern",
+    "rule": "rust_test",
+    "build_file": "ir/tests/BUILD",
+    "line": 9,
+    "crate_under_test": null,
+    "crate_root": "pattern.rs",
+    "srcs": [
+      "pattern.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//ir/tests:pipeline",
+    "rule": "rust_test",
+    "build_file": "ir/tests/BUILD",
+    "line": 19,
+    "crate_under_test": null,
+    "crate_root": "pipeline.rs",
+    "srcs": [
+      "pipeline.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//ir/tests:test_structural_equality",
+    "rule": "rust_test",
+    "build_file": "ir/tests/BUILD",
+    "line": 32,
+    "crate_under_test": null,
+    "crate_root": "structural_equality.rs",
+    "srcs": [
+      "structural_equality.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//ir/tests:binding_modes",
+    "rule": "rust_test",
+    "build_file": "ir/tests/BUILD",
+    "line": 50,
+    "crate_under_test": null,
+    "crate_root": "binding_modes.rs",
+    "srcs": [
+      "binding_modes.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//ir/tests:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "ir/tests/BUILD",
+    "line": 62,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":pattern",
+        ":pipeline",
+        ":test_structural_equality"
+      ]
+    }
+  },
+  {
+    "label": "//ir/tests:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "ir/tests/BUILD",
+    "line": 72,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//query:test_crate_query",
+    "rule": "rust_test",
+    "build_file": "query/BUILD",
+    "line": 42,
+    "crate_under_test": "query",
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//query:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "query/BUILD",
+    "line": 48,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":query",
+        ":test_crate_query"
+      ]
+    }
+  },
+  {
+    "label": "//query:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "query/BUILD",
+    "line": 57,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//query/benches:bench_insert_queries",
+    "rule": "rust_test",
+    "build_file": "query/benches/BUILD",
+    "line": 11,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "bench_insert_queries.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "use_libtest_harness": []
+    }
+  },
+  {
+    "label": "//query/benches:bench_insert_queries_multithreaded",
+    "rule": "rust_test",
+    "build_file": "query/benches/BUILD",
+    "line": 45,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "bench_insert_queries_multithreaded.rs",
+      "common.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "use_libtest_harness": []
+    }
+  },
+  {
+    "label": "//query/benches:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "query/benches/BUILD",
+    "line": 78,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":bench_insert_queries",
+        ":bench_insert_queries_multithreaded"
+      ]
+    }
+  },
+  {
+    "label": "//query/benches:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "query/benches/BUILD",
+    "line": 87,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//query/tests:test_define",
+    "rule": "rust_test",
+    "build_file": "query/tests/BUILD",
+    "line": 33,
+    "crate_under_test": null,
+    "crate_root": "define.rs",
+    "srcs": [
+      "define.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//query/tests:test_fetch",
+    "rule": "rust_test",
+    "build_file": "query/tests/BUILD",
+    "line": 40,
+    "crate_under_test": null,
+    "crate_root": "fetch.rs",
+    "srcs": [
+      "fetch.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//query/tests:test_unimplemented",
+    "rule": "rust_test",
+    "build_file": "query/tests/BUILD",
+    "line": 47,
+    "crate_under_test": null,
+    "crate_root": "unimplemented.rs",
+    "srcs": [
+      "unimplemented.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//query/tests:test_pipeline_stages_limit",
+    "rule": "rust_test",
+    "build_file": "query/tests/BUILD",
+    "line": 54,
+    "crate_under_test": null,
+    "crate_root": "pipeline_stages_limit.rs",
+    "srcs": [
+      "pipeline_stages_limit.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//query/tests:test_query_profile",
+    "rule": "rust_test",
+    "build_file": "query/tests/BUILD",
+    "line": 61,
+    "crate_under_test": null,
+    "crate_root": "query_profile.rs",
+    "srcs": [
+      "query_profile.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//query/tests:test_query_cache",
+    "rule": "rust_test",
+    "build_file": "query/tests/BUILD",
+    "line": 68,
+    "crate_under_test": null,
+    "crate_root": "query_cache.rs",
+    "srcs": [
+      "query_cache.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//query/tests:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "query/tests/BUILD",
+    "line": 75,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":test_define",
+        ":test_fetch",
+        ":test_unimplemented",
+        ":test_pipeline_stages_limit",
+        ":test_query_profile"
+      ]
+    }
+  },
+  {
+    "label": "//query/tests:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "query/tests/BUILD",
+    "line": 87,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//resource:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "resource/BUILD",
+    "line": 29,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":resource"
+      ]
+    }
+  },
+  {
+    "label": "//resource:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "resource/BUILD",
+    "line": 37,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*",
+        "typedb-ascii.txt"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//server:test_crate_server",
+    "rule": "rust_test",
+    "build_file": "server/BUILD",
+    "line": 115,
+    "crate_under_test": "server",
+    "crate_root": null,
+    "srcs": [],
+    "data": [
+      ":config.yml"
+    ],
+    "env": {},
+    "crate_features": [
+      "bazel"
+    ],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//server:test_admin_service",
+    "rule": "rust_test",
+    "build_file": "server/BUILD",
+    "line": 123,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "service/admin/admin_service_test.rs"
+    ],
+    "data": [
+      ":config.yml"
+    ],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//server:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "server/BUILD",
+    "line": 137,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":server",
+        ":test_crate_server"
+      ]
+    }
+  },
+  {
+    "label": "//server:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "server/BUILD",
+    "line": 146,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*",
+        "*/*/*/*",
+        "*/*/*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//server/service/admin/proto:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "server/service/admin/proto/BUILD",
+    "line": 33,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ],
+      "size": [
+        "small"
+      ]
+    }
+  },
+  {
+    "label": "//storage:test_crate_storage",
+    "rule": "rust_test",
+    "build_file": "storage/BUILD",
+    "line": 42,
+    "crate_under_test": "storage",
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//storage:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "storage/BUILD",
+    "line": 48,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":storage",
+        ":test_crate_storage"
+      ]
+    }
+  },
+  {
+    "label": "//storage:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "storage/BUILD",
+    "line": 57,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "keyspace/*",
+        "recovery/*",
+        "snapshot/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//storage/benches:bench_mvcc_storage",
+    "rule": "rust_test",
+    "build_file": "storage/benches/BUILD",
+    "line": 11,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "bench_mvcc_storage.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [
+      "manual"
+    ],
+    "other_attrs": {
+      "use_libtest_harness": []
+    }
+  },
+  {
+    "label": "//storage/benches:bench_rocks",
+    "rule": "rust_test",
+    "build_file": "storage/benches/BUILD",
+    "line": 39,
+    "crate_under_test": null,
+    "crate_root": "bench_rocks.rs",
+    "srcs": [
+      "bench_rocks.rs",
+      "bench_rocks_impl/**/*.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [
+      "manual"
+    ],
+    "other_attrs": {
+      "use_libtest_harness": []
+    }
+  },
+  {
+    "label": "//storage/benches:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "storage/benches/BUILD",
+    "line": 66,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":bench_mvcc_storage",
+        ":bench_rocks"
+      ]
+    }
+  },
+  {
+    "label": "//storage/benches:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "storage/benches/BUILD",
+    "line": 75,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//storage/tests:test_storage",
+    "rule": "rust_test",
+    "build_file": "storage/tests/BUILD",
+    "line": 24,
+    "crate_under_test": null,
+    "crate_root": "test_storage.rs",
+    "srcs": [
+      "test_storage.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//storage/tests:test_snapshot",
+    "rule": "rust_test",
+    "build_file": "storage/tests/BUILD",
+    "line": 48,
+    "crate_under_test": null,
+    "crate_root": "test_snapshot.rs",
+    "srcs": [
+      "test_snapshot.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//storage/tests:test_recovery",
+    "rule": "rust_test",
+    "build_file": "storage/tests/BUILD",
+    "line": 70,
+    "crate_under_test": null,
+    "crate_root": "test_recovery.rs",
+    "srcs": [
+      "test_recovery.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//storage/tests:test_mvcc",
+    "rule": "rust_test",
+    "build_file": "storage/tests/BUILD",
+    "line": 94,
+    "crate_under_test": null,
+    "crate_root": "test_mvcc.rs",
+    "srcs": [
+      "test_mvcc.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//storage/tests:test_isolation",
+    "rule": "rust_test",
+    "build_file": "storage/tests/BUILD",
+    "line": 115,
+    "crate_under_test": null,
+    "crate_root": "test_isolation.rs",
+    "srcs": [
+      "test_isolation.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//storage/tests:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "storage/tests/BUILD",
+    "line": 138,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":test_isolation",
+        ":test_mvcc",
+        ":test_recovery",
+        ":test_snapshot",
+        ":test_storage",
+        ":test_utils_storage"
+      ]
+    }
+  },
+  {
+    "label": "//storage/tests:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "storage/tests/BUILD",
+    "line": 151,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "*/*",
+        "*/*/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//system:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "system/BUILD",
+    "line": 35,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":system"
+      ]
+    }
+  },
+  {
+    "label": "//system:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "system/BUILD",
+    "line": 43,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//tests/assembly:test_assembly",
+    "rule": "rust_test",
+    "build_file": "tests/assembly/BUILD",
+    "line": 16,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "assembly.rs"
+    ],
+    "data": [
+      "//:assemble-typedb-all",
+      ":script.tql"
+    ],
+    "env": {
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
+    },
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//tests/assembly:test_fail_points",
+    "rule": "rust_test",
+    "build_file": "tests/assembly/BUILD",
+    "line": 26,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "fail_points.rs"
+    ],
+    "data": [
+      "//:assemble-typedb-all",
+      ":script.tql"
+    ],
+    "env": {
+      "TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"
+    },
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "timeout": [
+        "eternal"
+      ]
+    }
+  },
+  {
+    "label": "//tests/assembly:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "tests/assembly/BUILD",
+    "line": 40,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":test_assembly"
+      ]
+    }
+  },
+  {
+    "label": "//tests/assembly:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "tests/assembly/BUILD",
+    "line": 48,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*",
+        "script.tql"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "tests/behaviour/BUILD",
+    "line": 7,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/concept:test_concept",
+    "rule": "rust_test",
+    "build_file": "tests/behaviour/concept/BUILD",
+    "line": 8,
+    "crate_under_test": null,
+    "crate_root": "main.rs",
+    "srcs": [
+      "main.rs",
+      "migration/*.rs",
+      "thing/*.rs",
+      "type/*.rs"
+    ],
+    "data": [
+      "@typedb_behaviour//concept/migration:data-validation.feature",
+      "@typedb_behaviour//concept/migration:migration.feature",
+      "@typedb_behaviour//concept/thing:attribute.feature",
+      "@typedb_behaviour//concept/thing:entity.feature",
+      "@typedb_behaviour//concept/thing:has.feature",
+      "@typedb_behaviour//concept/thing:links.feature",
+      "@typedb_behaviour//concept/thing:relation.feature",
+      "@typedb_behaviour//concept/type:attributetype.feature",
+      "@typedb_behaviour//concept/type:entitytype.feature",
+      "@typedb_behaviour//concept/type:relationtype.feature",
+      "@typedb_behaviour//concept/type:plays.feature",
+      "@typedb_behaviour//concept/type:owns.feature",
+      "@typedb_behaviour//concept/type:owns-annotations.feature"
+    ],
+    "env": {},
+    "crate_features": [
+      "bazel"
+    ],
+    "tags": [
+      "manual_build"
+    ],
+    "other_attrs": {
+      "size": [
+        "enormous"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/concept:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "tests/behaviour/concept/BUILD",
+    "line": 38,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":test_concept"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/concept:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "tests/behaviour/concept/BUILD",
+    "line": 46,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "*/*.rs"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/connection:test_connection",
+    "rule": "rust_test",
+    "build_file": "tests/behaviour/connection/BUILD",
+    "line": 8,
+    "crate_under_test": null,
+    "crate_root": "main.rs",
+    "srcs": [
+      "*.rs"
+    ],
+    "data": [
+      "@typedb_behaviour//connection:database.feature",
+      "@typedb_behaviour//connection:transaction.feature"
+    ],
+    "env": {},
+    "crate_features": [
+      "bazel"
+    ],
+    "tags": [
+      "manual_build"
+    ],
+    "other_attrs": {}
+  },
+  {
+    "label": "//tests/behaviour/connection:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "tests/behaviour/connection/BUILD",
+    "line": 25,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":test_connection"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/connection:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "tests/behaviour/connection/BUILD",
+    "line": 33,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/debug:test_debug",
+    "rule": "rust_test",
+    "build_file": "tests/behaviour/debug/BUILD",
+    "line": 8,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "debug.rs"
+    ],
+    "data": [
+      "debug.feature"
+    ],
+    "env": {},
+    "crate_features": [],
+    "tags": [
+      "manual_build"
+    ],
+    "other_attrs": {}
+  },
+  {
+    "label": "//tests/behaviour/debug:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "tests/behaviour/debug/BUILD",
+    "line": 20,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":test_debug"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/debug:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "tests/behaviour/debug/BUILD",
+    "line": 28,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/query:test_query",
+    "rule": "rust_test",
+    "build_file": "tests/behaviour/query/BUILD",
+    "line": 8,
+    "crate_under_test": null,
+    "crate_root": "main.rs",
+    "srcs": [
+      "main.rs",
+      "language/*.rs",
+      "functions/*.rs",
+      "analyze/*.rs"
+    ],
+    "data": [
+      "@typedb_behaviour//query/functions:basic.feature",
+      "@typedb_behaviour//query/functions:definition.feature",
+      "@typedb_behaviour//query/functions:negation.feature",
+      "@typedb_behaviour//query/functions:recursion.feature",
+      "@typedb_behaviour//query/functions:signature.feature",
+      "@typedb_behaviour//query/functions:structure.feature",
+      "@typedb_behaviour//query/functions:usage.feature",
+      "@typedb_behaviour//query/language:define.feature",
+      "@typedb_behaviour//query/language:delete.feature",
+      "@typedb_behaviour//query/language:expression.feature",
+      "@typedb_behaviour//query/language:fetch.feature",
+      "@typedb_behaviour//query/language:given.feature",
+      "@typedb_behaviour//query/language:insert.feature",
+      "@typedb_behaviour//query/language:match.feature",
+      "@typedb_behaviour//query/language:metadata.feature",
+      "@typedb_behaviour//query/language:modifiers.feature",
+      "@typedb_behaviour//query/language:negation.feature",
+      "@typedb_behaviour//query/language:disjunction.feature",
+      "@typedb_behaviour//query/language:optional.feature",
+      "@typedb_behaviour//query/language:pipelines.feature",
+      "@typedb_behaviour//query/language:put.feature",
+      "@typedb_behaviour//query/language:redefine.feature",
+      "@typedb_behaviour//query/language:reduce.feature",
+      "@typedb_behaviour//query/language:undefine.feature",
+      "@typedb_behaviour//query/language:update.feature",
+      "@typedb_behaviour//query/language:variables.feature",
+      "@typedb_behaviour//query/analyze:structure.feature",
+      "@typedb_behaviour//query/analyze:annotations.feature",
+      "//server:config.yml"
+    ],
+    "env": {
+      "RUST_MIN_STACK": "40960000"
+    },
+    "crate_features": [
+      "bazel"
+    ],
+    "tags": [
+      "manual_build"
+    ],
+    "other_attrs": {
+      "size": [
+        "enormous"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/query:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "tests/behaviour/query/BUILD",
+    "line": 56,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":test_query"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/query:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "tests/behaviour/query/BUILD",
+    "line": 64,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "*/*.rs"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/service:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "tests/behaviour/service/BUILD",
+    "line": 7,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/service/http:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "tests/behaviour/service/http/BUILD",
+    "line": 8,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/service/http/connection:test_http_database",
+    "rule": "rust_test",
+    "build_file": "tests/behaviour/service/http/connection/BUILD",
+    "line": 8,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "database.rs"
+    ],
+    "data": [
+      "@typedb_behaviour//connection:database.feature"
+    ],
+    "env": {},
+    "crate_features": [
+      "bazel"
+    ],
+    "tags": [
+      "manual_build",
+      "exclusive"
+    ],
+    "other_attrs": {}
+  },
+  {
+    "label": "//tests/behaviour/service/http/connection:test_http_transaction",
+    "rule": "rust_test",
+    "build_file": "tests/behaviour/service/http/connection/BUILD",
+    "line": 21,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "transaction.rs"
+    ],
+    "data": [
+      "@typedb_behaviour//connection:transaction.feature"
+    ],
+    "env": {},
+    "crate_features": [
+      "bazel"
+    ],
+    "tags": [
+      "manual_build",
+      "exclusive"
+    ],
+    "other_attrs": {}
+  },
+  {
+    "label": "//tests/behaviour/service/http/connection:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "tests/behaviour/service/http/connection/BUILD",
+    "line": 34,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":test_http_database",
+        ":test_http_transaction"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/service/http/connection:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "tests/behaviour/service/http/connection/BUILD",
+    "line": 43,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/service/http/debug:test_http_debug",
+    "rule": "rust_test",
+    "build_file": "tests/behaviour/service/http/debug/BUILD",
+    "line": 8,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "debug.rs"
+    ],
+    "data": [
+      "debug.feature"
+    ],
+    "env": {},
+    "crate_features": [
+      "bazel"
+    ],
+    "tags": [
+      "manual_build",
+      "exclusive"
+    ],
+    "other_attrs": {}
+  },
+  {
+    "label": "//tests/behaviour/service/http/debug:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "tests/behaviour/service/http/debug/BUILD",
+    "line": 21,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":test_http_debug"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/service/http/debug:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "tests/behaviour/service/http/debug/BUILD",
+    "line": 29,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/service/http/driver:test_http_driver_concept",
+    "rule": "rust_test",
+    "build_file": "tests/behaviour/service/http/driver/BUILD",
+    "line": 8,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "concept.rs"
+    ],
+    "data": [
+      "@typedb_behaviour//driver:concept.feature"
+    ],
+    "env": {},
+    "crate_features": [
+      "bazel"
+    ],
+    "tags": [
+      "manual_build",
+      "exclusive"
+    ],
+    "other_attrs": {}
+  },
+  {
+    "label": "//tests/behaviour/service/http/driver:test_http_driver_connection",
+    "rule": "rust_test",
+    "build_file": "tests/behaviour/service/http/driver/BUILD",
+    "line": 21,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "connection.rs"
+    ],
+    "data": [
+      "@typedb_behaviour//driver:connection.feature"
+    ],
+    "env": {},
+    "crate_features": [
+      "bazel"
+    ],
+    "tags": [
+      "manual_build",
+      "exclusive"
+    ],
+    "other_attrs": {}
+  },
+  {
+    "label": "//tests/behaviour/service/http/driver:test_http_driver_http",
+    "rule": "rust_test",
+    "build_file": "tests/behaviour/service/http/driver/BUILD",
+    "line": 34,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "http.rs"
+    ],
+    "data": [
+      "@typedb_behaviour//driver/http:http.feature"
+    ],
+    "env": {},
+    "crate_features": [
+      "bazel"
+    ],
+    "tags": [
+      "manual_build",
+      "exclusive"
+    ],
+    "other_attrs": {}
+  },
+  {
+    "label": "//tests/behaviour/service/http/driver:test_http_driver_query",
+    "rule": "rust_test",
+    "build_file": "tests/behaviour/service/http/driver/BUILD",
+    "line": 47,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "query.rs"
+    ],
+    "data": [
+      "@typedb_behaviour//driver:query.feature"
+    ],
+    "env": {},
+    "crate_features": [
+      "bazel"
+    ],
+    "tags": [
+      "manual_build",
+      "exclusive"
+    ],
+    "other_attrs": {}
+  },
+  {
+    "label": "//tests/behaviour/service/http/driver:test_http_driver_user",
+    "rule": "rust_test",
+    "build_file": "tests/behaviour/service/http/driver/BUILD",
+    "line": 60,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "user.rs"
+    ],
+    "data": [
+      "@typedb_behaviour//driver:user.feature"
+    ],
+    "env": {},
+    "crate_features": [
+      "bazel"
+    ],
+    "tags": [
+      "manual_build",
+      "exclusive"
+    ],
+    "other_attrs": {}
+  },
+  {
+    "label": "//tests/behaviour/service/http/driver:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "tests/behaviour/service/http/driver/BUILD",
+    "line": 73,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":test_http_driver_concept",
+        ":test_http_driver_connection",
+        ":test_http_driver_http",
+        ":test_http_driver_query",
+        ":test_http_driver_user"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/service/http/driver:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "tests/behaviour/service/http/driver/BUILD",
+    "line": 85,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/service/http/http_steps:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "tests/behaviour/service/http/http_steps/BUILD",
+    "line": 44,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":http_steps"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/service/http/http_steps:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "tests/behaviour/service/http/http_steps/BUILD",
+    "line": 52,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "**/Cargo.*"
+      ],
+      "include": [
+        "*",
+        "**/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/steps:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "tests/behaviour/steps/BUILD",
+    "line": 50,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":steps"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/steps:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "tests/behaviour/steps/BUILD",
+    "line": 58,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*",
+        "concept/*",
+        "concept/thing/*",
+        "concept/type_/*",
+        "connection/*",
+        "query/*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/steps/params:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "tests/behaviour/steps/params/BUILD",
+    "line": 31,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":params"
+      ]
+    }
+  },
+  {
+    "label": "//tests/behaviour/steps/params:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "tests/behaviour/steps/params/BUILD",
+    "line": 39,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//tests/benchmarks/concurrent_ops:bench_concurrency",
+    "rule": "rust_test",
+    "build_file": "tests/benchmarks/concurrent_ops/BUILD",
+    "line": 8,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "bench_concurrency.rs"
+    ],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "use_libtest_harness": []
+    }
+  },
+  {
+    "label": "//tests/benchmarks/concurrent_ops:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "tests/benchmarks/concurrent_ops/BUILD",
+    "line": 30,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":bench_concurrency"
+      ]
+    }
+  },
+  {
+    "label": "//tests/benchmarks/concurrent_ops:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "tests/benchmarks/concurrent_ops/BUILD",
+    "line": 38,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//tests/benchmarks/iam:bench_iam",
+    "rule": "rust_test",
+    "build_file": "tests/benchmarks/iam/BUILD",
+    "line": 8,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [
+      "bench_iam.rs"
+    ],
+    "data": [
+      ":functions.tql",
+      ":schema.tql",
+      ":data.tql"
+    ],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {}
+  },
+  {
+    "label": "//tests/benchmarks/iam:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "tests/benchmarks/iam/BUILD",
+    "line": 29,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":bench_iam"
+      ]
+    }
+  },
+  {
+    "label": "//tests/benchmarks/iam:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "tests/benchmarks/iam/BUILD",
+    "line": 37,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//tests/distribution:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "tests/distribution/BUILD",
+    "line": 9,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "load.tql",
+        "verify.tql"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//tool/release:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "tool/release/BUILD",
+    "line": 7,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//tool/rust:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "tool/rust/BUILD",
+    "line": 7,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ],
+      "size": [
+        "small"
+      ]
+    }
+  },
+  {
+    "label": "//tool/test:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "tool/test/BUILD",
+    "line": 7,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//user:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "user/BUILD",
+    "line": 30,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":user"
+      ]
+    }
+  },
+  {
+    "label": "//user:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "user/BUILD",
+    "line": 38,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//util/project:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "util/project/BUILD",
+    "line": 18,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":project"
+      ]
+    }
+  },
+  {
+    "label": "//util/project:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "util/project/BUILD",
+    "line": 26,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  },
+  {
+    "label": "//util/test:rustfmt_test",
+    "rule": "rustfmt_test",
+    "build_file": "util/test/BUILD",
+    "line": 23,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "size": [
+        "small"
+      ],
+      "targets": [
+        ":test_utils"
+      ]
+    }
+  },
+  {
+    "label": "//util/test:checkstyle",
+    "rule": "checkstyle_test",
+    "build_file": "util/test/BUILD",
+    "line": 31,
+    "crate_under_test": null,
+    "crate_root": null,
+    "srcs": [],
+    "data": [],
+    "env": {},
+    "crate_features": [],
+    "tags": [],
+    "other_attrs": {
+      "exclude": [
+        "Cargo.*"
+      ],
+      "include": [
+        "*"
+      ],
+      "license_type": [
+        "mpl-header"
+      ]
+    }
+  }
+]

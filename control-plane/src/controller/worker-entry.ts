@@ -117,6 +117,11 @@ async function mapBounded<T, R>(items: T[], limit: number, fn: (item: T) => Prom
 
 const PAYLOAD_FETCH_CONCURRENCY = 8;
 
+/** Hard per-response byte budget for scan pages (payload bytes, pre-base64):
+ *  a full page must fit working memory in the 128 MiB worker isolate with
+ *  headroom for the base64 expansion and JSON envelope. */
+const SCAN_PAGE_BYTE_BUDGET = 8 * 1024 * 1024;
+
 /** Record types are u8 in TypeDB durability; anything else is a client bug
  *  surfaced as a typed 400, never coerced. */
 function invalidRecordType(value: unknown): boolean {
@@ -187,6 +192,7 @@ export default {
           records: Record<string, unknown>[]; nextFromLsn: number | null;
         }>;
         lastByType(db: string, generation: number, recordType: number): Promise<Record<string, unknown>>;
+        queryOperation(db: string, generation: number, operationId: string): Promise<Record<string, unknown>>;
       };
 
     if (request.method === "POST" && path === "/session/register") {
@@ -312,22 +318,55 @@ export default {
       const fromLsn = nonNegativeInt(url.searchParams.get("fromLsn"), 0);
       const throughLsn = nonNegativeInt(throughLsnParam, 0);
       const rawLimit = nonNegativeInt(url.searchParams.get("limit"), 100);
-      if (fromTypeSequence === null || fromLsn === null || throughLsn === null || rawLimit === null) {
+      const rawMaxBytes = nonNegativeInt(url.searchParams.get("maxBytes"), SCAN_PAGE_BYTE_BUDGET);
+      if (fromTypeSequence === null || fromLsn === null || throughLsn === null || rawLimit === null
+          || rawMaxBytes === null) {
         return json({ ok: false, error: "INVALID_PARAMETER" }, 400);
       }
       const limit = Math.min(Math.max(rawLimit, 1), 1000);
+      const maxBytes = Math.min(Math.max(rawMaxBytes, 1), SCAN_PAGE_BYTE_BUDGET);
       const page = await stubFor(db).scan(db, Number(generation), {
         fromTypeSequence, fromLsn, throughLsn, recordType, limit,
       });
-      const payloads = await mapBounded(page.records, PAYLOAD_FETCH_CONCURRENCY, (record) =>
+      // Bounded response memory (V16 boundedness rules): the catalogue knows
+      // every payload's length, so the page is cut to the byte budget BEFORE
+      // any payload is fetched - a worker never materialises an unbounded
+      // multi-payload response. Always at least one record makes progress;
+      // the cut is reported through nextFromLsn exactly like a limit cut.
+      let cut = page.records.length;
+      let budget = maxBytes;
+      for (const [index, record] of page.records.entries()) {
+        const length = Number((record as { payloadLength: number }).payloadLength);
+        if (index > 0 && length > budget) {
+          cut = index;
+          break;
+        }
+        budget -= length;
+      }
+      const included = page.records.slice(0, cut);
+      const nextFromLsn = cut < page.records.length
+        ? (included[included.length - 1] as { appendLsn: number }).appendLsn + 1
+        : page.nextFromLsn;
+      const payloads = await mapBounded(included, PAYLOAD_FETCH_CONCURRENCY, (record) =>
         verifiedPayloadBase64(env, record as { payloadKey: string; payloadDigest: string }),
       );
       const records: Record<string, unknown>[] = [];
       for (const [index, payload] of payloads.entries()) {
         if ("errorResponse" in payload) return payload.errorResponse;
-        records.push({ ...page.records[index], payloadBase64: payload.payloadBase64 });
+        records.push({ ...included[index], payloadBase64: payload.payloadBase64 });
       }
-      return json({ ok: true, records, nextFromLsn: page.nextFromLsn });
+      return json({ ok: true, records, nextFromLsn });
+    }
+
+    const walOperation = path.match(/^\/wal\/([^/]+)\/(\d+)\/operation\/([^/]+)$/);
+    if (request.method === "GET" && walOperation) {
+      const [, db, generation, operationId] = walOperation;
+      // read surface: immutable durable history stays queryable by operation
+      // identity even after the finalizing session is fenced (V16; the
+      // finalize-RETRY path still answers SESSION_FENCED per inv. 38)
+      const result = await stubFor(db).queryOperation(db, Number(generation), decodeURIComponent(operationId));
+      if (!result.ok) return json(result, 404);
+      return json(result);
     }
 
     const walLast = path.match(/^\/wal\/([^/]+)\/(\d+)\/last$/);

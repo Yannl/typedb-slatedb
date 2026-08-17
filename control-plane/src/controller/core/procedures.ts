@@ -82,6 +82,21 @@ export const SCHEMA = `
   );
 `;
 
+/** V16 exactness rule: authoritative u64 sequence values (AppendLsn,
+ *  TypeSequence, ControlSeq) must stay exact. SQLite stores i64 and
+ *  JavaScript `number` is exact only to 2^53-1, so any sequence at or beyond
+ *  that bound - or non-integral, or below the -1 empty-head sentinel - is an
+ *  invariant catastrophe and fails CLOSED here instead of silently rounding.
+ *  (The full fixed-width big-endian blob representation is staged:
+ *  docs/reviews/v16-convergence-audit.md F7.) */
+function exactU64(value: unknown, context: string): number {
+  const n = Number(value);
+  if (!Number.isSafeInteger(n) || n < -1) {
+    throw new Error(`INTEGER_RANGE_VIOLATION: ${context}=${String(value)} outside exact JS integer range`);
+  }
+  return n;
+}
+
 export type Typed<TOk> = { ok: true } & TOk;
 export type TypedErr =
   | { ok: false; error: "ADMISSION_REJECTED_OUTBOX_DEPTH"; limit: number }
@@ -259,9 +274,9 @@ export class ControllerCore {
       if (replay[0].request_digest === req.requestDigest) {
         return {
           ok: true as const,
-          appendLsn: Number(replay[0].append_lsn),
-          typeSequence: Number(replay[0].type_sequence),
-          controlSeq: Number(replay[0].control_seq),
+          appendLsn: exactU64(replay[0].append_lsn, "append_lsn"),
+          typeSequence: exactU64(replay[0].type_sequence, "type_sequence"),
+          controlSeq: exactU64(replay[0].control_seq, "control_seq"),
           replayed: true,
         };
       }
@@ -285,9 +300,9 @@ export class ControllerCore {
         if (existing[0].payload_digest === req.payloadDigest) {
           return {
             ok: true as const,
-            appendLsn: Number(existing[0].append_lsn),
-            typeSequence: Number(existing[0].type_sequence),
-            controlSeq: Number(existing[0].control_seq),
+            appendLsn: exactU64(existing[0].append_lsn, "append_lsn"),
+            typeSequence: exactU64(existing[0].type_sequence, "type_sequence"),
+            controlSeq: exactU64(existing[0].control_seq, "control_seq"),
             replayed: true,
           };
         }
@@ -329,10 +344,11 @@ export class ControllerCore {
        FROM wal_tail WHERE database_id=? AND generation=?`,
       req.databaseId, req.generation,
     )[0];
-    const appendLsn = Number(head.lsn) + 1;
-    const typeSequence = req.sequencingKind === "SEQUENCED" ? Number(head.ts) + 1 : Number(head.ts);
+    const appendLsn = exactU64(head.lsn, "max_append_lsn") + 1;
+    const typeSequence =
+      req.sequencingKind === "SEQUENCED" ? exactU64(head.ts, "max_type_sequence") + 1 : exactU64(head.ts, "max_type_sequence");
     const controlSeq =
-      Number(this.sql.exec(`SELECT COALESCE(MAX(control_seq), 0) AS c FROM control_outbox`)[0].c) + 1;
+      exactU64(this.sql.exec(`SELECT COALESCE(MAX(control_seq), 0) AS c FROM control_outbox`)[0].c, "max_control_seq") + 1;
 
     this.sql.exec(
       `INSERT INTO wal_tail(database_id, generation, append_lsn, type_sequence, sequencing_kind,
@@ -469,6 +485,32 @@ export class ControllerCore {
     return { records: page, nextFromLsn };
   }
 
+  /**
+   * Exact lookup by operation identity (V16: an already-finalized operation
+   * remains queryable by operation ID after its former session is fenced).
+   * This is the READ surface: authority checks gate mutation and the
+   * finalize-retry REPORTING path (inv. 38 / ADR-0006 - a fenced actor's
+   * identical retry gets SESSION_FENCED, never the receipt), but they never
+   * hide the immutable durable record itself: lost-response recovery and
+   * forensics by the CURRENT actor resolve here.
+   */
+  queryOperation(databaseId: string, generation: number, operationId: string):
+    Typed<{ record: WalDescriptor; requestDigest: string; controlSeq: number }> | TypedErr {
+    const rows = this.sql.exec(
+      `SELECT append_lsn, type_sequence, sequencing_kind, record_type, payload_key, payload_digest,
+              payload_length, unsequenced_logical_key, request_digest, control_seq
+       FROM wal_tail WHERE database_id=? AND generation=? AND finalization_operation_id=?`,
+      databaseId, generation, operationId,
+    );
+    if (!rows.length) return { ok: false, error: "NOT_FOUND" };
+    return {
+      ok: true,
+      record: descriptorOf(rows[0]),
+      requestDigest: String(rows[0].request_digest),
+      controlSeq: exactU64(rows[0].control_seq, "control_seq"),
+    };
+  }
+
   /** Last record of a type in physical order (`find_last_type`). */
   lastByType(databaseId: string, generation: number, recordType: number): Typed<{ record: WalDescriptor }> | TypedErr {
     const rows = this.sql.exec(
@@ -495,8 +537,8 @@ export class ControllerCore {
 
 function descriptorOf(row: SqlRow): WalDescriptor {
   return {
-    appendLsn: Number(row.append_lsn),
-    typeSequence: Number(row.type_sequence),
+    appendLsn: exactU64(row.append_lsn, "append_lsn"),
+    typeSequence: exactU64(row.type_sequence, "type_sequence"),
     sequencingKind: String(row.sequencing_kind),
     recordType: Number(row.record_type),
     payloadKey: String(row.payload_key),

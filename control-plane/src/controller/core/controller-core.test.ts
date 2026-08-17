@@ -202,6 +202,25 @@ test("batch candidate: all-or-nothing equivalence with per-record finalisation",
   assert.equal(failing.auditContiguity("db1", 3).count, 0);
 });
 
+test("a finalized operation stays queryable by operation id after its session is fenced (V16 read surface)", () => {
+  const core = boot();
+  const first = req();
+  const r1 = core.finalizeWalRecord(first);
+  assert.ok(r1.ok);
+  core.registerSession("db1", 3, "sess-2"); // takeover fences sess-1
+  // the finalize-RETRY path stays fenced (inv. 38 - reporting is revoked)...
+  assert.deepEqual(core.finalizeWalRecord(first), { ok: false, error: "SESSION_FENCED", fencedBy: "sess-2" });
+  // ...but the immutable durable record is queryable by operation identity:
+  // authority gates mutation, never hides finalized history
+  const query = core.queryOperation("db1", 3, first.operationId);
+  assert.ok(query.ok);
+  assert.equal(query.record.appendLsn, r1.ok && r1.appendLsn);
+  assert.equal(query.requestDigest, first.requestDigest);
+  assert.equal(query.controlSeq, r1.ok && r1.controlSeq);
+  // absence stays typed
+  assert.deepEqual(core.queryOperation("db1", 3, "op-never"), { ok: false, error: "NOT_FOUND" });
+});
+
 test("exact lookup: missing rows are typed NOT_FOUND, never EOF", () => {
   const core = boot();
   core.finalizeWalRecord(req());

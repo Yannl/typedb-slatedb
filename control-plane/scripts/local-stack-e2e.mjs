@@ -186,6 +186,23 @@ check("limit=0 is clamped to one record, never a crash",
 const scanBadParam = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=abc&throughLsn=${iter.body.headLsn}`);
 check("non-numeric scan parameter is a typed 400",
   scanBadParam.status === 400 && scanBadParam.body.error === "INVALID_PARAMETER");
+// byte budget: maxBytes=1 forces a one-record page (progress guaranteed),
+// resumable exactly like a limit cut
+const scanByteCut = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&throughLsn=${iter.body.headLsn}&maxBytes=1`);
+check("scan byte budget cuts the page with progress",
+  scanByteCut.body.ok === true && scanByteCut.body.records.length === 1 && scanByteCut.body.nextFromLsn === 1,
+  JSON.stringify({ n: scanByteCut.body.records?.length, next: scanByteCut.body.nextFromLsn }));
+const scanResume = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&fromLsn=${scanByteCut.body.nextFromLsn}&throughLsn=${iter.body.headLsn}&maxBytes=1`);
+check("byte-cut pages resume without overlap",
+  scanResume.body.records.length === 1 && scanResume.body.records[0].appendLsn === 1);
+
+// a finalized operation stays queryable by operation id after its session was
+// fenced (op-1 was finalized by SESSION, fenced in step 7)
+const opQuery = await api("GET", `/wal/${DB}/${GEN}/operation/op-1`);
+check("finalized operation queryable after fencing",
+  opQuery.body.ok === true && opQuery.body.record.appendLsn === 0 && opQuery.body.requestDigest === "rd-1");
+const opMiss = await api("GET", `/wal/${DB}/${GEN}/operation/op-ghost-never`);
+check("operation query miss is typed NOT_FOUND", opMiss.status === 404 && opMiss.body.error === "NOT_FOUND");
 
 // 13. last-by-type
 const last = await api("GET", `/wal/${DB}/${GEN}/last?recordType=1`);

@@ -123,6 +123,10 @@ export class DatabaseControllerDO extends DurableObject {
     return this.core().lastByType(databaseId, generation, recordType);
   }
 
+  queryOperation(databaseId: string, generation: number, operationId: string): ReturnType<ControllerCore["queryOperation"]> {
+    return this.core().queryOperation(databaseId, generation, operationId);
+  }
+
   outboxPeek(limit: number): ReturnType<ControllerCore["outboxPeek"]> {
     return this.core().outboxPeek(limit);
   }

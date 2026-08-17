@@ -26,9 +26,13 @@ import {
   type SqlRow,
   type SyncSql,
 } from "./core/procedures.ts";
+import { fromHex } from "./core/journal-crypto.ts";
 
 export interface Env {
   CONTAINER_LIFECYCLE: DurableObjectNamespace;
+  /** Hex journal MAC key (F8). Unset = the core's loud dev default; a
+   *  managed secret is a G2 provisioning item. */
+  CONTROLLER_JOURNAL_KEY?: string;
 }
 
 export class DatabaseControllerDO extends DurableObject {
@@ -60,7 +64,9 @@ export class DatabaseControllerDO extends DurableObject {
           .toArray() as SqlRow[],
       transaction: <T,>(fn: () => T): T => storage.transactionSync(fn),
     };
-    this.controllerCore = new ControllerCore(adapter);
+    this.controllerCore = new ControllerCore(adapter, {
+      journalKey: env.CONTROLLER_JOURNAL_KEY ? fromHex(env.CONTROLLER_JOURNAL_KEY) : undefined,
+    });
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS databases(
         database_id TEXT PRIMARY KEY,
@@ -145,6 +151,10 @@ export class DatabaseControllerDO extends DurableObject {
 
   outboxAck(upToControlSeq: bigint): number {
     return this.core().outboxAck(upToControlSeq);
+  }
+
+  verifyJournal(): ReturnType<ControllerCore["verifyJournal"]> {
+    return this.core().verifyJournal();
   }
 
   private core(): ControllerCore {

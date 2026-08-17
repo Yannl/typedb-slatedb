@@ -24,6 +24,7 @@
  *                                  ordered replay page (physical LSN order, type_sequence>=fromTs,
  *                                  bounded by the pinned throughLsn); payloads inline, digest-verified
  *   GET  /wal/{db}/{generation}/last?recordType=N  last record of a type + payload (find_last_type)
+ *   GET  /journal/{db}/verify      recompute + verify the authenticated journal (F8)
  *   GET  /outbox/{db}?limit=N      peek unpublished control events (no marking)
  *   POST /outbox/{db}/ack          {upToControlSeq} - ack after durable processing
  */
@@ -416,6 +417,16 @@ export default {
         return json({ ok: false, error: "INVALID_PARAMETER", field: "upToControlSeq" }, 400);
       }
       return json({ ok: true, acked: await stub.outboxAck(upTo) });
+    }
+
+    const journalVerify = path.match(/^\/journal\/([^/]+)\/verify$/);
+    if (request.method === "GET" && journalVerify) {
+      // F8 read surface: recompute the whole chain + MACs server-side.
+      // Routed by databaseId like every DO method (the journal is the DO's
+      // global outbox; the id names the authority instance to audit).
+      const stub = stubFor(journalVerify[1]) as unknown as { verifyJournal(): Promise<Record<string, unknown>> };
+      const verdict = await stub.verifyJournal();
+      return json(verdict, verdict.ok ? 200 : 409);
     }
 
     const walAudit = path.match(/^\/wal\/([^/]+)\/(\d+)\/audit$/);

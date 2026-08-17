@@ -242,5 +242,11 @@ const auditAfterBatch = await api("GET", `/wal/${DB}/${GEN}/audit`);
 check("aborted batch allocated nothing",
   auditAfterBatch.body.contiguous === true && auditAfterBatch.body.count === 6, JSON.stringify(auditAfterBatch.body));
 
+// F8: the authenticated journal verifies end-to-end over the whole run
+const journal = await api("GET", `/journal/${DB}/verify`);
+check("authenticated journal verifies (chain + MACs)",
+  journal.body.ok === true && journal.body.length === 6 && /^[0-9a-f]{64}$/.test(journal.body.headHash),
+  JSON.stringify(journal.body));
+
 console.log(failures === 0 ? "\nL1 LOCAL STACK E2E: ALL PASS" : `\nL1 LOCAL STACK E2E: ${failures} FAILURES`);
 process.exit(failures === 0 ? 0 : 1);

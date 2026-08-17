@@ -436,9 +436,11 @@ test("u64 exactness beyond 2^53: allocation, replay, scan and wire encoding stay
     u64Blob(beyond, "seed_control"), 2,
   );
   // the global ControlSeq allocates from the OUTBOX head - seed it too
+  const seedHash = new Uint8Array(32); // journal chain fields: NOT NULL placeholders (F8 chain not under test here)
   sql.exec(
-    `INSERT INTO control_outbox(control_seq, database_id, kind, canonical_body) VALUES (?,?,?,?)`,
-    u64Blob(beyond, "seed_outbox"), "db1", "SEED", "{}",
+    `INSERT INTO control_outbox(control_seq, database_id, kind, canonical_body, prev_hash, entry_hash, mac)
+     VALUES (?,?,?,?,?,?,?)`,
+    u64Blob(beyond, "seed_outbox"), "db1", "SEED", "{}", seedHash, seedHash, seedHash,
   );
   const r = core.finalizeWalRecord(req());
   assert.ok(r.ok);

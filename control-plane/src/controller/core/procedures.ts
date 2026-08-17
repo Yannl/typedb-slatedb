@@ -25,6 +25,8 @@
  *    exact — a missing row is a typed NOT_FOUND, never treated as EOF.
  */
 
+import { bytesEqual, canonicalJson, hex, hmacSha256, sha256, utf8 } from "./journal-crypto.ts";
+
 export interface SqlRow {
   [column: string]: unknown;
 }
@@ -65,7 +67,10 @@ export const SCHEMA = `
     database_id TEXT NOT NULL,
     kind TEXT NOT NULL,
     canonical_body TEXT NOT NULL,
-    published INTEGER NOT NULL DEFAULT 0
+    published INTEGER NOT NULL DEFAULT 0,
+    prev_hash BLOB NOT NULL,
+    entry_hash BLOB NOT NULL,
+    mac BLOB NOT NULL
   );
   CREATE TABLE IF NOT EXISTS budgets(
     database_id TEXT PRIMARY KEY,
@@ -188,11 +193,18 @@ export interface WalDescriptor {
 
 export type FinalizeResult = Typed<{ appendLsn: bigint; typeSequence: bigint; controlSeq: bigint; replayed: boolean }> | TypedErr;
 
+/** 32 zero bytes: the hash-chain genesis ancestor. */
+const GENESIS_HASH = new Uint8Array(32);
+
 export class ControllerCore {
   private readonly sql: SyncSql;
+  /** Commit-time journal MAC key (F8). The dev default is deliberately loud;
+   *  production provisioning of a managed secret is a G2 gate item. */
+  private readonly journalKey: Uint8Array;
 
-  constructor(sql: SyncSql) {
+  constructor(sql: SyncSql, options?: { journalKey?: Uint8Array }) {
     this.sql = sql;
+    this.journalKey = options?.journalKey ?? utf8("dev-insecure-journal-key");
     this.sql.exec(SCHEMA);
     // pre-record_type dev state (CREATE TABLE IF NOT EXISTS cannot add
     // columns to an existing table): additive migration, idempotent.
@@ -417,18 +429,69 @@ export class ControllerCore {
     );
     // outbox row in the SAME transaction as the projection mutation (section
     // 7.4). Sequence values are canonically DECIMAL STRINGS in the body:
-    // JSON numbers stop being exact at 2^53.
-    this.sql.exec(
-      `INSERT INTO control_outbox(control_seq, database_id, kind, canonical_body)
-       VALUES (?,?,?,?)`,
-      u64Blob(controlSeq, "control_seq"), req.databaseId, "WAL_RECORD_FINALIZED",
-      JSON.stringify({ databaseId: req.databaseId, generation: req.generation,
-                       appendLsn: appendLsn.toString(), typeSequence: typeSequence.toString(),
-                       sequencingKind: req.sequencingKind, recordType: req.recordType,
-                       payloadKey: req.payloadKey,
-                       payloadDigest: req.payloadDigest, logicalKey: req.logicalKey }),
-    );
+    // JSON numbers stop being exact at 2^53. The row is a hash-chained,
+    // commit-time-MACed journal entry (F8): the body is CANONICAL JSON
+    // (sorted keys, byte-deterministic), the entry hash binds
+    // (prev_hash, control_seq, kind, body), and the MAC signs the entry
+    // hash with the controller's journal key - all inside this synchronous
+    // transaction, so no entry can ever exist unchained or unsigned.
+    const body = canonicalJson({ databaseId: req.databaseId, generation: req.generation,
+                                 appendLsn: appendLsn.toString(), typeSequence: typeSequence.toString(),
+                                 sequencingKind: req.sequencingKind, recordType: req.recordType,
+                                 payloadKey: req.payloadKey,
+                                 payloadDigest: req.payloadDigest, logicalKey: req.logicalKey });
+    this.appendJournalEntry(controlSeq, req.databaseId, "WAL_RECORD_FINALIZED", body);
     return { ok: true as const, appendLsn, typeSequence, controlSeq, replayed: false };
+  }
+
+  /** Chain-append one journal/outbox row. Caller holds the transaction. */
+  private appendJournalEntry(controlSeq: bigint, databaseId: string, kind: string, canonicalBody: string): void {
+    const tail = this.sql.exec(`SELECT entry_hash FROM control_outbox ORDER BY control_seq DESC LIMIT 1`);
+    const prevHash = tail.length ? asHash(tail[0].entry_hash, "prev entry_hash") : GENESIS_HASH;
+    const entryHash = sha256(prevHash, u64Blob(controlSeq, "control_seq"), utf8(kind), utf8(canonicalBody));
+    const mac = hmacSha256(this.journalKey, entryHash);
+    this.sql.exec(
+      `INSERT INTO control_outbox(control_seq, database_id, kind, canonical_body, prev_hash, entry_hash, mac)
+       VALUES (?,?,?,?,?,?,?)`,
+      u64Blob(controlSeq, "control_seq"), databaseId, kind, canonicalBody, prevHash, entryHash, mac,
+    );
+  }
+
+  /**
+   * Journal authentication audit (F8): walk the WHOLE outbox in ControlSeq
+   * order and verify contiguity from 1, hash-chain linkage from the genesis
+   * ancestor, each entry hash against its (prev, seq, kind, body) preimage,
+   * and each commit-time MAC under the journal key. Any deviation is a
+   * typed failure naming the first bad sequence. What this cannot detect -
+   * by construction - is truncation of the TAIL: that requires an external
+   * RecoveryAnchor (staged F8 remainder), which is why the verdict reports
+   * `length` and `headHash` for the caller to anchor externally.
+   */
+  verifyJournal():
+    | { ok: true; length: number; headHash: string }
+    | { ok: false; error: "JOURNAL_GAP" | "JOURNAL_CHAIN_BROKEN" | "JOURNAL_HASH_MISMATCH" | "JOURNAL_MAC_INVALID"; atControlSeq: string } {
+    const rows = this.sql.exec(
+      `SELECT control_seq, kind, canonical_body, prev_hash, entry_hash, mac FROM control_outbox ORDER BY control_seq`,
+    );
+    let expectedSeq = 1n;
+    let expectedPrev: Uint8Array = GENESIS_HASH;
+    for (const row of rows) {
+      const seq = u64FromSql(row.control_seq, "control_seq");
+      const at = seq.toString();
+      if (seq !== expectedSeq) return { ok: false, error: "JOURNAL_GAP", atControlSeq: at };
+      const prevHash = asHash(row.prev_hash, "prev_hash");
+      const entryHash = asHash(row.entry_hash, "entry_hash");
+      const mac = asHash(row.mac, "mac");
+      if (!bytesEqual(prevHash, expectedPrev)) return { ok: false, error: "JOURNAL_CHAIN_BROKEN", atControlSeq: at };
+      const recomputed = sha256(prevHash, u64Blob(seq, "control_seq"), utf8(String(row.kind)), utf8(String(row.canonical_body)));
+      if (!bytesEqual(entryHash, recomputed)) return { ok: false, error: "JOURNAL_HASH_MISMATCH", atControlSeq: at };
+      if (!bytesEqual(mac, hmacSha256(this.journalKey, entryHash))) {
+        return { ok: false, error: "JOURNAL_MAC_INVALID", atControlSeq: at };
+      }
+      expectedPrev = entryHash;
+      expectedSeq = seq + 1n;
+    }
+    return { ok: true, length: rows.length, headHash: hex(expectedPrev) };
   }
 
   /** Idempotent outbox drain: publish everything unpublished, exactly once. */
@@ -611,6 +674,16 @@ export class ControllerCore {
     const maxLsn = r.m === null ? -1n : u64FromSql(r.m, "max_append_lsn");
     return { contiguous: BigInt(Number(r.n)) === maxLsn + 1n, count: Number(r.n), maxLsn };
   }
+}
+
+/** A 32-byte hash/MAC column read back from SQL; anything else fails closed. */
+function asHash(value: unknown, context: string): Uint8Array {
+  const bytes =
+    value instanceof Uint8Array ? value : value instanceof ArrayBuffer ? new Uint8Array(value) : null;
+  if (bytes === null || bytes.byteLength !== 32) {
+    throw new Error(`JOURNAL_REPRESENTATION_VIOLATION: ${context} is not a 32-byte hash`);
+  }
+  return bytes;
 }
 
 function descriptorOf(row: SqlRow): WalDescriptor {

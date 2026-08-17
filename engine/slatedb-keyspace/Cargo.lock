@@ -2219,7 +2219,9 @@ dependencies = [
 name = "slatedb-keyspace"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "bytes",
+ "futures",
  "object_store",
  "slatedb",
  "tempfile",

@@ -5,7 +5,7 @@ edition = "2021"
 license = "MPL-2.0"
 
 [features]
-default = ["compression"]
+default = ["compression", "wal_disable"]
 # SlateDB's WAL can be switched off entirely, leaving TypeDB's `durability` WAL as the only
 # log — matching upstream's `disable_wal(true)` on RocksDB. See `config::Tuning::wal_enabled`.
 wal_disable = ["slatedb/wal_disable"]
@@ -20,6 +20,8 @@ object_store = { version = "0.14", features = ["aws"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 bytes = "1"
 thiserror = "2"
+async-trait = "0.1"
+futures = "0.3"
 
 [dev-dependencies]
 tempfile = "3"

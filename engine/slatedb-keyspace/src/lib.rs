@@ -54,9 +54,11 @@ use slatedb::{
 
 pub mod config;
 pub mod error;
+pub mod safety;
 
 pub use config::{Backend, R2Credentials, StoreConfig, Tuning};
 pub use error::KeyspaceError;
+pub use safety::{DeleteGuard, PostureAttestation};
 
 /// Re-exported so callers can build keys and values for [`Batch::put_prefixed`] without
 /// depending on `bytes` themselves. TypeDB ships its own crate named `bytes`, so a caller
@@ -216,6 +218,8 @@ pub struct KeyspaceSet {
     /// Prefetch settings for full range walks. Held rather than recomputed so `iterate_from`
     /// stays allocation-free on a hot path.
     scan_options: ScanOptions,
+    /// Resolved committed/non-dirty read options; see `Tuning::read_options`.
+    read_options: slatedb::config::ReadOptions,
     /// Set only when the store is a local directory, and used to refuse operations that are
     /// meaningful only against one — see [`Self::local_directory`].
     local_directory: Option<std::path::PathBuf>,
@@ -226,6 +230,7 @@ pub struct KeyspaceSet {
     /// Per-keyspace memo for [`Keyspace::estimated_stats`], indexed by keyspace id.
     estimates: Vec<Mutex<Option<CachedEstimate>>>,
     estimate_ttl: Duration,
+    attestation: PostureAttestation,
 }
 
 impl KeyspaceSet {
@@ -298,6 +303,34 @@ impl KeyspaceSet {
             })?;
         }
 
+        // Fail-closed before anything can write. Wrapping here rather than at a call site is
+        // the point: every path SlateDB takes — flush, compaction, GC, recovery — goes through
+        // this handle, so there is no route that reaches the bucket without passing the guard.
+        let store = DeleteGuard::new(store);
+
+        // Read back from the resolved `Settings` rather than from the `Tuning` that produced
+        // them. The two can disagree — a field gated behind an absent feature is compiled out
+        // and silently keeps SlateDB's default — and it is the resolved value that governs the
+        // process. Attesting to the request instead would report the posture we asked for.
+        let settings = tuning.to_settings();
+        let attestation = PostureAttestation {
+            #[cfg(feature = "wal_disable")]
+            wal_enabled: settings.wal_enabled,
+            #[cfg(not(feature = "wal_disable"))]
+            wal_enabled: true,
+            garbage_collector_enabled: settings.garbage_collector_options.is_some(),
+            compactor_enabled: settings.compactor_options.is_some(),
+            reads_committed_only: !tuning.read_options().dirty,
+            delete_guard_installed: true,
+            durability_filter: "Memory",
+        };
+        if !attestation.is_compliant() {
+            return Err(KeyspaceError::Config(format!(
+                "refusing to open with a non-compliant storage posture ({attestation}): {}",
+                attestation.violations().join("; "),
+            )));
+        }
+
         let runtime = Arc::new(
             tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
@@ -307,7 +340,7 @@ impl KeyspaceSet {
         let db = runtime
             .block_on(
                 Db::builder(path.clone(), Arc::clone(&store))
-                    .with_settings(tuning.to_settings())
+                    .with_settings(settings.clone())
                     .build(),
             )
             .map_err(|e| KeyspaceError::Open(e.to_string()))?;
@@ -318,10 +351,17 @@ impl KeyspaceSet {
             object_store: store,
             path,
             scan_options: tuning.scan_options(),
+            read_options: tuning.read_options(),
             local_directory,
             estimates: (0..KEYSPACE_MAXIMUM_COUNT).map(|_| Mutex::new(None)).collect(),
             estimate_ttl: DEFAULT_ESTIMATE_TTL,
+            attestation,
         })
+    }
+
+    /// The storage posture this handle actually resolved to, for attestation at startup.
+    pub fn attestation(&self) -> &PostureAttestation {
+        &self.attestation
     }
 
     /// The directory holding this store's files, or `None` when it lives in an object store.
@@ -679,7 +719,7 @@ impl Keyspace<'_> {
 
     pub fn get(&self, key: &[u8]) -> Result<Option<Bytes>, KeyspaceError> {
         self.set
-            .block(self.set.db.get(physical_key(self.id, key)))
+            .block(self.set.db.get_with_options(physical_key(self.id, key), &self.set.read_options))
             .map_err(|e| KeyspaceError::Get(e.to_string()))
     }
 

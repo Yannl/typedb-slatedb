@@ -127,7 +127,13 @@ fn the_object_storage_profile_departs_from_the_local_one_where_operations_cost_m
 
     // Background chatter that buys nothing in a single-writer deployment.
     assert!(cloud.manifest_poll_interval > local.manifest_poll_interval);
-    assert!(cloud.gc_interval.unwrap() > local.gc_interval.unwrap());
+
+    // Garbage collection is off on both, and that is a posture requirement rather than a
+    // tuning choice: pre-G13 GC is report-only (brief I-77) and collection deletes
+    // authoritative objects (brief I-84). An earlier revision of this test asserted the cloud
+    // profile merely swept *less often* than the local one, which is the assertion you write
+    // when you are optimising a cost and not enforcing a contract.
+    assert!(cloud.gc_interval.is_none() && local.gc_interval.is_none());
 
     assert!(cloud.validate().is_ok());
     assert!(local.validate().is_ok());
@@ -176,8 +182,15 @@ fn the_tuning_reaches_slatedb_intact() {
 
     assert_eq!(settings.object_store_max_retries, tuning.object_store_max_retries);
 
-    let gc = settings.garbage_collector_options.expect("GC stays on");
-    assert_eq!(gc.wal_options.unwrap().interval, tuning.gc_interval);
+    assert!(
+        settings.garbage_collector_options.is_none(),
+        "no garbage collector may be configured pre-G13"
+    );
+    assert!(
+        settings.compactor_options.is_none(),
+        "no implicit compactor may start: compaction is an unfenced reachability mutation"
+    );
+    assert_eq!(settings.l0_max_ssts, tuning.l0_ceiling);
 }
 
 #[test]

@@ -61,6 +61,14 @@ use crate::error::KeyspaceError;
 /// surfaces as a generic open failure rather than a pointer at the field responsible.
 pub const MIN_WAL_FLUSHES_BEFORE_L0_FLUSH: u64 = 4096;
 
+/// The highest L0 ceiling allowed without an external compaction arrangement.
+///
+/// Read amplification is bounded by the number of L0 SSTs covering a key, and every one of them
+/// is a billed request against object storage. 64 keeps a worst-case lookup within a range an
+/// operator can reason about; beyond it the store is relying on compaction that this engine
+/// does not perform.
+pub const SAFE_L0_CEILING: usize = 64;
+
 /// Cloudflare R2 credentials and location.
 ///
 /// R2 speaks the S3 API, so this becomes an `AmazonS3` object store. The two settings that are
@@ -323,6 +331,32 @@ pub struct Tuning {
     /// above can report, retry, or fail on.
     pub object_store_max_retries: Option<u32>,
 
+    /// Ceiling on L0 SSTs, and the decision it forces.
+    ///
+    /// With the in-process compactor disabled — which this posture requires, since compaction
+    /// is an unfenced reachability mutation — L0 only ever grows. SlateDB's default ceiling of
+    /// 8 then stalls memtable flush dispatch and eventually every write, which is a liveness
+    /// failure rather than backpressure.
+    ///
+    /// Raising it does not solve that, it relocates it: every point read must consult every L0
+    /// SST whose range covers the key, so an unbounded ceiling buys liveness with unbounded
+    /// read amplification — on object storage, an unbounded number of billed GETs per read.
+    /// Neither branch is safe by default, so the value is explicit and
+    /// [`Tuning::validate`] refuses a ceiling high enough to be a de facto "unbounded" without
+    /// the operator having also arranged external compaction.
+    ///
+    /// The real resolution is external, controller-scheduled compaction carrying exact epochs.
+    /// Until that exists this engine has a bounded write budget, and saying so is the honest
+    /// posture — the alternative is a store that silently degrades to a full scan per lookup.
+    pub l0_ceiling: usize,
+
+    /// Whether external compaction is arranged for this deployment.
+    ///
+    /// Purely an assertion by the operator: nothing here can verify it. It exists so that
+    /// raising [`Self::l0_ceiling`] past the safe bound is a deliberate, recorded claim rather
+    /// than a number nobody had to justify.
+    pub external_compaction_arranged: bool,
+
     /// How often the garbage collector sweeps.
     ///
     /// Sweeping means `LIST`, which is Class A — the expensive class — while `DELETE` is free
@@ -345,7 +379,7 @@ impl Tuning {
     pub fn local() -> Self {
         Self {
             flush_interval: Some(Duration::from_millis(100)),
-            wal_enabled: true,
+            wal_enabled: false,
             manifest_poll_interval: Duration::from_secs(1),
             max_wal_flushes_before_l0_flush: 4096,
             min_filter_keys: 1000,
@@ -360,7 +394,9 @@ impl Tuning {
             // Unbounded, as SlateDB has it. A local filesystem does not produce the transient
             // failures the bound exists to escape.
             object_store_max_retries: None,
-            gc_interval: Some(Duration::from_secs(600)),
+            l0_ceiling: SAFE_L0_CEILING,
+            external_compaction_arranged: false,
+            gc_interval: None,
             gc_min_age: Duration::from_secs(300),
         }
     }
@@ -377,7 +413,7 @@ impl Tuning {
             // object storage. TypeDB's own WAL already covers that window, so the guarantee
             // being relaxed is one the caller above does not rely on.
             flush_interval: Some(Duration::from_secs(5)),
-            wal_enabled: true,
+            wal_enabled: false,
             // 1s -> 30s. Polling detects compactions and fencing by another writer. In the
             // single-writer deployment this backend targets, the only real consumer is noticing
             // compaction output; 30s of staleness there is invisible, and the poll is pure
@@ -405,7 +441,9 @@ impl Tuning {
             object_store_max_retries: Some(10),
             // 600s -> 3600s. Six times fewer Class A `LIST` sweeps, paid for with a little
             // retained garbage at $0.015/GB-month.
-            gc_interval: Some(Duration::from_secs(3600)),
+            l0_ceiling: SAFE_L0_CEILING,
+            external_compaction_arranged: false,
+            gc_interval: None,
             gc_min_age: Duration::from_secs(3600),
         }
     }
@@ -431,6 +469,47 @@ impl Tuning {
     /// them as an opaque open failure. Catching them here means an operator who mis-tunes a
     /// deployment is told which knob is wrong rather than that the database would not start.
     pub fn validate(&self) -> Result<(), KeyspaceError> {
+        // The pre-G13 posture. Each of these is a hard contract requirement rather than a
+        // preference, so they are rejected here instead of being silently corrected — a
+        // configuration that asked for an unsafe posture and got a safe one is a configuration
+        // whose author still believes the unsafe one is available.
+        // Without the `wal_disable` feature, `Settings::wal_enabled` does not exist and the
+        // field below is compiled out — so a profile asking for WAL-off would silently run
+        // WAL-on, and the startup attestation would report the value that was *requested*
+        // rather than the one in force. Refusing is the only honest option: the posture cannot
+        // be honoured, and a build that cannot honour it must not claim it.
+        #[cfg(not(feature = "wal_disable"))]
+        if !self.wal_enabled {
+            return Err(KeyspaceError::Config(
+                "wal_enabled=false requires the `wal_disable` feature. Without it SlateDB keeps \
+                 its write-ahead log whatever this profile says, and the attestation would be \
+                 false rather than merely incomplete."
+                    .to_string(),
+            ));
+        }
+        if self.wal_enabled {
+            return Err(KeyspaceError::Config(
+                "wal_enabled must be false: TypeDB's durability crate is the sole WAL authority, \
+                 and a second WAL is both redundant and a delete-capable GC obligation"
+                    .to_string(),
+            ));
+        }
+        if self.gc_interval.is_some() {
+            return Err(KeyspaceError::Config(
+                "garbage collection must be disabled: pre-G13 GC is report-only (brief I-77) and \
+                 collection deletes authoritative objects (brief I-84)"
+                    .to_string(),
+            ));
+        }
+        if self.l0_ceiling > SAFE_L0_CEILING && !self.external_compaction_arranged {
+            return Err(KeyspaceError::Config(format!(
+                "l0_ceiling is {} but the safe bound without external compaction is {}. With no \
+                 in-process compactor L0 never shrinks, so this many SSTs may have to be read \
+                 for a single lookup — each one a billed request. Arrange external compaction \
+                 and set external_compaction_arranged, or lower the ceiling.",
+                self.l0_ceiling, SAFE_L0_CEILING,
+            )));
+        }
         if self.max_wal_flushes_before_l0_flush < MIN_WAL_FLUSHES_BEFORE_L0_FLUSH {
             return Err(KeyspaceError::Config(format!(
                 "max_wal_flushes_before_l0_flush is {} but SlateDB requires at least {}",
@@ -447,6 +526,26 @@ impl Tuning {
         Ok(())
     }
 
+    /// The resolved read options every correctness read uses.
+    ///
+    /// Committed-only and memory-visible. `dirty` is left false deliberately and is not
+    /// configurable: brief I-74 requires correctness reads to use resolved committed/non-dirty
+    /// options that no caller can override. Dirty reads expose writes whose sequence numbers
+    /// are past the committed watermark, which is precisely the data a reader must not see.
+    ///
+    /// `DurabilityLevel::Memory` is what preserves read-your-writes without dirty: an
+    /// acknowledged write is committed in the sequencer and resident in the memtable, so a
+    /// committed memory-visible read observes it. Reaching for `dirty` to obtain
+    /// read-your-writes conflates "not yet durable" with "not yet committed" — only the first
+    /// is true of an acknowledged write.
+    pub fn read_options(&self) -> slatedb::config::ReadOptions {
+        slatedb::config::ReadOptions {
+            durability_filter: slatedb::config::DurabilityLevel::Memory,
+            dirty: false,
+            ..slatedb::config::ReadOptions::default()
+        }
+    }
+
     /// Scan options for a full range walk, where reading ahead pays for itself.
     ///
     /// Deliberately not used by point lookups or `get_prev`, which read one entry: prefetching
@@ -456,6 +555,8 @@ impl Tuning {
         slatedb::config::ScanOptions {
             read_ahead_bytes: self.scan_read_ahead_bytes,
             max_fetch_tasks: self.scan_fetch_tasks,
+            durability_filter: slatedb::config::DurabilityLevel::Memory,
+            dirty: false,
             ..slatedb::config::ScanOptions::default()
         }
     }
@@ -476,6 +577,8 @@ impl Tuning {
             max_wal_flushes_before_l0_flush: self.max_wal_flushes_before_l0_flush,
             min_filter_keys: self.min_filter_keys,
             l0_sst_size_bytes: self.l0_sst_size_bytes,
+            l0_max_ssts: self.l0_ceiling,
+            l0_max_ssts_per_key: self.l0_ceiling,
             object_store_max_retries: self.object_store_max_retries,
             compression_codec: self.compression_codec(),
             object_store_cache_options: ObjectStoreCacheOptions {
@@ -488,13 +591,16 @@ impl Tuning {
                 cache_on_compaction: self.cache_dir.is_some(),
                 ..ObjectStoreCacheOptions::default()
             },
-            garbage_collector_options: Some(GarbageCollectorOptions {
-                manifest_options: Some(gc_directory),
-                wal_options: Some(gc_directory),
-                compacted_options: Some(gc_directory),
-                compactions_options: Some(gc_directory),
-                ..GarbageCollectorOptions::default()
-            }),
+            // Off entirely, not merely slowed. Pre-G13 GC is report-only (brief I-77) and
+            // collection is a delete-capable reachability mutation, which this posture forbids
+            // outright. `gc_interval` therefore only ever selects between "off" and "off"; it
+            // is retained so a post-G13 profile has somewhere to put the answer.
+            garbage_collector_options: None,
+            // The in-process compactor is a reachability mutation and must be externally
+            // epoch-fenced (brief I-110). Nothing here can supply an external epoch, so the
+            // only correct posture is to not start one. Compaction is an external obligation
+            // for this engine — see `Tuning::l0_ceiling`.
+            compactor_options: None,
             ..Settings::default()
         }
     }

@@ -337,6 +337,10 @@ pub(super) struct SlateKeyspace {
     db: Arc<Db>,
     path: PathBuf,
     remote: Option<RemoteStore>,
+    /// Bounded-staleness memo for [`Self::estimate_key_count`] on the remote
+    /// lane: (computed_at, count). Never locked across a scan — see the
+    /// method for why that would be the worse defect.
+    key_count_memo: std::sync::Mutex<Option<(std::time::Instant, u64)>>,
 }
 
 impl SlateKeyspace {
@@ -347,7 +351,7 @@ impl SlateKeyspace {
         })?);
         let db = bridge(async move { Db::builder(DB_SUBDIR, store).with_settings(settings()).build().await })
             .map_err(Arc::new)?;
-        Ok(Self { db: Arc::new(db), path: path.to_owned(), remote: None })
+        Ok(Self { db: Arc::new(db), path: path.to_owned(), remote: None, key_count_memo: Default::default() })
     }
 
     /// Open over the configured S3-compatible store (TB-P8, profile U2S3).
@@ -396,7 +400,12 @@ impl SlateKeyspace {
         }
         let db = bridge(async move { Db::builder(DB_SUBDIR, prefixed).with_settings(settings).build().await })
             .map_err(Arc::new)?;
-        Ok(Self { db: Arc::new(db), path: path.to_owned(), remote: Some(RemoteStore { store, prefix }) })
+        Ok(Self {
+            db: Arc::new(db),
+            path: path.to_owned(),
+            remote: Some(RemoteStore { store, prefix }),
+            key_count_memo: Default::default(),
+        })
     }
 
     pub(super) fn shared_db(&self) -> Arc<Db> {
@@ -614,24 +623,41 @@ impl SlateKeyspace {
         .map_err(Arc::new)
     }
 
+    /// Manifest-based size estimate (donor idea, ADR-0013 portable list;
+    /// observational per V16 inv. 72): summed SST size estimates from the
+    /// in-memory manifest — no directory walk, no remote LIST. TypeDB's
+    /// diagnostics loop polls this every ~15s; the previous implementation
+    /// issued one full remote LIST per poll on the S3 lane (billed Class-A
+    /// operations on R2) to compute a number that is an estimate either way,
+    /// and a local directory walk on the LocalFS lane. Memtable-resident
+    /// bytes are excluded on both lanes, exactly as before.
     pub(super) fn estimate_size_in_bytes(&self) -> u64 {
-        match &self.remote {
-            None => dir_size(&self.path).unwrap_or(0),
-            Some(remote) => {
-                let store = remote.store.clone();
-                let prefix = remote.prefix.clone();
-                bridge(async move { list_remote_prefix(store.as_ref(), &prefix).await })
-                    .map(|objects| objects.iter().map(|meta| meta.size).sum())
-                    .unwrap_or(0)
-            }
-        }
+        let manifest = self.db.manifest();
+        let l0: u64 = manifest.l0().iter().map(|sst| sst.estimate_size()).sum();
+        let compacted: u64 = manifest.compacted().iter().map(|run| run.estimate_size()).sum();
+        l0 + compacted
     }
 
-    /// Exact key count by full scan. The RocksDB path serves an O(1) engine
-    /// estimate; SlateDB has no equivalent property, and the only caller is
-    /// periodic database metrics, so a scan (exact, bounded by store size)
-    /// is preferred over inventing an estimator.
+    /// Key count for periodic database metrics. The RocksDB path serves an
+    /// O(1) engine estimate; SlateDB has no equivalent property, so LocalFS
+    /// serves an exact full scan (cheap, and exactness beats inventing an
+    /// estimator). On the REMOTE lane a full scan re-reads the store from
+    /// the object store on every ~15s diagnostics poll, so the exact scan is
+    /// memoised with bounded staleness (observational metric, V16 inv. 72).
+    /// The memo lock is NEVER held across the scan — holding a mutex across
+    /// a remote scan is a named excluded defect (audit F12): a slow scan
+    /// would block every concurrent metrics caller. The cost of that choice
+    /// is that two callers racing an expired memo may both scan; the
+    /// diagnostics loop is single-threaded, so that race is theoretical.
     pub(super) fn estimate_key_count(&self) -> Result<u64, Arc<slatedb::Error>> {
+        const REMOTE_KEY_COUNT_TTL: std::time::Duration = std::time::Duration::from_secs(60);
+        if self.remote.is_some() {
+            if let Some((computed_at, count)) = *self.key_count_memo.lock().unwrap() {
+                if computed_at.elapsed() < REMOTE_KEY_COUNT_TTL {
+                    return Ok(count);
+                }
+            }
+        }
         let db = self.db.clone();
         bridge(async move {
             let mut iterator = db.scan_with_options(.., &scan_options()).await?;

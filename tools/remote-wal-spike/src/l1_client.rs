@@ -43,6 +43,9 @@ pub struct FinalizeHttpOutcome {
     pub control_seq: Option<u64>,
     pub replayed: Option<bool>,
     pub error: Option<String>,
+    /// On SESSION_FENCED: the live actor that superseded this one
+    /// (attribution, never authority — the outcome is decided regardless).
+    pub fenced_by: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

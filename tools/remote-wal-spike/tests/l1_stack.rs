@@ -208,6 +208,8 @@ fn rust_client_full_protocol_against_workerd() {
     let (status, fenced) = client.finalize(&post_takeover).unwrap();
     assert_eq!(status, 409);
     assert_eq!(fenced.error.as_deref(), Some("SESSION_FENCED"));
+    // fence attribution names the live actor that superseded us
+    assert_eq!(fenced.fenced_by.as_deref(), Some("sess-r2"));
 
     // explicit fencing of the new actor too
     client.fence_session(db, "sess-r2").unwrap();

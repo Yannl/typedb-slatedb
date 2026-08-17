@@ -87,7 +87,11 @@ the session record; the staged plan:
   exact-start enforcement, StatusKey derivation from the 9-byte
   StatusRecord prefix, deterministic operation ids
   (generation ⊕ session ⊕ counter), typed error mapping, bounded retry with
-  identical-request ambiguity resolution.
+  identical-request ambiguity resolution. Retry taxonomy per the hydradb
+  comparative review: `SESSION_FENCED` is never retryable and never enters
+  the ambiguity loop — it surfaces to `Database` lifecycle, which re-enters
+  only via a fresh register with a NEW startup session id (ADR-0011);
+  fence handling and failure backoff are separate mechanisms.
 - **U3.2** — `enum DurabilityBackend { File(WAL), Remote(RemoteWal) }`
   behind `StorageFactory` (keeps `Database<WALClient>` and its ~106 call
   sites untouched); `truncate_from`/`delete_durability`/`reset` are typed
@@ -96,7 +100,11 @@ the session record; the staged plan:
   `TYPEDB_STORAGE_PROFILE=U3` against a self-booted `wrangler dev`;
   classify file-WAL-specific tests, never skip silently.
 - **U3.4** — fencing at `Database::create/load` before any read
-  (fence-precedes-replay, ADR-0006), failpoint crash matrix.
+  (fence-precedes-replay, ADR-0006), failpoint crash matrix. Faults are
+  injected **per operation type** (upload / finalize / read / register),
+  not only per call sequence — the partial-failure mode where one verb
+  fails while others land is invisible to all-or-nothing fault doubles
+  (hydradb comparative review, transfer 4).
 
 ## Remaining local work items (added to the plan)
 

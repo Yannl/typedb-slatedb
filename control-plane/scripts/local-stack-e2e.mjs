@@ -146,8 +146,9 @@ const fencedByRegister = await api("POST", "/wal/finalize", {
   ...finalizeRequest, startupSessionId: "sess-2", operationId: "op-2b", requestDigest: "rd-2b",
   payloadKey: `${DB}/g1/p2`, payloadDigest: sha256hex(payload2), payloadLength: payload2.length,
 });
-check("register fences the predecessor",
-  fencedByRegister.status === 409 && fencedByRegister.body.error === "SESSION_FENCED");
+check("register fences the predecessor, with attribution",
+  fencedByRegister.status === 409 && fencedByRegister.body.error === "SESSION_FENCED" &&
+  fencedByRegister.body.fencedBy === "sess-3");
 const payload3 = Buffer.from("commit-record-3");
 await api("PUT", `/payload/${DB}/g1/p3`, payload3, true);
 const f3 = await api("POST", "/wal/finalize", {

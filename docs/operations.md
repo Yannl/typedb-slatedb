@@ -87,7 +87,16 @@ export TYPEDB_STORAGE_PROFILE=U2S3 \
     TYPEDB_S3_ACCESS_KEY_ID=typedb \
     TYPEDB_S3_SECRET_ACCESS_KEY=typedb-secret
 # TYPEDB_S3_PREFIX (default "typedb") scopes all keys under one root
+# TYPEDB_S3_CACHE_BYTES (optional, default off): local disk-cache budget
+#   per keyspace for remote SST reads; the cache lives INSIDE the keyspace
+#   dir (wiped with it — a cache surviving the open-time remote purge would
+#   serve stale bytes) and is excluded from checkpoint-restore uploads
 ```
+
+Memory budget note (hydradb comparative review): every open SlateDB
+keyspace handle carries its own in-memory block cache (~64 MiB by
+default) — a TypeDB database opens several keyspaces, so budget
+`N_keyspaces × 64 MiB` per database when sizing processes.
 
 Compare against the oracle baseline (`docs/evidence/G3/u1-full/`): the
 pass/fail profile must be identical (including the two upstream `todo!()`

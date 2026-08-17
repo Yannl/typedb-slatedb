@@ -125,6 +125,17 @@ pub const S3_REGION_ENV: &str = "TYPEDB_S3_REGION";
 pub const S3_ACCESS_KEY_ENV: &str = "TYPEDB_S3_ACCESS_KEY_ID";
 pub const S3_SECRET_KEY_ENV: &str = "TYPEDB_S3_SECRET_ACCESS_KEY";
 pub const S3_PREFIX_ENV: &str = "TYPEDB_S3_PREFIX";
+/// Optional local disk cache budget (bytes) for remote SST reads. Unset or 0
+/// disables the cache. When set, SlateDB's CachedObjectStore keeps part files
+/// under `<keyspace-dir>/object-cache/` — INSIDE the lifecycle marker, so the
+/// disposable-store contract wipes it with the keyspace dir; a cache that
+/// outlived the open-time remote purge would serve stale bytes for reused
+/// object paths.
+pub const S3_CACHE_BYTES_ENV: &str = "TYPEDB_S3_CACHE_BYTES";
+
+/// Local disk-cache subtree inside the keyspace dir (never uploaded, and
+/// wiped at open as defense in depth).
+const OBJECT_CACHE_SUBDIR: &str = "object-cache";
 
 struct S3Config {
     endpoint: String,
@@ -155,6 +166,16 @@ fn s3_config() -> Result<&'static S3Config, slatedb::Error> {
         })
         .as_ref()
         .map_err(|message| slatedb::Error::unavailable(message.clone()))
+}
+
+/// Optional disk-cache budget: unset, unparsable or 0 disables the cache
+/// (misconfiguration degrades to remote reads, never to a wrong cache).
+fn s3_cache_bytes() -> Option<usize> {
+    let raw = std::env::var(S3_CACHE_BYTES_ENV).ok()?;
+    match raw.trim().parse::<usize>() {
+        Ok(0) | Err(_) => None,
+        Ok(bytes) => Some(bytes),
+    }
 }
 
 fn build_s3_store(config: &S3Config) -> Result<Arc<dyn ObjectStore>, slatedb::Error> {
@@ -234,6 +255,10 @@ async fn upload_dir_to_remote(
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
+            // the local disk cache is machine-local state, never store state
+            if dir == root && entry.file_name() == OBJECT_CACHE_SUBDIR {
+                continue;
+            }
             if entry.file_type()?.is_dir() {
                 collect(root, &path, out)?;
             } else {
@@ -344,7 +369,23 @@ impl SlateKeyspace {
             .map_err(Arc::new)?;
         }
         let prefixed: Arc<dyn ObjectStore> = Arc::new(PrefixStore::new(store.clone(), prefix.clone()));
-        let db = bridge(async move { Db::builder(DB_SUBDIR, prefixed).with_settings(settings()).build().await })
+        let mut settings = settings();
+        if let Some(cache_bytes) = s3_cache_bytes() {
+            // hydradb comparative review: SlateDB's local disk cache cuts the
+            // per-read object-store round trip; the writer caches its own
+            // flushed SSTs (`cache_on_flush`) so reads of recent data never
+            // leave the machine. The cache lives inside the keyspace dir (the
+            // lifecycle marker) and is wiped here because open just purged
+            // and re-seeded the remote prefix — cache entries for reused
+            // object paths would otherwise serve stale bytes.
+            let cache_dir = path.join(OBJECT_CACHE_SUBDIR);
+            let _ = fs::remove_dir_all(&cache_dir);
+            fs::create_dir_all(&cache_dir).map_err(|error| Arc::new(io_error(error)))?;
+            settings.object_store_cache_options.root_folder = Some(cache_dir);
+            settings.object_store_cache_options.max_cache_size_bytes = Some(cache_bytes);
+            settings.object_store_cache_options.cache_on_flush = true;
+        }
+        let db = bridge(async move { Db::builder(DB_SUBDIR, prefixed).with_settings(settings).build().await })
             .map_err(Arc::new)?;
         Ok(Self { db: Arc::new(db), path: path.to_owned(), remote: Some(RemoteStore { store, prefix }) })
     }

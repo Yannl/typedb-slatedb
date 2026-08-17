@@ -87,7 +87,7 @@ describe("DatabaseControllerDO on workerd", () => {
       ).toMatchObject({ ok: true });
       // takeover: the new actor's register revokes the old actor's authority
       instance.registerSession("db1", 1, "sess-2");
-      expect(instance.finalizeWalRecord(finalizeReq("a-3"))).toEqual({ ok: false, error: "SESSION_FENCED" });
+      expect(instance.finalizeWalRecord(finalizeReq("a-3"))).toEqual({ ok: false, error: "SESSION_FENCED", fencedBy: "sess-2" });
       expect(
         instance.finalizeWalRecord(finalizeReq("a-4", { startupSessionId: "sess-2" })),
       ).toMatchObject({ ok: true, appendLsn: 2 });

@@ -6,7 +6,7 @@
   "toolchain": "rust 1.93.0 parity lane",
   "storage_profile_env": "U2S3",
   "assembly_archive_sha256": "a1dcdb5b8f18b7ee0306083de6f849502f1547ea07f293e7d48a7b20d13ab067",
-  "repo_commit": "1c8ddce49d4df210a395a63bb093c3d9d20c21f2"
+  "repo_commit": "3ab01f0cae10d7ee66367fe71589e3859ee1e163"
  },
  "results": [
   {
@@ -2015,22 +2015,22 @@
    "target_id": "typedb_server_bin:test_concept",
    "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_concept-d91f9ac55a6947be",
    "executable_sha256": "b034494d2f61d7a5d686a718628c4f7aafd55a916f2000555daa5519310609b6",
-   "exit_code": 101,
+   "exit_code": 0,
    "timed_out": false,
-   "duration_seconds": 2132.71,
-   "passed": 11,
-   "failed": 2,
+   "duration_seconds": 2291.12,
+   "passed": 13,
+   "failed": 0,
    "ignored": 0,
    "measured": 0,
    "filtered_out": 0,
    "raw_log": "docs/evidence/G3/u2s3-full/typedb_server_bin__test_concept.log",
-   "tail": "ntity(person) get owns(name) get constraints contain: @card(0..)\n   \u2714  Then entity(person) get constraints for owned attribute(name) contain: @card(0..)\n   \u2714  Then entity(person) get owns(name) get cardinality: @card(0..)\n   \u2714  Then entity(customer) get owns(surname) is key: true\n   \u2714  Then entity(customer) get owns(surname) get cardinality: @card(1..1)\n   \u2714  Then entity(customer) get constraints for owned attribute(surname) contain: @card(1..1)\n   \u2714  Then entity(customer) get constraints for owned attribute(surname) contain: @card(0..)\n   \u2714  Then entity(subscriber) get owns(surname) is key: true\n   \u2714  Then entity(subscriber) get owns(surname) get cardinality: @card(1..1)\n   \u2714  Then entity(subscriber) get constraints for owned attribute(surname) contain: @card(1..1)\n   \u2714  Then entity(subscriber) get constraints for owned attribute(surname) contain: @card(0..)\n   \u2714  Then entity(subscriber) get owns(third-name) is key: true\n   \u2714  Then entity(subscriber) get owns(third-name) get cardinality: @card(1..1)\n   \u2714  Then entity(subscriber) get constraints for owned attribute(third-name) contain: @card(1..1)\n   \u2714  Then entity(subscriber) get constraints for owned attribute(third-name) contain: @card(0..)\n[Summary]\n725 features\n725 scenarios (725 passed)\n44550 steps (44550 passed)\n.\nfailures:\n\n---- migration::migration::test_migration stdout ----\npanicked at tests/behaviour/concept/migration/migration.rs:14:5:\nassertion failed: Context::test(\"../typedb_behaviour+/concept/migration/migration.feature\",\n        true).await\n\n---- migration::data_validation::test_data_validation stdout ----\npanicked at tests/behaviour/concept/migration/data_validation.rs:14:5:\nassertion failed: Context::test(\"../typedb_behaviour+/concept/migration/data-validation.feature\",\n        true).await\n\n\nfailures:\n    migration::data_validation::test_data_validation\n    migration::migration::test_migration\n\ntest result: FAILED. 11 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2132.61s\n\n",
+   "tail": null,
    "run": {
     "profile": "U2S3",
     "toolchain": "rust 1.93.0 parity lane",
     "storage_profile_env": "U2S3",
     "assembly_archive_sha256": "a1dcdb5b8f18b7ee0306083de6f849502f1547ea07f293e7d48a7b20d13ab067",
-    "repo_commit": "1c8ddce49d4df210a395a63bb093c3d9d20c21f2"
+    "repo_commit": "3ab01f0cae10d7ee66367fe71589e3859ee1e163"
    }
   },
   {

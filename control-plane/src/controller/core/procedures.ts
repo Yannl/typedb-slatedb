@@ -25,7 +25,7 @@
  *    exact — a missing row is a typed NOT_FOUND, never treated as EOF.
  */
 
-import { bytesEqual, canonicalJson, hex, hmacSha256, sha256, utf8 } from "./journal-crypto.ts";
+import { bytesEqual, canonicalJson, fromHex as fromHexInternal, hex, hmacSha256, sha256, utf8 } from "./journal-crypto.ts";
 
 export interface SqlRow {
   [column: string]: unknown;
@@ -77,6 +77,20 @@ export const SCHEMA = `
     max_unpublished_outbox INTEGER NOT NULL,
     max_payload_length INTEGER NOT NULL,
     max_tail_records INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS checkpoint_cuts(
+    cut_id TEXT PRIMARY KEY,
+    database_id TEXT NOT NULL,
+    generation INTEGER NOT NULL,
+    incarnation INTEGER NOT NULL,
+    cut_control_seq BLOB NOT NULL,
+    head_lsn BLOB,
+    head_type_sequence BLOB,
+    journal_length INTEGER NOT NULL,
+    journal_head_hash BLOB NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('PENDING','ACTIVE','SUPERSEDED','ABANDONED')),
+    materializations TEXT,
+    logical_digest TEXT
   );
   CREATE TABLE IF NOT EXISTS capability_nonces(
     nonce TEXT PRIMARY KEY,
@@ -250,6 +264,18 @@ export class ControllerCore {
         databaseId, startupSessionId,
       );
       if (fencedRows.length) return;
+      // command ledger (F7r): the fence-and-register is journaled ONLY when
+      // it changes authority state - an idempotent re-register writes no
+      // ledger entry (replaying the ledger must reproduce state exactly,
+      // and a no-op that appends would break trace equivalence)
+      const fencedCount = Number(this.sql.exec(
+        `SELECT COUNT(*) AS n FROM sessions WHERE database_id=? AND startup_session_id<>? AND fenced=0`,
+        databaseId, startupSessionId,
+      )[0].n);
+      const known = this.sql.exec(
+        `SELECT 1 FROM sessions WHERE database_id=? AND generation=? AND startup_session_id=?`,
+        databaseId, generation, startupSessionId,
+      ).length > 0;
       this.sql.exec(
         `UPDATE sessions SET fenced=1 WHERE database_id=? AND startup_session_id<>?`,
         databaseId, startupSessionId,
@@ -258,6 +284,11 @@ export class ControllerCore {
         `INSERT OR IGNORE INTO sessions(database_id, generation, startup_session_id) VALUES (?,?,?)`,
         databaseId, generation, startupSessionId,
       );
+      if (!known || fencedCount > 0) {
+        this.appendCommand(databaseId, "SESSION_REGISTERED", {
+          databaseId, generation, startupSessionId, fencedPredecessors: fencedCount,
+        });
+      }
     });
   }
 
@@ -266,18 +297,30 @@ export class ControllerCore {
     // the actor's append authority across every generation it registered —
     // a per-generation fence would leave a rollover-spanning actor half
     // fenced (blocked from re-registering, still able to append elsewhere).
-    this.sql.exec(
-      `UPDATE sessions SET fenced=1 WHERE database_id=? AND startup_session_id=?`,
-      databaseId, startupSessionId,
-    );
+    this.sql.transaction(() => {
+      const live = Number(this.sql.exec(
+        `SELECT COUNT(*) AS n FROM sessions WHERE database_id=? AND startup_session_id=? AND fenced=0`,
+        databaseId, startupSessionId,
+      )[0].n);
+      this.sql.exec(
+        `UPDATE sessions SET fenced=1 WHERE database_id=? AND startup_session_id=?`,
+        databaseId, startupSessionId,
+      );
+      if (live > 0) {
+        this.appendCommand(databaseId, "SESSION_FENCED", { databaseId, startupSessionId });
+      }
+    });
   }
 
   setBudgets(databaseId: string, b: { maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number }): void {
-    this.sql.exec(
-      `INSERT OR REPLACE INTO budgets(database_id, max_unpublished_outbox, max_payload_length, max_tail_records)
-       VALUES (?,?,?,?)`,
-      databaseId, b.maxUnpublishedOutbox, b.maxPayloadLength, b.maxTailRecords,
-    );
+    this.sql.transaction(() => {
+      this.sql.exec(
+        `INSERT OR REPLACE INTO budgets(database_id, max_unpublished_outbox, max_payload_length, max_tail_records)
+         VALUES (?,?,?,?)`,
+        databaseId, b.maxUnpublishedOutbox, b.maxPayloadLength, b.maxTailRecords,
+      );
+      this.appendCommand(databaseId, "BUDGETS_SET", { databaseId, ...b });
+    });
   }
 
   /**
@@ -494,6 +537,166 @@ export class ControllerCore {
       this.sql.exec(`INSERT INTO capability_nonces(nonce, expires_at) VALUES (?,?)`, nonce, expiresAtMs);
       return true;
     });
+  }
+
+  /** Journal one authority COMMAND (F7r command ledger): allocates the next
+   *  ControlSeq and chain-appends inside the caller's transaction. The
+   *  authenticated journal is thereby the totally-ordered command ledger of
+   *  every authority mutation, not only of WAL finalisations. */
+  private appendCommand(databaseId: string, kind: string, body: Record<string, unknown>): bigint {
+    const maxControl = this.sql.exec(`SELECT MAX(control_seq) AS c FROM control_outbox`)[0].c;
+    const controlSeq = maxControl === null ? 1n : u64FromSql(maxControl, "max_control_seq") + 1n;
+    this.appendJournalEntry(controlSeq, databaseId, kind, canonicalJson(body));
+    return controlSeq;
+  }
+
+  /**
+   * CheckpointCut protocol core (F6r, inv. 99-103 groundwork): the
+   * controller-owned cut record. `openCheckpointCut` captures - in ONE
+   * synchronous transaction - the WAL head of the generation, the control
+   * head, the controller incarnation, and the journal anchor
+   * (length + head hash) as of the cut, journaled as CHECKPOINT_CUT_OPENED
+   * (the cut event itself is part of the anchored prefix that follows it).
+   * Activation (`activateCheckpointCut`) transitions PENDING -> ACTIVE only
+   * when the caller presents restore evidence (materialisation ids + an
+   * independently computed logical digest - inv. 102's scratch-restore
+   * proof), supersedes the previous ACTIVE cut, and is itself journaled.
+   * Exactly one ACTIVE cut per (database, generation) can exist (inv. 81's
+   * single-active-materialisation, at the cut level).
+   *
+   * The stored journal anchor also closes part of the F8 truncation gap:
+   * `verifyJournalAnchored` proves the journal is an EXTENSION of the
+   * anchored prefix. The anchor lives in the same SQLite as the journal,
+   * so it defends against bugs and partial restores, not against an
+   * attacker with database write access - THAT requires the immutable R2
+   * RecoveryAnchor publication (still staged, F8 remainder).
+   */
+  openCheckpointCut(databaseId: string, generation: number, cutId: string):
+    Typed<{ cutId: string; headLsn: bigint; headTypeSequence: bigint; cutControlSeq: bigint;
+            journalLength: number; journalHeadHash: string }> | { ok: false; error: "CUT_EXISTS" } {
+    return this.sql.transaction(() => {
+      const existing = this.sql.exec(`SELECT 1 FROM checkpoint_cuts WHERE cut_id=?`, cutId);
+      if (existing.length) return { ok: false as const, error: "CUT_EXISTS" as const };
+      const head = this.head(databaseId, generation);
+      const verdict = this.verifyJournal();
+      if (!verdict.ok) {
+        // a cut over an inconsistent journal must never be recorded
+        throw new Error(`CHECKPOINT_CUT_REFUSED: journal ${verdict.error} at ${verdict.atControlSeq}`);
+      }
+      const cutControlSeq = this.appendCommand(databaseId, "CHECKPOINT_CUT_OPENED", {
+        databaseId, generation, cutId,
+        headLsn: head.headLsn.toString(), headTypeSequence: head.headTypeSequence.toString(),
+        journalLength: verdict.length, journalHeadHash: verdict.headHash,
+      });
+      // re-derive the anchor AFTER the cut event so the anchored prefix
+      // includes the cut itself
+      const anchored = this.verifyJournal();
+      if (!anchored.ok) throw new Error("CHECKPOINT_CUT_REFUSED: journal broke while cutting");
+      this.sql.exec(
+        `INSERT INTO checkpoint_cuts(cut_id, database_id, generation, incarnation, cut_control_seq,
+           head_lsn, head_type_sequence, journal_length, journal_head_hash, state)
+         VALUES (?,?,?,?,?,?,?,?,?,'PENDING')`,
+        cutId, databaseId, generation, this.currentIncarnation(),
+        u64Blob(cutControlSeq, "cut_control_seq"),
+        head.headLsn < 0n ? null : u64Blob(head.headLsn, "head_lsn"),
+        u64Blob(head.headTypeSequence, "head_type_sequence"),
+        anchored.length, fromHexInternal(anchored.headHash),
+      );
+      return {
+        ok: true as const, cutId, headLsn: head.headLsn, headTypeSequence: head.headTypeSequence,
+        cutControlSeq, journalLength: anchored.length, journalHeadHash: anchored.headHash,
+      };
+    });
+  }
+
+  activateCheckpointCut(databaseId: string, cutId: string, evidence: { materializations: string[]; logicalDigest: string }):
+    Typed<{ cutId: string; superseded: string | null }>
+    | { ok: false; error: "CUT_NOT_FOUND" | "CUT_NOT_PENDING" | "CUT_EVIDENCE_MISSING" } {
+    return this.sql.transaction(() => {
+      const rows = this.sql.exec(
+        `SELECT state, generation FROM checkpoint_cuts WHERE cut_id=? AND database_id=?`, cutId, databaseId);
+      if (!rows.length) return { ok: false as const, error: "CUT_NOT_FOUND" as const };
+      if (String(rows[0].state) !== "PENDING") return { ok: false as const, error: "CUT_NOT_PENDING" as const };
+      if (!evidence.materializations.length || !evidence.logicalDigest) {
+        // inv. 102: activation only from verified restore evidence - an
+        // empty evidence set fails closed
+        return { ok: false as const, error: "CUT_EVIDENCE_MISSING" as const };
+      }
+      const generation = Number(rows[0].generation);
+      const active = this.sql.exec(
+        `SELECT cut_id FROM checkpoint_cuts WHERE database_id=? AND generation=? AND state='ACTIVE'`,
+        databaseId, generation);
+      const superseded = active.length ? String(active[0].cut_id) : null;
+      if (superseded !== null) {
+        this.sql.exec(`UPDATE checkpoint_cuts SET state='SUPERSEDED' WHERE cut_id=?`, superseded);
+      }
+      this.sql.exec(
+        `UPDATE checkpoint_cuts SET state='ACTIVE', materializations=?, logical_digest=? WHERE cut_id=?`,
+        JSON.stringify(evidence.materializations.slice().sort()), evidence.logicalDigest, cutId,
+      );
+      this.appendCommand(databaseId, "CHECKPOINT_CUT_ACTIVATED", {
+        databaseId, generation, cutId, superseded,
+        materializations: evidence.materializations.slice().sort(),
+        logicalDigest: evidence.logicalDigest,
+      });
+      return { ok: true as const, cutId, superseded };
+    });
+  }
+
+  activeCheckpointCut(databaseId: string, generation: number):
+    Typed<{ cutId: string; headLsn: bigint | null; journalLength: number; journalHeadHash: string;
+            materializations: string[]; logicalDigest: string }> | TypedErr {
+    const rows = this.sql.exec(
+      `SELECT cut_id, head_lsn, journal_length, journal_head_hash, materializations, logical_digest
+       FROM checkpoint_cuts WHERE database_id=? AND generation=? AND state='ACTIVE'`,
+      databaseId, generation);
+    if (!rows.length) return { ok: false, error: "NOT_FOUND" };
+    return {
+      ok: true,
+      cutId: String(rows[0].cut_id),
+      headLsn: rows[0].head_lsn === null ? null : u64FromSql(rows[0].head_lsn, "head_lsn"),
+      journalLength: Number(rows[0].journal_length),
+      journalHeadHash: hex(asHash(rows[0].journal_head_hash, "journal_head_hash")),
+      materializations: JSON.parse(String(rows[0].materializations ?? "[]")) as string[],
+      logicalDigest: String(rows[0].logical_digest ?? ""),
+    };
+  }
+
+  /**
+   * Journal verification against the newest recorded cut anchor (F8+F6r):
+   * beyond the chain checks, the journal must be an EXTENSION of the
+   * anchored prefix - at least `journalLength` entries, with the running
+   * hash at exactly that position equal to the anchored head hash. A
+   * truncation (or rewrite) at or below the anchor is now DETECTED; only
+   * the un-anchored tail after the newest cut remains chain-consistent to
+   * truncate, and every new cut shrinks that window.
+   */
+  verifyJournalAnchored():
+    | { ok: true; length: number; headHash: string; anchor: { length: number; headHash: string } | null }
+    | { ok: false; error: string; atControlSeq?: string } {
+    const verdict = this.verifyJournal();
+    if (!verdict.ok) return verdict;
+    const anchors = this.sql.exec(
+      `SELECT journal_length, journal_head_hash FROM checkpoint_cuts ORDER BY cut_control_seq DESC LIMIT 1`);
+    if (!anchors.length) return { ...verdict, anchor: null };
+    const anchorLength = Number(anchors[0].journal_length);
+    const anchorHash = hex(asHash(anchors[0].journal_head_hash, "journal_head_hash"));
+    if (verdict.length < anchorLength) {
+      return { ok: false, error: "JOURNAL_TRUNCATED_BELOW_ANCHOR" };
+    }
+    const prefixHash = this.journalHashAt(anchorLength);
+    if (prefixHash !== anchorHash) {
+      return { ok: false, error: "JOURNAL_ANCHOR_MISMATCH" };
+    }
+    return { ...verdict, anchor: { length: anchorLength, headHash: anchorHash } };
+  }
+
+  /** Running chain hash after the first `length` entries (0 = genesis). */
+  private journalHashAt(length: number): string {
+    const rows = this.sql.exec(
+      `SELECT entry_hash FROM control_outbox ORDER BY control_seq LIMIT ?`, length);
+    if (!rows.length) return hex(GENESIS_HASH);
+    return hex(asHash(rows[rows.length - 1].entry_hash, "entry_hash"));
   }
 
   /** Chain-append one journal/outbox row. Caller holds the transaction. */

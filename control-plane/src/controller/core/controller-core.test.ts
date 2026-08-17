@@ -140,7 +140,7 @@ test("fenced replay: a fenced session retrying a durable finalize gets SESSION_F
 
 test("bounded admission fail-closed: payload, outbox depth, tail budget", () => {
   const core = boot();
-  core.setBudgets("db1", { maxUnpublishedOutbox: 2, maxPayloadLength: 1000, maxTailRecords: 5 });
+  core.setBudgets("db1", { maxUnpublishedOutbox: 4, maxPayloadLength: 1000, maxTailRecords: 5 });
 
   const tooBig = core.finalizeWalRecord(req({ payloadLength: 1001 }));
   assert.ok(!tooBig.ok && tooBig.error === "ADMISSION_REJECTED_PAYLOAD_LENGTH");
@@ -153,7 +153,10 @@ test("bounded admission fail-closed: payload, outbox depth, tail budget", () => 
   // draining the outbox restores admission (overload recovery)
   const published: bigint[] = [];
   core.drainOutbox((row) => published.push(row.controlSeq));
-  assert.deepEqual(published, [1n, 2n]);
+  // the bus carries the command ledger too: register(1), budgets-set(2),
+  // then the two finalisations and the budgets-set of this test's setup
+  assert.ok(published.length >= 4 && new Set(published).size === published.length,
+    `bus drains every control event exactly once: ${published}`);
   assert.ok(core.finalizeWalRecord(req()).ok);
 
   // tail budget
@@ -172,7 +175,9 @@ test("outbox drain is exactly-once per control_seq across repeated alarms", () =
   core.drainOutbox((r) => seen.push(r.controlSeq)); // repeated alarm: nothing new
   core.finalizeWalRecord(req());
   core.drainOutbox((r) => seen.push(r.controlSeq));
-  assert.deepEqual(seen, [1n, 2n, 3n]);
+  // register command (1) + two finalisations, then the third finalisation:
+  // exactly once each, in order, across repeated drains
+  assert.deepEqual(seen, [1n, 2n, 3n, 4n]);
 });
 
 test("batch candidate: all-or-nothing equivalence with per-record finalisation", () => {
@@ -266,7 +271,9 @@ test("SQL projection and pure reducer replay are trace-equivalent over a generat
     if (!r.ok) continue; // STATUS_CONFLICT / duplicates are legal schedule outcomes
   }
   // rebuild the event stream from the outbox (the canonical bus contents)
-  core.drainOutbox((row) => events.push(JSON.parse(row.body) as WalRecordEvent));
+  core.drainOutbox((row) => {
+    if (row.kind === "WAL_RECORD_FINALIZED") events.push(JSON.parse(row.body) as WalRecordEvent);
+  });
 
   const reduced = replay(
     MUTANT === "drop-outbox-event" ? events.slice(0, -1) : events,

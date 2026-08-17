@@ -37,6 +37,10 @@
  *                                  bounded by the pinned throughLsn); payloads inline, digest-verified
  *   GET  /wal/{db}/{generation}/last?recordType=N  last record of a type + payload (find_last_type)
  *   GET  /journal/{db}/verify      recompute + verify the authenticated journal (F8)
+ *   GET  /journal/{db}/verify-anchored  journal verification against the newest cut anchor (F6r/F8)
+ *   POST /checkpoint/{db}/{gen}/cut          open a CheckpointCut {cutId} (SESSION_ADMIN)
+ *   POST /checkpoint/{db}/cut/{cutId}/activate  activate with restore evidence (SESSION_ADMIN)
+ *   GET  /checkpoint/{db}/{gen}/active       the ACTIVE cut record
  *   GET  /outbox/{db}?limit=N      peek unpublished control events (no marking)
  *   POST /outbox/{db}/ack          {upToControlSeq} - ack after durable processing
  */
@@ -496,6 +500,52 @@ export default {
         return json({ ok: false, error: "INVALID_PARAMETER", field: "upToControlSeq" }, 400);
       }
       return json({ ok: true, acked: await stub.outboxAck(upTo) });
+    }
+
+    const cutOpen = path.match(/^\/checkpoint\/([^/]+)\/(\d+)\/cut$/);
+    if (request.method === "POST" && cutOpen) {
+      const denied = await requireCapability(cutOpen[1], { method: "SESSION_ADMIN" });
+      if (denied) return denied;
+      const b = (await request.json()) as { cutId: string };
+      const stub = stubFor(cutOpen[1]) as unknown as {
+        openCheckpointCut(db: string, generation: number, cutId: string): Promise<{ ok: boolean }>;
+      };
+      const result = await stub.openCheckpointCut(cutOpen[1], Number(cutOpen[2]), b.cutId);
+      return json(result, result.ok ? 200 : 409);
+    }
+
+    const cutActivate = path.match(/^\/checkpoint\/([^/]+)\/cut\/([^/]+)\/activate$/);
+    if (request.method === "POST" && cutActivate) {
+      const denied = await requireCapability(cutActivate[1], { method: "SESSION_ADMIN" });
+      if (denied) return denied;
+      const b = (await request.json()) as { materializations: string[]; logicalDigest: string };
+      const stub = stubFor(cutActivate[1]) as unknown as {
+        activateCheckpointCut(db: string, cutId: string, evidence: object): Promise<{ ok: boolean }>;
+      };
+      const result = await stub.activateCheckpointCut(cutActivate[1], decodeURIComponent(cutActivate[2]), b);
+      return json(result, result.ok ? 200 : 409);
+    }
+
+    const cutActive = path.match(/^\/checkpoint\/([^/]+)\/(\d+)\/active$/);
+    if (request.method === "GET" && cutActive) {
+      const denied = await requireCapability(cutActive[1], { method: "WAL_READ" });
+      if (denied) return denied;
+      const stub = stubFor(cutActive[1]) as unknown as {
+        activeCheckpointCut(db: string, generation: number): Promise<{ ok: boolean }>;
+      };
+      const result = await stub.activeCheckpointCut(cutActive[1], Number(cutActive[2]));
+      return json(result, result.ok ? 200 : 404);
+    }
+
+    const journalVerifyAnchored = path.match(/^\/journal\/([^/]+)\/verify-anchored$/);
+    if (request.method === "GET" && journalVerifyAnchored) {
+      const denied = await requireCapability(journalVerifyAnchored[1], { method: "JOURNAL_VERIFY" });
+      if (denied) return denied;
+      const stub = stubFor(journalVerifyAnchored[1]) as unknown as {
+        verifyJournalAnchored(): Promise<{ ok: boolean }>;
+      };
+      const verdict = await stub.verifyJournalAnchored();
+      return json(verdict, verdict.ok ? 200 : 409);
     }
 
     const journalVerify = path.match(/^\/journal\/([^/]+)\/verify$/);

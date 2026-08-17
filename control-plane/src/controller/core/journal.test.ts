@@ -109,7 +109,7 @@ test("the journal chains and verifies over real finalisations", () => {
   for (let i = 0; i < 5; i++) assert.ok(core.finalizeWalRecord(req()).ok);
   const verdict = core.verifyJournal();
   assert.ok(verdict.ok, JSON.stringify(verdict));
-  assert.equal(verdict.length, 5);
+  assert.equal(verdict.length, 6); // the SESSION_REGISTERED command + 5 finalisations
   assert.equal(verdict.headHash.length, 64);
   // draining/acking must not touch authentication state
   core.drainOutbox(() => {});
@@ -176,19 +176,21 @@ test("tamper matrix: every interior manipulation is a typed detection", () => {
   }
 });
 
-test("boundary pin: tail truncation is invisible to chain verification (RecoveryAnchor is the staged answer)", () => {
-  // This test EXISTS to keep the known limitation visible: deleting the
-  // journal tail yields a shorter but internally consistent chain. The F8
-  // remainder (external RecoveryAnchor over (length, headHash)) closes it;
-  // when that lands, this test flips to a detection assertion.
+test("boundary pin: tail truncation is invisible to PLAIN chain verification", () => {
+  // This test EXISTS to keep the limitation visible: deleting the journal
+  // tail yields a shorter but internally consistent chain. The CheckpointCut
+  // anchor (controller-state.test.ts) now DETECTS truncation at or below the
+  // newest cut via verifyJournalAnchored; the un-anchored tail window and
+  // the adversarial rewrite-with-DB-access case close with the immutable R2
+  // RecoveryAnchor publication (staged F8 remainder).
   const { core, db } = boot();
   for (let i = 0; i < 4; i++) core.finalizeWalRecord(req());
   const before = core.verifyJournal();
-  assert.ok(before.ok && before.length === 4);
-  db.prepare(`DELETE FROM control_outbox WHERE control_seq = ?`).run(u64Blob(4n, "t"));
+  assert.ok(before.ok && before.length === 5); // register command + 4 finalisations
+  db.prepare(`DELETE FROM control_outbox WHERE control_seq = ?`).run(u64Blob(5n, "t"));
   const truncated = core.verifyJournal();
   assert.ok(truncated.ok, "truncation is undetectable without the external anchor - by construction");
-  assert.equal(truncated.length, 3);
+  assert.equal(truncated.length, 4);
   assert.notEqual(truncated.headHash, before.headHash,
     "the head hash DOES change - an external anchor of (length, headHash) detects truncation");
 });

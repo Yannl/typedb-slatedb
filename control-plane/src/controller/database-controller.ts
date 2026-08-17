@@ -227,6 +227,26 @@ export class DatabaseControllerDO extends DurableObject {
     return this.core().bumpIncarnation();
   }
 
+  openCheckpointCut(databaseId: string, generation: number, cutId: string): ReturnType<ControllerCore["openCheckpointCut"]> {
+    return this.core().openCheckpointCut(databaseId, generation, cutId);
+  }
+
+  activateCheckpointCut(
+    databaseId: string,
+    cutId: string,
+    evidence: Parameters<ControllerCore["activateCheckpointCut"]>[2],
+  ): ReturnType<ControllerCore["activateCheckpointCut"]> {
+    return this.core().activateCheckpointCut(databaseId, cutId, evidence);
+  }
+
+  activeCheckpointCut(databaseId: string, generation: number): ReturnType<ControllerCore["activeCheckpointCut"]> {
+    return this.core().activeCheckpointCut(databaseId, generation);
+  }
+
+  verifyJournalAnchored(): ReturnType<ControllerCore["verifyJournalAnchored"]> {
+    return this.core().verifyJournalAnchored();
+  }
+
   private core(): ControllerCore {
     return this.controllerCore;
   }

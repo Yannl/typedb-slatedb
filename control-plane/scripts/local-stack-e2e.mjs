@@ -63,8 +63,12 @@ function capSpecFor(method, rawPath, body) {
   if (m) return { databaseId: m[1], method: "WAL_READ" };
   m = path.match(/^\/outbox\/([^/]+)/);
   if (m) return { databaseId: m[1], method: "OUTBOX" };
-  m = path.match(/^\/journal\/([^/]+)\/verify$/);
+  m = path.match(/^\/journal\/([^/]+)\/verify(-anchored)?$/);
   if (m) return { databaseId: m[1], method: "JOURNAL_VERIFY" };
+  m = path.match(/^\/checkpoint\/([^/]+)\/\d+\/active$/);
+  if (m) return { databaseId: m[1], method: "WAL_READ" };
+  m = path.match(/^\/checkpoint\/([^/]+)\//);
+  if (m) return { databaseId: m[1], method: "SESSION_ADMIN" };
   m = path.match(/^\/admin\/([^/]+)\//);
   if (m) return { databaseId: m[1], method: "SESSION_ADMIN" };
   throw new Error(`no capability mapping for ${method} ${path}`);
@@ -180,17 +184,21 @@ check("identical re-upload is idempotent", idempotentPut.response.status === 200
 
 // 9. outbox consumer loop: at-least-once peek/ack with redelivery
 const peek1 = await api("GET", `/outbox/${DB}?limit=10`);
-check("outbox peek returns finalized events", peek1.body.ok && peek1.body.events.length === 2,
-  `events=${peek1.body.events?.length}`);
+// the bus carries the COMMAND LEDGER too (F7r): register + fence commands
+// ride alongside the two WAL_RECORD_FINALIZED events
+const walEvents = peek1.body.events.filter((e) => e.kind === "WAL_RECORD_FINALIZED");
+check("outbox peek returns finalized + command events",
+  peek1.body.ok && walEvents.length === 2 && peek1.body.events.length === 4,
+  `events=${peek1.body.events?.length} wal=${walEvents.length}`);
 const peek2 = await api("GET", `/outbox/${DB}?limit=10`);
 check("unacked events are redelivered", peek2.body.events.length === peek1.body.events.length);
 const kinds = new Set(peek1.body.events.map((e) => e.kind));
-check("events carry canonical bodies", kinds.has("WAL_RECORD_FINALIZED") &&
+check("events carry canonical bodies", kinds.has("WAL_RECORD_FINALIZED") && kinds.has("SESSION_REGISTERED") &&
   peek1.body.events.every((e) => JSON.parse(e.body).databaseId === DB));
 // controlSeq is a decimal-string u64 on the wire (F7): compare as bigint
 const maxSeq = peek1.body.events.map((e) => BigInt(e.controlSeq)).reduce((a, b) => (a > b ? a : b)).toString();
 const ack = await api("POST", `/outbox/${DB}/ack`, { upToControlSeq: maxSeq });
-check("ack marks events", ack.body.ok && ack.body.acked === 2, JSON.stringify(ack.body));
+check("ack marks events", ack.body.ok && ack.body.acked === 4, JSON.stringify(ack.body));
 const peek3 = await api("GET", `/outbox/${DB}?limit=10`);
 check("acked events are not redelivered", peek3.body.events.length === 0);
 const ackAgain = await api("POST", `/outbox/${DB}/ack`, { upToControlSeq: maxSeq });
@@ -353,12 +361,35 @@ const stale = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { 
 check("stale-incarnation tokens die with their controller",
   stale.status === 403 && stale.body.error === "CAPABILITY_STALE_INCARNATION");
 
-// F8: the authenticated journal verifies end-to-end over the whole run
-// (6 WAL finalisations + the journaled incarnation bump)
+// 16. F6r CheckpointCut lifecycle over HTTP
+const cutOpen = await api("POST", `/checkpoint/${DB}/${GEN}/cut`, { cutId: "e2e-cut-1" });
+check("checkpoint cut opens with head + journal anchor",
+  cutOpen.body.ok === true && cutOpen.body.headLsn === "5" && Number(cutOpen.body.journalLength) > 0,
+  JSON.stringify(cutOpen.body));
+const cutDup = await api("POST", `/checkpoint/${DB}/${GEN}/cut`, { cutId: "e2e-cut-1" });
+check("duplicate cut id is refused", cutDup.status === 409 && cutDup.body.error === "CUT_EXISTS");
+const noEvidence = await api("POST", `/checkpoint/${DB}/cut/e2e-cut-1/activate`, { materializations: [], logicalDigest: "" });
+check("activation without restore evidence fails closed",
+  noEvidence.status === 409 && noEvidence.body.error === "CUT_EVIDENCE_MISSING");
+const activate = await api("POST", `/checkpoint/${DB}/cut/e2e-cut-1/activate`,
+  { materializations: ["m-e2e-1"], logicalDigest: "ld-e2e" });
+check("activation with evidence succeeds", activate.body.ok === true && activate.body.superseded === null);
+const activeCut = await api("GET", `/checkpoint/${DB}/${GEN}/active`);
+check("active cut is readable", activeCut.body.ok === true && activeCut.body.cutId === "e2e-cut-1"
+  && activeCut.body.logicalDigest === "ld-e2e");
+
+// F8+F6r: the authenticated journal verifies end-to-end, INCLUDING the
+// command ledger (sessions, budgets-free run: 4 session commands), the
+// incarnation bump, and the cut events, against the newest cut anchor
 const journal = await api("GET", `/journal/${DB}/verify`);
 check("authenticated journal verifies (chain + MACs)",
-  journal.body.ok === true && journal.body.length === 7 && /^[0-9a-f]{64}$/.test(journal.body.headHash),
+  journal.body.ok === true && journal.body.length === 13 && /^[0-9a-f]{64}$/.test(journal.body.headHash),
   JSON.stringify(journal.body));
+const anchored = await api("GET", `/journal/${DB}/verify-anchored`);
+check("journal verifies against the cut anchor",
+  anchored.body.ok === true && anchored.body.anchor !== null
+  && Number(anchored.body.anchor.length) > 0,
+  JSON.stringify(anchored.body));
 
 console.log(failures === 0 ? "\nL1 LOCAL STACK E2E: ALL PASS" : `\nL1 LOCAL STACK E2E: ${failures} FAILURES`);
 process.exit(failures === 0 ? 0 : 1);

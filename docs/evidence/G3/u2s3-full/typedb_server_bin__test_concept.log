@@ -60335,3 +60335,12 @@ Feature: Concept Attribute Type :: Struct cannot be commited without fields
    ✔  Then entity(person) get owns(custom-attribute) get declared annotation categories do not contain: @regex
    ✔  When transaction commits
    ✔  When connection open schema transaction for database: typedb
+   ✔  Then entity(person) get owns(custom-attribute) get constraints do not contain: @regex("\S+")
+   ✔  Then entity(person) get owns(custom-attribute) get declared annotations do not contain: @regex("\S+")
+   ✔  Then entity(person) get owns(custom-attribute) get declared annotation categories do not contain: @regex
+   ✔  When entity(person) get owns(custom-attribute) set annotation: @regex("\S+")
+   ✔  Then entity(person) get owns(custom-attribute) get constraints contain: @regex("\S+")
+   ✔  Then entity(person) get owns(custom-attribute) get declared annotations contain: @regex("\S+")
+   ✔  Then entity(person) get owns(custom-attribute) get declared annotation categories contain: @regex
+   ✔  When transaction commits
+   ✔  When connection open schema transaction for database: typedb

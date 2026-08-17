@@ -200,7 +200,7 @@ export default {
      *  database's authority. null = authorized; otherwise the typed 401/403. */
     const requireCapability = async (
       databaseId: string,
-      expect: { method: string; key?: string; bodyDigest?: string; bodyLength?: number },
+      expect: { method: string; session?: string; key?: string; bodyDigest?: string; bodyLength?: number },
     ): Promise<Response | null> => {
       const token = request.headers.get("x-capability");
       if (token === null) return json({ ok: false, error: "CAPABILITY_REQUIRED" }, 401);
@@ -318,7 +318,11 @@ export default {
       if (invalidRecordType(req.recordType)) {
         return json({ ok: false, error: "INVALID_RECORD_TYPE", observed: req.recordType ?? null }, 400);
       }
-      const denied = await requireCapability(req.databaseId, { method: "WAL_FINALIZE" });
+      // the finalize capability MUST be bound to the request's session
+      // (donor A3): a session id in the body is not by itself write authority
+      const denied = await requireCapability(req.databaseId, {
+        method: "WAL_FINALIZE", session: String((req as { startupSessionId?: unknown }).startupSessionId ?? ""),
+      });
       if (denied) return denied;
       const receiptError = await verifyReceipt(req);
       if (receiptError !== null) return receiptError;
@@ -335,16 +339,22 @@ export default {
         return json({ ok: false, error: "EMPTY_BATCH" }, 400);
       }
       const databaseId = body.requests[0].databaseId;
+      const batchSession = String((body.requests[0] as { startupSessionId?: unknown }).startupSessionId ?? "");
       for (const req of body.requests) {
         if (req.databaseId !== databaseId) {
           // one DO per database: a batch is one transaction on ONE authority
           return json({ ok: false, error: "BATCH_SPANS_DATABASES" }, 400);
         }
+        if (String((req as { startupSessionId?: unknown }).startupSessionId ?? "") !== batchSession) {
+          // one actor per batch: a batch is one transaction by ONE session,
+          // so one session-bound capability authorizes it (donor A3)
+          return json({ ok: false, error: "BATCH_SPANS_SESSIONS" }, 400);
+        }
         if (invalidRecordType(req.recordType)) {
           return json({ ok: false, error: "INVALID_RECORD_TYPE", observed: req.recordType ?? null }, 400);
         }
       }
-      const denied = await requireCapability(databaseId, { method: "WAL_FINALIZE" });
+      const denied = await requireCapability(databaseId, { method: "WAL_FINALIZE", session: batchSession });
       if (denied) return denied;
       const receiptErrors = await mapBounded(body.requests, PAYLOAD_FETCH_CONCURRENCY, verifyReceipt);
       const firstReceiptError = receiptErrors.find((error) => error !== null);

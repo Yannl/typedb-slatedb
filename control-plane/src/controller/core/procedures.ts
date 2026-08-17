@@ -364,11 +364,16 @@ export class ControllerCore {
     );
     if (!session.length) return { ok: false as const, error: "SESSION_UNKNOWN" as const };
     if (Number(session[0].fenced)) {
-      // Attribution, not authority (hydradb comparative review): the fenced
-      // actor learns WHO superseded it — epochs/fences alone carry no
-      // identity, and the first question in a fence incident is "who is the
-      // writer now?". Served from the authority row read-only; it can never
-      // change the outcome.
+      // Attribution, not a credential (donor A3): the fenced actor learns
+      // WHO superseded it — the first question in a fence incident is "who
+      // is the writer now?". This disclosure is only SAFE because the
+      // session id is no longer sufficient to write: WAL_FINALIZE authority
+      // requires a capability BOUND to the session (worker-entry's finalize
+      // guard passes the session; capability.ts enforces the binding), and
+      // the controller issues a session-bound finalize capability only to
+      // the actor it admitted as that session. A leaked id without such a
+      // capability finalizes nothing. Served from the authority row
+      // read-only; it can never change this call's outcome.
       const live = this.sql.exec(
         `SELECT startup_session_id FROM sessions WHERE database_id=? AND fenced=0 LIMIT 1`,
         req.databaseId,

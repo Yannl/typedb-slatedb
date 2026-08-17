@@ -27,6 +27,12 @@ export interface CapabilityPayload {
   principal: string;
   databaseId: string;
   method: string;
+  /** the startup session this capability authorizes (WAL_FINALIZE only): the
+   *  actor identity is BOUND into the token, so a disclosed session id (e.g.
+   *  via a SESSION_FENCED attribution) is not by itself a write credential -
+   *  the controller only issues a session-bound finalize capability to the
+   *  actor it admitted as that session (donor A3). */
+  session?: string;
   /** exact object key (PUT_PAYLOAD only; issuer-derived, content-addressed) */
   key?: string;
   /** required sha256 hex of the body (PUT_PAYLOAD only) */
@@ -46,6 +52,7 @@ export type CapabilityCheck =
       | "CAPABILITY_EXPIRED"
       | "CAPABILITY_METHOD_MISMATCH"
       | "CAPABILITY_AUDIENCE_MISMATCH"
+      | "CAPABILITY_SESSION_MISMATCH"
       | "CAPABILITY_KEY_MISMATCH"
       | "CAPABILITY_DIGEST_MISMATCH"
       | "CAPABILITY_BUDGET_EXCEEDED"
@@ -92,6 +99,11 @@ export function checkCapability(
     databaseId: string;
     currentIncarnation: number;
     nowMs: number;
+    /** when set, the capability MUST carry a matching session binding - a
+     *  finalize request cannot be authorized by a session-unbound token
+     *  (donor A3): the actor identity is part of the authority, not just a
+     *  field in the request body. */
+    session?: string;
     key?: string;
     bodyDigest?: string;
     bodyLength?: number;
@@ -118,6 +130,12 @@ export function checkCapability(
   if (payload.incarnation !== expect.currentIncarnation) return { ok: false, error: "CAPABILITY_STALE_INCARNATION" };
   if (payload.method !== expect.method) return { ok: false, error: "CAPABILITY_METHOD_MISMATCH" };
   if (payload.databaseId !== expect.databaseId) return { ok: false, error: "CAPABILITY_AUDIENCE_MISMATCH" };
+  // session binding: when the route demands a session (finalize), the token
+  // must carry exactly that session - a session-unbound token is refused, so
+  // knowing a session id cannot be turned into write authority
+  if (expect.session !== undefined && payload.session !== expect.session) {
+    return { ok: false, error: "CAPABILITY_SESSION_MISMATCH" };
+  }
   if (payload.key !== undefined && payload.key !== expect.key) return { ok: false, error: "CAPABILITY_KEY_MISMATCH" };
   if (payload.digest !== undefined && payload.digest !== expect.bodyDigest) {
     return { ok: false, error: "CAPABILITY_DIGEST_MISMATCH" };

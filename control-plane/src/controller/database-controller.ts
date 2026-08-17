@@ -177,6 +177,7 @@ export class DatabaseControllerDO extends DurableObject {
     principal: string;
     databaseId: string;
     method: string;
+    session?: string;
     digest?: string;
     maxBytes?: number;
     ttlMs?: number;
@@ -190,6 +191,7 @@ export class DatabaseControllerDO extends DurableObject {
       principal: spec.principal,
       databaseId: spec.databaseId,
       method: spec.method,
+      ...(spec.session !== undefined ? { session: spec.session } : {}),
       ...(key !== undefined ? { key } : {}),
       ...(spec.digest !== undefined ? { digest: spec.digest } : {}),
       ...(spec.maxBytes !== undefined ? { maxBytes: spec.maxBytes } : {}),
@@ -208,7 +210,7 @@ export class DatabaseControllerDO extends DurableObject {
    */
   useCapability(
     token: string,
-    expect: { method: string; databaseId: string; key?: string; bodyDigest?: string; bodyLength?: number },
+    expect: { method: string; databaseId: string; session?: string; key?: string; bodyDigest?: string; bodyLength?: number },
   ): CapabilityCheck | { ok: false; error: "CAPABILITY_REPLAYED" } {
     const nowMs = Date.now();
     const checked = checkCapability(this.capabilityKey, token, {

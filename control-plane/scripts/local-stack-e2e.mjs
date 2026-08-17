@@ -57,8 +57,14 @@ function capSpecFor(method, rawPath, body) {
   if (path.startsWith("/session/") || path === "/budgets") {
     return { databaseId: body.databaseId, method: "SESSION_ADMIN" };
   }
-  if (path === "/wal/finalize") return { databaseId: body.databaseId, method: "WAL_FINALIZE" };
-  if (path === "/wal/finalize-batch") return { databaseId: body.requests[0].databaseId, method: "WAL_FINALIZE" };
+  // finalize capabilities are SESSION-bound (donor A3): the token carries
+  // the actor identity, so a disclosed session id is not itself write authority
+  if (path === "/wal/finalize") {
+    return { databaseId: body.databaseId, method: "WAL_FINALIZE", session: body.startupSessionId };
+  }
+  if (path === "/wal/finalize-batch") {
+    return { databaseId: body.requests[0].databaseId, method: "WAL_FINALIZE", session: body.requests[0].startupSessionId };
+  }
   let m = path.match(/^\/wal\/([^/]+)\//);
   if (m) return { databaseId: m[1], method: "WAL_READ" };
   m = path.match(/^\/outbox\/([^/]+)/);
@@ -334,6 +340,18 @@ const wrongMethod = await rawApi("POST", "/wal/finalize", { ...finalizeRequest, 
   false, { "x-capability": readCap2.token });
 check("method binding: a read token cannot finalize",
   wrongMethod.status === 403 && wrongMethod.body.error === "CAPABILITY_METHOD_MISMATCH");
+
+// session binding (donor A3): a finalize capability bound to session sess-3
+// cannot authorize a finalize request that claims a DIFFERENT session, even
+// though that session is a live unfenced actor. Knowing a session id is not
+// write authority.
+const otherSessionCap = await issueCap({ databaseId: DB, method: "WAL_FINALIZE", session: "sess-OTHER" });
+const impersonate = await rawApi("POST", "/wal/finalize",
+  { ...finalizeRequest, startupSessionId: "sess-3", operationId: "op-impersonate", requestDigest: "rd-imp" },
+  false, { "x-capability": otherSessionCap.token });
+check("session binding: a token bound to another session cannot finalize as sess-3",
+  impersonate.status === 403 && impersonate.body.error === "CAPABILITY_SESSION_MISMATCH",
+  JSON.stringify(impersonate.body));
 
 const foreignCap = await issueCap({ databaseId: "other-db", method: "WAL_READ" });
 const wrongAudience = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { "x-capability": foreignCap.token });

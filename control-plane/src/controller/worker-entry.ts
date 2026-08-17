@@ -30,13 +30,18 @@
 
 export { DatabaseControllerDO } from "./database-controller.ts";
 
+import { u64FromWire } from "./core/procedures.ts";
+
 interface Env {
   CONTROLLER: DurableObjectNamespace;
   PAYLOADS: R2Bucket;
 }
 
 function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  // sequence values are bigint end-to-end (F7); their canonical JSON
+  // encoding is the decimal string - JSON numbers stop being exact at 2^53
+  const encoded = JSON.stringify(body, (_key, value) => (typeof value === "bigint" ? value.toString() : value));
+  return new Response(encoded, { status, headers: { "content-type": "application/json" } });
 }
 
 async function sha256hex(bytes: ArrayBuffer): Promise<string> {
@@ -137,6 +142,15 @@ function nonNegativeInt(raw: string | null, fallback: number): number | null {
   return Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
+/** Sequence-valued query parameters (F7): exact u64 from a decimal string,
+ *  over the full range - no 2^53 cliff. Returns null when invalid. */
+function nonNegativeU64(raw: string | null, fallback: bigint): bigint | null {
+  if (raw === null) return fallback;
+  if (!/^\d+$/.test(raw)) return null;
+  const value = BigInt(raw);
+  return value <= (1n << 64n) - 1n ? value : null;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -184,12 +198,12 @@ export default {
         setBudgets(db: string, budgets: object): Promise<void>;
         finalizeWalRecord(req: object): Promise<Record<string, unknown>>;
         finalizeBatch(reqs: object[]): Promise<Record<string, unknown>[] | Record<string, unknown>>;
-        exactLookup(db: string, generation: number, lsn: number): Promise<Record<string, unknown>>;
+        exactLookup(db: string, generation: number, lsn: bigint): Promise<Record<string, unknown>>;
         auditContiguity(db: string, generation: number): Promise<Record<string, unknown>>;
         head(db: string, generation: number): Promise<Record<string, unknown>>;
         openIterator(db: string, generation: number): Promise<Record<string, unknown>>;
         scan(db: string, generation: number, opts: object): Promise<{
-          records: Record<string, unknown>[]; nextFromLsn: number | null;
+          records: Record<string, unknown>[]; nextFromLsn: bigint | null;
         }>;
         lastByType(db: string, generation: number, recordType: number): Promise<Record<string, unknown>>;
         queryOperation(db: string, generation: number, operationId: string): Promise<Record<string, unknown>>;
@@ -277,7 +291,7 @@ export default {
     const walRead = path.match(/^\/wal\/([^/]+)\/(\d+)\/(\d+)$/);
     if (request.method === "GET" && walRead) {
       const [, db, generation, lsn] = walRead;
-      const record = await stubFor(db).exactLookup(db, Number(generation), Number(lsn));
+      const record = await stubFor(db).exactLookup(db, Number(generation), BigInt(lsn));
       if (!record.ok) return json(record, 404);
       // exact reads re-verify bytes against the catalogued digest: serving
       // corrupted payload under valid metadata is worse than failing; a
@@ -314,9 +328,9 @@ export default {
         // started (inv. 41-42): the pinned snapshot bound is mandatory
         return json({ ok: false, error: "MISSING_THROUGH_LSN" }, 400);
       }
-      const fromTypeSequence = nonNegativeInt(url.searchParams.get("fromTs"), 0);
-      const fromLsn = nonNegativeInt(url.searchParams.get("fromLsn"), 0);
-      const throughLsn = nonNegativeInt(throughLsnParam, 0);
+      const fromTypeSequence = nonNegativeU64(url.searchParams.get("fromTs"), 0n);
+      const fromLsn = nonNegativeU64(url.searchParams.get("fromLsn"), 0n);
+      const throughLsn = nonNegativeU64(throughLsnParam, 0n);
       const rawLimit = nonNegativeInt(url.searchParams.get("limit"), 100);
       const rawMaxBytes = nonNegativeInt(url.searchParams.get("maxBytes"), SCAN_PAGE_BYTE_BUDGET);
       if (fromTypeSequence === null || fromLsn === null || throughLsn === null || rawLimit === null
@@ -345,7 +359,7 @@ export default {
       }
       const included = page.records.slice(0, cut);
       const nextFromLsn = cut < page.records.length
-        ? (included[included.length - 1] as { appendLsn: number }).appendLsn + 1
+        ? (included[included.length - 1] as { appendLsn: bigint }).appendLsn + 1n
         : page.nextFromLsn;
       const payloads = await mapBounded(included, PAYLOAD_FETCH_CONCURRENCY, (record) =>
         verifiedPayloadBase64(env, record as { payloadKey: string; payloadDigest: string }),
@@ -393,9 +407,15 @@ export default {
 
     const outboxAck = path.match(/^\/outbox\/([^/]+)\/ack$/);
     if (request.method === "POST" && outboxAck) {
-      const b = (await request.json()) as { upToControlSeq: number };
-      const stub = stubFor(outboxAck[1]) as unknown as { outboxAck(seq: number): Promise<number> };
-      return json({ ok: true, acked: await stub.outboxAck(b.upToControlSeq) });
+      const b = (await request.json()) as { upToControlSeq: number | string };
+      const stub = stubFor(outboxAck[1]) as unknown as { outboxAck(seq: bigint): Promise<number> };
+      let upTo: bigint;
+      try {
+        upTo = u64FromWire(b.upToControlSeq, "upToControlSeq");
+      } catch {
+        return json({ ok: false, error: "INVALID_PARAMETER", field: "upToControlSeq" }, 400);
+      }
+      return json({ ok: true, acked: await stub.outboxAck(upTo) });
     }
 
     const walAudit = path.match(/^\/wal\/([^/]+)\/(\d+)\/audit$/);

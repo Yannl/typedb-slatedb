@@ -53,13 +53,13 @@ const finalizeRequest = {
   payloadKey: `${DB}/g1/p1`, payloadDigest: digest1, payloadLength: payload1.length,
 };
 const f1 = await api("POST", "/wal/finalize", finalizeRequest);
-check("finalize allocates lsn 0", f1.body.ok === true && f1.body.appendLsn === 0 && f1.body.replayed === false,
+check("finalize allocates lsn 0", f1.body.ok === true && f1.body.appendLsn === "0" && f1.body.replayed === false,
   JSON.stringify(f1.body));
 
 // 2. lost-response ambiguity: identical retry replays the SAME allocation
 const f1retry = await api("POST", "/wal/finalize", finalizeRequest);
 check("ambiguous retry replays identically",
-  f1retry.body.ok === true && f1retry.body.appendLsn === 0 && f1retry.body.replayed === true);
+  f1retry.body.ok === true && f1retry.body.appendLsn === "0" && f1retry.body.replayed === true);
 
 // 3. tampered digest is rejected by the DATA PATH before the controller
 const tampered = { ...finalizeRequest, operationId: "op-tampered", requestDigest: "rd-t", payloadDigest: "0".repeat(64) };
@@ -106,7 +106,7 @@ check("fenced session rejected", fenced.status === 409 && fenced.body.error === 
 
 // 8. contiguity audit
 const audit = await api("GET", `/wal/${DB}/${GEN}/audit`);
-check("tail contiguous", audit.body.contiguous === true && audit.body.count === 2, JSON.stringify(audit.body));
+check("tail contiguous", audit.body.contiguous === true && audit.body.count === 2 && audit.body.maxLsn === "1", JSON.stringify(audit.body));
 
 // 8b. payload immutability on the data path
 const overwrite = await api("PUT", `/payload/${DB}/g1/p1`, Buffer.from("DIFFERENT BYTES"), true);
@@ -124,7 +124,8 @@ check("unacked events are redelivered", peek2.body.events.length === peek1.body.
 const kinds = new Set(peek1.body.events.map((e) => e.kind));
 check("events carry canonical bodies", kinds.has("WAL_RECORD_FINALIZED") &&
   peek1.body.events.every((e) => JSON.parse(e.body).databaseId === DB));
-const maxSeq = Math.max(...peek1.body.events.map((e) => e.controlSeq));
+// controlSeq is a decimal-string u64 on the wire (F7): compare as bigint
+const maxSeq = peek1.body.events.map((e) => BigInt(e.controlSeq)).reduce((a, b) => (a > b ? a : b)).toString();
 const ack = await api("POST", `/outbox/${DB}/ack`, { upToControlSeq: maxSeq });
 check("ack marks events", ack.body.ok && ack.body.acked === 2, JSON.stringify(ack.body));
 const peek3 = await api("GET", `/outbox/${DB}?limit=10`);
@@ -140,7 +141,7 @@ const takeover = await api("POST", "/wal/finalize", {
   ...finalizeRequest, startupSessionId: "sess-2", operationId: "op-2", requestDigest: "rd-2",
   payloadKey: `${DB}/g1/p2`, payloadDigest: sha256hex(payload2), payloadLength: payload2.length,
 });
-check("new actor appends after taking over", takeover.body.ok === true && takeover.body.appendLsn === 2);
+check("new actor appends after taking over", takeover.body.ok === true && takeover.body.appendLsn === "2");
 await api("POST", "/session/register", { databaseId: DB, generation: GEN, startupSessionId: "sess-3" });
 const fencedByRegister = await api("POST", "/wal/finalize", {
   ...finalizeRequest, startupSessionId: "sess-2", operationId: "op-2b", requestDigest: "rd-2b",
@@ -155,34 +156,34 @@ const f3 = await api("POST", "/wal/finalize", {
   ...finalizeRequest, startupSessionId: "sess-3", operationId: "op-3", requestDigest: "rd-3",
   payloadKey: `${DB}/g1/p3`, payloadDigest: sha256hex(payload3), payloadLength: payload3.length,
 });
-check("current actor appends lsn 3", f3.body.ok === true && f3.body.appendLsn === 3);
+check("current actor appends lsn 3", f3.body.ok === true && f3.body.appendLsn === "3");
 
 // 11. head: TypeSequence, not physical LSN (they diverge here: 4 records, 3 sequenced)
 const head = await api("GET", `/wal/${DB}/${GEN}/head`);
 check("head reports lsn and type sequence",
-  head.body.ok === true && head.body.headLsn === 3 && head.body.headTypeSequence === 3,
+  head.body.ok === true && head.body.headLsn === "3" && head.body.headTypeSequence === "3",
   JSON.stringify(head.body));
 
 // 12. pinned iterator + ordered scan with verified inline payloads
 const iter = await api("POST", `/wal/${DB}/${GEN}/iterator`);
-check("iterator pins the head", iter.body.ok === true && iter.body.headLsn === 3);
+check("iterator pins the head", iter.body.ok === true && iter.body.headLsn === "3");
 const scan = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=1&throughLsn=${iter.body.headLsn}&limit=100`);
 check("scan replays in physical order",
   scan.body.ok === true &&
   JSON.stringify(scan.body.records.map((r) => [r.appendLsn, r.typeSequence, r.recordType])) ===
-    JSON.stringify([[0, 1, 2], [1, 1, 1], [2, 2, 2], [3, 3, 2]]),
+    JSON.stringify([["0", "1", 2], ["1", "1", 1], ["2", "2", 2], ["3", "3", 2]]),
   JSON.stringify(scan.body.records?.map((r) => [r.appendLsn, r.typeSequence, r.recordType])));
 check("scan payloads round-trip",
   Buffer.from(scan.body.records[0].payloadBase64, "base64").equals(payload1) &&
   Buffer.from(scan.body.records[3].payloadBase64, "base64").equals(payload3));
 const scanTyped = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&throughLsn=${iter.body.headLsn}&recordType=1&limit=100`);
-check("scan filters by record type", scanTyped.body.records.length === 1 && scanTyped.body.records[0].appendLsn === 1);
+check("scan filters by record type", scanTyped.body.records.length === 1 && scanTyped.body.records[0].appendLsn === "1");
 const scanUnbounded = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&limit=100`);
 check("unbounded scan is refused (pinned snapshot is mandatory)",
   scanUnbounded.status === 400 && scanUnbounded.body.error === "MISSING_THROUGH_LSN");
 const scanZeroLimit = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&throughLsn=${iter.body.headLsn}&limit=0`);
 check("limit=0 is clamped to one record, never a crash",
-  scanZeroLimit.body.ok === true && scanZeroLimit.body.records.length === 1 && scanZeroLimit.body.nextFromLsn === 1);
+  scanZeroLimit.body.ok === true && scanZeroLimit.body.records.length === 1 && scanZeroLimit.body.nextFromLsn === "1");
 const scanBadParam = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=abc&throughLsn=${iter.body.headLsn}`);
 check("non-numeric scan parameter is a typed 400",
   scanBadParam.status === 400 && scanBadParam.body.error === "INVALID_PARAMETER");
@@ -190,23 +191,23 @@ check("non-numeric scan parameter is a typed 400",
 // resumable exactly like a limit cut
 const scanByteCut = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&throughLsn=${iter.body.headLsn}&maxBytes=1`);
 check("scan byte budget cuts the page with progress",
-  scanByteCut.body.ok === true && scanByteCut.body.records.length === 1 && scanByteCut.body.nextFromLsn === 1,
+  scanByteCut.body.ok === true && scanByteCut.body.records.length === 1 && scanByteCut.body.nextFromLsn === "1",
   JSON.stringify({ n: scanByteCut.body.records?.length, next: scanByteCut.body.nextFromLsn }));
 const scanResume = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&fromLsn=${scanByteCut.body.nextFromLsn}&throughLsn=${iter.body.headLsn}&maxBytes=1`);
 check("byte-cut pages resume without overlap",
-  scanResume.body.records.length === 1 && scanResume.body.records[0].appendLsn === 1);
+  scanResume.body.records.length === 1 && scanResume.body.records[0].appendLsn === "1");
 
 // a finalized operation stays queryable by operation id after its session was
 // fenced (op-1 was finalized by SESSION, fenced in step 7)
 const opQuery = await api("GET", `/wal/${DB}/${GEN}/operation/op-1`);
 check("finalized operation queryable after fencing",
-  opQuery.body.ok === true && opQuery.body.record.appendLsn === 0 && opQuery.body.requestDigest === "rd-1");
+  opQuery.body.ok === true && opQuery.body.record.appendLsn === "0" && opQuery.body.requestDigest === "rd-1");
 const opMiss = await api("GET", `/wal/${DB}/${GEN}/operation/op-ghost-never`);
 check("operation query miss is typed NOT_FOUND", opMiss.status === 404 && opMiss.body.error === "NOT_FOUND");
 
 // 13. last-by-type
 const last = await api("GET", `/wal/${DB}/${GEN}/last?recordType=1`);
-check("last-by-type finds the status record", last.body.ok === true && last.body.record.appendLsn === 1);
+check("last-by-type finds the status record", last.body.ok === true && last.body.record.appendLsn === "1");
 const lastMiss = await api("GET", `/wal/${DB}/${GEN}/last?recordType=99`);
 check("last-by-type miss is typed NOT_FOUND", lastMiss.status === 404 && lastMiss.body.error === "NOT_FOUND");
 const badType = await api("POST", "/wal/finalize", {
@@ -226,7 +227,7 @@ const batchOk = await api("POST", "/wal/finalize-batch", { requests: [
     payloadKey: `${DB}/g1/bb`, payloadDigest: sha256hex(batchB), payloadLength: batchB.length },
 ]});
 check("batch finalize allocates contiguously",
-  batchOk.body.ok === true && JSON.stringify(batchOk.body.results.map((r) => r.appendLsn)) === JSON.stringify([4, 5]),
+  batchOk.body.ok === true && JSON.stringify(batchOk.body.results.map((r) => r.appendLsn)) === JSON.stringify(["4", "5"]),
   JSON.stringify(batchOk.body));
 const batchAborted = await api("POST", "/wal/finalize-batch", { requests: [
   { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-3", requestDigest: "rd-bb3",

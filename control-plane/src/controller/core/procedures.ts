@@ -40,8 +40,8 @@ export const SCHEMA = `
   CREATE TABLE IF NOT EXISTS wal_tail(
     database_id TEXT NOT NULL,
     generation INTEGER NOT NULL,
-    append_lsn INTEGER NOT NULL,
-    type_sequence INTEGER NOT NULL,
+    append_lsn BLOB NOT NULL,
+    type_sequence BLOB NOT NULL,
     sequencing_kind TEXT NOT NULL CHECK(sequencing_kind IN ('SEQUENCED','UNSEQUENCED')),
     payload_key TEXT NOT NULL,
     payload_digest TEXT NOT NULL,
@@ -50,7 +50,7 @@ export const SCHEMA = `
     request_digest TEXT NOT NULL,
     unsequenced_logical_key TEXT,
     startup_session_id TEXT NOT NULL,
-    control_seq INTEGER NOT NULL,
+    control_seq BLOB NOT NULL,
     record_type INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY(database_id, generation, append_lsn),
     UNIQUE(database_id, generation, finalization_operation_id)
@@ -61,7 +61,7 @@ export const SCHEMA = `
   CREATE INDEX IF NOT EXISTS wal_type_scan
     ON wal_tail(database_id, generation, record_type, append_lsn);
   CREATE TABLE IF NOT EXISTS control_outbox(
-    control_seq INTEGER PRIMARY KEY,
+    control_seq BLOB PRIMARY KEY,
     database_id TEXT NOT NULL,
     kind TEXT NOT NULL,
     canonical_body TEXT NOT NULL,
@@ -82,14 +82,62 @@ export const SCHEMA = `
   );
 `;
 
-/** V16 exactness rule: authoritative u64 sequence values (AppendLsn,
- *  TypeSequence, ControlSeq) must stay exact. SQLite stores i64 and
- *  JavaScript `number` is exact only to 2^53-1, so any sequence at or beyond
- *  that bound - or non-integral, or below the -1 empty-head sentinel - is an
- *  invariant catastrophe and fails CLOSED here instead of silently rounding.
- *  (The full fixed-width big-endian blob representation is staged:
- *  docs/reviews/v16-convergence-audit.md F7.) */
-function exactU64(value: unknown, context: string): number {
+/* V16 exactness rule (F7): authoritative u64 sequence values (AppendLsn,
+ * TypeSequence, ControlSeq) are exact over the FULL u64 range. In SQL they
+ * are 8-byte big-endian blobs - SQLite compares blobs bytewise, so ORDER BY,
+ * MAX() and range predicates order exactly as the u64s do, with no i64 cast
+ * and no 2^53 cliff. In JS they are bigint end to end; on the JSON wire they
+ * are decimal strings (JSON numbers stop being exact at 2^53). Legacy rows
+ * that stored INTEGER sequences fail CLOSED in u64FromSql - a typed
+ * representation violation, never a silent reinterpretation. */
+
+export const U64_MAX = (1n << 64n) - 1n;
+
+/** Encode an exact u64 as its 8-byte big-endian SQL blob. */
+export function u64Blob(value: bigint, context: string): Uint8Array {
+  if (value < 0n || value > U64_MAX) {
+    throw new Error(`INTEGER_RANGE_VIOLATION: ${context}=${value} outside u64`);
+  }
+  const bytes = new Uint8Array(8);
+  new DataView(bytes.buffer).setBigUint64(0, value);
+  return bytes;
+}
+
+/** Decode an authoritative sequence read back from SQL. Blobs only: any
+ *  other representation under a sequence column is a corruption of the
+ *  storage contract and fails closed. */
+export function u64FromSql(value: unknown, context: string): bigint {
+  const bytes =
+    value instanceof Uint8Array ? value : value instanceof ArrayBuffer ? new Uint8Array(value) : null;
+  if (bytes === null || bytes.byteLength !== 8) {
+    throw new Error(
+      `INTEGER_REPRESENTATION_VIOLATION: ${context} is not an 8-byte big-endian blob; ` +
+        `pre-blob rows must be migrated, never reinterpreted`,
+    );
+  }
+  return new DataView(bytes.buffer, bytes.byteOffset, 8).getBigUint64(0);
+}
+
+/** Parse a u64 from the wire/API boundary: decimal string (the canonical
+ *  JSON encoding), exact-integer number (legacy-client convenience inside
+ *  the exact range), or bigint. Everything else - floats, negatives,
+ *  overflow, NaN - is a typed violation, never a coercion. */
+export function u64FromWire(value: unknown, context: string): bigint {
+  let parsed: bigint;
+  if (typeof value === "bigint") parsed = value;
+  else if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) parsed = BigInt(value);
+  else if (typeof value === "string" && /^\d+$/.test(value)) parsed = BigInt(value);
+  else throw new Error(`INTEGER_RANGE_VIOLATION: ${context}=${String(value)} is not an exact u64`);
+  if (parsed > U64_MAX) {
+    throw new Error(`INTEGER_RANGE_VIOLATION: ${context}=${parsed} outside u64`);
+  }
+  return parsed;
+}
+
+/** Non-sequence integers (generation, budgets, payload lengths) remain JS
+ *  numbers, guarded to the exact range - they are human/config-scale, and a
+ *  value outside 2^53 is an invariant catastrophe that fails closed. */
+export function exactU64(value: unknown, context: string): number {
   const n = Number(value);
   if (!Number.isSafeInteger(n) || n < -1) {
     throw new Error(`INTEGER_RANGE_VIOLATION: ${context}=${String(value)} outside exact JS integer range`);
@@ -125,10 +173,11 @@ export interface FinalizeRequest {
   payloadLength: number;
 }
 
-/** One catalogued WAL tail row, as returned by the scan/last read paths. */
+/** One catalogued WAL tail row, as returned by the scan/last read paths.
+ *  Sequence values are exact u64 bigints (F7 blob representation). */
 export interface WalDescriptor {
-  appendLsn: number;
-  typeSequence: number;
+  appendLsn: bigint;
+  typeSequence: bigint;
   sequencingKind: string;
   recordType: number;
   payloadKey: string;
@@ -137,7 +186,7 @@ export interface WalDescriptor {
   logicalKey: string | null;
 }
 
-export type FinalizeResult = Typed<{ appendLsn: number; typeSequence: number; controlSeq: number; replayed: boolean }> | TypedErr;
+export type FinalizeResult = Typed<{ appendLsn: bigint; typeSequence: bigint; controlSeq: bigint; replayed: boolean }> | TypedErr;
 
 export class ControllerCore {
   private readonly sql: SyncSql;
@@ -146,7 +195,11 @@ export class ControllerCore {
     this.sql = sql;
     this.sql.exec(SCHEMA);
     // pre-record_type dev state (CREATE TABLE IF NOT EXISTS cannot add
-    // columns to an existing table): additive migration, idempotent
+    // columns to an existing table): additive migration, idempotent.
+    // NOTE (F7 blob representation): rows written before the u64-blob change
+    // stored INTEGER sequences; they are NOT migrated - u64FromSql fails
+    // closed on them with a typed representation violation. Dev lanes
+    // recreate their state; there is no production data behind this schema.
     try {
       this.sql.exec(`ALTER TABLE wal_tail ADD COLUMN record_type INTEGER NOT NULL DEFAULT 0`);
     } catch {
@@ -274,9 +327,9 @@ export class ControllerCore {
       if (replay[0].request_digest === req.requestDigest) {
         return {
           ok: true as const,
-          appendLsn: exactU64(replay[0].append_lsn, "append_lsn"),
-          typeSequence: exactU64(replay[0].type_sequence, "type_sequence"),
-          controlSeq: exactU64(replay[0].control_seq, "control_seq"),
+          appendLsn: u64FromSql(replay[0].append_lsn, "append_lsn"),
+          typeSequence: u64FromSql(replay[0].type_sequence, "type_sequence"),
+          controlSeq: u64FromSql(replay[0].control_seq, "control_seq"),
           replayed: true,
         };
       }
@@ -300,9 +353,9 @@ export class ControllerCore {
         if (existing[0].payload_digest === req.payloadDigest) {
           return {
             ok: true as const,
-            appendLsn: exactU64(existing[0].append_lsn, "append_lsn"),
-            typeSequence: exactU64(existing[0].type_sequence, "type_sequence"),
-            controlSeq: exactU64(existing[0].control_seq, "control_seq"),
+            appendLsn: u64FromSql(existing[0].append_lsn, "append_lsn"),
+            typeSequence: u64FromSql(existing[0].type_sequence, "type_sequence"),
+            controlSeq: u64FromSql(existing[0].control_seq, "control_seq"),
             replayed: true,
           };
         }
@@ -338,33 +391,39 @@ export class ControllerCore {
 
     // late atomic allocation: contiguous AppendLsn, monotone TypeSequence
     // (sequenced records advance it; unsequenced reuse the current one),
-    // global ControlSeq - all inside the caller's transaction.
+    // global ControlSeq - all inside the caller's transaction. MAX over the
+    // BE-blob columns is exact bytewise u64 ordering; an empty head is NULL
+    // (never a -1 sentinel, which has no u64 blob encoding).
     const head = this.sql.exec(
-      `SELECT COALESCE(MAX(append_lsn), -1) AS lsn, COALESCE(MAX(type_sequence), 0) AS ts
+      `SELECT MAX(append_lsn) AS lsn, MAX(type_sequence) AS ts
        FROM wal_tail WHERE database_id=? AND generation=?`,
       req.databaseId, req.generation,
     )[0];
-    const appendLsn = exactU64(head.lsn, "max_append_lsn") + 1;
-    const typeSequence =
-      req.sequencingKind === "SEQUENCED" ? exactU64(head.ts, "max_type_sequence") + 1 : exactU64(head.ts, "max_type_sequence");
-    const controlSeq =
-      exactU64(this.sql.exec(`SELECT COALESCE(MAX(control_seq), 0) AS c FROM control_outbox`)[0].c, "max_control_seq") + 1;
+    const appendLsn = head.lsn === null ? 0n : u64FromSql(head.lsn, "max_append_lsn") + 1n;
+    const headTypeSequence = head.ts === null ? 0n : u64FromSql(head.ts, "max_type_sequence");
+    const typeSequence = req.sequencingKind === "SEQUENCED" ? headTypeSequence + 1n : headTypeSequence;
+    const maxControl = this.sql.exec(`SELECT MAX(control_seq) AS c FROM control_outbox`)[0].c;
+    const controlSeq = maxControl === null ? 1n : u64FromSql(maxControl, "max_control_seq") + 1n;
 
     this.sql.exec(
       `INSERT INTO wal_tail(database_id, generation, append_lsn, type_sequence, sequencing_kind,
          payload_key, payload_digest, payload_length, finalization_operation_id, request_digest,
          unsequenced_logical_key, startup_session_id, control_seq, record_type)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      req.databaseId, req.generation, appendLsn, typeSequence, req.sequencingKind,
+      req.databaseId, req.generation, u64Blob(appendLsn, "append_lsn"), u64Blob(typeSequence, "type_sequence"),
+      req.sequencingKind,
       req.payloadKey, req.payloadDigest, req.payloadLength, req.operationId, req.requestDigest,
-      req.logicalKey, req.startupSessionId, controlSeq, req.recordType,
+      req.logicalKey, req.startupSessionId, u64Blob(controlSeq, "control_seq"), req.recordType,
     );
-    // outbox row in the SAME transaction as the projection mutation (section 7.4)
+    // outbox row in the SAME transaction as the projection mutation (section
+    // 7.4). Sequence values are canonically DECIMAL STRINGS in the body:
+    // JSON numbers stop being exact at 2^53.
     this.sql.exec(
       `INSERT INTO control_outbox(control_seq, database_id, kind, canonical_body)
        VALUES (?,?,?,?)`,
-      controlSeq, req.databaseId, "WAL_RECORD_FINALIZED",
-      JSON.stringify({ databaseId: req.databaseId, generation: req.generation, appendLsn, typeSequence,
+      u64Blob(controlSeq, "control_seq"), req.databaseId, "WAL_RECORD_FINALIZED",
+      JSON.stringify({ databaseId: req.databaseId, generation: req.generation,
+                       appendLsn: appendLsn.toString(), typeSequence: typeSequence.toString(),
                        sequencingKind: req.sequencingKind, recordType: req.recordType,
                        payloadKey: req.payloadKey,
                        payloadDigest: req.payloadDigest, logicalKey: req.logicalKey }),
@@ -373,7 +432,7 @@ export class ControllerCore {
   }
 
   /** Idempotent outbox drain: publish everything unpublished, exactly once. */
-  drainOutbox(publish: (row: { controlSeq: number; kind: string; body: string }) => void): number {
+  drainOutbox(publish: (row: { controlSeq: bigint; kind: string; body: string }) => void): number {
     // Publishing is external I/O; the marking is transactional per row so a
     // crash between publish and mark yields at-least-once delivery to the
     // bus, deduplicated downstream by control_seq (the exactly-once identity).
@@ -382,7 +441,7 @@ export class ControllerCore {
     );
     let published = 0;
     for (const row of rows) {
-      publish({ controlSeq: Number(row.control_seq), kind: String(row.kind), body: String(row.canonical_body) });
+      publish({ controlSeq: u64FromSql(row.control_seq, "control_seq"), kind: String(row.kind), body: String(row.canonical_body) });
       this.sql.exec(`UPDATE control_outbox SET published=1 WHERE control_seq=?`, row.control_seq);
       published += 1;
     }
@@ -394,47 +453,54 @@ export class ControllerCore {
    * marking; the consumer acks after durable processing. A lost ack response
    * redelivers on the next peek; consumers dedupe by control_seq.
    */
-  outboxPeek(limit: number): { controlSeq: number; kind: string; body: string }[] {
+  outboxPeek(limit: number): { controlSeq: bigint; kind: string; body: string }[] {
     return this.sql
       .exec(`SELECT control_seq, kind, canonical_body FROM control_outbox
              WHERE published=0 ORDER BY control_seq LIMIT ?`, limit)
-      .map((row) => ({ controlSeq: Number(row.control_seq), kind: String(row.kind), body: String(row.canonical_body) }));
+      .map((row) => ({
+        controlSeq: u64FromSql(row.control_seq, "control_seq"),
+        kind: String(row.kind),
+        body: String(row.canonical_body),
+      }));
   }
 
-  outboxAck(upToControlSeq: number): number {
+  outboxAck(upToControlSeq: bigint): number {
+    const bound = u64Blob(upToControlSeq, "up_to_control_seq");
     return this.sql.transaction(() => {
       const before = Number(this.sql.exec(
-        `SELECT COUNT(*) AS n FROM control_outbox WHERE published=0 AND control_seq <= ?`, upToControlSeq)[0].n);
-      this.sql.exec(`UPDATE control_outbox SET published=1 WHERE published=0 AND control_seq <= ?`, upToControlSeq);
+        `SELECT COUNT(*) AS n FROM control_outbox WHERE published=0 AND control_seq <= ?`, bound)[0].n);
+      this.sql.exec(`UPDATE control_outbox SET published=1 WHERE published=0 AND control_seq <= ?`, bound);
       return before;
     });
   }
 
   /** Exact lookup (CT-P5): missing rows are typed NOT_FOUND, never EOF. */
-  exactLookup(databaseId: string, generation: number, appendLsn: number):
-    Typed<{ payloadKey: string; payloadDigest: string; typeSequence: number; recordType: number }> | TypedErr {
+  exactLookup(databaseId: string, generation: number, appendLsn: bigint):
+    Typed<{ payloadKey: string; payloadDigest: string; typeSequence: bigint; recordType: number }> | TypedErr {
     const rows = this.sql.exec(
       `SELECT payload_key, payload_digest, type_sequence, record_type FROM wal_tail
        WHERE database_id=? AND generation=? AND append_lsn=?`,
-      databaseId, generation, appendLsn,
+      databaseId, generation, u64Blob(appendLsn, "append_lsn"),
     );
     if (!rows.length) return { ok: false, error: "NOT_FOUND" };
     return {
       ok: true,
       payloadKey: String(rows[0].payload_key),
       payloadDigest: String(rows[0].payload_digest),
-      typeSequence: Number(rows[0].type_sequence),
+      typeSequence: u64FromSql(rows[0].type_sequence, "type_sequence"),
       recordType: Number(rows[0].record_type),
     };
   }
 
-  /** Fixed iterator snapshot (CT-P3): head is pinned at open; reads are exact. */
-  openIterator(databaseId: string, generation: number): { headLsn: number } {
+  /** Fixed iterator snapshot (CT-P3): head is pinned at open; reads are
+   *  exact. `-1n` is the empty-head sentinel (a JS value only - it never
+   *  touches the u64 blob encoding). */
+  openIterator(databaseId: string, generation: number): { headLsn: bigint } {
     const head = this.sql.exec(
-      `SELECT COALESCE(MAX(append_lsn), -1) AS lsn FROM wal_tail WHERE database_id=? AND generation=?`,
+      `SELECT MAX(append_lsn) AS lsn FROM wal_tail WHERE database_id=? AND generation=?`,
       databaseId, generation,
     )[0];
-    return { headLsn: Number(head.lsn) };
+    return { headLsn: head.lsn === null ? -1n : u64FromSql(head.lsn, "max_append_lsn") };
   }
 
   /**
@@ -442,13 +508,16 @@ export class ControllerCore {
    * durability client's `current()`/`previous()` need the TypeSequence —
    * the audit's `maxLsn` is a physical position, not a sequence number.
    */
-  head(databaseId: string, generation: number): { headLsn: number; headTypeSequence: number } {
+  head(databaseId: string, generation: number): { headLsn: bigint; headTypeSequence: bigint } {
     const head = this.sql.exec(
-      `SELECT COALESCE(MAX(append_lsn), -1) AS lsn, COALESCE(MAX(type_sequence), 0) AS ts
+      `SELECT MAX(append_lsn) AS lsn, MAX(type_sequence) AS ts
        FROM wal_tail WHERE database_id=? AND generation=?`,
       databaseId, generation,
     )[0];
-    return { headLsn: Number(head.lsn), headTypeSequence: Number(head.ts) };
+    return {
+      headLsn: head.lsn === null ? -1n : u64FromSql(head.lsn, "max_append_lsn"),
+      headTypeSequence: head.ts === null ? 0n : u64FromSql(head.ts, "max_type_sequence"),
+    };
   }
 
   /**
@@ -461,14 +530,22 @@ export class ControllerCore {
   scan(
     databaseId: string,
     generation: number,
-    opts: { fromTypeSequence: number; fromLsn: number; throughLsn: number; recordType: number | null; limit: number },
-  ): { records: WalDescriptor[]; nextFromLsn: number | null } {
+    opts: { fromTypeSequence: bigint; fromLsn: bigint; throughLsn: bigint; recordType: number | null; limit: number },
+  ): { records: WalDescriptor[]; nextFromLsn: bigint | null } {
     // a non-positive limit would page nothing yet compute nextFromLsn from an
     // empty slice (crash); clamp defensively — the HTTP route validates, but
     // the DO method is directly callable
     const limit = Math.max(1, Math.floor(opts.limit));
+    // an empty generation pins headLsn=-1n; a scan bounded by it is exactly
+    // empty (u64 blobs cannot encode the sentinel, so answer before SQL)
+    if (opts.throughLsn < 0n) return { records: [], nextFromLsn: null };
     const typeFilter = opts.recordType === null ? "" : "AND record_type=?";
-    const params: unknown[] = [databaseId, generation, opts.fromTypeSequence, opts.fromLsn, opts.throughLsn];
+    const params: unknown[] = [
+      databaseId, generation,
+      u64Blob(opts.fromTypeSequence, "from_type_sequence"),
+      u64Blob(opts.fromLsn < 0n ? 0n : opts.fromLsn, "from_lsn"),
+      u64Blob(opts.throughLsn, "through_lsn"),
+    ];
     if (opts.recordType !== null) params.push(opts.recordType);
     params.push(limit + 1); // one extra row decides whether a next page exists
     const rows = this.sql.exec(
@@ -481,7 +558,7 @@ export class ControllerCore {
       ...params,
     );
     const page = rows.slice(0, limit).map((row) => descriptorOf(row));
-    const nextFromLsn = rows.length > limit ? page[page.length - 1].appendLsn + 1 : null;
+    const nextFromLsn = rows.length > limit ? page[page.length - 1].appendLsn + 1n : null;
     return { records: page, nextFromLsn };
   }
 
@@ -495,7 +572,7 @@ export class ControllerCore {
    * forensics by the CURRENT actor resolve here.
    */
   queryOperation(databaseId: string, generation: number, operationId: string):
-    Typed<{ record: WalDescriptor; requestDigest: string; controlSeq: number }> | TypedErr {
+    Typed<{ record: WalDescriptor; requestDigest: string; controlSeq: bigint }> | TypedErr {
     const rows = this.sql.exec(
       `SELECT append_lsn, type_sequence, sequencing_kind, record_type, payload_key, payload_digest,
               payload_length, unsequenced_logical_key, request_digest, control_seq
@@ -507,7 +584,7 @@ export class ControllerCore {
       ok: true,
       record: descriptorOf(rows[0]),
       requestDigest: String(rows[0].request_digest),
-      controlSeq: exactU64(rows[0].control_seq, "control_seq"),
+      controlSeq: u64FromSql(rows[0].control_seq, "control_seq"),
     };
   }
 
@@ -525,20 +602,21 @@ export class ControllerCore {
   }
 
   /** Contiguity audit: the tail must have no LSN holes. */
-  auditContiguity(databaseId: string, generation: number): { contiguous: boolean; count: number; maxLsn: number } {
+  auditContiguity(databaseId: string, generation: number): { contiguous: boolean; count: number; maxLsn: bigint } {
     const r = this.sql.exec(
-      `SELECT COUNT(*) AS n, COALESCE(MAX(append_lsn), -1) AS m
+      `SELECT COUNT(*) AS n, MAX(append_lsn) AS m
        FROM wal_tail WHERE database_id=? AND generation=?`,
       databaseId, generation,
     )[0];
-    return { contiguous: Number(r.n) === Number(r.m) + 1, count: Number(r.n), maxLsn: Number(r.m) };
+    const maxLsn = r.m === null ? -1n : u64FromSql(r.m, "max_append_lsn");
+    return { contiguous: BigInt(Number(r.n)) === maxLsn + 1n, count: Number(r.n), maxLsn };
   }
 }
 
 function descriptorOf(row: SqlRow): WalDescriptor {
   return {
-    appendLsn: exactU64(row.append_lsn, "append_lsn"),
-    typeSequence: exactU64(row.type_sequence, "type_sequence"),
+    appendLsn: u64FromSql(row.append_lsn, "append_lsn"),
+    typeSequence: u64FromSql(row.type_sequence, "type_sequence"),
     sequencingKind: String(row.sequencing_kind),
     recordType: Number(row.record_type),
     payloadKey: String(row.payload_key),

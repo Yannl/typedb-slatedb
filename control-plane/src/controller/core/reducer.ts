@@ -4,13 +4,21 @@
  * A pure reducer over the outbox event stream. Replaying every published
  * WAL_RECORD_FINALIZED event must reconstruct exactly the state the SQLite
  * projection holds — proven in the test suite over generated schedules.
+ *
+ * Sequence values (F7): events carry appendLsn/typeSequence as canonical
+ * decimal strings (exact over the full u64 range); the reducer parses them
+ * through the same fail-closed boundary the SQL projection uses and tracks
+ * them as bigints.
  */
+
+import { u64FromWire } from "./procedures.ts";
 
 export interface WalRecordEvent {
   databaseId: string;
   generation: number;
-  appendLsn: number;
-  typeSequence: number;
+  /** decimal-string u64 (numbers accepted for legacy events inside 2^53) */
+  appendLsn: string | number;
+  typeSequence: string | number;
   sequencingKind: "SEQUENCED" | "UNSEQUENCED";
   recordType: number;
   payloadKey: string;
@@ -19,10 +27,10 @@ export interface WalRecordEvent {
 }
 
 export interface ReducedGeneration {
-  headLsn: number;
-  typeSequenceHead: number;
-  records: Map<number, { payloadKey: string; payloadDigest: string; typeSequence: number; recordType: number }>;
-  statusByLogicalKey: Map<string, number>; // logicalKey -> appendLsn
+  headLsn: bigint;
+  typeSequenceHead: bigint;
+  records: Map<bigint, { payloadKey: string; payloadDigest: string; typeSequence: bigint; recordType: number }>;
+  statusByLogicalKey: Map<string, bigint>; // logicalKey -> appendLsn
 }
 
 export interface ReducedState {
@@ -36,21 +44,23 @@ export function emptyState(): ReducedState {
 /** Pure, deterministic, event-at-a-time. Throws on any contiguity violation:
  *  a reducer that silently tolerates holes would mask allocator defects. */
 export function applyEvent(state: ReducedState, event: WalRecordEvent): ReducedState {
+  const appendLsn = u64FromWire(event.appendLsn, "event.appendLsn");
+  const typeSequence = u64FromWire(event.typeSequence, "event.typeSequence");
   const key = `${event.databaseId}#${event.generation}`;
   const generation = state.generations.get(key) ?? {
-    headLsn: -1,
-    typeSequenceHead: 0,
+    headLsn: -1n,
+    typeSequenceHead: 0n,
     records: new Map(),
     statusByLogicalKey: new Map(),
   };
-  if (event.appendLsn !== generation.headLsn + 1) {
-    throw new Error(`reducer contiguity violation: expected lsn ${generation.headLsn + 1}, got ${event.appendLsn}`);
+  if (appendLsn !== generation.headLsn + 1n) {
+    throw new Error(`reducer contiguity violation: expected lsn ${generation.headLsn + 1n}, got ${appendLsn}`);
   }
   const expectedTypeSequence =
-    event.sequencingKind === "SEQUENCED" ? generation.typeSequenceHead + 1 : generation.typeSequenceHead;
-  if (event.typeSequence !== expectedTypeSequence) {
+    event.sequencingKind === "SEQUENCED" ? generation.typeSequenceHead + 1n : generation.typeSequenceHead;
+  if (typeSequence !== expectedTypeSequence) {
     throw new Error(
-      `reducer type-sequence violation: expected ${expectedTypeSequence}, got ${event.typeSequence}`,
+      `reducer type-sequence violation: expected ${expectedTypeSequence}, got ${typeSequence}`,
     );
   }
   if (event.logicalKey !== null && generation.statusByLogicalKey.has(event.logicalKey)) {
@@ -58,10 +68,10 @@ export function applyEvent(state: ReducedState, event: WalRecordEvent): ReducedS
   }
 
   const records = new Map(generation.records);
-  records.set(event.appendLsn, {
+  records.set(appendLsn, {
     payloadKey: event.payloadKey,
     payloadDigest: event.payloadDigest,
-    typeSequence: event.typeSequence,
+    typeSequence,
     // outbox rows published before the record_type migration carry no
     // recordType in their canonical body; normalize to 0 — the same value
     // the SQL migration backfills — so replay of migrated state stays
@@ -69,12 +79,12 @@ export function applyEvent(state: ReducedState, event: WalRecordEvent): ReducedS
     recordType: event.recordType ?? 0,
   });
   const statusByLogicalKey = new Map(generation.statusByLogicalKey);
-  if (event.logicalKey !== null) statusByLogicalKey.set(event.logicalKey, event.appendLsn);
+  if (event.logicalKey !== null) statusByLogicalKey.set(event.logicalKey, appendLsn);
 
   const generations = new Map(state.generations);
   generations.set(key, {
-    headLsn: event.appendLsn,
-    typeSequenceHead: event.typeSequence,
+    headLsn: appendLsn,
+    typeSequenceHead: typeSequence,
     records,
     statusByLogicalKey,
   });

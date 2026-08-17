@@ -45,7 +45,19 @@ export class DatabaseControllerDO extends DurableObject {
     const sql = this.sql;
     const storage = this.ctx.storage;
     const adapter: SyncSql = {
-      exec: (query: string, ...params: unknown[]) => sql.exec(query, ...params).toArray() as SqlRow[],
+      // SqlStorage binds blobs as ArrayBuffer; the core hands them over as
+      // Uint8Array (the u64 BE sequence encoding, F7) - convert here
+      exec: (query: string, ...params: unknown[]) =>
+        sql
+          .exec(
+            query,
+            ...params.map((param) =>
+              param instanceof Uint8Array
+                ? param.buffer.slice(param.byteOffset, param.byteOffset + param.byteLength)
+                : param,
+            ),
+          )
+          .toArray() as SqlRow[],
       transaction: <T,>(fn: () => T): T => storage.transactionSync(fn),
     };
     this.controllerCore = new ControllerCore(adapter);
@@ -95,7 +107,7 @@ export class DatabaseControllerDO extends DurableObject {
     this.core().setBudgets(databaseId, budgets);
   }
 
-  exactLookup(databaseId: string, generation: number, appendLsn: number): ReturnType<ControllerCore["exactLookup"]> {
+  exactLookup(databaseId: string, generation: number, appendLsn: bigint): ReturnType<ControllerCore["exactLookup"]> {
     return this.core().exactLookup(databaseId, generation, appendLsn);
   }
 
@@ -131,7 +143,7 @@ export class DatabaseControllerDO extends DurableObject {
     return this.core().outboxPeek(limit);
   }
 
-  outboxAck(upToControlSeq: number): number {
+  outboxAck(upToControlSeq: bigint): number {
     return this.core().outboxAck(upToControlSeq);
   }
 

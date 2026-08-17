@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { ControllerCore, type FinalizeRequest, type SyncSql } from "./procedures.ts";
+import { ControllerCore, u64Blob, type FinalizeRequest, type SyncSql } from "./procedures.ts";
 import { replay, type WalRecordEvent } from "./reducer.ts";
 
 const MUTANT = process.env.CONTROLLER_MUTANT ?? "";
@@ -64,8 +64,8 @@ test("contiguous LSN allocation, monotone type sequence", () => {
   const r2 = core.finalizeWalRecord(req({ sequencingKind: "UNSEQUENCED" }));
   const r3 = core.finalizeWalRecord(req({ sequencingKind: "SEQUENCED" }));
   assert.ok(r1.ok && r2.ok && r3.ok);
-  assert.deepEqual([r1.appendLsn, r2.appendLsn, r3.appendLsn], [0, 1, 2]);
-  assert.deepEqual([r1.typeSequence, r2.typeSequence, r3.typeSequence], [1, 1, 2]);
+  assert.deepEqual([r1.appendLsn, r2.appendLsn, r3.appendLsn], [0n, 1n, 2n]);
+  assert.deepEqual([r1.typeSequence, r2.typeSequence, r3.typeSequence], [1n, 1n, 2n]);
   assert.ok(core.auditContiguity("db1", 3).contiguous);
 });
 
@@ -151,9 +151,9 @@ test("bounded admission fail-closed: payload, outbox depth, tail budget", () => 
   assert.ok(!overDepth.ok && overDepth.error === "ADMISSION_REJECTED_OUTBOX_DEPTH");
 
   // draining the outbox restores admission (overload recovery)
-  const published: number[] = [];
+  const published: bigint[] = [];
   core.drainOutbox((row) => published.push(row.controlSeq));
-  assert.deepEqual(published, [1, 2]);
+  assert.deepEqual(published, [1n, 2n]);
   assert.ok(core.finalizeWalRecord(req()).ok);
 
   // tail budget
@@ -167,12 +167,12 @@ test("outbox drain is exactly-once per control_seq across repeated alarms", () =
   const core = boot();
   core.finalizeWalRecord(req());
   core.finalizeWalRecord(req());
-  const seen: number[] = [];
+  const seen: bigint[] = [];
   core.drainOutbox((r) => seen.push(r.controlSeq));
   core.drainOutbox((r) => seen.push(r.controlSeq)); // repeated alarm: nothing new
   core.finalizeWalRecord(req());
   core.drainOutbox((r) => seen.push(r.controlSeq));
-  assert.deepEqual(seen, [1, 2, 3]);
+  assert.deepEqual(seen, [1n, 2n, 3n]);
 });
 
 test("batch candidate: all-or-nothing equivalence with per-record finalisation", () => {
@@ -190,7 +190,7 @@ test("batch candidate: all-or-nothing equivalence with per-record finalisation",
   assert.ok(Array.isArray(batchResult));
   assert.deepEqual(
     batchResult.map((r) => (r.ok ? [r.appendLsn, r.typeSequence] : r)),
-    [[0, 1], [1, 1], [2, 2]],
+    [[0n, 1n], [1n, 1n], [2n, 2n]],
   );
   assert.deepEqual(perRecord.auditContiguity("db1", 3), batched.auditContiguity("db1", 3));
 
@@ -224,11 +224,11 @@ test("a finalized operation stays queryable by operation id after its session is
 test("exact lookup: missing rows are typed NOT_FOUND, never EOF", () => {
   const core = boot();
   core.finalizeWalRecord(req());
-  const hit = core.exactLookup("db1", 3, 0);
+  const hit = core.exactLookup("db1", 3, 0n);
   assert.ok(hit.ok);
-  const miss = core.exactLookup("db1", 3, 1);
+  const miss = core.exactLookup("db1", 3, 1n);
   assert.deepEqual(miss, { ok: false, error: "NOT_FOUND" });
-  const wrongGen = core.exactLookup("db1", 4, 0);
+  const wrongGen = core.exactLookup("db1", 4, 0n);
   assert.deepEqual(wrongGen, { ok: false, error: "NOT_FOUND" });
 });
 
@@ -237,12 +237,12 @@ test("fixed iterator head: records finalised after open stay invisible to the pi
   core.finalizeWalRecord(req());
   core.finalizeWalRecord(req());
   const iter = core.openIterator("db1", 3);
-  assert.equal(iter.headLsn, 1);
+  assert.equal(iter.headLsn, 1n);
   core.finalizeWalRecord(req());
   // the pinned head does not move; exact reads beyond it are the caller's
   // typed NOT_FOUND/visibility decision, never silent EOF-extension
-  assert.equal(iter.headLsn, 1);
-  assert.equal(core.openIterator("db1", 3).headLsn, 2);
+  assert.equal(iter.headLsn, 1n);
+  assert.equal(core.openIterator("db1", 3).headLsn, 2n);
 });
 
 test("SQL projection and pure reducer replay are trace-equivalent over a generated schedule", () => {
@@ -301,7 +301,10 @@ test("status recovery is never blocked by budgets: duplicate status retry succee
   const retry = core.finalizeWalRecord(
     req({ sequencingKind: "UNSEQUENCED", logicalKey: "status:cp", payloadDigest: "pd-s" }),
   );
-  assert.ok(retry.ok && retry.replayed, `expected replay, got ${JSON.stringify(retry)}`);
+  assert.ok(
+    retry.ok && retry.replayed,
+    `expected replay, got ${JSON.stringify(retry, (_k, v) => (typeof v === "bigint" ? v.toString() : v))}`,
+  );
   assert.equal(retry.ok && retry.appendLsn, original.ok && original.appendLsn);
   // a genuinely NEW write is still rejected by the budget
   const fresh = core.finalizeWalRecord(req());
@@ -357,14 +360,14 @@ test("one actor spans a generation rollover without fencing itself", () => {
 
 test("head reports the TypeSequence, not the physical LSN", () => {
   const core = boot();
-  assert.deepEqual(core.head("db1", 3), { headLsn: -1, headTypeSequence: 0 });
+  assert.deepEqual(core.head("db1", 3), { headLsn: -1n, headTypeSequence: 0n });
   core.finalizeWalRecord(req({ sequencingKind: "SEQUENCED" }));
   core.finalizeWalRecord(req({ sequencingKind: "UNSEQUENCED" }));
   core.finalizeWalRecord(req({ sequencingKind: "UNSEQUENCED" }));
   // 3 physical records, 1 sequenced: lsn head 2, sequence head 1 — the two
   // MUST diverge here or `current()`/`previous()` built on this endpoint
   // would corrupt recovery arithmetic
-  assert.deepEqual(core.head("db1", 3), { headLsn: 2, headTypeSequence: 1 });
+  assert.deepEqual(core.head("db1", 3), { headLsn: 2n, headTypeSequence: 1n });
 });
 
 test("scan replays in physical order with type_sequence floor, type filter, pinned bound, and paging", () => {
@@ -378,25 +381,25 @@ test("scan replays in physical order with type_sequence floor, type filter, pinn
 
   // full replay from sequence 1 under the pinned bound: physical order,
   // unsequenced records interleaved, the post-pin append invisible
-  const all = core.scan("db1", 3, { fromTypeSequence: 1, fromLsn: 0, throughLsn: pinned, recordType: null, limit: 100 });
+  const all = core.scan("db1", 3, { fromTypeSequence: 1n, fromLsn: 0n, throughLsn: pinned, recordType: null, limit: 100 });
   assert.deepEqual(all.records.map((r) => [r.appendLsn, r.typeSequence, r.recordType]),
-    [[0, 1, 2], [1, 1, 10], [2, 2, 2], [3, 3, 2]]);
+    [[0n, 1n, 2], [1n, 1n, 10], [2n, 2n, 2], [3n, 3n, 2]]);
   assert.equal(all.nextFromLsn, null);
 
   // sequence floor: from ts 2 excludes the ts-1 records (both of them)
-  const fromTs2 = core.scan("db1", 3, { fromTypeSequence: 2, fromLsn: 0, throughLsn: pinned, recordType: null, limit: 100 });
-  assert.deepEqual(fromTs2.records.map((r) => r.appendLsn), [2, 3]);
+  const fromTs2 = core.scan("db1", 3, { fromTypeSequence: 2n, fromLsn: 0n, throughLsn: pinned, recordType: null, limit: 100 });
+  assert.deepEqual(fromTs2.records.map((r) => r.appendLsn), [2n, 3n]);
 
   // type filter is a catalogue property, no payload fetch required
-  const statsOnly = core.scan("db1", 3, { fromTypeSequence: 0, fromLsn: 0, throughLsn: pinned, recordType: 10, limit: 100 });
-  assert.deepEqual(statsOnly.records.map((r) => r.appendLsn), [1]);
+  const statsOnly = core.scan("db1", 3, { fromTypeSequence: 0n, fromLsn: 0n, throughLsn: pinned, recordType: 10, limit: 100 });
+  assert.deepEqual(statsOnly.records.map((r) => r.appendLsn), [1n]);
 
   // paging: limit 2 hands back a cursor that resumes exactly, no overlap
-  const page1 = core.scan("db1", 3, { fromTypeSequence: 1, fromLsn: 0, throughLsn: pinned, recordType: null, limit: 2 });
-  assert.deepEqual(page1.records.map((r) => r.appendLsn), [0, 1]);
-  assert.equal(page1.nextFromLsn, 2);
-  const page2 = core.scan("db1", 3, { fromTypeSequence: 1, fromLsn: page1.nextFromLsn!, throughLsn: pinned, recordType: null, limit: 2 });
-  assert.deepEqual(page2.records.map((r) => r.appendLsn), [2, 3]);
+  const page1 = core.scan("db1", 3, { fromTypeSequence: 1n, fromLsn: 0n, throughLsn: pinned, recordType: null, limit: 2 });
+  assert.deepEqual(page1.records.map((r) => r.appendLsn), [0n, 1n]);
+  assert.equal(page1.nextFromLsn, 2n);
+  const page2 = core.scan("db1", 3, { fromTypeSequence: 1n, fromLsn: page1.nextFromLsn!, throughLsn: pinned, recordType: null, limit: 2 });
+  assert.deepEqual(page2.records.map((r) => r.appendLsn), [2n, 3n]);
   assert.equal(page2.nextFromLsn, null);
 });
 
@@ -408,8 +411,57 @@ test("lastByType returns the physically last record of the type; absence is type
   core.finalizeWalRecord(req({ sequencingKind: "UNSEQUENCED", recordType: 10 }));
   const last = core.lastByType("db1", 3, 10);
   assert.ok(last.ok);
-  assert.equal(last.record.appendLsn, 2);
+  assert.equal(last.record.appendLsn, 2n);
   assert.equal(last.record.recordType, 10);
+});
+
+test("u64 exactness beyond 2^53: allocation, replay, scan and wire encoding stay exact (F7 blob representation)", () => {
+  // Under the previous number-based representation every value here
+  // collapses: 2^53 + 1 === 2^53 in JS doubles, so the allocator would
+  // re-issue the same LSN and the exactness guard could only fail closed.
+  // The BE-blob representation must be EXACT instead.
+  const sql = makeSql();
+  const core = new ControllerCore(sql);
+  core.registerSession("db1", 3, "sess-1");
+  const beyond = 2n ** 53n; // 9007199254740992: the first non-exact double integer
+  // seed a durable head directly at the boundary (the representation under
+  // test is the storage contract, not the allocator's path to get there)
+  sql.exec(
+    `INSERT INTO wal_tail(database_id, generation, append_lsn, type_sequence, sequencing_kind,
+       payload_key, payload_digest, payload_length, finalization_operation_id, request_digest,
+       unsequenced_logical_key, startup_session_id, control_seq, record_type)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    "db1", 3, u64Blob(beyond, "seed_lsn"), u64Blob(beyond, "seed_ts"), "SEQUENCED",
+    "payload/seed", "pd-seed", 1, "op-seed", "digest-seed", null, "sess-1",
+    u64Blob(beyond, "seed_control"), 2,
+  );
+  // the global ControlSeq allocates from the OUTBOX head - seed it too
+  sql.exec(
+    `INSERT INTO control_outbox(control_seq, database_id, kind, canonical_body) VALUES (?,?,?,?)`,
+    u64Blob(beyond, "seed_outbox"), "db1", "SEED", "{}",
+  );
+  const r = core.finalizeWalRecord(req());
+  assert.ok(r.ok);
+  assert.equal(r.appendLsn, beyond + 1n, "allocation beyond 2^53 must be exact, not collapsed");
+  assert.equal(r.typeSequence, beyond + 1n);
+  assert.equal(r.controlSeq, beyond + 1n);
+  // exact read-back through every read path
+  const lookup = core.exactLookup("db1", 3, beyond + 1n);
+  assert.ok(lookup.ok);
+  assert.equal(lookup.typeSequence, beyond + 1n);
+  assert.deepEqual(core.head("db1", 3), { headLsn: beyond + 1n, headTypeSequence: beyond + 1n });
+  const audit = core.auditContiguity("db1", 3);
+  assert.equal(audit.maxLsn, beyond + 1n);
+  // the outbox wire body carries the DECIMAL STRING, exact by construction
+  const bodies: string[] = [];
+  core.drainOutbox((row) => bodies.push(row.body));
+  const event = JSON.parse(bodies[bodies.length - 1]) as { appendLsn: string };
+  assert.equal(event.appendLsn, (beyond + 1n).toString());
+  // and the scan path pages exactly at the boundary
+  const page = core.scan("db1", 3, {
+    fromTypeSequence: 0n, fromLsn: beyond + 1n, throughLsn: beyond + 1n, recordType: null, limit: 10,
+  });
+  assert.deepEqual(page.records.map((rec) => rec.appendLsn), [beyond + 1n]);
 });
 
 test("negative control: reducer refuses LSN holes (mutant must fail equivalence)", () => {

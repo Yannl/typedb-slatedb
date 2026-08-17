@@ -544,7 +544,19 @@ impl<Durability> MVCCStorage<Durability> {
             .unwrap_or_log() // TODO: unwrap_or_log may be incorrect: this could trigger if the DB is deleted for example?
     }
 
-    pub fn get_prev_raw<M, T>(&self, key: StorageKeyReference<'_>, mut key_value_mapper: M) -> Option<T>
+    /// The greatest key `<= key`, i.e. RocksDB's `seek_for_prev`.
+    ///
+    /// Returns `Result` because the caller cannot safely treat a failed read as an absent key.
+    /// The object-id generator uses this to find the highest id in use per type and resumes
+    /// allocating after it; `None` means *none in use*, so an I/O error folded into `None`
+    /// restarts allocation from zero and overwrites live data. On local RocksDB that error is
+    /// near-impossible and the old `Option` signature was safe; against object storage a
+    /// transient failure is ordinary.
+    pub fn get_prev_raw<M, T>(
+        &self,
+        key: StorageKeyReference<'_>,
+        mut key_value_mapper: M,
+    ) -> Result<Option<T>, KeyspaceError>
     where
         M: FnMut(&MVCCKey<'_>, &[u8]) -> T,
     {

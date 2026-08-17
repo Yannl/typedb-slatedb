@@ -30,7 +30,9 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use slatedb_keyspace::{Batch as SlateBatch, KeyspaceId as SlateKeyspaceId, KeyspaceSet};
+use slatedb_keyspace::{
+    Batch as SlateBatch, KeyBytes, KeyspaceId as SlateKeyspaceId, KeyspaceSet, ValueBytes,
+};
 
 use super::keyspace::{KeyspaceId, KeyspaceSet as KeyspaceSetTrait};
 
@@ -128,43 +130,21 @@ impl SlateKeyspace {
 
     /// Mirrors upstream's `get_prev`, i.e. RocksDB `seek_for_prev`: the greatest key `<= key`.
     ///
-    /// # Why this panics instead of returning `None`
-    ///
-    /// Upstream's signature is `Option<T>` with no error channel, and its RocksDB
-    /// implementation discards iteration errors into `None`. That is defensible there and
-    /// dangerous here, because moving the store to R2 changes an I/O error from
-    /// near-impossible to routine while leaving the caller's interpretation of `None`
-    /// unchanged.
-    ///
-    /// The interpretation is the problem. The only caller is the object-id generator
-    /// (`vertex_generator.rs`), which seeks back from the maximum id of each type to find the
-    /// highest one in use and resumes allocating after it. `None` there means *no vertex of
-    /// this type exists*, so it starts from zero. A transient network error that becomes
-    /// `None` therefore does not fail the read — it silently reissues object ids that are
-    /// already in use, overwriting live data, with no error anywhere and no way to detect it
-    /// afterwards.
-    ///
-    /// A panic on the startup path is a bad outcome; silently corrupting a knowledge base is a
-    /// worse one, and unlike the panic it is unrecoverable and undetectable. So the error is
-    /// made loud here rather than converted.
-    ///
-    /// The proper fix is upstream: `Storage::get_prev_raw` should return `Result<Option<T>>`.
-    /// Both of its call sites already sit inside functions returning `Result`, so the change
-    /// is small — it is simply not this layer's to make unilaterally, since it alters a
-    /// signature the RocksDB lane shares.
-    pub(crate) fn get_prev<M, T>(&self, key: &[u8], mut mapper: M) -> Option<T>
+    /// Propagates I/O errors rather than reporting them as "no such key". The caller is the
+    /// object-id generator, which reads `None` as *this type has no vertices yet* and resumes
+    /// allocating from zero — so an error collapsed into `None` silently reissues object ids
+    /// already in use, overwriting live data with nothing raised and nothing to detect
+    /// afterwards. On R2 a transient error during startup is routine rather than exotic, which
+    /// is what makes the distinction load-bearing here and not on local disk.
+    pub(crate) fn get_prev<M, T>(&self, key: &[u8], mut mapper: M) -> Result<Option<T>, SlateKeyspaceError>
     where
         M: FnMut(&[u8], &[u8]) -> T,
     {
-        match self.store.keyspace(self.slate_id()).get_prev(key) {
-            Ok(found) => found.map(|(k, v)| mapper(&k, v.as_ref())),
-            Err(error) => panic!(
-                "keyspace '{}': seeking backwards failed: {error}. Treating this as \"no such \
-                 key\" would let the object-id generator restart from zero and overwrite live \
-                 data, so it is raised here instead.",
-                self.name
-            ),
-        }
+        self.store
+            .keyspace(self.slate_id())
+            .get_prev(key)
+            .map(|found| found.map(|(k, v)| mapper(&k, v.as_ref())))
+            .map_err(|source| SlateKeyspaceError { name: self.name, source })
     }
 
     /// Apply a batch to this keyspace atomically.
@@ -181,8 +161,8 @@ impl SlateKeyspace {
             return Ok(());
         }
         let mut inner = SlateBatch::new();
-        for (key, value) in &batch.puts {
-            inner.put(self.slate_id(), key, value);
+        for (key, value) in batch.puts {
+            inner.put_prefixed(self.slate_id(), key, value);
         }
         self.store.write(inner).map_err(|source| SlateKeyspaceError { name: self.name, source })
     }
@@ -258,8 +238,8 @@ pub(crate) fn write_coalesced(
 ) -> Result<(), SlateKeyspaceError> {
     let mut combined = SlateBatch::new();
     for (id, batch) in batches {
-        for (key, value) in &batch.puts {
-            combined.put(id, key, value);
+        for (key, value) in batch.puts {
+            combined.put_prefixed(id, key, value);
         }
     }
     // An all-empty commit is a successful no-op, as it is on RocksDB. `WriteBatches` really
@@ -291,12 +271,29 @@ pub(crate) fn write_coalesced(
 /// key with an empty value (`write_batches.rs` L45), so `put` is the only operation needed.
 #[derive(Default)]
 pub(crate) struct SlateWriteBatch {
-    puts: Vec<(Vec<u8>, Vec<u8>)>,
+    /// Keys carry a reserved byte at index 0 for the keyspace prefix, stamped when the batch is
+    /// applied. Values are `Bytes` so they move into SlateDB's batch rather than being copied
+    /// into it.
+    puts: Vec<(KeyBytes, ValueBytes)>,
 }
 
 impl SlateWriteBatch {
+    /// Buffer one put.
+    ///
+    /// The keyspace is not known here — `WriteBatches::from_operations` fills a batch per
+    /// keyspace index and only the commit knows which store they belong to — so the prefix byte
+    /// is reserved now and stamped later. That ordering is what makes the ingest path cost one
+    /// copy of each key and value instead of three and two: without the reserved byte the key
+    /// would be built here, rebuilt with its prefix at write time, and copied a third time on
+    /// the way into SlateDB's own batch.
+    ///
+    /// On a knowledge base ingesting documents the value copies are the ones that matter, since
+    /// values are the large half and there is one per write.
     pub(crate) fn put(&mut self, key: impl AsRef<[u8]>, value: impl AsRef<[u8]>) {
-        self.puts.push((key.as_ref().to_vec(), value.as_ref().to_vec()));
+        self.puts.push((
+            SlateBatch::prefixed_key(key.as_ref()),
+            ValueBytes::copy_from_slice(value.as_ref()),
+        ));
     }
 
     pub(crate) fn is_empty(&self) -> bool {

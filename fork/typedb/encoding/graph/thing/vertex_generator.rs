@@ -101,7 +101,7 @@ impl ThingVertexGenerator {
                 StorageCounters::DISABLED,
             )
             .collect_cloned_vec(|k, _v| TypeVertex::decode(Bytes::Reference(k.bytes())).type_id_().as_u16())
-            .map_err(|err| EncodingError::ExistingTypesRead { source: err })?;
+            .map_err(|source| EncodingError::ExistingTypesRead { source })?;
         let relation_types = read_snapshot
             .iterate_range(
                 &KeyRange::new_within(
@@ -111,7 +111,7 @@ impl ThingVertexGenerator {
                 StorageCounters::DISABLED,
             )
             .collect_cloned_vec(|k, _v| TypeVertex::decode(Bytes::Reference(k.bytes())).type_id_().as_u16())
-            .map_err(|err| EncodingError::ExistingTypesRead { source: err })?;
+            .map_err(|source| EncodingError::ExistingTypesRead { source })?;
 
         for type_id in entity_types {
             let mut max_object_id =
@@ -119,9 +119,10 @@ impl ThingVertexGenerator {
             bytes::util::increment(&mut max_object_id).unwrap();
             let next_storage_key: StorageKey<'_, { ObjectVertex::LENGTH }> =
                 StorageKey::new_ref(ObjectVertex::KEYSPACE, &max_object_id);
-            if let Some(prev_bytes) =
-                storage.get_prev_raw(next_storage_key.as_reference(), |key, _| Vec::from(key.key()))
-            {
+            let previous = storage
+                .get_prev_raw(next_storage_key.as_reference(), |key, _| Vec::from(key.key()))
+                .map_err(|source| EncodingError::ExistingObjectsRead { source })?;
+            if let Some(prev_bytes) = previous {
                 if ObjectVertex::is_entity_vertex(StorageKeyReference::new(ObjectVertex::KEYSPACE, &prev_bytes)) {
                     let object_vertex = ObjectVertex::decode(&prev_bytes);
                     if object_vertex.type_id_() == TypeID::new(type_id) {
@@ -137,9 +138,10 @@ impl ThingVertexGenerator {
             bytes::util::increment(&mut max_object_id).unwrap();
             let next_storage_key: StorageKey<'_, { ObjectVertex::LENGTH }> =
                 StorageKey::new_ref(ObjectVertex::KEYSPACE, &max_object_id);
-            if let Some(prev_bytes) =
-                storage.get_prev_raw(next_storage_key.as_reference(), |key, _| Vec::from(key.key()))
-            {
+            let previous = storage
+                .get_prev_raw(next_storage_key.as_reference(), |key, _| Vec::from(key.key()))
+                .map_err(|source| EncodingError::ExistingObjectsRead { source })?;
+            if let Some(prev_bytes) = previous {
                 if ObjectVertex::is_relation_vertex(StorageKeyReference::new(ObjectVertex::KEYSPACE, &prev_bytes)) {
                     let object_vertex = ObjectVertex::decode(&prev_bytes);
                     if object_vertex.type_id_() == TypeID::new(type_id) {

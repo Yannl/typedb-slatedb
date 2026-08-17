@@ -6,7 +6,7 @@
 
 use std::{error::Error, fmt, str::Utf8Error};
 
-use storage::snapshot::iterator::SnapshotIteratorError;
+use storage::{keyspace::KeyspaceError, snapshot::iterator::SnapshotIteratorError};
 
 use crate::{layout::prefix::Prefix, value::value_type::ValueType};
 
@@ -15,6 +15,12 @@ pub enum EncodingError {
     UFT8Decode { bytes: Box<[u8]>, source: Utf8Error },
     SchemaIDAllocate { source: std::sync::Arc<SnapshotIteratorError> },
     ExistingTypesRead { source: std::sync::Arc<SnapshotIteratorError> },
+    /// The backward seek that finds the highest object id already in use failed.
+    ///
+    /// Distinct from `ExistingTypesRead` because it must never be confused with finding
+    /// nothing: an empty result means allocation restarts from zero, so an unreported failure
+    /// here reissues ids that are already in use.
+    ExistingObjectsRead { source: KeyspaceError },
     TypeIDsExhausted { kind: crate::graph::type_::Kind },
     UnexpectedPrefix { expected_prefix: Prefix, actual_prefix: Prefix },
     DefinitionIDsExhausted { prefix: Prefix },
@@ -42,6 +48,7 @@ impl Error for EncodingError {
             Self::UFT8Decode { source, .. } => Some(source),
             Self::SchemaIDAllocate { source, .. } => Some(source),
             Self::ExistingTypesRead { source, .. } => Some(source),
+            Self::ExistingObjectsRead { source, .. } => Some(source),
             Self::TypeIDsExhausted { .. } => None,
             Self::DefinitionIDsExhausted { .. } => None,
             Self::UnexpectedPrefix { .. } => None,

@@ -58,6 +58,11 @@ pub mod error;
 pub use config::{Backend, R2Credentials, StoreConfig, Tuning};
 pub use error::KeyspaceError;
 
+/// Re-exported so callers can build keys and values for [`Batch::put_prefixed`] without
+/// depending on `bytes` themselves. TypeDB ships its own crate named `bytes`, so a caller
+/// naming the dependency directly resolves to the wrong one.
+pub use bytes::{Bytes as ValueBytes, BytesMut as KeyBytes};
+
 /// Matches upstream's `KeyspaceId(pub u8)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct KeyspaceId(pub u8);
@@ -132,10 +137,39 @@ fn keyspace_end(keyspace: KeyspaceId) -> Bound<Vec<u8>> {
 ///
 /// Free function rather than a method so that types holding only an `Arc<Runtime>` — notably
 /// [`KeyspaceIterator`] — can bridge without borrowing the whole [`KeyspaceSet`].
-fn block_on<F: std::future::Future>(runtime: &tokio::runtime::Runtime, fut: F) -> F::Output {
-    match tokio::runtime::Handle::try_current() {
-        Ok(_) => tokio::task::block_in_place(|| runtime.block_on(fut)),
-        Err(_) => runtime.block_on(fut),
+fn block_on<F>(runtime: &tokio::runtime::Runtime, fut: F) -> F::Output
+where
+    F: std::future::Future + Send,
+    F::Output: Send,
+{
+    let Ok(handle) = tokio::runtime::Handle::try_current() else {
+        // No runtime on this thread: the simple case, and the one TypeDB's synchronous storage
+        // calls normally take.
+        return runtime.block_on(fut);
+    };
+
+    match handle.runtime_flavor() {
+        // The caller is on a multi-threaded worker. `block_in_place` hands its work to a
+        // sibling worker before blocking, so the caller's reactor keeps running.
+        tokio::runtime::RuntimeFlavor::MultiThread => {
+            tokio::task::block_in_place(|| runtime.block_on(fut))
+        }
+        // The caller is on a single-threaded runtime, where `block_in_place` has no sibling to
+        // hand off to and panics outright. TypeDB's server builds a multi-threaded runtime so
+        // production never lands here, but `#[tokio::test]` is single-threaded by default —
+        // meaning any async test that touched storage would panic inside the storage layer,
+        // which is a confusing place to discover the rule.
+        //
+        // Blocking a scoped thread instead is sound because the two runtimes are independent:
+        // this future runs to completion on *our* runtime, which needs nothing from the
+        // caller's, so parking the caller's only worker cannot deadlock it. `scope` rather than
+        // `spawn` because the future borrows the `Db`, and requiring `'static` here would push
+        // an `Arc` clone into every call site to satisfy a path that is rarely taken.
+        _ => std::thread::scope(|scope| {
+            scope.spawn(|| runtime.block_on(fut)).join().unwrap_or_else(|payload| {
+                std::panic::resume_unwind(payload);
+            })
+        }),
     }
 }
 
@@ -269,7 +303,11 @@ impl KeyspaceSet {
         self
     }
 
-    fn block<F: std::future::Future>(&self, fut: F) -> F::Output {
+    fn block<F>(&self, fut: F) -> F::Output
+    where
+        F: std::future::Future + Send,
+        F::Output: Send,
+    {
         block_on(&self.runtime, fut)
     }
 
@@ -429,6 +467,37 @@ impl Batch {
     pub fn put(&mut self, keyspace: KeyspaceId, key: &[u8], value: &[u8]) {
         self.inner.put(physical_key(keyspace, key), value);
         self.len += 1;
+    }
+
+    /// Add an entry whose key already reserves its keyspace prefix at byte 0.
+    ///
+    /// Exists to remove copies from the ingest path, which is the one place they add up. A
+    /// caller that buffers writes before knowing which keyspace they belong to — as TypeDB's
+    /// `WriteBatches` does, since the keyspace is only fixed when the commit is applied —
+    /// otherwise has to build the key once for its own buffer and again with the prefix here,
+    /// and hand the value through `AsRef<[u8]>`, which SlateDB copies a third time on the way
+    /// into its own batch.
+    ///
+    /// Reserving byte 0 up front collapses that to one copy of the key and one of the value.
+    /// The prefix is stamped rather than prepended, so no reallocation happens here at all.
+    ///
+    /// # Panics
+    ///
+    /// If `key` is empty. An empty key has no byte 0 to stamp, so silently accepting it would
+    /// write an entry into whichever keyspace sorts first rather than the one requested.
+    pub fn put_prefixed(&mut self, keyspace: KeyspaceId, mut key: KeyBytes, value: ValueBytes) {
+        assert!(!key.is_empty(), "a prefixed key must reserve a byte for its keyspace id");
+        key[0] = keyspace.0;
+        self.inner.put_bytes(key.freeze(), value);
+        self.len += 1;
+    }
+
+    /// A key buffer with byte 0 reserved for the keyspace prefix, ready for [`Self::put_prefixed`].
+    pub fn prefixed_key(key: &[u8]) -> KeyBytes {
+        let mut buffer = KeyBytes::with_capacity(key.len() + 1);
+        buffer.extend_from_slice(&[0]);
+        buffer.extend_from_slice(key);
+        buffer
     }
 
     pub fn delete(&mut self, keyspace: KeyspaceId, key: &[u8]) {

@@ -481,21 +481,37 @@ impl Keyspace {
     }
 
     #[cfg(not(feature = "slatedb-backend"))]
-    pub(crate) fn get_prev<M, T>(&self, key: &[u8], mut mapper: M) -> Option<T>
+    /// The greatest key `<= key`, i.e. RocksDB's `seek_for_prev`.
+    ///
+    /// Returns `Result` rather than the bare `Option` this used to be. The distinction between
+    /// "no such key" and "the store could not be read" is not decorative here: the only caller
+    /// is the object-id generator, which treats `None` as *this type has no vertices yet* and
+    /// resumes allocating from zero. Collapsing an I/O error into that answer reissues object
+    /// ids that are already in use.
+    ///
+    /// On local RocksDB such an error is near-impossible, which is why the original signature
+    /// was safe. It stops being safe the moment the store is remote.
+    pub(crate) fn get_prev<M, T>(&self, key: &[u8], mut mapper: M) -> Result<Option<T>, KeyspaceError>
     where
         M: FnMut(&[u8], &[u8]) -> T,
     {
         let mut iterator = self.kv_storage.raw_iterator_opt(self.new_read_options());
         iterator.seek_for_prev(key);
-        iterator.item().map(|(k, v)| mapper(k, v))
+        if let Err(error) = iterator.status() {
+            return Err(KeyspaceError::Iterate { name: self.name, source: error });
+        }
+        Ok(iterator.item().map(|(k, v)| mapper(k, v)))
     }
 
+    /// See the RocksDB-lane sibling for why this returns `Result`.
     #[cfg(feature = "slatedb-backend")]
-    pub(crate) fn get_prev<M, T>(&self, key: &[u8], mapper: M) -> Option<T>
+    pub(crate) fn get_prev<M, T>(&self, key: &[u8], mapper: M) -> Result<Option<T>, KeyspaceError>
     where
         M: FnMut(&[u8], &[u8]) -> T,
     {
-        super::slate::SlateKeyspace::from_parts(self).get_prev(key, mapper)
+        super::slate::SlateKeyspace::from_parts(self)
+            .get_prev(key, mapper)
+            .map_err(|source| KeyspaceError::Iterate { name: source.name, source })
     }
 
     pub(crate) fn iterate_range<const PREFIX_INLINE_SIZE: usize>(

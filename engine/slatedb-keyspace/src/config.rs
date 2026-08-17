@@ -277,6 +277,40 @@ pub struct Tuning {
     /// Cache size cap.
     pub cache_max_bytes: usize,
 
+    /// Bytes a range scan fetches ahead of the cursor.
+    ///
+    /// SlateDB defaults this to 1 byte — one block — and [`Self::scan_fetch_tasks`] to 1, so a
+    /// scan pulls one block at a time, serially. On local disk that is a page-cache hit and the
+    /// default is fine. Against R2 every block is a network round trip: at a 4 KB block and
+    /// ~50ms of latency, scanning 1 MB costs 256 sequential round trips, on the order of ten
+    /// seconds, for data that could have arrived in two or three requests.
+    ///
+    /// Reading ahead is cheaper in operations as well as faster, which is the unusual part.
+    /// Egress is free on R2 and requests are not, so one large fetch beats many small ones on
+    /// both axes — the usual worry about wasted bandwidth simply does not apply.
+    ///
+    /// It is not free everywhere, which is why it is a scan setting rather than a global one:
+    /// a cursor that reads two keys and stops has paid for a megabyte it never used. Point
+    /// lookups and [`crate::Keyspace::get_prev`] deliberately do not use this.
+    pub scan_read_ahead_bytes: usize,
+
+    /// Concurrent block fetches within a single scan.
+    ///
+    /// Turns the read-ahead window above into parallel requests rather than a longer serial
+    /// chain. Bounded modestly: each task is an in-flight request against the same store, and
+    /// past a handful the gain is throughput SlateDB's compaction and flush paths also want.
+    pub scan_fetch_tasks: usize,
+
+    /// Give up on an object-store operation after this many retries.
+    ///
+    /// SlateDB's default is `None`, meaning *retry transient errors indefinitely*. Under a
+    /// synchronous facade that is a liveness hazard rather than a resilience feature: a TypeDB
+    /// query thread is parked inside `block_on` for the duration, so an outage or a revoked
+    /// credential does not surface as a failed query, it surfaces as a server that stops
+    /// answering and never explains why. A bounded count converts that into an error the layer
+    /// above can report, retry, or fail on.
+    pub object_store_max_retries: Option<u32>,
+
     /// How often the garbage collector sweeps.
     ///
     /// Sweeping means `LIST`, which is Class A — the expensive class — while `DELETE` is free
@@ -307,6 +341,13 @@ impl Tuning {
             compression: false,
             cache_dir: None,
             cache_max_bytes: 0,
+            // SlateDB's own defaults: one block at a time. Correct where a block is a
+            // page-cache hit rather than a round trip.
+            scan_read_ahead_bytes: 1,
+            scan_fetch_tasks: 1,
+            // Unbounded, as SlateDB has it. A local filesystem does not produce the transient
+            // failures the bound exists to escape.
+            object_store_max_retries: None,
             gc_interval: Some(Duration::from_secs(600)),
             gc_min_age: Duration::from_secs(300),
         }
@@ -343,6 +384,13 @@ impl Tuning {
             compression: true,
             cache_dir: None,
             cache_max_bytes: 8 * 1024 * 1024 * 1024,
+            // 1 byte -> 1 MiB, 1 task -> 4. The single largest scan-latency lever: a graph
+            // traversal reading a range no longer pays one network round trip per 4 KB block.
+            scan_read_ahead_bytes: 1024 * 1024,
+            scan_fetch_tasks: 4,
+            // Bounded rather than SlateDB's unlimited. See the field's documentation: under a
+            // synchronous API, "retry forever" is a hang, not resilience.
+            object_store_max_retries: Some(10),
             // 600s -> 3600s. Six times fewer Class A `LIST` sweeps, paid for with a little
             // retained garbage at $0.015/GB-month.
             gc_interval: Some(Duration::from_secs(3600)),
@@ -387,6 +435,19 @@ impl Tuning {
         Ok(())
     }
 
+    /// Scan options for a full range walk, where reading ahead pays for itself.
+    ///
+    /// Deliberately not used by point lookups or `get_prev`, which read one entry: prefetching
+    /// a megabyte to answer them would trade a latency win on scans for a latency loss
+    /// everywhere else.
+    pub fn scan_options(&self) -> slatedb::config::ScanOptions {
+        slatedb::config::ScanOptions {
+            read_ahead_bytes: self.scan_read_ahead_bytes,
+            max_fetch_tasks: self.scan_fetch_tasks,
+            ..slatedb::config::ScanOptions::default()
+        }
+    }
+
     /// Translate to SlateDB's own settings type.
     pub fn to_settings(&self) -> Settings {
         let gc_directory = GarbageCollectorDirectoryOptions {
@@ -403,6 +464,7 @@ impl Tuning {
             max_wal_flushes_before_l0_flush: self.max_wal_flushes_before_l0_flush,
             min_filter_keys: self.min_filter_keys,
             l0_sst_size_bytes: self.l0_sst_size_bytes,
+            object_store_max_retries: self.object_store_max_retries,
             compression_codec: self.compression_codec(),
             object_store_cache_options: ObjectStoreCacheOptions {
                 root_folder: self.cache_dir.clone(),

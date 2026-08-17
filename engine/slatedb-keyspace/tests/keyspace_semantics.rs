@@ -410,3 +410,25 @@ fn a_cursor_is_independent_of_the_handle_that_opened_it() {
     assert_eq!(cursors[0].advance().unwrap(), Some((&[0u8][..], &b"v"[..])));
     assert_eq!(cursors[1].advance().unwrap(), Some((&[0u8][..], &b"w"[..])));
 }
+
+#[test]
+fn a_store_knows_whether_its_files_are_local() {
+    // TypeDB checkpoints by copying the store's directory. That is meaningful for a local
+    // store and meaningless for a remote one, whose local directory holds at most a block
+    // cache — so the checkpoint path has to be able to tell them apart. Getting this wrong is
+    // silent: the copy succeeds and produces an unrestorable checkpoint.
+    let dir = tempfile::tempdir().unwrap();
+    let local = KeyspaceSet::open_local(dir.path()).unwrap();
+    assert_eq!(local.local_directory(), Some(dir.path()));
+
+    let remote_dir = tempfile::tempdir().unwrap();
+    let store: Arc<dyn ObjectStore> =
+        Arc::new(LocalFileSystem::new_with_prefix(remote_dir.path()).unwrap());
+    let remote = KeyspaceSet::open("/typedb", store).unwrap();
+    assert_eq!(
+        remote.local_directory(),
+        None,
+        "a store reached through an ObjectStore handle must not claim a local directory, even \
+         when that handle happens to be backed by one"
+    );
+}

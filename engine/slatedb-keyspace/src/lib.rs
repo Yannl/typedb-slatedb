@@ -132,6 +132,12 @@ struct CachedEstimate {
 pub struct KeyspaceSet {
     db: Arc<Db>,
     runtime: Arc<tokio::runtime::Runtime>,
+    /// Prefetch settings for full range walks. Held rather than recomputed so `iterate_from`
+    /// stays allocation-free on a hot path.
+    scan_options: ScanOptions,
+    /// Set only when the store is a local directory, and used to refuse operations that are
+    /// meaningful only against one — see [`Self::local_directory`].
+    local_directory: Option<std::path::PathBuf>,
     /// Per-keyspace memo for [`Keyspace::estimated_stats`], indexed by keyspace id.
     estimates: Vec<Mutex<Option<CachedEstimate>>>,
     estimate_ttl: Duration,
@@ -176,6 +182,11 @@ impl KeyspaceSet {
         let StoreConfig { backend, tuning } = config;
         tuning.validate()?;
 
+        let local_directory = match &backend {
+            Backend::Local { path } => Some(path.clone()),
+            Backend::ObjectStore { .. } => None,
+        };
+
         let (path, store) = match backend {
             Backend::Local { path } => {
                 std::fs::create_dir_all(&path).map_err(|error| {
@@ -215,9 +226,23 @@ impl KeyspaceSet {
         Ok(Self {
             db: Arc::new(db),
             runtime,
+            scan_options: tuning.scan_options(),
+            local_directory,
             estimates: (0..KEYSPACE_MAXIMUM_COUNT).map(|_| Mutex::new(None)).collect(),
             estimate_ttl: DEFAULT_ESTIMATE_TTL,
         })
+    }
+
+    /// The directory holding this store's files, or `None` when it lives in an object store.
+    ///
+    /// Exists for one reason: TypeDB's checkpoint mechanism copies a store's *files* into a
+    /// checkpoint directory and later copies them back. That is meaningful for a local store
+    /// and meaningless for a remote one, where the local directory holds at most a block cache.
+    /// Callers must be able to tell the difference, because the failure is otherwise silent —
+    /// the copy succeeds, produces a directory of the wrong bytes, and yields a checkpoint that
+    /// is present, plausible and unrestorable.
+    pub fn local_directory(&self) -> Option<&std::path::Path> {
+        self.local_directory.as_deref()
     }
 
     /// Override how long a key-count estimate is cached. Chiefly for tests.
@@ -558,7 +583,7 @@ impl Keyspace<'_> {
         let end = keyspace_end(self.id);
         let iter = self
             .set
-            .block(self.set.db.scan((start, end)))
+            .block(self.set.db.scan_with_options((start, end), &self.set.scan_options))
             .map_err(|e| KeyspaceError::Iterate(e.to_string()))?;
         Ok(KeyspaceIterator {
             runtime: Arc::clone(&self.set.runtime),

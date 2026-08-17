@@ -224,13 +224,31 @@ impl Keyspaces {
             return Err(CheckpointExists { name: SLATEDB_CHECKPOINT_DIR, dir: target });
         }
 
+        // A file-copy checkpoint is only meaningful for a store made of local files. When the
+        // backend is an object store, `store_dir` holds a block cache and nothing else, so the
+        // copy below would succeed, produce a directory of the wrong bytes, and leave a
+        // checkpoint that is present, plausible and unrestorable — discovered at restore time,
+        // which is the worst moment to discover it. Refusing is the only safe answer available
+        // here: mapping this onto SlateDB's own checkpoints means reopening the store at a
+        // manifest id or cloning it to a new prefix, which is a recovery-path design decision
+        // rather than a translation, and is not one to make silently.
+        let Some(store_dir) = keyspace.store.local_directory().map(Path::to_path_buf) else {
+            return Err(SlateDBCheckpoint {
+                message: "checkpointing an object-store-backed database by copying its directory \
+                          would capture only the local block cache; SlateDB's native checkpoint \
+                          has been taken and pins the manifest, but restoring from it needs a \
+                          store-level clone that this path does not implement"
+                    .to_string(),
+            });
+        };
+
         // Flush and pin first. The copy that follows reads live files, and compaction or GC
         // removing an SST midway would produce a checkpoint that looks complete and is not.
         super::slate::SlateKeyspace::from_parts(keyspace)
             .checkpoint()
             .map_err(|error| SlateDBCheckpoint { message: error.to_string() })?;
 
-        copy_dir_recursive(&self.store_dir, &target)
+        copy_dir_recursive(&store_dir, &target)
             .map_err(|error| SlateDBCheckpoint { message: error.to_string() })?;
         Ok(())
     }

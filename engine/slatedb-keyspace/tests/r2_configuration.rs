@@ -174,6 +174,39 @@ fn the_tuning_reaches_slatedb_intact() {
         "compression is requested and compiled in, so it must actually be configured"
     );
 
+    assert_eq!(settings.object_store_max_retries, tuning.object_store_max_retries);
+
     let gc = settings.garbage_collector_options.expect("GC stays on");
     assert_eq!(gc.wal_options.unwrap().interval, tuning.gc_interval);
+}
+
+#[test]
+fn scans_read_ahead_on_object_storage_but_not_on_local_disk() {
+    // SlateDB defaults a scan to one block at a time, fetched serially. On disk that is a
+    // page-cache hit. Against R2 it is one network round trip per block, which turns a range
+    // scan — how a graph database reads almost everything — into a serial chain of them.
+    let local = Tuning::local().scan_options();
+    let cloud = Tuning::object_storage().scan_options();
+
+    assert!(
+        cloud.read_ahead_bytes >= 256 * 1024,
+        "a read-ahead window smaller than a few hundred KB leaves the round trips in place"
+    );
+    assert!(cloud.max_fetch_tasks > local.max_fetch_tasks, "and they should overlap");
+    assert_eq!(
+        local.read_ahead_bytes,
+        slatedb::config::ScanOptions::default().read_ahead_bytes,
+        "the local profile stays on SlateDB's defaults so it rehearses upstream behaviour"
+    );
+}
+
+#[test]
+fn object_store_retries_are_bounded() {
+    // SlateDB's default is to retry transient errors forever. Behind a synchronous facade the
+    // caller is parked inside `block_on` for the whole time, so "forever" is a query thread
+    // that never returns and never reports why.
+    assert!(
+        Tuning::object_storage().object_store_max_retries.is_some(),
+        "an unbounded retry under a blocking API is a hang, not resilience"
+    );
 }

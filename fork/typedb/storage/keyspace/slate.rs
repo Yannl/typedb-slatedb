@@ -128,20 +128,43 @@ impl SlateKeyspace {
 
     /// Mirrors upstream's `get_prev`, i.e. RocksDB `seek_for_prev`: the greatest key `<= key`.
     ///
-    /// Upstream returns `Option<T>` and swallows iteration errors. That is preserved rather
-    /// than improved: changing an error into a `None` — or a `None` into an error — would
-    /// alter behaviour the conformance corpus is measuring, and this layer's job is to be
-    /// invisible.
+    /// # Why this panics instead of returning `None`
+    ///
+    /// Upstream's signature is `Option<T>` with no error channel, and its RocksDB
+    /// implementation discards iteration errors into `None`. That is defensible there and
+    /// dangerous here, because moving the store to R2 changes an I/O error from
+    /// near-impossible to routine while leaving the caller's interpretation of `None`
+    /// unchanged.
+    ///
+    /// The interpretation is the problem. The only caller is the object-id generator
+    /// (`vertex_generator.rs`), which seeks back from the maximum id of each type to find the
+    /// highest one in use and resumes allocating after it. `None` there means *no vertex of
+    /// this type exists*, so it starts from zero. A transient network error that becomes
+    /// `None` therefore does not fail the read — it silently reissues object ids that are
+    /// already in use, overwriting live data, with no error anywhere and no way to detect it
+    /// afterwards.
+    ///
+    /// A panic on the startup path is a bad outcome; silently corrupting a knowledge base is a
+    /// worse one, and unlike the panic it is unrecoverable and undetectable. So the error is
+    /// made loud here rather than converted.
+    ///
+    /// The proper fix is upstream: `Storage::get_prev_raw` should return `Result<Option<T>>`.
+    /// Both of its call sites already sit inside functions returning `Result`, so the change
+    /// is small — it is simply not this layer's to make unilaterally, since it alters a
+    /// signature the RocksDB lane shares.
     pub(crate) fn get_prev<M, T>(&self, key: &[u8], mut mapper: M) -> Option<T>
     where
         M: FnMut(&[u8], &[u8]) -> T,
     {
-        self.store
-            .keyspace(self.slate_id())
-            .get_prev(key)
-            .ok()
-            .flatten()
-            .map(|(k, v)| mapper(&k, v.as_ref()))
+        match self.store.keyspace(self.slate_id()).get_prev(key) {
+            Ok(found) => found.map(|(k, v)| mapper(&k, v.as_ref())),
+            Err(error) => panic!(
+                "keyspace '{}': seeking backwards failed: {error}. Treating this as \"no such \
+                 key\" would let the object-id generator restart from zero and overwrite live \
+                 data, so it is raised here instead.",
+                self.name
+            ),
+        }
     }
 
     /// Apply a batch to this keyspace atomically.

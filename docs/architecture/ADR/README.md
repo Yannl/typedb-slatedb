@@ -18,6 +18,8 @@ ADRs explain *why it is that way and what else was on the table*.
 | [ADR-0009](ADR-0009-local-first-parity-ladder.md) | Local-first on the L0–L3 fidelity ladder; Cloudflare is the last step | accepted |
 | [ADR-0010](ADR-0010-cargo-only-federated-workspaces.md) | Cargo-only builds, federated workspaces, machine-verified source lock | accepted |
 | [ADR-0011](ADR-0011-actor-scoped-fencing-takeover-at-register.md) | Fencing is actor-scoped; registering is takeover-at-open (fences every other actor) | accepted |
+| [ADR-0012](ADR-0012-slatedb-soft-fork-external-epochs.md) | Production lane consumes a SlateDB soft fork carrying exact external epochs (supersedes ADR-0001 there; local lanes stay crates.io) | accepted-as-plan |
+| [ADR-0013](ADR-0013-shared-store-vs-per-keyspace.md) | Shared SlateDB store + coalesced writes evaluated against per-keyspace; not adopted pending G2 evidence | evaluated |
 
 Numbering is chronological by decision, not by importance. A decision is
 reversed only by a new ADR that names the one it supersedes.

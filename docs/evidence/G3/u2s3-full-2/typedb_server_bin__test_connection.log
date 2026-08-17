@@ -1,0 +1,915 @@
+
+running 2 tests
+Feature: Connection Transaction :: one database, one read transaction
+Feature: Connection Database :: create one database with name alice
+  Scenario Outline: one database, one read transaction
+  Scenario Outline: create one database with name alice
+   ✔> Given typedb starts
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔> Given connection has 0 databases
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  When connection create database: alice
+   ✔  Then transaction has type: read
+   ✔  Then connection has database: alice
+Feature: Connection Database :: create one database with name ALICE
+  Scenario Outline: create one database with name ALICE
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: ALICE
+   ✔  Then connection has database: ALICE
+Feature: Connection Database :: create one database with name cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile
+  Scenario Outline: create one database with name cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile
+   ✔  Then connection has database: cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile
+Feature: Connection Database :: create one database with name 資料庫
+  Scenario Outline: create one database with name 資料庫
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: 資料庫
+   ✔  Then connection has database: 資料庫
+Feature: Connection Database :: create many databases
+  Scenario: create many databases
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create databases:
+       | alice   |
+       | bob     |
+       | charlie |
+       | dylan   |
+       | eve     |
+       | frank   |
+   ✔  Then connection has databases:
+       | alice   |
+       | bob     |
+       | charlie |
+       | dylan   |
+       | eve     |
+       | frank   |
+Feature: Connection Database :: create many databases in parallel
+  Scenario: create many databases in parallel
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create databases in parallel:
+       | alice   |
+       | bob     |
+       | charlie |
+       | dylan   |
+       | eve     |
+       | frank   |
+   ✔  Then connection has databases:
+       | alice   |
+       | bob     |
+       | charlie |
+       | dylan   |
+       | eve     |
+       | frank   |
+Feature: Connection Database :: cannot create database with an incorrect name
+  Scenario: cannot create database with an incorrect name
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Then connection create database with empty name; fails
+   ✔  Then connection create database: .; fails
+   ✔  Then connection create database: !; fails
+   ✔  Then connection create database: ...; fails
+   ✔  Then connection create database: ·‿·; fails
+   ✔  Then connection create database: 😎; fails
+   ✔  Then connection create database: my😎database; fails
+Feature: Connection Database :: delete one database
+  Scenario: delete one database
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: alice
+   ✔  When connection delete database: alice
+   ✔  Then connection does not have database: alice
+   ✔  Then connection has 0 databases
+Feature: Connection Database :: connection can delete many databases
+  Scenario: connection can delete many databases
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create databases:
+       | alice   |
+       | bob     |
+       | charlie |
+       | dylan   |
+       | eve     |
+       | frank   |
+   ✔  When connection delete databases:
+       | alice   |
+       | bob     |
+       | charlie |
+       | dylan   |
+       | eve     |
+       | frank   |
+   ✔  Then connection does not have databases:
+       | alice   |
+       | bob     |
+       | charlie |
+       | dylan   |
+       | eve     |
+       | frank   |
+   ✔  Then connection has 0 databases
+Feature: Connection Database :: delete many databases in parallel
+  Scenario: delete many databases in parallel
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create databases in parallel:
+       | alice   |
+       | bob     |
+       | charlie |
+       | dylan   |
+       | eve     |
+       | frank   |
+   ✔  When connection delete databases in parallel:
+       | alice   |
+       | bob     |
+       | charlie |
+       | dylan   |
+       | eve     |
+       | frank   |
+   ✔  Then connection does not have databases:
+       | alice   |
+       | bob     |
+       | charlie |
+       | dylan   |
+       | eve     |
+       | frank   |
+   ✔  Then connection has 0 databases
+Feature: Connection Database :: create delete and recreate a database
+  Scenario: create delete and recreate a database
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: alice
+   ✔  Then connection has database: alice
+   ✔  When connection delete database: alice
+   ✔  Then connection does not have database: alice
+   ✔  When connection create database: alice
+   ✔  Then connection has database: alice
+Feature: Connection Database :: delete a nonexistent database fails
+  Scenario: delete a nonexistent database fails
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection delete database: typedb; fails
+Feature: Connection Database :: database cannot be deleted if it has open transactions
+  Scenario: database cannot be deleted if it has open transactions
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  Then connection has database: typedb
+   ✔  When connection open schema transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then connection delete database: typedb; fails
+   ✔  Then typeql schema query
+   ✔  Then connection delete database: typedb; fails
+   ✔  Then transaction rollbacks
+   ✔  Then transaction is open: true
+   ✔  Then connection delete database: typedb; fails
+   ✔  Then typeql schema query
+   ✔  Then transaction commits
+   ✔  Then connection delete database: typedb
+   ✔  Then connection does not have database: typedb
+Feature: Connection Database :: database can be deleted and recreated immediately after closing schema transactions
+  Scenario Outline: database can be deleted and recreated immediately after closing schema transactions
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  When connection open schema transaction for database: typedb
+   ✔  Then transaction closes
+   ✔  Then connection delete database: typedb
+   ✔  Then connection does not have database: typedb
+   ✔  When connection create database: typedb
+   ✔  Then connection has database: typedb
+Feature: Connection Database :: database can be deleted and recreated immediately after closing write transactions
+  Scenario Outline: database can be deleted and recreated immediately after closing write transactions
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction closes
+   ✔  Then connection delete database: typedb
+   ✔  Then connection does not have database: typedb
+   ✔  When connection create database: typedb
+   ✔  Then connection has database: typedb
+Feature: Connection Database :: database can be deleted and recreated immediately after closing read transactions
+  Scenario Outline: database can be deleted and recreated immediately after closing read transactions
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  When connection open read transaction for database: typedb
+   ✔  Then transaction closes
+   ✔  Then connection delete database: typedb
+   ✔  Then connection does not have database: typedb
+   ✔  When connection create database: typedb
+   ✔  Then connection has database: typedb
+[Summary]
+16 features
+16 scenarios (16 passed)
+137 steps (137 passed)
+.Feature: Connection Transaction :: one database, one write transaction
+  Scenario Outline: one database, one write transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: write
+Feature: Connection Transaction :: one database, one schema transaction
+  Scenario Outline: one database, one schema transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: schema
+Feature: Connection Transaction :: one database, one committed write transaction is closed
+  Scenario Outline: one database, one committed write transaction is closed
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Then transaction commits
+   ✔  Then transaction is open: false
+Feature: Connection Transaction :: one database, one committed schema transaction is closed
+  Scenario Outline: one database, one committed schema transaction is closed
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Then transaction commits
+   ✔  Then transaction is open: false
+Feature: Connection Transaction :: read transaction cannot be committed
+  Scenario: read transaction cannot be committed
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Then transaction commits; fails
+Feature: Connection Transaction :: one database, read transaction close
+  Scenario Outline: one database, read transaction close
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Then transaction closes
+   ✔  Then transaction is open: false
+Feature: Connection Transaction :: one database, write transaction close
+  Scenario Outline: one database, write transaction close
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Then transaction closes
+   ✔  Then transaction is open: false
+Feature: Connection Transaction :: one database, schema transaction close
+  Scenario Outline: one database, schema transaction close
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Then transaction closes
+   ✔  Then transaction is open: false
+Feature: Connection Transaction :: one database, write transaction rollback
+  Scenario Outline: one database, write transaction rollback
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Then transaction rollbacks
+   ✔  Then transaction is open: true
+Feature: Connection Transaction :: one database, schema transaction rollback
+  Scenario Outline: one database, schema transaction rollback
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Then transaction rollbacks
+   ✔  Then transaction is open: true
+Feature: Connection Transaction :: read transaction cannot be rollbacked
+  Scenario: read transaction cannot be rollbacked
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Then transaction rollbacks; fails
+Feature: Connection Transaction :: one database, many read transactions
+  Scenario Outline: one database, many read transactions
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  When connection open transactions for database: typedb, of type:
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+   ✔  Then transactions are open: true
+   ✔  Then transactions have type:
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+Feature: Connection Transaction :: one database, many write transactions
+  Scenario Outline: one database, many write transactions
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  When connection open transactions for database: typedb, of type:
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+   ✔  Then transactions are open: true
+   ✔  Then transactions have type:
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+Feature: Connection Transaction :: one database, many transactions of write and read types
+  Scenario: one database, many transactions of write and read types
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  When connection open transactions for database: typedb, of type:
+       | read  |
+       | write |
+       | read  |
+       | write |
+       | read  |
+       | write |
+       | read  |
+       | write |
+       | read  |
+       | write |
+       | read  |
+       | write |
+   ✔  Then transactions are open: true
+   ✔  Then transactions have type:
+       | read  |
+       | write |
+       | read  |
+       | write |
+       | read  |
+       | write |
+       | read  |
+       | write |
+       | read  |
+       | write |
+       | read  |
+       | write |
+Feature: Connection Transaction :: one database, many read transactions in parallel
+  Scenario Outline: one database, many read transactions in parallel
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  When connection open transactions in parallel for database: typedb, of type:
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+   ✔  Then transactions in parallel are open: true
+   ✔  Then transactions in parallel have type:
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+       | read |
+Feature: Connection Transaction :: one database, many write transactions in parallel
+  Scenario Outline: one database, many write transactions in parallel
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  When connection open transactions in parallel for database: typedb, of type:
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+   ✔  Then transactions in parallel are open: true
+   ✔  Then transactions in parallel have type:
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+       | write |
+Feature: Connection Transaction :: one database, many transactions in parallel of read and write types
+  Scenario: one database, many transactions in parallel of read and write types
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  When connection open transactions in parallel for database: typedb, of type:
+       | read  |
+       | write |
+       | read  |
+       | write |
+       | read  |
+       | write |
+       | read  |
+       | write |
+       | read  |
+       | write |
+       | read  |
+       | write |
+   ✔  Then transactions in parallel are open: true
+   ✔  Then transactions in parallel have type:
+       | read  |
+       | write |
+       | read  |
+       | write |
+       | read  |
+       | write |
+       | read  |
+       | write |
+       | read  |
+       | write |
+       | read  |
+       | write |
+Feature: Connection Transaction :: write in a read transaction fails
+  Scenario Outline: write in a read transaction fails
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  Then typeql write query; fails
+Feature: Connection Transaction :: commit in a read transaction fails
+  Scenario: commit in a read transaction fails
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Then transaction commits; fails
+Feature: Connection Transaction :: close in a schema transaction closes the transaction
+  Scenario Outline: close in a schema transaction closes the transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  When transaction closes
+   ✔  Then transaction is open: false
+Feature: Connection Transaction :: commit in a schema transaction closes the transaction
+  Scenario Outline: commit in a schema transaction closes the transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  When transaction commits
+   ✔  Then transaction is open: false
+Feature: Connection Transaction :: close in a write transaction closes the transaction
+  Scenario Outline: close in a write transaction closes the transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  When transaction closes
+   ✔  Then transaction is open: false
+Feature: Connection Transaction :: commit in a write transaction closes the transaction
+  Scenario Outline: commit in a write transaction closes the transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  When transaction commits
+   ✔  Then transaction is open: false
+Feature: Connection Transaction :: schema modification in a write transaction fails
+  Scenario: schema modification in a write transaction fails
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Then typeql schema query; fails
+Feature: Connection Transaction :: write data in a schema transaction is allowed
+  Scenario: write data in a schema transaction is allowed
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Then typeql schema query
+   ✔  Then typeql write query
+   ✔  Then transaction commits
+Feature: Connection Transaction :: commit after a schema transaction rollback does nothing
+  Scenario: commit after a schema transaction rollback does nothing
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  When transaction rollbacks
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+Feature: Connection Transaction :: commit after a write transaction rollback does nothing
+  Scenario: commit after a write transaction rollback does nothing
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  When transaction rollbacks
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+Feature: Connection Transaction :: can open a read transaction after a critical failure of a write transaction
+  Scenario Outline: can open a read transaction after a critical failure of a write transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction has type: write
+   ✔  Then typeql write query; fails
+   ✔  Then transaction is open: false
+   ✔  When connection open read transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: read
+Feature: Connection Transaction :: can open a write transaction after a critical failure of a write transaction
+  Scenario Outline: can open a write transaction after a critical failure of a write transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction has type: write
+   ✔  Then typeql write query; fails
+   ✔  Then transaction is open: false
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: write
+Feature: Connection Transaction :: can open a schema transaction after a critical failure of a write transaction
+  Scenario Outline: can open a schema transaction after a critical failure of a write transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction has type: write
+   ✔  Then typeql write query; fails
+   ✔  Then transaction is open: false
+   ✔  When connection open schema transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: schema
+Feature: Connection Transaction :: can open a read transaction after a critical failure of a schema transaction
+  Scenario Outline: can open a read transaction after a critical failure of a schema transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  When connection open schema transaction for database: typedb
+   ✔  Then transaction has type: schema
+   ✔  Then typeql write query; fails
+   ✔  Then transaction is open: false
+   ✔  When connection open read transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: read
+Feature: Connection Transaction :: can open a write transaction after a critical failure of a schema transaction
+  Scenario Outline: can open a write transaction after a critical failure of a schema transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  When connection open schema transaction for database: typedb
+   ✔  Then transaction has type: schema
+   ✔  Then typeql write query; fails
+   ✔  Then transaction is open: false
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: write
+Feature: Connection Transaction :: can open a schema transaction after a critical failure of a schema transaction
+  Scenario Outline: can open a schema transaction after a critical failure of a schema transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  When connection open schema transaction for database: typedb
+   ✔  Then transaction has type: schema
+   ✔  Then typeql write query; fails
+   ✔  Then transaction is open: false
+   ✔  When connection open schema transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: schema
+Feature: Connection Transaction :: can open a read transaction after a non-critical failure and closing of a read transaction
+  Scenario Outline: can open a read transaction after a non-critical failure and closing of a read transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  When connection open read transaction for database: typedb
+   ✔  Then transaction has type: read
+   ✔  Then typeql write query; parsing fails
+   ✔  When transaction closes
+   ✔  Then transaction is open: false
+   ✔  When connection open read transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: read
+Feature: Connection Transaction :: can open a write transaction after a non-critical failure and closing of a read transaction
+  Scenario Outline: can open a write transaction after a non-critical failure and closing of a read transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  When connection open read transaction for database: typedb
+   ✔  Then transaction has type: read
+   ✔  Then typeql write query; parsing fails
+   ✔  When transaction closes
+   ✔  Then transaction is open: false
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: write
+Feature: Connection Transaction :: can open a schema transaction after a non-critical failure and closing of a read transaction
+  Scenario Outline: can open a schema transaction after a non-critical failure and closing of a read transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  When connection open read transaction for database: typedb
+   ✔  Then transaction has type: read
+   ✔  Then typeql write query; parsing fails
+   ✔  When transaction closes
+   ✔  Then transaction is open: false
+   ✔  When connection open schema transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: schema
+Feature: Connection Transaction :: can open a read transaction after a non-critical failure and closing of a write transaction
+  Scenario Outline: can open a read transaction after a non-critical failure and closing of a write transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction has type: write
+   ✔  Then typeql write query; parsing fails
+   ✔  When transaction closes
+   ✔  Then transaction is open: false
+   ✔  When connection open read transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: read
+Feature: Connection Transaction :: can open a write transaction after a non-critical failure and closing of a write transaction
+  Scenario Outline: can open a write transaction after a non-critical failure and closing of a write transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction has type: write
+   ✔  Then typeql write query; parsing fails
+   ✔  When transaction closes
+   ✔  Then transaction is open: false
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: write
+Feature: Connection Transaction :: can open a schema transaction after a non-critical failure and closing of a write transaction
+  Scenario Outline: can open a schema transaction after a non-critical failure and closing of a write transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction has type: write
+   ✔  Then typeql write query; parsing fails
+   ✔  When transaction closes
+   ✔  Then transaction is open: false
+   ✔  When connection open schema transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: schema
+Feature: Connection Transaction :: can open a read transaction after a non-critical failure and closing of a schema transaction
+  Scenario Outline: can open a read transaction after a non-critical failure and closing of a schema transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  When connection open schema transaction for database: typedb
+   ✔  Then transaction has type: schema
+   ✔  Then typeql write query; parsing fails
+   ✔  When transaction closes
+   ✔  Then transaction is open: false
+   ✔  When connection open read transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: read
+Feature: Connection Transaction :: can open a write transaction after a non-critical failure and closing of a schema transaction
+  Scenario Outline: can open a write transaction after a non-critical failure and closing of a schema transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  When connection open schema transaction for database: typedb
+   ✔  Then transaction has type: schema
+   ✔  Then typeql write query; parsing fails
+   ✔  When transaction closes
+   ✔  Then transaction is open: false
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: write
+Feature: Connection Transaction :: can open a schema transaction after a non-critical failure and closing of a schema transaction
+  Scenario Outline: can open a schema transaction after a non-critical failure and closing of a schema transaction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: typedb
+   ✔  When connection open schema transaction for database: typedb
+   ✔  Then transaction has type: schema
+   ✔  Then typeql write query; parsing fails
+   ✔  When transaction closes
+   ✔  Then transaction is open: false
+   ✔  When connection open schema transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then transaction has type: schema
+[Summary]
+43 features
+43 scenarios (43 passed)
+443 steps (443 passed)
+.
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 25.92s
+

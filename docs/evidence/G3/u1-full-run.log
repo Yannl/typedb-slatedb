@@ -1,0 +1,114 @@
+U0: 104 test executables
+[1/104] 0.0.0:answer ... OK 0p/0f/0i in 0.01s
+[2/104] 0.0.0:basic ... OK 5p/0f/0i in 0.06s
+[3/104] 0.0.0:binding_modes ... OK 15p/0f/0i in 0.02s
+[4/104] 0.0.0:bytes ... OK 0p/0f/0i in 0.0s
+[5/104] 0.0.0:cache ... OK 2p/0f/0i in 0.02s
+[6/104] 0.0.0:compiler ... OK 10p/0f/0i in 0.16s
+[7/104] 0.0.0:concept ... OK 0p/0f/0i in 0.0s
+[8/104] 0.0.0:concurrency ... OK 8p/0f/0i in 0.0s
+[9/104] 0.0.0:crash ... OK 0p/0f/0i in 0.0s
+[10/104] 0.0.0:database ... OK 0p/0f/0i in 0.0s
+[11/104] 0.0.0:diagnostics ... OK 10p/0f/0i in 0.12s
+[12/104] 0.0.0:durability ... OK 12p/0f/0i in 4.73s
+[13/104] 0.0.0:encoding ... OK 22p/0f/0i in 3.83s
+[14/104] 0.0.0:error ... OK 0p/0f/0i in 0.0s
+[15/104] 0.0.0:execute_comparison_check ... OK 1p/0f/0i in 0.06s
+[16/104] 0.0.0:executor ... OK 0p/0f/0i in 0.0s
+[17/104] 0.0.0:fail_point ... OK 0p/0f/0i in 0.0s
+[18/104] 0.0.0:function ... OK 1p/0f/0i in 0.06s
+[19/104] 0.0.0:http_steps ... OK 0p/0f/0i in 0.01s
+[20/104] 0.0.0:ir ... OK 2p/0f/0i in 0.02s
+[21/104] 0.0.0:iterator ... OK 0p/0f/0i in 0.0s
+[22/104] 0.0.0:lending_iterator ... OK 5p/0f/0i in 0.0s
+[23/104] 0.0.0:logger ... OK 3p/0f/0i in 0.0s
+[24/104] 0.0.0:options ... OK 20p/0f/0i in 0.0s
+[25/104] 0.0.0:params ... OK 0p/0f/0i in 0.0s
+[26/104] 0.0.0:pattern ... OK 3p/0f/0i in 0.02s
+[27/104] 0.0.0:pipeline ... OK 4p/0f/0i in 0.03s
+[28/104] 0.0.0:primitive ... OK 0p/0f/0i in 0.0s
+[29/104] 0.0.0:project ... OK 2p/0f/0i in 0.0s
+[30/104] 0.0.0:query ... OK 0p/0f/0i in 0.0s
+[31/104] 0.0.0:recoverer ... OK 0p/0f/0i in 0.0s
+[32/104] 0.0.0:resource ... OK 0p/0f/0i in 0.0s
+[33/104] 0.0.0:server ... OK 4p/0f/0i in 0.01s
+[34/104] 0.0.0:steps ... OK 0p/0f/0i in 0.01s
+[35/104] 0.0.0:storage ... OK 8p/0f/0i in 0.11s
+[36/104] 0.0.0:streamer ... OK 0p/0f/0i in 0.0s
+[37/104] 0.0.0:structural_equality ... OK 0p/0f/0i in 0.0s
+[38/104] 0.0.0:system ... OK 0p/0f/0i in 0.0s
+[39/104] 0.0.0:test_admin_service ... OK 10p/0f/0i in 1.62s
+[40/104] 0.0.0:test_attribute_vertex ... OK 7p/0f/0i in 0.37s
+[41/104] 0.0.0:test_compile_execute ... OK 9p/0f/0i in 0.22s
+[42/104] 0.0.0:test_database ... OK 2p/0f/0i in 0.16s
+[43/104] 0.0.0:test_define ... OK 1p/0f/0i in 0.06s
+[44/104] 0.0.0:test_definition ... OK 0p/0f/0i in 0.0s
+[45/104] 0.0.0:test_definitions ... OK 1p/0f/0i in 0.06s
+[46/104] 0.0.0:test_diagnostics_posthog_pii ... OK 2p/0f/0i in 0.06s
+[47/104] 0.0.0:test_efficiency ... OK 9p/0f/0i in 0.27s
+[48/104] 0.0.0:test_execute_expression ... OK 4p/0f/0i in 0.02s
+[49/104] 0.0.0:test_execute_has ... OK 5p/0f/0i in 0.16s
+[50/104] 0.0.0:test_execute_isa ... OK 9p/0f/0i in 0.16s
+[51/104] 0.0.0:test_execute_links ... OK 8p/0f/0i in 0.21s
+[52/104] 0.0.0:test_execute_relation_index ... OK 3p/0f/0i in 0.11s
+[53/104] 0.0.0:test_fetch ... OK 1p/0f/0i in 0.11s
+[54/104] 0.0.0:test_functions ... OK 10p/0f/0i in 0.47s
+[55/104] 0.0.0:test_isolation ... OK 14p/0f/1i in 0.06s
+[56/104] 0.0.0:test_mvcc ... OK 4p/0f/0i in 0.03s
+[57/104] 0.0.0:test_pipeline_stages_limit ... OK 2p/0f/0i in 0.11s
+[58/104] 0.0.0:test_pipelines ... OK 9p/0f/0i in 0.21s
+[59/104] 0.0.0:test_query_cache ... OK 3p/0f/0i in 0.11s
+[60/104] 0.0.0:test_query_profile ... OK 1p/0f/0i in 0.11s
+[61/104] 0.0.0:test_recovery ... FAIL(101) 5p/2f/0i in 0.11s
+[62/104] 0.0.0:test_select ... OK 3p/0f/0i in 0.11s
+[63/104] 0.0.0:test_snapshot ... OK 10p/0f/0i in 0.06s
+[64/104] 0.0.0:test_statistics ... OK 9p/0f/0i in 0.16s
+[65/104] 0.0.0:test_statistics_synchronization ... OK 1p/0f/0i in 2.12s
+[66/104] 0.0.0:test_storage ... OK 6p/0f/0i in 0.03s
+[67/104] 0.0.0:test_structural_equality ... OK 5p/0f/0i in 0.02s
+[68/104] 0.0.0:test_thing ... OK 15p/0f/0i in 0.31s
+[69/104] 0.0.0:test_transaction ... OK 31p/0f/0i in 32.74s
+[70/104] 0.0.0:test_transaction_isolation ... OK 22p/0f/0i in 0.57s
+[71/104] 0.0.0:test_type ... OK 6p/0f/0i in 0.16s
+[72/104] 0.0.0:test_type_vertex ... OK 3p/0f/0i in 1.12s
+[73/104] 0.0.0:test_unimplemented ... OK 2p/0f/0i in 0.06s
+[74/104] 0.0.0:test_utils_concept ... OK 0p/0f/0i in 0.0s
+[75/104] 0.0.0:test_utils_encoding ... OK 0p/0f/0i in 0.0s
+[76/104] 0.0.0:test_writes ... OK 6p/0f/0i in 0.16s
+[77/104] 0.0.0:transformation ... OK 12p/0f/0i in 0.21s
+[78/104] 0.0.0:user ... OK 0p/0f/0i in 0.0s
+[79/104] database-tools:read_wal ... OK 0p/0f/0i in 0.0s
+[80/104] database-tools:replay_wal ... OK 0p/0f/0i in 0.0s
+[81/104] durability_test_common:durability_test_common ... OK 0p/0f/0i in 0.0s
+[82/104] server_admin_proto:server_admin_proto ... OK 0p/0f/0i in 0.0s
+[83/104] test_utils:test_utils ... OK 0p/0f/0i in 0.0s
+[84/104] test_utils_concept:test_utils_concept ... OK 0p/0f/0i in 0.0s
+[85/104] test_utils_encoding:test_utils_encoding ... OK 0p/0f/0i in 0.0s
+[86/104] test_utils_storage:test_utils_storage ... OK 0p/0f/0i in 0.0s
+[87/104] typedb-admin:typedb_admin ... OK 8p/0f/0i in 0.0s
+[88/104] typedb_admin_bin:test_admin_assembly ... OK 1p/0f/0i in 15.56s
+[89/104] typedb_admin_bin:typedb_admin_bin ... OK 0p/0f/0i in 0.0s
+[90/104] typedb_server_bin:test_concept ... OK 13p/0f/0i in 222.87s
+[91/104] typedb_server_bin:test_connection ... OK 2p/0f/0i in 6.38s
+[92/104] typedb_server_bin:test_debug ... OK 1p/0f/0i in 4.32s
+[93/104] typedb_server_bin:test_query ... OK 27p/0f/0i in 109.03s
+[94/104] typedb_server_bin:typedb_server_bin ... OK 0p/0f/0i in 0.0s
+[95/104] typedb_server_bin:test_assembly ... OK 1p/0f/0i in 12.2s
+[96/104] typedb_server_bin:test_fail_points ... TIMEOUT 0p/0f/0i in 1800.51s
+[97/104] typedb_server_bin:test_http_database ... OK 1p/0f/0i in 14.0s
+[98/104] typedb_server_bin:test_http_debug ... OK 1p/0f/0i in 1.62s
+[99/104] typedb_server_bin:test_http_driver_concept ... OK 1p/0f/0i in 59.16s
+[100/104] typedb_server_bin:test_http_driver_connection ... OK 1p/0f/0i in 45.93s
+[101/104] typedb_server_bin:test_http_driver_http ... OK 1p/0f/0i in 59.0s
+[102/104] typedb_server_bin:test_http_driver_query ... OK 1p/0f/0i in 24.93s
+[103/104] typedb_server_bin:test_http_driver_user ... OK 1p/0f/0i in 42.42s
+[104/104] typedb_server_bin:test_http_transaction ... OK 1p/0f/0i in 33.9s
+{
+  "executables": 104,
+  "green": 102,
+  "red": 1,
+  "timeout": 1,
+  "cases_passed": 448,
+  "cases_failed": 2,
+  "cases_ignored": 1
+}

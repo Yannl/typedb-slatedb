@@ -1,0 +1,165 @@
+
+running 22 tests
+[2m2026-08-16T03:53:01.323429Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running schema query:
+define entity person, owns id @key; attribute id, value integer;
+[2m2026-08-16T03:53:01.324453Z[0m [32m INFO[0m [2mquery::query_manager[0m[2m:[0m Schema query done.
+Query profile[measurements_enabled=true, total micros: 0]
+  CompileIR[enabled=true, total micros=0]
+    validation micros: 0
+    annotation micros: 0
+    compilation micros: 0
+  -----
+  Stage[root pattern id=0]
+    Define ~~ 0 us
+    Define pattern
+    [0] Define execution
+        ==> batches: 0, rows: 0, micros: 0, micros/row: NaN (raw seeks: 1, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+
+[2m2026-08-16T03:53:01.325293Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[0]
+[2m2026-08-16T03:53:01.325682Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-16T03:53:01.326567Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-16T03:53:01.327252Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[1] with size 445 bytes; 445 bytes total
+[2m2026-08-16T03:53:01.327299Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[1]
+[2m2026-08-16T03:53:01.327389Z[0m [35mTRACE[0m [2mconcept::thing::statistics[0m[2m:[0m Statistics sync finished in 0 ms. Storage watermark was initially: SeqNr[1]. Current statistics sequence is from: SeqNr[1]
+[2m2026-08-16T03:53:01.328160Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running write query:
+insert $p isa person, has id 1;
+[2m2026-08-16T03:53:01.329755Z[0m [32m INFO[0m [2mdatabase::query[0m[2m:[0m Write query done (excluding network request time) in 1594 micros.
+Query profile[measurements_enabled=true, total micros: 886.401]
+  CompileIR[enabled=true, total micros=712.48]
+    validation micros: 49.452
+    annotation micros: 453.557
+    compilation micros: 209.471
+  -----
+  Stage[root pattern id=0]
+    Insert ~~ 173.921 us
+    Insert pattern
+    [0] Concept inserts
+      [0] Put object
+          ==> batches: 1, rows: 1, micros: 15, micros/row: 15.0 (raw seeks: 0, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+      [1] Put attribute
+          ==> batches: 1, rows: 1, micros: 34, micros/row: 34.0 (raw seeks: 0, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+    [1] Connection inserts
+      [0] Put has
+          ==> batches: 1, rows: 1, micros: 123, micros/row: 123.0 (raw seeks: 1, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+
+[2m2026-08-16T03:53:01.330203Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+[2m2026-08-16T03:53:01.331084Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+[2m2026-08-16T03:53:01.331786Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running write query:
+match $p isa person, has id 1; delete $p;
+[2m2026-08-16T03:53:01.332415Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Planning conjunction:
+(1) Conjunction
+  $0 isa person
+  $_1 == Param[Value(integer:0)]
+  $0 has $_1
+  $_1 isa id
+
+[2m2026-08-16T03:53:01.332612Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 0
+[2m2026-08-16T03:53:01.332629Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [] ONGOING: {} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-16T03:53:01.332674Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$0 has $_1| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 9.61, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-16T03:53:01.332724Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 isa person| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 9.8, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-16T03:53:01.332750Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(3) = |$_1 isa id| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 9.8, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-16T03:53:01.332781Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 1
+[2m2026-08-16T03:53:01.332786Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [] ONGOING: {P(2)} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 9.61, io_ratio: 1.0 }
+[2m2026-08-16T03:53:01.332808Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(1) = |$_1 comp Param[Value(integer:0)]| <-- cost: 0.02 heuristic: Cost { cost: 8.463518749999999, io_ratio: 1.0 }
+[2m2026-08-16T03:53:01.332826Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [] ONGOING: {P(0)} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 9.8, io_ratio: 1.0 }
+[2m2026-08-16T03:53:01.332859Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$0 has $_1| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 14.572125, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-16T03:53:01.332884Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(3) = |$_1 isa id| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 14.572125, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-16T03:53:01.332904Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [] ONGOING: {P(3)} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 9.8, io_ratio: 1.0 }
+[2m2026-08-16T03:53:01.332920Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(1) = |$_1 comp Param[Value(integer:0)]| <-- cost: 0.02 heuristic: Cost { cost: 8.7275, io_ratio: 1.0 }
+[2m2026-08-16T03:53:01.332947Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 2
+[2m2026-08-16T03:53:01.332951Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [] ONGOING: {P(2)} STASH: [P(1)] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 9.61, io_ratio: 1.0 }
+[2m2026-08-16T03:53:01.332968Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(0) = |$0 isa person| <-- cost: 0.0 heuristic: Cost { cost: 7.6290125, io_ratio: 1.0 }
+[2m2026-08-16T03:53:01.332981Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [] ONGOING: {P(3)} STASH: [P(1)] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 9.8, io_ratio: 1.0 }
+[2m2026-08-16T03:53:01.333003Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 isa person| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 13.71475, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-16T03:53:01.333026Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$0 has $_1| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 13.71475, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-16T03:53:01.333043Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [P(0), V(0)] ONGOING: {P(2)} STASH: [] COST: Cost { cost: 6.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 14.572125, io_ratio: 1.0 }
+[2m2026-08-16T03:53:01.333059Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(1) = |$_1 comp Param[Value(integer:0)]| <-- cost: 0.02 heuristic: Cost { cost: 13.73475, io_ratio: 1.0 }
+[2m2026-08-16T03:53:01.333071Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [P(0), V(0)] ONGOING: {P(3)} STASH: [] COST: Cost { cost: 6.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 14.572125, io_ratio: 1.0 }
+[2m2026-08-16T03:53:01.333086Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(1) = |$_1 comp Param[Value(integer:0)]| <-- cost: 0.02 heuristic: Cost { cost: 13.73475, io_ratio: 1.0 }
+[2m2026-08-16T03:53:01.333110Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 3
+[2m2026-08-16T03:53:01.333114Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [] ONGOING: {P(2)} STASH: [P(1), P(0)] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 9.61, io_ratio: 1.0 }
+[2m2026-08-16T03:53:01.333130Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(3) = |$_1 isa id| <-- cost: 0.0 heuristic: Cost { cost: 6.0, io_ratio: 1.0 }
+[2m2026-08-16T03:53:01.333143Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [P(3), V(1), P(1)] ONGOING: {P(2)} STASH: [] COST: Cost { cost: 6.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 13.71475, io_ratio: 1.0 }
+[2m2026-08-16T03:53:01.333159Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(0) = |$0 isa person| <-- cost: 0.0 heuristic: Cost { cost: 12.02, io_ratio: 1.0 }
+[2m2026-08-16T03:53:01.333171Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [P(3), V(1), P(1)] ONGOING: {P(0)} STASH: [] COST: Cost { cost: 6.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 13.71475, io_ratio: 1.0 }
+[2m2026-08-16T03:53:01.333188Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$0 has $_1| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 18.02, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-16T03:53:01.333204Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [P(0), V(0)] ONGOING: {P(2)} STASH: [P(1)] COST: Cost { cost: 6.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 14.572125, io_ratio: 1.0 }
+[2m2026-08-16T03:53:01.333223Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(3) = |$_1 isa id| <-- cost: 0.0 heuristic: Cost { cost: 12.0, io_ratio: 1.0 }
+[2m2026-08-16T03:53:01.333235Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [P(0), V(0)] ONGOING: {P(3)} STASH: [P(1)] COST: Cost { cost: 6.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 14.572125, io_ratio: 1.0 }
+[2m2026-08-16T03:53:01.333255Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$0 has $_1| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 18.0, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-16T03:53:01.333297Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m 
+ Final plan (before lowering):
+ --> Order: [P(2), V(1), V(0), P(1), P(0), P(3)] --> MetaData 
+ {P(3): None, P(1): None, P(2): Direction(Canonical), P(0): None}
+[2m2026-08-16T03:53:01.333489Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Finished planning conjunction:
+(1) Conjunction
+  $0 isa person
+  $_1 == Param[Value(integer:0)]
+  $0 has $_1
+  $_1 isa id
+
+[2m2026-08-16T03:53:01.334168Z[0m [32m INFO[0m [2mdatabase::query[0m[2m:[0m Write query done (excluding network request time) in 2382 micros.
+Query profile[measurements_enabled=true, total micros: 1787.847]
+  CompileIR[enabled=true, total micros=1547.823]
+    validation micros: 28.443
+    annotation micros: 253.666
+    compilation micros: 1265.714
+  -----
+  Stage[root pattern id=3]
+    Match ~~ 175.692 us
+    Conjunction [id: 3] ~ Cost: 6.06 Size: 1.00 (stats: links 0.00 / 0.00, has 1.00 / 0.00, vars 2.00 / 0.00)
+    [0] Sorted Iterator Intersection [bound_vars=[], output_size=2, sort_by=$0]
+            [$0 has $_1] filter [Check[$_1 == Param[Value(integer:0)]] ] with (outputs=$_1, $0, )
+        ==> batches: 1, rows: 1, micros: 164, micros/row: 164.0 (raw seeks: 1, raw advances: 1, advances mvcc visible: 1, advances mvcc invisible: 0, advances deleted invisible: 0)
+    [1] Check
+            Check[$0 isa [EntityType:[0000]]] 
+        ==> batches: 1, rows: 1, micros: 8, micros/row: 8.0 (raw seeks: 0, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+    [2] Check
+            Check[$_1 isa [AttributeType:[0000]]] 
+        ==> batches: 1, rows: 1, micros: 2, micros/row: 2.0 (raw seeks: 0, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+  -----
+  Stage[root pattern id=6]
+    Delete ~~ 64.332 us
+    Delete
+    [0] Connection deletes
+    [1] Concept deletes
+      [0] instance
+          ==> batches: 1, rows: 1, micros: 64, micros/row: 64.0 (raw seeks: 5, raw advances: 1, advances mvcc visible: 4, advances mvcc invisible: 0, advances deleted invisible: 0)
+
+[2m2026-08-16T03:53:01.335024Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running write query:
+match $p isa person, has id 1; delete $p;
+[2m2026-08-16T03:53:01.335651Z[0m [32m INFO[0m [2mdatabase::query[0m[2m:[0m Write query done (excluding network request time) in 629 micros.
+Query profile[measurements_enabled=true, total micros: 221.249]
+  CompileIR[enabled=true, total micros=0]
+    validation micros: 0
+    annotation micros: 0
+    compilation micros: 0
+  -----
+  Stage[root pattern id=3]
+    Match ~~ 139.164 us
+    Conjunction [id: 3] ~ Cost: 6.06 Size: 1.00 (stats: links 0.00 / 0.00, has 1.00 / 0.00, vars 2.00 / 0.00)
+    [0] Sorted Iterator Intersection [bound_vars=[], output_size=2, sort_by=$0]
+            [$0 has $_1] filter [Check[$_1 == Param[Value(integer:0)]] ] with (outputs=$0, $_1, )
+        ==> batches: 1, rows: 1, micros: 115, micros/row: 115.0 (raw seeks: 1, raw advances: 1, advances mvcc visible: 1, advances mvcc invisible: 0, advances deleted invisible: 0)
+    [1] Check
+            Check[$0 isa [EntityType:[0000]]] 
+        ==> batches: 1, rows: 1, micros: 9, micros/row: 9.0 (raw seeks: 0, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+    [2] Check
+            Check[$_1 isa [AttributeType:[0000]]] 
+        ==> batches: 1, rows: 1, micros: 14, micros/row: 14.0 (raw seeks: 0, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+  -----
+  Stage[root pattern id=6]
+    Delete ~~ 82.085 us
+    Delete
+    [0] Connection deletes
+    [1] Concept deletes
+      [0] instance
+          ==> batches: 1, rows: 1, micros: 82, micros/row: 82.0 (raw seeks: 5, raw advances: 1, advances mvcc visible: 4, advances mvcc invisible: 0, advances deleted invisible: 0)
+
+[2m2026-08-16T03:53:01.336049Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[3]
+[2m2026-08-16T03:53:01.337780Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[3]
+[2m2026-08-16T03:53:01.338118Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[4]
+[2m2026-08-16T03:53:01.338670Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[4]
+......................
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
+

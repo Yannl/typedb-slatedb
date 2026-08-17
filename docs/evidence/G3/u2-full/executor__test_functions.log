@@ -1,0 +1,267 @@
+
+running 10 tests
+[2m2026-08-16T16:05:03.172474Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running schema query:
+define attribute number @independent, value integer;
+[2m2026-08-16T16:05:03.177805Z[0m [32m INFO[0m [2mquery::query_manager[0m[2m:[0m Schema query done.
+Query profile[measurements_enabled=true, total micros: 0]
+  CompileIR[enabled=true, total micros=0]
+    validation micros: 0
+    annotation micros: 0
+    compilation micros: 0
+  -----
+  Stage[root pattern id=0]
+    Define ~~ 0 us
+    Define pattern
+    [0] Define execution
+        ==> batches: 0, rows: 0, micros: 0, micros/row: NaN (raw seeks: 0, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+
+[2m2026-08-16T16:05:03.179199Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-16T16:05:03.181253Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-16T16:05:03.181642Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[1] with size 266 bytes; 266 bytes total
+[2m2026-08-16T16:05:03.181682Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[1]
+[2m2026-08-16T16:05:03.181746Z[0m [35mTRACE[0m [2mconcept::thing::statistics[0m[2m:[0m Statistics sync finished in 0 ms. Storage watermark was initially: SeqNr[1]. Current statistics sequence is from: SeqNr[1]
+[2m2026-08-16T16:05:03.187377Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running read query:
+
+            with
+            fun ith_fibonacci_number($i: integer) -> { integer }:
+            match
+                let $_ = $ret;
+                { $i == 1; let $ret = 1;  } or
+                { $i == 2; let $ret = 1; } or
+                { $i > 2;
+                     let $i1 = $i - 1;
+                     let $i2 = $i - 2;
+                     let $ret = ith_fibonacci_number($i1) +  ith_fibonacci_number($i2);
+                };
+            return { $ret };
+
+            match
+                let $f_7 = ith_fibonacci_number(7);
+
+        
+[2m2026-08-16T16:05:03.189780Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Planning conjunction:
+(1) Conjunction
+  $_1 = (Proper formatting has not yet been implemented for ir::pattern::expression::ExpressionTree<answer::variable::Variable>)
+The error is: ExpressionTree { preorder_tree: [Variable($2)] }
+
+(3) Conjunction
+  $0 == Param[Value(integer:0)]
+  $2 = (Proper formatting has not yet been implemented for ir::pattern::expression::ExpressionTree<answer::variable::Variable>)
+The error is: ExpressionTree { preorder_tree: [Constant(Param[Value(integer:1)])] }
+
+ or (4) Conjunction
+  $0 == Param[Value(integer:2)]
+  $2 = (Proper formatting has not yet been implemented for ir::pattern::expression::ExpressionTree<answer::variable::Variable>)
+The error is: ExpressionTree { preorder_tree: [Constant(Param[Value(integer:3)])] }
+
+ or (5) Conjunction
+  $0 > Param[Value(integer:4)]
+  $3 = (Proper formatting has not yet been implemented for ir::pattern::expression::ExpressionTree<answer::variable::Variable>)
+The error is: ExpressionTree { preorder_tree: [Variable($0), Constant(Param[Value(integer:5)]), Operation(Operation { operator: Subtract, left_expression_id: 0, right_expression_id: 1, source_span: Some(Span { begin_offset: 283, end_offset: 289 }) })] }
+
+  $4 = (Proper formatting has not yet been implemented for ir::pattern::expression::ExpressionTree<answer::variable::Variable>)
+The error is: ExpressionTree { preorder_tree: [Variable($0), Constant(Param[Value(integer:6)]), Operation(Operation { operator: Subtract, left_expression_id: 0, right_expression_id: 1, source_span: Some(Span { begin_offset: 322, end_offset: 328 }) })] }
+
+  $_5 in fn_QueryFunction#0($3)
+  $_6 in fn_QueryFunction#0($4)
+  $2 = (Proper formatting has not yet been implemented for ir::pattern::expression::ExpressionTree<answer::variable::Variable>)
+The error is: ExpressionTree { preorder_tree: [Variable($_5), Variable($_6), Operation(Operation { operator: Add, left_expression_id: 0, right_expression_id: 1, source_span: Some(Span { begin_offset: 362, end_offset: 416 }) })] }
+
+
+[2m2026-08-16T16:05:03.190109Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 0
+[2m2026-08-16T16:05:03.190123Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-16T16:05:03.190185Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 0
+[2m2026-08-16T16:05:03.190193Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-16T16:05:03.190230Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(0) = |$0 comp Param[Value(integer:0)]| <-- cost: 0.02 heuristic: Cost { cost: 1.92, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.190269Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 1
+[2m2026-08-16T16:05:03.190278Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {} STASH: [P(0)] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-16T16:05:03.190305Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(1) = |Expr of []| <-- cost: 0.02 heuristic: Cost { cost: 0.02, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.190349Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m 
+ Final plan (before lowering):
+ --> Order: [V(0), P(0), P(1), V(1)] --> MetaData 
+ {P(1): None, P(0): None}
+[2m2026-08-16T16:05:03.190395Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 0
+[2m2026-08-16T16:05:03.190432Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-16T16:05:03.190498Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(0) = |$0 comp Param[Value(integer:2)]| <-- cost: 0.02 heuristic: Cost { cost: 1.92, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.190523Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 1
+[2m2026-08-16T16:05:03.190529Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {} STASH: [P(0)] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-16T16:05:03.190546Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(1) = |Expr of []| <-- cost: 0.02 heuristic: Cost { cost: 0.02, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.190570Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m 
+ Final plan (before lowering):
+ --> Order: [V(0), P(0), P(1), V(1)] --> MetaData 
+ {P(1): None, P(0): None}
+[2m2026-08-16T16:05:03.190622Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 0
+[2m2026-08-16T16:05:03.190629Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-16T16:05:03.190653Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(1) = |Expr of [$0]| <-- cost: 0.02 heuristic: Cost { cost: 5.435, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.190672Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 1
+[2m2026-08-16T16:05:03.190677Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {} STASH: [P(1)] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-16T16:05:03.190694Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(2) = |Expr of [$0]| <-- cost: 0.02 heuristic: Cost { cost: 4.5325, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.190709Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 2
+[2m2026-08-16T16:05:03.190769Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {} STASH: [P(1), P(2)] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-16T16:05:03.190796Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(0) = |$0 comp Param[Value(integer:4)]| <-- cost: 0.02 heuristic: Cost { cost: 3.82, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.190820Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 3
+[2m2026-08-16T16:05:03.190826Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {} STASH: [P(1), P(2), P(0)] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-16T16:05:03.190850Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(3) = |Fun Call| <-- join: None, cost: Cost { cost: 1.0, io_ratio: 1.0 }, heuristic: Cost { cost: 3.5721249999999998, io_ratio: 1.0 } metadata: None
+[2m2026-08-16T16:05:03.190881Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(4) = |Fun Call| <-- join: None, cost: Cost { cost: 1.0, io_ratio: 1.0 }, heuristic: Cost { cost: 3.5721249999999998, io_ratio: 1.0 } metadata: None
+[2m2026-08-16T16:05:03.190925Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 4
+[2m2026-08-16T16:05:03.190932Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0), P(1), V(1), P(2), V(3), P(0)] ONGOING: {P(3)} STASH: [] COST: Cost { cost: 0.06, io_ratio: 1.0 } + Cost { cost: 1.0, io_ratio: 1.0 } = Cost { cost: 1.06, io_ratio: 1.0 } HEURISTIC: Cost { cost: 3.5721249999999998, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.190958Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(4) = |Fun Call| <-- join: None, cost: Cost { cost: 1.0, io_ratio: 1.0 }, heuristic: Cost { cost: 3.4566745921875, io_ratio: 1.0 } metadata: None
+[2m2026-08-16T16:05:03.190978Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0), P(1), V(1), P(2), V(3), P(0)] ONGOING: {P(4)} STASH: [] COST: Cost { cost: 0.06, io_ratio: 1.0 } + Cost { cost: 1.0, io_ratio: 1.0 } = Cost { cost: 1.06, io_ratio: 1.0 } HEURISTIC: Cost { cost: 3.5721249999999998, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.190998Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(3) = |Fun Call| <-- join: None, cost: Cost { cost: 1.0, io_ratio: 1.0 }, heuristic: Cost { cost: 3.4566745921875, io_ratio: 1.0 } metadata: None
+[2m2026-08-16T16:05:03.191027Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 5
+[2m2026-08-16T16:05:03.191038Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0), P(1), V(1), P(2), V(3), P(0), P(3), V(2)] ONGOING: {P(4)} STASH: [] COST: Cost { cost: 1.06, io_ratio: 1.0 } + Cost { cost: 1.0, io_ratio: 1.0 } = Cost { cost: 2.06, io_ratio: 1.0 } HEURISTIC: Cost { cost: 3.4566745921875, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.191056Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(5) = |Expr of [$_5, $_6]| <-- cost: 0.02 heuristic: Cost { cost: 2.08, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.191072Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0), P(1), V(1), P(2), V(3), P(0), P(4), V(5)] ONGOING: {P(3)} STASH: [] COST: Cost { cost: 1.06, io_ratio: 1.0 } + Cost { cost: 1.0, io_ratio: 1.0 } = Cost { cost: 2.06, io_ratio: 1.0 } HEURISTIC: Cost { cost: 3.4566745921875, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.191089Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(5) = |Expr of [$_5, $_6]| <-- cost: 0.02 heuristic: Cost { cost: 2.08, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.191118Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m 
+ Final plan (before lowering):
+ --> Order: [V(0), P(1), V(1), P(2), V(3), P(0), P(3), V(2), P(4), V(5), P(5), V(4)] --> MetaData 
+ {P(2): None, P(4): None, P(5): None, P(0): None, P(3): None, P(1): None}
+[2m2026-08-16T16:05:03.191157Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(1) = |Disjunction| <-- join: None, cost: Cost { cost: 2.16, io_ratio: 3.0 }, heuristic: Cost { cost: 7.575, io_ratio: 3.0 } metadata: None
+[2m2026-08-16T16:05:03.191181Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 1
+[2m2026-08-16T16:05:03.191187Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {P(1)} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 2.16, io_ratio: 3.0 } = Cost { cost: 2.16, io_ratio: 3.0 } HEURISTIC: Cost { cost: 7.575, io_ratio: 3.0 }
+[2m2026-08-16T16:05:03.191204Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(0) = |Expr of [$2]| <-- cost: 0.02 heuristic: Cost { cost: 2.22, io_ratio: 3.0 }
+[2m2026-08-16T16:05:03.191227Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m 
+ Final plan (before lowering):
+ --> Order: [V(0), P(1), V(1), P(0), V(2)] --> MetaData 
+ {P(1): None, P(0): None}
+[2m2026-08-16T16:05:03.191312Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 0
+[2m2026-08-16T16:05:03.191320Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-16T16:05:03.191339Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(0) = |$0 comp Param[Value(integer:0)]| <-- cost: 0.02 heuristic: Cost { cost: 1.92, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.191358Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 1
+[2m2026-08-16T16:05:03.191363Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {} STASH: [P(0)] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-16T16:05:03.191378Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(1) = |Expr of []| <-- cost: 0.02 heuristic: Cost { cost: 0.02, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.191436Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m 
+ Final plan (before lowering):
+ --> Order: [V(0), P(0), P(1), V(1)] --> MetaData 
+ {P(1): None, P(0): None}
+[2m2026-08-16T16:05:03.191466Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 0
+[2m2026-08-16T16:05:03.191472Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-16T16:05:03.191490Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(1) = |Expr of []| <-- cost: 0.02 heuristic: Cost { cost: 1.825, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.191507Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 1
+[2m2026-08-16T16:05:03.191513Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {} STASH: [P(1)] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-16T16:05:03.191528Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(0) = |$0 comp Param[Value(integer:2)]| <-- cost: 0.02 heuristic: Cost { cost: 0.02, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.191550Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m 
+ Final plan (before lowering):
+ --> Order: [V(0), P(1), V(1), P(0)] --> MetaData 
+ {P(0): None, P(1): None}
+[2m2026-08-16T16:05:03.191577Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 0
+[2m2026-08-16T16:05:03.191583Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-16T16:05:03.191600Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(0) = |$0 comp Param[Value(integer:4)]| <-- cost: 0.02 heuristic: Cost { cost: 5.719999999999999, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.191618Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 1
+[2m2026-08-16T16:05:03.191629Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {} STASH: [P(0)] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-16T16:05:03.191647Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(2) = |Expr of [$0]| <-- cost: 0.02 heuristic: Cost { cost: 4.5325, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.191663Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 2
+[2m2026-08-16T16:05:03.191668Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {} STASH: [P(0), P(2)] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-16T16:05:03.191685Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(1) = |Expr of [$0]| <-- cost: 0.02 heuristic: Cost { cost: 3.63, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.191700Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 3
+[2m2026-08-16T16:05:03.191705Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {} STASH: [P(0), P(2), P(1)] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-16T16:05:03.191730Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(3) = |Fun Call| <-- join: None, cost: Cost { cost: 1.0, io_ratio: 1.0 }, heuristic: Cost { cost: 3.5721249999999998, io_ratio: 1.0 } metadata: None
+[2m2026-08-16T16:05:03.191758Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(4) = |Fun Call| <-- join: None, cost: Cost { cost: 1.0, io_ratio: 1.0 }, heuristic: Cost { cost: 3.5721249999999998, io_ratio: 1.0 } metadata: None
+[2m2026-08-16T16:05:03.191793Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 4
+[2m2026-08-16T16:05:03.191799Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0), P(0), P(2), V(3), P(1), V(1)] ONGOING: {P(3)} STASH: [] COST: Cost { cost: 0.06, io_ratio: 1.0 } + Cost { cost: 1.0, io_ratio: 1.0 } = Cost { cost: 1.06, io_ratio: 1.0 } HEURISTIC: Cost { cost: 3.5721249999999998, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.191870Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(4) = |Fun Call| <-- join: None, cost: Cost { cost: 1.0, io_ratio: 1.0 }, heuristic: Cost { cost: 3.4566745921875, io_ratio: 1.0 } metadata: None
+[2m2026-08-16T16:05:03.191895Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0), P(0), P(2), V(3), P(1), V(1)] ONGOING: {P(4)} STASH: [] COST: Cost { cost: 0.06, io_ratio: 1.0 } + Cost { cost: 1.0, io_ratio: 1.0 } = Cost { cost: 1.06, io_ratio: 1.0 } HEURISTIC: Cost { cost: 3.5721249999999998, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.191915Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(3) = |Fun Call| <-- join: None, cost: Cost { cost: 1.0, io_ratio: 1.0 }, heuristic: Cost { cost: 3.4566745921875, io_ratio: 1.0 } metadata: None
+[2m2026-08-16T16:05:03.191944Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 5
+[2m2026-08-16T16:05:03.191951Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0), P(0), P(2), V(3), P(1), V(1), P(3), V(2)] ONGOING: {P(4)} STASH: [] COST: Cost { cost: 1.06, io_ratio: 1.0 } + Cost { cost: 1.0, io_ratio: 1.0 } = Cost { cost: 2.06, io_ratio: 1.0 } HEURISTIC: Cost { cost: 3.4566745921875, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.191969Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(5) = |Expr of [$_5, $_6]| <-- cost: 0.02 heuristic: Cost { cost: 2.08, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.191984Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0), P(0), P(2), V(3), P(1), V(1), P(4), V(5)] ONGOING: {P(3)} STASH: [] COST: Cost { cost: 1.06, io_ratio: 1.0 } + Cost { cost: 1.0, io_ratio: 1.0 } = Cost { cost: 2.06, io_ratio: 1.0 } HEURISTIC: Cost { cost: 3.4566745921875, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.192001Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(5) = |Expr of [$_5, $_6]| <-- cost: 0.02 heuristic: Cost { cost: 2.08, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.192029Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m 
+ Final plan (before lowering):
+ --> Order: [V(0), P(0), P(2), V(3), P(1), V(1), P(3), V(2), P(4), V(5), P(5), V(4)] --> MetaData 
+ {P(0): None, P(1): None, P(5): None, P(4): None, P(3): None, P(2): None}
+[2m2026-08-16T16:05:03.192434Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Finished planning conjunction:
+(1) Conjunction
+  $_1 = (Proper formatting has not yet been implemented for ir::pattern::expression::ExpressionTree<answer::variable::Variable>)
+The error is: ExpressionTree { preorder_tree: [Variable($2)] }
+
+(3) Conjunction
+  $0 == Param[Value(integer:0)]
+  $2 = (Proper formatting has not yet been implemented for ir::pattern::expression::ExpressionTree<answer::variable::Variable>)
+The error is: ExpressionTree { preorder_tree: [Constant(Param[Value(integer:1)])] }
+
+ or (4) Conjunction
+  $0 == Param[Value(integer:2)]
+  $2 = (Proper formatting has not yet been implemented for ir::pattern::expression::ExpressionTree<answer::variable::Variable>)
+The error is: ExpressionTree { preorder_tree: [Constant(Param[Value(integer:3)])] }
+
+ or (5) Conjunction
+  $0 > Param[Value(integer:4)]
+  $3 = (Proper formatting has not yet been implemented for ir::pattern::expression::ExpressionTree<answer::variable::Variable>)
+The error is: ExpressionTree { preorder_tree: [Variable($0), Constant(Param[Value(integer:5)]), Operation(Operation { operator: Subtract, left_expression_id: 0, right_expression_id: 1, source_span: Some(Span { begin_offset: 283, end_offset: 289 }) })] }
+
+  $4 = (Proper formatting has not yet been implemented for ir::pattern::expression::ExpressionTree<answer::variable::Variable>)
+The error is: ExpressionTree { preorder_tree: [Variable($0), Constant(Param[Value(integer:6)]), Operation(Operation { operator: Subtract, left_expression_id: 0, right_expression_id: 1, source_span: Some(Span { begin_offset: 322, end_offset: 328 }) })] }
+
+  $_5 in fn_QueryFunction#0($3)
+  $_6 in fn_QueryFunction#0($4)
+  $2 = (Proper formatting has not yet been implemented for ir::pattern::expression::ExpressionTree<answer::variable::Variable>)
+The error is: ExpressionTree { preorder_tree: [Variable($_5), Variable($_6), Operation(Operation { operator: Add, left_expression_id: 0, right_expression_id: 1, source_span: Some(Span { begin_offset: 362, end_offset: 416 }) })] }
+
+
+[2m2026-08-16T16:05:03.192528Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Lowered plan:
+Conjunction executable plan [selected=[p0, p1], output_width=2]:
+  0: Disjunction [selected=[p0, p1], output_size=2]
+      --- Start branch ---Conjunction executable plan [selected=[p0, p1], output_width=2]:
+  0: Check [selected=[p0], output_width=1]
+      Check[p0 == Param[Value(integer:0)]] 
+  1: Assignment [inputs=[], selected=[p0, p1], output_size=2]
+      ExecutableExpression { instructions: [LoadConstant], variables: [], constants: [Param[Value(integer:1)]], return_type: Single(integer) }
+      --- End branch ---
+      --- Start branch ---Conjunction executable plan [selected=[p1, p0], output_width=2]:
+  0: Assignment [inputs=[], selected=[p1, p0], output_size=2]
+      ExecutableExpression { instructions: [LoadConstant], variables: [], constants: [Param[Value(integer:3)]], return_type: Single(integer) }
+  1: Check [selected=[p1, p0], output_width=2]
+      Check[p0 == Param[Value(integer:2)]] 
+      --- End branch ---
+      --- Start branch ---Conjunction executable plan [selected=[p1, p0], output_width=2]:
+  0: Check [selected=[p0], output_width=1]
+      Check[p0 > Param[Value(integer:4)]] 
+  1: Assignment [inputs=[p0], selected=[p2, p0], output_size=3]
+      ExecutableExpression { instructions: [LoadVariable, LoadConstant, OpIntegerSubtractInteger], variables: [p0], constants: [Param[Value(integer:6)]], return_type: Single(integer) }
+  2: Assignment [inputs=[p0], selected=[p3, p2, p0], output_size=4]
+      ExecutableExpression { instructions: [LoadVariable, LoadConstant, OpIntegerSubtractInteger], variables: [p0], constants: [Param[Value(integer:5)]], return_type: Single(integer) }
+  3: Function Call [fn_id=QueryFunction#0, assigned=[Some(p4)], arguments=[p3], selected=[p2, p4, p0], output_size=5]
+
+  4: Function Call [fn_id=QueryFunction#0, assigned=[Some(p5)], arguments=[p2], selected=[p5, p4, p0], output_size=6]
+
+  5: Assignment [inputs=[p4, p5], selected=[p1, p0], output_size=2]
+      ExecutableExpression { instructions: [LoadVariable, LoadVariable, OpIntegerAddInteger], variables: [p4, p5], constants: [], return_type: Single(integer) }
+      --- End branch ---
+  1: Assignment [inputs=[p1], selected=[p0, p1], output_size=2]
+      ExecutableExpression { instructions: [LoadVariable], variables: [p1], constants: [], return_type: Single(integer) }
+[2m2026-08-16T16:05:03.192660Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Planning conjunction:
+(1) Conjunction
+  $_1 = (Proper formatting has not yet been implemented for ir::pattern::expression::ExpressionTree<answer::variable::Variable>)
+The error is: ExpressionTree { preorder_tree: [Constant(Param[Value(integer:0)])] }
+
+  $0 in fn_QueryFunction#0($_1)
+
+[2m2026-08-16T16:05:03.192733Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 0
+[2m2026-08-16T16:05:03.192741Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [] ONGOING: {} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-16T16:05:03.192763Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(0) = |Expr of []| <-- cost: 0.02 heuristic: Cost { cost: 1.92, io_ratio: 1.0 }
+[2m2026-08-16T16:05:03.192783Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 1
+[2m2026-08-16T16:05:03.192788Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [] ONGOING: {} STASH: [P(0)] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-16T16:05:03.192804Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(1) = |Fun Call| <-- join: None, cost: Cost { cost: 2.22, io_ratio: 3.0 }, heuristic: Cost { cost: 2.22, io_ratio: 3.0 } metadata: None
+[2m2026-08-16T16:05:03.192836Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m 
+ Final plan (before lowering):
+ --> Order: [P(0), V(1), P(1), V(0)] --> MetaData 
+ {P(1): None, P(0): None}
+[2m2026-08-16T16:05:03.192919Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Finished planning conjunction:
+(1) Conjunction
+  $_1 = (Proper formatting has not yet been implemented for ir::pattern::expression::ExpressionTree<answer::variable::Variable>)
+The error is: ExpressionTree { preorder_tree: [Constant(Param[Value(integer:0)])] }
+
+  $0 in fn_QueryFunction#0($_1)
+
+[2m2026-08-16T16:05:03.192941Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Lowered plan:
+Conjunction executable plan [selected=[p1], output_width=2]:
+  0: Assignment [inputs=[], selected=[p0], output_size=1]
+      ExecutableExpression { instructions: [LoadConstant], variables: [], constants: [Param[Value(integer:0)]], return_type: Single(integer) }
+  1: Function Call [fn_id=QueryFunction#0, assigned=[Some(p1)], arguments=[p0], selected=[p1], output_size=2]
+
+..........
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.28s
+

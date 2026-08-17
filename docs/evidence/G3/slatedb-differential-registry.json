@@ -1,0 +1,28 @@
+{
+  "spike": "SL semantics differential re-run at the registry identity (tools/storage-diff-spike)",
+  "engine": "slatedb =0.15.0 from crates.io (default-features = false) over object_store LocalFileSystem",
+  "identity_change": {
+    "from": "git f88be86d17ac53260d3684edbc8f82811d945b5c (v0.15.0 + 32 commits, path dependency)",
+    "to": "registry crates.io slatedb 0.15.0, checksum 35ca56b01922b15aa69fe3abb62cadc985d86032c9647e4606e211c4da751a76",
+    "companions": {
+      "slatedb-common 0.15.0": "0aa8de522ff46a0f9b5a66f45e650d125421d4d91990933591092f9d010c40d1",
+      "slatedb-txn-obj 0.15.0": "d85fd9c0c86dd4954524fa8238d0548bd80f4a9a66983cbde3728402d339993e"
+    },
+    "reason": "owner decision ADR-0001: consume-only SlateDB, no fork"
+  },
+  "oracle": "ordered-map (BTreeMap) reference semantics",
+  "tests": {
+    "pass": 2,
+    "fail": 0,
+    "wall_clock_seconds": 152
+  },
+  "validated_assumptions": [
+    "total byte-order equivalence over a 1500-op seeded workload (puts/deletes/atomic batches, 8 shared prefixes), full-scan checked every 250 steps",
+    "read-your-writes visibility immediately after every put/delete",
+    "atomic multi-key WriteBatch: all-visible including interleaved delete",
+    "exact half-open prefix-range scans equal to oracle range views for 10 prefixes",
+    "reopen durability: flush+close+reopen over the same LocalFS store reproduces the full state byte-for-byte"
+  ],
+  "negative_control": "planted oracle divergence is detected by the harness (EFFECTIVE)",
+  "implication": "the storage-swap assumptions the U2 lane (TB-P7) relies on hold at the released registry identity; the prior git-pin run (slatedb-differential.json) remains archived as the pre-switch baseline"
+}

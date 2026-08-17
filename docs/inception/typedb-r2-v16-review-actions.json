@@ -1,0 +1,534 @@
+{
+  "actions": [
+    {
+      "failure_mode": "A release could produce a false 100% behavior-test denominator from an unlocked corpus.",
+      "gate": "G0",
+      "id": "P0-01",
+      "owner": "build-evidence",
+      "priority": "critical",
+      "problem": "V15 announces typedb-behaviour as mandatory but \u00a71.1 lists only TypeDB, SlateDB and an optional Containers repo.",
+      "required_change": "Add BH to the lock and make missing BH a G0 failure.",
+      "status": "open_until_executable_evidence",
+      "title": "Normative source lock contradicts the document"
+    },
+    {
+      "failure_mode": "Cargo/Bazel parity, fixtures and package layout cannot be reproduced from TB/SL/BH alone.",
+      "gate": "G0",
+      "id": "P0-02",
+      "owner": "build-evidence",
+      "priority": "critical",
+      "problem": "The selected MODULE.bazel also pins typedb/dependencies, bazel-distribution, TypeQL, typedb-protocol, Console/Loader artifacts, Rust 1.93.0 and base images.",
+      "required_change": "Lock the whole proof-critical graph; resolve tags/artifacts/images to immutable digests.",
+      "status": "open_until_executable_evidence",
+      "title": "TypeDB external proof graph is incomplete"
+    },
+    {
+      "failure_mode": "Cross references and evidence counts are ambiguous; automated document validation can pass the wrong appendix.",
+      "gate": "G0",
+      "id": "P0-03",
+      "owner": "build-evidence",
+      "priority": "critical",
+      "problem": "V15 contains two Appendix F sections. The second says 11/11 anchors but visibly enumerates six numbered items.",
+      "required_change": "Assign unique appendix IDs and make evidence counts machine-generated.",
+      "status": "open_until_executable_evidence",
+      "title": "Two appendices have the same identity"
+    },
+    {
+      "failure_mode": "Cargo feature unification, profiles, lock resolution, paths and rebase behavior may change before any storage patch.",
+      "gate": "G0",
+      "id": "P0-04",
+      "owner": "build-evidence",
+      "priority": "critical",
+      "problem": "V15 makes moonrepo the task authority and flattens 41 TypeDB members plus SlateDB and tooling into one root Cargo workspace.",
+      "required_change": "Keep federated upstream-shaped workspaces. Treat any task runner as replaceable orchestration.",
+      "status": "open_until_executable_evidence",
+      "title": "The monorepo proposal creates a new semantic build system"
+    },
+    {
+      "failure_mode": "The audit mode cannot be reproduced or governed because its own policy is self-contradictory.",
+      "gate": "G0",
+      "id": "P0-05",
+      "owner": "build-evidence",
+      "priority": "critical",
+      "problem": "V15 says Bazel is never executed anywhere, then requires a sacrificial cquery snapshot.",
+      "required_change": "Choose explicit Mode Q (isolated query oracle) or Mode S (static expansion), never both rhetorically.",
+      "status": "open_until_executable_evidence",
+      "title": "Zero-Bazel language contradicts the one-time cquery plan"
+    },
+    {
+      "failure_mode": "An autonomous agent can land semantic changes in the wrong phase and claim the wrong gate.",
+      "gate": "G0",
+      "id": "P0-06",
+      "owner": "build-evidence",
+      "priority": "critical",
+      "problem": "V15 P2/P3/P4 labels do not match the \u00a723 TB-P/SL-P responsibilities consistently.",
+      "required_change": "Use one stable patch registry and map each phase to exact IDs.",
+      "status": "open_until_executable_evidence",
+      "title": "The playbook references patch numbers inconsistently"
+    },
+    {
+      "failure_mode": "A helper reset, lifecycle alarm, rollout or state bug could become entangled with WAL/epoch state.",
+      "gate": "G0",
+      "id": "P0-07",
+      "owner": "build-evidence",
+      "priority": "critical",
+      "problem": "The architecture describes one database controller and a Container, but does not make the Container-backed Durable Object a separate authority domain.",
+      "required_change": "Split DatabaseControllerDO from DatabaseContainerDO; lifecycle reports are advisory.",
+      "status": "open_until_executable_evidence",
+      "title": "Database authority is implicitly coupled to Container lifecycle"
+    },
+    {
+      "failure_mode": "Validate\u2013network-await\u2013commit procedures can commit using stale authority state.",
+      "gate": "G1",
+      "id": "P0-08",
+      "owner": "controller-platform",
+      "priority": "critical",
+      "problem": "Single-threaded DO execution is not enough: arbitrary async awaits allow requests to interleave outside storage gates.",
+      "required_change": "Require prepare/I-O/finalise or transaction/outbox structure and test forced interleavings.",
+      "status": "open_until_executable_evidence",
+      "title": "Durable Object interleaving is underspecified"
+    },
+    {
+      "failure_mode": "Outbox, archival, checkpoint or lifecycle work may remain permanently stuck.",
+      "gate": "G1",
+      "id": "P0-09",
+      "owner": "controller-platform",
+      "priority": "critical",
+      "problem": "V15 treats alarms as background execution but does not account for at-least-once delivery with only a finite automatic retry sequence.",
+      "required_change": "Persist next_due/attempt state, catch/reschedule, and add an independent watchdog.",
+      "status": "open_until_executable_evidence",
+      "title": "Alarm progress can be stranded"
+    },
+    {
+      "failure_mode": "The pre-G13 no-delete invariant would depend only on application convention.",
+      "gate": "G2",
+      "id": "P0-10",
+      "owner": "data-path",
+      "priority": "critical",
+      "problem": "A broad object-read-write temporary credential includes DeleteObject/DeleteObjects in current R2 action semantics.",
+      "required_change": "Use explicit action lists, exact presigned operations, or gateway capabilities; separate parent tokens.",
+      "status": "open_until_executable_evidence",
+      "title": "R2 credential scopes are not delete-safe by construction"
+    },
+    {
+      "failure_mode": "A major independent guard against accidental overwrite/delete is left unused.",
+      "gate": "G2",
+      "id": "P0-11",
+      "owner": "data-path",
+      "priority": "critical",
+      "problem": "V15 states only that S3 Object Lock is absent and therefore misses the newer native Bucket Lock facility.",
+      "required_change": "Use coarse Bucket Locks as defense in depth, while documenting privileged-admin residual risk.",
+      "status": "open_until_executable_evidence",
+      "title": "R2 Bucket Locks are absent from the safety design"
+    },
+    {
+      "failure_mode": "A retry with changed bytes can corrupt an attempt while still looking like ordinary retry behavior.",
+      "gate": "G2",
+      "id": "P0-12",
+      "owner": "data-path",
+      "priority": "critical",
+      "problem": "R2 documents same-part replacement, including loss of the previous part if a replacement fails; multipart SHA-256 is composite.",
+      "required_change": "Bind each part number to one digest/length and allocate a new upload attempt for changed bytes; verify completed bytes by application SHA-256.",
+      "status": "open_until_executable_evidence",
+      "title": "Multipart object identity is incomplete"
+    },
+    {
+      "failure_mode": "A native TypeDB TCP/gRPC profile remains latent in V15 and can distort routing/session design.",
+      "gate": "G6",
+      "id": "P0-13",
+      "owner": "container-platform",
+      "priority": "critical",
+      "problem": "Current Container architecture routes end-user requests through Workers and states non-HTTP TCP/UDP is unavailable through this path.",
+      "required_change": "Make V1 HTTP-only and move native transport to a future ADR.",
+      "status": "open_until_executable_evidence",
+      "title": "V1 transport scope is stale"
+    },
+    {
+      "failure_mode": "New Worker code may talk to old images during a correctness-critical format/protocol change.",
+      "gate": "G6",
+      "id": "P0-14",
+      "owner": "container-platform",
+      "priority": "critical",
+      "problem": "Cloudflare activates Worker code before every instance is replaced; rollout completion is asynchronous and non-transactional.",
+      "required_change": "Add DeploymentCompatibilityEnvelope, reader-before-writer formats, observed convergence, and rollback image retention.",
+      "status": "open_until_executable_evidence",
+      "title": "Container rollouts are not modeled as mixed-version"
+    },
+    {
+      "failure_mode": "Deadlines, control latency and failure classification can be incorrect if calls are treated as local.",
+      "gate": "G6",
+      "id": "P0-15",
+      "owner": "container-platform",
+      "priority": "critical",
+      "problem": "The platform does not guarantee a Container and its associated DO are colocated.",
+      "required_change": "Model them as ordinary network hops and test geographical/location separation.",
+      "status": "open_until_executable_evidence",
+      "title": "Container and lifecycle DO location is assumed too weakly"
+    },
+    {
+      "failure_mode": "Request inactivity is not equivalent to absence of open transaction/recovery/checkpoint work.",
+      "gate": "G6",
+      "id": "P0-16",
+      "owner": "container-platform",
+      "priority": "critical",
+      "problem": "The Container helper defaults to inactivity shutdown; V15 does not make the policy controller-approved.",
+      "required_change": "Set explicit sleep policy and require controller-authorized hibernation.",
+      "status": "open_until_executable_evidence",
+      "title": "Default sleep and stop behavior can terminate an authoritative writer"
+    },
+    {
+      "failure_mode": "Release code can silently gain providers, test utilities, filters or alternate caches.",
+      "gate": "G0",
+      "id": "P0-17",
+      "owner": "build-evidence",
+      "priority": "critical",
+      "problem": "V15 discusses settings but does not prohibit default/all features. The pinned crate defaults to aws+foyer and exposes compaction_filters with a snapshot-consistency warning.",
+      "required_change": "Use default-features=false plus an explicit feature allowlist and linked-symbol/config attestation.",
+      "status": "open_until_executable_evidence",
+      "title": "SlateDB production features are not locked minimally"
+    },
+    {
+      "failure_mode": "Either preserving 1.93 forever or silently upgrading can be unsafe.",
+      "gate": "G0",
+      "id": "P0-18",
+      "owner": "build-evidence",
+      "priority": "critical",
+      "problem": "TypeDB pins Rust 1.93.0 while current stable has moved and may contain fixes.",
+      "required_change": "Run a parity lane and a qualified patched-stable lane; select one release compiler with full evidence.",
+      "status": "open_until_executable_evidence",
+      "title": "Compiler authority is single-lane and stale by design"
+    },
+    {
+      "failure_mode": "Local tests and deployed behavior can drift despite a lockfile.",
+      "gate": "G0",
+      "id": "P0-19",
+      "owner": "build-evidence",
+      "priority": "critical",
+      "problem": "V15 says the TS toolchain is pinned but does not bind Wrangler, workerd, Vitest pool, Miniflare and @cloudflare/containers tarballs to exact source commits.",
+      "required_change": "Add npm integrity, source commit and runtime/package relationship to G0.",
+      "status": "open_until_executable_evidence",
+      "title": "Cloudflare packages are versioned without source mapping"
+    },
+    {
+      "failure_mode": "A changed doc can retroactively change the meaning of a prior release.",
+      "gate": "G0",
+      "id": "P0-20",
+      "owner": "build-evidence",
+      "priority": "critical",
+      "problem": "V15 refers to current docs but does not lock the bytes, date, account profile and dependent probes as one artifact.",
+      "required_change": "Generate a PlatformContractRecord with content hash and real-account evidence.",
+      "status": "open_until_executable_evidence",
+      "title": "Platform documentation is not a reproducible input"
+    },
+    {
+      "failure_mode": "Large or parallel uploads can fail in a way that causes ambiguous object outcomes.",
+      "gate": "G1",
+      "id": "P0-21",
+      "owner": "controller-platform",
+      "priority": "critical",
+      "problem": "The design says streaming but does not make the 128 MB isolate and six simultaneous outgoing connections a formal capacity boundary.",
+      "required_change": "Add streaming negative controls, connection permits, body cancellation and direct bulk path qualification.",
+      "status": "open_until_executable_evidence",
+      "title": "Gateway limits are not composed with Workers limits"
+    },
+    {
+      "failure_mode": "Archival lag can hit SQLITE_FULL or overload before the system sheds safely.",
+      "gate": "G1",
+      "id": "P0-22",
+      "owner": "controller-platform",
+      "priority": "critical",
+      "problem": "V15 says bounded but does not derive admission thresholds from 10 GB/2 MB/soft QPS and workload amplification.",
+      "required_change": "Define high/emergency watermarks and reserved recovery/archival capacity.",
+      "status": "open_until_executable_evidence",
+      "title": "Controller limits are not conservative enough to be actionable"
+    },
+    {
+      "failure_mode": "Tests or fixtures can be selected by version while code comes from a different snapshot.",
+      "gate": "G0",
+      "id": "P0-23",
+      "owner": "build-evidence",
+      "priority": "critical",
+      "problem": "The selected commit is the real code identity; release/tag labels are secondary and can be adjacent but not identical.",
+      "required_change": "Lock the commit and separately record release/tag provenance.",
+      "status": "open_until_executable_evidence",
+      "title": "TypeDB source identity and release provenance are conflated"
+    },
+    {
+      "failure_mode": "A green runner can still be a false green.",
+      "gate": "G0",
+      "id": "P0-24",
+      "owner": "build-evidence",
+      "priority": "critical",
+      "problem": "The 59/8 count is useful reconnaissance, but leaf cases, macros, ignored cases and external behavior features are not yet generated.",
+      "required_change": "Treat all prose counts as non-authoritative until catalogue evidence exists.",
+      "status": "open_until_executable_evidence",
+      "title": "The upstream test denominator remains narrative"
+    },
+    {
+      "failure_mode": "Assembly tests can execute the wrong client/tool.",
+      "gate": "G0",
+      "id": "P1-01",
+      "owner": "build-evidence",
+      "priority": "high",
+      "problem": "Versions appear in the source graph, but exact URLs, hashes, licences and package layout are not locked.",
+      "required_change": "Resolve and mirror the exact Linux fixtures at G0.",
+      "status": "open_until_executable_evidence",
+      "title": "Console/Loader fixture provenance is unresolved"
+    },
+    {
+      "failure_mode": "A same-key conflicting writer can still produce last-writer-wins behavior.",
+      "gate": "G2",
+      "id": "P1-02",
+      "owner": "data-path",
+      "priority": "high",
+      "problem": "Strong read/list consistency does not identify bytes after an ambiguous write or replace application authentication.",
+      "required_change": "Retain exact conditions and application digest verification.",
+      "status": "open_until_executable_evidence",
+      "title": "R2 strong consistency can be overused as a proof shortcut"
+    },
+    {
+      "failure_mode": "Per-object locks or runtime-admin access would be unsafe and unscalable.",
+      "gate": "G2",
+      "id": "P1-03",
+      "owner": "data-path",
+      "priority": "high",
+      "problem": "Bucket Locks allow finite rules and can be modified by privileged administration.",
+      "required_change": "Use coarse prefixes, separate lock administrator, continuous audit and policy-change events.",
+      "status": "open_until_executable_evidence",
+      "title": "Bucket Lock rule-count and policy administration are not modeled"
+    },
+    {
+      "failure_mode": "Old credentials may remain usable briefly after controller recovery.",
+      "gate": "G2",
+      "id": "P1-04",
+      "owner": "data-path",
+      "priority": "high",
+      "problem": "R2 permission changes can propagate eventually.",
+      "required_change": "Use controller incarnation/epoch checks as immediate authority; measure revocation and test old credentials.",
+      "status": "open_until_executable_evidence",
+      "title": "IAM revocation is not an immediate fence"
+    },
+    {
+      "failure_mode": "Pinning only a repository SHA without package/runtime tests is insufficient.",
+      "gate": "G1",
+      "id": "P1-05",
+      "owner": "controller-platform",
+      "priority": "high",
+      "problem": "Recent releases contain multiple lifecycle/start/stop race fixes.",
+      "required_change": "Map package to source and execute mutation/rollout/reset lifecycle tests.",
+      "status": "open_until_executable_evidence",
+      "title": "@cloudflare/containers is a fast-moving correctness dependency"
+    },
+    {
+      "failure_mode": "Developers may bypass the rule or the runner may hide ordinary crate failures.",
+      "gate": "G1",
+      "id": "P1-06",
+      "owner": "controller-platform",
+      "priority": "high",
+      "problem": "V15 makes the conformance runner the only test entry point, which can hinder developer iteration and creates another single authority.",
+      "required_change": "Allow bare local tests as non-normative; release coverage remains catalogue-defined.",
+      "status": "open_until_executable_evidence",
+      "title": "Bare cargo-test prohibition is over-centralized"
+    },
+    {
+      "failure_mode": "CI pressure may motivate unsafe cache exceptions.",
+      "gate": "G1",
+      "id": "P1-07",
+      "owner": "controller-platform",
+      "priority": "high",
+      "problem": "Hashing all vendored sources for every task causes huge invalidation and couples unrelated workspaces.",
+      "required_change": "Use per-workspace dependency digests and content-addressed offline stores.",
+      "status": "open_until_executable_evidence",
+      "title": "Global vendor directory in every cache key is inefficient and brittle"
+    },
+    {
+      "failure_mode": "Ad hoc sharding can hide missing cases or mixed configs.",
+      "gate": "G6",
+      "id": "P1-08",
+      "owner": "container-platform",
+      "priority": "high",
+      "problem": "Real-platform release execution may be too large for one invocation and profile.",
+      "required_change": "Bind shards to one catalogue/source/config and require complete signed reassembly.",
+      "status": "open_until_executable_evidence",
+      "title": "U4 full corpus needs a coherent sharding/reassembly contract"
+    },
+    {
+      "failure_mode": "Marketing/operations may overstate resilience.",
+      "gate": "G6",
+      "id": "P1-09",
+      "owner": "container-platform",
+      "priority": "high",
+      "problem": "Same-provider and privileged-account risks remain.",
+      "required_change": "Keep operational, account-isolated and independently immutable backup classes distinct.",
+      "status": "open_until_executable_evidence",
+      "title": "Bucket locks do not make an R2 backup an independent disaster copy"
+    },
+    {
+      "failure_mode": "A shared Worker/package/binding can accidentally expose cleanup paths.",
+      "gate": "G6",
+      "id": "P1-10",
+      "owner": "container-platform",
+      "priority": "high",
+      "problem": "Tests need cleanup, while production explicitly must not delete.",
+      "required_change": "Use separate buckets/accounts/principals and exclude cleanup code from the production bundle.",
+      "status": "open_until_executable_evidence",
+      "title": "Production and test delete capabilities can leak through shared config"
+    },
+    {
+      "failure_mode": "Reviewers can treat historical statements as live requirements.",
+      "gate": "G6",
+      "id": "P2-01",
+      "owner": "container-platform",
+      "priority": "medium",
+      "problem": "V15 mixes old revision names and current normative language.",
+      "required_change": "Mark historical evidence explicitly and make main sections authoritative.",
+      "status": "open_until_executable_evidence",
+      "title": "Historical appendix labels and source counts are confusing"
+    },
+    {
+      "failure_mode": "Maintenance cost and tool bugs become project risks.",
+      "gate": "G6",
+      "id": "P2-02",
+      "owner": "container-platform",
+      "priority": "medium",
+      "problem": "A specific task runner adds churn without improving correctness proof.",
+      "required_change": "Demote it to an optional ADR-controlled convenience.",
+      "status": "open_until_executable_evidence",
+      "title": "Optional orchestrator is over-prescriptive"
+    },
+    {
+      "gate": "G0",
+      "id": "A37",
+      "owner": "source-lock",
+      "priority": "critical",
+      "required_evidence": "machine-readable artifact and raw command output",
+      "status": "open",
+      "title": "Generate complete TypeDB source graph from MODULE.bazel"
+    },
+    {
+      "gate": "G0",
+      "id": "A38",
+      "owner": "source-lock",
+      "priority": "critical",
+      "required_evidence": "machine-readable artifact and raw command output",
+      "status": "open",
+      "title": "Resolve TypeQL/protocol tags and Console/Loader/base image digests"
+    },
+    {
+      "gate": "G0",
+      "id": "A39",
+      "owner": "build-evidence",
+      "priority": "critical",
+      "required_evidence": "machine-readable artifact and raw command output",
+      "status": "open",
+      "title": "Implement federated workspace lock and offline build"
+    },
+    {
+      "gate": "G0",
+      "id": "A40",
+      "owner": "conformance",
+      "priority": "critical",
+      "required_evidence": "machine-readable artifact and raw command output",
+      "status": "open",
+      "title": "Implement target/leaf/fixture/profile catalogue with negative controls"
+    },
+    {
+      "gate": "G0",
+      "id": "A41",
+      "owner": "conformance",
+      "priority": "high",
+      "required_evidence": "machine-readable artifact and raw command output",
+      "status": "open",
+      "title": "Execute U0 parity baseline under Rust 1.93.0"
+    },
+    {
+      "gate": "G1",
+      "id": "A42",
+      "owner": "controller-platform",
+      "priority": "critical",
+      "required_evidence": "machine-readable artifact and raw command output",
+      "status": "open",
+      "title": "Implement DO interleaving/alarm/overload models and probes"
+    },
+    {
+      "gate": "G2",
+      "id": "A43",
+      "owner": "data-path",
+      "priority": "critical",
+      "required_evidence": "machine-readable artifact and raw command output",
+      "status": "open",
+      "title": "Implement R2 Bucket Lock/credential/checksum/multipart probes"
+    },
+    {
+      "gate": "G2",
+      "id": "A44",
+      "owner": "remote-wal",
+      "priority": "critical",
+      "required_evidence": "machine-readable artifact and raw command output",
+      "status": "open",
+      "title": "Implement standalone remote append/sync/status/iterator spike"
+    },
+    {
+      "gate": "G0",
+      "id": "A45",
+      "owner": "cloudflare-build",
+      "priority": "critical",
+      "required_evidence": "machine-readable artifact and raw command output",
+      "status": "open",
+      "title": "Map Cloudflare packages to source and workerd runtime"
+    },
+    {
+      "gate": "G6",
+      "id": "A46",
+      "owner": "container-platform",
+      "priority": "high",
+      "required_evidence": "machine-readable artifact and raw command output",
+      "status": "open",
+      "title": "Implement deployment compatibility envelope and mixed-rollout harness"
+    },
+    {
+      "gate": "G6",
+      "id": "A47",
+      "owner": "security",
+      "priority": "high",
+      "required_evidence": "machine-readable artifact and raw command output",
+      "status": "open",
+      "title": "Implement delete-free production bundle/callgraph/policy check"
+    },
+    {
+      "gate": "G1",
+      "id": "A48",
+      "owner": "build-evidence",
+      "priority": "high",
+      "required_evidence": "machine-readable artifact and raw command output",
+      "status": "open",
+      "title": "Run dual Rust qualification and select release compiler"
+    },
+    {
+      "gate": "G14",
+      "id": "A49",
+      "owner": "release",
+      "priority": "critical",
+      "required_evidence": "machine-readable artifact and raw command output",
+      "status": "open",
+      "title": "Prove tested server binary equals image payload"
+    },
+    {
+      "gate": "G2",
+      "id": "A50",
+      "owner": "programme",
+      "priority": "critical",
+      "required_evidence": "machine-readable artifact and raw command output",
+      "status": "open",
+      "title": "Return raw G0-G2 evidence and revise design on contradictions"
+    }
+  ],
+  "counts": {
+    "critical": 34,
+    "high": 14,
+    "medium": 2,
+    "total": 50
+  },
+  "document": "typedb-r2-implementation-brief-v16",
+  "schema_version": 1
+}

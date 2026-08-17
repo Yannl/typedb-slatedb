@@ -1,0 +1,60 @@
+
+running 22 tests
+[2m2026-08-16T04:20:38.479779Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running schema query:
+define entity person, owns id @key, owns name @card(0..); attribute id, value integer; attribute name @independent, value string;
+[2m2026-08-16T04:20:38.481179Z[0m [32m INFO[0m [2mquery::query_manager[0m[2m:[0m Schema query done.
+Query profile[measurements_enabled=true, total micros: 0]
+  CompileIR[enabled=true, total micros=0]
+    validation micros: 0
+    annotation micros: 0
+    compilation micros: 0
+  -----
+  Stage[root pattern id=0]
+    Define ~~ 0 us
+    Define pattern
+    [0] Define execution
+        ==> batches: 0, rows: 0, micros: 0, micros/row: NaN (raw seeks: 2, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+
+[2m2026-08-16T04:20:38.482815Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[0]
+[2m2026-08-16T04:20:38.483314Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-16T04:20:38.484315Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-16T04:20:38.488275Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+[2m2026-08-16T04:20:38.488646Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+[2m2026-08-16T04:20:38.489937Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m 
+ Final plan (before lowering):
+ --> Order: [P(0), V(0), P(1)] --> MetaData 
+ {P(1): None, P(0): Direction(Reverse)}
+[2m2026-08-16T04:20:38.490157Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Finished planning conjunction:
+(1) Conjunction
+  $0 isa name
+  $0 == Param[Value(string:0)]
+
+[2m2026-08-16T04:20:38.490186Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Lowered plan:
+Conjunction executable plan [selected=[p0], output_width=1]:
+  0: Sorted Iterator Intersection [bound_vars=[], selected=[p0], output_size=1, sort_by=p0]
+      Reverse[p0 isa name] filter [Check[p0 == Param[Value(string:0)]] ] with (outputs=p0, )
+[2m2026-08-16T04:20:38.493154Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m 
+ Final plan (before lowering):
+ --> Order: [P(2), V(0), V(1), P(0), P(3), P(1)] --> MetaData 
+ {P(1): None, P(0): None, P(3): None, P(2): Direction(Canonical)}
+[2m2026-08-16T04:20:38.493324Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Finished planning conjunction:
+(1) Conjunction
+  $0 isa person
+  $_1 == Param[Value(integer:0)]
+  $0 has $_1
+  $_1 isa id
+
+[2m2026-08-16T04:20:38.493348Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Lowered plan:
+Conjunction executable plan [selected=[p0, p1], output_width=2]:
+  0: Sorted Iterator Intersection [bound_vars=[], selected=[p0, p1], output_size=2, sort_by=p1]
+      [p1 has p0] filter [Check[p0 == Param[Value(integer:0)]] ] with (outputs=p0, p1, )
+  1: Check [selected=[p0, p1], output_width=2]
+      Check[p1 isa [EntityType:[0000]]] 
+      Check[p0 isa [AttributeType:[0000]]] 
+[2m2026-08-16T04:20:38.494473Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[3]
+[2m2026-08-16T04:20:38.495069Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[3]
+[2m2026-08-16T04:20:38.495403Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[4]
+[2m2026-08-16T04:20:38.496611Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[4]
+......................
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.54s
+

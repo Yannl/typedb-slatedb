@@ -1,0 +1,36 @@
+Negative controls for tools/source-lock/materialize_sources.py
+(archived runs; the checker must fail when the lock is deliberately broken)
+
+Control 1 — corrupted artifact digest must abort the fetch and leave any
+existing good artifact untouched.
+
+  Setup: copy of source-lock.json with TCONSOLE.sha256 = 64 zeros; the
+  genuine artifact (sha256 05814512...) present on disk.
+
+  $ python3 tools/source-lock/materialize_sources.py --only TCONSOLE --lock corrupt-lock.json
+  TCONSOLE: sha256 mismatch for https://repo.typedb.com/public/public-release/raw/names/typedb-console-linux-x86_64/versions/3.12.0/typedb-console-linux-x86_64-3.12.0.tar.gz
+    want 0000000000000000000000000000000000000000000000000000000000000000
+    got  058145121f478f2f8ad10991cd17e64e12957b93e0836ac180fe9d095a4c4e40
+  exit code: 1
+  artifact on disk after the run: 058145121f478f2f8ad10991cd17e64e12957b93e0836ac180fe9d095a4c4e40 (untouched)
+
+  Note: the first draft of the tool deleted a digest-mismatched local file
+  before downloading its replacement; this control caught that (the good
+  artifact was destroyed by a corrupt lock). Fixed so nothing is deleted
+  until replacement bytes have verified; the run above is the fixed tool.
+
+Control 2 — a revision the remote does not have must fail as a reported
+lock problem, leaving the checkout at its previous state.
+
+  Setup: copy of source-lock.json with TQL.resolved_revision = deadbeef^5.
+
+  $ python3 tools/source-lock/materialize_sources.py --only TQL --lock badrev-lock.json
+  fatal: remote error: upload-pack: not our ref deadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+    TQL              sources/typeql                       FETCH FAILED
+  MATERIALISE: FAIL
+    - TQL: fetch failed (git -C .../sources/typeql fetch --force origin deadbeef...)
+  exit code: 1
+  sources/typeql HEAD after the run: 7f4cac93fa8eee8643aa9f75eb60cacb5a454842 (the locked revision, untouched)
+
+Environment: fresh CCR container, 2026-08-16; both runs against the live
+network through the sandbox proxy.

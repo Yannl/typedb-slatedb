@@ -1,0 +1,127 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+use std::path::{Path, PathBuf};
+
+use clap::Parser;
+use resource::constants::server::DISTRIBUTION_INFO;
+
+/// TypeDB CE usage
+#[derive(Parser, Debug)]
+#[command(about, long_about = None)]
+#[clap(version = DISTRIBUTION_INFO.version)]
+pub struct CLIArgs {
+    /// Path to config file
+    #[arg(long = "config")]
+    pub config_file_override: Option<String>,
+
+    /// Server listen address for gRPC connections (e.g., 0.0.0.0:1729)
+    /// Aliases: 'server.address'
+    #[arg(long = "server.listen-address", alias = "server.address")]
+    pub server_listen_address: Option<String>,
+
+    /// Server advertise address for gRPC connections (e.g., 127.0.0.1:1729)
+    /// This is the address shared with clients and other servers. Required when the listen
+    /// and advertise addresses differ (e.g., behind proxies or NAT)
+    #[arg(long = "server.advertise-address")]
+    pub server_advertise_address: Option<String>,
+
+    /// Enable/disable HTTP endpoint
+    #[arg(long = "server.http.enabled")]
+    pub server_http_enabled: Option<bool>,
+
+    /// Server listen address for HTTP connections (e.g., 0.0.0.0:8000)
+    /// Aliases: 'server.http.address'
+    #[arg(long = "server.http.listen-address", alias = "server.http.address")]
+    pub server_http_listen_address: Option<String>,
+
+    /// Server advertise address for HTTP connections (e.g., http://127.0.0.1:8000)
+    /// This is the address shared with clients. Required when the listen and advertise
+    /// addresses differ (e.g., behind proxies or NAT)
+    #[arg(long = "server.http.advertise-address")]
+    pub server_http_advertise_address: Option<String>,
+
+    /// Enable/disable local Admin endpoint
+    #[arg(long = "server.admin.enabled")]
+    pub server_admin_enabled: Option<bool>,
+
+    /// Path of the local Admin endpoint.
+    /// Linux/macOS: a Unix domain socket file. Default: `<data-directory>/admin.sock`.
+    /// The socket file is created with mode 0600, so access is restricted to the
+    /// server process owner.
+    /// Windows: a Named Pipe name (e.g. `\\.\pipe\typedb_admin`). Default:
+    /// `\\.\pipe\typedb_admin`. The pipe carries a DACL granting access only to
+    /// the server's owner, `LOCAL SYSTEM`, and `BUILTIN\Administrators`.
+    #[arg(long = "server.admin.socket-path", value_name = "PATH")]
+    pub server_admin_socket_path: Option<String>,
+
+    /// The amount of seconds generated authentication tokens will remain valid, specified in seconds.
+    /// Use smaller values for better security and bigger values for better authentication performance and convenience
+    /// (min: 1 second, max: 1 year)
+    #[arg(long = "server.authentication.token-expiration-seconds")]
+    pub server_authentication_token_expiration_seconds: Option<u64>,
+
+    /// Enable/disable in-flight encryption. Specify to enable, or leave out to disable
+    #[arg(long = "server.encryption.enabled", action=clap::ArgAction::Set)]
+    pub server_encryption_enabled: Option<bool>,
+
+    /// Encryption certificate in PEM format. Must be supplied if encryption is enabled
+    #[arg(long = "server.encryption.certificate", value_name = "FILE")]
+    pub server_encryption_certificate: Option<String>,
+
+    /// Encryption certificate key. Must be supplied if encryption is enabled
+    #[arg(long = "server.encryption.certificate-key", value_name = "FILE")]
+    pub server_encryption_certificate_key: Option<String>,
+
+    /// Encryption CA in PEM format
+    #[arg(long = "server.encryption.ca-certificate", value_name = "FILE")]
+    pub server_encryption_ca_certificate: Option<String>,
+
+    /// Path to the data directory
+    #[arg(long = "storage.data-directory", value_name = "DIR")]
+    pub storage_data_directory: Option<String>,
+
+    /// RocksDB shared block-cache size (e.g., `1gb`, `512mb`, `1024MiB`)
+    #[arg(long = "storage.rocksdb.cache-size", value_name = "SIZE")]
+    pub storage_rocksdb_cache_size: Option<String>,
+
+    /// RocksDB shared write-buffer manager budget (e.g., `512mb`, `1gb`)
+    #[arg(long = "storage.rocksdb.write-buffers-limit", value_name = "SIZE")]
+    pub storage_rocksdb_write_buffers_limit: Option<String>,
+
+    /// Path to the log directory
+    #[arg(long = "logging.directory")]
+    pub logging_directory: Option<String>,
+
+    /// Enable usage metrics reporting
+    #[arg(long = "diagnostics.reporting.metrics")]
+    pub diagnostics_reporting_metrics: Option<bool>, // used to be `statistics` in 2.x
+
+    /// Enable critical error reporting
+    #[arg(long = "diagnostics.reporting.errors")]
+    pub diagnostics_reporting_errors: Option<bool>,
+
+    /// Enable/disable diagnostics monitoring HTTP endpoint
+    #[arg(long = "diagnostics.monitoring.enabled")]
+    pub diagnostics_monitoring_enabled: Option<bool>,
+
+    /// Port for diagnostics monitoring HTTP endpoint (e.g., 4104)
+    /// Serves on 0.0.0.0
+    #[arg(long = "diagnostics.monitoring.port")]
+    pub diagnostics_monitoring_port: Option<u16>,
+
+    /// Enable development mode for testing setups. Note that running TypeDB in development mode
+    /// may result in error reporting limitations (obstructing maintenance and support), additional
+    /// logging, restricted functionalities, and reduced performance
+    #[arg(long = "development-mode.enabled", hide = true)]
+    pub development_mode_enabled: Option<bool>,
+}
+
+impl CLIArgs {
+    pub fn resolve_path_from_pwd(path: &Path) -> PathBuf {
+        std::env::current_dir().expect("Could not read working directory").join(path)
+    }
+}

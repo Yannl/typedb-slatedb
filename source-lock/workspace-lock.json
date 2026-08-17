@@ -1,0 +1,48 @@
+{
+  "document": "workspace release binding (brief v16 \u00a70.2.1; generated, never hand-edited)",
+  "generated_by": "tools/source-lock/generate_workspace_lock.py",
+  "repo_commit": "740282d9d98e1c76418a0c1fda70732998fc9e32",
+  "source_lock_sha256": "9cf330d8d30de531c94bdb40ecfcde38a84f5dc124d6289a8b61568af8a51860",
+  "workspaces": {
+    "fork/typedb": {
+      "manifest": "fork/typedb/Cargo.toml",
+      "manifest_sha256": "a5dbb6856c879da17f29a0bc205cf02fe830f0fbe27e4306e84c0387b1c66abe",
+      "lockfile": "fork/typedb/Cargo.lock",
+      "lockfile_sha256": "b09dad3df4b2573b69f036f5d3b8dc326992fa01879221adc9c8a06714e49ab8"
+    },
+    "tools": {
+      "manifest": "tools/Cargo.toml",
+      "manifest_sha256": "f5fe8427695edba95ec2ea71c8a683b6192617d6655be87d49a1f42e1addc6bb",
+      "lockfile": "tools/Cargo.lock",
+      "lockfile_sha256": "1526f2efae70e4d34326bac7334d6ce9373b38d0242f74896b09e3f9fb45ee3e"
+    },
+    "control-plane": {
+      "manifest": "control-plane/package.json",
+      "manifest_sha256": "f949aa21ebf629b9439ee32dc9213799642b8dc984cc51912f87932ef8876526",
+      "lockfile": "control-plane/package-lock.json",
+      "lockfile_sha256": "5a6476047a4a68ae604dcec17adda832fb7b7868adf49cf7bcb17449af473fce"
+    }
+  },
+  "slatedb_consumption": {
+    "fork/typedb": {
+      "version": "=0.15.0",
+      "features": [
+        "wal_disable"
+      ],
+      "default_features": false
+    },
+    "tools/storage-diff-spike": {
+      "version": "=0.15.0",
+      "features": [],
+      "default_features": false
+    }
+  },
+  "toolchains": {
+    "rust_parity": "1.93.0",
+    "rustfmt_pinned_nightly": "nightly-2026-04-15"
+  },
+  "artifacts": {
+    "sources/fixtures/console/typedb-console-linux-x86_64-3.12.0.tar.gz": "058145121f478f2f8ad10991cd17e64e12957b93e0836ac180fe9d095a4c4e40",
+    "sources/fixtures/loader/typedb-loader-linux-x86_64-3.12.0.tar.gz": "c46fba13d835701e43778a2ea1e2dbf0e031d206c55c6c8fec28e03c274d37f9"
+  }
+}

@@ -1,0 +1,18 @@
+{
+ "spike": "SL-P0 semantics differential (tools/storage-diff-spike)",
+ "engine": "pinned SlateDB f88be86d (path dependency) over object_store LocalFileSystem",
+ "oracle": "ordered-map (BTreeMap) reference semantics",
+ "tests": {
+  "pass": 2,
+  "fail": 0
+ },
+ "validated_assumptions": [
+  "total byte-order equivalence over a 1500-op seeded workload (puts/deletes/atomic batches, 8 shared prefixes), full-scan checked every 250 steps",
+  "read-your-writes visibility immediately after every put/delete",
+  "atomic multi-key WriteBatch: all-visible including interleaved delete",
+  "exact half-open prefix-range scans equal to oracle range views for 10 prefixes",
+  "reopen durability: flush+close+reopen over the same LocalFS store reproduces the full state byte-for-byte"
+ ],
+ "negative_control": "planted oracle divergence is detected by the harness (EFFECTIVE)",
+ "implication": "the storage-swap assumptions the U2 lane (TB-P7) relies on hold at the pin; a failure here would have blocked TB-P7"
+}

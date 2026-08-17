@@ -1,0 +1,33 @@
+
+running 1 test
+=====================================================================================
+     ________ __      __ _____    _______  _____    _____       _______  _______
+    |__    __|\  \  /  /|   _  \ |   _   ||   _  \ |   _  \    |   _   ||   _   |
+       |  |    \  \/  / |  | |  ||  | |__||  | |  ||  | |  |   |  | |  ||  | |__|
+       |  |     \    /  |  |/  / |  |___  |  | |  ||  |/  /    |  | |__||  |___
+       |  |      |  |   |   __/  |   ___| |  | |  ||   _  \    |  |  __ |   ___|
+       |  |      |  |   |  |     |  |  __ |  | |  ||  | |  |   |  | |  ||  |  __
+       |  |      |  |   |  |     |  |_|  ||  |/  / |  |/  /    |  |_|  ||  |_|  |
+       |__|      |__|   |__|     |_______||_____/  |_____/     |_______||_______|
+
+=====================================================================================
+
+Running TypeDB CE 3.12.3 in development mode.
+Serving:
+  gRPC:       127.0.0.1:11733
+  HTTP:       disabled
+  Admin:      typedb-extracted/admin-smoke.sock (Unix socket)
+  Monitoring: http://127.0.0.1:4104/diagnostics (Prometheus scrape)
+              http://127.0.0.1:4104/diagnostics?format=json (JSON)
+TLS: disabled
+  WARNING: TLS NOT ENABLED. Credentials are transmitted unencrypted in plaintext.
+  Drivers must be configured to connect *without TLS*.
+
+To connect:
+  Console: typedb console --address 127.0.0.1:11733 --tls-disabled --username admin
+
+2026-08-16T16:05:21.881613Z  INFO ThreadId(01) server/lib.rs:485: 
+Ready!
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.57s
+

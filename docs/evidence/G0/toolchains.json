@@ -1,0 +1,21 @@
+{
+  "rustc_parity": "rustc 1.93.0 (254b59607 2026-01-19)",
+  "cargo_parity": "cargo 1.93.0 (083ac5135 2025-12-15)",
+  "rustc_env_default": "rustc 1.94.1 (e408947bf 2026-03-25)",
+  "node": "v22.22.2",
+  "pnpm": "10.33.0",
+  "python": "Python 3.11.15",
+  "protoc": "libprotoc 3.21.12",
+  "cmake": "cmake version 3.28.3",
+  "cc": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "libc": "ldd (Ubuntu GLIBC 2.39-0ubuntu8.7) 2.39",
+  "binary_sha256": {
+    "/usr/bin/cc": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+    "/usr/bin/g++": "1353e9bdd29a7295c7226bf6c63abccce056d8cac31f112e5cdbecc3f28c2769",
+    "/usr/bin/ld": "e9ceb054c12207970f2726dfc07e9a66b411602748628baf27399f02a9bbb31b",
+    "/usr/bin/cmake": "1c5227af4edd22d8d689def545e18ee458260c0fd579eba2187967f38817e638",
+    "/usr/bin/protoc": "fc386306299ba6a2f3668a0bb85cb059f389d52842f72dc618626a96c60506c7",
+    "/usr/bin/pkg-config": "7e8152db1b0c7e49d47b4b82a70dc9997b557951c5d4d938b0e7f208ce9eb10b"
+  },
+  "target_triple": "x86_64-unknown-linux-gnu"
+}

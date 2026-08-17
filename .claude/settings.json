@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "allow": [
+      "Bash",
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "NotebookEdit",
+      "WebFetch",
+      "WebSearch",
+      "Agent",
+      "Skill",
+      "Workflow",
+      "Artifact",
+      "TaskCreate",
+      "TaskUpdate",
+      "TaskList",
+      "TaskGet",
+      "TaskOutput",
+      "TaskStop",
+      "Monitor",
+      "ToolSearch",
+      "SendUserFile",
+      "SendMessage",
+      "ListAgents",
+      "EnterWorktree",
+      "ExitWorktree",
+      "mcp__github",
+      "mcp__claude-code-remote"
+    ]
+  },
+  "skipDangerousModePermissionPrompt": true,
+  "skipAutoPermissionPrompt": true,
+  "askUserQuestionTimeout": "never"
+}

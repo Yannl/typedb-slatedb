@@ -1,0 +1,40 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+server:
+    listen-address: 0.0.0.0:1729
+    advertise-address:
+    http:
+        enabled: true
+        listen-address: 0.0.0.0:8000
+        advertise-address:
+    admin:
+        enabled: false
+        socket-path:
+
+    authentication:
+        token-expiration-seconds: 5000
+
+    encryption:
+        enabled: false
+        certificate:
+        certificate-key:
+        ca-certificate:
+
+storage:
+    data-directory: "data"
+    rocksdb:
+        cache-size: 1gb
+        write-buffers-limit: 512mb
+
+logging:
+    directory: "logs"
+
+diagnostics:
+    monitoring:
+        enabled: true
+        port: 4104
+    reporting:
+        metrics: true
+        errors: true

@@ -1,0 +1,281 @@
+{
+  "document": "typedb-r2-implementation-brief-v16",
+  "generated_at_utc": "2026-08-16T00:00:00Z",
+  "nodes": [
+    {
+      "id": "TB",
+      "kind": "git",
+      "license": "MPL-2.0",
+      "repository": "https://github.com/typedb/typedb",
+      "revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+      "role": [
+        "shipping_source",
+        "semantic_oracle"
+      ],
+      "status": "locked"
+    },
+    {
+      "id": "SL",
+      "kind": "git",
+      "license": "Apache-2.0",
+      "repository": "https://github.com/slatedb/slatedb",
+      "revision": "f88be86d17ac53260d3684edbc8f82811d945b5c",
+      "role": [
+        "shipping_source",
+        "storage_engine"
+      ],
+      "status": "locked",
+      "version": "0.15.0"
+    },
+    {
+      "id": "BH",
+      "kind": "git",
+      "license": "MPL-2.0",
+      "repository": "https://github.com/typedb/typedb-behaviour",
+      "revision": "ac5d5733a484cea1d8809a2968029a818fdae24f",
+      "role": [
+        "test_corpus"
+      ],
+      "status": "locked"
+    },
+    {
+      "id": "TBD",
+      "kind": "git",
+      "license": "MPL-2.0",
+      "repository": "https://github.com/typedb/dependencies",
+      "revision": "a5c51254088f343fb8b6a9668eaf99b35503dad4",
+      "role": [
+        "build_evidence",
+        "artifact_resolution"
+      ],
+      "status": "locked"
+    },
+    {
+      "id": "TBDIST",
+      "kind": "git",
+      "repository": "https://github.com/typedb/bazel-distribution",
+      "revision": "ab5bfc90274e2d34569d5bc22558314b551cdecd",
+      "role": [
+        "build_evidence",
+        "starlark_macro_oracle"
+      ],
+      "status": "locked"
+    },
+    {
+      "id": "TQL",
+      "kind": "git_tag",
+      "repository": "https://github.com/typedb/typeql",
+      "resolved_revision": null,
+      "role": [
+        "compiled_dependency",
+        "source_evidence"
+      ],
+      "status": "must_resolve_tag_to_commit_and_tree",
+      "tag": "3.12.2"
+    },
+    {
+      "id": "TPROTO",
+      "kind": "git_tag",
+      "repository": "https://github.com/typedb/typedb-protocol",
+      "resolved_revision": null,
+      "role": [
+        "compiled_dependency",
+        "protocol_evidence"
+      ],
+      "status": "must_resolve_tag_to_commit_and_tree",
+      "tag": "3.12.0"
+    },
+    {
+      "id": "TCONSOLE",
+      "kind": "artifact",
+      "license": null,
+      "name": "typedb-console-linux-x86_64",
+      "role": [
+        "assembly_fixture"
+      ],
+      "sha256": null,
+      "status": "must_resolve",
+      "url": null,
+      "version": "3.12.0"
+    },
+    {
+      "id": "TLOADER",
+      "kind": "artifact",
+      "license": null,
+      "name": "typedb-loader-linux-x86_64",
+      "role": [
+        "conditional_test_fixture"
+      ],
+      "sha256": null,
+      "status": "must_classify_and_resolve_if_applicable",
+      "url": null,
+      "version": "3.12.0"
+    },
+    {
+      "digest": null,
+      "id": "TB_BASE",
+      "kind": "oci_image",
+      "reference": "docker.io/typedb/ubuntu:3.1.0-amd64",
+      "role": [
+        "upstream_package_provenance"
+      ],
+      "status": "must_resolve_digest"
+    },
+    {
+      "edition": "2024",
+      "id": "RUST_PARITY",
+      "kind": "toolchain",
+      "name": "rust",
+      "role": [
+        "upstream_parity"
+      ],
+      "rustfmt": "nightly/2026-04-15",
+      "status": "declared_by_TB",
+      "version": "1.93.0"
+    },
+    {
+      "id": "RUST_QUAL",
+      "kind": "toolchain",
+      "name": "rust",
+      "role": [
+        "qualification_candidate"
+      ],
+      "status": "must_qualify",
+      "version": "1.97.1"
+    },
+    {
+      "id": "OBJECT_STORE",
+      "kind": "cargo_dependency",
+      "name": "object_store",
+      "role": [
+        "r2_s3_client"
+      ],
+      "source_lock": "SL/Cargo.lock",
+      "status": "locked_by_SL_then_verify_fork_lock",
+      "version": "0.14.0"
+    },
+    {
+      "id": "CF_CTR_SOURCE",
+      "kind": "git",
+      "package": "@cloudflare/containers@0.3.7",
+      "repository": "https://github.com/cloudflare/containers",
+      "revision": null,
+      "role": [
+        "shipping_source_if_helper_used"
+      ],
+      "status": "must_map_package_to_full_commit"
+    },
+    {
+      "id": "CF_CTR_PACKAGE",
+      "integrity": null,
+      "kind": "npm",
+      "name": "@cloudflare/containers",
+      "role": [
+        "container_lifecycle_helper"
+      ],
+      "status": "must_lock_tarball_integrity",
+      "version": "0.3.7"
+    },
+    {
+      "full_revision": null,
+      "id": "CF_WORKERS_SDK",
+      "kind": "git",
+      "repository": "https://github.com/cloudflare/workers-sdk",
+      "revision": "c576a82",
+      "role": [
+        "tooling_source"
+      ],
+      "status": "must_resolve_full_commit"
+    },
+    {
+      "id": "WRANGLER",
+      "integrity": null,
+      "kind": "npm",
+      "name": "wrangler",
+      "role": [
+        "deploy_tool"
+      ],
+      "status": "must_lock",
+      "version": "4.123.0"
+    },
+    {
+      "id": "CF_VITEST",
+      "integrity": null,
+      "kind": "npm",
+      "name": "@cloudflare/vitest-pool-workers",
+      "role": [
+        "controller_gateway_tests"
+      ],
+      "status": "must_lock",
+      "version": "0.21.3"
+    },
+    {
+      "id": "MINIFLARE",
+      "integrity": null,
+      "kind": "npm",
+      "name": "miniflare",
+      "role": [
+        "transitive_local_runtime_if_selected"
+      ],
+      "status": "must_confirm_from_lock",
+      "version": "5.20260811.1-alpha"
+    },
+    {
+      "id": "WORKERD",
+      "integrity": null,
+      "kind": "npm",
+      "name": "workerd",
+      "role": [
+        "local_runtime"
+      ],
+      "status": "must_confirm_from_lock",
+      "version": "1.20260811.1"
+    },
+    {
+      "digest": null,
+      "id": "PRODUCTION_BASE",
+      "kind": "oci_image",
+      "reference": null,
+      "role": [
+        "shipping_image_base"
+      ],
+      "status": "architecture_choice_required"
+    },
+    {
+      "digests": null,
+      "id": "NATIVE_TOOLCHAIN",
+      "kind": "toolchain_set",
+      "members": [
+        "cc",
+        "c++",
+        "ld",
+        "cmake",
+        "protoc",
+        "pkg-config",
+        "libc",
+        "tls_roots"
+      ],
+      "role": [
+        "offline_reproducible_build"
+      ],
+      "status": "must_lock"
+    }
+  ],
+  "policies": {
+    "artifacts_require_url_sha256_license": true,
+    "floating_refs_forbidden": true,
+    "independent_workspaces": [
+      "fork/typedb",
+      "fork/slatedb",
+      "tools",
+      "control-plane"
+    ],
+    "npm_requires_tarball_integrity_and_source_mapping": true,
+    "oci_requires_digest": true,
+    "release_build_offline": true,
+    "tags_must_resolve_to_commit_and_tree": true
+  },
+  "schema_version": 1,
+  "status": "candidate_g0_resolution_required",
+  "unresolved_count": 14
+}

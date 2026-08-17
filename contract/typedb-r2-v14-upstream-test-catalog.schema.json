@@ -1,0 +1,423 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bioaxiom.invalid/schemas/typedb-upstream-test-catalog-v1.json",
+  "title": "TypeDB upstream test catalog v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source_lock_digest",
+    "rust_toolchain",
+    "target_triple",
+    "profiles",
+    "targets",
+    "leaf_cases",
+    "required_pairs",
+    "fixtures",
+    "exclusions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "source_lock_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "rust_toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rustc",
+        "cargo"
+      ],
+      "properties": {
+        "rustc": {
+          "type": "string"
+        },
+        "cargo": {
+          "type": "string"
+        },
+        "native_toolchain_digest": {
+          "type": "string"
+        }
+      }
+    },
+    "target_triple": {
+      "type": "string",
+      "minLength": 1
+    },
+    "bazel_query_oracle": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "digest": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 5,
+      "items": {
+        "$ref": "#/$defs/profile"
+      }
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/target"
+      }
+    },
+    "leaf_cases": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/leafCase"
+      }
+    },
+    "required_pairs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "leaf_case_id",
+          "profile_id"
+        ],
+        "properties": {
+          "leaf_case_id": {
+            "type": "string"
+          },
+          "profile_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "fixtures": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/fixture"
+      }
+    },
+    "exclusions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/exclusion"
+      }
+    }
+  },
+  "$defs": {
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile_id",
+        "kv_backend",
+        "durability",
+        "object_store",
+        "controller"
+      ],
+      "properties": {
+        "profile_id": {
+          "enum": [
+            "U0",
+            "U1",
+            "U2",
+            "U3",
+            "U4"
+          ]
+        },
+        "kv_backend": {
+          "type": "string"
+        },
+        "durability": {
+          "type": "string"
+        },
+        "object_store": {
+          "type": "string"
+        },
+        "controller": {
+          "type": "string"
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cfg": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "config_digest": {
+          "type": "string"
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target_id",
+        "origin",
+        "source_files",
+        "case_discovery",
+        "platform_predicate",
+        "timeout_seconds",
+        "serial_group",
+        "port_status"
+      ],
+      "properties": {
+        "target_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "origin": {
+          "enum": [
+            "CARGO",
+            "BAZEL_DIRECT",
+            "BAZEL_MACRO",
+            "SHELL",
+            "STATIC_CHECK"
+          ]
+        },
+        "upstream_label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cargo_package": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cargo_target": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/hashedFile"
+          },
+          "minItems": 1
+        },
+        "case_discovery": {
+          "enum": [
+            "LIBTEST_LIST",
+            "CUCUMBER_SCENARIOS",
+            "FAILPOINT_REGISTRY",
+            "SCRIPT",
+            "STATIC_CHECK"
+          ]
+        },
+        "platform_predicate": {
+          "type": "string"
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cfg": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "fixture_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "working_directory": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "serial_group": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "port_status": {
+          "enum": [
+            "BYTE_IDENTICAL",
+            "LAUNCHER_ADAPTED",
+            "SEMANTIC_PORT",
+            "EXCLUDED"
+          ]
+        }
+      }
+    },
+    "leafCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "leaf_case_id",
+        "target_id",
+        "kind",
+        "source_hash",
+        "declared_ignored"
+      ],
+      "properties": {
+        "leaf_case_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "LIBTEST",
+            "CUCUMBER",
+            "FAILPOINT",
+            "SCRIPT",
+            "STATIC_CHECK"
+          ]
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "source_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "declared_ignored": {
+          "type": "boolean"
+        },
+        "resource_group": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fixture_id",
+        "kind",
+        "sha256",
+        "licence"
+      ],
+      "properties": {
+        "fixture_id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "FILE",
+            "DIRECTORY",
+            "BINARY",
+            "ARCHIVE",
+            "GENERATED"
+          ]
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "licence": {
+          "type": "string"
+        },
+        "destination": {
+          "type": "string"
+        }
+      }
+    },
+    "exclusion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject_id",
+        "predicate",
+        "reason",
+        "owner",
+        "expiry"
+      ],
+      "properties": {
+        "subject_id": {
+          "type": "string"
+        },
+        "predicate": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expiry": {
+          "type": "string",
+          "format": "date"
+        },
+        "replacement_test_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "hashedFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

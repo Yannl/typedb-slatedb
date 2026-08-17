@@ -1,0 +1,11 @@
+U0: 1 test executables
+[1/1] typedb_server_bin:test_fail_points ... FAIL(101) 1p/1f/0i in 1753.25s
+{
+  "executables": 1,
+  "green": 0,
+  "red": 1,
+  "timeout": 0,
+  "cases_passed": 1,
+  "cases_failed": 1,
+  "cases_ignored": 0
+}

@@ -1,0 +1,160 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+use std::{collections::HashMap, fmt};
+
+use answer::variable::Variable;
+use itertools::Itertools;
+use structural_equality::StructuralEquality;
+use typeql::common::Span;
+
+use crate::{
+    pattern::{
+        BindingMode, BranchID, ContextualisedBindingMode, Pattern, PatternVariables, Scope, ScopeId,
+        conjunction::{Conjunction, ConjunctionBuilder, ConjunctionBuilderWithContext},
+        impl_pattern_from_pattern_variables,
+        nested_pattern::NestedPattern,
+    },
+    pipeline::block::BlockBuilderContext,
+};
+
+#[derive(Clone, Debug)]
+pub struct Disjunction {
+    conjunctions: Vec<Conjunction>,
+    branch_ids: Vec<BranchID>,
+    scope_id: ScopeId,
+    pattern_variables: PatternVariables,
+    source_span: Option<Span>,
+}
+
+impl Disjunction {
+    pub fn conjunctions_by_branch_id(&self) -> impl Iterator<Item = (&BranchID, &Conjunction)> {
+        self.branch_ids.iter().zip(self.conjunctions.iter())
+    }
+
+    pub fn conjunctions(&self) -> &[Conjunction] {
+        &self.conjunctions
+    }
+
+    pub fn conjunctions_mut(&mut self) -> &mut [Conjunction] {
+        &mut self.conjunctions
+    }
+
+    pub(crate) fn source_span(&self) -> Option<Span> {
+        self.source_span
+    }
+
+    pub fn optimise_away_unsatisfiable_branches(&mut self, unsatisfiable: Vec<ScopeId>) {
+        let unsatisfiable_branch_ids = self
+            .conjunctions
+            .iter()
+            .zip(self.branch_ids.iter())
+            .filter_map(|(conj, branch_id)| unsatisfiable.contains(&conj.scope_id()).then_some(*branch_id))
+            .collect::<Vec<_>>();
+        self.branch_ids.retain(|branch_id| !unsatisfiable_branch_ids.contains(branch_id));
+        self.conjunctions.retain(|conj| !unsatisfiable.contains(&conj.scope_id()))
+    }
+}
+
+impl_pattern_from_pattern_variables!(Disjunction);
+
+impl StructuralEquality for Disjunction {
+    fn hash(&self) -> u64 {
+        self.conjunctions().hash()
+    }
+
+    fn equals(&self, other: &Self) -> bool {
+        self.conjunctions().equals(other.conjunctions())
+    }
+}
+
+impl fmt::Display for Disjunction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        debug_assert!(!self.conjunctions.is_empty());
+        write!(f, "{}", self.conjunctions[0])?;
+        for i in 1..self.conjunctions.len() {
+            write!(f, " or {}", self.conjunctions[i])?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct DisjunctionBuilder {
+    conjunctions: Vec<(BranchID, ConjunctionBuilder)>,
+    scope_id: ScopeId,
+    source_span: Option<Span>,
+}
+
+impl DisjunctionBuilder {
+    pub fn new(scope_id: ScopeId, source_span: Option<Span>) -> Self {
+        Self { scope_id, conjunctions: Vec::new(), source_span }
+    }
+
+    pub(crate) fn finish(self, parent_modes: &ContextualisedBindingMode) -> NestedPattern {
+        let source_span = self.source_span;
+        let binding_modes = ContextualisedBindingMode::from(self.variable_binding_modes(), parent_modes);
+        let scope_id = self.scope_id;
+        let branch_ids = self.conjunctions.iter().map(|(bid, _)| *bid).collect();
+        let conjunctions =
+            self.conjunctions.into_iter().map(|(_, conjunction)| conjunction.finish(&binding_modes)).collect();
+        let pattern_variables = PatternVariables::from(&binding_modes);
+        NestedPattern::Disjunction(Disjunction { scope_id, branch_ids, conjunctions, pattern_variables, source_span })
+    }
+
+    pub(crate) fn conjunctions(&self) -> impl Iterator<Item = &ConjunctionBuilder> {
+        self.conjunctions.iter().map(|(_, c)| c)
+    }
+
+    pub(crate) fn variable_binding_modes(&self) -> HashMap<Variable, BindingMode> {
+        if self.conjunctions.is_empty() {
+            return HashMap::new();
+        }
+        let all_branch_modes: Vec<_> = self.conjunctions.iter().map(|(_, c)| c.variable_binding_modes()).collect();
+        let all_variables = all_branch_modes.iter().flat_map(|b| b.keys()).dedup().collect::<Vec<_>>();
+
+        let mut binding_modes = all_variables
+            .iter()
+            .map(|v| {
+                let mode = all_branch_modes
+                    .iter()
+                    .map(|b| b.get(v).copied().unwrap_or(BindingMode::Absent))
+                    .reduce(|a, b| a | b)
+                    .unwrap_or(BindingMode::Absent);
+                (**v, mode)
+            })
+            .collect::<HashMap<_, _>>();
+
+        // Escalate multiple branches locally-bound to RequireBound
+        binding_modes.iter_mut().filter(|(_, mode)| mode.is_locally_binding_in_child()).for_each(|(var, mode)| {
+            let binding_branches_count =
+                all_branch_modes.iter().filter(|branch_modes| branch_modes.get(var).is_some()).count();
+            if binding_branches_count > 1 {
+                *mode = BindingMode::RequirePrebound
+            }
+        });
+        binding_modes
+    }
+}
+
+#[derive(Debug)]
+pub struct DisjunctionBuilderWithContext<'ctx, 'reg> {
+    context: &'ctx mut BlockBuilderContext<'reg>,
+    disjunction: &'ctx mut DisjunctionBuilder,
+}
+
+impl<'ctx, 'reg> DisjunctionBuilderWithContext<'ctx, 'reg> {
+    pub(crate) fn new(context: &'ctx mut BlockBuilderContext<'reg>, disjunction: &'ctx mut DisjunctionBuilder) -> Self {
+        Self { context, disjunction }
+    }
+
+    pub fn add_conjunction(&mut self) -> ConjunctionBuilderWithContext<'_, 'reg> {
+        let conj_scope_id = self.context.next_scope_id();
+        let branch_id = self.context.next_branch_id();
+        self.disjunction.conjunctions.push((branch_id, ConjunctionBuilder::new(conj_scope_id)));
+        ConjunctionBuilderWithContext::new(&mut self.context, &mut self.disjunction.conjunctions.last_mut().unwrap().1)
+    }
+}

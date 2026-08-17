@@ -1,0 +1,62 @@
+{
+ "suite": "controller-core (CT-P1/CT-P3/CT-P5 deterministic lane, better-sqlite3)",
+ "tests": {
+  "pass": 12,
+  "fail": 0
+ },
+ "negative_control": {
+  "mutant": "drop-outbox-event",
+  "pass": 11,
+  "fail": 1,
+  "killed_test": "SQL projection and pure reducer replay are trace-equivalent over a generated schedule",
+  "verdict": "EFFECTIVE"
+ },
+ "coverage": [
+  "contiguous LSN + monotone TypeSequence",
+  "kill-point replay idempotency by operation identity",
+  "digest conflict typed rejection",
+  "status singleton (idempotent duplicate / typed conflict)",
+  "stale-session fencing",
+  "bounded admission fail-closed (payload/outbox-depth/tail) + overload recovery",
+  "outbox exactly-once drain across repeated alarms",
+  "batch all-or-nothing = per-record equivalence",
+  "exact lookup typed NOT_FOUND (never EOF)",
+  "fixed iterator head pinning",
+  "SQL-vs-pure-reducer trace equivalence over seeded 200-event schedule",
+  "reducer contiguity negative control"
+ ],
+ "workerd_runtime_validation": {
+  "runner": "@cloudflare/vitest-pool-workers 0.21.3 (workerd via wrangler 4.123.0, pinned in source-lock)",
+  "tests": {
+   "pass": 2,
+   "fail": 0
+  },
+  "facts": [
+   "DatabaseControllerDO runs the shared ControllerCore over real DO SqlStorage + storage.transactionSync",
+   "finalisation, replay idempotency, digest conflict, and status-singleton semantics verified inside the actual Durable Object runtime",
+   "ControllerCore SCHEMA is the single source of truth for projection tables in both lanes"
+  ]
+ },
+ "l1_local_stack": {
+  "topology": "gateway Worker -> local R2 data path -> DatabaseControllerDO, served by wrangler dev (workerd)",
+  "node_e2e": "18/18 PASS (scripts/local-stack-e2e.mjs): protocol 12 + outbox consumer loop 6 (at-least-once peek/ack, redelivery without ack, idempotent duplicate ack)",
+  "rust_client": "tools/remote-wal-spike tests/l1_stack.rs 1/1 PASS - TB-P4 transport skeleton (ureq) drives upload/finalize/ambiguous-retry/digest-conflict 409/data-path 422/exact read/typed 404/fencing 409/contiguity against real workerd; self-boots the stack (process-group reaped, per-run port+namespace)",
+  "outbox_consumer_contract": "peek returns unpublished without marking; ack after durable processing; lost ack => redelivery; dedupe key = control_seq"
+ },
+ "audit_2026_08_16": {
+  "review": "high-effort audit of all session-authored code (fork patches, control-plane, tools)",
+  "findings": 8,
+  "fixed": 8,
+  "fixes": [
+   "fork storage.rs: commit-path confirm_sync failure is now explicitly fail-stop (fatal_commit_durability_ambiguity) in BOTH Write and Conflict branches - durability ambiguity can only be resolved by crash recovery replaying the WAL; the previous typed-error return stranded the sequence in Validated state and wedged the watermark forever. Storage suite re-verified equal to baseline.",
+   "worker-entry: payload immutability enforced (create-or-identical PUT, 409 PAYLOAD_IMMUTABILITY_VIOLATION on overwrite) and exact reads re-verify bytes against the catalogued digest (500 PAYLOAD_INTEGRITY_VIOLATION); E2E extended (20 checks).",
+   "procedures.ts: status-singleton dedupe moved BEFORE admission so lost-response status recovery is never blocked by budgets; node regression added (13/13).",
+   "database-controller alarm(): every pass advances next_due_at (success: +interval, failure: bounded exponential backoff), scheduleTask/armAlarm/runScheduledTask structure, dead-code catch eliminated; workerd regression added (3/3).",
+   "database-controller: ControllerCore built once per DO instantiation (schema DDL no longer on the hot path).",
+   "generate_catalog.py: --list subprocess failures now fatal unless the recognized harness=false flag rejection.",
+   "storage-diff-spike: prefix_bounds returns Option upper bound (0xFF safe); differential extended to prefix 0xFF (unbounded scan).",
+   "keyspace.rs delete: comment corrected to state POSIX-only unlink guarantee; Windows failure mode surfaces as the typed DirectoryRemove error."
+  ],
+  "post_fix_verification": "node 13/13, workerd 3/3, E2E 20/20 ALL PASS, tools 35/35, fork storage suite equal to baseline"
+ }
+}

@@ -1,0 +1,11 @@
+# Toolchain pins per AGENTS.md §2 / brief §1.6.
+# proto (moonrepo) is the declared manager; in environments without proto,
+# the same pins are honored via rustup/system packages and recorded in
+# docs/evidence/G0/toolchains.json. Removing proto/moon must never change
+# any build or test outcome (A17.2 negative control).
+rust = "1.93.0"
+node = "22.22.2"
+pnpm = "10.33.0"
+python = "3.11.15"
+protoc = "3.21.12"
+cmake = "3.28.3"

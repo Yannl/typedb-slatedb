@@ -1,0 +1,15 @@
+{
+  "command": "cargo +1.93.0 fetch --locked && cargo +1.93.0 build --workspace --locked",
+  "cwd": "sources/typedb @ 2256711abd532742dae8e822a9ad5cce63e69b1a",
+  "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+  "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+  "result": [
+    "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 9m 03s",
+    "exit=0"
+  ],
+  "crates_compiled": 468,
+  "errors": 0,
+  "raw_log_sha256": "d78990f3ccf03873bea936965f0c60e084681154ce337b2b95b39f45198092fd",
+  "typedb_server_bin_sha256_dev_profile": "3233d1ad7c453658e679b98e9e20d91f4b8ec2893e70d5e1328b215f33c7b1b4",
+  "note": "dev-profile digest; release-profile reproducible-build digests are a later BT-P4 obligation"
+}

@@ -1,0 +1,14 @@
+{
+  "u0_run_exclusions": [
+    {
+      "subject": "cargo:typedb_server_bin:test:bench_concurrency and bench_iam",
+      "reason": "[[test]]-declared bench harnesses; long-running load benchmarks skipped in this session's U0 baseline run to fit the compute envelope; they remain in the catalogue denominator and must run before any release-coverage claim",
+      "owner": "conformance",
+      "expiry": "2026-12-31"
+    }
+  ],
+  "environment_notes": [
+    "test binaries compiled with CARGO_PROFILE_{DEV,TEST}_DEBUG=false and CARGO_INCREMENTAL=0 (disk envelope); debuginfo does not affect test semantics",
+    "executables deleted after execution (--reap) with sha256 recorded pre-run; reproducible from pinned source + toolchain"
+  ]
+}

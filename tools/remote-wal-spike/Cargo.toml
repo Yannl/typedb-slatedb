@@ -1,0 +1,12 @@
+[package]
+name = "remote-wal-spike"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "G2 spike: standalone remote append/sync/status/iterator client against a deterministic controller and a pluggable object store (brief §9, §J.4)"
+
+[dependencies]
+sha2 = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "3", features = ["json"] }

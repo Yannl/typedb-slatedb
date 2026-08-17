@@ -1,0 +1,46 @@
+
+running 2 tests
+list_permissions --- FAILED
+has_permission --- FAILED
+
+failures:
+
+---- list_permissions stdout ----
+
+thread 'list_permissions' (28562) panicked at tests/benchmarks/iam/bench_iam.rs:207:5:
+assertion `left == right` failed
+  left: 67
+ right: 0
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::panicking::assert_failed_inner
+   3: core::panicking::assert_failed
+   4: bench_iam::list_permissions
+   5: bench_iam::list_permissions::{{closure}}
+   6: core::ops::function::FnOnce::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- has_permission stdout ----
+
+thread 'has_permission' (28561) panicked at tests/benchmarks/iam/bench_iam.rs:184:5:
+assertion `left == right` failed
+  left: 1
+ right: 0
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::panicking::assert_failed_inner
+   3: core::panicking::assert_failed
+   4: bench_iam::has_permission
+   5: bench_iam::has_permission::{{closure}}
+   6: core::ops::function::FnOnce::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+
+failures:
+    has_permission
+    list_permissions
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.87s
+

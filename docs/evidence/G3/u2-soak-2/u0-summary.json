@@ -1,0 +1,15 @@
+{
+  "profile": "U2",
+  "toolchain": "rust 1.93.0 parity lane",
+  "scope": "complete soak-2 sweep (97 prior-session rows + 9 fresh-environment tail rows; per-row provenance in u0-results.json)",
+  "executables": 106,
+  "green": 105,
+  "red": 1,
+  "timeout": 0,
+  "cases_passed": 452,
+  "cases_failed": 2,
+  "cases_ignored": 1,
+  "red_targets": [
+    "storage:test_recovery (5p/2f - upstream todo!() stubs, baseline-identical to the oracle)"
+  ]
+}

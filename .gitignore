@@ -1,0 +1,15 @@
+sources/
+target/
+node_modules/
+*.tar.gz
+docs/evidence/G0/cloudflare-docs/*.html
+docs/evidence/G0/u0-parity-build.log
+docs/evidence/**/iso/
+docs/evidence/**/tmp/
+docs/evidence/G3/failpoints-remeasure/
+docs/evidence/G3/failpoints-remeasure.log
+sources/vendor-typedb/
+sources/assembly-artifacts/
+control-plane/.wrangler/
+__pycache__/
+*.pyc

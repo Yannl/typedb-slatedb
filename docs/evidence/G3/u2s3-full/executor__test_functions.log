@@ -1,0 +1,31 @@
+
+running 10 tests
+[2m2026-08-17T09:11:48.163971Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-17T09:11:48.243164Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-17T09:11:48.312433Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-17T09:11:48.387476Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-17T09:11:48.449714Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-17T09:11:48.516023Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running schema query:
+define attribute age, value integer; attribute name, value string; entity person, owns age @card(0..), owns name @card(0..), plays membership:member; entity organisation, plays membership:group; relation membership, relates member, relates group;
+[2m2026-08-17T09:11:48.569723Z[0m [32m INFO[0m [2mquery::query_manager[0m[2m:[0m Schema query done.
+Query profile[measurements_enabled=true, total micros: 0]
+  CompileIR[enabled=true, total micros=0]
+    validation micros: 0
+    annotation micros: 0
+    compilation micros: 0
+  -----
+  Stage[root pattern id=0]
+    Define ~~ 0 us
+    Define pattern
+    [0] Define execution
+        ==> batches: 0, rows: 0, micros: 0, micros/row: NaN (raw seeks: 4, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+
+[2m2026-08-17T09:11:48.589479Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running write query:
+insert
+        $p1 isa person, has name "Alice", has age 1, has age 5;
+        $p2 isa person, has name "Bob", has age 2;
+        $p3 isa person, has name "Chris", has age 5;
+        
+..........
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.44s
+

@@ -1,0 +1,77 @@
+
+running 2 tests
+[2m2026-08-17T14:44:55.840100Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-17T14:44:56.183904Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-17T14:44:56.186432Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-17T14:44:56.186843Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[1] with size 208 bytes; 208 bytes total
+[2m2026-08-17T14:44:56.186885Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[1]
+[2m2026-08-17T14:44:56.186965Z[0m [35mTRACE[0m [2mconcept::thing::statistics[0m[2m:[0m Statistics sync finished in 0 ms. Storage watermark was initially: SeqNr[1]. Current statistics sequence is from: SeqNr[1]
+[2m2026-08-17T14:44:56.193204Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running read query:
+
+        with
+        fun with_require() -> { integer }:
+        match
+          let $x = 1;
+          let $y = $x + 1;
+        require $y;
+        return {$y};
+
+        match
+            let $two in with_require();
+        
+[2m2026-08-17T14:44:56.195346Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Planning conjunction:
+(1) Conjunction
+  $0 = (Proper formatting has not yet been implemented for ir::pattern::expression::ExpressionTree<answer::variable::Variable>)
+The error is: ExpressionTree { preorder_tree: [Constant(Param[Value(integer:0)])] }
+
+  $1 = (Proper formatting has not yet been implemented for ir::pattern::expression::ExpressionTree<answer::variable::Variable>)
+The error is: ExpressionTree { preorder_tree: [Variable($0), Constant(Param[Value(integer:1)]), Operation(Operation { operator: Add, left_expression_id: 0, right_expression_id: 1, source_span: Some(Span { begin_offset: 112, end_offset: 118 }) })] }
+
+
+[2m2026-08-17T14:44:56.195587Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 0
+[2m2026-08-17T14:44:56.195607Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [] ONGOING: {} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-17T14:44:56.195657Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(0) = |Expr of []| <-- cost: 0.02 heuristic: Cost { cost: 1.92, io_ratio: 1.0 }
+[2m2026-08-17T14:44:56.195692Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 1
+[2m2026-08-17T14:44:56.195699Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [] ONGOING: {} STASH: [P(0)] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-17T14:44:56.195719Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(1) = |Expr of [$0]| <-- cost: 0.02 heuristic: Cost { cost: 0.02, io_ratio: 1.0 }
+[2m2026-08-17T14:44:56.195755Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m 
+ Final plan (before lowering):
+ --> Order: [P(0), V(1), P(1), V(0)] --> MetaData 
+ {P(0): None, P(1): None}
+[2m2026-08-17T14:44:56.195896Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Finished planning conjunction:
+(1) Conjunction
+  $0 = (Proper formatting has not yet been implemented for ir::pattern::expression::ExpressionTree<answer::variable::Variable>)
+The error is: ExpressionTree { preorder_tree: [Constant(Param[Value(integer:0)])] }
+
+  $1 = (Proper formatting has not yet been implemented for ir::pattern::expression::ExpressionTree<answer::variable::Variable>)
+The error is: ExpressionTree { preorder_tree: [Variable($0), Constant(Param[Value(integer:1)]), Operation(Operation { operator: Add, left_expression_id: 0, right_expression_id: 1, source_span: Some(Span { begin_offset: 112, end_offset: 118 }) })] }
+
+
+[2m2026-08-17T14:44:56.195949Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Lowered plan:
+Conjunction executable plan [selected=[p0, p1], output_width=2]:
+  0: Assignment [inputs=[], selected=[p0], output_size=1]
+      ExecutableExpression { instructions: [LoadConstant], variables: [], constants: [Param[Value(integer:0)]], return_type: Single(integer) }
+  1: Assignment [inputs=[p0], selected=[p0, p1], output_size=2]
+      ExecutableExpression { instructions: [LoadVariable, LoadConstant, OpIntegerAddInteger], variables: [p0], constants: [Param[Value(integer:1)]], return_type: Single(integer) }
+[2m2026-08-17T14:44:56.196105Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Planning conjunction:
+(1) Conjunction
+  $0 in fn_QueryFunction#0()
+
+[2m2026-08-17T14:44:56.196226Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 0
+[2m2026-08-17T14:44:56.196284Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [] ONGOING: {} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-17T14:44:56.196350Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |Fun Call| <-- join: None, cost: Cost { cost: 0.04, io_ratio: 1.0 }, heuristic: Cost { cost: 0.04, io_ratio: 1.0 } metadata: None
+[2m2026-08-17T14:44:56.196499Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m 
+ Final plan (before lowering):
+ --> Order: [P(0), V(0)] --> MetaData 
+ {P(0): None}
+[2m2026-08-17T14:44:56.196634Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Finished planning conjunction:
+(1) Conjunction
+  $0 in fn_QueryFunction#0()
+
+[2m2026-08-17T14:44:56.196660Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Lowered plan:
+Conjunction executable plan [selected=[p0], output_width=1]:
+  0: Function Call [fn_id=QueryFunction#0, assigned=[Some(p0)], arguments=[], selected=[p0], output_size=1]
+
+..
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+

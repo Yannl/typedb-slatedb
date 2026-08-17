@@ -375,6 +375,60 @@ impl KeyspaceSet {
         l0 + compacted
     }
 
+    /// Live rows across the store, read from each SST's stats block rather than by scanning.
+    ///
+    /// This is the equivalent of RocksDB's `rocksdb.estimate-num-keys`, computed the same way:
+    /// every SST records how many puts, deletes and merges it holds, so the total is a sum over
+    /// SST metadata rather than a walk over the data. Cost is O(number of SSTs) — one small
+    /// ranged read each, served from the block cache after the first — instead of O(number of
+    /// keys), which against object storage is the difference between a few requests and dragging
+    /// the entire database across the network.
+    ///
+    /// It is an *estimate*, in exactly the sense RocksDB's property is, and for the same two
+    /// reasons. A key overwritten in a later SST is counted in both until compaction merges
+    /// them, and a deleted key is counted until its tombstone is dropped. Rows still in the
+    /// memtable are not counted at all, because they are not in any SST yet.
+    ///
+    /// [`Keyspace::stats`] remains available for callers that need an exact live count and can
+    /// afford the scan.
+    pub fn estimated_key_count(&self) -> Result<u64, KeyspaceError> {
+        let manifest = self.db.manifest();
+        let reader = slatedb::SstReader::new(
+            self.path.clone(),
+            Arc::clone(&self.object_store),
+            None,
+            None,
+        );
+
+        let handles = manifest
+            .l0()
+            .iter()
+            .map(|view| view.sst.clone())
+            .chain(
+                manifest
+                    .compacted()
+                    .iter()
+                    .flat_map(|run| run.sst_views().iter().map(|view| view.sst.clone())),
+            )
+            .collect::<Vec<_>>();
+
+        self.block(async {
+            let mut total = 0u64;
+            for handle in handles {
+                let file = reader
+                    .open_with_handle(handle)
+                    .map_err(|e| KeyspaceError::Get(e.to_string()))?;
+                // An SST written before stats existed, or with the block omitted, reports None.
+                // Skipping it undercounts rather than failing: this is a diagnostic figure, and
+                // refusing to answer at all is worse than answering low.
+                if let Some(stats) = file.stats().await.map_err(|e| KeyspaceError::Get(e.to_string()))? {
+                    total += stats.num_rows();
+                }
+            }
+            Ok(total)
+        })
+    }
+
     /// Apply a batch spanning any number of keyspaces. Returns once the write is *visible*,
     /// not once it is durable.
     ///

@@ -511,3 +511,44 @@ fn releasing_a_checkpoint_reclaims_its_pin() {
         "a released checkpoint must be gone from the manifest, not merely expiring later"
     );
 }
+
+#[test]
+fn the_key_count_comes_from_sst_metadata_not_a_scan() {
+    // O2. RocksDB answers `estimate-num-keys` by summing per-SST row counts; SlateDB records the
+    // same figures in each SST's stats block and exposes them through `SstReader`, so the count
+    // is O(number of SSTs) rather than O(number of keys). Against object storage that is the
+    // difference between a few small ranged reads and dragging the whole database over the
+    // network — four times a minute, forever, since TypeDB polls this every 15 seconds.
+    let dir = tempfile::tempdir().unwrap();
+    let mut tuning = Tuning::local();
+    tuning.l0_sst_size_bytes = 64 * 1024;
+    let set = KeyspaceSet::open_with(StoreConfig {
+        backend: Backend::Local { path: dir.path().to_path_buf() },
+        tuning,
+    })
+    .unwrap();
+
+    const ROWS: u32 = 4000;
+    let mut batch = Batch::new();
+    for i in 0..ROWS {
+        batch.put(KeyspaceId(0), &i.to_be_bytes(), &[b'v'; 64]);
+    }
+    set.write(batch).unwrap();
+    set.flush().unwrap();
+
+    // The memtable is promoted to an L0 SST asynchronously, and rows that have not reached an
+    // SST are not counted — the same characteristic RocksDB's property has.
+    let mut counted = 0;
+    for _ in 0..100 {
+        counted = set.estimated_key_count().unwrap();
+        if counted > 0 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    assert_eq!(
+        counted, ROWS as u64,
+        "every row written should be accounted for once it has reached an SST"
+    );
+}

@@ -312,11 +312,32 @@ impl Keyspaces {
         Ok(first.store.size_bytes())
     }
 
+    #[cfg(not(feature = "slatedb-backend"))]
     pub fn estimate_key_count(&self) -> Result<u64, KeyspaceError> {
         self.keyspaces.iter().try_fold(0, |total, keyspace| {
             let count = keyspace.estimate_key_count()?;
             Ok(total + count)
         })
+    }
+
+    /// Rows across the store, summed from SST metadata rather than by scanning.
+    ///
+    /// Asked of the store once rather than summed per keyspace, for the same reason as
+    /// `estimate_size_in_bytes`: the keyspaces share one manifest, so asking each of them would
+    /// return the same store-wide figure N times over.
+    ///
+    /// This is what RocksDB's `estimate-num-keys` does — sum the per-SST row counts recorded in
+    /// table metadata — and it is an estimate in the same sense: overwritten keys are counted in
+    /// every SST that still holds a version, and rows still in the memtable are not counted at
+    /// all. What it is not is a scan, which is what this used to be, four times a minute,
+    /// forever.
+    #[cfg(feature = "slatedb-backend")]
+    pub fn estimate_key_count(&self) -> Result<u64, KeyspaceError> {
+        let Some(first) = self.keyspaces.first() else { return Ok(0) };
+        first
+            .store
+            .estimated_key_count()
+            .map_err(|source| KeyspaceError::Get { name: first.name(), source })
     }
 }
 

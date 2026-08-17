@@ -82,6 +82,20 @@ fn tuning_for(test: &str) -> Tuning {
     Tuning::object_storage().with_cache_dir(cache_dir(test))
 }
 
+/// Tuning for tests that assert on operation counts.
+///
+/// SlateDB polls the manifest on a timer, so a long-running test can have a background poll land
+/// inside its measurement window and be charged for traffic the code under test never issued.
+/// Pushing the interval past any plausible test duration makes the count reflect the operation
+/// being measured rather than how long the suite happened to take to reach it — without it the
+/// assertion passes or fails on timing, which is the kind of flake that gets rerun rather than
+/// read.
+fn quiet_tuning_for(test: &str) -> Tuning {
+    let mut tuning = tuning_for(test);
+    tuning.manifest_poll_interval = Duration::from_secs(3600);
+    tuning
+}
+
 // ---------------------------------------------------------------------------------------
 // Operation accounting
 // ---------------------------------------------------------------------------------------
@@ -239,7 +253,7 @@ fn a_commit_spanning_every_keyspace_costs_one_write() {
     // in the system by the number of keyspaces for no benefit. Nothing but an operation count
     // can see the difference.
     let endpoint = require_simulator!();
-    let set = store_for("one-write", &endpoint, tuning_for("one-write"));
+    let set = store_for("one-write", &endpoint, quiet_tuning_for("one-write"));
 
     // Settle the store before measuring, so open-time traffic is not attributed to the commit.
     set.keyspace(KeyspaceId(0)).put(b"warm", b"up").unwrap();
@@ -270,7 +284,7 @@ fn polling_the_store_size_costs_nothing() {
     // database across the network four times a minute, forever, while idle. The manifest already
     // holds the answer, and the handle already holds the manifest.
     let endpoint = require_simulator!();
-    let set = store_for("free-metrics", &endpoint, tuning_for("free-metrics"));
+    let set = store_for("free-metrics", &endpoint, quiet_tuning_for("free-metrics"));
 
     let mut batch = Batch::new();
     for i in 0u16..2000 {
@@ -293,6 +307,7 @@ fn polling_the_store_size_costs_nothing() {
         0,
         "sixty size polls must not touch the network at all, got {ops:?} (size reported {last})"
     );
+    let _ = last;
 }
 
 #[test]
@@ -300,7 +315,7 @@ fn a_memoized_estimate_scans_once_not_once_per_poll() {
     // Finding 02, the half that cannot be answered from the manifest. The scan remains, so what
     // is under test is that it happens once per TTL rather than once per caller.
     let endpoint = require_simulator!();
-    let set = store_for("memo", &endpoint, tuning_for("memo"))
+    let set = store_for("memo", &endpoint, quiet_tuning_for("memo"))
         .with_estimate_ttl(Duration::from_secs(3600));
 
     let mut batch = Batch::new();
@@ -333,7 +348,7 @@ fn reading_back_what_was_just_written_stays_on_the_machine() {
     // case for a knowledge base, and without the cache that read leaves the machine to fetch
     // bytes this process produced moments ago.
     let endpoint = require_simulator!();
-    let set = store_for("warm-read", &endpoint, tuning_for("warm-read"));
+    let set = store_for("warm-read", &endpoint, quiet_tuning_for("warm-read"));
 
     let mut batch = Batch::new();
     for i in 0u16..1000 {
@@ -423,4 +438,41 @@ fn concurrent_readers_share_one_store_safely() {
         let (keys, _) = handle.join().expect("no reader may panic");
         assert_eq!(keys, 500);
     }
+}
+
+#[test]
+fn the_key_count_reads_sst_metadata_rather_than_the_data() {
+    // O2, measured. The count now sums per-SST row counts out of each SST's stats block, so its
+    // cost tracks the number of SSTs and not the number of keys. The assertion is deliberately
+    // on operations rather than on wall-clock: a scan of this store would be thousands of block
+    // reads, and only an operation count distinguishes that from a handful of small ranged ones.
+    let endpoint = require_simulator!();
+    let mut tuning = quiet_tuning_for("sst-metadata");
+    tuning.l0_sst_size_bytes = 64 * 1024;
+    let set = store_for("sst-metadata", &endpoint, tuning);
+
+    let mut batch = Batch::new();
+    for i in 0u16..8000 {
+        batch.put(KeyspaceId(0), &i.to_be_bytes(), &[b'v'; 64]);
+    }
+    set.write(batch).unwrap();
+    set.flush().unwrap();
+
+    // Let the memtable reach L0, so there is real SST metadata to read.
+    for _ in 0..100 {
+        if set.estimated_key_count().unwrap() > 0 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    reset_ops(&endpoint);
+    let counted = set.estimated_key_count().unwrap();
+    let ops = read_ops(&endpoint);
+
+    assert!(counted > 0, "the store holds 8000 rows, so the count must not be zero");
+    assert!(
+        ops.total() < 64,
+        "counting rows should cost a read per SST, not a read per block of data: {ops:?}"
+    );
 }

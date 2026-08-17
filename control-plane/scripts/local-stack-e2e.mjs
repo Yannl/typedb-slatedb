@@ -358,6 +358,18 @@ const wrongAudience = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, f
 check("audience binding: another database's token is refused",
   wrongAudience.status === 403 && wrongAudience.body.error === "CAPABILITY_AUDIENCE_MISMATCH");
 
+// generation guard (donor A5): a 30-digit path generation passes the \d+
+// route regex but is NOT an exact JS integer - Number() would round it to a
+// different generation. Must be a typed 400, never a silent lookup of the
+// rounded value.
+const hugeGenPath = await api("GET", `/wal/${DB}/999999999999999999999999999999/head`);
+check("generation guard: 30-digit path generation is a typed 400",
+  hugeGenPath.status === 400 && hugeGenPath.body.error === "INVALID_GENERATION", JSON.stringify(hugeGenPath.body));
+const hugeGenBody = await api("POST", "/session/register",
+  { databaseId: DB, generation: 1e300, startupSessionId: "sess-a5" });
+check("generation guard: overflowing body generation is a typed 400",
+  hugeGenBody.status === 400 && hugeGenBody.body.error === "INVALID_GENERATION", JSON.stringify(hugeGenBody.body));
+
 const shortCap = await issueCap({ databaseId: DB, method: "WAL_READ", ttlMs: 1 });
 await new Promise((resolve) => setTimeout(resolve, 25));
 const expired = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { "x-capability": shortCap.token });

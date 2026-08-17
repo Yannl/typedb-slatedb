@@ -159,6 +159,16 @@ function nonNegativeInt(raw: string | null, fallback: number): number | null {
   return Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
+/** Generation at the wire boundary (donor A5): body values and `\d+` path
+ *  segments alike must be exact non-negative safe integers BEFORE they reach
+ *  the DO - `Number("1e300")`-style overflow or a 30-digit path segment
+ *  would otherwise round silently and address the wrong generation's rows.
+ *  Returns null when invalid; callers answer INVALID_GENERATION 400. */
+function exactGeneration(raw: unknown): number | null {
+  const value = typeof raw === "string" ? (/^\d+$/.test(raw) ? Number(raw) : NaN) : raw;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
 /** Sequence-valued query parameters (F7): exact u64 from a decimal string,
  *  over the full range - no 2^53 cliff. Returns null when invalid. */
 function nonNegativeU64(raw: string | null, fallback: bigint): bigint | null {
@@ -269,6 +279,9 @@ export default {
 
     if (request.method === "POST" && path === "/session/register") {
       const b = (await request.json()) as { databaseId: string; generation: number; startupSessionId: string };
+      if (exactGeneration(b.generation) === null) {
+        return json({ ok: false, error: "INVALID_GENERATION", observed: b.generation ?? null }, 400);
+      }
       const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
       if (denied) return denied;
       await stubFor(b.databaseId).registerSession(b.databaseId, b.generation, b.startupSessionId);
@@ -277,6 +290,9 @@ export default {
 
     if (request.method === "POST" && path === "/session/fence") {
       const b = (await request.json()) as { databaseId: string; generation: number; startupSessionId: string };
+      if (exactGeneration(b.generation) === null) {
+        return json({ ok: false, error: "INVALID_GENERATION", observed: b.generation ?? null }, 400);
+      }
       // the fence is actor-wide: any `generation` in the body is accepted for
       // wire compatibility but does not scope the revocation
       const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
@@ -318,6 +334,9 @@ export default {
       if (invalidRecordType(req.recordType)) {
         return json({ ok: false, error: "INVALID_RECORD_TYPE", observed: req.recordType ?? null }, 400);
       }
+      if (exactGeneration(req.generation) === null) {
+        return json({ ok: false, error: "INVALID_GENERATION", observed: req.generation ?? null }, 400);
+      }
       // the finalize capability MUST be bound to the request's session
       // (donor A3): a session id in the body is not by itself write authority
       const denied = await requireCapability(req.databaseId, {
@@ -353,6 +372,9 @@ export default {
         if (invalidRecordType(req.recordType)) {
           return json({ ok: false, error: "INVALID_RECORD_TYPE", observed: req.recordType ?? null }, 400);
         }
+        if (exactGeneration(req.generation) === null) {
+          return json({ ok: false, error: "INVALID_GENERATION", observed: req.generation ?? null }, 400);
+        }
       }
       const denied = await requireCapability(databaseId, { method: "WAL_FINALIZE", session: batchSession });
       if (denied) return denied;
@@ -369,9 +391,11 @@ export default {
     const walRead = path.match(/^\/wal\/([^/]+)\/(\d+)\/(\d+)$/);
     if (request.method === "GET" && walRead) {
       const [, db, generation, lsn] = walRead;
+      const gen = exactGeneration(generation);
+      if (gen === null) return json({ ok: false, error: "INVALID_GENERATION", observed: generation }, 400);
       const denied = await requireCapability(db, { method: "WAL_READ" });
       if (denied) return denied;
-      const record = await stubFor(db).exactLookup(db, Number(generation), BigInt(lsn));
+      const record = await stubFor(db).exactLookup(db, gen, BigInt(lsn));
       if (!record.ok) return json(record, 404);
       // exact reads re-verify bytes against the catalogued digest: serving
       // corrupted payload under valid metadata is worse than failing; a
@@ -385,22 +409,28 @@ export default {
     const walHead = path.match(/^\/wal\/([^/]+)\/(\d+)\/head$/);
     if (request.method === "GET" && walHead) {
       const [, db, generation] = walHead;
+      const gen = exactGeneration(generation);
+      if (gen === null) return json({ ok: false, error: "INVALID_GENERATION", observed: generation }, 400);
       const denied = await requireCapability(db, { method: "WAL_READ" });
       if (denied) return denied;
-      return json({ ok: true, ...(await stubFor(db).head(db, Number(generation))) });
+      return json({ ok: true, ...(await stubFor(db).head(db, gen)) });
     }
 
     const walIterator = path.match(/^\/wal\/([^/]+)\/(\d+)\/iterator$/);
     if (request.method === "POST" && walIterator) {
       const [, db, generation] = walIterator;
+      const gen = exactGeneration(generation);
+      if (gen === null) return json({ ok: false, error: "INVALID_GENERATION", observed: generation }, 400);
       const denied = await requireCapability(db, { method: "WAL_READ" });
       if (denied) return denied;
-      return json({ ok: true, ...(await stubFor(db).openIterator(db, Number(generation))) });
+      return json({ ok: true, ...(await stubFor(db).openIterator(db, gen)) });
     }
 
     const walScan = path.match(/^\/wal\/([^/]+)\/(\d+)\/scan$/);
     if (request.method === "GET" && walScan) {
       const [, db, generation] = walScan;
+      const gen = exactGeneration(generation);
+      if (gen === null) return json({ ok: false, error: "INVALID_GENERATION", observed: generation }, 400);
       const denied = await requireCapability(db, { method: "WAL_READ" });
       if (denied) return denied;
       const recordTypeParam = url.searchParams.get("recordType");
@@ -425,7 +455,7 @@ export default {
       }
       const limit = Math.min(Math.max(rawLimit, 1), 1000);
       const maxBytes = Math.min(Math.max(rawMaxBytes, 1), SCAN_PAGE_BYTE_BUDGET);
-      const page = await stubFor(db).scan(db, Number(generation), {
+      const page = await stubFor(db).scan(db, gen, {
         fromTypeSequence, fromLsn, throughLsn, recordType, limit,
       });
       // Bounded response memory (V16 boundedness rules): the catalogue knows
@@ -461,12 +491,14 @@ export default {
     const walOperation = path.match(/^\/wal\/([^/]+)\/(\d+)\/operation\/([^/]+)$/);
     if (request.method === "GET" && walOperation) {
       const [, db, generation, operationId] = walOperation;
+      const gen = exactGeneration(generation);
+      if (gen === null) return json({ ok: false, error: "INVALID_GENERATION", observed: generation }, 400);
       const denied = await requireCapability(db, { method: "WAL_READ" });
       if (denied) return denied;
       // read surface: immutable durable history stays queryable by operation
       // identity even after the finalizing session is fenced (V16; the
       // finalize-RETRY path still answers SESSION_FENCED per inv. 38)
-      const result = await stubFor(db).queryOperation(db, Number(generation), decodeURIComponent(operationId));
+      const result = await stubFor(db).queryOperation(db, gen, decodeURIComponent(operationId));
       if (!result.ok) return json(result, 404);
       return json(result);
     }
@@ -474,13 +506,15 @@ export default {
     const walLast = path.match(/^\/wal\/([^/]+)\/(\d+)\/last$/);
     if (request.method === "GET" && walLast) {
       const [, db, generation] = walLast;
+      const gen = exactGeneration(generation);
+      if (gen === null) return json({ ok: false, error: "INVALID_GENERATION", observed: generation }, 400);
       const denied = await requireCapability(db, { method: "WAL_READ" });
       if (denied) return denied;
       const recordType = Number(url.searchParams.get("recordType") ?? "NaN");
       if (invalidRecordType(recordType)) {
         return json({ ok: false, error: "INVALID_RECORD_TYPE", observed: url.searchParams.get("recordType") }, 400);
       }
-      const result = await stubFor(db).lastByType(db, Number(generation), recordType);
+      const result = await stubFor(db).lastByType(db, gen, recordType);
       if (!result.ok) return json(result, 404);
       const record = result.record as { payloadKey: string; payloadDigest: string };
       const payload = await verifiedPayloadBase64(env, record);
@@ -520,7 +554,9 @@ export default {
       const stub = stubFor(cutOpen[1]) as unknown as {
         openCheckpointCut(db: string, generation: number, cutId: string): Promise<{ ok: boolean }>;
       };
-      const result = await stub.openCheckpointCut(cutOpen[1], Number(cutOpen[2]), b.cutId);
+      const cutGen = exactGeneration(cutOpen[2]);
+      if (cutGen === null) return json({ ok: false, error: "INVALID_GENERATION", observed: cutOpen[2] }, 400);
+      const result = await stub.openCheckpointCut(cutOpen[1], cutGen, b.cutId);
       return json(result, result.ok ? 200 : 409);
     }
 
@@ -543,7 +579,9 @@ export default {
       const stub = stubFor(cutActive[1]) as unknown as {
         activeCheckpointCut(db: string, generation: number): Promise<{ ok: boolean }>;
       };
-      const result = await stub.activeCheckpointCut(cutActive[1], Number(cutActive[2]));
+      const activeGen = exactGeneration(cutActive[2]);
+      if (activeGen === null) return json({ ok: false, error: "INVALID_GENERATION", observed: cutActive[2] }, 400);
+      const result = await stub.activeCheckpointCut(cutActive[1], activeGen);
       return json(result, result.ok ? 200 : 404);
     }
 
@@ -573,9 +611,11 @@ export default {
     const walAudit = path.match(/^\/wal\/([^/]+)\/(\d+)\/audit$/);
     if (request.method === "GET" && walAudit) {
       const [, db, generation] = walAudit;
+      const gen = exactGeneration(generation);
+      if (gen === null) return json({ ok: false, error: "INVALID_GENERATION", observed: generation }, 400);
       const denied = await requireCapability(db, { method: "WAL_READ" });
       if (denied) return denied;
-      return json(await stubFor(db).auditContiguity(db, Number(generation)));
+      return json(await stubFor(db).auditContiguity(db, gen));
     }
 
     return json({ ok: false, error: "NOT_FOUND" }, 404);

@@ -546,3 +546,3703 @@ Feature: Validate Function Signatures Against Definition & Calls :: Function cal
 98 steps (98 passed)
 .Feature: Function Body Structure :: a function with disjunctions considers every branch
   Scenario: Functions can be defined
+Feature: Function Usage :: Functions can be called in expressions.
+  Scenario: a function with disjunctions considers every branch
+   ✔> Given typedb starts
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | p         |
+       | key:ref:0 |
+       | key:ref:1 |
+Feature: Function Body Structure :: a function with negated disjunctions considers every branch
+  Scenario: a function with negated disjunctions considers every branch
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | p         |
+       | key:ref:2 |
+       | key:ref:3 |
+Feature: Function Body Structure :: Sort, Offset & Limit can be used in function bodies.
+  Scenario: Sort, Offset & Limit can be used in function bodies.
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given get answers of typeql read query
+   ✔  Then order of answer concepts is
+       | age         |
+       | attr:age:11 |
+       | attr:age:10 |
+Feature: Function Body Structure :: Reduce can be used in function bodies
+  Scenario: Reduce can be used in function bodies
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | sum_ages         |
+       | value:integer:42 |
+Feature: Function Body Structure :: A function may not have write stages in the body
+  Scenario: A function may not have write stages in the body
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query; fails
+[Summary]
+5 features
+5 scenarios (5 passed)
+81 steps (81 passed)
+.   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+  Scenario: Functions can be called in expressions.
+Feature: TypeQL Define Query :: empty defines are valid
+  Scenario: when resolution produces an infinite stream of answers, limiting the answer size allows it to terminate
+   ✔> Given connection create database: typedb
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | six             |
+       | value:integer:6 |
+   ✔  Given transaction closes
+Feature: Function Usage :: Functions can be called in comparators.
+  Scenario: Functions can be called in comparators.
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+Feature: Function Usage :: repeated function calls within a query trigger execution from all pattern occurrences
+  Scenario: repeated function calls within a query trigger execution from all pattern occurrences
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | ten              |
+       | value:integer:10 |
+   ✔  Given transaction closes
+Feature: Function Usage :: The same variable cannot be 'assigned' to twice, either by the same or different functions.
+  Scenario: The same variable cannot be 'assigned' to twice, either by the same or different functions.
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Then typeql read query; fails with a message containing: "Variable 'five' cannot be assigned to multiple times in the same branch"
+   ✔  Then typeql read query; fails with a message containing: "Variable 'five' cannot be assigned to multiple times in the same branch"
+   ✔  Then typeql read query; fails with a message containing: "Variable 'five' cannot be assigned to multiple times in the same branch"
+   ✔  Then typeql read query; fails with a message containing: "Variable 'five' cannot be assigned to multiple times in the same branch"
+Feature: Function Usage :: Assigning to an anonymous variable discards the returned value.
+  Scenario: Assigning to an anonymous variable discards the returned value.
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | person    |
+       | key:ref:0 |
+   ✔  Given transaction closes
+Feature: Function Usage :: Function arguments are passed properly according to index (typedb#7407)
+  Scenario: Function arguments are passed properly according to index (typedb#7407)
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  Then uniquely identify answer concepts
+       | x               | y               | z               |
+       | value:integer:2 | value:integer:1 | value:integer:1 |
+Feature: Function Usage :: A variable that is input from a previous stage may not be assigned to
+  Scenario: A variable that is input from a previous stage may not be assigned to
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Then typeql read query; fails with a message containing: "The variable 'name' may not be assigned to, as it was already bound in a previous stage"
+Feature: Function Usage :: When no evaluation order can bind the arguments of a function, an error is returned.
+  Scenario: When no evaluation order can bind the arguments of a function, an error is returned.
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Then typeql read query; fails with a message containing: "The variable 'x' must be bound to a value before it's used."
+   ✔  Given transaction closes
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Then typeql read query; fails with a message containing: "The required input variables for the following constraints could not be satisfied (there may be a circular dependency)"
+   ✔  Given transaction closes
+[Summary]
+8 features
+8 scenarios (8 passed)
+123 steps (123 passed)
+.   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+Feature: TypeQL Delete Query :: when deleting multiple variables, they all get deleted
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔> Given typedb starts
+Feature: Function Definition :: Functions can be undefined
+  Scenario: Functions can be undefined
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  Given transaction closes
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Then typeql read query; fails with a message containing: "Could not resolve function with name 'five'."
+Feature: Function Definition :: Functions can be redefined
+  Scenario: Functions can be redefined
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | five            |
+       | value:integer:4 |
+   ✔  Given transaction closes
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | five            |
+       | value:integer:5 |
+   ✔  Given transaction closes
+Feature: Function Definition :: Functions with undefined types in their signature error.
+  Scenario: Functions with undefined types in their signature error.
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query
+   ✔  Then transaction commits; fails with a message containing: "An error occurred when trying to resolve the type of the argument at index: 0"
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query
+   ✔  Then transaction commits; fails with a message containing: "An error occurred when trying to resolve the type at return index: 0"
+Feature: Function Definition :: A functions with an unused argument errors
+  Scenario: A functions with an unused argument errors
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query; fails with a message containing: "Function argument variable 'arg' is unused."
+   ✔  Then transaction is open: false
+Feature: Function Definition :: Functions can be defined with annotation @doc("docs here")
+  Scenario Outline: Functions can be defined with annotation @doc("docs here")
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query
+   ✔  Then transaction commits
+Feature: Function Definition :: Functions can be defined with annotation @meta("key", "value")
+  Scenario Outline: Functions can be defined with annotation @meta("key", "value")
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query
+   ✔  Then transaction commits
+Feature: Function Definition :: Functions cannot be defined with annotation @abstract
+  Scenario Outline: Functions cannot be defined with annotation @abstract
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query; fails
+   ✔  Then transaction is open: false
+Feature: Function Definition :: Functions cannot be defined with annotation @distinct
+  Scenario Outline: Functions cannot be defined with annotation @distinct
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query; fails
+   ✔  Then transaction is open: false
+Feature: Function Definition :: Functions cannot be defined with annotation @independent
+  Scenario Outline: Functions cannot be defined with annotation @independent
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query; fails
+   ✔  Then transaction is open: false
+Feature: Function Definition :: Functions cannot be defined with annotation @unique
+  Scenario Outline: Functions cannot be defined with annotation @unique
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query; fails
+   ✔  Then transaction is open: false
+Feature: Function Definition :: Functions cannot be defined with annotation @key
+  Scenario Outline: Functions cannot be defined with annotation @key
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query; fails
+   ✔  Then transaction is open: false
+Feature: Function Definition :: Functions cannot be defined with annotation @card(1..1)
+  Scenario Outline: Functions cannot be defined with annotation @card(1..1)
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query; fails
+   ✔  Then transaction is open: false
+Feature: Function Definition :: Functions cannot be defined with annotation @regex("val")
+  Scenario Outline: Functions cannot be defined with annotation @regex("val")
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query; fails
+   ✔  Then transaction is open: false
+Feature: Function Definition :: Functions cannot be defined with annotation @range("1".."2")
+  Scenario Outline: Functions cannot be defined with annotation @range("1".."2")
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query; fails
+   ✔  Then transaction is open: false
+Feature: Function Definition :: Functions cannot be defined with annotation @values("1", "2")
+  Scenario Outline: Functions cannot be defined with annotation @values("1", "2")
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query; fails
+   ✔  Then transaction is open: false
+Feature: Function Definition :: Functions can be defined with multiple annotations
+  Scenario: Functions can be defined with multiple annotations
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query
+   ✔  Then transaction commits
+Feature: Function Definition :: Functions cannot be defined with duplicate annotations
+  Scenario: Functions cannot be defined with duplicate annotations
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query; fails
+   ✔  Then transaction is open: false
+   ✔  Then connection open schema transaction for database: typedb
+   ✔  When typeql schema query; fails
+   ✔  Then transaction is open: false
+Feature: Function Definition :: Schema functions can be committed even if all types inferred are abstract.
+  Scenario: Schema functions can be committed even if all types inferred are abstract.
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query
+   ✔  Then transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When typeql schema query
+   ✔  Then transaction commits
+Feature: Function Definition :: Using a schema function where all types are abstract in a query or preamble function errors.
+  Scenario: Using a schema function where all types are abstract in a query or preamble function errors.
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Then typeql read query; fails with a message containing: "Type-inference derived an empty-set for some variable"
+   ✔  Given transaction closes
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Then typeql read query; fails with a message containing: "Type-inference was unable to find compatible types for the pair of variables 'a' & 'animal' across a 'isa' constraint"
+   ✔  Given transaction closes
+Feature: Function Definition :: Preamble functions that infer no concrete types are not allowed
+  Scenario: Preamble functions that infer no concrete types are not allowed
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Then typeql read query; fails with a message containing: "Type-inference was unable to find compatible types for the pair of variables 'a' & 'animal' across a 'isa' constraint"
+   ✔  Given transaction closes
+Feature: Function Definition :: A function returning only abstract types produces results after concrete subtypes are added
+  Scenario: A function returning only abstract types produces results after concrete subtypes are added
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  Given transaction closes
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  Given transaction closes
+Feature: Function Definition :: Functions are stratified wrt negation
+  Scenario: Functions are stratified wrt negation
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits; fails with a message containing: "Detected a recursive cycle through a negation, reduction or single return"
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given typeql read query; fails with a message containing: "Detected a recursive cycle through a negation, reduction or single return"
+Feature: Function Definition :: Functions are stratified wrt negation, over multiple hops
+  Scenario: Functions are stratified wrt negation, over multiple hops
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits; fails with a message containing: "Detected a recursive cycle through a negation, reduction or single return"
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given typeql read query; fails with a message containing: "Detected a recursive cycle through a negation, reduction or single return"
+Feature: Function Definition :: Functions are stratified wrt aggregates
+  Scenario: Functions are stratified wrt aggregates
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Then transaction commits; fails with a message containing: "Detected a recursive cycle through a negation, reduction or single return"
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Then typeql read query; fails with a message containing: "Detected a recursive cycle through a negation, reduction or single return"
+Feature: Function Definition :: Functions are stratified wrt aggregates in return statements
+  Scenario: Functions are stratified wrt aggregates in return statements
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Then transaction commits; fails with a message containing: "Detected a recursive cycle through a negation, reduction or single return"
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Then typeql read query; fails with a message containing: "Detected a recursive cycle through a negation, reduction or single return"
+Feature: Function Definition :: Functions are stratified wrt single return statements
+  Scenario: Functions are stratified wrt single return statements
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Then transaction commits; fails with a message containing: "Detected a recursive cycle through a negation, reduction or single return"
+Feature: Function Definition :: Functions are stratified wrt aggregates, over multiple hops
+  Scenario: Functions are stratified wrt aggregates, over multiple hops
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Then transaction commits; fails with a message containing: "Detected a recursive cycle through a negation, reduction or single return"
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Then typeql read query; fails with a message containing: "Detected a recursive cycle through a negation, reduction or single return"
+Feature: Function Definition :: A function being undefined must not be referenced by a separate function which is not being undefined.
+  Scenario: A function being undefined must not be referenced by a separate function which is not being undefined.
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Then transaction commits; fails with a message containing: "Could not resolve function with name 'default_nickname'"
+Feature: Function Definition :: If a modification of a function causes a caller function to become invalid, the modification is blocked.
+  Scenario: If a modification of a function causes a caller function to become invalid, the modification is blocked.
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Then transaction commits; fails with a message containing: "Type checking all functions currently defined failed"
+Feature: Function Definition :: If a modification of the schema causes a stored function to become invalid, the modification is blocked at commit time
+  Scenario: If a modification of the schema causes a stored function to become invalid, the modification is blocked at commit time
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Then transaction commits; fails
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Then transaction commits; fails
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Then typeql read query; fails with a message containing: "An error occurred when trying to resolve the type at return index: 0"
+[Summary]
+31 features
+31 scenarios (31 passed)
+436 steps (436 passed)
+.Feature: TypeQL Disjunction :: disjunctions return the union of composing query statements
+   ✔> Given connection opens with default authentication
+  Scenario: disjunctions return the union of composing query statements
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection reset database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | x         | t             |
+       | key:ref:0 | label:person  |
+       | key:ref:1 | label:company |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | x         |
+       | key:ref:0 |
+       | key:ref:1 |
+Feature: TypeQL Disjunction :: disjunctions with no answers
+  Scenario: disjunctions with no answers
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection reset database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+Feature: TypeQL Disjunction :: a variable reused across all branches is returned
+  Scenario: a variable reused across all branches is returned
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection reset database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | person    |
+       | key:ref:0 |
+       | key:ref:1 |
+Feature: TypeQL Disjunction :: a variable reused across all nested branches of a nested disjunction is returned
+  Scenario: a variable reused across all nested branches of a nested disjunction is returned
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection reset database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | p          |
+       | key:ref:10 |
+       | key:ref:11 |
+       | key:ref:12 |
+Feature: TypeQL Disjunction :: a variable only used in one branch is not returned
+  Scenario: a variable only used in one branch is not returned
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection reset database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answers do not contain variable: other
+   ✔  Then uniquely identify answer concepts
+       | p         |
+       | key:ref:1 |
+       | key:ref:2 |
+Feature: TypeQL Disjunction :: a conjunction where one disjunction produces a variable, and the other only references it can be planned.
+  Scenario: a conjunction where one disjunction produces a variable, and the other only references it can be planned.
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection reset database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given transaction closes
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 1
+Feature: TypeQL Disjunction :: a disjunction that both binds and consumes a variable can be planned
+  Scenario: a disjunction that both binds and consumes a variable can be planned
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection reset database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | x         | ref        |
+       | key:ref:0 | attr:ref:0 |
+       | key:ref:1 | attr:ref:1 |
+       | key:ref:2 | attr:ref:2 |
+Feature: TypeQL Disjunction :: Variables appearing outside the disjunction and in only some branches of the disjunction
+  Scenario: Variables appearing outside the disjunction and in only some branches of the disjunction
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection reset database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then transaction closes
+[Summary]
+8 features
+8 scenarios (8 passed)
+113 steps (113 passed)
+.Feature: TypeQL Query with Expressions :: A value variable must have exactly one assignment constraint in the same branch of a pipeline
+test functions::recursion::test_functions_recursion has been running for over 60 seconds
+   ✔> Given connection is open: true
+  Scenario: when deleting multiple variables, they all get deleted
+   ✔> Given typedb starts
+test language::define::test_definable_define has been running for over 60 seconds
+   ✔> Given connection opens with default authentication
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+Feature: Recursive Function Execution :: when a query using transitivity has a limit exceeding the result size, answers are consistent between runs
+  Scenario: when a query using transitivity has a limit exceeding the result size, answers are consistent between runs
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+Feature: Recursive Function Execution :: the types of entities in inferred relations can be used to make further inferences
+  Scenario: the types of entities in inferred relations can be used to make further inferences
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 1
+Feature: Recursive Function Execution :: ancestor test
+  Scenario: ancestor test
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 3
+   ✔  Then verify answer set is equivalent for query
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 3
+   ✔  Then verify answer set is equivalent for query
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 10
+   ✔  Then verify answer set is equivalent for query
+   ✔  Given transaction closes
+Feature: Recursive Function Execution :: ancestor-friend test
+  Scenario: ancestor-friend test
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 2
+   ✔  Then verify answer set is equivalent for query
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 3
+   ✔  Then verify answer set is equivalent for query
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 3
+   ✔  Then verify answer set is equivalent for query
+Feature: Recursive Function Execution :: same-generation test
+  Scenario: same-generation test
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 2
+   ✔  Then verify answer set is equivalent for query
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 2
+   ✔  Then verify answer set is equivalent for query
+Feature: Recursive Function Execution :: TC test
+  Scenario: TC test
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  Then verify answer set is equivalent for query
+Feature: Recursive Function Execution :: given a directed graph, all pairs of vertices (x,y) such that y is reachable from x can be found
+  Scenario: given a directed graph, all pairs of vertices (x,y) such that y is reachable from x can be found
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 7
+   ✔  Then verify answer set is equivalent for query
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 7
+   ✔  Then verify answer set is equivalent for query
+Feature: Recursive Function Execution :: given an undirected graph, all vertices connected to a given vertex can be found
+  Scenario: given an undirected graph, all vertices connected to a given vertex can be found
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 4
+   ✔  Then verify answer set is equivalent for query
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 4
+   ✔  Then verify answer set is equivalent for query
+Feature: Recursive Function Execution :: same-generation - Cao test
+  Scenario: same-generation - Cao test
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given get answers of typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 3
+   ✔  Then verify answer set is equivalent for query
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 3
+   ✔  Then verify answer set is equivalent for query
+Feature: Recursive Function Execution :: reverse same-generation test
+  Scenario: reverse same-generation test
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 3
+   ✔  Then verify answer set is equivalent for query
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 11
+   ✔  Then verify answer set is equivalent for query
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 3
+   ✔  Then verify answer set is equivalent for query
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 11
+   ✔  Then verify answer set is equivalent for query
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 11
+   ✔  Then verify answer set is equivalent for query
+Feature: Recursive Function Execution :: dual linear transitivity matrix test
+  Scenario: dual linear transitivity matrix test
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given get answers of typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 5
+   ✔  Then verify answer set is equivalent for query
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 5
+   ✔  Then verify answer set is equivalent for query
+Feature: Recursive Function Execution :: tail recursion test
+  Scenario: tail recursion test
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 60
+   ✔  Then verify answer set is equivalent for query
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 60
+   ✔  Then verify answer set is equivalent for query
+Feature: Recursive Function Execution :: linear transitivity matrix test
+  Scenario: linear transitivity matrix test
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 25
+   ✔  Then verify answer set is equivalent for query
+   ✔  Given get answers of typeql read query
+   ✔  Then answer size is: 25
+   ✔  Then verify answer set is equivalent for query
+[Summary]
+14 features
+14 scenarios (14 passed)
+279 steps (279 passed)
+.  Scenario: empty defines are valid
+test language::delete::test_write_delete has been running for over 60 seconds
+Feature: TypeQL Fetch Query :: a fetch with zero projections errors
+   ✔> Given connection is open: true
+   ✔> Given typedb starts
+   ✔> Given connection has 0 databases
+   ✔> Given connection opens with default authentication
+   ✔> Given connection create database: typedb
+   ✔> Given connection is open: true
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+  Scenario: A value variable must have exactly one assignment constraint in the same branch of a pipeline
+   ✔> Given connection reset database: typedb
+   ✔> Given transaction commits
+   ✔> Given typedb starts
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given connection opens with default authentication
+   ✔  Given get answers of typeql write query
+   ✔> Given connection is open: true
+   ✔  Given uniquely identify answer concepts
+       | x             | y            | r         | n              |
+       | key:name:Alex | key:name:Bob | key:ref:0 | attr:name:John |
+   ✔> Given typeql schema query
+   ✔> Given connection has 0 databases
+   ✔  Given transaction commits
+   ✔> Given connection create database: typedb
+   ✔> Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given connection open schema transaction for database: typedb
+   ✔  When typeql write query
+   ✔> Given transaction commits
+   ✔  When typeql schema query
+   ✔  Then transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Then transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Then uniquely identify answer concepts
+       | x            |
+       | key:name:Bob |
+   ✔  Then typeql read query; fails with a message containing: "The variable 'v' must be bound to a value before it's used"
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | x              |
+       | attr:name:Alex |
+       | attr:name:Bob  |
+Feature: TypeQL Delete Query :: an entity can be deleted
+  Scenario: an entity can be deleted
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | x             | y            | r         | n              |
+       | key:name:Alex | key:name:Bob | key:ref:0 | attr:name:John |
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  Then transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | x            |
+       | key:name:Bob |
+Feature: TypeQL Delete Query :: a relation can be deleted
+  Scenario: a relation can be deleted
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | x             | y            | r         | n              |
+       | key:name:Alex | key:name:Bob | key:ref:0 | attr:name:John |
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  Then transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+Feature: TypeQL Delete Query :: an attribute can be deleted
+  Scenario: an attribute can be deleted
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | n              |
+       | attr:name:John |
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  Then transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+Feature: TypeQL Delete Query :: one delete statement can delete multiple things
+  Scenario: one delete statement can delete multiple things
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | a              | b                |
+       | key:name:Alice | key:name:Barbara |
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  Then transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+Feature: TypeQL Delete Query :: instances of multiple attribute supertypes and subtypes can be deleted based on a match
+  Scenario: instances of multiple attribute supertypes and subtypes can be deleted based on a match
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given transaction closes
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When typeql write query
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | e                                 |
+       | attr:email:"bob@mail.com"         |
+       | attr:email:"bobbie1987@gmail.com" |
+   ✔  When typeql write query
+   ✔  When typeql write query
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | e                                  |
+       | attr:email:"bob@mail.com"          |
+       | attr:email:"bobbie1987@gmail.com"  |
+       | attr:encrypted-email:"b0b@bob.bob" |
+   ✔  Then transaction commits
+Feature: TypeQL Delete Query :: deleting a role player from a relation using its role keeps the relation and removes the role player from it
+  Scenario: deleting a role player from a relation using its role keeps the relation and removes the role player from it
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | x             | y            | z               | r         |
+       | key:name:Alex | key:name:Bob | key:name:Carrie | key:ref:0 |
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  Then transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | x               | y               |
+       | key:name:Bob    | key:name:Carrie |
+       | key:name:Carrie | key:name:Bob    |
+Feature: TypeQL Delete Query :: deleting an instance removes it from all relations
+  Scenario: deleting an instance removes it from all relations
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | x             | y            | z               | r         | r2        |
+       | key:name:Alex | key:name:Bob | key:name:Carrie | key:ref:1 | key:ref:2 |
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  Then transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | x               |
+       | key:name:Bob    |
+       | key:name:Carrie |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | r         | x               |
+       | key:ref:1 | key:name:Bob    |
+       | key:ref:2 | key:name:Carrie |
+Feature: TypeQL Delete Query :: The role player playing the specialized role can be deleted
+  Scenario: The role player playing the specialized role can be deleted
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given transaction closes
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  Then transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  When typeql write query; fails with a message containing: "Left type 'internship' across constraint 'links' is not compatible with right type 'employment:employee'"
+   ✔  Given connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | e         | p           |
+       | key:ref:2 | key:name:s2 |
+   ✔  Then transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  Then transaction commits
+Feature: TypeQL Delete Query :: deleting role players in multiple statements is allowed
+  Scenario: deleting role players in multiple statements is allowed
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | x             | y            | z               | r         |
+       | key:name:Alex | key:name:Bob | key:name:Carrie | key:ref:0 |
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  Then transaction commits
+Feature: TypeQL Delete Query :: when deleting overlapping answers, deletes are idempotent
+  Scenario: when deleting overlapping answers, deletes are idempotent
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Then typeql write query
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  Then typeql write query
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  Then typeql write query
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+Feature: TypeQL Delete Query :: deletes are idempotent when deleting uncommitted concepts
+  Scenario: deletes are idempotent when deleting uncommitted concepts
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | x             | y            | r         | n              |
+       | key:name:Alex | key:name:Bob | key:ref:0 | attr:name:John |
+   ✔  When typeql write query
+   ✔  Then transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+Feature: TypeQL Delete Query :: when deleting incompatible ownerships or role players, an error is thrown
+  Scenario: when deleting incompatible ownerships or role players, an error is thrown
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Then typeql write query; fails
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Then typeql write query; fails
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Then typeql write query; fails
+Feature: TypeQL Delete Query :: when all instances that play roles in a relation are deleted, the relation instance gets cleaned up
+  Scenario: when all instances that play roles in a relation are deleted, the relation instance gets cleaned up
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | x             | y            | r         |
+       | key:name:Alex | key:name:Bob | key:ref:0 |
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  Then transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+Feature: TypeQL Delete Query :: when the last role player is disassociated from a relation instance, the relation instance gets cleaned up
+  Scenario: when the last role player is disassociated from a relation instance, the relation instance gets cleaned up
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | x             | y            | r         |
+       | key:name:Alex | key:name:Bob | key:ref:0 |
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  Then transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+Feature: TypeQL Delete Query :: deleting a role player with a too-specific (downcasting) role errors
+  Scenario: deleting a role player with a too-specific (downcasting) role errors
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given transaction closes
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  Then transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then typeql write query; fails
+Feature: TypeQL Delete Query :: Matching & deleting a links constraint a supertype of the actual role-type labels does nothing.
+  Scenario: Matching & deleting a links constraint a supertype of the actual role-type labels does nothing.
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given transaction closes
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  When typeql write query; fails with a message containing: "Left type 'internship' across constraint 'links' is not compatible with right type 'employment:employee'"
+Feature: TypeQL Delete Query :: when deleting repeated role players with a single variable role, both repetitions are removed
+  Scenario: when deleting repeated role players with a single variable role, both repetitions are removed
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given transaction closes
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | rel       | p               |
+       | key:ref:0 | key:name:Joshua |
+   ✔  When typeql write query
+   ✔  Then transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+Feature: TypeQL Delete Query :: deleting an attribute instance also deletes its ownerships
+  Scenario: deleting an attribute instance also deletes its ownerships
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given transaction closes
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | x             |
+       | key:name:Anna |
+   ✔  When typeql write query
+   ✔  Then transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+Feature: TypeQL Delete Query :: attempting to delete an attribute ownership with a redeclared isa errors
+  Scenario: attempting to delete an attribute ownership with a redeclared isa errors
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given transaction closes
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | x             | y             |
+       | key:name:Alex | key:name:John |
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query; parsing fails
+Feature: TypeQL Delete Query :: an attribute deletion using anonymous thing variables errors
+  Scenario: an attribute deletion using anonymous thing variables errors
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query; parsing fails
+Feature: TypeQL Delete Query :: deleting the owner of an attribute also deletes the attribute ownership
+  Scenario: deleting the owner of an attribute also deletes the attribute ownership
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given transaction closes
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | x         | d                  |
+       | key:ref:0 | attr:timespan:1000 |
+   ✔  When typeql write query
+   ✔  Then transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+Feature: TypeQL Delete Query :: deleting the last roleplayer in a relation deletes both the relation and its attribute ownerships
+  Scenario: deleting the last roleplayer in a relation deletes both the relation and its attribute ownerships
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given transaction closes
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | x         | d                  |
+       | key:ref:0 | attr:timespan:1000 |
+   ✔  When typeql write query
+   ✔  Then transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+Feature: TypeQL Delete Query :: an error is thrown when deleting the ownership of a non-existent attribute type
+  Scenario: an error is thrown when deleting the ownership of a non-existent attribute type
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Then typeql write query; fails
+Feature: TypeQL Delete Query :: has can be deleted for instances of multiple attribute supertypes and subtypes
+  Scenario: has can be deleted for instances of multiple attribute supertypes and subtypes
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given transaction closes
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When typeql write query
+   ✔  When typeql write query
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | e                                 |
+       | attr:email:"bob@mail.com"         |
+       | attr:email:"bobbie1987@gmail.com" |
+   ✔  When typeql write query
+   ✔  When typeql write query
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | e                                  |
+       | attr:email:"bob@mail.com"          |
+       | attr:email:"bobbie1987@gmail.com"  |
+       | attr:encrypted-email:"b0b@bob.bob" |
+   ✔  Then transaction commits
+Feature: TypeQL Delete Query :: has can be deleted based on a match of supertypes of owners and attributes without prior has matching, skipping non-existing instances
+  Scenario: has can be deleted based on a match of supertypes of owners and attributes without prior has matching, skipping non-existing instances
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given transaction closes
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  When connection open schema transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n               |
+       | attr:name:Alice |
+   ✔  When get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | e                                     | p              |
+       | attr:encrypted-email:al1ce@typedb.com | key:name:Alice |
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n             |
+       | attr:name:Bob |
+   ✔  When get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | e                                     | p              |
+       | attr:encrypted-email:al1ce@typedb.com | key:name:Alice |
+       | attr:encrypted-email:al1ce@typedb.com | key:name:Bob   |
+       | attr:encrypted-email:b0b@typedb.com   | key:name:Alice |
+       | attr:encrypted-email:b0b@typedb.com   | key:name:Bob   |
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When typeql schema query
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n                 |
+       | attr:name:Charlie |
+   ✔  When get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | e                                      | p                |
+       | attr:encrypted-email:4arl1e@typedb.com | key:name:Alice   |
+       | attr:encrypted-email:4arl1e@typedb.com | key:name:Bob     |
+       | attr:encrypted-email:4arl1e@typedb.com | key:name:Charlie |
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When transaction closes
+   ✔  When connection open schema transaction for database: typedb
+   ✔  When typeql schema query
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n               |
+       | attr:name:Alice |
+   ✔  When get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | e                                     | p              |
+       | attr:encrypted-email:al1ce@typedb.com | key:name:Alice |
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n             |
+       | attr:name:Bob |
+   ✔  When get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | e                                   | p              |
+       | attr:encrypted-email:b0b@typedb.com | key:name:Alice |
+       | attr:encrypted-email:b0b@typedb.com | key:name:Bob   |
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+Feature: TypeQL Delete Query :: has can be deleted for instances of multiple attribute supertypes and subtypes for multiple owner subtypes
+  Scenario: has can be deleted for instances of multiple attribute supertypes and subtypes for multiple owner subtypes
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given transaction closes
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n                 |
+       | attr:name:Bob     |
+       | attr:name:Charlie |
+       | attr:name:David   |
+       | attr:name:Elon    |
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n                 |
+       | attr:name:Bob     |
+       | attr:name:Charlie |
+       | attr:name:David   |
+       | attr:name:Elon    |
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n                 |
+       | attr:name:Alice   |
+       | attr:name:Charlie |
+       | attr:name:David   |
+       | attr:name:Elon    |
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n               |
+       | attr:name:Alice |
+       | attr:name:Bob   |
+       | attr:name:David |
+       | attr:name:Elon  |
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n                 |
+       | attr:name:Alice   |
+       | attr:name:Bob     |
+       | attr:name:Charlie |
+       | attr:name:Elon    |
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n                 |
+       | attr:name:Alice   |
+       | attr:name:Bob     |
+       | attr:name:Charlie |
+       | attr:name:David   |
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+test language::expressions::test_read_expressions has been running for over 60 seconds
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n                 |
+       | attr:name:Alice   |
+       | attr:name:Bob     |
+       | attr:name:Charlie |
+       | attr:name:David   |
+       | attr:name:Elon    |
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n                 |
+       | attr:name:Alice   |
+       | attr:name:Bob     |
+       | attr:name:Charlie |
+       | attr:name:David   |
+       | attr:name:Elon    |
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql write query
+   ✔  Then answer size is: 7
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n                 |
+       | attr:name:Alice   |
+       | attr:name:Charlie |
+       | attr:name:Elon    |
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | p                |
+       | key:name:Charlie |
+       | key:name:Elon    |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n                 |
+       | attr:name:Alice   |
+       | attr:name:Bob     |
+       | attr:name:Charlie |
+       | attr:name:David   |
+       | attr:name:Elon    |
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | p              |
+       | key:name:David |
+       | key:name:Elon  |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n                 |
+       | attr:name:Alice   |
+       | attr:name:Bob     |
+       | attr:name:Charlie |
+       | attr:name:Elon    |
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql write query
+   ✔  Then answer size is: 5
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n                 |
+       | attr:name:Alice   |
+       | attr:name:Bob     |
+       | attr:name:Charlie |
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql write query
+   ✔  Then answer size is: 9
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n               |
+       | attr:name:Alice |
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql write query
+   ✔  Then answer size is: 9
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n               |
+       | attr:name:Alice |
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | p              |
+       | key:name:David |
+       | key:name:Elon  |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n                 |
+       | attr:name:Alice   |
+       | attr:name:Bob     |
+       | attr:name:Charlie |
+       | attr:name:Elon    |
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then typeql write query; fails with a message containing: "Left type 'safe-person' across constraint 'has' is not compatible with right type 'corporate-email'"
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql write query
+   ✔  Then answer size is: 4
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n                 |
+       | attr:name:Alice   |
+       | attr:name:Bob     |
+       | attr:name:Charlie |
+       | attr:name:Elon    |
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql write query
+   ✔  Then answer size is: 14
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n                 |
+       | attr:name:Alice   |
+       | attr:name:Bob     |
+       | attr:name:Charlie |
+       | attr:name:Elon    |
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql write query
+   ✔  Then answer size is: 20
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n                 |
+       | attr:name:Alice   |
+       | attr:name:Bob     |
+       | attr:name:Charlie |
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql write query
+   ✔  Then answer size is: 20
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | n                 |
+       | attr:name:Alice   |
+       | attr:name:Bob     |
+       | attr:name:Charlie |
+Feature: TypeQL Delete Query :: not independent attributes are always hidden after queries if owners are lost: alphabetically smaller value
+  Scenario Outline: not independent attributes are always hidden after queries if owners are lost: alphabetically smaller value
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given transaction closes
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"alice@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When typeql write query
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                             |
+       | attr:email:"bob@typedb.com"   |
+       | attr:email:"alice@typedb.com" |
+Feature: TypeQL Delete Query :: not independent attributes are always hidden after queries if owners are lost: alphabetically bigger value
+  Scenario Outline: not independent attributes are always hidden after queries if owners are lost: alphabetically bigger value
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given transaction closes
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When typeql write query
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 0
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                           |
+       | attr:email:"bob@typedb.com" |
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | a                               |
+       | attr:email:"bob@typedb.com"     |
+       | attr:email:"charlie@typedb.com" |
+Feature: TypeQL Delete Query :: Non-existent ownerships are ignored by the delete.
+  Scenario: Non-existent ownerships are ignored by the delete.
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  When get answers of typeql write query
+   ✔  Then answer size is: 4
+Feature: TypeQL Delete Query :: deleting a variable not in the query errors, even if there were no matches
+  Scenario: deleting a variable not in the query errors, even if there were no matches
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Then typeql write query; fails
+Feature: TypeQL Delete Query :: deleting a has ownership @key errors on commit
+  Scenario: deleting a has ownership @key errors on commit
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then typeql write query
+   ✔  Then transaction commits; fails
+Feature: TypeQL Delete Query :: deleting an attribute instance that is owned as a has @key errors
+  Scenario: deleting an attribute instance that is owned as a has @key errors
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | x                 |
+       | attr:name:Tatyana |
+   ✔  Then typeql write query
+   ✔  Then transaction commits; fails
+Feature: TypeQL Delete Query :: deleting a type errors
+  Scenario: deleting a type errors
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Then typeql write query; fails
+Feature: TypeQL Delete Query :: deleting an anonymous variable errors
+  Scenario: deleting an anonymous variable errors
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Then typeql write query; fails with a message containing: "anonymous"
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then typeql write query; fails with a message containing: "anonymous"
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then typeql write query; fails with a message containing: "anonymous"
+Feature: TypeQL Delete Query :: Concept deletions do not cause trouble for constraint deletions in the same stage referencing that concept
+  Scenario: Concept deletions do not cause trouble for constraint deletions in the same stage referencing that concept
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then typeql write query
+   ✔  Then transaction commits
+Feature: TypeQL Delete Query :: an optional binding is deleted
+  Scenario: an optional binding is deleted
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  When get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | p             | name           |
+       | key:name:John | attr:name:John |
+       | key:name:Jane | attr:name:Jane |
+   ✔  Then transaction commits
+   ✔  Then connection open write transaction for database: typedb
+   ✔  Then get answers of typeql read query
+   ✔  Then answer size is: 0
+Feature: TypeQL Delete Query :: a has edge depending on an optional binding is deleted
+  Scenario: a has edge depending on an optional binding is deleted
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  When get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | p             | name           | email                   |
+       | key:name:John | attr:name:John | none                    |
+       | key:name:Jane | attr:name:Jane | attr:email:jane@doe.com |
+   ✔  Then transaction commits
+   ✔  Then connection open write transaction for database: typedb
+   ✔  Then get answers of typeql read query
+   ✔  Then answer size is: 0
+Feature: TypeQL Delete Query :: multiple edges in a single try block are only deleted when all optional variables are bound
+  Scenario: multiple edges in a single try block are only deleted when all optional variables are bound
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  When get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | p              | email                   | age         |
+       | key:name:John  | none                    | none        |
+       | key:name:Jane  | attr:email:jane@doe.com | none        |
+       | key:name:Alice | none                    | attr:age:33 |
+       | key:name:Bob   | attr:email:bob@ross.com | attr:age:22 |
+   ✔  Then transaction commits
+   ✔  Then connection open write transaction for database: typedb
+   ✔  Then get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | p             | email                   |
+       | key:name:Jane | attr:email:jane@doe.com |
+   ✔  Then get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | p              | age         |
+       | key:name:Alice | attr:age:33 |
+Feature: TypeQL Delete Query :: an optional relation is deleted
+  Scenario: an optional relation is deleted
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  When get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | p             | name           |
+       | key:name:John | attr:name:John |
+       | key:name:Jane | attr:name:Jane |
+       | key:name:Eve  | attr:name:Eve  |
+   ✔  Then transaction commits
+   ✔  Then connection open write transaction for database: typedb
+   ✔  Then get answers of typeql read query
+   ✔  Then answer size is: 0
+Feature: TypeQL Delete Query :: a links edge depending on an optional binding is deleted
+  Scenario: a links edge depending on an optional binding is deleted
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given typeql write query
+   ✔  When get answers of typeql write query
+   ✔  Then uniquely identify answer concepts
+       | p             | name           | f         |
+       | key:name:John | attr:name:John | key:ref:0 |
+       | key:name:Jane | attr:name:Jane | key:ref:0 |
+       | key:name:Eve  | attr:name:Eve  | none      |
+   ✔  Then transaction commits
+   ✔  Then connection open write transaction for database: typedb
+   ✔  Then get answers of typeql read query
+   ✔  Then answer size is: 0
+Feature: TypeQL Delete Query :: In a delete stage, using an optional variable outside a try block errors.
+  Scenario: In a delete stage, using an optional variable outside a try block errors.
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Then typeql write query; fails with a message containing: "A write stage uses the optional variable 'name' outside a 'try' block."
+Feature: TypeQL Delete Query :: nested try blocks in delete are disallowed
+  Scenario: nested try blocks in delete are disallowed
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔  Given typeql write query; parsing fails
+[Summary]
+43 features
+43 scenarios (43 passed)
+1214 steps (1214 passed)
+.   ✔  Given transaction closes
+Feature: TypeQL Define Query :: new entity types can be defined
+   ✔  Given connection open read transaction for database: typedb
+  Scenario: new entity types can be defined
+   ✔  Then typeql read query; fails with a message containing: "Variable 'v' cannot be assigned to multiple times in the same branch."
+   ✔  Then typeql read query; fails with a message containing: "The variable 'v' may not be assigned to, as it was already bound in a previous stage"
+Feature: TypeQL Given Clause :: raw values can be used in given rows
+   ✔  Then typeql read query; fails with a message containing: "Variable 'v' cannot be assigned to multiple times in the same branch."
+   ✔  Then typeql read query; fails with a message containing: "The variable 'v' may not be assigned to, as it was already bound in a previous stage"
+   ✔  When get answers of typeql read query
+   ✔> Given typedb starts
+   ✔  Then uniquely identify answer concepts
+       | v                 |
+       | value:integer:20  |
+       | value:integer:360 |
+   ✔  When get answers of typeql read query
+   ✔> Given connection opens with default authentication
+   ✔  Then uniquely identify answer concepts
+       | v                 |
+       | value:integer:12  |
+       | value:integer:20  |
+       | value:integer:360 |
+   ✔> Given connection is open: true
+Feature: TypeQL Query with Expressions :: A value variable must have exactly one assignment constraint recursively
+  Scenario: A value variable must have exactly one assignment constraint recursively
+   ✔> Given connection reset database: typedb
+   ✔> Given typedb starts
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given typeql schema query
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given transaction commits
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+  Scenario: raw values can be used in given rows
+   ✔  Then typeql read query; fails with a message containing: "Variable 'v' cannot be assigned to multiple times in the same branch."
+test language::fetch::test_read_fetch has been running for over 60 seconds
+   ✔  When typeql schema query
+   ✔> Given typedb starts
+Feature: TypeQL Query with Expressions :: When no evaluation order can bind the variables in an expression, an error is returned.
+   ✔> Given connection opens with default authentication
+   ✔  Then transaction commits
+  Scenario: When no evaluation order can bind the variables in an expression, an error is returned.
+   ✔> Given connection is open: true
+   ✔> Given typedb starts
+   ✔  When connection open schema transaction for database: typedb
+   ✔> Given connection has 0 databases
+   ✔> Given connection opens with default authentication
+   ✔> Given connection create database: typedb
+   ✔  When get answers of typeql read query
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection open schema transaction for database: typedb
+   ✔  Then uniquely identify answer concepts
+       | x         |
+       | label:dog |
+   ✔> Given connection create database: typedb
+   ✔> Given typeql schema query
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given set query given rows
+       | n: string         |
+       | value:string:Jane |
+   ✔  When get answers of typeql read query with given rows
+   ✔  Then uniquely identify answer concepts
+       | p           |
+       | key:ref:101 |
+Feature: TypeQL Given Clause :: Given rows handle boolean values
+  Scenario Outline: Given rows handle boolean values
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set query given rows
+       | attr               |
+       | value:boolean:true |
+   ✔  When get answers of typeql write query with given rows
+   ✔  Then transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | attr           |
+       | attr:attr:true |
+Feature: TypeQL Given Clause :: Given rows handle integer values
+  Scenario Outline: Given rows handle integer values
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set query given rows
+       | attr                   |
+       | value:integer:12345090 |
+   ✔  When get answers of typeql write query with given rows
+   ✔  Then transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | attr               |
+       | attr:attr:12345090 |
+Feature: TypeQL Given Clause :: Given rows handle double values
+  Scenario Outline: Given rows handle double values
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set query given rows
+       | attr                    |
+       | value:double:2.01234567 |
+   ✔  When get answers of typeql write query with given rows
+   ✔  Then transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | attr                 |
+       | attr:attr:2.01234567 |
+Feature: TypeQL Given Clause :: Given rows handle decimal values
+  Scenario Outline: Given rows handle decimal values
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set query given rows
+       | attr                                      |
+       | value:decimal:1234567890.0001234567890dec |
+   ✔  When get answers of typeql write query with given rows
+   ✔  Then transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | attr                                  |
+       | attr:attr:1234567890.0001234567890dec |
+Feature: TypeQL Given Clause :: Given rows handle date values
+  Scenario Outline: Given rows handle date values
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set query given rows
+       | attr                  |
+       | value:date:2024-09-20 |
+   ✔  When get answers of typeql write query with given rows
+   ✔  Then transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | attr                 |
+       | attr:attr:2024-09-20 |
+Feature: TypeQL Given Clause :: Given rows handle datetime values
+  Scenario Outline: Given rows handle datetime values
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set query given rows
+       | attr                               |
+       | value:datetime:1999-02-26T12:15:05 |
+   ✔  When get answers of typeql write query with given rows
+   ✔  Then transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | attr                          |
+       | attr:attr:1999-02-26T12:15:05 |
+Feature: TypeQL Given Clause :: Given rows handle datetime-tz values
+  Scenario Outline: Given rows handle datetime-tz values
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set query given rows
+       | attr                                                 |
+       | value:datetime-tz:2024-09-20T16:40:05.000000001+0100 |
+   ✔  When get answers of typeql write query with given rows
+   ✔  Then transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | attr                                         |
+       | attr:attr:2024-09-20T16:40:05.000000001+0100 |
+Feature: TypeQL Given Clause :: Given rows handle duration values
+  Scenario Outline: Given rows handle duration values
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set query given rows
+       | attr                                      |
+       | value:duration:P1Y10M7DT15H44M5.00394892S |
+   ✔  When get answers of typeql write query with given rows
+   ✔  Then transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | attr                                 |
+       | attr:attr:P1Y10M7DT15H44M5.00394892S |
+Feature: TypeQL Given Clause :: Given rows handle string values
+  Scenario Outline: Given rows handle string values
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set query given rows
+       | attr               |
+       | value:string:hello |
+   ✔  When get answers of typeql write query with given rows
+   ✔  Then transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | attr            |
+       | attr:attr:hello |
+Feature: TypeQL Given Clause :: Given rows handle string values
+  Scenario Outline: Given rows handle string values
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set query given rows
+       | attr                   |
+       | value:string:bob"bobby |
+   ✔  When get answers of typeql write query with given rows
+   ✔  Then transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | attr                |
+       | attr:attr:bob"bobby |
+Feature: TypeQL Given Clause :: concepts can be used in given rows
+  Scenario: concepts can be used in given rows
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given set query given rows
+       | p: person      |
+       | iid:entity:0:1 |
+   ✔  When get answers of typeql read query with given rows
+   ✔  Then uniquely identify answer concepts
+       | n              |
+       | attr:name:Jane |
+Feature: TypeQL Given Clause :: If a query has a given stage, given rows must be passed
+  Scenario: If a query has a given stage, given rows must be passed
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Then typeql read query; fails with a message containing: "The query contains a given stage, but no given rows were provided"
+   ✔  When set query given rows
+       | n: name           |
+       | value:string:Jane |
+   ✔  Then typeql read query with given rows; fails with a message containing: "The query contains no given stage, but given rows were provided"
+   ✔  When set query given rows
+       | n: name |
+   ✔  Then get answers of typeql read query with given rows
+   ✔  Then answer size is: 0
+Feature: TypeQL Given Clause :: Variables in given rows cannot be reassigned to
+  Scenario: Variables in given rows cannot be reassigned to
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given set query given rows
+       | x               |
+       | value:integer:5 |
+   ✔  Then typeql read query with given rows; fails with a message containing: "The variable 'x' may not be assigned to, as it was already bound in a previous stage"
+Feature: TypeQL Given Clause :: Given rows may contain multiple rows
+  Scenario: Given rows may contain multiple rows
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given set query given rows
+       | x               |
+       | value:integer:3 |
+       | value:integer:5 |
+       | value:integer:7 |
+   ✔  When get answers of typeql read query with given rows
+   ✔  Then uniquely identify answer concepts
+       | y                 |
+       | value:integer: 6  |
+       | value:integer: 10 |
+       | value:integer: 14 |
+Feature: TypeQL Given Clause :: Given rows are checked against declared types
+  Scenario: Given rows are checked against declared types
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given set query given rows
+       | x                |
+       | value:integer:3  |
+       | value:string:abc |
+   ✔  Then typeql read query with given rows; fails with a message containing: "The provided value '"abc"' has type 'string' and could not be decoded as the value type 'integer'"
+   ✔  Given set query given rows
+       | comp           |
+       | iid:entity:0:0 |
+   ✔  Then typeql read query with given rows; fails with a message containing: "The given value at row '0' and column '0' does not not satisfy the declared type"
+   ✔  Given set query given rows
+       | x                    |
+       | value:integer:3      |
+       | value:decimal:1.2dec |
+   ✔  Then get answers of typeql read query with given rows
+   ✔  Then uniquely identify answer concepts
+       | y                |
+       | value:double:6.0 |
+       | value:double:2.4 |
+Feature: TypeQL Given Clause :: Optional variables may be omitted, required ones may not, undeclared variables are flagged.
+  Scenario: Optional variables may be omitted, required ones may not, undeclared variables are flagged.
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When set query given rows
+       | x               |
+       | value:integer:5 |
+   ✔  When get answers of typeql read query with given rows
+   ✔  Then uniquely identify answer concepts
+       | x               | p                |
+       | value:integer:5 | value:integer:10 |
+   ✔  When set query given rows
+       | x               |
+       | value:integer:5 |
+   ✔  Then typeql read query with given rows; fails with a message containing: "The given rows are missing the required variable 'y'"
+   ✔  When set query given rows
+       | x               | z               |
+       | value:integer:5 | value:integer:6 |
+   ✔  Then typeql read query with given rows; fails with a message containing: "The variable 'z' was not declared in the query"
+Feature: TypeQL Given Clause :: Concepts in given rows are validated to exist
+  Scenario: Concepts in given rows are validated to exist
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given set query given rows
+       | person         |
+       | iid:entity:0:0 |
+   ✔  When get answers of typeql read query with given rows
+   ✔  Then uniquely identify answer concepts
+       | person      |
+       | key:ref:100 |
+   ✔  Given set query given rows
+       | person           |
+       | iid:entity:0:123 |
+   ✔  Then typeql read query with given rows; fails with a message containing: "The given instance at row '0' and column '0' does not exist in the database"
+Feature: TypeQL Given Clause :: Given entries can be used in write stages
+  Scenario: Given entries can be used in write stages
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set query given rows
+       | name               |
+       | value:string:James |
+   ✔  When get answers of typeql write query with given rows
+   ✔  Then transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | p           | name            |
+       | key:ref:100 | attr:name:John  |
+       | key:ref:101 | attr:name:Jane  |
+       | key:ref:110 | attr:name:James |
+Feature: TypeQL Given Clause :: concepts given can be subtypes of the declared types
+  Scenario: concepts given can be subtypes of the declared types
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set query given rows
+       | p: animal      |
+       | iid:entity:0:1 |
+   ✔  When get answers of typeql write query with given rows
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | p           | name           | weight         |
+       | key:ref:101 | attr:name:Jane | attr:weight:65 |
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set query given rows
+       | p: animal      |
+       | iid:entity:0:1 |
+   ✔  When typeql write query with given rows; fails with a message containing: "Left type 'animal' across constraint 'has' is not compatible with right type 'age'"
+Feature: TypeQL Given Clause :: Given row entries can be optional
+  Scenario: Given row entries can be optional
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set query given rows
+       | ref               | name               |
+       | value:integer:110 | value:string:James |
+       | value:integer:111 | none               |
+   ✔  Then typeql write query with given rows; fails with a message containing: "The given value at row '1' and column '1' was None, but the variable was not declared optional"
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set query given rows
+       | ref               | name               |
+       | value:integer:110 | value:string:James |
+       | value:integer:111 | none               |
+   ✔  Then typeql write query with given rows; fails with a message containing: "A write stage uses the optional variable 'name' outside a 'try' block"
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set query given rows
+       | ref               | name               |
+       | value:integer:110 | value:string:James |
+       | value:integer:111 | none               |
+   ✔  When get answers of typeql write query with given rows
+   ✔  Then transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | p           |
+       | key:ref:110 |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | p           |
+       | key:ref:111 |
+Feature: TypeQL Given Clause :: The order of variables in the given rows does not matter, omitted ones are treated as optional, undeclared ones are flagged.
+  Scenario: The order of variables in the given rows does not matter, omitted ones are treated as optional, undeclared ones are flagged.
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection open schema transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typeql schema query
+   ✔> Given transaction commits
+   ✔> Given connection open write transaction for database: typedb
+   ✔> Given typeql write query
+   ✔> Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set query given rows
+       | name               | ref               |
+       | value:string:James | value:integer:110 |
+   ✔  When get answers of typeql write query with given rows
+   ✔  Given set query given rows
+       | ref               |
+       | value:integer:111 |
+   ✔  When get answers of typeql write query with given rows
+   ✔  Then transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | p           |
+       | key:ref:110 |
+   ✔  When get answers of typeql read query
+   ✔  Then uniquely identify answer concepts
+       | p           |
+       | key:ref:111 |
+[Summary]
+22 features
+22 scenarios (22 passed)
+453 steps (453 passed)
+.   ✔> Given transaction commits
+Feature: TypeQL Define Query :: new entity type declaration should contain kind
+   ✔  Given connection open read transaction for database: typedb
+  Scenario: new entity type declaration should contain kind
+   ✔  Then typeql read query; fails with a message containing: "The variable 'v' must be bound to a value before it's used"
+Feature: TypeQL Insert Query :: new entities can be inserted
+   ✔  Given transaction closes
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Then typeql read query; fails with a message containing: "The variable 'v' must be bound to a value before it's used."
+   ✔> Given typedb starts
+   ✔  Given transaction closes
+   ✔  Given connection open read transaction for database: typedb
+   ✔> Given connection opens with default authentication
+   ✔  Then typeql read query; fails with a message containing: "The required input variables for the following constraints could not be satisfied (there may be a circular dependency)"
+   ✔> Given connection is open: true
+   ✔  Given transaction closes
+   ✔  Given connection open read transaction for database: typedb
+   ✔> Given connection reset database: typedb
+  Scenario: a fetch with zero projections errors
+   ✔  Then typeql read query; fails with a message containing: "The required input variables for the following constraints could not be satisfied (there may be a circular dependency)"
+   ✔> Given connection open schema transaction for database: typedb
+   ✔  Given transaction closes
+   ✔  Given connection open read transaction for database: typedb
+   ✔> Given typeql schema query
+   ✔> Given typedb starts

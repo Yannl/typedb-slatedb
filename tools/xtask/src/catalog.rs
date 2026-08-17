@@ -20,20 +20,62 @@ fn tool_version(bin: &str, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-fn source_lock_digest(repo_root: &Path) -> Result<String> {
-    let path = repo_root.join("source-lock/source-lock.json");
+/// Optional overrides that let the catalogue run against a foreign fork checkout without
+/// touching the in-repo defaults. All-`None`/`false` reproduces the original behaviour exactly.
+#[derive(Default, Clone, Copy)]
+pub struct CatalogPaths<'a> {
+    /// Source-lock file to seal the catalogue under. `None` → `source-lock/source-lock.json`.
+    pub source_lock: Option<&'a Path>,
+    /// When no lock is present, seal under a digest computed from the fork tree rather than
+    /// aborting.
+    pub allow_missing_source_lock: bool,
+    /// Directory for catalogue/reconciliation evidence. `None` → `docs/evidence/phase-b`.
+    pub evidence_dir: Option<&'a Path>,
+}
+
+/// A sealed catalogue digest and whether it came from a pinned graph or a bare fork tree.
+struct SealDigest {
+    /// 64-hex digest, schema-valid for `source_lock_digest`.
+    digest: String,
+    /// True when computed from the fork tree (`--allow-missing-source-lock`) rather than read
+    /// from a pinned `source-lock.json`. Recorded in a provenance sidecar so the two cannot be
+    /// confused despite sharing the same field shape.
+    fork_derived: bool,
+}
+
+/// The digest that seals the catalogue to an exact source graph.
+///
+/// Ordinarily this is the pinned graph's `source_graph_digest` from `source-lock.json`, and a
+/// missing lock is a hard error — the catalogue must not float free of a provenance root. The
+/// `allow_missing_source_lock` escape hatch exists for cataloguing a bare fork checkout that
+/// carries no pinned `sources/` graph: it seals under `hash_tree(fork_root)`, a recomputable
+/// 64-hex content digest of the fork tree. That digest is schema-valid but is *not* the
+/// 14-node pinned-graph digest, so `fork_derived` is set and a provenance sidecar records it.
+fn source_lock_digest(repo_root: &Path, fork_root: &Path, paths: CatalogPaths) -> Result<SealDigest> {
+    let path = match paths.source_lock {
+        Some(p) if p.is_absolute() => p.to_path_buf(),
+        Some(p) => repo_root.join(p),
+        None => repo_root.join("source-lock/source-lock.json"),
+    };
     if !path.exists() {
+        if paths.allow_missing_source_lock {
+            let (digest, _files, _bytes) = source_lock::hash_tree(fork_root)
+                .with_context(|| format!("digesting fork tree {}", fork_root.display()))?;
+            return Ok(SealDigest { digest, fork_derived: true });
+        }
         bail!(
-            "{} is missing; run `cargo xtask source-lock` first — the catalogue is bound to \
-             an exact source graph",
+            "{} is missing; run `cargo xtask source-lock` first, pass --source-lock <path>, or \
+             pass --allow-missing-source-lock to seal under a fork-derived digest",
             path.display()
         );
     }
     let lock: serde_json::Value = serde_json::from_slice(&std::fs::read(&path)?)?;
-    lock.get("source_graph_digest")
+    let digest = lock
+        .get("source_graph_digest")
         .and_then(|v| v.as_str())
         .map(str::to_string)
-        .context("source-lock.json has no source_graph_digest")
+        .context("source-lock.json has no source_graph_digest")?;
+    Ok(SealDigest { digest, fork_derived: false })
 }
 
 /// The `NATIVE` node's digest, once `cargo xtask native-toolchain` has resolved it.
@@ -62,6 +104,7 @@ pub fn run(
     profile: &str,
     with_libtest_listing: bool,
     cargo_bin: &str,
+    paths: CatalogPaths,
 ) -> Result<()> {
     let typedb_root = resolve_typedb_root(repo_root, typedb_root);
     let behaviour_root = if behaviour_root.is_absolute() {
@@ -71,10 +114,11 @@ pub fn run(
     };
 
     let extra_path = Some("/opt/protoc/bin".to_string());
+    let seal = source_lock_digest(repo_root, &typedb_root, paths)?;
     let inputs = CatalogInputs {
         fork_root: &typedb_root,
         behaviour_root: &behaviour_root,
-        source_lock_digest: source_lock_digest(repo_root)?,
+        source_lock_digest: seal.digest.clone(),
         native_toolchain_digest: native_toolchain_digest(repo_root),
         rustc: tool_version("rustc", &["--version"])?,
         cargo: tool_version(cargo_bin, &["--version"])?,
@@ -94,7 +138,11 @@ pub fn run(
         corpus_catalog::add_declared_ignored_exclusions(&mut out.catalog);
     }
 
-    let evidence = repo_root.join("docs/evidence/phase-b");
+    let evidence = match paths.evidence_dir {
+        Some(p) if p.is_absolute() => p.to_path_buf(),
+        Some(p) => repo_root.join(p),
+        None => repo_root.join("docs/evidence/phase-b"),
+    };
     std::fs::create_dir_all(&evidence)?;
 
     let catalog_path = evidence.join(format!("upstream-test-catalog-{profile}.json"));
@@ -105,6 +153,24 @@ pub fn run(
 
     let build_path = evidence.join("build-test-targets.json");
     std::fs::write(&build_path, serde_json::to_string_pretty(&out.build_targets)? + "\n")?;
+
+    // When the seal is fork-derived rather than pin-read, record that beside the catalogue so
+    // the two cannot be confused: both are 64-hex in the `source_lock_digest` field, but only
+    // the pinned one identifies the 14-node upstream graph.
+    if seal.fork_derived {
+        let provenance = serde_json::json!({
+            "source_lock_digest": seal.digest,
+            "provenance": "fork-tree",
+            "note": "digest is hash_tree(fork_root), a recomputable content hash of the fork \
+                     checkout — NOT the 14-node pinned source-graph digest",
+            "fork_root": typedb_root.display().to_string(),
+        });
+        std::fs::write(
+            evidence.join(format!("catalogue-provenance-{profile}.json")),
+            serde_json::to_string_pretty(&provenance)? + "\n",
+        )?;
+        println!("  provenance          : fork-tree (see catalogue-provenance-{profile}.json)");
+    }
 
     // Validate against the contract's own schema, so the catalogue cannot drift from it.
     validate_against_schema(repo_root, &catalog_path)?;

@@ -40,7 +40,8 @@ enum Command {
     /// Generate the upstream test denominator from the pinned checkout.
     CatalogUpstreamTests {
         /// TypeDB checkout to catalogue. Defaults to the pristine pin for U0.
-        #[arg(long)]
+        /// `--fork-root` is an alias, for cataloguing an arbitrary fork checkout.
+        #[arg(long, alias = "fork-root")]
         typedb_root: Option<PathBuf>,
         #[arg(long, default_value = "fixtures/typedb-behaviour")]
         behaviour_root: PathBuf,
@@ -51,6 +52,21 @@ enum Command {
         with_libtest_listing: bool,
         #[arg(long, default_value = "cargo")]
         cargo_bin: String,
+        /// Override the source-lock file whose digest seals the catalogue. Defaults to this
+        /// repo's `source-lock/source-lock.json`. Point it at the subject fork's own lock when
+        /// cataloguing another checkout, so the evidence is sealed under *its* provenance.
+        #[arg(long)]
+        source_lock: Option<PathBuf>,
+        /// When set, and no source-lock file is present, seal the catalogue under a digest
+        /// computed from the fork tree itself instead of aborting. Makes a bare fork checkout
+        /// (no pinned `sources/` graph) catalogable; the digest is recorded as fork-derived.
+        #[arg(long)]
+        allow_missing_source_lock: bool,
+        /// Where to write the catalogue and reconciliation evidence. Defaults to
+        /// `docs/evidence/phase-b`. Use a scratch dir when cataloguing a foreign fork so the
+        /// in-repo evidence is not overwritten.
+        #[arg(long)]
+        evidence_dir: Option<PathBuf>,
     },
     /// Check that Cargo manifests and BUILD files declare the same test targets.
     VerifyCargoParity {
@@ -123,6 +139,9 @@ fn main() -> Result<()> {
             profile,
             with_libtest_listing,
             cargo_bin,
+            source_lock,
+            allow_missing_source_lock,
+            evidence_dir,
         } => catalog::run(
             &repo_root,
             typedb_root.as_deref(),
@@ -130,6 +149,11 @@ fn main() -> Result<()> {
             &profile,
             with_libtest_listing,
             &cargo_bin,
+            catalog::CatalogPaths {
+                source_lock: source_lock.as_deref(),
+                allow_missing_source_lock,
+                evidence_dir: evidence_dir.as_deref(),
+            },
         ),
         Command::VerifyCargoParity { typedb_root } => {
             catalog::verify_parity(&repo_root, typedb_root.as_deref())

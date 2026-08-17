@@ -4,8 +4,9 @@ equality of the U2S3 corpus run against the U1 oracle baseline, with the
 same corrected-expectation policy the U2 comparison used."""
 import json, pathlib, sys
 
-REPO = pathlib.Path("/home/user/typedb-slatedb")
-u2s3 = json.load(open(REPO / "docs/evidence/G3/u2s3-full/u0-results.json"))
+REPO = pathlib.Path(__file__).resolve().parents[2]
+RUN_DIR = sys.argv[1] if len(sys.argv) > 1 else "u2s3-full"
+u2s3 = json.load(open(REPO / f"docs/evidence/G3/{RUN_DIR}/u0-results.json"))
 u1 = json.load(open(REPO / "docs/evidence/G3/u1-full/u0-results.json"))
 
 
@@ -32,6 +33,7 @@ def profiles(rows):
 a, b = by_target(u2s3), by_target(u1)
 
 EXPLAINED = {
+    "storage:storage": "additive port-layer test: the storage lib gained the V16 F2 read-contract negative control (read_contract_tests::paused_precommit_write_is_invisible_to_committed_frontier_reads, commit 65da032) - a unit test of the SlateDB adapter module, which does not exist on the U1/RocksDB baseline. 9 = the baseline's 8 + this control; zero baseline tests changed outcome",
     "storage:test_recovery": "baseline-identical: the 2 failures are upstream todo!() stubs (wal_missing_records_*) that fail on every backend; U0/U1 record the same 5/2",
     "typedb_server_bin:test_fail_points": "corrected expectation: the U1 baseline row itself is a 1800s TIMEOUT (0/0); the corrected oracle profile is U2's measured 2 passed / 0 failed at a raised timeout (u2-full: 2099s at 3600s; U2S3 measured 2572s at 7200s) - equal to it",
     "typedb_server_bin:bench_concurrency": "absent from the U1 baseline: the executable was silently dropped by the pre-fix (package,target) dedupe collapse and first measured on the U2 run (see u2-vs-oracle-comparison.json denominator_note); it contains 0 test cases on every lane, so equality is trivial",
@@ -64,7 +66,7 @@ for name, group in sorted(a.items()):
 
 out = {
     "claim": "U2S3 (SlateDB keyspaces over an S3-compatible object store - local MinIO standing in for Cloudflare R2 - with file WAL) runs the complete applicable upstream TypeDB test corpus with a pass/fail profile structurally equal to the U1 RocksDB oracle baseline, under the corrected expectations for known upstream-defective targets",
-    "u2s3_run": "docs/evidence/G3/u2s3-full/u0-results.json",
+    "u2s3_run": f"docs/evidence/G3/{RUN_DIR}/u0-results.json",
     "u1_baseline": "docs/evidence/G3/u1-full/u0-results.json",
     "s3_endpoint": "MinIO (S3 API) at 127.0.0.1:9000, bucket typedb-keyspaces",
     "u2s3_summary": {
@@ -85,7 +87,8 @@ out = {
     ],
 }
 unexplained = [d for d in diffs if d["classification"].startswith("UNEXPLAINED")]
-path = REPO / "docs/evidence/G3/u2s3-vs-oracle-comparison.json"
+path = REPO / ("docs/evidence/G3/u2s3-vs-oracle-comparison.json" if RUN_DIR == "u2s3-full"
+               else f"docs/evidence/G3/{RUN_DIR}-vs-oracle-comparison.json")
 path.write_text(json.dumps(out, indent=1) + "\n")
 print(json.dumps(out["u2s3_summary"], indent=1))
 print(f"divergent: {len(diffs)}, unexplained: {len(unexplained)}")

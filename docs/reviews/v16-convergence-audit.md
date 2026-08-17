@@ -49,9 +49,13 @@ deliberately reintroduced, and the mutant run was actually executed.
   passes.
 - **Evidence:** storage crate suite baseline-equal on U2 and U2S3 after
   the flip (6/10/4/14 green + the two upstream recovery stubs); database
-  `test_transaction` 31/31; durability 12+5. Full-corpus re-proof on the
-  new contract: `docs/evidence/G3/u2s3-full-2/` (run initiated in this
-  audit's session; the result lands with its own commit).
+  `test_transaction` 31/31; durability 12+5. Full-corpus re-proof ON THE
+  NEW CONTRACT: `docs/evidence/G3/u2s3-full-2/` — built and run from ONE
+  commit (`c75a1af`, which contains every convergence change): 106
+  executables, 105 green, 1 baseline-identical red (upstream recovery
+  stubs), 0 timeouts, 0 unexplained divergences vs the U1 oracle
+  (`u2s3-full-2-vs-oracle-comparison.json`; the single +1-case delta is
+  this audit's own read-contract control, classified in the artifact).
 - **Fail-closed/observability:** contract violation is impossible to
   reach by configuration — the options are hard-resolved in one place.
 
@@ -263,8 +267,9 @@ adopted verbatim in the gate table.
 |---|---|
 | `65da032` | F2 closed (dirty=false + paused-pre-commit control, mutant-verified); `contract/` imported @ donor `8dc0398` |
 | `ce3d64c` | F7a (operation read surface post-fence), F7b (exact-u64 guards), F9a (bounded scan pages) |
-| *(this commit)* | This audit; ADR-0012; gate-table stop conditions |
-| *(pending)* | `u2s3-full-2` corpus evidence on the new read contract |
+| `d5cd3ca` | This audit; ADR-0012/0013 |
+| `c75a1af` | F11 approved ports (manifest size estimate; bounded-staleness remote key count, no lock across scan) |
+| *(evidence commit)* | `u2s3-full-2` + oracle comparison: the single-commit corpus run of the converged tree |
 
 Donor artifacts used: `contract/**` (verbatim import @ `8dc0398`);
 `engine/slatedb-keyspace` + `fork/slatedb` (read as evidence for

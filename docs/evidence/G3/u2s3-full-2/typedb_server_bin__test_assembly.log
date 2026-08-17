@@ -1,0 +1,34 @@
+
+running 1 test
+=====================================================================================
+     ________ __      __ _____    _______  _____    _____       _______  _______
+    |__    __|\  \  /  /|   _  \ |   _   ||   _  \ |   _  \    |   _   ||   _   |
+       |  |    \  \/  / |  | |  ||  | |__||  | |  ||  | |  |   |  | |  ||  | |__|
+       |  |     \    /  |  |/  / |  |___  |  | |  ||  |/  /    |  | |__||  |___
+       |  |      |  |   |   __/  |   ___| |  | |  ||   _  \    |  |  __ |   ___|
+       |  |      |  |   |  |     |  |  __ |  | |  ||  | |  |   |  | |  ||  |  __
+       |  |      |  |   |  |     |  |_|  ||  |/  / |  |/  /    |  |_|  ||  |_|  |
+       |__|      |__|   |__|     |_______||_____/  |_____/     |_______||_______|
+
+=====================================================================================
+
+Running TypeDB CE 3.12.3 in development mode.
+Serving:
+  gRPC:       0.0.0.0:1729
+  HTTP:       0.0.0.0:8000
+  Admin:      disabled
+  Monitoring: http://127.0.0.1:4104/diagnostics (Prometheus scrape)
+              http://127.0.0.1:4104/diagnostics?format=json (JSON)
+TLS: disabled
+  WARNING: TLS NOT ENABLED. Credentials are transmitted unencrypted in plaintext.
+  Drivers must be configured to connect *without TLS*.
+
+To connect:
+  Studio:  https://studio.typedb.com/connect?address=http://127.0.0.1:8000&username=admin
+  Console: typedb console --address 127.0.0.1:1729 --tls-disabled --username admin
+
+2026-08-17T15:44:41.453256Z  INFO ThreadId(01) server/lib.rs:485: 
+Ready!
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.24s
+

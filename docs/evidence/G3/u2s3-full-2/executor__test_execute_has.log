@@ -1,0 +1,10 @@
+
+running 5 tests
+[2m2026-08-17T14:44:29.760357Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-17T14:44:29.838946Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-17T14:44:29.919229Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-17T14:44:29.985952Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-17T14:44:30.071722Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+.....
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.15s
+

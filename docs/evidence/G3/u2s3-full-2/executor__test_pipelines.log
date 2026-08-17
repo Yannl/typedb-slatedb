@@ -1,0 +1,19 @@
+
+running 9 tests
+[2m2026-08-17T14:44:44.816963Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-17T14:44:44.888465Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-17T14:44:44.971576Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-17T14:44:45.028278Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-17T14:44:45.088772Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-17T14:44:45.211910Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-17T14:44:45.216083Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-17T14:44:45.216382Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[1] with size 1.39 KiB; 1.39 KiB total
+[2m2026-08-17T14:44:45.216419Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[1]
+[2m2026-08-17T14:44:45.216633Z[0m [35mTRACE[0m [2mconcept::thing::statistics[0m[2m:[0m Statistics sync finished in 0 ms. Storage watermark was initially: SeqNr[1]. Current statistics sequence is from: SeqNr[1]
+..[2m2026-08-17T14:44:45.511384Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+[2m2026-08-17T14:44:45.515098Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+[2m2026-08-17T14:44:45.667271Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[3]
+[2m2026-08-17T14:44:45.672438Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[3]
+.......
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.85s
+

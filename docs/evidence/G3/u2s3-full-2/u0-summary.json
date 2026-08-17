@@ -1,0 +1,14 @@
+{
+  "profile": "U2S3",
+  "toolchain": "rust 1.93.0 parity lane",
+  "storage_profile_env": "U2S3",
+  "assembly_archive_sha256": "121a64e503dcd66a312c7a0a25b0c47716e0b62ab57f53de8648135aa53aad36",
+  "repo_commit": "c75a1af2205b3c8558e31480184d5e76afd59622",
+  "executables": 106,
+  "green": 105,
+  "red": 1,
+  "timeout": 0,
+  "cases_passed": 453,
+  "cases_failed": 2,
+  "cases_ignored": 1
+}

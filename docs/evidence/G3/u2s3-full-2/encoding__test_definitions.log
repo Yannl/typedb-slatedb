@@ -1,0 +1,12 @@
+
+running 1 test
+[2m2026-08-17T14:43:37.550464Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-17T14:43:37.598691Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-17T14:43:37.646375Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-17T14:43:37.693027Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-17T14:43:37.739345Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-17T14:43:37.787185Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-17T14:43:37.790076Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+

@@ -1,0 +1,78 @@
+{
+  "entry_points": [
+    "AGENTS.md",
+    "PROMPT-implementation-agent.md"
+  ],
+  "files": {
+    "AGENTS.md": {
+      "bytes": 4519,
+      "sha256": "6d7b5a52c955d626cab576f37e364fcbd45cc7042a8d768124e9227fd4c26223"
+    },
+    "PROMPT-implementation-agent.md": {
+      "bytes": 2591,
+      "sha256": "96331d9d91805f048e0dc0e56b06b8d6203f1ea277c445ced1a67bc516df0965"
+    },
+    "README.md": {
+      "bytes": 2228,
+      "sha256": "541f196bb1d38d5db9a0494a4e8e9923d1f9a06bb533802d2eed383584ab7e32"
+    },
+    "fetch-pinned-sources-v16.sh": {
+      "bytes": 4467,
+      "sha256": "65b73b36c128afa675d73c0f15b482a13a2dc74b1b5a4476c886a6f496bc8096"
+    },
+    "typedb-r2-implementation-brief-v16.md": {
+      "bytes": 251987,
+      "sha256": "419834ad85d270e2f8fe281a94c3889d37a23279ed0fdbc375b2ec8f1fb3842b"
+    },
+    "typedb-r2-v14-cargo-test-conformance-plan.md": {
+      "bytes": 3337,
+      "sha256": "0d2a6ca35707ba0c4c56959765f4cb621030abb4572390f4554143a53fef9875"
+    },
+    "typedb-r2-v14-upstream-test-catalog.schema.json": {
+      "bytes": 8512,
+      "sha256": "ae3da47f8be5e8aec7bb7d24b74de7938b0a9d535e6e417d5c364f897ee0541c"
+    },
+    "typedb-r2-v16-cloudflare-contract-lock.json": {
+      "bytes": 7233,
+      "sha256": "ae274a786b86ab7fa24dd287a3739c7df1162e8de9bb64c10f7cbe341a57bedb"
+    },
+    "typedb-r2-v16-cloudflare-source-matrix.md": {
+      "bytes": 2972,
+      "sha256": "1f952ca455ad52cf7aa6fd8b4f200e83789dbcb4920a1d3ff14885a5126fd425"
+    },
+    "typedb-r2-v16-implementation-playbook.md": {
+      "bytes": 4477,
+      "sha256": "5e63010c083a3a4ed7739cee7db056c1af6d38078ce82c00855454e6bc641691"
+    },
+    "typedb-r2-v16-platform-probes.md": {
+      "bytes": 5988,
+      "sha256": "f883e1a5080cbb30a3ef92e29d0dcb1287ccc7bc3ef00f5ed0f1168268161e1d"
+    },
+    "typedb-r2-v16-review-actions.json": {
+      "bytes": 25189,
+      "sha256": "27183d42b98426fdcc07953580a3782ca5fc7ce1141aae1742a5f7af7bb82986"
+    },
+    "typedb-r2-v16-source-lock-candidate.json": {
+      "bytes": 6729,
+      "sha256": "05df96b9a3d2aa08669621fe6de18469495566ca8be8df8a5a8eac31e101fc9b"
+    },
+    "typedb-r2-v17-final-addendum.md": {
+      "bytes": 7992,
+      "sha256": "a7499031fc7d2ee391093cfaae80f66b81460f33b6dd14eb64387f1366af236f"
+    }
+  },
+  "generated_utc": "2026-08-16T00:46:32.429961+00:00",
+  "normative": [
+    "typedb-r2-implementation-brief-v16.md",
+    "typedb-r2-v17-final-addendum.md"
+  ],
+  "package": "typedb-r2-implementation-package",
+  "purpose": "Self-contained handoff to the autonomous implementation agent (uploaded to a GitHub repository).",
+  "schema_version": 1,
+  "source_pins": {
+    "full_graph": "typedb-r2-v16-source-lock-candidate.json (+ typedb-driver to resolve at G0 per addendum A17.5)",
+    "slatedb": "f88be86d17ac53260d3684edbc8f82811d945b5c",
+    "typedb": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+    "typedb-behaviour": "ac5d5733a484cea1d8809a2968029a818fdae24f"
+  }
+}

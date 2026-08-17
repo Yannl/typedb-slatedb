@@ -15,6 +15,14 @@ features = {}
 
 [dev-dependencies]
 
+	# Arms SlateDB's built-in fail_point! hooks in TEST builds only (feature
+	# unification on the fail-parallel crate slatedb already depends on): the
+	# committed-frontier read-contract negative control pauses the
+	# `write-batch-pre-commit` hook — the exact control V16 anchor 25 names.
+	[dev-dependencies.fail-parallel]
+		version = "=0.6.0"
+		features = ["failpoints"]
+
 	[dev-dependencies.test_utils]
 		workspace = true
 

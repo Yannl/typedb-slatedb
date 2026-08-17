@@ -15,10 +15,11 @@
 //!   is the sole durability authority; on reopen without a checkpoint the
 //!   storage directory is rebuilt from the TypeDB WAL, and checkpoints flush
 //!   the memtable before copying files.
-//! - **Read-your-writes**: writes go to the memtable with
-//!   `await_durable: false` and every read/scan opts into
-//!   `dirty: true` + `DurabilityLevel::Memory`, so a write is visible to the
-//!   very next read exactly as with RocksDB.
+//! - **Committed-memory-visible reads** (V16 inv. 74/75): writes go to the
+//!   memtable with `await_durable: false`; every read/scan uses the resolved
+//!   `DurabilityLevel::Memory` + `dirty: false` options, so a COMMITTED
+//!   write is visible to the very next read exactly as with RocksDB, while a
+//!   batch still inside the write pipeline is invisible to every reader.
 //! - **No background rewrites**: the in-process compactor and garbage
 //!   collector are disabled (ADR-0001's SL-P2/SL-P3 posture), so between
 //!   flushes the on-disk object store is quiescent and a post-flush file copy
@@ -82,14 +83,22 @@ fn write_options() -> WriteOptions {
 }
 
 fn read_options() -> ReadOptions {
-    // DurabilityLevel::Memory is the default; dirty=true additionally exposes
-    // writes whose sequence numbers are not yet committed-durable — required
-    // for read-your-writes with `await_durable: false`.
-    ReadOptions::default().with_dirty(true)
+    // The committed-memory-visible contract (V16 inv. 74): the defaults are
+    // exactly `DurabilityLevel::Memory` + `dirty: false`, i.e. reads see the
+    // last COMMITTED sequence — a batch whose `write_with_options` call has
+    // returned — and never a batch still inside the write pipeline. `dirty:
+    // true` would additionally expose rows with sequence numbers beyond the
+    // committed frontier (a concurrent batch mid-commit), breaking the
+    // atomicity TypeDB's commit relies on. Read-your-writes (inv. 75) does
+    // NOT need dirty reads: SlateDB advances the committed sequence inside
+    // the write path before `write_with_options` resolves — proved by the
+    // paused-pre-commit negative control below. No caller can override
+    // these options; every read/scan in this module resolves them here.
+    ReadOptions::default()
 }
 
 fn scan_options() -> ScanOptions {
-    ScanOptions::default().with_dirty(true)
+    ScanOptions::default()
 }
 
 fn settings() -> Settings {
@@ -825,4 +834,134 @@ fn dir_size(path: &Path) -> io::Result<u64> {
         }
     }
     Ok(total)
+}
+
+#[cfg(test)]
+mod read_contract_tests {
+    //! V16 inv. 74/75 negative control (brief anchor 25): the committed-
+    //! memory-visible read contract, proved against the exact options this
+    //! module resolves, with SlateDB's own `write-batch-pre-commit`
+    //! failpoint pausing a write between memtable insertion and commit.
+    //!
+    //! The control detects the defect it guards against: while the write is
+    //! paused pre-commit, a `dirty: true` probe DOES see the row (so
+    //! reintroducing `with_dirty(true)` into `read_options`/`scan_options`
+    //! makes the production-options assertions below fail), while the
+    //! production options see nothing. Resuming the write advances the
+    //! committed frontier and the same options see the row — same-handle
+    //! read-your-writes without dirty reads (inv. 75).
+
+    use std::{sync::Arc, time::{Duration, Instant}};
+
+    use fail_parallel::FailPointRegistry;
+    use slatedb::{Db, config::ReadOptions, object_store::{ObjectStore, local::LocalFileSystem}};
+    use test_utils::create_tmp_dir;
+
+    use super::{bridge, read_options, scan_options, settings, write_options};
+
+    #[test]
+    fn paused_precommit_write_is_invisible_to_committed_frontier_reads() {
+        let dir = create_tmp_dir("slate-read-contract");
+        let registry = Arc::new(FailPointRegistry::new());
+        let store: Arc<dyn ObjectStore> =
+            Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
+        let db = Arc::new(
+            bridge({
+                let registry = registry.clone();
+                async move {
+                    Db::builder("read-contract", store)
+                        .with_settings(settings())
+                        .with_fp_registry(registry)
+                        .build()
+                        .await
+                }
+            })
+            .unwrap(),
+        );
+
+        // inv. 75 baseline: a COMMITTED write is visible to the very next
+        // read through the production options, before any flush
+        {
+            let db = db.clone();
+            bridge(async move {
+                db.put_with_options(b"k-committed", b"v1", &Default::default(), &write_options()).await
+            })
+            .unwrap();
+        }
+        let committed = {
+            let db = db.clone();
+            bridge(async move { db.get_with_options(b"k-committed", &read_options()).await }).unwrap()
+        };
+        assert!(committed.is_some(), "read-your-writes must hold for committed writes (inv. 75)");
+
+        // pause the NEXT write between memtable insertion and commit
+        fail_parallel::cfg(registry.clone(), "write-batch-pre-commit", "pause").unwrap();
+        let writer = {
+            let db = db.clone();
+            std::thread::spawn(move || {
+                bridge(async move {
+                    db.put_with_options(b"k-pending", b"v2", &Default::default(), &write_options()).await
+                })
+            })
+        };
+
+        // wait until the paused write is observable at all — via a dirty
+        // probe, which is exactly the visibility the production options must
+        // NOT have. This wait doubles as the mutant detector: it proves the
+        // row IS in the memtable while the assertions below run.
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            let dirty_probe = {
+                let db = db.clone();
+                bridge(async move {
+                    db.get_with_options(b"k-pending", &ReadOptions::default().with_dirty(true)).await
+                })
+                .unwrap()
+            };
+            if dirty_probe.is_some() {
+                break;
+            }
+            assert!(Instant::now() < deadline, "paused write never reached the memtable");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+
+        // THE CONTRACT (inv. 74): the resolved production options cannot
+        // observe a write whose commit has not happened
+        let pending_get = {
+            let db = db.clone();
+            bridge(async move { db.get_with_options(b"k-pending", &read_options()).await }).unwrap()
+        };
+        assert!(
+            pending_get.is_none(),
+            "a pre-commit write leaked through read_options() - the committed-frontier contract is broken",
+        );
+        let pending_scan: Vec<_> = {
+            let db = db.clone();
+            bridge(async move {
+                let mut iterator = db
+                    .scan_with_options(b"k-pending".to_vec()..b"k-pending\xff".to_vec(), &scan_options())
+                    .await?;
+                let mut rows = Vec::new();
+                while let Some(row) = iterator.next().await? {
+                    rows.push(row.key);
+                }
+                Ok::<_, slatedb::Error>(rows)
+            })
+            .unwrap()
+        };
+        assert!(
+            pending_scan.is_empty(),
+            "a pre-commit write leaked through scan_options() - the committed-frontier contract is broken",
+        );
+
+        // resume: the commit completes, the frontier advances, and the SAME
+        // production options now see the row
+        fail_parallel::cfg(registry, "write-batch-pre-commit", "off").unwrap();
+        writer.join().unwrap().unwrap();
+        let resumed = {
+            let db = db.clone();
+            bridge(async move { db.get_with_options(b"k-pending", &read_options()).await }).unwrap()
+        };
+        assert!(resumed.is_some(), "the committed write must be visible after the pipeline resumes");
+    }
 }

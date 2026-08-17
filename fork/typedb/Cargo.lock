@@ -5784,6 +5784,7 @@ dependencies = [
  "diagnostics",
  "durability",
  "error",
+ "fail-parallel",
  "fail_point",
  "itertools 0.14.0",
  "lending_iterator",

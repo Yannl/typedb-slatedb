@@ -26,18 +26,22 @@ import {
   type SqlRow,
   type SyncSql,
 } from "./core/procedures.ts";
-import { fromHex } from "./core/journal-crypto.ts";
+import { fromHex, utf8 } from "./core/journal-crypto.ts";
+import { checkCapability, mintCapability, type CapabilityCheck, type CapabilityPayload } from "./core/capability.ts";
 
 export interface Env {
   CONTAINER_LIFECYCLE: DurableObjectNamespace;
   /** Hex journal MAC key (F8). Unset = the core's loud dev default; a
    *  managed secret is a G2 provisioning item. */
   CONTROLLER_JOURNAL_KEY?: string;
+  /** Hex capability MAC key (F9) - distinct from the journal key. */
+  CONTROLLER_CAPABILITY_KEY?: string;
 }
 
 export class DatabaseControllerDO extends DurableObject {
   private sql: SqlStorage;
   private readonly controllerCore: ControllerCore;
+  private readonly capabilityKey: Uint8Array;
 
   constructor(state: DurableObjectState, env: Env) {
     super(state, env);
@@ -67,6 +71,9 @@ export class DatabaseControllerDO extends DurableObject {
     this.controllerCore = new ControllerCore(adapter, {
       journalKey: env.CONTROLLER_JOURNAL_KEY ? fromHex(env.CONTROLLER_JOURNAL_KEY) : undefined,
     });
+    this.capabilityKey = env.CONTROLLER_CAPABILITY_KEY
+      ? fromHex(env.CONTROLLER_CAPABILITY_KEY)
+      : utf8("dev-insecure-capability-key");
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS databases(
         database_id TEXT PRIMARY KEY,
@@ -155,6 +162,69 @@ export class DatabaseControllerDO extends DurableObject {
 
   verifyJournal(): ReturnType<ControllerCore["verifyJournal"]> {
     return this.core().verifyJournal();
+  }
+
+  /**
+   * Mint a capability (F9). In production this surface is controller-
+   * internal (issued to authenticated principals during session admission);
+   * on the L1 lane the facade exposes it openly - the local Worker is
+   * scaffolding, not a security boundary (parity plan), and the contract
+   * under proof is the DATA PATH's refusal matrix, not local issuance.
+   * PUT_PAYLOAD capabilities derive the object key from the CONTENT DIGEST
+   * (`p/<databaseId>/<sha256hex>`): the caller never selects an R2 key.
+   */
+  issueCapability(spec: {
+    principal: string;
+    databaseId: string;
+    method: string;
+    digest?: string;
+    maxBytes?: number;
+    ttlMs?: number;
+  }): { token: string; key?: string; expiresAtMs: number; incarnation: number } {
+    const incarnation = this.core().currentIncarnation();
+    const expiresAtMs = Date.now() + Math.min(Math.max(spec.ttlMs ?? 60_000, 1), 3_600_000);
+    const key = spec.method === "PUT_PAYLOAD" && spec.digest !== undefined
+      ? `p/${spec.databaseId}/${spec.digest}`
+      : undefined;
+    const payload: CapabilityPayload = {
+      principal: spec.principal,
+      databaseId: spec.databaseId,
+      method: spec.method,
+      ...(key !== undefined ? { key } : {}),
+      ...(spec.digest !== undefined ? { digest: spec.digest } : {}),
+      ...(spec.maxBytes !== undefined ? { maxBytes: spec.maxBytes } : {}),
+      incarnation,
+      nonce: crypto.randomUUID(),
+      expiresAtMs,
+    };
+    return { token: mintCapability(this.capabilityKey, payload), key, expiresAtMs, incarnation };
+  }
+
+  /**
+   * Verify-and-burn a capability for one request (F9). MAC, expiry,
+   * incarnation, method, audience, key, digest and budget are checked
+   * synchronously; the nonce burn is the transactional single-use rule -
+   * a second use of a valid token is CAPABILITY_REPLAYED.
+   */
+  useCapability(
+    token: string,
+    expect: { method: string; databaseId: string; key?: string; bodyDigest?: string; bodyLength?: number },
+  ): CapabilityCheck | { ok: false; error: "CAPABILITY_REPLAYED" } {
+    const nowMs = Date.now();
+    const checked = checkCapability(this.capabilityKey, token, {
+      ...expect,
+      currentIncarnation: this.core().currentIncarnation(),
+      nowMs,
+    });
+    if (!checked.ok) return checked;
+    if (!this.core().burnCapabilityNonce(checked.payload.nonce, checked.payload.expiresAtMs, nowMs)) {
+      return { ok: false, error: "CAPABILITY_REPLAYED" };
+    }
+    return checked;
+  }
+
+  bumpIncarnation(): number {
+    return this.core().bumpIncarnation();
   }
 
   private core(): ControllerCore {

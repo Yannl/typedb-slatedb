@@ -8,8 +8,20 @@
  * only ever sees keys/digests, and digest verification happens in the data
  * path BEFORE the DO's synchronous finalisation (inv. 151).
  *
+ * Every endpoint except /health and POST /capability requires a
+ * controller-issued capability token (F9) in the `x-capability` header:
+ * audience-bound (databaseId), method-bound, expiring, single-use (nonce
+ * burned at the authority), incarnation-bound; payload writes additionally
+ * bind the exact object key, the body digest, and a byte budget. Object
+ * keys are ISSUER-DERIVED and content-addressed (`p/<db>/<sha256hex>`) -
+ * a caller never selects an R2 key. Local issuance is open (the L1 facade
+ * is scaffolding, not a security boundary - the refusal matrix is the
+ * contract under proof; production issuance is controller-internal).
+ *
  * Endpoints (JSON unless noted):
  *   GET  /health
+ *   POST /capability               {principal, databaseId, method, digest?, maxBytes?, ttlMs?} → {token, key?}
+ *   POST /admin/{db}/incarnation/bump  supersede the controller incarnation (SESSION_ADMIN)
  *   PUT  /payload/{key}            raw body → R2; returns {key, sha256hex, length}
  *   POST /session/register         {databaseId, generation, startupSessionId}
  *   POST /session/fence            {databaseId, generation, startupSessionId}
@@ -161,36 +173,6 @@ export default {
       return json({ ok: true, runtime: "workerd", stack: "L1-local" });
     }
 
-    if (request.method === "PUT" && path.startsWith("/payload/")) {
-      const key = decodeURIComponent(path.slice("/payload/".length));
-      const bytes = await request.arrayBuffer();
-      const digest = await sha256hex(bytes);
-      // payload immutability: puts are create-or-identical, never overwrite.
-      // The create is a CONDITIONAL put (If-None-Match: *), not get-then-put:
-      // two concurrent puts of different bytes must never both succeed, and a
-      // read-then-write window would allow exactly that (last-writer-wins over
-      // a digest another client may already have receipt-verified). On
-      // precondition failure the existing object is compared by digest.
-      // (In production the same contract is enforced by object-store
-      // conditions/credential policy; the facade upholds it locally.)
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const created = await env.PAYLOADS.put(key, bytes, {
-          onlyIf: new Headers({ "if-none-match": "*" }),
-        });
-        if (created !== null) {
-          return json({ key, sha256hex: digest, length: bytes.byteLength });
-        }
-        const existing = await env.PAYLOADS.get(key);
-        if (existing === null) continue; // lost a delete/create race; retry the conditional create
-        const existingDigest = await sha256hex(await existing.arrayBuffer());
-        if (existingDigest !== digest) {
-          return json({ ok: false, error: "PAYLOAD_IMMUTABILITY_VIOLATION", key, existing: existingDigest }, 409);
-        }
-        return json({ key, sha256hex: digest, length: bytes.byteLength, deduplicated: true });
-      }
-      return json({ ok: false, error: "PAYLOAD_RACE_UNRESOLVED", key }, 503);
-    }
-
     // controller routing: one DO per database
     const stubFor = (databaseId: string) =>
       env.CONTROLLER.get(env.CONTROLLER.idFromName(databaseId)) as unknown as {
@@ -210,8 +192,81 @@ export default {
         queryOperation(db: string, generation: number, operationId: string): Promise<Record<string, unknown>>;
       };
 
+    /** F9 middleware: verify-and-burn the request's capability at the
+     *  database's authority. null = authorized; otherwise the typed 401/403. */
+    const requireCapability = async (
+      databaseId: string,
+      expect: { method: string; key?: string; bodyDigest?: string; bodyLength?: number },
+    ): Promise<Response | null> => {
+      const token = request.headers.get("x-capability");
+      if (token === null) return json({ ok: false, error: "CAPABILITY_REQUIRED" }, 401);
+      const stub = stubFor(databaseId) as unknown as {
+        useCapability(token: string, expect: object): Promise<{ ok: boolean } & Record<string, unknown>>;
+      };
+      const verdict = await stub.useCapability(token, { databaseId, ...expect });
+      if (!verdict.ok) return json(verdict, 403);
+      return null;
+    };
+
+    if (request.method === "POST" && path === "/capability") {
+      const spec = (await request.json()) as {
+        principal: string; databaseId: string; method: string; digest?: string; maxBytes?: number; ttlMs?: number;
+      };
+      const stub = stubFor(spec.databaseId) as unknown as {
+        issueCapability(spec: object): Promise<Record<string, unknown>>;
+      };
+      return json({ ok: true, ...(await stub.issueCapability(spec)) });
+    }
+
+    const adminBump = path.match(/^\/admin\/([^/]+)\/incarnation\/bump$/);
+    if (request.method === "POST" && adminBump) {
+      const denied = await requireCapability(adminBump[1], { method: "SESSION_ADMIN" });
+      if (denied) return denied;
+      const stub = stubFor(adminBump[1]) as unknown as { bumpIncarnation(): Promise<number> };
+      return json({ ok: true, incarnation: await stub.bumpIncarnation() });
+    }
+
+    if (request.method === "PUT" && path.startsWith("/payload/")) {
+      const key = decodeURIComponent(path.slice("/payload/".length));
+      // content-addressed, issuer-derived key scheme: p/<databaseId>/<sha256hex>
+      const parts = key.split("/");
+      if (parts.length !== 3 || parts[0] !== "p") {
+        return json({ ok: false, error: "INVALID_PAYLOAD_KEY", key }, 400);
+      }
+      const bytes = await request.arrayBuffer();
+      const digest = await sha256hex(bytes);
+      const denied = await requireCapability(parts[1], {
+        method: "PUT_PAYLOAD", key, bodyDigest: digest, bodyLength: bytes.byteLength,
+      });
+      if (denied) return denied;
+      // payload immutability: puts are create-or-identical, never overwrite.
+      // The create is a CONDITIONAL put (If-None-Match: *), not get-then-put:
+      // two concurrent puts of different bytes must never both succeed, and a
+      // read-then-write window would allow exactly that. Under the capability
+      // boundary a different-bytes put at this key cannot even reach here
+      // (digest binding); the conditional create remains as defense in depth.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const created = await env.PAYLOADS.put(key, bytes, {
+          onlyIf: new Headers({ "if-none-match": "*" }),
+        });
+        if (created !== null) {
+          return json({ key, sha256hex: digest, length: bytes.byteLength });
+        }
+        const existing = await env.PAYLOADS.get(key);
+        if (existing === null) continue; // lost a delete/create race; retry the conditional create
+        const existingDigest = await sha256hex(await existing.arrayBuffer());
+        if (existingDigest !== digest) {
+          return json({ ok: false, error: "PAYLOAD_IMMUTABILITY_VIOLATION", key, existing: existingDigest }, 409);
+        }
+        return json({ key, sha256hex: digest, length: bytes.byteLength, deduplicated: true });
+      }
+      return json({ ok: false, error: "PAYLOAD_RACE_UNRESOLVED", key }, 503);
+    }
+
     if (request.method === "POST" && path === "/session/register") {
       const b = (await request.json()) as { databaseId: string; generation: number; startupSessionId: string };
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      if (denied) return denied;
       await stubFor(b.databaseId).registerSession(b.databaseId, b.generation, b.startupSessionId);
       return json({ ok: true });
     }
@@ -220,6 +275,8 @@ export default {
       const b = (await request.json()) as { databaseId: string; generation: number; startupSessionId: string };
       // the fence is actor-wide: any `generation` in the body is accepted for
       // wire compatibility but does not scope the revocation
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      if (denied) return denied;
       await stubFor(b.databaseId).fenceSession(b.databaseId, b.startupSessionId);
       return json({ ok: true });
     }
@@ -228,6 +285,8 @@ export default {
       const b = (await request.json()) as {
         databaseId: string; maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number;
       };
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      if (denied) return denied;
       await stubFor(b.databaseId).setBudgets(b.databaseId, {
         maxUnpublishedOutbox: b.maxUnpublishedOutbox,
         maxPayloadLength: b.maxPayloadLength,
@@ -255,6 +314,8 @@ export default {
       if (invalidRecordType(req.recordType)) {
         return json({ ok: false, error: "INVALID_RECORD_TYPE", observed: req.recordType ?? null }, 400);
       }
+      const denied = await requireCapability(req.databaseId, { method: "WAL_FINALIZE" });
+      if (denied) return denied;
       const receiptError = await verifyReceipt(req);
       if (receiptError !== null) return receiptError;
       const result = await stubFor(req.databaseId).finalizeWalRecord(req);
@@ -279,6 +340,8 @@ export default {
           return json({ ok: false, error: "INVALID_RECORD_TYPE", observed: req.recordType ?? null }, 400);
         }
       }
+      const denied = await requireCapability(databaseId, { method: "WAL_FINALIZE" });
+      if (denied) return denied;
       const receiptErrors = await mapBounded(body.requests, PAYLOAD_FETCH_CONCURRENCY, verifyReceipt);
       const firstReceiptError = receiptErrors.find((error) => error !== null);
       if (firstReceiptError) return firstReceiptError;
@@ -292,6 +355,8 @@ export default {
     const walRead = path.match(/^\/wal\/([^/]+)\/(\d+)\/(\d+)$/);
     if (request.method === "GET" && walRead) {
       const [, db, generation, lsn] = walRead;
+      const denied = await requireCapability(db, { method: "WAL_READ" });
+      if (denied) return denied;
       const record = await stubFor(db).exactLookup(db, Number(generation), BigInt(lsn));
       if (!record.ok) return json(record, 404);
       // exact reads re-verify bytes against the catalogued digest: serving
@@ -306,18 +371,24 @@ export default {
     const walHead = path.match(/^\/wal\/([^/]+)\/(\d+)\/head$/);
     if (request.method === "GET" && walHead) {
       const [, db, generation] = walHead;
+      const denied = await requireCapability(db, { method: "WAL_READ" });
+      if (denied) return denied;
       return json({ ok: true, ...(await stubFor(db).head(db, Number(generation))) });
     }
 
     const walIterator = path.match(/^\/wal\/([^/]+)\/(\d+)\/iterator$/);
     if (request.method === "POST" && walIterator) {
       const [, db, generation] = walIterator;
+      const denied = await requireCapability(db, { method: "WAL_READ" });
+      if (denied) return denied;
       return json({ ok: true, ...(await stubFor(db).openIterator(db, Number(generation))) });
     }
 
     const walScan = path.match(/^\/wal\/([^/]+)\/(\d+)\/scan$/);
     if (request.method === "GET" && walScan) {
       const [, db, generation] = walScan;
+      const denied = await requireCapability(db, { method: "WAL_READ" });
+      if (denied) return denied;
       const recordTypeParam = url.searchParams.get("recordType");
       const recordType = recordTypeParam === null ? null : Number(recordTypeParam);
       if (recordType !== null && invalidRecordType(recordType)) {
@@ -376,6 +447,8 @@ export default {
     const walOperation = path.match(/^\/wal\/([^/]+)\/(\d+)\/operation\/([^/]+)$/);
     if (request.method === "GET" && walOperation) {
       const [, db, generation, operationId] = walOperation;
+      const denied = await requireCapability(db, { method: "WAL_READ" });
+      if (denied) return denied;
       // read surface: immutable durable history stays queryable by operation
       // identity even after the finalizing session is fenced (V16; the
       // finalize-RETRY path still answers SESSION_FENCED per inv. 38)
@@ -387,6 +460,8 @@ export default {
     const walLast = path.match(/^\/wal\/([^/]+)\/(\d+)\/last$/);
     if (request.method === "GET" && walLast) {
       const [, db, generation] = walLast;
+      const denied = await requireCapability(db, { method: "WAL_READ" });
+      if (denied) return denied;
       const recordType = Number(url.searchParams.get("recordType") ?? "NaN");
       if (invalidRecordType(recordType)) {
         return json({ ok: false, error: "INVALID_RECORD_TYPE", observed: url.searchParams.get("recordType") }, 400);
@@ -401,6 +476,8 @@ export default {
 
     const outboxPeek = path.match(/^\/outbox\/([^/]+)$/);
     if (request.method === "GET" && outboxPeek) {
+      const denied = await requireCapability(outboxPeek[1], { method: "OUTBOX" });
+      if (denied) return denied;
       const limit = Number(url.searchParams.get("limit") ?? "100");
       const stub = stubFor(outboxPeek[1]) as unknown as { outboxPeek(limit: number): Promise<unknown[]> };
       return json({ ok: true, events: await stub.outboxPeek(limit) });
@@ -408,6 +485,8 @@ export default {
 
     const outboxAck = path.match(/^\/outbox\/([^/]+)\/ack$/);
     if (request.method === "POST" && outboxAck) {
+      const denied = await requireCapability(outboxAck[1], { method: "OUTBOX" });
+      if (denied) return denied;
       const b = (await request.json()) as { upToControlSeq: number | string };
       const stub = stubFor(outboxAck[1]) as unknown as { outboxAck(seq: bigint): Promise<number> };
       let upTo: bigint;
@@ -424,6 +503,8 @@ export default {
       // F8 read surface: recompute the whole chain + MACs server-side.
       // Routed by databaseId like every DO method (the journal is the DO's
       // global outbox; the id names the authority instance to audit).
+      const denied = await requireCapability(journalVerify[1], { method: "JOURNAL_VERIFY" });
+      if (denied) return denied;
       const stub = stubFor(journalVerify[1]) as unknown as { verifyJournal(): Promise<Record<string, unknown>> };
       const verdict = await stub.verifyJournal();
       return json(verdict, verdict.ok ? 200 : 409);
@@ -432,6 +513,8 @@ export default {
     const walAudit = path.match(/^\/wal\/([^/]+)\/(\d+)\/audit$/);
     if (request.method === "GET" && walAudit) {
       const [, db, generation] = walAudit;
+      const denied = await requireCapability(db, { method: "WAL_READ" });
+      if (denied) return denied;
       return json(await stubFor(db).auditContiguity(db, Number(generation)));
     }
 

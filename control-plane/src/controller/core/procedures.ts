@@ -78,6 +78,14 @@ export const SCHEMA = `
     max_payload_length INTEGER NOT NULL,
     max_tail_records INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS capability_nonces(
+    nonce TEXT PRIMARY KEY,
+    expires_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS controller_meta(
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS sessions(
     database_id TEXT NOT NULL,
     generation INTEGER NOT NULL,
@@ -442,6 +450,50 @@ export class ControllerCore {
                                  payloadDigest: req.payloadDigest, logicalKey: req.logicalKey });
     this.appendJournalEntry(controlSeq, req.databaseId, "WAL_RECORD_FINALIZED", body);
     return { ok: true as const, appendLsn, typeSequence, controlSeq, replayed: false };
+  }
+
+  /**
+   * Controller incarnation (F9 boundary; F7c groundwork): capabilities are
+   * minted under the current incarnation and die with it. Starts at 1;
+   * every bump is itself a journaled control event (the authenticated
+   * journal is the record of authority changes, not only WAL events).
+   */
+  currentIncarnation(): number {
+    const rows = this.sql.exec(`SELECT value FROM controller_meta WHERE key='incarnation'`);
+    return rows.length ? Number(rows[0].value) : 1;
+  }
+
+  bumpIncarnation(): number {
+    return this.sql.transaction(() => {
+      const next = this.currentIncarnation() + 1;
+      this.sql.exec(
+        `INSERT INTO controller_meta(key, value) VALUES ('incarnation', ?)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+        String(next),
+      );
+      const maxControl = this.sql.exec(`SELECT MAX(control_seq) AS c FROM control_outbox`)[0].c;
+      const controlSeq = maxControl === null ? 1n : u64FromSql(maxControl, "max_control_seq") + 1n;
+      this.appendJournalEntry(
+        controlSeq, "@controller", "CONTROLLER_INCARNATION_BUMPED",
+        canonicalJson({ incarnation: next }),
+      );
+      return next;
+    });
+  }
+
+  /**
+   * Burn a capability nonce (F9 single-use rule): true exactly once per
+   * nonce. Transactional check-and-insert; expired burns are pruned lazily
+   * so the table stays bounded by the live-token window.
+   */
+  burnCapabilityNonce(nonce: string, expiresAtMs: number, nowMs: number): boolean {
+    return this.sql.transaction(() => {
+      this.sql.exec(`DELETE FROM capability_nonces WHERE expires_at <= ?`, nowMs);
+      const seen = this.sql.exec(`SELECT 1 FROM capability_nonces WHERE nonce=?`, nonce);
+      if (seen.length) return false;
+      this.sql.exec(`INSERT INTO capability_nonces(nonce, expires_at) VALUES (?,?)`, nonce, expiresAtMs);
+      return true;
+    });
   }
 
   /** Chain-append one journal/outbox row. Caller holds the transaction. */

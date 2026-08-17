@@ -1,8 +1,15 @@
 /*
  * L1 local-stack end-to-end: drives the production topology over real HTTP
- * against `wrangler dev` (workerd + local R2): payload upload → data-path
- * digest verification → DO finalisation → exact read-back, plus the
- * ambiguity/idempotency and tamper cases from the protocol contract.
+ * against `wrangler dev` (workerd + local R2): capability issuance → payload
+ * upload through the data path → digest verification → DO finalisation →
+ * exact read-back, plus the ambiguity/idempotency, tamper, and capability
+ * refusal-matrix cases from the protocol contract.
+ *
+ * F9: every data-path call carries a controller-issued capability
+ * (audience/method/expiry/nonce/incarnation-bound; payload writes bind the
+ * issuer-derived content-addressed key, the digest, and a byte budget).
+ * The driver acts as the controller-side orchestrator, so local issuance
+ * is open; the contract under proof is the refusal matrix.
  *
  * Usage: node scripts/local-stack-e2e.mjs [baseUrl]
  * Exit code 0 = every check passed.
@@ -14,6 +21,7 @@ const BASE = process.argv[2] ?? "http://127.0.0.1:8787";
 const DB = `e2e-db-${process.pid}-${Date.now()}`;
 const GEN = 1;
 const SESSION = "sess-e2e";
+const PRINCIPAL = "e2e-driver";
 
 let failures = 0;
 function check(name, condition, detail = "") {
@@ -22,35 +30,85 @@ function check(name, condition, detail = "") {
   console.log(`${status}  ${name}${detail ? ` — ${detail}` : ""}`);
 }
 
-async function api(method, path, body, raw = false) {
-  const response = await fetch(`${BASE}${path}`, {
-    method,
-    body: raw ? body : body !== undefined ? JSON.stringify(body) : undefined,
-    headers: raw ? {} : { "content-type": "application/json" },
-  });
-  return { status: response.status, body: await response.json() };
-}
-
 function sha256hex(buffer) {
   return createHash("sha256").update(buffer).digest("hex");
 }
 
-const health = await api("GET", "/health");
+async function rawApi(method, path, body, raw = false, headers = {}) {
+  const response = await fetch(`${BASE}${path}`, {
+    method,
+    body: raw ? body : body !== undefined ? JSON.stringify(body) : undefined,
+    headers: raw ? headers : { "content-type": "application/json", ...headers },
+  });
+  return { status: response.status, body: await response.json() };
+}
+
+/** Issue a capability from the controller (open local issuance). */
+async function issueCap(spec) {
+  const issued = await rawApi("POST", "/capability", { principal: PRINCIPAL, ttlMs: 60_000, ...spec });
+  if (!issued.body.ok) throw new Error(`capability issuance failed: ${JSON.stringify(issued.body)}`);
+  return issued.body; // {token, key?, expiresAtMs, incarnation}
+}
+
+/** Which capability a route needs (mirror of the worker's guard map). */
+function capSpecFor(method, rawPath, body) {
+  const path = rawPath.split("?")[0]; // the audience derives from the path, never the query
+  if (path === "/capability" || path === "/health") return null;
+  if (path.startsWith("/session/") || path === "/budgets") {
+    return { databaseId: body.databaseId, method: "SESSION_ADMIN" };
+  }
+  if (path === "/wal/finalize") return { databaseId: body.databaseId, method: "WAL_FINALIZE" };
+  if (path === "/wal/finalize-batch") return { databaseId: body.requests[0].databaseId, method: "WAL_FINALIZE" };
+  let m = path.match(/^\/wal\/([^/]+)\//);
+  if (m) return { databaseId: m[1], method: "WAL_READ" };
+  m = path.match(/^\/outbox\/([^/]+)/);
+  if (m) return { databaseId: m[1], method: "OUTBOX" };
+  m = path.match(/^\/journal\/([^/]+)\/verify$/);
+  if (m) return { databaseId: m[1], method: "JOURNAL_VERIFY" };
+  m = path.match(/^\/admin\/([^/]+)\//);
+  if (m) return { databaseId: m[1], method: "SESSION_ADMIN" };
+  throw new Error(`no capability mapping for ${method} ${path}`);
+}
+
+/** api() with automatic single-use capability acquisition. */
+async function api(method, path, body, raw = false, opts = {}) {
+  const headers = {};
+  if (!opts.noCap) {
+    const token = opts.token ?? (await issueCap(capSpecFor(method, path, body))).token;
+    headers["x-capability"] = token;
+  }
+  return rawApi(method, path, body, raw, headers);
+}
+
+/** Upload bytes through the capability-bound payload path; returns the
+ *  issuer-derived content-addressed key + receipt. */
+async function uploadPayload(bytes, opts = {}) {
+  const digest = sha256hex(bytes);
+  const cap = await issueCap({
+    databaseId: DB, method: "PUT_PAYLOAD", digest, maxBytes: bytes.length, ...opts.capOverrides,
+  });
+  const key = opts.key ?? cap.key;
+  const response = await rawApi("PUT", `/payload/${key}`, bytes, true, { "x-capability": opts.token ?? cap.token });
+  return { key, digest, length: bytes.length, response };
+}
+
+const health = await rawApi("GET", "/health");
 check("health", health.body.ok === true, JSON.stringify(health.body));
 
 await api("POST", "/session/register", { databaseId: DB, generation: GEN, startupSessionId: SESSION });
 
 // 1. payload through the data path, then finalisation
 const payload1 = Buffer.from("commit-record-1");
-const digest1 = sha256hex(payload1);
-const up1 = await api("PUT", `/payload/${DB}/g1/p1`, payload1, true);
-check("payload upload digest agrees", up1.body.sha256hex === digest1);
+const up1 = await uploadPayload(payload1);
+check("payload upload digest agrees", up1.response.body.sha256hex === up1.digest, JSON.stringify(up1.response.body));
+check("payload key is issuer-derived and content-addressed",
+  up1.key === `p/${DB}/${up1.digest}`, up1.key);
 
 const finalizeRequest = {
   databaseId: DB, generation: GEN, startupSessionId: SESSION,
   operationId: "op-1", requestDigest: "rd-1",
   sequencingKind: "SEQUENCED", recordType: 2, logicalKey: null,
-  payloadKey: `${DB}/g1/p1`, payloadDigest: digest1, payloadLength: payload1.length,
+  payloadKey: up1.key, payloadDigest: up1.digest, payloadLength: payload1.length,
 };
 const f1 = await api("POST", "/wal/finalize", finalizeRequest);
 check("finalize allocates lsn 0", f1.body.ok === true && f1.body.appendLsn === "0" && f1.body.replayed === false,
@@ -67,26 +125,25 @@ const ft = await api("POST", "/wal/finalize", tampered);
 check("data path rejects digest mismatch", ft.status === 422 && ft.body.error === "PAYLOAD_DIGEST_MISMATCH");
 
 // 4. finalize referencing a never-uploaded payload is rejected
-const ghost = { ...finalizeRequest, operationId: "op-ghost", requestDigest: "rd-g", payloadKey: `${DB}/g1/ghost` };
+const ghost = { ...finalizeRequest, operationId: "op-ghost", requestDigest: "rd-g", payloadKey: `p/${DB}/${"f".repeat(64)}` };
 const fg = await api("POST", "/wal/finalize", ghost);
 check("data path rejects missing payload", fg.status === 422 && fg.body.error === "PAYLOAD_MISSING");
 
 // 5. status singleton over HTTP
 const statusPayload = Buffer.from("status-A");
-const statusDigest = sha256hex(statusPayload);
-await api("PUT", `/payload/${DB}/g1/status-a`, statusPayload, true);
+const upStatus = await uploadPayload(statusPayload);
 const s1 = await api("POST", "/wal/finalize", {
   ...finalizeRequest, operationId: "st-1", requestDigest: "rd-s1", sequencingKind: "UNSEQUENCED",
   recordType: 1,
-  logicalKey: "status:cp", payloadKey: `${DB}/g1/status-a`, payloadDigest: statusDigest, payloadLength: statusPayload.length,
+  logicalKey: "status:cp", payloadKey: upStatus.key, payloadDigest: upStatus.digest, payloadLength: statusPayload.length,
 });
 check("status singleton accepted", s1.body.ok === true);
 
 const statusB = Buffer.from("status-B-conflicting");
-await api("PUT", `/payload/${DB}/g1/status-b`, statusB, true);
+const upStatusB = await uploadPayload(statusB);
 const s2 = await api("POST", "/wal/finalize", {
   ...finalizeRequest, operationId: "st-2", requestDigest: "rd-s2", sequencingKind: "UNSEQUENCED",
-  logicalKey: "status:cp", payloadKey: `${DB}/g1/status-b`, payloadDigest: sha256hex(statusB), payloadLength: statusB.length,
+  logicalKey: "status:cp", payloadKey: upStatusB.key, payloadDigest: upStatusB.digest, payloadLength: statusB.length,
 });
 check("conflicting status rejected", s2.status === 409 && s2.body.error === "STATUS_CONFLICT");
 
@@ -106,14 +163,20 @@ check("fenced session rejected", fenced.status === 409 && fenced.body.error === 
 
 // 8. contiguity audit
 const audit = await api("GET", `/wal/${DB}/${GEN}/audit`);
-check("tail contiguous", audit.body.contiguous === true && audit.body.count === 2 && audit.body.maxLsn === "1", JSON.stringify(audit.body));
+check("tail contiguous", audit.body.contiguous === true && audit.body.count === 2 && audit.body.maxLsn === "1",
+  JSON.stringify(audit.body));
 
-// 8b. payload immutability on the data path
-const overwrite = await api("PUT", `/payload/${DB}/g1/p1`, Buffer.from("DIFFERENT BYTES"), true);
-check("payload overwrite with different bytes rejected",
-  overwrite.status === 409 && overwrite.body.error === "PAYLOAD_IMMUTABILITY_VIOLATION");
-const idempotentPut = await api("PUT", `/payload/${DB}/g1/p1`, payload1, true);
-check("identical re-upload is idempotent", idempotentPut.status === 200 && idempotentPut.body.deduplicated === true);
+// 8b. payload immutability at the capability boundary: different bytes can
+// never be placed at an existing key - the key/digest binding refuses
+// BEFORE R2 (the conditional create underneath remains as defense in depth)
+const differentBytes = Buffer.from("DIFFERENT BYTES");
+const overwrite = await uploadPayload(differentBytes, { key: up1.key });
+check("different bytes at an existing key are refused by the capability binding",
+  overwrite.response.status === 403 && overwrite.response.body.error === "CAPABILITY_KEY_MISMATCH",
+  JSON.stringify(overwrite.response.body));
+const idempotentPut = await uploadPayload(payload1);
+check("identical re-upload is idempotent", idempotentPut.response.status === 200
+  && idempotentPut.response.body.deduplicated === true);
 
 // 9. outbox consumer loop: at-least-once peek/ack with redelivery
 const peek1 = await api("GET", `/outbox/${DB}?limit=10`);
@@ -136,25 +199,25 @@ check("duplicate ack is idempotent", ackAgain.body.acked === 0);
 // 10. register-fences-predecessor over HTTP (takeover; three-lane pin)
 await api("POST", "/session/register", { databaseId: DB, generation: GEN, startupSessionId: "sess-2" });
 const payload2 = Buffer.from("commit-record-2");
-await api("PUT", `/payload/${DB}/g1/p2`, payload2, true);
+const up2 = await uploadPayload(payload2);
 const takeover = await api("POST", "/wal/finalize", {
   ...finalizeRequest, startupSessionId: "sess-2", operationId: "op-2", requestDigest: "rd-2",
-  payloadKey: `${DB}/g1/p2`, payloadDigest: sha256hex(payload2), payloadLength: payload2.length,
+  payloadKey: up2.key, payloadDigest: up2.digest, payloadLength: payload2.length,
 });
 check("new actor appends after taking over", takeover.body.ok === true && takeover.body.appendLsn === "2");
 await api("POST", "/session/register", { databaseId: DB, generation: GEN, startupSessionId: "sess-3" });
 const fencedByRegister = await api("POST", "/wal/finalize", {
   ...finalizeRequest, startupSessionId: "sess-2", operationId: "op-2b", requestDigest: "rd-2b",
-  payloadKey: `${DB}/g1/p2`, payloadDigest: sha256hex(payload2), payloadLength: payload2.length,
+  payloadKey: up2.key, payloadDigest: up2.digest, payloadLength: payload2.length,
 });
 check("register fences the predecessor, with attribution",
   fencedByRegister.status === 409 && fencedByRegister.body.error === "SESSION_FENCED" &&
   fencedByRegister.body.fencedBy === "sess-3");
 const payload3 = Buffer.from("commit-record-3");
-await api("PUT", `/payload/${DB}/g1/p3`, payload3, true);
+const up3 = await uploadPayload(payload3);
 const f3 = await api("POST", "/wal/finalize", {
   ...finalizeRequest, startupSessionId: "sess-3", operationId: "op-3", requestDigest: "rd-3",
-  payloadKey: `${DB}/g1/p3`, payloadDigest: sha256hex(payload3), payloadLength: payload3.length,
+  payloadKey: up3.key, payloadDigest: up3.digest, payloadLength: payload3.length,
 });
 check("current actor appends lsn 3", f3.body.ok === true && f3.body.appendLsn === "3");
 
@@ -218,23 +281,23 @@ check("out-of-range record type is a typed 400", badType.status === 400 && badTy
 // 14. batch finalize: all-or-nothing over HTTP
 const batchA = Buffer.from("batch-record-A");
 const batchB = Buffer.from("batch-record-B");
-await api("PUT", `/payload/${DB}/g1/ba`, batchA, true);
-await api("PUT", `/payload/${DB}/g1/bb`, batchB, true);
+const upA = await uploadPayload(batchA);
+const upB = await uploadPayload(batchB);
 const batchOk = await api("POST", "/wal/finalize-batch", { requests: [
   { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-1", requestDigest: "rd-bb1",
-    payloadKey: `${DB}/g1/ba`, payloadDigest: sha256hex(batchA), payloadLength: batchA.length },
+    payloadKey: upA.key, payloadDigest: upA.digest, payloadLength: batchA.length },
   { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-2", requestDigest: "rd-bb2",
-    payloadKey: `${DB}/g1/bb`, payloadDigest: sha256hex(batchB), payloadLength: batchB.length },
+    payloadKey: upB.key, payloadDigest: upB.digest, payloadLength: batchB.length },
 ]});
 check("batch finalize allocates contiguously",
   batchOk.body.ok === true && JSON.stringify(batchOk.body.results.map((r) => r.appendLsn)) === JSON.stringify(["4", "5"]),
   JSON.stringify(batchOk.body));
 const batchAborted = await api("POST", "/wal/finalize-batch", { requests: [
   { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-3", requestDigest: "rd-bb3",
-    payloadKey: `${DB}/g1/ba`, payloadDigest: sha256hex(batchA), payloadLength: batchA.length },
+    payloadKey: upA.key, payloadDigest: upA.digest, payloadLength: batchA.length },
   { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-4", requestDigest: "rd-bb4",
     sequencingKind: "UNSEQUENCED", recordType: 1, logicalKey: "status:cp",
-    payloadKey: `${DB}/g1/bb`, payloadDigest: sha256hex(batchB), payloadLength: batchB.length },
+    payloadKey: upB.key, payloadDigest: upB.digest, payloadLength: batchB.length },
 ]});
 check("failing member aborts the whole batch",
   batchAborted.status === 409 && batchAborted.body.error === "STATUS_CONFLICT");
@@ -242,10 +305,59 @@ const auditAfterBatch = await api("GET", `/wal/${DB}/${GEN}/audit`);
 check("aborted batch allocated nothing",
   auditAfterBatch.body.contiguous === true && auditAfterBatch.body.count === 6, JSON.stringify(auditAfterBatch.body));
 
+// 15. F9 capability refusal matrix - every denial is typed, nothing reaches
+// the authority or the store
+const noToken = await rawApi("GET", `/wal/${DB}/${GEN}/head`);
+check("missing capability is a typed 401", noToken.status === 401 && noToken.body.error === "CAPABILITY_REQUIRED");
+
+const readCap = await issueCap({ databaseId: DB, method: "WAL_READ" });
+const flipped = readCap.token.slice(0, -1) + (readCap.token.endsWith("0") ? "1" : "0");
+const badMac = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { "x-capability": flipped });
+check("tampered MAC is refused", badMac.status === 403 && badMac.body.error === "CAPABILITY_MAC_INVALID");
+
+const once = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { "x-capability": readCap.token });
+const replayed = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { "x-capability": readCap.token });
+check("nonce is single-use: replay is refused",
+  once.status === 200 && replayed.status === 403 && replayed.body.error === "CAPABILITY_REPLAYED",
+  JSON.stringify(replayed.body));
+
+const readCap2 = await issueCap({ databaseId: DB, method: "WAL_READ" });
+const wrongMethod = await rawApi("POST", "/wal/finalize", { ...finalizeRequest, operationId: "op-wm", requestDigest: "rd-wm" },
+  false, { "x-capability": readCap2.token });
+check("method binding: a read token cannot finalize",
+  wrongMethod.status === 403 && wrongMethod.body.error === "CAPABILITY_METHOD_MISMATCH");
+
+const foreignCap = await issueCap({ databaseId: "other-db", method: "WAL_READ" });
+const wrongAudience = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { "x-capability": foreignCap.token });
+check("audience binding: another database's token is refused",
+  wrongAudience.status === 403 && wrongAudience.body.error === "CAPABILITY_AUDIENCE_MISMATCH");
+
+const shortCap = await issueCap({ databaseId: DB, method: "WAL_READ", ttlMs: 1 });
+await new Promise((resolve) => setTimeout(resolve, 25));
+const expired = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { "x-capability": shortCap.token });
+check("expiry is enforced", expired.status === 403 && expired.body.error === "CAPABILITY_EXPIRED");
+
+const budgetBytes = Buffer.from("this body exceeds its budget");
+const budgetCap = await issueCap({
+  databaseId: DB, method: "PUT_PAYLOAD", digest: sha256hex(budgetBytes), maxBytes: 4,
+});
+const overBudget = await rawApi("PUT", `/payload/${budgetCap.key}`, budgetBytes, true, { "x-capability": budgetCap.token });
+check("byte budget is enforced on payload writes",
+  overBudget.status === 403 && overBudget.body.error === "CAPABILITY_BUDGET_EXCEEDED");
+
+const preBump = await issueCap({ databaseId: DB, method: "WAL_READ" });
+const bump = await api("POST", `/admin/${DB}/incarnation/bump`);
+check("incarnation bump is a journaled admin operation", bump.body.ok === true && bump.body.incarnation === 2,
+  JSON.stringify(bump.body));
+const stale = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { "x-capability": preBump.token });
+check("stale-incarnation tokens die with their controller",
+  stale.status === 403 && stale.body.error === "CAPABILITY_STALE_INCARNATION");
+
 // F8: the authenticated journal verifies end-to-end over the whole run
+// (6 WAL finalisations + the journaled incarnation bump)
 const journal = await api("GET", `/journal/${DB}/verify`);
 check("authenticated journal verifies (chain + MACs)",
-  journal.body.ok === true && journal.body.length === 6 && /^[0-9a-f]{64}$/.test(journal.body.headHash),
+  journal.body.ok === true && journal.body.length === 7 && /^[0-9a-f]{64}$/.test(journal.body.headHash),
   JSON.stringify(journal.body));
 
 console.log(failures === 0 ? "\nL1 LOCAL STACK E2E: ALL PASS" : `\nL1 LOCAL STACK E2E: ${failures} FAILURES`);

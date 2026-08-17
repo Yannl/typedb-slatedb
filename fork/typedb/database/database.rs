@@ -550,6 +550,15 @@ impl Database<WALClient> {
     }
 
     pub fn get_metrics(&self) -> DatabaseMetricsSnapshot {
+        // Storage estimates are read FIRST, holding no schema lock (donor
+        // A6): the key-count estimate can touch the object store, and holding
+        // the schema read-lock across it would block every schema transaction
+        // for the duration of a remote round trip. These reads depend only on
+        // `self.storage`, never on `self.schema`, so hoisting them out is
+        // free. (The remote key-count scan is itself bounded by the storage
+        // engine's staleness memo.)
+        let storage_in_bytes = self.storage.estimate_size_in_bytes().expect("Expected storage size in bytes");
+        let storage_key_count = self.storage.estimate_key_count().expect("Expected storage key count");
         let schema = self.schema.read().expect("Expected database schema lock acquisition");
         DatabaseMetricsSnapshot {
             schema: SchemaLoadMetrics { type_count: schema.type_cache.get_types_count() },
@@ -559,8 +568,8 @@ impl Database<WALClient> {
                 attribute_count: schema.thing_statistics.total_attribute_count,
                 has_count: schema.thing_statistics.total_has_count,
                 role_count: schema.thing_statistics.total_role_count,
-                storage_in_bytes: self.storage.estimate_size_in_bytes().expect("Expected storage size in bytes"),
-                storage_key_count: self.storage.estimate_key_count().expect("Expected storage key count"),
+                storage_in_bytes,
+                storage_key_count,
             },
         }
     }

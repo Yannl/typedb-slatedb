@@ -840,7 +840,8 @@ impl SlateKeyspace {
     /// diagnostics loop is single-threaded, so that race is theoretical.
     pub(super) fn estimate_key_count(&self) -> Result<u64, Arc<slatedb::Error>> {
         const REMOTE_KEY_COUNT_TTL: std::time::Duration = std::time::Duration::from_secs(60);
-        if self.remote.is_some() {
+        let remote = self.remote.is_some();
+        if remote {
             if let Some((computed_at, count)) = *self.key_count_memo.lock().unwrap() {
                 if computed_at.elapsed() < REMOTE_KEY_COUNT_TTL {
                     return Ok(count);
@@ -848,7 +849,7 @@ impl SlateKeyspace {
             }
         }
         let db = self.db.clone();
-        bridge(async move {
+        let count = bridge(async move {
             let mut iterator = db.scan_with_options(.., &scan_options()).await?;
             let mut count = 0u64;
             while iterator.next().await?.is_some() {
@@ -856,7 +857,15 @@ impl SlateKeyspace {
             }
             Ok(count)
         })
-        .map_err(Arc::new)
+        .map_err(Arc::new)?;
+        // Populate the memo so the TTL actually bounds the remote scan
+        // (without this write the memo above was dead code and every ~15s
+        // metrics poll re-scanned the whole store — donor A6). The lock is
+        // taken only for this O(1) store, never across the scan above.
+        if remote {
+            *self.key_count_memo.lock().unwrap() = Some((std::time::Instant::now(), count));
+        }
+        Ok(count)
     }
 }
 
@@ -1357,6 +1366,26 @@ mod materialization_tests {
         // and the active handle still reads its own data
         let read = active.get(b"k", |value| value.to_vec()).unwrap();
         assert_eq!(read.as_deref(), Some(b"v-active".as_slice()));
+    }
+
+    #[test]
+    fn remote_key_count_memo_is_populated_and_bounds_the_scan() {
+        // donor A6: the memo must be WRITTEN, not just read - otherwise the
+        // TTL is dead code and every metrics poll re-scans. Proof: after the
+        // first count, add keys directly; a second call within the TTL must
+        // return the MEMOISED (stale) count, not a fresh scan.
+        let (_store_dir, store) = remote_fixture();
+        let keyspace_dir = create_tmp_dir("slate-f3-memo");
+        let keyspace = open(&store, &keyspace_dir);
+        keyspace.put(b"k1", b"v1").unwrap();
+        keyspace.put(b"k2", b"v2").unwrap();
+        let first = keyspace.estimate_key_count().unwrap();
+        assert_eq!(first, 2, "first count scans the store");
+        // more keys land after the memo is populated
+        keyspace.put(b"k3", b"v3").unwrap();
+        keyspace.put(b"k4", b"v4").unwrap();
+        let second = keyspace.estimate_key_count().unwrap();
+        assert_eq!(second, 2, "within the TTL the memoised count is served (proves the memo is written)");
     }
 
     #[test]

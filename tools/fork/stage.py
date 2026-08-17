@@ -22,6 +22,7 @@ it documents the fork, it is not part of the buildable tree.
 """
 import argparse
 import filecmp
+import os
 import pathlib
 import shutil
 import subprocess
@@ -130,6 +131,12 @@ def main() -> int:
         dst = DEST / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(FORK / rel, dst)
+        # copy2 preserves the fork file's mtime, which can be OLDER than a
+        # build that compiled a since-reverted edit of the same path - cargo
+        # fingerprints by mtime and would keep the stale binary (observed:
+        # a mutant-run binary surviving the restore). Staging must always
+        # look newer than any previous build.
+        os.utime(dst, None)
         print(f"  {'+' if rel in new else 'M'} {rel}")
     for rel in stale:
         (DEST / rel).unlink()

@@ -5776,6 +5776,7 @@ dependencies = [
 name = "storage"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
  "bincode",
  "bytes 0.0.0",
  "chrono",
@@ -5786,6 +5787,7 @@ dependencies = [
  "error",
  "fail-parallel",
  "fail_point",
+ "futures",
  "itertools 0.14.0",
  "lending_iterator",
  "logger",

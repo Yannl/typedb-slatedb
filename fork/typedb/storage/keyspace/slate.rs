@@ -33,15 +33,18 @@
 use std::{
     fs, io,
     path::{Path, PathBuf},
-    sync::{Arc, OnceLock},
+    sync::{Arc, OnceLock, atomic::{AtomicU64, Ordering}},
 };
 
+use async_trait::async_trait;
+use futures::stream::BoxStream;
 use slatedb::{
     Db, DbIterator, WriteBatch as SlateWriteBatch,
     bytes::Bytes as SlateBytes,
     config::{ReadOptions, ScanOptions, Settings, WriteOptions},
     object_store::{
-        ObjectMeta, ObjectStore, ObjectStoreExt, PutPayload,
+        CopyOptions, GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, ObjectStore,
+        ObjectStoreExt, PutMultipartOptions, PutOptions, PutPayload, PutResult,
         aws::AmazonS3Builder,
         local::LocalFileSystem,
         path::Path as ObjectPath,
@@ -101,6 +104,38 @@ fn scan_options() -> ScanOptions {
     ScanOptions::default()
 }
 
+/// Pre-G13 posture attestation (F5 interim enforcement; donor idea ported
+/// after review, audit F11): the settings every open uses MUST attest the
+/// disposable-store posture - SlateDB WAL off (TypeDB's durability crate is
+/// the sole WAL authority), in-process compactor off (compaction is a
+/// reachability mutation and must be externally epoch-fenced - ADR-0012's
+/// fork lands that), garbage collector off (pre-G13 GC is report-only).
+/// A violation is a typed open refusal listing every failed clause - config
+/// drift can never silently re-enable a background rewriter. The other two
+/// posture clauses are enforced structurally elsewhere: committed-only
+/// reads by the hard-resolved read options (read_contract_tests), no delete
+/// authority by [`NoDeleteStore`] (materialization_tests).
+fn assert_pre_g13_posture(settings: &Settings) -> Result<(), slatedb::Error> {
+    let mut violations = Vec::new();
+    if settings.wal_enabled {
+        violations.push("SlateDB WAL is enabled; TypeDB's WAL is the sole durability authority");
+    }
+    if settings.compactor_options.is_some() {
+        violations.push("in-process compactor is enabled; compaction must be externally epoch-fenced (ADR-0012)");
+    }
+    if settings.garbage_collector_options.is_some() {
+        violations.push("garbage collector is enabled; pre-G13 GC is report-only (inv. 105)");
+    }
+    if violations.is_empty() {
+        Ok(())
+    } else {
+        Err(slatedb::Error::unavailable(format!(
+            "pre-G13 posture violation refused at open: {}",
+            violations.join("; ")
+        )))
+    }
+}
+
 fn settings() -> Settings {
     let mut settings = Settings::default();
     settings.wal_enabled = false;
@@ -120,9 +155,41 @@ fn settings() -> Settings {
 
 /// The SlateDB store subtree under a keyspace root: LocalFS keyspaces put it
 /// under `<keyspace-dir>/keyspace/`, S3 keyspaces under
-/// `<object-prefix>/keyspace/` — one name, both lanes.
+/// `<materialisation-prefix>/keyspace/` — one name, both lanes.
 const DB_SUBDIR: &str = "keyspace";
 const MANIFEST_SUBDIR: &str = "manifest";
+
+/// Remote namespace format version (V16 F3): a layout change mints a new
+/// segment instead of ever rewriting bytes under an old one.
+const FORMAT_VERSION_SEGMENT: &str = "fv1";
+
+/// Local file (inside the keyspace lifecycle-marker dir) recording the
+/// materialisation this open is writing to — diagnostics and GC-report
+/// input, never uploaded and never authoritative for the remote side.
+const MATERIALIZATION_FILE: &str = "materialization";
+
+/// Mint a fresh materialisation id: time-ordered (zero-padded hex
+/// nanoseconds first, so listings sort oldest-first), made unique across
+/// processes by pid + a per-process random seed + a per-process counter.
+/// In the production design this id is minted and activated by the
+/// controller (inv. 81); on the single-actor local lanes the opener mints
+/// it, and uniqueness — not coordination — is all the lane needs.
+fn mint_materialization_id() -> String {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    static SEED: OnceLock<u64> = OnceLock::new();
+    let seed = *SEED.get_or_init(|| {
+        use std::hash::{BuildHasher, Hasher};
+        let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+        hasher.write_u32(std::process::id());
+        hasher.finish()
+    });
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or(0);
+    let count = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("m{nanos:024x}-{:08x}-{seed:016x}-{count:04x}", std::process::id())
+}
 
 /// U2S3 profile configuration (TB-P8): every variable is required except
 /// region (default `auto`, the R2 convention) and the root prefix (default
@@ -246,11 +313,102 @@ async fn list_remote_prefix(
     Ok(objects)
 }
 
-async fn purge_remote_prefix(store: &dyn ObjectStore, prefix: &ObjectPath) -> Result<(), slatedb::Error> {
-    for meta in list_remote_prefix(store, prefix).await? {
-        store.delete(&meta.location).await.map_err(store_error)?;
+/// The runtime storage principal, with delete authority structurally removed
+/// (V16 inv. 84: before G13 no reachable code path may delete remote
+/// objects, and "mere symbol absence is not proof" — this wrapper turns the
+/// requirement into a runtime boundary that a probe can exercise). Every
+/// remote store the engine touches is wrapped before first use, so a future
+/// code path — or SlateDB itself, should a background component ever be
+/// misconfigured back on — gets a typed `NotImplemented` error instead of a
+/// deletion. `delete_stream` is the trait's ONLY delete primitive in
+/// object_store 0.14 (`ObjectStoreExt::delete` and `rename`'s
+/// copy-then-delete default both funnel into it), so denying it denies
+/// every deletion path transitively.
+#[derive(Debug)]
+struct NoDeleteStore {
+    inner: Arc<dyn ObjectStore>,
+}
+
+impl NoDeleteStore {
+    fn new(inner: Arc<dyn ObjectStore>) -> Self {
+        Self { inner }
     }
-    Ok(())
+}
+
+impl std::fmt::Display for NoDeleteStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "NoDeleteStore({})", self.inner)
+    }
+}
+
+#[async_trait]
+impl ObjectStore for NoDeleteStore {
+    async fn put_opts(
+        &self,
+        location: &ObjectPath,
+        payload: PutPayload,
+        opts: PutOptions,
+    ) -> slatedb::object_store::Result<PutResult> {
+        self.inner.put_opts(location, payload, opts).await
+    }
+
+    async fn put_multipart_opts(
+        &self,
+        location: &ObjectPath,
+        opts: PutMultipartOptions,
+    ) -> slatedb::object_store::Result<Box<dyn MultipartUpload>> {
+        self.inner.put_multipart_opts(location, opts).await
+    }
+
+    async fn get_opts(
+        &self,
+        location: &ObjectPath,
+        options: GetOptions,
+    ) -> slatedb::object_store::Result<GetResult> {
+        self.inner.get_opts(location, options).await
+    }
+
+    fn list(
+        &self,
+        prefix: Option<&ObjectPath>,
+    ) -> BoxStream<'static, slatedb::object_store::Result<ObjectMeta>> {
+        self.inner.list(prefix)
+    }
+
+    async fn list_with_delimiter(
+        &self,
+        prefix: Option<&ObjectPath>,
+    ) -> slatedb::object_store::Result<ListResult> {
+        self.inner.list_with_delimiter(prefix).await
+    }
+
+    async fn copy_opts(
+        &self,
+        from: &ObjectPath,
+        to: &ObjectPath,
+        options: CopyOptions,
+    ) -> slatedb::object_store::Result<()> {
+        self.inner.copy_opts(from, to, options).await
+    }
+
+    fn delete_stream(
+        &self,
+        locations: BoxStream<'static, slatedb::object_store::Result<ObjectPath>>,
+    ) -> BoxStream<'static, slatedb::object_store::Result<ObjectPath>> {
+        use futures::StreamExt;
+        locations
+            .map(|location| {
+                location.and_then(|location| {
+                    Err(slatedb::object_store::Error::NotImplemented {
+                        operation: format!(
+                            "delete_stream {location} (V16 inv. 84: the runtime storage principal has no delete authority)"
+                        ),
+                        implementer: "NoDeleteStore".to_owned(),
+                    })
+                })
+            })
+            .boxed()
+    }
 }
 
 /// Upload a local directory tree (a restored checkpoint) under `prefix`,
@@ -264,8 +422,11 @@ async fn upload_dir_to_remote(
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
-            // the local disk cache is machine-local state, never store state
-            if dir == root && entry.file_name() == OBJECT_CACHE_SUBDIR {
+            // the local disk cache and the materialisation marker are
+            // machine-local state, never store state
+            if dir == root
+                && (entry.file_name() == OBJECT_CACHE_SUBDIR || entry.file_name() == MATERIALIZATION_FILE)
+            {
                 continue;
             }
             if entry.file_type()?.is_dir() {
@@ -323,8 +484,9 @@ async fn download_remote_objects(
     Ok(())
 }
 
-/// The remote half of an S3-backed keyspace: the bucket-root store plus this
-/// keyspace's exclusive prefix (the `Db` itself sees a `PrefixStore`).
+/// The remote half of an S3-backed keyspace: the no-delete-wrapped
+/// bucket-root store plus this open's exclusive materialisation prefix (the
+/// `Db` itself sees a `PrefixStore`).
 struct RemoteStore {
     store: Arc<dyn ObjectStore>,
     prefix: ObjectPath,
@@ -349,48 +511,72 @@ impl SlateKeyspace {
         let store: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(path).map_err(|error| {
             Arc::new(slatedb::Error::unavailable(format!("local object store at {path:?}: {error}")))
         })?);
-        let db = bridge(async move { Db::builder(DB_SUBDIR, store).with_settings(settings()).build().await })
+        let settings = settings();
+        assert_pre_g13_posture(&settings).map_err(Arc::new)?;
+        let db = bridge(async move { Db::builder(DB_SUBDIR, store).with_settings(settings).build().await })
             .map_err(Arc::new)?;
         Ok(Self { db: Arc::new(db), path: path.to_owned(), remote: None, key_count_memo: Default::default() })
     }
 
     /// Open over the configured S3-compatible store (TB-P8, profile U2S3).
+    pub(super) fn open_s3(path: &Path) -> Result<Self, Arc<slatedb::Error>> {
+        let config = s3_config().map_err(Arc::new)?;
+        let store = build_s3_store(config).map_err(Arc::new)?;
+        let base_prefix = object_prefix(config, path);
+        Self::open_remote(store, base_prefix, path, s3_cache_bytes())
+    }
+
+    /// Open over a remote object store, under a FRESH immutable
+    /// materialisation namespace (V16 F3, inv. 81–84):
+    /// `<base>/<format-version>/<materialisation-id>/keyspace/…`.
     ///
     /// The local keyspace directory is the lifecycle marker — storage
     /// recovery wipes it to mean "start empty" and checkpoint recovery
     /// repopulates it with the checkpointed store files (those are the only
     /// two states an open can observe; there is no state-preserving reopen
-    /// without a checkpoint). Either way the remote prefix's previous
-    /// contents are stale: purge them, and when a restored subtree is
-    /// present, upload it as the new store state.
-    pub(super) fn open_s3(path: &Path) -> Result<Self, Arc<slatedb::Error>> {
+    /// without a checkpoint). Under the previous layout that made the remote
+    /// prefix's old contents stale, and open PURGED them — a destructive
+    /// posture that is catastrophic on shared storage (a duplicate container
+    /// or stale actor purging the active materialisation). Open now NEVER
+    /// deletes: it mints a fresh materialisation id, seeds the new namespace
+    /// from the restored checkpoint subtree when one is present, and leaves
+    /// every earlier materialisation in place as orphan bytes (inv. 83) —
+    /// report-only GC candidates (inv. 105) for a separated maintenance
+    /// principal (`tools/maintenance/s3_gc.py`), never for the runtime,
+    /// whose store handle structurally lacks delete ([`NoDeleteStore`],
+    /// inv. 84).
+    fn open_remote(
+        store: Arc<dyn ObjectStore>,
+        base_prefix: ObjectPath,
+        path: &Path,
+        cache_bytes: Option<usize>,
+    ) -> Result<Self, Arc<slatedb::Error>> {
         fs::create_dir_all(path).map_err(|error| Arc::new(io_error(error)))?;
-        let config = s3_config().map_err(Arc::new)?;
-        let store = build_s3_store(config).map_err(Arc::new)?;
-        let prefix = object_prefix(config, path);
+        let store: Arc<dyn ObjectStore> = Arc::new(NoDeleteStore::new(store));
+        let materialization = mint_materialization_id();
+        let prefix = base_prefix.join(FORMAT_VERSION_SEGMENT).join(materialization.as_str());
         let restored_root = path.join(DB_SUBDIR).is_dir().then(|| path.to_owned());
-        {
+        if let Some(root) = restored_root {
             let store = store.clone();
             let prefix = prefix.clone();
-            bridge(async move {
-                purge_remote_prefix(store.as_ref(), &prefix).await?;
-                if let Some(root) = restored_root {
-                    upload_dir_to_remote(store.as_ref(), &prefix, &root).await?;
-                }
-                Ok(())
-            })
-            .map_err(Arc::new)?;
+            bridge(async move { upload_dir_to_remote(store.as_ref(), &prefix, &root).await })
+                .map_err(Arc::new)?;
         }
+        // recorded for diagnostics and the GC report; written AFTER the seed
+        // upload so it can never itself be uploaded as store state
+        fs::write(path.join(MATERIALIZATION_FILE), &materialization)
+            .map_err(|error| Arc::new(io_error(error)))?;
         let prefixed: Arc<dyn ObjectStore> = Arc::new(PrefixStore::new(store.clone(), prefix.clone()));
         let mut settings = settings();
-        if let Some(cache_bytes) = s3_cache_bytes() {
+        if let Some(cache_bytes) = cache_bytes {
             // hydradb comparative review: SlateDB's local disk cache cuts the
             // per-read object-store round trip; the writer caches its own
             // flushed SSTs (`cache_on_flush`) so reads of recent data never
             // leave the machine. The cache lives inside the keyspace dir (the
-            // lifecycle marker) and is wiped here because open just purged
-            // and re-seeded the remote prefix — cache entries for reused
-            // object paths would otherwise serve stale bytes.
+            // lifecycle marker) and is wiped here because cache entries are
+            // keyed by STORE-RELATIVE paths, which repeat across
+            // materialisations — a surviving entry would serve the previous
+            // materialisation's bytes for this one's object paths.
             let cache_dir = path.join(OBJECT_CACHE_SUBDIR);
             let _ = fs::remove_dir_all(&cache_dir);
             fs::create_dir_all(&cache_dir).map_err(|error| Arc::new(io_error(error)))?;
@@ -398,6 +584,7 @@ impl SlateKeyspace {
             settings.object_store_cache_options.max_cache_size_bytes = Some(cache_bytes);
             settings.object_store_cache_options.cache_on_flush = true;
         }
+        assert_pre_g13_posture(&settings).map_err(Arc::new)?;
         let db = bridge(async move { Db::builder(DB_SUBDIR, prefixed).with_settings(settings).build().await })
             .map_err(Arc::new)?;
         Ok(Self {
@@ -571,19 +758,21 @@ impl SlateKeyspace {
         .map_err(Arc::new)
     }
 
-    /// Delete every object under this keyspace's remote prefix (no-op on the
-    /// LocalFS lane, where deleting the local directory is already complete).
-    /// The engine is closed first so no background flush races the purge; the
+    /// Retire this keyspace's remote materialisation IN PLACE (V16 F3):
+    /// close the engine and leave every remote object exactly where it is.
+    /// Keyspace deletion previously purged the remote prefix here; under the
+    /// immutable-namespace model the runtime has no delete authority at all
+    /// (inv. 84 — structurally enforced by [`NoDeleteStore`]), so a deleted
+    /// keyspace's bytes become orphans (inv. 83) that only the separated
+    /// maintenance principal (`tools/maintenance/s3_gc.py`, report-only by
+    /// default, inv. 105) may ever reclaim. No-op on the LocalFS lane. The
     /// second close attempted later by `Drop` is a swallowed error.
-    pub(super) fn purge_remote(&self) -> Result<(), Arc<slatedb::Error>> {
-        let Some(remote) = &self.remote else {
-            return Ok(());
-        };
+    pub(super) fn retire_remote(&self) {
+        if self.remote.is_none() {
+            return;
+        }
         let db = self.db.clone();
         let _ = bridge(async move { db.close().await });
-        let store = remote.store.clone();
-        let prefix = remote.prefix.clone();
-        bridge(async move { purge_remote_prefix(store.as_ref(), &prefix).await }).map_err(Arc::new)
     }
 
     pub(super) fn reset(&self) -> Result<(), Arc<slatedb::Error>> {
@@ -849,19 +1038,6 @@ fn find_manifest_dir(keyspace_path: &Path) -> io::Result<Option<PathBuf>> {
     if candidate.is_dir() { Ok(Some(candidate)) } else { Ok(None) }
 }
 
-fn dir_size(path: &Path) -> io::Result<u64> {
-    let mut total = 0;
-    for entry in fs::read_dir(path)? {
-        let entry = entry?;
-        if entry.file_type()?.is_dir() {
-            total += dir_size(&entry.path())?;
-        } else {
-            total += entry.metadata()?.len();
-        }
-    }
-    Ok(total)
-}
-
 #[cfg(test)]
 mod read_contract_tests {
     //! V16 inv. 74/75 negative control (brief anchor 25): the committed-
@@ -989,5 +1165,255 @@ mod read_contract_tests {
             bridge(async move { db.get_with_options(b"k-pending", &read_options()).await }).unwrap()
         };
         assert!(resumed.is_some(), "the committed write must be visible after the pipeline resumes");
+    }
+}
+
+#[cfg(test)]
+mod posture_tests {
+    //! F5 interim enforcement: the pre-G13 posture is attested fail-closed
+    //! at every open. Each clause has a violation control; the wiring is
+    //! proved by the mutant run (enable the compactor in `settings()` and
+    //! every open-path test refuses with the posture error).
+
+    use slatedb::config::{CompactorOptions, GarbageCollectorOptions, Settings};
+
+    use super::{assert_pre_g13_posture, settings};
+
+    #[test]
+    fn compliant_settings_pass() {
+        assert!(assert_pre_g13_posture(&settings()).is_ok());
+    }
+
+    #[test]
+    fn each_violation_is_a_typed_refusal_naming_the_clause() {
+        let mut wal_on = settings();
+        wal_on.wal_enabled = true;
+        let error = assert_pre_g13_posture(&wal_on).unwrap_err().to_string();
+        assert!(error.contains("sole durability authority"), "{error}");
+
+        let mut compactor_on = settings();
+        compactor_on.compactor_options = Some(CompactorOptions::default());
+        let error = assert_pre_g13_posture(&compactor_on).unwrap_err().to_string();
+        assert!(error.contains("externally epoch-fenced"), "{error}");
+
+        let mut gc_on = settings();
+        gc_on.garbage_collector_options = Some(GarbageCollectorOptions::default());
+        let error = assert_pre_g13_posture(&gc_on).unwrap_err().to_string();
+        assert!(error.contains("report-only"), "{error}");
+
+        let mut all_on = Settings::default();
+        all_on.wal_enabled = true;
+        all_on.compactor_options = Some(CompactorOptions::default());
+        all_on.garbage_collector_options = Some(GarbageCollectorOptions::default());
+        let error = assert_pre_g13_posture(&all_on).unwrap_err().to_string();
+        assert!(error.matches(';').count() >= 2, "every violated clause must be named: {error}");
+    }
+}
+
+#[cfg(test)]
+mod materialization_tests {
+    //! V16 F3 negative controls (inv. 81–84): open NEVER deletes, a stale
+    //! actor cannot alter the active materialisation, and the runtime store
+    //! principal structurally lacks delete authority. The "remote" store is
+    //! a LocalFileSystem object store injected through the same
+    //! [`SlateKeyspace::open_remote`] path the S3 lane uses — the namespace
+    //! and no-delete logic under test is byte-identical on both.
+
+    use std::{collections::BTreeMap, sync::Arc};
+
+    use slatedb::object_store::{
+        ObjectStore, ObjectStoreExt, PutPayload, local::LocalFileSystem, path::Path as ObjectPath,
+    };
+    use test_utils::create_tmp_dir;
+
+    use super::{
+        FORMAT_VERSION_SEGMENT, MATERIALIZATION_FILE, NoDeleteStore, SlateKeyspace, bridge,
+        list_remote_prefix,
+    };
+
+    const BASE: &str = "it-base";
+
+    fn remote_fixture() -> (test_utils::TempDir, Arc<dyn ObjectStore>) {
+        let store_dir = create_tmp_dir("slate-f3-store");
+        let store: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*store_dir).unwrap());
+        (store_dir, store)
+    }
+
+    /// Every object under `base`, as location → bytes (content compare, not
+    /// just presence: an overwrite would slip past a presence check).
+    fn snapshot(store: &Arc<dyn ObjectStore>, base: &ObjectPath) -> BTreeMap<String, Vec<u8>> {
+        let store = store.clone();
+        let base = base.clone();
+        bridge(async move {
+            let mut contents = BTreeMap::new();
+            for meta in list_remote_prefix(store.as_ref(), &base).await.unwrap() {
+                let bytes = store.get(&meta.location).await.unwrap().bytes().await.unwrap();
+                contents.insert(meta.location.to_string(), bytes.to_vec());
+            }
+            contents
+        })
+    }
+
+    fn open(store: &Arc<dyn ObjectStore>, keyspace_dir: &std::path::Path) -> SlateKeyspace {
+        SlateKeyspace::open_remote(store.clone(), ObjectPath::from(BASE), keyspace_dir, None).unwrap()
+    }
+
+    fn materialization_of(keyspace_dir: &std::path::Path) -> String {
+        std::fs::read_to_string(keyspace_dir.join(MATERIALIZATION_FILE)).unwrap()
+    }
+
+    #[test]
+    fn reopen_mints_fresh_materialization_and_never_deletes_the_previous_one() {
+        let (_store_dir, store) = remote_fixture();
+        let keyspace_dir = create_tmp_dir("slate-f3-ks");
+        let base = ObjectPath::from(BASE);
+
+        // materialisation A: write, flush to the store, close
+        let keyspace_a = open(&store, &keyspace_dir);
+        keyspace_a.put(b"k", b"v-a").unwrap();
+        keyspace_a.close().unwrap();
+        let id_a = materialization_of(&keyspace_dir);
+        drop(keyspace_a);
+        let after_a = snapshot(&store, &base);
+        assert!(
+            after_a.keys().any(|location| location.contains(&id_a)),
+            "materialisation A must have flushed objects under its own namespace",
+        );
+
+        // storage recovery semantics: the lifecycle marker dir is wiped
+        std::fs::remove_dir_all(&*keyspace_dir).unwrap();
+
+        // materialisation B: a fresh namespace; A's bytes are untouched
+        let keyspace_b = open(&store, &keyspace_dir);
+        let id_b = materialization_of(&keyspace_dir);
+        assert_ne!(id_a, id_b, "reopen must mint a fresh materialisation id (inv. 81/82)");
+        keyspace_b.put(b"k", b"v-b").unwrap();
+        keyspace_b.close().unwrap();
+
+        let after_b = snapshot(&store, &base);
+        for (location, bytes) in &after_a {
+            assert_eq!(
+                after_b.get(location),
+                Some(bytes),
+                "open deleted or altered {location} from the previous materialisation - open must never delete (inv. 83)",
+            );
+        }
+        assert!(
+            after_b.keys().any(|location| location.contains(&id_b)),
+            "materialisation B must write under its own namespace",
+        );
+        assert!(
+            after_b.keys().all(|location| {
+                !location.contains(&id_b) || !location.contains(&id_a)
+            }),
+            "materialisation namespaces must be disjoint",
+        );
+
+        // retirement (keyspace delete) leaves every byte in place
+        keyspace_b.retire_remote();
+        assert_eq!(
+            snapshot(&store, &base),
+            after_b,
+            "retire_remote must not delete anything - orphan bytes await the maintenance principal",
+        );
+    }
+
+    #[test]
+    fn stale_actor_cannot_alter_the_active_materialization() {
+        let (_store_dir, store) = remote_fixture();
+        let keyspace_dir = create_tmp_dir("slate-f3-stale");
+        let base = ObjectPath::from(BASE);
+
+        // the stale actor: opened first, still running
+        let stale = open(&store, &keyspace_dir);
+        let stale_id = materialization_of(&keyspace_dir);
+        stale.put(b"k", b"v-stale-early").unwrap();
+
+        // the active actor: a duplicate open of the same keyspace path
+        let active = open(&store, &keyspace_dir);
+        let active_id = materialization_of(&keyspace_dir);
+        assert_ne!(stale_id, active_id, "duplicate open must allocate a fresh materialisation (inv. 81)");
+        active.put(b"k", b"v-active").unwrap();
+        {
+            let db = active.shared_db();
+            bridge(async move { db.flush().await }).unwrap();
+        }
+
+        let active_prefix = base.join(FORMAT_VERSION_SEGMENT).join(active_id.as_str());
+        let active_before = snapshot(&store, &active_prefix);
+        assert!(!active_before.is_empty(), "the active materialisation must have flushed objects");
+
+        // the stale actor keeps writing, flushes, and is retired: nothing it
+        // does may reach into the active namespace (inv. 82/83)
+        stale.put(b"k2", b"v-stale-late").unwrap();
+        stale.close().unwrap();
+        stale.retire_remote();
+        assert_eq!(
+            snapshot(&store, &active_prefix),
+            active_before,
+            "a stale actor's writes/close/retire altered the ACTIVE materialisation (inv. 82 violated)",
+        );
+
+        // and the active handle still reads its own data
+        let read = active.get(b"k", |value| value.to_vec()).unwrap();
+        assert_eq!(read.as_deref(), Some(b"v-active".as_slice()));
+    }
+
+    #[test]
+    fn runtime_store_principal_has_no_delete_authority() {
+        // inv. 84's probe: not symbol absence but an exercised runtime
+        // boundary — delete on the wrapped principal is a typed denial and
+        // the object survives.
+        let (_store_dir, inner) = remote_fixture();
+        let store = Arc::new(NoDeleteStore::new(inner));
+        let location = ObjectPath::from("probe/object");
+        bridge({
+            let payload = PutPayload::from_static(b"bytes");
+            let location = location.clone();
+            let store = store.clone();
+            async move { store.put(&location, payload).await }
+        })
+        .unwrap();
+
+        let denial = bridge({
+            let location = location.clone();
+            let store = store.clone();
+            async move { store.delete(&location).await }
+        });
+        assert!(
+            matches!(denial, Err(slatedb::object_store::Error::NotImplemented { .. })),
+            "delete through the runtime principal must be a typed denial, got: {denial:?}",
+        );
+        let survives = bridge({
+            let store = store.inner.clone();
+            async move { store.head(&location).await }
+        });
+        assert!(survives.is_ok(), "the probed object must survive the denied delete");
+
+        // the same probe against the store handle an OPENED keyspace holds:
+        // proves open_remote actually installs the no-delete principal (a
+        // wrapper that exists but is not wired in would pass the probe above
+        // and still leave the runtime with delete authority)
+        let (_ks_store_dir, ks_store) = remote_fixture();
+        let keyspace_dir = create_tmp_dir("slate-f3-probe-ks");
+        let keyspace = open(&ks_store, &keyspace_dir);
+        keyspace.put(b"k", b"v").unwrap();
+        keyspace.close().unwrap();
+        let installed = keyspace.remote.as_ref().expect("remote lane").store.clone();
+        let target = bridge({
+            let installed = installed.clone();
+            async move {
+                let listing = list_remote_prefix(installed.as_ref(), &ObjectPath::from(BASE)).await.unwrap();
+                listing.into_iter().next().expect("flushed keyspace has objects").location
+            }
+        });
+        let runtime_denial = bridge({
+            let target = target.clone();
+            async move { installed.delete(&target).await }
+        });
+        assert!(
+            matches!(runtime_denial, Err(slatedb::object_store::Error::NotImplemented { .. })),
+            "the store handle installed by open_remote must deny delete (inv. 84), got: {runtime_denial:?}",
+        );
     }
 }

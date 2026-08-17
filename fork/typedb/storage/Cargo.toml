@@ -98,6 +98,14 @@ features = {}
 	[dependencies.tokio]
 		workspace = true
 
+	# V16 F3: the NoDeleteStore runtime principal implements the
+	# object_store trait (async-trait) and its list stream type (futures).
+	[dependencies.async-trait]
+		workspace = true
+
+	[dependencies.futures]
+		workspace = true
+
 	[dependencies.same-file]
 		workspace = true
 

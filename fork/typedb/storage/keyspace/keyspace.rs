@@ -418,20 +418,23 @@ impl Keyspace {
         // sharing violation, surfaced as the typed DirectoryRemove error rather
         // than upstream's undefined behavior on the same race.
         //
-        // U2S3 caveat: that guarantee is local-lane only. purge_remote() below
-        // closes the shared engine and deletes the remote objects, so a cursor
-        // still pooled in a live snapshot fails its next read (typed engine/
-        // object error, never silent corruption). Callers reach delete() only
-        // through database deletion, which requires exclusive ownership of the
-        // database, so no such cursor exists on that path; new callers on the
-        // remote lane must uphold the same exclusivity.
+        // U2S3 caveat: that guarantee is local-lane only. retire_remote()
+        // below closes the shared engine, so a cursor still pooled in a live
+        // snapshot fails its next read (typed engine error, never silent
+        // corruption). Callers reach delete() only through database deletion,
+        // which requires exclusive ownership of the database, so no such
+        // cursor exists on that path; new callers on the remote lane must
+        // uphold the same exclusivity.
         let path = self.path.clone();
         let name = self.name;
-        // S3-backed keyspaces (U2S3) also own remote objects; deleting only
-        // the local directory would leak them AND leave state a later open of
-        // the same path would purge as stale — delete both sides.
+        // S3-backed keyspaces (U2S3) own remote objects too, but the runtime
+        // has NO delete authority (V16 inv. 84): deletion retires the remote
+        // materialisation in place — its bytes become unreachable orphans
+        // (inv. 83; a later open of the same path mints a fresh
+        // materialisation namespace and never touches them) awaiting the
+        // separated maintenance principal's report-only GC (inv. 105).
         if let KeyspaceEngine::Slate(slate) = &self.engine {
-            slate.purge_remote().map_err(|source| KeyspaceDeleteError::RemotePurge { name, source })?;
+            slate.retire_remote();
         }
         drop(self.engine); // SlateKeyspace::drop closes the engine, flushing state
         fs::remove_dir_all(path)
@@ -543,7 +546,6 @@ impl Error for KeyspaceCheckpointError {
 #[derive(Debug, Clone)]
 pub enum KeyspaceDeleteError {
     DirectoryRemove { name: &'static str, source: Arc<io::Error> },
-    RemotePurge { name: &'static str, source: Arc<slatedb::Error> },
 }
 
 impl fmt::Display for KeyspaceDeleteError {
@@ -556,7 +558,6 @@ impl Error for KeyspaceDeleteError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match &self {
             Self::DirectoryRemove { source, .. } => Some(source),
-            Self::RemotePurge { source, .. } => Some(source.as_ref()),
         }
     }
 }

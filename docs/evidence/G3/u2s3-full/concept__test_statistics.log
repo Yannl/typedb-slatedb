@@ -1,0 +1,6 @@
+
+running 9 tests
+[2m2026-08-17T09:09:33.648937Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+.........
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.28s
+

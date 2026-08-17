@@ -1,0 +1,96 @@
+
+running 22 tests
+[2m2026-08-17T09:10:25.302648Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[1] with size 445 bytes; 445 bytes total
+[2m2026-08-17T09:10:25.302748Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[1]
+[2m2026-08-17T09:10:25.302840Z[0m [35mTRACE[0m [2mconcept::thing::statistics[0m[2m:[0m Statistics sync finished in 0 ms. Storage watermark was initially: SeqNr[1]. Current statistics sequence is from: SeqNr[1]
+[2m2026-08-17T09:10:25.303681Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running write query:
+insert $p isa person, has id 1;
+[2m2026-08-17T09:10:25.308736Z[0m [32m INFO[0m [2mdatabase::query[0m[2m:[0m Write query done (excluding network request time) in 5066 micros.
+Query profile[measurements_enabled=true, total micros: 4271.081]
+  CompileIR[enabled=true, total micros=3088.182]
+    validation micros: 52.358
+    annotation micros: 882.922
+    compilation micros: 2152.902
+  -----
+  Stage[root pattern id=1]
+    Insert ~~ 1182.899 us
+    Insert pattern
+    [0] Concept inserts
+      [0] Put object
+          ==> batches: 1, rows: 1, micros: 11, micros/row: 11.0 (raw seeks: 0, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+      [1] Put attribute
+          ==> batches: 1, rows: 1, micros: 26, micros/row: 26.0 (raw seeks: 0, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+    [1] Connection inserts
+      [0] Put has
+          ==> batches: 1, rows: 1, micros: 1145, micros/row: 1145.0 (raw seeks: 1, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+
+[2m2026-08-17T09:10:25.314655Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running write query:
+match $p isa person, has id 1; delete $p;
+[2m2026-08-17T09:10:25.315750Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Planning conjunction:
+(1) Conjunction
+  $0 isa person
+  $_1 == Param[Value(integer:0)]
+  $0 has $_1
+  $_1 isa id
+
+[2m2026-08-17T09:10:25.320863Z[0m [32m INFO[0m [2mdatabase::query[0m[2m:[0m Write query done (excluding network request time) in 6216 micros.
+Query profile[measurements_enabled=true, total micros: 5159.566]
+  CompileIR[enabled=true, total micros=1509.665]
+    validation micros: 44.193
+    annotation micros: 385.446
+    compilation micros: 1080.026
+  -----
+  Stage[root pattern id=4]
+    Match ~~ 1118.248 us
+    Conjunction [id: 4] ~ Cost: 6.06 Size: 1.00 (stats: links 0.00 / 0.00, has 1.00 / 0.00, vars 2.00 / 0.00)
+    [0] Sorted Iterator Intersection [bound_vars=[], output_size=2, sort_by=$0]
+            [$0 has $_1] filter [Check[$_1 == Param[Value(integer:0)]] ] with (outputs=$_1, $0, )
+        ==> batches: 1, rows: 1, micros: 1092, micros/row: 1092.0 (raw seeks: 1, raw advances: 1, advances mvcc visible: 1, advances mvcc invisible: 0, advances deleted invisible: 0)
+    [1] Check
+            Check[$_1 isa [AttributeType:[0000]]] 
+        ==> batches: 1, rows: 1, micros: 20, micros/row: 20.0 (raw seeks: 0, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+    [2] Check
+            Check[$0 isa [EntityType:[0000]]] 
+        ==> batches: 1, rows: 1, micros: 5, micros/row: 5.0 (raw seeks: 0, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+  -----
+  Stage[root pattern id=5]
+    Delete ~~ 2531.653 us
+    Delete
+    [0] Connection deletes
+    [1] Concept deletes
+      [0] instance
+          ==> batches: 1, rows: 1, micros: 2531, micros/row: 2531.0 (raw seeks: 5, raw advances: 1, advances mvcc visible: 4, advances mvcc invisible: 0, advances deleted invisible: 0)
+
+[2m2026-08-17T09:10:25.321541Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running write query:
+match $p isa person, has id 1; delete $p;
+[2m2026-08-17T09:10:25.324335Z[0m [32m INFO[0m [2mdatabase::query[0m[2m:[0m Write query done (excluding network request time) in 2781 micros.
+Query profile[measurements_enabled=true, total micros: 2207.686]
+  CompileIR[enabled=true, total micros=0]
+    validation micros: 0
+    annotation micros: 0
+    compilation micros: 0
+  -----
+  Stage[root pattern id=4]
+    Match ~~ 564.09 us
+    Conjunction [id: 4] ~ Cost: 6.06 Size: 1.00 (stats: links 0.00 / 0.00, has 1.00 / 0.00, vars 2.00 / 0.00)
+    [0] Sorted Iterator Intersection [bound_vars=[], output_size=2, sort_by=$0]
+            [$0 has $_1] filter [Check[$_1 == Param[Value(integer:0)]] ] with (outputs=$0, $_1, )
+        ==> batches: 1, rows: 1, micros: 544, micros/row: 544.0 (raw seeks: 1, raw advances: 1, advances mvcc visible: 1, advances mvcc invisible: 0, advances deleted invisible: 0)
+    [1] Check
+            Check[$_1 isa [AttributeType:[0000]]] 
+        ==> batches: 1, rows: 1, micros: 13, micros/row: 13.0 (raw seeks: 0, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+    [2] Check
+            Check[$0 isa [EntityType:[0000]]] 
+        ==> batches: 1, rows: 1, micros: 6, micros/row: 6.0 (raw seeks: 0, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+  -----
+  Stage[root pattern id=5]
+    Delete ~~ 1643.596 us
+    Delete
+    [0] Connection deletes
+    [1] Concept deletes
+      [0] instance
+          ==> batches: 1, rows: 1, micros: 1643, micros/row: 1643.0 (raw seeks: 5, raw advances: 1, advances mvcc visible: 4, advances mvcc invisible: 0, advances deleted invisible: 0)
+
+......................
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.48s
+

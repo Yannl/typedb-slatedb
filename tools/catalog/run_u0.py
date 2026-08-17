@@ -234,21 +234,33 @@ def ensure_behaviour_fixture():
     still run `--package storage`.
     """
     behaviour = REPO / "sources" / "typedb-behaviour"
-    link = TB / "bazel-typedb" / "external" / "typedb_behaviour+"
-    probe = link / "connection" / "database.feature"
-    if probe.exists():
-        return True  # symlink or a real copy — either serves the features
-    if not behaviour.is_dir():
-        return False
-    link.parent.mkdir(parents=True, exist_ok=True)
-    if link.is_symlink():
-        link.unlink()  # dangling or wrong target
-    elif link.exists():
-        # a real dir/file that does NOT serve the features: refuse to guess
-        sys.exit(f"{link} exists but has no features under it - "
-                 f"remove it (the runner will recreate the symlink)")
-    os.symlink(os.path.relpath(behaviour, link.parent), link)
-    return probe.exists()
+    # Upstream inconsistency (pinned revision): tests/behaviour/query/language/
+    # given.rs and variables.rs alone reference `external/typedb_behaviour/...`
+    # without the bazel-module `+` suffix every other behaviour test uses.
+    # Consume-only (ADR-0008) means the fixture serves BOTH spellings rather
+    # than editing upstream; dropping the plain link fails exactly those two
+    # tests with '0 features / 1 parsing error' — a false red.
+    links = [
+        TB / "bazel-typedb" / "external" / "typedb_behaviour+",
+        TB / "bazel-typedb" / "external" / "typedb_behaviour",
+    ]
+    usable = True
+    for link in links:
+        probe = link / "connection" / "database.feature"
+        if probe.exists():
+            continue  # symlink or a real copy — either serves the features
+        if not behaviour.is_dir():
+            return False
+        link.parent.mkdir(parents=True, exist_ok=True)
+        if link.is_symlink():
+            link.unlink()  # dangling or wrong target
+        elif link.exists():
+            # a real dir/file that does NOT serve the features: refuse to guess
+            sys.exit(f"{link} exists but has no features under it - "
+                     f"remove it (the runner will recreate the symlink)")
+        os.symlink(os.path.relpath(behaviour, link.parent), link)
+        usable = usable and probe.exists()
+    return usable
 
 
 def needs_behaviour_fixture(execs):

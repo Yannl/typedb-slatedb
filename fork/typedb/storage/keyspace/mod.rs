@@ -5,6 +5,8 @@
  */
 
 pub(crate) use keyspace::{KEYSPACE_MAXIMUM_COUNT, Keyspace, KeyspaceCheckpointError, Keyspaces};
+#[cfg(feature = "slatedb-backend")]
+pub(crate) use keyspace::{SLATEDB_ACTIVE_PREFIX, SLATEDB_CHECKPOINT_POINTER};
 pub use keyspace::{
     KeyspaceDeleteError, KeyspaceError, KeyspaceId, KeyspaceOpenError, KeyspaceSet, KeyspaceValidationError,
 };

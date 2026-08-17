@@ -219,10 +219,66 @@ fn restore_slatedb_store_from_checkpoint(store_dir: &Path, checkpoint_dir: &Path
             format!("checkpoint is missing its store directory: {}", checkpoint_dir.display()),
         ));
     }
+
+    // Two mechanisms, distinguished by whether the checkpoint holds files or a reference. The
+    // pointer file is written only by the object-store path, where there were no files to copy.
+    let pointer = checkpoint_dir.join(crate::keyspace::SLATEDB_CHECKPOINT_POINTER);
+    if pointer.exists() {
+        return restore_slatedb_store_by_clone(store_dir, &pointer);
+    }
+
     if store_dir.exists() {
         fs::remove_dir_all(store_dir)?;
     }
     crate::keyspace::copy_dir_recursive(checkpoint_dir, store_dir)
+}
+
+/// Restore an object-store-backed database by cloning the checkpoint into a fresh prefix.
+///
+/// The clone writes a manifest referencing the checkpoint's SSTs rather than duplicating them,
+/// so this is O(manifest) and not O(data): restoring a large knowledge base moves no bytes and
+/// costs a handful of writes.
+///
+/// It clones to a *new* prefix rather than overwriting the source. Writing a clone over its own
+/// source would leave a manifest describing objects it was in the middle of replacing, and the
+/// window where that is true is exactly the window a crash would make permanent. The new prefix
+/// is then recorded so the next open finds it — a restore that produced correct bytes nobody
+/// opens is not a restore.
+#[cfg(feature = "slatedb-backend")]
+fn restore_slatedb_store_by_clone(store_dir: &Path, pointer: &Path) -> io::Result<()> {
+    let contents = fs::read_to_string(pointer)?;
+    let mut lines = contents.lines();
+    let (Some(source_prefix), Some(checkpoint_id)) = (lines.next(), lines.next()) else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("malformed checkpoint reference at {}", pointer.display()),
+        ));
+    };
+    let checkpoint = checkpoint_id.trim().parse().map_err(|error| {
+        io::Error::new(io::ErrorKind::InvalidData, format!("bad checkpoint id: {error}"))
+    })?;
+
+    let config = slatedb_keyspace::StoreConfig::from_env(store_dir, source_prefix.trim())
+        .map_err(|error| io::Error::other(error.to_string()))?;
+    let slatedb_keyspace::Backend::ObjectStore { store, .. } = config.backend else {
+        return Err(io::Error::other(
+            "this checkpoint was taken against an object store, but the environment now selects              local storage; restoring would silently produce an empty database",
+        ));
+    };
+
+    // The timestamp keeps successive restores from colliding, and leaves the previous prefix in
+    // place: a restore that turns out to be the wrong one is then still recoverable.
+    let restored_prefix = format!(
+        "{}-restored-{}",
+        source_prefix.trim(),
+        chrono::Utc::now().timestamp_micros()
+    );
+    slatedb_keyspace::clone_checkpoint(store, source_prefix.trim(), checkpoint, &restored_prefix)
+        .map_err(|error| io::Error::other(error.to_string()))?;
+
+    fs::create_dir_all(store_dir)?;
+    fs::write(store_dir.join(crate::keyspace::SLATEDB_ACTIVE_PREFIX), &restored_prefix)?;
+    Ok(())
 }
 
 #[cfg(not(feature = "slatedb-backend"))]

@@ -91,10 +91,39 @@ pub const DEFAULT_ESTIMATE_TTL: Duration = Duration::from_secs(600);
 /// being deleted underneath the directory copy that immediately follows, and that copy finishes
 /// in seconds. An hour is far longer than the job needs and far shorter than forever.
 ///
-/// This also makes [`KeyspaceSet::release_checkpoint`] honestly a no-op. Releasing explicitly
-/// would need an `Admin` handle this type does not hold, so without an expiry the pin would
-/// depend on a cleanup path that does not exist.
+/// The expiry is a backstop rather than the only mechanism: [`KeyspaceSet::release_checkpoint`]
+/// deletes a pin outright, and a caller that releases promptly returns the SSTs to garbage
+/// collection an hour sooner. The lifetime is what stops a caller that forgets — or a process
+/// that dies between checkpoint and release — from leaking one forever.
 pub const CHECKPOINT_LIFETIME: Duration = Duration::from_secs(3600);
+
+/// Clone a checkpoint into a new prefix without opening the source store.
+///
+/// The restore path needs this: it runs *before* any database is open, precisely because what
+/// it is doing is deciding which bytes the database will open onto. An API that required a live
+/// [`KeyspaceSet`] would force the caller to open the store it is about to replace.
+///
+/// The clone references the checkpoint's SSTs rather than copying them, so this is O(manifest)
+/// and not O(data) — restoring a large store moves nothing and costs a handful of writes.
+pub fn clone_checkpoint(
+    object_store: Arc<dyn object_store::ObjectStore>,
+    source_prefix: &str,
+    checkpoint: uuid::Uuid,
+    target_prefix: &str,
+) -> Result<(), KeyspaceError> {
+    use slatedb::{admin::AdminBuilder, CloneSourceSpec};
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| KeyspaceError::Open(e.to_string()))?;
+
+    let admin = AdminBuilder::new(target_prefix.to_string(), object_store).build();
+    let source = CloneSourceSpec::with_checkpoint(source_prefix.to_string(), checkpoint);
+
+    block_on(&runtime, admin.create_clone_builder_from_source(source).build())
+        .map_err(|e| KeyspaceError::Write(format!("cloning checkpoint {checkpoint}: {e}")))
+}
 
 /// Keys deleted per batch by [`Keyspace::clear`].
 ///
@@ -190,6 +219,10 @@ pub struct KeyspaceSet {
     /// Set only when the store is a local directory, and used to refuse operations that are
     /// meaningful only against one — see [`Self::local_directory`].
     local_directory: Option<std::path::PathBuf>,
+    /// Held so an `Admin` handle can be built for cloning and checkpoint deletion, both of
+    /// which address the store by prefix rather than through the open `Db`.
+    object_store: Arc<dyn object_store::ObjectStore>,
+    path: String,
     /// Per-keyspace memo for [`Keyspace::estimated_stats`], indexed by keyspace id.
     estimates: Vec<Mutex<Option<CachedEstimate>>>,
     estimate_ttl: Duration,
@@ -272,12 +305,18 @@ impl KeyspaceSet {
                 .map_err(|e| KeyspaceError::Open(e.to_string()))?,
         );
         let db = runtime
-            .block_on(Db::builder(path, store).with_settings(tuning.to_settings()).build())
+            .block_on(
+                Db::builder(path.clone(), Arc::clone(&store))
+                    .with_settings(tuning.to_settings())
+                    .build(),
+            )
             .map_err(|e| KeyspaceError::Open(e.to_string()))?;
 
         Ok(Self {
             db: Arc::new(db),
             runtime,
+            object_store: store,
+            path,
             scan_options: tuning.scan_options(),
             local_directory,
             estimates: (0..KEYSPACE_MAXIMUM_COUNT).map(|_| Mutex::new(None)).collect(),
@@ -421,6 +460,41 @@ impl KeyspaceSet {
         Ok(result.id)
     }
 
+    /// Materialize `checkpoint` as a new store at `target_prefix`.
+    ///
+    /// This is what makes point-in-time recovery possible against an object store, where the
+    /// directory copy TypeDB's RocksDB path uses has nothing to copy. SlateDB's clone writes a
+    /// manifest at the new prefix that *references* the checkpoint's SSTs rather than
+    /// duplicating them, so the cost is one manifest write regardless of how much data the
+    /// store holds — a restore of a 100 GB knowledge base moves no data and costs a handful of
+    /// Class A operations.
+    ///
+    /// The referencing is also why [`Self::release_checkpoint`] must not be called on a
+    /// checkpoint a clone still depends on: releasing the pin would let garbage collection
+    /// reclaim SSTs the clone points at.
+    ///
+    /// `target_prefix` must be empty. Cloning onto a live store would leave two manifests
+    /// disagreeing about which objects are current.
+    pub fn clone_at_checkpoint(
+        &self,
+        checkpoint: uuid::Uuid,
+        target_prefix: &str,
+    ) -> Result<(), KeyspaceError> {
+        use slatedb::{admin::AdminBuilder, CloneSourceSpec};
+
+        let admin = AdminBuilder::new(target_prefix.to_string(), Arc::clone(&self.object_store))
+            .build();
+        let source = CloneSourceSpec::with_checkpoint(self.path.clone(), checkpoint);
+
+        self.block(admin.create_clone_builder_from_source(source).build())
+            .map_err(|e| KeyspaceError::Write(format!("cloning checkpoint {checkpoint}: {e}")))
+    }
+
+    /// The prefix this store's objects live under.
+    pub fn prefix(&self) -> &str {
+        &self.path
+    }
+
     /// Checkpoints currently recorded in the manifest.
     ///
     /// Exposed so a caller — or a test — can confirm that pins carry an expiry, which is the
@@ -439,13 +513,23 @@ impl KeyspaceSet {
         Ok(self.db.manifest().checkpoints().to_vec())
     }
 
-    /// Release a checkpoint taken by [`Self::checkpoint`].
+    /// Release a checkpoint taken by [`Self::checkpoint`], reclaiming its pin immediately.
     ///
-    /// A no-op, and safe to be one: the checkpoint carries an expiry, so the pin releases
-    /// itself. Deleting one explicitly needs an `Admin` handle against the same object store,
-    /// which this type does not hold.
-    pub fn release_checkpoint(&self, _id: uuid::Uuid) -> Result<(), KeyspaceError> {
-        Ok(())
+    /// The expiry on [`CHECKPOINT_LIFETIME`] remains the backstop — a caller that forgets to
+    /// release still cannot leak indefinitely — but releasing explicitly returns the SSTs to
+    /// garbage collection an hour sooner, which on a store checkpointed every 60 seconds is the
+    /// difference between an hour of retained garbage and none.
+    ///
+    /// Do not release a checkpoint that a [`Self::clone_at_checkpoint`] result still depends
+    /// on: the clone references the checkpoint's SSTs rather than copying them, so releasing
+    /// the pin makes them collectable out from under it.
+    pub fn release_checkpoint(&self, id: uuid::Uuid) -> Result<(), KeyspaceError> {
+        use slatedb::admin::AdminBuilder;
+
+        let admin =
+            AdminBuilder::new(self.path.clone(), Arc::clone(&self.object_store)).build();
+        self.block(admin.delete_checkpoint(id))
+            .map_err(|e| KeyspaceError::Write(format!("releasing checkpoint {id}: {e}")))
     }
 }
 

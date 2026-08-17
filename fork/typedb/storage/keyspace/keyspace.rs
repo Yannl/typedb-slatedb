@@ -135,6 +135,14 @@ impl Keyspaces {
     /// bucket root where every other database's `LIST` would see them.
     #[cfg(feature = "slatedb-backend")]
     fn store_prefix(path: &Path) -> String {
+        // A restore leaves a pointer naming the prefix it cloned into; honour it before falling
+        // back to the derived name, or the database would reopen onto the pre-restore data.
+        if let Ok(active) = fs::read_to_string(path.join(SLATEDB_ACTIVE_PREFIX)) {
+            let active = active.trim();
+            if !active.is_empty() {
+                return active.to_string();
+            }
+        }
         path.file_name()
             .and_then(|name| name.to_str())
             .filter(|name| !name.is_empty())
@@ -232,21 +240,30 @@ impl Keyspaces {
         // here: mapping this onto SlateDB's own checkpoints means reopening the store at a
         // manifest id or cloning it to a new prefix, which is a recovery-path design decision
         // rather than a translation, and is not one to make silently.
-        let Some(store_dir) = keyspace.store.local_directory().map(Path::to_path_buf) else {
-            return Err(SlateDBCheckpoint {
-                message: "checkpointing an object-store-backed database by copying its directory \
-                          would capture only the local block cache; SlateDB's native checkpoint \
-                          has been taken and pins the manifest, but restoring from it needs a \
-                          store-level clone that this path does not implement"
-                    .to_string(),
-            });
-        };
-
-        // Flush and pin first. The copy that follows reads live files, and compaction or GC
-        // removing an SST midway would produce a checkpoint that looks complete and is not.
-        super::slate::SlateKeyspace::from_parts(keyspace)
+        // Flush and pin first, on both paths. The pin is what stops compaction or GC removing
+        // an SST between the checkpoint being recorded and anything being done with it.
+        let checkpoint_id = keyspace
+            .store
             .checkpoint()
             .map_err(|error| SlateDBCheckpoint { message: error.to_string() })?;
+
+        let Some(store_dir) = keyspace.store.local_directory().map(Path::to_path_buf) else {
+            // Object-store backed. There are no local files to copy — the local directory holds
+            // at most a block cache — so the checkpoint is recorded by reference instead. That
+            // is not a lesser checkpoint: SlateDB's clone materializes it later by writing a
+            // manifest that points at the pinned SSTs, so a restore moves no data at all and
+            // costs a handful of writes whatever the database weighs. Copying would have been
+            // the expensive option even if it were possible.
+            fs::create_dir_all(&target)
+                .map_err(|error| SlateDBCheckpoint { message: error.to_string() })?;
+            let pointer = target.join(SLATEDB_CHECKPOINT_POINTER);
+            fs::write(
+                &pointer,
+                format!("{}\n{}\n", keyspace.store.prefix(), checkpoint_id),
+            )
+            .map_err(|error| SlateDBCheckpoint { message: error.to_string() })?;
+            return Ok(());
+        };
 
         copy_dir_recursive(&store_dir, &target)
             .map_err(|error| SlateDBCheckpoint { message: error.to_string() })?;
@@ -340,6 +357,21 @@ impl Error for KeyspaceValidationError {}
 /// restored everything.
 #[cfg(feature = "slatedb-backend")]
 pub(crate) const SLATEDB_CHECKPOINT_DIR: &str = "slatedb-store";
+
+/// Names an object-store checkpoint by reference: source prefix on the first line, checkpoint id
+/// on the second.
+///
+/// Its presence is what tells the restore path which of the two mechanisms produced this
+/// checkpoint — a directory of copied files, or a pinned manifest version to clone from.
+pub(crate) const SLATEDB_CHECKPOINT_POINTER: &str = "checkpoint.ref";
+
+/// Records which prefix inside the bucket the live database occupies.
+///
+/// Restoring on the object-store path clones the checkpoint to a *new* prefix rather than
+/// overwriting the old one, because a clone references the source's SSTs and writing it over its
+/// own source would leave a manifest describing objects it was in the middle of replacing. The
+/// database therefore has to be told where to open, and this file is that instruction.
+pub(crate) const SLATEDB_ACTIVE_PREFIX: &str = "active-prefix";
 
 /// Copy a directory tree.
 ///

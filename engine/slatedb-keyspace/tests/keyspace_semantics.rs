@@ -456,3 +456,58 @@ fn a_checkpoint_pin_expires_instead_of_being_held_forever() {
         "a checkpoint with no expiry pins its SSTs against garbage collection forever"
     );
 }
+
+#[test]
+fn a_checkpoint_can_be_cloned_into_a_new_store_without_copying_data() {
+    // O3's mechanism. TypeDB's RocksDB path checkpoints by copying a directory of files, which
+    // has nothing to copy when the store lives in an object store. SlateDB's clone writes a
+    // manifest at a new prefix that *references* the checkpoint's SSTs, so a restore moves no
+    // data at all — the property that makes point-in-time recovery affordable on a store billed
+    // per operation.
+    let dir = tempfile::tempdir().unwrap();
+    let store: Arc<dyn ObjectStore> =
+        Arc::new(LocalFileSystem::new_with_prefix(dir.path()).unwrap());
+
+    let set = KeyspaceSet::open("/source", Arc::clone(&store)).unwrap();
+    for i in 0u8..16 {
+        set.keyspace(KeyspaceId(0)).put(&[i], b"before-checkpoint").unwrap();
+    }
+    let checkpoint = set.checkpoint().unwrap();
+
+    // Diverge after the checkpoint. The clone must show the pinned past, not this.
+    set.keyspace(KeyspaceId(0)).put(b"later", b"after-checkpoint").unwrap();
+    set.flush().unwrap();
+
+    slatedb_keyspace::clone_checkpoint(Arc::clone(&store), "/source", checkpoint, "/restored")
+        .expect("clone the checkpoint into a fresh prefix");
+
+    let restored = KeyspaceSet::open("/restored", store).unwrap();
+    assert_eq!(
+        restored.keyspace(KeyspaceId(0)).get(&[3]).unwrap().as_deref(),
+        Some(&b"before-checkpoint"[..]),
+        "the clone must carry everything the checkpoint pinned"
+    );
+    assert!(
+        restored.keyspace(KeyspaceId(0)).get(b"later").unwrap().is_none(),
+        "and nothing written after it — a restore that includes later writes is not a restore"
+    );
+}
+
+#[test]
+fn releasing_a_checkpoint_reclaims_its_pin() {
+    // The expiry on CHECKPOINT_LIFETIME is a backstop for a caller that forgets. A caller that
+    // releases should get the SSTs back to garbage collection immediately rather than an hour
+    // later, which on a store checkpointed every 60 seconds is the whole difference.
+    let dir = tempfile::tempdir().unwrap();
+    let set = KeyspaceSet::open_local(dir.path()).unwrap();
+    set.keyspace(KeyspaceId(0)).put(b"k", b"v").unwrap();
+
+    let id = set.checkpoint().unwrap();
+    assert!(set.checkpoints().unwrap().iter().any(|c| c.id == id));
+
+    set.release_checkpoint(id).unwrap();
+    assert!(
+        !set.checkpoints().unwrap().iter().any(|c| c.id == id),
+        "a released checkpoint must be gone from the manifest, not merely expiring later"
+    );
+}

@@ -2279,22 +2279,22 @@
    "target_id": "typedb_server_bin:test_query",
    "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_query-6d4e2f3620b473ee",
    "executable_sha256": "aabb3d084ce448912668b4ac09cce3842e30f9cf6fdb5f73d373fc3b86588aac",
-   "exit_code": 101,
+   "exit_code": 0,
    "timed_out": false,
-   "duration_seconds": 1060.69,
-   "passed": 26,
-   "failed": 1,
+   "duration_seconds": 1049.71,
+   "passed": 27,
+   "failed": 0,
    "ignored": 0,
    "measured": 0,
    "filtered_out": 0,
    "raw_log": "docs/evidence/G3/u2s3-full/typedb_server_bin__test_query.log",
-   "tail": "ma query\n   \u2714  When typeql schema query\n   \u2714  Then transaction commits\n   \u2714  Given connection open read transaction for database: typedb\n   \u2714  When get answers of typeql read query\n   \u2714  Then uniquely identify answer concepts\n       | x            |\n       | label:pigeon |\nFeature: TypeQL Redefine Query :: assigning a new supertype when having other sub succeeds with existing data if the supertypes have the same attributes\n  Scenario: assigning a new supertype when having other sub succeeds with existing data if the supertypes have the same attributes\n   \u2714> Given typedb starts\n   \u2714> Given connection opens with default authentication\n   \u2714> Given connection is open: true\n   \u2714> Given connection reset database: typedb\n   \u2714> Given connection open schema transaction for database: typedb\n   \u2714> Given typeql schema query\n   \u2714> Given transaction commits\n   \u2714> Given connection open schema transaction for database: typedb\n   \u2714  Given typeql schema query\n   \u2714  Given transaction commits\n   \u2714  Given connection open write transaction for database: typedb\n   \u2714  Given typeql write query\n   \u2714  Given transaction commits\n   \u2714  Given connection open schema transaction for database: typedb\n   \u2714  When typeql schema query\n   \u2714  Then transaction commits\n   \u2714  Given connection open schema transaction for database: typedb\n   \u2714  When typeql schema query\n   \u2714  Then transaction commits\n   \u2714  Given connection open read transaction for database: typedb\n   \u2714  When get answers of typeql read query\n   \u2714  Then uniquely identify answer concepts\n       | x            |\n       | label:pigeon |\n[Summary]\n197 features\n197 scenarios (197 passed)\n2760 steps (2760 passed)\n.\nfailures:\n\n---- language::variables::test_read_variables stdout ----\npanicked at tests/behaviour/query/language/variables.rs:22:5:\nassertion failed: Context::test(path, true).await\n\n\nfailures:\n    language::variables::test_read_variables\n\ntest result: FAILED. 26 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1060.60s\n\n",
+   "tail": null,
    "run": {
     "profile": "U2S3",
     "toolchain": "rust 1.93.0 parity lane",
     "storage_profile_env": "U2S3",
     "assembly_archive_sha256": "a1dcdb5b8f18b7ee0306083de6f849502f1547ea07f293e7d48a7b20d13ab067",
-    "repo_commit": "f2a69f70af08c91bedee87882109c82160a8bf4f"
+    "repo_commit": "1c8ddce49d4df210a395a63bb093c3d9d20c21f2"
    }
   },
   {

@@ -4,11 +4,11 @@
   "storage_profile_env": "U2S3",
   "assembly_archive_sha256": "a1dcdb5b8f18b7ee0306083de6f849502f1547ea07f293e7d48a7b20d13ab067",
   "repo_commit": "1c8ddce49d4df210a395a63bb093c3d9d20c21f2",
-  "executables": 1,
-  "green": 0,
-  "red": 1,
+  "executables": 3,
+  "green": 3,
+  "red": 0,
   "timeout": 0,
-  "cases_passed": 11,
-  "cases_failed": 2,
+  "cases_passed": 31,
+  "cases_failed": 0,
   "cases_ignored": 0
 }

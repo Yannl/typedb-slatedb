@@ -1,0 +1,28 @@
+{
+  "description": "First-class flake/exclusion ledger (V16 F10). The ONLY place a failing or ignored case may be tolerated: tools/catalog/completeness.py --results <dir> fails the line on any anomaly not covered here, on any count mismatch, on any expired entry, and on any entry that no longer fires (stale exclusions are debt to retire, not carry).",
+  "entries": [
+    {
+      "target_id": "storage:test_recovery",
+      "expected_failed": 2,
+      "expected_ignored": 0,
+      "cases": [
+        "wal_missing_records_entire_replay_fails",
+        "wal_missing_records_for_checkpoint_replay_fails"
+      ],
+      "reason": "Upstream todo!() stubs (unimplemented WAL-hole recovery paths) - they fail identically on the U1/RocksDB oracle and on every SlateDB lane; baseline-equal red, not a port defect. See u2s3-vs-oracle-comparison.json.",
+      "owner": "storage-parity",
+      "expiry": "2027-06-30"
+    },
+    {
+      "target_id": "storage:test_isolation",
+      "expected_failed": 0,
+      "expected_ignored": 1,
+      "cases": [
+        "g0_dirty_writes"
+      ],
+      "reason": "Declared #[ignore] upstream (G0 dirty-write isolation level not implemented by TypeDB); identically ignored on the U1 oracle.",
+      "owner": "storage-parity",
+      "expiry": "2027-06-30"
+    }
+  ]
+}

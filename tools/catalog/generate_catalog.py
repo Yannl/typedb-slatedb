@@ -209,12 +209,16 @@ def cucumber_cases():
                     elif in_examples and l2 and not l2.startswith("#"):
                         in_examples = False
                     j += 1
-                scenarios.append({"name": name, "outline_examples": max(rows, 1)})
+                # an outline whose Examples rows are all commented out
+                # expands to ZERO runs (cucumber semantics) - counting it as
+                # one would put a phantom leaf in the denominator that no
+                # runner ever executes (completeness.py cross-checks this)
+                scenarios.append({"name": name, "outline_examples": rows})
                 i = j
                 continue
             if line.startswith("Scenario:"):
                 scenarios.append({"name": line.split(":", 1)[1].strip(),
-                                  "outline_examples": 0})
+                                  "outline_examples": None})
             i += 1
         out[ref] = {"sha256": src_hash, "scenarios": scenarios}
     return out
@@ -396,6 +400,10 @@ def main():
         for s in data["scenarios"]:
             n = s["outline_examples"]
             if n == 0:
+                # dead outline (all Examples rows commented out upstream):
+                # zero leaves, deliberately absent from the denominator
+                continue
+            if n is None:
                 leaf_cases.append({
                     "leaf_case_id": f"cucumber:{ref}::{s['name']}",
                     "target_id": f"cucumber-corpus:{ref}",

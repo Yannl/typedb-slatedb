@@ -432,3 +432,27 @@ fn a_store_knows_whether_its_files_are_local() {
          when that handle happens to be backed by one"
     );
 }
+
+#[test]
+fn a_checkpoint_pin_expires_instead_of_being_held_forever() {
+    // A checkpoint keeps every SST it references alive, so GC cannot reclaim them while it
+    // exists. SlateDB's default lifetime is None — never expires — and TypeDB checkpoints
+    // every 60 seconds, so inheriting that default accrues 1,440 permanent pins a day and
+    // storage that only ever grows. The expiry must actually be recorded on the checkpoint,
+    // not merely intended.
+    let dir = tempfile::tempdir().unwrap();
+    let set = KeyspaceSet::open_local(dir.path()).unwrap();
+    set.keyspace(KeyspaceId(0)).put(b"k", b"v").unwrap();
+
+    let id = set.checkpoint().unwrap();
+    let checkpoint = set
+        .checkpoints()
+        .unwrap()
+        .into_iter()
+        .find(|checkpoint| checkpoint.id == id)
+        .expect("the checkpoint just taken should be listed");
+    assert!(
+        checkpoint.expire_time.is_some(),
+        "a checkpoint with no expiry pins its SSTs against garbage collection forever"
+    );
+}

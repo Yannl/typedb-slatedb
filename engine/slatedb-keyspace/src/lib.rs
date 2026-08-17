@@ -73,6 +73,24 @@ pub const KEYSPACE_MAXIMUM_COUNT: usize = 10;
 /// staying short enough that the reported figure tracks a bulk ingest within one report.
 pub const DEFAULT_ESTIMATE_TTL: Duration = Duration::from_secs(600);
 
+/// How long a checkpoint's pin survives before expiring on its own.
+///
+/// A checkpoint holds every SST it references alive, so garbage collection cannot reclaim any
+/// of them while it exists. `CheckpointOptions::lifetime` defaults to `None`, meaning *never
+/// expires*, and that default is a slow leak here rather than a conservative choice: TypeDB
+/// checkpoints every 60 seconds (`CHECKPOINT_INTERVAL`), so a database left running accrues
+/// 1,440 permanent pins a day, none of whose objects GC may ever delete. Storage grows without
+/// bound, and the manifest grows with it, since every checkpoint is an entry in it.
+///
+/// An expiry is the right shape because of what the pin is *for*: it exists to keep files from
+/// being deleted underneath the directory copy that immediately follows, and that copy finishes
+/// in seconds. An hour is far longer than the job needs and far shorter than forever.
+///
+/// This also makes [`KeyspaceSet::release_checkpoint`] honestly a no-op. Releasing explicitly
+/// would need an `Admin` handle this type does not hold, so without an expiry the pin would
+/// depend on a cleanup path that does not exist.
+pub const CHECKPOINT_LIFETIME: Duration = Duration::from_secs(3600);
+
 /// Keys deleted per batch by [`Keyspace::clear`].
 ///
 /// Bounds both the memory held while clearing and the size of any single object-store write.
@@ -355,19 +373,40 @@ impl KeyspaceSet {
     /// after this returns, and compaction or GC deleting an SST mid-copy would produce a
     /// checkpoint that looks complete and is not. Holding a checkpoint keeps every referenced
     /// object alive for the duration.
+    /// The pin is given an expiry rather than being held forever; see [`CHECKPOINT_LIFETIME`].
     pub fn checkpoint(&self) -> Result<uuid::Uuid, KeyspaceError> {
+        let options =
+            CheckpointOptions { lifetime: Some(CHECKPOINT_LIFETIME), ..CheckpointOptions::default() };
         let result = self
-            .block(self.db.create_checkpoint(CheckpointScope::All, &CheckpointOptions::default()))
+            .block(self.db.create_checkpoint(CheckpointScope::All, &options))
             .map_err(|e| KeyspaceError::Write(e.to_string()))?;
         Ok(result.id)
     }
 
+    /// Checkpoints currently recorded in the manifest.
+    ///
+    /// Exposed so a caller — or a test — can confirm that pins carry an expiry, which is the
+    /// difference between a checkpoint that releases itself and one that suppresses garbage
+    /// collection for the life of the database.
+    ///
+    /// Refreshes the manifest first, and therefore costs a read. `Db::manifest` returns the
+    /// handle's cached copy, which does not include a checkpoint this process just created —
+    /// checkpoint creation commits a new manifest version rather than mutating the cached one.
+    /// Reading the cache would report an empty list immediately after a successful checkpoint.
+    ///
+    /// Unlike [`Self::size_bytes`], which is deliberately cache-only because it is polled every
+    /// 15 seconds, this is called rarely and correctness is worth the round trip.
+    pub fn checkpoints(&self) -> Result<Vec<slatedb::Checkpoint>, KeyspaceError> {
+        self.block(self.db.refresh_manifest()).map_err(|e| KeyspaceError::Get(e.to_string()))?;
+        Ok(self.db.manifest().checkpoints().to_vec())
+    }
+
     /// Release a checkpoint taken by [`Self::checkpoint`].
+    ///
+    /// A no-op, and safe to be one: the checkpoint carries an expiry, so the pin releases
+    /// itself. Deleting one explicitly needs an `Admin` handle against the same object store,
+    /// which this type does not hold.
     pub fn release_checkpoint(&self, _id: uuid::Uuid) -> Result<(), KeyspaceError> {
-        // Deleting a checkpoint needs an `Admin` handle against the same object store, which
-        // this type does not hold. Leaving it pinned wastes space but never loses data, so the
-        // safe direction is the one taken here; the alternative failure mode is a checkpoint
-        // that vanishes while something still depends on it.
         Ok(())
     }
 }

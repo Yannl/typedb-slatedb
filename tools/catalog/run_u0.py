@@ -234,15 +234,23 @@ def ensure_behaviour_fixture():
     still run `--package storage`.
     """
     behaviour = REPO / "sources" / "typedb-behaviour"
-    # Upstream inconsistency (pinned revision): tests/behaviour/query/language/
-    # given.rs and variables.rs alone reference `external/typedb_behaviour/...`
-    # without the bazel-module `+` suffix every other behaviour test uses.
-    # Consume-only (ADR-0008) means the fixture serves BOTH spellings rather
-    # than editing upstream; dropping the plain link fails exactly those two
-    # tests with '0 features / 1 parsing error' — a false red.
+    # Upstream path inconsistencies (pinned revision) — consume-only
+    # (ADR-0008) means the fixture serves EVERY spelling rather than editing
+    # upstream; each missing link fails its exact tests with '0 features /
+    # 1 parsing error', a false red:
+    #  - `external/typedb_behaviour+`: the canonical spelling (45 tests);
+    #  - `external/typedb_behaviour` (no `+`): query/language/given.rs only;
+    #  - `external/typedb_behaviour++` (double): query/language/variables.rs;
+    #  - `sources/typedb_behaviour+` NEXT TO the checkout:
+    #    concept/migration/{migration,data_validation}.rs carry no
+    #    #[cfg(not(feature="bazel"))] fallback at all, so under cargo their
+    #    bazel-sibling path `../typedb_behaviour+/...` resolves against the
+    #    package root's parent — the sources/ directory.
     links = [
         TB / "bazel-typedb" / "external" / "typedb_behaviour+",
         TB / "bazel-typedb" / "external" / "typedb_behaviour",
+        TB / "bazel-typedb" / "external" / "typedb_behaviour++",
+        REPO / "sources" / "typedb_behaviour+",
     ]
     usable = True
     for link in links:

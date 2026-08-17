@@ -11,7 +11,7 @@ is the v16 brief; this page is the operational digest.
 | G1 | Complete upstream test catalogue + pristine U0 baseline | **green** (`docs/evidence/G1/`) |
 | — | Safe boundaries (TB-P1..P3, BT-P3), pure models, local protocol spikes | **green** (`docs/evidence/G3/`, models in `tools/protocol-models`) |
 | TB-P7 / U2 | SlateDB keyspace engine, corpus parity vs oracle | **green** — full corpus: 106 executables, 104 green, 0 timeouts; the 2 red are documented upstream defects (`u2-vs-oracle-comparison.json`) |
-| TB-P8 / U2S3 | SlateDB over an S3-compatible store (MinIO as the local R2 stand-in) | **green** — storage crate suite baseline-equal vs the oracle; corpus evidence under `docs/evidence/G3/u2s3-full/` |
+| TB-P8 / U2S3 | SlateDB over an S3-compatible store (MinIO as the local R2 stand-in) | **green** — full corpus structurally equal to the U1 oracle: 106 executables, 105 green, 0 timeouts, 0 unexplained divergences (`u2s3-vs-oracle-comparison.json`; strictly closer to the oracle than U2 — bench_iam green) |
 | U3.0 | Remote-WAL protocol completion on the control plane (record types, head, pinned scans, last-by-type, batch, register-fences-predecessor) | **green** — pinned across all three lanes; L1 E2E 35/35 |
 | G2 | Real-platform measurements (latency/cost/amplification kill gate) | **blocked** on SI-G0-3 |
 | U3/U4, broad TypeDB semantic phases | remote WAL client wiring (U3.1+) and beyond | U3.1–U3.4 scoped (see parity plan); G2 still gates production lanes |

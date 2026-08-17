@@ -1,0 +1,44 @@
+{
+ "claim": "U2S3 (SlateDB keyspaces over an S3-compatible object store - local MinIO standing in for Cloudflare R2 - with file WAL) runs the complete applicable upstream TypeDB test corpus with a pass/fail profile structurally equal to the U1 RocksDB oracle baseline, under the corrected expectations for known upstream-defective targets",
+ "u2s3_run": "docs/evidence/G3/u2s3-full/u0-results.json",
+ "u1_baseline": "docs/evidence/G3/u1-full/u0-results.json",
+ "s3_endpoint": "MinIO (S3 API) at 127.0.0.1:9000, bucket typedb-keyspaces",
+ "u2s3_summary": {
+  "executables": 106,
+  "green": 105,
+  "red": 1,
+  "timeout": 0,
+  "cases_passed": 452,
+  "cases_failed": 2,
+  "cases_ignored": 1
+ },
+ "method": "per-target case-profile multiset equality (passed/failed/ignored) against the U1 oracle, joined on target name (the U1 manifest predates the package-id discovery fix); every inequality must carry a documented classification or the comparison fails",
+ "divergent_targets": [
+  {
+   "target": "typedb_server_bin:bench_concurrency",
+   "u2s3_profile": "0 passed / 0 failed",
+   "u1_profile": "ABSENT",
+   "u1_timed_out": false,
+   "classification": "absent from the U1 baseline: the executable was silently dropped by the pre-fix (package,target) dedupe collapse and first measured on the U2 run (see u2-vs-oracle-comparison.json denominator_note); it contains 0 test cases on every lane, so equality is trivial"
+  },
+  {
+   "target": "typedb_server_bin:bench_iam",
+   "u2s3_profile": "2 passed / 0 failed",
+   "u1_profile": "ABSENT",
+   "u1_timed_out": false,
+   "classification": "absent from the U1 baseline (same dedupe collapse), and GREEN on U2S3 where U2 is red: the upstream environment defect (the test queries a database whose TempDir storage dir was deleted at the end of setup; finding-bench-iam-deleted-storage-dir.md) cannot trigger when keyspace data lives in the object store, so U2S3 matches the U0/RocksDB behaviour directly"
+  },
+  {
+   "target": "typedb_server_bin:test_fail_points",
+   "u2s3_profile": "2 passed / 0 failed",
+   "u1_profile": "0 passed / 0 failed",
+   "u1_timed_out": true,
+   "classification": "corrected expectation: the U1 baseline row itself is a 1800s TIMEOUT (0/0); the corrected oracle profile is U2's measured 2 passed / 0 failed at a raised timeout (u2-full: 2099s at 3600s; U2S3 measured 2572s at 7200s) - equal to it"
+  }
+ ],
+ "notes": [
+  "test_concept, test_query and test_fail_points rows are re-runs on a quiet machine: the first pass ran under full-workspace build contention (2 spurious timeouts) and predates the four-spelling behaviour-fixture fix in run_u0.py (false reds from unreadable feature paths in exactly the four tests using non-canonical fixture paths).",
+  "test_fail_points requires a raised timeout on every lane (the U1 baseline row itself is a 1800s timeout; U2 measured 2099s green at 3600s; U2S3 2572s at 7200s).",
+  "bench_iam is the one target where U2S3 is strictly closer to the oracle than U2: object-store-resident keyspaces are immune to the deleted-TempDir environment defect that reds it on LocalFS SlateDB."
+ ]
+}

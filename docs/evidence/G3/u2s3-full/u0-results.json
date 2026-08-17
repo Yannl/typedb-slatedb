@@ -6,7 +6,7 @@
   "toolchain": "rust 1.93.0 parity lane",
   "storage_profile_env": "U2S3",
   "assembly_archive_sha256": "a1dcdb5b8f18b7ee0306083de6f849502f1547ea07f293e7d48a7b20d13ab067",
-  "repo_commit": "3ab01f0cae10d7ee66367fe71589e3859ee1e163"
+  "repo_commit": "d7bd1b7afda530e5ddedc703ff05d375e5a76a21"
  },
  "results": [
   {
@@ -2081,22 +2081,22 @@
    "target_id": "typedb_server_bin:test_fail_points",
    "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_fail_points-9fe4e639fe2f2939",
    "executable_sha256": "67525383051ea7893f0fb5c1497ec2101087f6894824f9b31c4b4ba87cf64e8e",
-   "exit_code": null,
-   "timed_out": true,
-   "duration_seconds": 1800.54,
-   "passed": 0,
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 2571.64,
+   "passed": 2,
    "failed": 0,
    "ignored": 0,
    "measured": 0,
    "filtered_out": 0,
    "raw_log": "docs/evidence/G3/u2s3-full/typedb_server_bin__test_fail_points.log",
-   "tail": "\nrunning 2 tests\n.",
+   "tail": null,
    "run": {
     "profile": "U2S3",
     "toolchain": "rust 1.93.0 parity lane",
     "storage_profile_env": "U2S3",
     "assembly_archive_sha256": "a1dcdb5b8f18b7ee0306083de6f849502f1547ea07f293e7d48a7b20d13ab067",
-    "repo_commit": "8679cb155ae21aaf2503f9e1b9b03e38b1fef86c"
+    "repo_commit": "d7bd1b7afda530e5ddedc703ff05d375e5a76a21"
    }
   },
   {

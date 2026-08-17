@@ -13,7 +13,7 @@ use std::{
 
 use remote_wal_spike::{
     hex, sha256,
-    l1_client::{FinalizeHttpRequest, L1Client},
+    l1_client::{FinalizeHttpRequest, L1Client, ScanQuery},
 };
 
 fn port() -> u16 {
@@ -159,7 +159,9 @@ fn rust_client_full_protocol_against_workerd() {
     let iterator = client.open_iterator(db, 1).unwrap();
     assert!(iterator.ok);
     assert_eq!(iterator.head_lsn, 1);
-    let scan = client.scan(db, 1, 1, 0, iterator.head_lsn, None, 100).unwrap();
+    let scan = client
+        .scan(db, 1, &ScanQuery { from_ts: 1, from_lsn: 0, through_lsn: iterator.head_lsn, record_type: None, limit: 100 })
+        .unwrap();
     assert!(scan.ok);
     assert_eq!(
         scan.records.iter().map(|r| (r.append_lsn, r.type_sequence, r.record_type)).collect::<Vec<_>>(),
@@ -167,7 +169,9 @@ fn rust_client_full_protocol_against_workerd() {
     );
     assert_eq!(scan.next_from_lsn, None);
     // type filter is a catalogue property
-    let typed = client.scan(db, 1, 0, 0, iterator.head_lsn, Some(10), 100).unwrap();
+    let typed = client
+        .scan(db, 1, &ScanQuery { from_ts: 0, from_lsn: 0, through_lsn: iterator.head_lsn, record_type: Some(10), limit: 100 })
+        .unwrap();
     assert_eq!(typed.records.len(), 1);
     assert_eq!(typed.records[0].append_lsn, 1);
 
@@ -206,7 +210,7 @@ fn rust_client_full_protocol_against_workerd() {
     assert_eq!(fenced.error.as_deref(), Some("SESSION_FENCED"));
 
     // explicit fencing of the new actor too
-    client.fence_session(db, 1, "sess-r2").unwrap();
+    client.fence_session(db, "sess-r2").unwrap();
     let mut post_fence = request.clone();
     post_fence.startup_session_id = "sess-r2".into();
     post_fence.operation_id = "rop-4".into();

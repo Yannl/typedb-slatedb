@@ -179,6 +179,12 @@ check("scan filters by record type", scanTyped.body.records.length === 1 && scan
 const scanUnbounded = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&limit=100`);
 check("unbounded scan is refused (pinned snapshot is mandatory)",
   scanUnbounded.status === 400 && scanUnbounded.body.error === "MISSING_THROUGH_LSN");
+const scanZeroLimit = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&throughLsn=${iter.body.headLsn}&limit=0`);
+check("limit=0 is clamped to one record, never a crash",
+  scanZeroLimit.body.ok === true && scanZeroLimit.body.records.length === 1 && scanZeroLimit.body.nextFromLsn === 1);
+const scanBadParam = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=abc&throughLsn=${iter.body.headLsn}`);
+check("non-numeric scan parameter is a typed 400",
+  scanBadParam.status === 400 && scanBadParam.body.error === "INVALID_PARAMETER");
 
 // 13. last-by-type
 const last = await api("GET", `/wal/${DB}/${GEN}/last?recordType=1`);

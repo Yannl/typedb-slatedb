@@ -62,7 +62,11 @@ export function applyEvent(state: ReducedState, event: WalRecordEvent): ReducedS
     payloadKey: event.payloadKey,
     payloadDigest: event.payloadDigest,
     typeSequence: event.typeSequence,
-    recordType: event.recordType,
+    // outbox rows published before the record_type migration carry no
+    // recordType in their canonical body; normalize to 0 — the same value
+    // the SQL migration backfills — so replay of migrated state stays
+    // trace-equivalent with the projection
+    recordType: event.recordType ?? 0,
   });
   const statusByLogicalKey = new Map(generation.statusByLogicalKey);
   if (event.logicalKey !== null) statusByLogicalKey.set(event.logicalKey, event.appendLsn);

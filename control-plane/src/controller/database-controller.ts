@@ -87,8 +87,8 @@ export class DatabaseControllerDO extends DurableObject {
     this.core().registerSession(databaseId, generation, startupSessionId);
   }
 
-  fenceSession(databaseId: string, generation: number, startupSessionId: string): void {
-    this.core().fenceSession(databaseId, generation, startupSessionId);
+  fenceSession(databaseId: string, startupSessionId: string): void {
+    this.core().fenceSession(databaseId, startupSessionId);
   }
 
   setBudgets(databaseId: string, budgets: Parameters<ControllerCore["setBudgets"]>[1]): void {

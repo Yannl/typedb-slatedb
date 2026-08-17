@@ -110,7 +110,7 @@ test("status singleton: identical duplicate is idempotent, conflicting duplicate
 
 test("stale session fencing: fenced or unknown sessions cannot finalise", () => {
   const core = boot();
-  core.fenceSession("db1", 3, "sess-1");
+  core.fenceSession("db1", "sess-1");
   assert.deepEqual(core.finalizeWalRecord(req()), { ok: false, error: "SESSION_FENCED" });
   assert.deepEqual(
     core.finalizeWalRecord(req({ startupSessionId: "sess-ghost" })),
@@ -128,7 +128,7 @@ test("fenced replay: a fenced session retrying a durable finalize gets SESSION_F
   const first = req();
   const r1 = core.finalizeWalRecord(first);
   assert.ok(r1.ok && !r1.replayed);
-  core.fenceSession("db1", 3, "sess-1");
+  core.fenceSession("db1", "sess-1");
   // identical retry (lost-response recovery) after the fence
   assert.deepEqual(core.finalizeWalRecord(first), { ok: false, error: "SESSION_FENCED" });
   // the record itself is untouched durable history (fencing revokes reporting,
@@ -314,6 +314,18 @@ test("a fenced actor cannot re-take authority by re-registering", () => {
   // sess-1 stays fenced; sess-2 keeps authority
   assert.deepEqual(core.finalizeWalRecord(req()), { ok: false, error: "SESSION_FENCED" });
   assert.ok(core.finalizeWalRecord(req({ startupSessionId: "sess-2" })).ok);
+});
+
+test("fencing is actor-wide: revoking a rollover-spanning actor covers every generation it registered", () => {
+  const core = boot();
+  core.registerSession("db1", 4, "sess-1"); // same actor, next generation
+  assert.ok(core.finalizeWalRecord(req()).ok);
+  assert.ok(core.finalizeWalRecord(req({ generation: 4 })).ok);
+  core.fenceSession("db1", "sess-1");
+  // both generations are revoked — a per-generation fence would leave the
+  // actor blocked from re-registering yet still able to append elsewhere
+  assert.deepEqual(core.finalizeWalRecord(req()), { ok: false, error: "SESSION_FENCED" });
+  assert.deepEqual(core.finalizeWalRecord(req({ generation: 4 })), { ok: false, error: "SESSION_FENCED" });
 });
 
 test("one actor spans a generation rollover without fencing itself", () => {

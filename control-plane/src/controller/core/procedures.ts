@@ -173,10 +173,14 @@ export class ControllerCore {
     });
   }
 
-  fenceSession(databaseId: string, generation: number, startupSessionId: string): void {
+  fenceSession(databaseId: string, startupSessionId: string): void {
+    // The authority unit is the ACTOR (see registerSession): fencing revokes
+    // the actor's append authority across every generation it registered —
+    // a per-generation fence would leave a rollover-spanning actor half
+    // fenced (blocked from re-registering, still able to append elsewhere).
     this.sql.exec(
-      `UPDATE sessions SET fenced=1 WHERE database_id=? AND generation=? AND startup_session_id=?`,
-      databaseId, generation, startupSessionId,
+      `UPDATE sessions SET fenced=1 WHERE database_id=? AND startup_session_id=?`,
+      databaseId, startupSessionId,
     );
   }
 
@@ -428,10 +432,14 @@ export class ControllerCore {
     generation: number,
     opts: { fromTypeSequence: number; fromLsn: number; throughLsn: number; recordType: number | null; limit: number },
   ): { records: WalDescriptor[]; nextFromLsn: number | null } {
+    // a non-positive limit would page nothing yet compute nextFromLsn from an
+    // empty slice (crash); clamp defensively — the HTTP route validates, but
+    // the DO method is directly callable
+    const limit = Math.max(1, Math.floor(opts.limit));
     const typeFilter = opts.recordType === null ? "" : "AND record_type=?";
     const params: unknown[] = [databaseId, generation, opts.fromTypeSequence, opts.fromLsn, opts.throughLsn];
     if (opts.recordType !== null) params.push(opts.recordType);
-    params.push(opts.limit + 1); // one extra row decides whether a next page exists
+    params.push(limit + 1); // one extra row decides whether a next page exists
     const rows = this.sql.exec(
       `SELECT append_lsn, type_sequence, sequencing_kind, record_type, payload_key, payload_digest,
               payload_length, unsequenced_logical_key
@@ -441,8 +449,8 @@ export class ControllerCore {
        ORDER BY append_lsn LIMIT ?`,
       ...params,
     );
-    const page = rows.slice(0, opts.limit).map((row) => descriptorOf(row));
-    const nextFromLsn = rows.length > opts.limit ? page[page.length - 1].appendLsn + 1 : null;
+    const page = rows.slice(0, limit).map((row) => descriptorOf(row));
+    const nextFromLsn = rows.length > limit ? page[page.length - 1].appendLsn + 1 : null;
     return { records: page, nextFromLsn };
   }
 

@@ -60,31 +60,76 @@ function base64Of(buffer: ArrayBuffer): string {
   return btoa(parts.join(""));
 }
 
-/** Fetch one catalogued payload with digest re-verification (integrity rule:
- *  a catalogued record with missing/corrupt payload is a hard error, never
- *  EOF). Returns the base64 payload or a typed error Response. */
+/** The single fetch-and-verify core both integrity paths share: get the
+ *  object, hash it, compare digests (and length when the caller has one).
+ *  The two callers map the same outcomes to different protocol shapes —
+ *  422 before finalisation (client's receipt is wrong), 500 after (a
+ *  catalogued record's payload is missing/corrupt — hard integrity error,
+ *  never EOF). */
+async function fetchVerified(
+  env: Env,
+  key: string,
+  expectedDigest: string,
+  expectedLength?: number,
+): Promise<{ buffer: ArrayBuffer } | { error: "MISSING" } | { error: "MISMATCH"; observed: string; length: number }> {
+  const object = await env.PAYLOADS.get(key);
+  if (object === null) return { error: "MISSING" };
+  const buffer = await object.arrayBuffer();
+  const observed = await sha256hex(buffer);
+  if (observed !== expectedDigest || (expectedLength !== undefined && buffer.byteLength !== expectedLength)) {
+    return { error: "MISMATCH", observed, length: buffer.byteLength };
+  }
+  return { buffer };
+}
+
+/** Read-path wrapper: base64 payload or a typed 500 error Response. */
 async function verifiedPayloadBase64(
   env: Env,
   record: { payloadKey: string; payloadDigest: string },
 ): Promise<{ payloadBase64: string } | { errorResponse: Response }> {
-  const object = await env.PAYLOADS.get(String(record.payloadKey));
-  if (object === null) {
+  const result = await fetchVerified(env, String(record.payloadKey), String(record.payloadDigest));
+  if ("buffer" in result) return { payloadBase64: base64Of(result.buffer) };
+  if (result.error === "MISSING") {
     return { errorResponse: json({ ok: false, error: "PAYLOAD_MISSING_FOR_CATALOGUED_RECORD", record }, 500) };
   }
-  const buffer = await object.arrayBuffer();
-  const observedDigest = await sha256hex(buffer);
-  if (observedDigest !== String(record.payloadDigest)) {
-    return {
-      errorResponse: json({ ok: false, error: "PAYLOAD_INTEGRITY_VIOLATION", record, observed: observedDigest }, 500),
-    };
-  }
-  return { payloadBase64: base64Of(buffer) };
+  return {
+    errorResponse: json({ ok: false, error: "PAYLOAD_INTEGRITY_VIOLATION", record, observed: result.observed }, 500),
+  };
 }
+
+/** Bounded-concurrency ordered map: the scan read path and batch receipt
+ *  verification issue one R2 get per record — strictly serial awaits would
+ *  make a full page pay the whole round-trip latency N times over. Results
+ *  keep item order; concurrency is capped so a 1000-record page cannot open
+ *  1000 simultaneous R2 reads. */
+async function mapBounded<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await fn(items[index]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+const PAYLOAD_FETCH_CONCURRENCY = 8;
 
 /** Record types are u8 in TypeDB durability; anything else is a client bug
  *  surfaced as a typed 400, never coerced. */
 function invalidRecordType(value: unknown): boolean {
   return typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 255;
+}
+
+/** Query-string numerics must be non-negative safe integers; anything else
+ *  (NaN, negatives, floats) is a typed 400, never a crash or a NaN reaching
+ *  SQL. Returns null when invalid. */
+function nonNegativeInt(raw: string | null, fallback: number): number | null {
+  if (raw === null) return fallback;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
 export default {
@@ -130,7 +175,7 @@ export default {
     const stubFor = (databaseId: string) =>
       env.CONTROLLER.get(env.CONTROLLER.idFromName(databaseId)) as unknown as {
         registerSession(db: string, generation: number, session: string): Promise<void>;
-        fenceSession(db: string, generation: number, session: string): Promise<void>;
+        fenceSession(db: string, session: string): Promise<void>;
         setBudgets(db: string, budgets: object): Promise<void>;
         finalizeWalRecord(req: object): Promise<Record<string, unknown>>;
         finalizeBatch(reqs: object[]): Promise<Record<string, unknown>[] | Record<string, unknown>>;
@@ -152,7 +197,9 @@ export default {
 
     if (request.method === "POST" && path === "/session/fence") {
       const b = (await request.json()) as { databaseId: string; generation: number; startupSessionId: string };
-      await stubFor(b.databaseId).fenceSession(b.databaseId, b.generation, b.startupSessionId);
+      // the fence is actor-wide: any `generation` in the body is accepted for
+      // wire compatibility but does not scope the revocation
+      await stubFor(b.databaseId).fenceSession(b.databaseId, b.startupSessionId);
       return json({ ok: true });
     }
 
@@ -171,16 +218,13 @@ export default {
     // data-path receipt verification BEFORE the DO's synchronous
     // finalisation: the object must exist and match digest + length
     const verifyReceipt = async (req: { payloadKey: string; payloadDigest: string; payloadLength: number }) => {
-      const object = await env.PAYLOADS.get(req.payloadKey);
-      if (object === null) {
-        return json({ ok: false, error: "PAYLOAD_MISSING", key: req.payloadKey }, 422);
-      }
-      const bytes = await object.arrayBuffer();
-      const digest = await sha256hex(bytes);
-      if (digest !== req.payloadDigest || bytes.byteLength !== req.payloadLength) {
-        return json({ ok: false, error: "PAYLOAD_DIGEST_MISMATCH", observed: digest, length: bytes.byteLength }, 422);
-      }
-      return null;
+      const result = await fetchVerified(env, req.payloadKey, req.payloadDigest, req.payloadLength);
+      if ("buffer" in result) return null;
+      if (result.error === "MISSING") return json({ ok: false, error: "PAYLOAD_MISSING", key: req.payloadKey }, 422);
+      return json(
+        { ok: false, error: "PAYLOAD_DIGEST_MISMATCH", observed: result.observed, length: result.length },
+        422,
+      );
     };
 
     if (request.method === "POST" && path === "/wal/finalize") {
@@ -213,9 +257,10 @@ export default {
         if (invalidRecordType(req.recordType)) {
           return json({ ok: false, error: "INVALID_RECORD_TYPE", observed: req.recordType ?? null }, 400);
         }
-        const receiptError = await verifyReceipt(req);
-        if (receiptError !== null) return receiptError;
       }
+      const receiptErrors = await mapBounded(body.requests, PAYLOAD_FETCH_CONCURRENCY, verifyReceipt);
+      const firstReceiptError = receiptErrors.find((error) => error !== null);
+      if (firstReceiptError) return firstReceiptError;
       const result = await stubFor(databaseId).finalizeBatch(body.requests);
       // all-or-nothing: an array is N successes; a single typed error aborted
       // (and rolled back) the whole batch
@@ -263,19 +308,24 @@ export default {
         // started (inv. 41-42): the pinned snapshot bound is mandatory
         return json({ ok: false, error: "MISSING_THROUGH_LSN" }, 400);
       }
-      const limit = Math.min(Number(url.searchParams.get("limit") ?? "100"), 1000);
+      const fromTypeSequence = nonNegativeInt(url.searchParams.get("fromTs"), 0);
+      const fromLsn = nonNegativeInt(url.searchParams.get("fromLsn"), 0);
+      const throughLsn = nonNegativeInt(throughLsnParam, 0);
+      const rawLimit = nonNegativeInt(url.searchParams.get("limit"), 100);
+      if (fromTypeSequence === null || fromLsn === null || throughLsn === null || rawLimit === null) {
+        return json({ ok: false, error: "INVALID_PARAMETER" }, 400);
+      }
+      const limit = Math.min(Math.max(rawLimit, 1), 1000);
       const page = await stubFor(db).scan(db, Number(generation), {
-        fromTypeSequence: Number(url.searchParams.get("fromTs") ?? "0"),
-        fromLsn: Number(url.searchParams.get("fromLsn") ?? "0"),
-        throughLsn: Number(throughLsnParam),
-        recordType,
-        limit,
+        fromTypeSequence, fromLsn, throughLsn, recordType, limit,
       });
+      const payloads = await mapBounded(page.records, PAYLOAD_FETCH_CONCURRENCY, (record) =>
+        verifiedPayloadBase64(env, record as { payloadKey: string; payloadDigest: string }),
+      );
       const records: Record<string, unknown>[] = [];
-      for (const record of page.records) {
-        const payload = await verifiedPayloadBase64(env, record as { payloadKey: string; payloadDigest: string });
+      for (const [index, payload] of payloads.entries()) {
         if ("errorResponse" in payload) return payload.errorResponse;
-        records.push({ ...record, payloadBase64: payload.payloadBase64 });
+        records.push({ ...page.records[index], payloadBase64: payload.payloadBase64 });
       }
       return json({ ok: true, records, nextFromLsn: page.nextFromLsn });
     }

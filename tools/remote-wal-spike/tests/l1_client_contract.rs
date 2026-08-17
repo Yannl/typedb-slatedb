@@ -39,7 +39,7 @@ fn serve_once(status_line: &'static str, body: &'static str) -> String {
 fn fence_on_json_404_is_a_typed_protocol_error_not_success() {
     let base = serve_once("404 Not Found", r#"{"ok":false,"error":"NOT_FOUND"}"#);
     let client = L1Client::new(base);
-    match client.fence_session("db", 1, "session-a") {
+    match client.fence_session("db", "session-a") {
         Err(L1Error::Protocol { status: 404, body }) => {
             assert!(body.contains("NOT_FOUND"), "body preserved for diagnosis: {body}");
         }

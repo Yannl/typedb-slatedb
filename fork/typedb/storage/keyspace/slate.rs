@@ -479,17 +479,28 @@ impl SlateKeyspace {
     /// local file sync followed by [`Self::open_s3`]'s upload) needs no
     /// engine-specific code.
     fn checkpoint_remote(remote: &RemoteStore, checkpoint_keyspace_dir: &Path) -> Result<(), Arc<slatedb::Error>> {
-        let manifest_prefix = format!("{}/", remote.prefix.clone().join(DB_SUBDIR).join(MANIFEST_SUBDIR));
+        let manifest_dir = remote.prefix.clone().join(DB_SUBDIR).join(MANIFEST_SUBDIR);
+        let manifest_prefix = format!("{manifest_dir}/");
         let store = remote.store.clone();
         let prefix = remote.prefix.clone();
         let dir = checkpoint_keyspace_dir.to_owned();
         bridge(async move {
+            // Pin FIRST, from a listing of the manifest prefix ALONE, and only
+            // then list the data prefixes: SSTs are immutable and durable
+            // before the manifest that references them, so the strictly-later
+            // full listing is a superset of everything the pinned manifest
+            // needs (extra SSTs from later flushes are unreferenced and
+            // harmless, as in the LocalFS path). A single interleaved walk
+            // could list a data prefix BEFORE a concurrent flush and the
+            // manifest prefix after it, pinning a manifest whose SSTs the
+            // walk never saw — the checkpoint the docstring above promises
+            // this algorithm can never produce.
+            let manifests = list_remote_prefix(store.as_ref(), &manifest_dir).await?;
+            // lexicographically last manifest object — the same ordering the
+            // LocalFS path applies to manifest file names
+            let pinned = manifests.iter().map(|meta| &meta.location).max().cloned();
             let objects = list_remote_prefix(store.as_ref(), &prefix).await?;
             let is_manifest = |location: &ObjectPath| location.as_ref().starts_with(&manifest_prefix);
-            // pin the lexicographically last manifest object — the same
-            // ordering the LocalFS path applies to manifest file names
-            let pinned =
-                objects.iter().map(|meta| &meta.location).filter(|location| is_manifest(location)).max().cloned();
             let mut to_copy: Vec<ObjectPath> = objects
                 .iter()
                 .map(|meta| meta.location.clone())

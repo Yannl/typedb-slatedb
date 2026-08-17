@@ -100,6 +100,17 @@ pub struct ScanRecord {
     pub payload_base64: String,
 }
 
+/// Parameters of one `/scan` page request. `through_lsn` is the pinned
+/// iterator snapshot bound (mandatory server-side).
+#[derive(Debug, Clone)]
+pub struct ScanQuery {
+    pub from_ts: u64,
+    pub from_lsn: u64,
+    pub through_lsn: i64,
+    pub record_type: Option<u8>,
+    pub limit: u32,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanOutcome {
@@ -161,10 +172,13 @@ impl L1Client {
         .map(|_| ())
     }
 
-    pub fn fence_session(&self, database_id: &str, generation: u64, session: &str) -> Result<(), L1Error> {
+    /// Fencing is actor-wide: it revokes this startup session's append
+    /// authority across every generation it registered (a per-generation
+    /// fence would leave a rollover-spanning actor half revoked).
+    pub fn fence_session(&self, database_id: &str, session: &str) -> Result<(), L1Error> {
         self.post_json(
             "/session/fence",
-            &serde_json::json!({ "databaseId": database_id, "generation": generation, "startupSessionId": session }),
+            &serde_json::json!({ "databaseId": database_id, "startupSessionId": session }),
         )
         .map(|_| ())
     }
@@ -222,28 +236,20 @@ impl L1Client {
         let mut response = self
             .agent
             .post(format!("{}/wal/{}/{}/iterator", self.base, database_id, generation))
-            .send_json(&serde_json::json!({}))
+            .send_json(serde_json::json!({}))
             .map_err(|e| L1Error::Http(e.to_string()))?;
         response.body_mut().read_json().map_err(|e| L1Error::Decode(e.to_string()))
     }
 
-    /// One ordered replay page (physical order, `type_sequence >= from_ts`,
-    /// bounded by the pinned `through_lsn`), payloads inline.
-    pub fn scan(
-        &self,
-        database_id: &str,
-        generation: u64,
-        from_ts: u64,
-        from_lsn: u64,
-        through_lsn: i64,
-        record_type: Option<u8>,
-        limit: u32,
-    ) -> Result<ScanOutcome, L1Error> {
+    /// One ordered replay page (physical order, `type_sequence >=
+    /// query.from_ts`, bounded by the pinned `query.through_lsn`), payloads
+    /// inline.
+    pub fn scan(&self, database_id: &str, generation: u64, query: &ScanQuery) -> Result<ScanOutcome, L1Error> {
         let mut url = format!(
             "{}/wal/{}/{}/scan?fromTs={}&fromLsn={}&throughLsn={}&limit={}",
-            self.base, database_id, generation, from_ts, from_lsn, through_lsn, limit
+            self.base, database_id, generation, query.from_ts, query.from_lsn, query.through_lsn, query.limit
         );
-        if let Some(rt) = record_type {
+        if let Some(rt) = query.record_type {
             url.push_str(&format!("&recordType={rt}"));
         }
         let mut response = self.agent.get(url).call().map_err(|e| L1Error::Http(e.to_string()))?;
@@ -273,7 +279,7 @@ impl L1Client {
         let mut response = self
             .agent
             .post(format!("{}/wal/finalize-batch", self.base))
-            .send_json(&serde_json::json!({ "requests": requests }))
+            .send_json(serde_json::json!({ "requests": requests }))
             .map_err(|e| L1Error::Http(e.to_string()))?;
         let status = response.status().as_u16();
         let outcome = response.body_mut().read_json().map_err(|e| L1Error::Decode(e.to_string()))?;

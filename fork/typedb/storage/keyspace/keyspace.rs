@@ -417,6 +417,14 @@ impl Keyspace {
         // open); on Windows an outstanding cursor can make removal fail with a
         // sharing violation, surfaced as the typed DirectoryRemove error rather
         // than upstream's undefined behavior on the same race.
+        //
+        // U2S3 caveat: that guarantee is local-lane only. purge_remote() below
+        // closes the shared engine and deletes the remote objects, so a cursor
+        // still pooled in a live snapshot fails its next read (typed engine/
+        // object error, never silent corruption). Callers reach delete() only
+        // through database deletion, which requires exclusive ownership of the
+        // database, so no such cursor exists on that path; new callers on the
+        // remote lane must uphold the same exclusivity.
         let path = self.path.clone();
         let name = self.name;
         // S3-backed keyspaces (U2S3) also own remote objects; deleting only

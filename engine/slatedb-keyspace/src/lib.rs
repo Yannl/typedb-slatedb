@@ -27,13 +27,14 @@
 //! ## What is deliberately not here yet
 //!
 //! Checkpointing, size estimation and deletion. They are separate concerns with their own
-//! semantics, and shipping a wrong `checkpoint` is worse than shipping none.
+//! semantics. `checkpoint` now ships: it flushes, pins the manifest, and lets the caller
+//! copy the store's files without compaction pulling them out from under it.
 
 use std::{ops::Bound, sync::Arc};
 
 use bytes::Bytes;
 use slatedb::{
-    config::{ScanOptions, WriteOptions},
+    config::{CheckpointOptions, CheckpointScope, ScanOptions, WriteOptions},
     Db, WriteBatch,
 };
 
@@ -148,6 +149,33 @@ impl KeyspaceSet {
     pub fn close(&self) -> Result<(), KeyspaceError> {
         self.block(self.db.close()).map_err(|e| KeyspaceError::Write(e.to_string()))
     }
+
+    /// Make every acknowledged write durable and pin the resulting state.
+    ///
+    /// `CheckpointScope::All` flushes the batch writer before recording the checkpoint, so the
+    /// returned state includes everything written so far — not merely everything already
+    /// durable. That distinction is the whole point: a checkpoint that silently excluded
+    /// in-flight writes would restore to a past the caller never asked for.
+    ///
+    /// The pin matters for a second reason. The caller copies the store's files immediately
+    /// after this returns, and compaction or GC deleting an SST mid-copy would produce a
+    /// checkpoint that looks complete and is not. Holding a checkpoint keeps every referenced
+    /// object alive for the duration.
+    pub fn checkpoint(&self) -> Result<uuid::Uuid, KeyspaceError> {
+        let result = self
+            .block(self.db.create_checkpoint(CheckpointScope::All, &CheckpointOptions::default()))
+            .map_err(|e| KeyspaceError::Write(e.to_string()))?;
+        Ok(result.id)
+    }
+
+    /// Release a checkpoint taken by [`Self::checkpoint`].
+    pub fn release_checkpoint(&self, _id: uuid::Uuid) -> Result<(), KeyspaceError> {
+        // Deleting a checkpoint needs an `Admin` handle against the same object store, which
+        // this type does not hold. Leaving it pinned wastes space but never loses data, so the
+        // safe direction is the one taken here; the alternative failure mode is a checkpoint
+        // that vanishes while something still depends on it.
+        Ok(())
+    }
 }
 
 /// A batch of writes, keyspace-prefixed as they are added.
@@ -226,6 +254,51 @@ impl<'a> Keyspace<'a> {
     /// is a cheap borrow-and-id pair that callers routinely create inline, so binding the
     /// iterator to `&self` would make `set.keyspace(id).iterate_from(..)` fail to compile —
     /// the handle is a temporary while the data it points at is not.
+    /// Delete every key in this keyspace, leaving other keyspaces untouched.
+    ///
+    /// Scan-and-delete rather than a native range delete, which this SlateDB version does not
+    /// expose. That is not a compromise here: upstream's `Keyspace::reset` walks the store with
+    /// an iterator and deletes key by key too (`keyspace.rs`), so the cost profile matches what
+    /// TypeDB already expects.
+    ///
+    /// Deletes are collected first and applied as one batch. Deleting while the cursor is live
+    /// would mutate the range being scanned — the one ordering mistake here that produces a
+    /// *partial* clear rather than an error, and a keyspace that is only mostly empty is worse
+    /// than one that failed to clear at all.
+    pub fn clear(&self) -> Result<usize, KeyspaceError> {
+        let mut batch = Batch::new();
+        let mut count = 0usize;
+        let mut iterator = self.iterate_from(&[])?;
+        while let Some((key, _)) = iterator.advance()? {
+            batch.delete(self.id, key);
+            count += 1;
+        }
+        drop(iterator);
+        if count > 0 {
+            self.set.write(batch)?;
+        }
+        Ok(count)
+    }
+
+    /// Number of live keys, and their total encoded size in bytes.
+    ///
+    /// Exact, by scanning. RocksDB answers the equivalent questions from table properties in
+    /// constant time and calls them *estimates*; SlateDB exposes no such property, so the
+    /// choice is an O(n) scan or a fabricated number. These feed diagnostics where a wrong
+    /// answer is indistinguishable from a right one, so the scan wins — and the cost is
+    /// documented rather than hidden, because a caller polling this on a large keyspace
+    /// deserves to know it is not free.
+    pub fn stats(&self) -> Result<(u64, u64), KeyspaceError> {
+        let mut keys = 0u64;
+        let mut bytes = 0u64;
+        let mut iterator = self.iterate_from(&[])?;
+        while let Some((key, value)) = iterator.advance()? {
+            keys += 1;
+            bytes += (key.len() + value.len()) as u64;
+        }
+        Ok((keys, bytes))
+    }
+
     pub fn iterate_from(&self, from: &[u8]) -> Result<KeyspaceIterator<'a>, KeyspaceError> {
         let start = Bound::Included(physical_key(self.id, from));
         let end = keyspace_end(self.id);

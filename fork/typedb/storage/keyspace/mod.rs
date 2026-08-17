@@ -20,6 +20,8 @@ pub mod rocks_resources;
 /// default build is byte-for-byte the upstream RocksDB path.
 #[cfg(feature = "slatedb-backend")]
 pub(crate) mod slate;
+#[cfg(feature = "slatedb-backend")]
+pub(crate) use keyspace::{SLATEDB_CHECKPOINT_DIR, copy_dir_recursive};
 
 /// The error type a backend's iterator yields.
 ///

@@ -60,11 +60,20 @@ pub trait KeyspaceSet: Copy {
 pub struct Keyspaces {
     keyspaces: Vec<Keyspace>,
     index: [Option<KeyspaceId>; KEYSPACE_MAXIMUM_COUNT],
+    /// Root directory of the shared SlateDB store. Held explicitly rather than derived from a
+    /// keyspace's `path`, because a keyspace path on this lane is a label, not a location.
+    #[cfg(feature = "slatedb-backend")]
+    store_dir: PathBuf,
 }
 
 impl Keyspaces {
     pub(crate) fn new() -> Self {
-        Self { keyspaces: Vec::new(), index: std::array::from_fn(|_| None) }
+        Self {
+            keyspaces: Vec::new(),
+            index: std::array::from_fn(|_| None),
+            #[cfg(feature = "slatedb-backend")]
+            store_dir: PathBuf::new(),
+        }
     }
 
     pub(crate) fn open<KS: KeyspaceSet>(
@@ -88,6 +97,10 @@ impl Keyspaces {
         );
 
         let mut keyspaces = Keyspaces::new();
+        #[cfg(feature = "slatedb-backend")]
+        {
+            keyspaces.store_dir = path.to_path_buf();
+        }
         for keyspace in KS::iter() {
             keyspaces
                 .validate_new_keyspace(keyspace)
@@ -142,11 +155,42 @@ impl Keyspaces {
         Ok(())
     }
 
+    #[cfg(not(feature = "slatedb-backend"))]
     pub(crate) fn checkpoint(&self, current_checkpoint_dir: &Path) -> Result<(), KeyspaceCheckpointError> {
         for keyspace in &self.keyspaces {
             fail_point!(KEYSPACE_CHECKPOINT_FAIL);
             keyspace.checkpoint(current_checkpoint_dir)?;
         }
+        Ok(())
+    }
+
+    /// Checkpoint the whole store once, not once per keyspace.
+    ///
+    /// RocksDB checkpoints per keyspace because each keyspace is a separate database. Every
+    /// SlateDB keyspace lives in one store, so N per-keyspace copies would be N copies of the
+    /// same bytes — and, worse, N copies taken at N different instants, which is not a
+    /// checkpoint of anything. One copy at one pinned instant is both cheaper and the only
+    /// version that is actually consistent.
+    #[cfg(feature = "slatedb-backend")]
+    pub(crate) fn checkpoint(&self, current_checkpoint_dir: &Path) -> Result<(), KeyspaceCheckpointError> {
+        use KeyspaceCheckpointError::{CheckpointExists, SlateDBCheckpoint};
+
+        fail_point!(KEYSPACE_CHECKPOINT_FAIL);
+        let Some(keyspace) = self.keyspaces.first() else { return Ok(()) };
+
+        let target = current_checkpoint_dir.join(SLATEDB_CHECKPOINT_DIR);
+        if target.exists() {
+            return Err(CheckpointExists { name: SLATEDB_CHECKPOINT_DIR, dir: target });
+        }
+
+        // Flush and pin first. The copy that follows reads live files, and compaction or GC
+        // removing an SST midway would produce a checkpoint that looks complete and is not.
+        super::slate::SlateKeyspace::from_parts(keyspace)
+            .checkpoint()
+            .map_err(|error| SlateDBCheckpoint { message: error.to_string() })?;
+
+        copy_dir_recursive(&self.store_dir, &target)
+            .map_err(|error| SlateDBCheckpoint { message: error.to_string() })?;
         Ok(())
     }
 
@@ -165,8 +209,7 @@ impl Keyspaces {
         Ok(())
     }
 
-    /// Clear every keyspace. RocksDB lane only — see `Keyspace::reset`.
-    #[cfg(not(feature = "slatedb-backend"))]
+    /// Clear every keyspace.
     pub(crate) fn reset(&mut self) -> Result<(), KeyspaceError> {
         for keyspace in self.keyspaces.iter_mut() {
             keyspace.reset()?
@@ -218,6 +261,35 @@ impl fmt::Display for KeyspaceValidationError {
 }
 
 impl Error for KeyspaceValidationError {}
+
+/// Name of the single directory a SlateDB checkpoint is written into.
+///
+/// Deliberately not a keyspace name: the store is shared, so the copy belongs to all keyspaces
+/// at once and naming it after one of them would invite a per-keyspace restore that silently
+/// restored everything.
+#[cfg(feature = "slatedb-backend")]
+pub(crate) const SLATEDB_CHECKPOINT_DIR: &str = "slatedb-store";
+
+/// Copy a directory tree.
+///
+/// `restore_storage_from_checkpoint` syncs a flat file list, which is enough for RocksDB — its
+/// checkpoint directory has no subdirectories. A SlateDB store nests (manifest, WAL, compacted
+/// SSTs), so a flat copy would silently produce a checkpoint missing its manifest: present,
+/// plausible, and unopenable.
+#[cfg(feature = "slatedb-backend")]
+pub(crate) fn copy_dir_recursive(from: &Path, to: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&entry.path(), &target)?;
+        } else {
+            fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
+}
 
 /// A non-durable key-value store that supports put, get, delete, iterate and checkpointing.
 pub(crate) struct Keyspace {
@@ -414,8 +486,13 @@ impl Keyspace {
         // acceptable, so the SlateDB lane needs a prefix range delete instead.
         #[cfg(feature = "slatedb-backend")]
         {
-            drop(self.store);
-            unimplemented!("SlateDB keyspace delete needs a prefix range delete; see slate.rs")
+            super::slate::SlateKeyspace::from_parts(&self).clear().map_err(|error| {
+                KeyspaceDeleteError::DirectoryRemove {
+                    name: self.name,
+                    source: Arc::new(std::io::Error::other(error.to_string())),
+                }
+            })?;
+            return Ok(());
         }
         #[cfg(not(feature = "slatedb-backend"))]
         drop(self.kv_storage);
@@ -426,11 +503,6 @@ impl Keyspace {
     }
 
     /// Delete every entry in this keyspace.
-    ///
-    /// RocksDB-only for now: it walks the store with a native iterator. The SlateDB lane needs
-    /// a range delete over the keyspace prefix, which is a different operation with different
-    /// cost, so it is not faked here — `Keyspace` still owns a `rocksdb::DB` on both lanes and
-    /// this method is unreachable on the SlateDB one.
     #[cfg(not(feature = "slatedb-backend"))]
     pub(crate) fn reset(&mut self) -> Result<(), KeyspaceError> {
         let iterator = self.kv_storage.iterator(IteratorMode::Start);
@@ -439,6 +511,18 @@ impl Keyspace {
             self.kv_storage.delete(key).map_err(|err| KeyspaceError::Iterate { name: self.name, source: err })?;
         }
         Ok(())
+    }
+
+    /// Delete every entry in this keyspace, leaving sibling keyspaces untouched.
+    ///
+    /// The engine collects the deletes and applies them as one batch rather than deleting
+    /// through a live cursor; see `slatedb-keyspace`'s `clear`.
+    #[cfg(feature = "slatedb-backend")]
+    pub(crate) fn reset(&mut self) -> Result<(), KeyspaceError> {
+        super::slate::SlateKeyspace::from_parts(self)
+            .clear()
+            .map(|_| ())
+            .map_err(|source| KeyspaceError::BatchWrite { name: self.name, source })
     }
 
     #[cfg(not(feature = "slatedb-backend"))]
@@ -459,20 +543,26 @@ impl Keyspace {
             .map(|result_opt| result_opt.unwrap_or(0))
     }
 
-    /// Both estimates read RocksDB table properties, which SlateDB does not expose.
+    /// RocksDB answers both from table properties in constant time and calls them estimates.
+    /// SlateDB exposes no equivalent property, so these scan and are exact.
     ///
-    /// These feed diagnostics, not correctness, so returning 0 is tempting — and wrong for the
-    /// same reason a no-op `reset` is wrong: a plausible-looking zero is indistinguishable from
-    /// an empty database, so the diagnostic silently lies rather than visibly failing. Whether
-    /// SlateDB can answer these at all is an open question worth answering deliberately.
+    /// Exact-but-O(n) rather than a fabricated constant: these feed diagnostics, where a wrong
+    /// number is indistinguishable from a right one and so silently misleads. The cost is real
+    /// and documented on the engine's `stats` rather than hidden behind the word "estimate".
     #[cfg(feature = "slatedb-backend")]
     pub fn estimate_size_in_bytes(&self) -> Result<u64, KeyspaceError> {
-        unimplemented!("SlateDB exposes no live-data-size property; see slate.rs")
+        super::slate::SlateKeyspace::from_parts(self)
+            .stats()
+            .map(|(_, bytes)| bytes)
+            .map_err(|source| KeyspaceError::Get { name: self.name, source })
     }
 
     #[cfg(feature = "slatedb-backend")]
     pub fn estimate_key_count(&self) -> Result<u64, KeyspaceError> {
-        unimplemented!("SlateDB exposes no key-count property; see slate.rs")
+        super::slate::SlateKeyspace::from_parts(self)
+            .stats()
+            .map(|(keys, _)| keys)
+            .map_err(|source| KeyspaceError::Get { name: self.name, source })
     }
 }
 
@@ -515,6 +605,8 @@ impl Error for KeyspaceOpenError {
 pub enum KeyspaceCheckpointError {
     CheckpointExists { name: &'static str, dir: PathBuf },
     CreateRocksDBCheckpoint { name: &'static str, source: rocksdb::Error },
+    #[cfg(feature = "slatedb-backend")]
+    SlateDBCheckpoint { message: String },
 }
 
 impl fmt::Display for KeyspaceCheckpointError {
@@ -528,6 +620,9 @@ impl Error for KeyspaceCheckpointError {
         match self {
             Self::CheckpointExists { .. } => None,
             Self::CreateRocksDBCheckpoint { source, .. } => Some(source),
+            // The rendered message is the whole error; nothing to chain to.
+            #[cfg(feature = "slatedb-backend")]
+            Self::SlateDBCheckpoint { .. } => None,
         }
     }
 }

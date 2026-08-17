@@ -150,3 +150,88 @@ fn data_survives_close_and_reopen() {
         "an acknowledged, flushed write must survive reopen"
     );
 }
+
+#[test]
+fn clear_empties_one_keyspace_and_leaves_the_others_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let set = KeyspaceSet::open_local(dir.path()).unwrap();
+    let a = set.keyspace(KeyspaceId(0));
+    let b = set.keyspace(KeyspaceId(1));
+
+    for i in 0u8..8 {
+        a.put(&[i], b"a").unwrap();
+        b.put(&[i], b"b").unwrap();
+    }
+
+    assert_eq!(a.clear().unwrap(), 8);
+
+    // A cleared keyspace reads as empty...
+    assert!(a.get(&[3]).unwrap().is_none());
+    assert!(a.iterate_from(&[]).unwrap().advance().unwrap().is_none());
+    // ...and its neighbour is untouched. This is the assertion that would catch a `clear`
+    // that forgot its prefix and wiped the whole store, which reads as a passing test if you
+    // only ever check that the target keyspace is empty.
+    assert_eq!(b.get(&[3]).unwrap().unwrap().as_ref(), b"b");
+    assert_eq!(b.stats().unwrap().0, 8);
+}
+
+#[test]
+fn clear_on_an_empty_keyspace_is_a_no_op_not_an_error() {
+    // SlateDB rejects an empty write batch, so a `clear` that unconditionally wrote one would
+    // fail on an already-empty keyspace — exactly the empty-batch trap that broke commits.
+    let dir = tempfile::tempdir().unwrap();
+    let set = KeyspaceSet::open_local(dir.path()).unwrap();
+    assert_eq!(set.keyspace(KeyspaceId(0)).clear().unwrap(), 0);
+}
+
+#[test]
+fn stats_counts_only_its_own_keyspace() {
+    let dir = tempfile::tempdir().unwrap();
+    let set = KeyspaceSet::open_local(dir.path()).unwrap();
+    set.keyspace(KeyspaceId(0)).put(b"k", b"12345").unwrap();
+    set.keyspace(KeyspaceId(1)).put(b"k", b"1").unwrap();
+
+    let (keys, bytes) = set.keyspace(KeyspaceId(0)).stats().unwrap();
+    assert_eq!(keys, 1);
+    // The logical key, not the prefixed physical one.
+    assert_eq!(bytes, 1 + 5);
+}
+
+#[test]
+fn a_checkpoint_makes_prior_writes_readable_from_a_copy_of_the_store() {
+    // The real contract TypeDB depends on: after `checkpoint`, the store's files on disk are a
+    // complete, openable database. Copying them and reopening the copy is exactly what the
+    // recovery path does, so testing anything less would not test the thing that matters.
+    let dir = tempfile::tempdir().unwrap();
+    let copy = tempfile::tempdir().unwrap();
+    let set = KeyspaceSet::open_local(dir.path()).unwrap();
+    for i in 0u8..32 {
+        set.keyspace(KeyspaceId(0)).put(&[i], b"durable").unwrap();
+    }
+    set.checkpoint().unwrap();
+
+    copy_dir(dir.path(), copy.path());
+    drop(set);
+
+    let restored = KeyspaceSet::open_local(copy.path()).unwrap();
+    for i in 0u8..32 {
+        assert_eq!(
+            restored.keyspace(KeyspaceId(0)).get(&[i]).unwrap().expect("key must survive").as_ref(),
+            b"durable",
+            "key {i} was lost across checkpoint and restore"
+        );
+    }
+}
+
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            std::fs::create_dir_all(&target).unwrap();
+            copy_dir(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), &target).unwrap();
+        }
+    }
+}

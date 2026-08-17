@@ -81,11 +81,30 @@ impl CheckpointReader {
     ) -> Result<(Keyspaces, SequenceNumber), CheckpointLoadError> {
         use CheckpointLoadError::{CheckpointRestore, CommitRecoveryFailed, KeyspaceOpen};
 
+        #[cfg(not(feature = "slatedb-backend"))]
         for keyspace in KS::iter() {
             let keyspace_dir = keyspaces_dir.join(keyspace.name());
             let keyspace_checkpoint_dir = self.directory.join(keyspace.name());
             trace!("Recovering keyspace from checkpoint");
             restore_storage_from_checkpoint(keyspace_dir, keyspace_checkpoint_dir)
+                .map_err(|error| CheckpointRestore { dir: self.directory.clone(), source: Arc::new(error) })?;
+        }
+
+        // One store, so one restore — matching the single copy `Keyspaces::checkpoint` writes.
+        // Restoring per keyspace here would replace the whole store once per keyspace and let
+        // the last one win: correct by accident today, wrong the moment a keyspace is added
+        // whose restore is not idempotent.
+        //
+        // The directory is replaced wholesale rather than synced file-by-file. A SlateDB store
+        // is a manifest plus the objects it names; a leftover object the restored manifest does
+        // not reference is merely wasteful, but a leftover *newer manifest* beside restored
+        // data would point at objects that no longer exist. Wholesale replacement is the only
+        // version with no such ordering hazard.
+        #[cfg(feature = "slatedb-backend")]
+        {
+            let source = self.directory.join(crate::keyspace::SLATEDB_CHECKPOINT_DIR);
+            trace!("Recovering the SlateDB store from checkpoint");
+            restore_slatedb_store_from_checkpoint(keyspaces_dir, &source)
                 .map_err(|error| CheckpointRestore { dir: self.directory.clone(), source: Arc::new(error) })?;
         }
 
@@ -191,6 +210,22 @@ fn parse_directory_name_timestamp(path: &PathBuf) -> Option<DateTime<Utc>> {
     Some(timestamp)
 }
 
+/// Replace the live SlateDB store with the checkpointed copy.
+#[cfg(feature = "slatedb-backend")]
+fn restore_slatedb_store_from_checkpoint(store_dir: &Path, checkpoint_dir: &Path) -> io::Result<()> {
+    if !checkpoint_dir.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("checkpoint is missing its store directory: {}", checkpoint_dir.display()),
+        ));
+    }
+    if store_dir.exists() {
+        fs::remove_dir_all(store_dir)?;
+    }
+    crate::keyspace::copy_dir_recursive(checkpoint_dir, store_dir)
+}
+
+#[cfg(not(feature = "slatedb-backend"))]
 fn restore_storage_from_checkpoint(keyspace_dir: PathBuf, keyspace_checkpoint_dir: PathBuf) -> io::Result<()> {
     fs::create_dir_all(&keyspace_dir)?;
 

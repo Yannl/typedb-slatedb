@@ -571,16 +571,9 @@ impl<Durability> MVCCStorage<Durability> {
         Durability: DurabilityClient,
     {
         self.isolation_manager.reset();
-        // Clearing the keyspaces is RocksDB-only for now: SlateDB needs a prefix range delete
-        // rather than an iterate-and-delete walk, and faking it with a no-op would let a
-        // "reset" silently leave data behind — a failure that only surfaces as mysterious
-        // cross-test contamination much later.
-        #[cfg(not(feature = "slatedb-backend"))]
         self.keyspaces
             .reset()
             .map_err(|err| StorageResetError::KeyspaceError { name: self.name.clone(), source: err })?;
-        #[cfg(feature = "slatedb-backend")]
-        unimplemented!("Storage::reset needs a SlateDB prefix range delete; see storage/keyspace/slate.rs");
         self.durability_client
             .reset()
             .map_err(|err| StorageResetError::Durability { name: self.name.clone(), typedb_source: err })?;

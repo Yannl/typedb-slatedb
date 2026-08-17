@@ -164,6 +164,31 @@ impl SlateKeyspace {
         self.store.write(inner).map_err(|source| SlateKeyspaceError { name: self.name, source })
     }
 
+    /// Delete every key in this keyspace, leaving siblings untouched.
+    pub(crate) fn clear(&self) -> Result<usize, SlateKeyspaceError> {
+        self.store
+            .keyspace(self.slate_id())
+            .clear()
+            .map_err(|source| SlateKeyspaceError { name: self.name, source })
+    }
+
+    /// Exact `(key_count, total_bytes)` for this keyspace. O(n) — see the engine's `stats`.
+    pub(crate) fn stats(&self) -> Result<(u64, u64), SlateKeyspaceError> {
+        self.store
+            .keyspace(self.slate_id())
+            .stats()
+            .map_err(|source| SlateKeyspaceError { name: self.name, source })
+    }
+
+    /// Flush every acknowledged write and pin the resulting state so the store's files can be
+    /// copied without compaction removing one midway. See the engine's `checkpoint`.
+    pub(crate) fn checkpoint(&self) -> Result<(), SlateKeyspaceError> {
+        self.store
+            .checkpoint()
+            .map(|_| ())
+            .map_err(|source| SlateKeyspaceError { name: self.name, source })
+    }
+
     /// Force everything acknowledged so far to durable storage.
     pub(crate) fn flush(&self) -> Result<(), SlateKeyspaceError> {
         self.store.flush().map_err(|source| SlateKeyspaceError { name: self.name, source })

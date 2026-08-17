@@ -25,6 +25,9 @@ pub struct FinalizeHttpRequest {
     pub operation_id: String,
     pub request_digest: String,
     pub sequencing_kind: String,
+    /// TypeDB durability record type (u8) — catalogued server-side so
+    /// type-filtered replay is an index scan, not a payload fetch per record.
+    pub record_type: u8,
     pub logical_key: Option<String>,
     pub payload_key: String,
     pub payload_digest: String,
@@ -66,6 +69,59 @@ pub struct AuditOutcome {
     pub contiguous: bool,
     pub count: u64,
     pub max_lsn: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HeadOutcome {
+    pub ok: bool,
+    pub head_lsn: i64,
+    pub head_type_sequence: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IteratorOutcome {
+    pub ok: bool,
+    pub head_lsn: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanRecord {
+    pub append_lsn: u64,
+    pub type_sequence: u64,
+    pub sequencing_kind: String,
+    pub record_type: u8,
+    pub payload_key: String,
+    pub payload_digest: String,
+    pub payload_length: u64,
+    pub logical_key: Option<String>,
+    pub payload_base64: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanOutcome {
+    pub ok: bool,
+    pub records: Vec<ScanRecord>,
+    pub next_from_lsn: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LastOutcome {
+    pub ok: bool,
+    pub error: Option<String>,
+    pub record: Option<ScanRecord>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchOutcome {
+    pub ok: bool,
+    pub error: Option<String>,
+    pub results: Option<Vec<FinalizeHttpOutcome>>,
 }
 
 pub struct L1Client {
@@ -146,6 +202,82 @@ impl L1Client {
             .call()
             .map_err(|e| L1Error::Http(e.to_string()))?;
         response.body_mut().read_json().map_err(|e| L1Error::Decode(e.to_string()))
+    }
+
+    /// WAL head: highest AppendLsn AND highest TypeSequence (the durability
+    /// client's `current()`/`previous()` need the latter — the audit's
+    /// `maxLsn` is a physical position, not a sequence number).
+    pub fn head(&self, database_id: &str, generation: u64) -> Result<HeadOutcome, L1Error> {
+        let mut response = self
+            .agent
+            .get(format!("{}/wal/{}/{}/head", self.base, database_id, generation))
+            .call()
+            .map_err(|e| L1Error::Http(e.to_string()))?;
+        response.body_mut().read_json().map_err(|e| L1Error::Decode(e.to_string()))
+    }
+
+    /// Pin a fixed iteration snapshot: pages of one logical iteration are
+    /// bounded by the returned head and never observe later appends.
+    pub fn open_iterator(&self, database_id: &str, generation: u64) -> Result<IteratorOutcome, L1Error> {
+        let mut response = self
+            .agent
+            .post(format!("{}/wal/{}/{}/iterator", self.base, database_id, generation))
+            .send_json(&serde_json::json!({}))
+            .map_err(|e| L1Error::Http(e.to_string()))?;
+        response.body_mut().read_json().map_err(|e| L1Error::Decode(e.to_string()))
+    }
+
+    /// One ordered replay page (physical order, `type_sequence >= from_ts`,
+    /// bounded by the pinned `through_lsn`), payloads inline.
+    pub fn scan(
+        &self,
+        database_id: &str,
+        generation: u64,
+        from_ts: u64,
+        from_lsn: u64,
+        through_lsn: i64,
+        record_type: Option<u8>,
+        limit: u32,
+    ) -> Result<ScanOutcome, L1Error> {
+        let mut url = format!(
+            "{}/wal/{}/{}/scan?fromTs={}&fromLsn={}&throughLsn={}&limit={}",
+            self.base, database_id, generation, from_ts, from_lsn, through_lsn, limit
+        );
+        if let Some(rt) = record_type {
+            url.push_str(&format!("&recordType={rt}"));
+        }
+        let mut response = self.agent.get(url).call().map_err(|e| L1Error::Http(e.to_string()))?;
+        response.body_mut().read_json().map_err(|e| L1Error::Decode(e.to_string()))
+    }
+
+    /// Last record of a type in physical order (`find_last_type`); a miss is
+    /// a typed 404 outcome, never EOF.
+    pub fn last_by_type(
+        &self,
+        database_id: &str,
+        generation: u64,
+        record_type: u8,
+    ) -> Result<(u16, LastOutcome), L1Error> {
+        let mut response = self
+            .agent
+            .get(format!("{}/wal/{}/{}/last?recordType={}", self.base, database_id, generation, record_type))
+            .call()
+            .map_err(|e| L1Error::Http(e.to_string()))?;
+        let status = response.status().as_u16();
+        let outcome = response.body_mut().read_json().map_err(|e| L1Error::Decode(e.to_string()))?;
+        Ok((status, outcome))
+    }
+
+    /// All-or-nothing batch finalisation: one transaction on one authority.
+    pub fn finalize_batch(&self, requests: &[FinalizeHttpRequest]) -> Result<(u16, BatchOutcome), L1Error> {
+        let mut response = self
+            .agent
+            .post(format!("{}/wal/finalize-batch", self.base))
+            .send_json(&serde_json::json!({ "requests": requests }))
+            .map_err(|e| L1Error::Http(e.to_string()))?;
+        let status = response.status().as_u16();
+        let outcome = response.body_mut().read_json().map_err(|e| L1Error::Decode(e.to_string()))?;
+        Ok((status, outcome))
     }
 
     /// POST where the only success shape is HTTP 200 with `{"ok": true}`.

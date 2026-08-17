@@ -21,6 +21,7 @@ function finalizeReq(operationId: string, overrides: Record<string, unknown> = {
     operationId,
     requestDigest: `digest-${operationId}`,
     sequencingKind: "SEQUENCED" as const,
+    recordType: 2,
     logicalKey: null,
     payloadKey: `payload/${operationId}`,
     payloadDigest: `pd-${operationId}`,
@@ -73,6 +74,33 @@ describe("DatabaseControllerDO on workerd", () => {
         finalizeReq("st-2", { sequencingKind: "UNSEQUENCED", logicalKey: "status:cp", payloadDigest: "pd-B" }),
       );
       expect(dupDifferent).toEqual({ ok: false, error: "STATUS_CONFLICT" });
+    });
+  });
+
+  it("register fences the predecessor and serves the U3 read surface on real SqlStorage", async () => {
+    const stub = testEnv.CONTROLLER.get(testEnv.CONTROLLER.idFromName("t3"));
+    await runInDurableObject(stub, async (instance: DatabaseControllerDO) => {
+      instance.registerSession("db1", 1, "sess-1");
+      expect(instance.finalizeWalRecord(finalizeReq("a-1"))).toMatchObject({ ok: true });
+      expect(
+        instance.finalizeWalRecord(finalizeReq("a-2", { sequencingKind: "UNSEQUENCED", recordType: 10 })),
+      ).toMatchObject({ ok: true });
+      // takeover: the new actor's register revokes the old actor's authority
+      instance.registerSession("db1", 1, "sess-2");
+      expect(instance.finalizeWalRecord(finalizeReq("a-3"))).toEqual({ ok: false, error: "SESSION_FENCED" });
+      expect(
+        instance.finalizeWalRecord(finalizeReq("a-4", { startupSessionId: "sess-2" })),
+      ).toMatchObject({ ok: true, appendLsn: 2 });
+
+      expect(instance.head("db1", 1)).toEqual({ headLsn: 2, headTypeSequence: 2 });
+      const pinned = instance.openIterator("db1", 1).headLsn;
+      const page = instance.scan("db1", 1, {
+        fromTypeSequence: 1, fromLsn: 0, throughLsn: pinned, recordType: null, limit: 100,
+      });
+      expect(page.records.map((r) => [r.appendLsn, r.recordType])).toEqual([[0, 2], [1, 10], [2, 2]]);
+      const last = instance.lastByType("db1", 1, 10);
+      expect(last).toMatchObject({ ok: true });
+      if (last.ok) expect(last.record.appendLsn).toBe(1);
     });
   });
 });

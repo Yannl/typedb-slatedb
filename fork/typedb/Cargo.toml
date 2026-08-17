@@ -633,7 +633,7 @@ features = {}
 		# off, mirroring the RocksDB keyspaces' disable_wal(true) — TypeDB's
 		# own WAL is the sole durability authority).
 		[workspace.dependencies.slatedb]
-			features = ["wal_disable"]
+			features = ["wal_disable", "aws"]
 			version = "=0.15.0"
 			default-features = false
 

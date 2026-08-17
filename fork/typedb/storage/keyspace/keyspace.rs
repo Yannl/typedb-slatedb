@@ -263,6 +263,9 @@ impl Keyspace {
             StorageBackendProfile::U2SlateLocalFs => {
                 KeyspaceEngine::Slate(SlateKeyspace::open(&path).map_err(|source| SlateDB { name, source })?)
             }
+            StorageBackendProfile::U2S3SlateS3FileWal => {
+                KeyspaceEngine::Slate(SlateKeyspace::open_s3(&path).map_err(|source| SlateDB { name, source })?)
+            }
             StorageBackendProfile::U3SlateRemoteSim | StorageBackendProfile::U4ProductionRemote => {
                 return Err(ProfileUnavailable { name, profile: profile.code() });
             }
@@ -416,6 +419,12 @@ impl Keyspace {
         // than upstream's undefined behavior on the same race.
         let path = self.path.clone();
         let name = self.name;
+        // S3-backed keyspaces (U2S3) also own remote objects; deleting only
+        // the local directory would leak them AND leave state a later open of
+        // the same path would purge as stale — delete both sides.
+        if let KeyspaceEngine::Slate(slate) = &self.engine {
+            slate.purge_remote().map_err(|source| KeyspaceDeleteError::RemotePurge { name, source })?;
+        }
         drop(self.engine); // SlateKeyspace::drop closes the engine, flushing state
         fs::remove_dir_all(path)
             .map_err(|error| KeyspaceDeleteError::DirectoryRemove { name, source: Arc::new(error) })?;
@@ -526,6 +535,7 @@ impl Error for KeyspaceCheckpointError {
 #[derive(Debug, Clone)]
 pub enum KeyspaceDeleteError {
     DirectoryRemove { name: &'static str, source: Arc<io::Error> },
+    RemotePurge { name: &'static str, source: Arc<slatedb::Error> },
 }
 
 impl fmt::Display for KeyspaceDeleteError {
@@ -538,6 +548,7 @@ impl Error for KeyspaceDeleteError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match &self {
             Self::DirectoryRemove { source, .. } => Some(source),
+            Self::RemotePurge { source, .. } => Some(source.as_ref()),
         }
     }
 }

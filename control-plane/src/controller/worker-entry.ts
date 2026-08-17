@@ -15,8 +15,15 @@
  *   POST /session/fence            {databaseId, generation, startupSessionId}
  *   POST /budgets                  {databaseId, maxUnpublishedOutbox, maxPayloadLength, maxTailRecords}
  *   POST /wal/finalize             FinalizeRequest → FinalizeResult (verifies R2 object + digest first)
+ *   POST /wal/finalize-batch       {requests: FinalizeRequest[]} → all-or-nothing FinalizeResult[]
  *   GET  /wal/{db}/{generation}/{lsn}  exact lookup; returns record metadata + payload bytes (base64)
  *   GET  /wal/{db}/{generation}/audit  contiguity audit
+ *   GET  /wal/{db}/{generation}/head   {headLsn, headTypeSequence} (durability current/previous)
+ *   POST /wal/{db}/{generation}/iterator  pin a fixed iteration snapshot → {headLsn}
+ *   GET  /wal/{db}/{generation}/scan?fromTs=&fromLsn=&throughLsn=&recordType=&limit=
+ *                                  ordered replay page (physical LSN order, type_sequence>=fromTs,
+ *                                  bounded by the pinned throughLsn); payloads inline, digest-verified
+ *   GET  /wal/{db}/{generation}/last?recordType=N  last record of a type + payload (find_last_type)
  *   GET  /outbox/{db}?limit=N      peek unpublished control events (no marking)
  *   POST /outbox/{db}/ack          {upToControlSeq} - ack after durable processing
  */
@@ -35,6 +42,49 @@ function json(body: unknown, status = 200): Response {
 async function sha256hex(bytes: ArrayBuffer): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Base64 of a payload buffer, built in bounded chunks: the previous
+ * char-at-a-time string concatenation was quadratic-ish over multi-MB
+ * payloads — real CommitRecords (schema loads, imports) would hit it long
+ * before any platform limit.
+ */
+function base64Of(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const CHUNK = 8192;
+  const parts: string[] = [];
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    parts.push(String.fromCharCode(...bytes.subarray(i, i + CHUNK)));
+  }
+  return btoa(parts.join(""));
+}
+
+/** Fetch one catalogued payload with digest re-verification (integrity rule:
+ *  a catalogued record with missing/corrupt payload is a hard error, never
+ *  EOF). Returns the base64 payload or a typed error Response. */
+async function verifiedPayloadBase64(
+  env: Env,
+  record: { payloadKey: string; payloadDigest: string },
+): Promise<{ payloadBase64: string } | { errorResponse: Response }> {
+  const object = await env.PAYLOADS.get(String(record.payloadKey));
+  if (object === null) {
+    return { errorResponse: json({ ok: false, error: "PAYLOAD_MISSING_FOR_CATALOGUED_RECORD", record }, 500) };
+  }
+  const buffer = await object.arrayBuffer();
+  const observedDigest = await sha256hex(buffer);
+  if (observedDigest !== String(record.payloadDigest)) {
+    return {
+      errorResponse: json({ ok: false, error: "PAYLOAD_INTEGRITY_VIOLATION", record, observed: observedDigest }, 500),
+    };
+  }
+  return { payloadBase64: base64Of(buffer) };
+}
+
+/** Record types are u8 in TypeDB durability; anything else is a client bug
+ *  surfaced as a typed 400, never coerced. */
+function invalidRecordType(value: unknown): boolean {
+  return typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 255;
 }
 
 export default {
@@ -83,8 +133,15 @@ export default {
         fenceSession(db: string, generation: number, session: string): Promise<void>;
         setBudgets(db: string, budgets: object): Promise<void>;
         finalizeWalRecord(req: object): Promise<Record<string, unknown>>;
+        finalizeBatch(reqs: object[]): Promise<Record<string, unknown>[] | Record<string, unknown>>;
         exactLookup(db: string, generation: number, lsn: number): Promise<Record<string, unknown>>;
         auditContiguity(db: string, generation: number): Promise<Record<string, unknown>>;
+        head(db: string, generation: number): Promise<Record<string, unknown>>;
+        openIterator(db: string, generation: number): Promise<Record<string, unknown>>;
+        scan(db: string, generation: number, opts: object): Promise<{
+          records: Record<string, unknown>[]; nextFromLsn: number | null;
+        }>;
+        lastByType(db: string, generation: number, recordType: number): Promise<Record<string, unknown>>;
       };
 
     if (request.method === "POST" && path === "/session/register") {
@@ -111,23 +168,59 @@ export default {
       return json({ ok: true });
     }
 
-    if (request.method === "POST" && path === "/wal/finalize") {
-      const req = (await request.json()) as {
-        databaseId: string; payloadKey: string; payloadDigest: string; payloadLength: number;
-      } & Record<string, unknown>;
-      // data-path receipt verification BEFORE the DO's synchronous
-      // finalisation: the object must exist and match digest + length
+    // data-path receipt verification BEFORE the DO's synchronous
+    // finalisation: the object must exist and match digest + length
+    const verifyReceipt = async (req: { payloadKey: string; payloadDigest: string; payloadLength: number }) => {
       const object = await env.PAYLOADS.get(req.payloadKey);
       if (object === null) {
-        return json({ ok: false, error: "PAYLOAD_MISSING" }, 422);
+        return json({ ok: false, error: "PAYLOAD_MISSING", key: req.payloadKey }, 422);
       }
       const bytes = await object.arrayBuffer();
       const digest = await sha256hex(bytes);
       if (digest !== req.payloadDigest || bytes.byteLength !== req.payloadLength) {
         return json({ ok: false, error: "PAYLOAD_DIGEST_MISMATCH", observed: digest, length: bytes.byteLength }, 422);
       }
+      return null;
+    };
+
+    if (request.method === "POST" && path === "/wal/finalize") {
+      const req = (await request.json()) as {
+        databaseId: string; payloadKey: string; payloadDigest: string; payloadLength: number;
+      } & Record<string, unknown>;
+      if (invalidRecordType(req.recordType)) {
+        return json({ ok: false, error: "INVALID_RECORD_TYPE", observed: req.recordType ?? null }, 400);
+      }
+      const receiptError = await verifyReceipt(req);
+      if (receiptError !== null) return receiptError;
       const result = await stubFor(req.databaseId).finalizeWalRecord(req);
       return json(result, result.ok ? 200 : 409);
+    }
+
+    if (request.method === "POST" && path === "/wal/finalize-batch") {
+      const body = (await request.json()) as {
+        requests: ({ databaseId: string; payloadKey: string; payloadDigest: string; payloadLength: number }
+          & Record<string, unknown>)[];
+      };
+      if (!Array.isArray(body.requests) || body.requests.length === 0) {
+        return json({ ok: false, error: "EMPTY_BATCH" }, 400);
+      }
+      const databaseId = body.requests[0].databaseId;
+      for (const req of body.requests) {
+        if (req.databaseId !== databaseId) {
+          // one DO per database: a batch is one transaction on ONE authority
+          return json({ ok: false, error: "BATCH_SPANS_DATABASES" }, 400);
+        }
+        if (invalidRecordType(req.recordType)) {
+          return json({ ok: false, error: "INVALID_RECORD_TYPE", observed: req.recordType ?? null }, 400);
+        }
+        const receiptError = await verifyReceipt(req);
+        if (receiptError !== null) return receiptError;
+      }
+      const result = await stubFor(databaseId).finalizeBatch(body.requests);
+      // all-or-nothing: an array is N successes; a single typed error aborted
+      // (and rolled back) the whole batch
+      if (Array.isArray(result)) return json({ ok: true, results: result });
+      return json(result, 409);
     }
 
     const walRead = path.match(/^\/wal\/([^/]+)\/(\d+)\/(\d+)$/);
@@ -135,26 +228,71 @@ export default {
       const [, db, generation, lsn] = walRead;
       const record = await stubFor(db).exactLookup(db, Number(generation), Number(lsn));
       if (!record.ok) return json(record, 404);
-      const object = await env.PAYLOADS.get(String(record.payloadKey));
-      if (object === null) {
-        // a catalogued record whose payload is missing is a hard integrity
-        // error - never EOF (§exact-index rules)
-        return json({ ok: false, error: "PAYLOAD_MISSING_FOR_CATALOGUED_RECORD", record }, 500);
-      }
-      const buffer = await object.arrayBuffer();
       // exact reads re-verify bytes against the catalogued digest: serving
-      // corrupted payload under valid metadata is worse than failing
-      const observedDigest = await sha256hex(buffer);
-      if (observedDigest !== String(record.payloadDigest)) {
-        return json(
-          { ok: false, error: "PAYLOAD_INTEGRITY_VIOLATION", record, observed: observedDigest },
-          500,
-        );
+      // corrupted payload under valid metadata is worse than failing; a
+      // catalogued record whose payload is missing is a hard integrity
+      // error - never EOF (§exact-index rules)
+      const payload = await verifiedPayloadBase64(env, record as { payloadKey: string; payloadDigest: string });
+      if ("errorResponse" in payload) return payload.errorResponse;
+      return json({ ...record, payloadBase64: payload.payloadBase64 });
+    }
+
+    const walHead = path.match(/^\/wal\/([^/]+)\/(\d+)\/head$/);
+    if (request.method === "GET" && walHead) {
+      const [, db, generation] = walHead;
+      return json({ ok: true, ...(await stubFor(db).head(db, Number(generation))) });
+    }
+
+    const walIterator = path.match(/^\/wal\/([^/]+)\/(\d+)\/iterator$/);
+    if (request.method === "POST" && walIterator) {
+      const [, db, generation] = walIterator;
+      return json({ ok: true, ...(await stubFor(db).openIterator(db, Number(generation))) });
+    }
+
+    const walScan = path.match(/^\/wal\/([^/]+)\/(\d+)\/scan$/);
+    if (request.method === "GET" && walScan) {
+      const [, db, generation] = walScan;
+      const recordTypeParam = url.searchParams.get("recordType");
+      const recordType = recordTypeParam === null ? null : Number(recordTypeParam);
+      if (recordType !== null && invalidRecordType(recordType)) {
+        return json({ ok: false, error: "INVALID_RECORD_TYPE", observed: recordTypeParam }, 400);
       }
-      const bytes = new Uint8Array(buffer);
-      let binary = "";
-      for (const b of bytes) binary += String.fromCharCode(b);
-      return json({ ...record, payloadBase64: btoa(binary) });
+      const throughLsnParam = url.searchParams.get("throughLsn");
+      if (throughLsnParam === null) {
+        // an unbounded scan would observe appends made after the iteration
+        // started (inv. 41-42): the pinned snapshot bound is mandatory
+        return json({ ok: false, error: "MISSING_THROUGH_LSN" }, 400);
+      }
+      const limit = Math.min(Number(url.searchParams.get("limit") ?? "100"), 1000);
+      const page = await stubFor(db).scan(db, Number(generation), {
+        fromTypeSequence: Number(url.searchParams.get("fromTs") ?? "0"),
+        fromLsn: Number(url.searchParams.get("fromLsn") ?? "0"),
+        throughLsn: Number(throughLsnParam),
+        recordType,
+        limit,
+      });
+      const records: Record<string, unknown>[] = [];
+      for (const record of page.records) {
+        const payload = await verifiedPayloadBase64(env, record as { payloadKey: string; payloadDigest: string });
+        if ("errorResponse" in payload) return payload.errorResponse;
+        records.push({ ...record, payloadBase64: payload.payloadBase64 });
+      }
+      return json({ ok: true, records, nextFromLsn: page.nextFromLsn });
+    }
+
+    const walLast = path.match(/^\/wal\/([^/]+)\/(\d+)\/last$/);
+    if (request.method === "GET" && walLast) {
+      const [, db, generation] = walLast;
+      const recordType = Number(url.searchParams.get("recordType") ?? "NaN");
+      if (invalidRecordType(recordType)) {
+        return json({ ok: false, error: "INVALID_RECORD_TYPE", observed: url.searchParams.get("recordType") }, 400);
+      }
+      const result = await stubFor(db).lastByType(db, Number(generation), recordType);
+      if (!result.ok) return json(result, 404);
+      const record = result.record as { payloadKey: string; payloadDigest: string };
+      const payload = await verifiedPayloadBase64(env, record);
+      if ("errorResponse" in payload) return payload.errorResponse;
+      return json({ ok: true, record: { ...record, payloadBase64: payload.payloadBase64 } });
     }
 
     const outboxPeek = path.match(/^\/outbox\/([^/]+)$/);

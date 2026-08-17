@@ -103,6 +103,26 @@ export class DatabaseControllerDO extends DurableObject {
     return this.core().auditContiguity(databaseId, generation);
   }
 
+  head(databaseId: string, generation: number): ReturnType<ControllerCore["head"]> {
+    return this.core().head(databaseId, generation);
+  }
+
+  openIterator(databaseId: string, generation: number): ReturnType<ControllerCore["openIterator"]> {
+    return this.core().openIterator(databaseId, generation);
+  }
+
+  scan(
+    databaseId: string,
+    generation: number,
+    opts: Parameters<ControllerCore["scan"]>[2],
+  ): ReturnType<ControllerCore["scan"]> {
+    return this.core().scan(databaseId, generation, opts);
+  }
+
+  lastByType(databaseId: string, generation: number, recordType: number): ReturnType<ControllerCore["lastByType"]> {
+    return this.core().lastByType(databaseId, generation, recordType);
+  }
+
   outboxPeek(limit: number): ReturnType<ControllerCore["outboxPeek"]> {
     return this.core().outboxPeek(limit);
   }

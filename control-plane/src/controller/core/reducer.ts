@@ -12,6 +12,7 @@ export interface WalRecordEvent {
   appendLsn: number;
   typeSequence: number;
   sequencingKind: "SEQUENCED" | "UNSEQUENCED";
+  recordType: number;
   payloadKey: string;
   payloadDigest: string;
   logicalKey: string | null;
@@ -20,7 +21,7 @@ export interface WalRecordEvent {
 export interface ReducedGeneration {
   headLsn: number;
   typeSequenceHead: number;
-  records: Map<number, { payloadKey: string; payloadDigest: string; typeSequence: number }>;
+  records: Map<number, { payloadKey: string; payloadDigest: string; typeSequence: number; recordType: number }>;
   statusByLogicalKey: Map<string, number>; // logicalKey -> appendLsn
 }
 
@@ -61,6 +62,7 @@ export function applyEvent(state: ReducedState, event: WalRecordEvent): ReducedS
     payloadKey: event.payloadKey,
     payloadDigest: event.payloadDigest,
     typeSequence: event.typeSequence,
+    recordType: event.recordType,
   });
   const statusByLogicalKey = new Map(generation.statusByLogicalKey);
   if (event.logicalKey !== null) statusByLogicalKey.set(event.logicalKey, event.appendLsn);

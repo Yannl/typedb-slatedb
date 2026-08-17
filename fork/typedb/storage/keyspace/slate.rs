@@ -39,7 +39,13 @@ use slatedb::{
     Db, DbIterator, WriteBatch as SlateWriteBatch,
     bytes::Bytes as SlateBytes,
     config::{ReadOptions, ScanOptions, Settings, WriteOptions},
-    object_store::{ObjectStore, local::LocalFileSystem},
+    object_store::{
+        ObjectMeta, ObjectStore, ObjectStoreExt, PutPayload,
+        aws::AmazonS3Builder,
+        local::LocalFileSystem,
+        path::Path as ObjectPath,
+        prefix::PrefixStore,
+    },
 };
 
 /// One process-wide storage runtime for every SlateDB keyspace.
@@ -103,11 +109,200 @@ fn settings() -> Settings {
     settings
 }
 
+/// The SlateDB store subtree under a keyspace root: LocalFS keyspaces put it
+/// under `<keyspace-dir>/keyspace/`, S3 keyspaces under
+/// `<object-prefix>/keyspace/` — one name, both lanes.
+const DB_SUBDIR: &str = "keyspace";
+const MANIFEST_SUBDIR: &str = "manifest";
+
+/// U2S3 profile configuration (TB-P8): every variable is required except
+/// region (default `auto`, the R2 convention) and the root prefix (default
+/// `typedb`). Missing values are a typed open error — fail closed, never a
+/// silent fallback to another store.
+pub const S3_ENDPOINT_ENV: &str = "TYPEDB_S3_ENDPOINT";
+pub const S3_BUCKET_ENV: &str = "TYPEDB_S3_BUCKET";
+pub const S3_REGION_ENV: &str = "TYPEDB_S3_REGION";
+pub const S3_ACCESS_KEY_ENV: &str = "TYPEDB_S3_ACCESS_KEY_ID";
+pub const S3_SECRET_KEY_ENV: &str = "TYPEDB_S3_SECRET_ACCESS_KEY";
+pub const S3_PREFIX_ENV: &str = "TYPEDB_S3_PREFIX";
+
+struct S3Config {
+    endpoint: String,
+    bucket: String,
+    region: String,
+    access_key_id: String,
+    secret_access_key: String,
+    root_prefix: String,
+}
+
+/// Resolved once per process, like the backend profile itself: two opens
+/// racing different S3 configurations against one prefix would corrupt it.
+fn s3_config() -> Result<&'static S3Config, slatedb::Error> {
+    static CONFIG: OnceLock<Result<S3Config, String>> = OnceLock::new();
+    CONFIG
+        .get_or_init(|| {
+            let require = |variable: &str| {
+                std::env::var(variable).map_err(|_| format!("{variable} must be set for the U2S3 storage profile"))
+            };
+            Ok(S3Config {
+                endpoint: require(S3_ENDPOINT_ENV)?,
+                bucket: require(S3_BUCKET_ENV)?,
+                region: std::env::var(S3_REGION_ENV).unwrap_or_else(|_| "auto".to_owned()),
+                access_key_id: require(S3_ACCESS_KEY_ENV)?,
+                secret_access_key: require(S3_SECRET_KEY_ENV)?,
+                root_prefix: std::env::var(S3_PREFIX_ENV).unwrap_or_else(|_| "typedb".to_owned()),
+            })
+        })
+        .as_ref()
+        .map_err(|message| slatedb::Error::unavailable(message.clone()))
+}
+
+fn build_s3_store(config: &S3Config) -> Result<Arc<dyn ObjectStore>, slatedb::Error> {
+    // Conditional put stays on the 0.14.1 default (`ETagMatch`): both MinIO
+    // and Cloudflare R2 implement the standard HTTP preconditions SlateDB's
+    // manifest CAS requires.
+    AmazonS3Builder::new()
+        .with_endpoint(config.endpoint.clone())
+        .with_allow_http(config.endpoint.starts_with("http://"))
+        .with_bucket_name(config.bucket.clone())
+        .with_region(config.region.clone())
+        .with_access_key_id(config.access_key_id.clone())
+        .with_secret_access_key(config.secret_access_key.clone())
+        .build()
+        .map(|store| Arc::new(store) as Arc<dyn ObjectStore>)
+        .map_err(store_error)
+}
+
+/// Map the absolute local keyspace directory to its object-store prefix:
+/// `<root>/<encoded absolute path>`. The encoding is injective (`=` is the
+/// only escape: `=s` for `/`, `==` for `=`, `=xHH` for anything outside
+/// `[A-Za-z0-9._-]`), so two distinct keyspace directories can never share a
+/// prefix, and the prefix of a reopened directory is stable.
+fn object_prefix(config: &S3Config, keyspace_path: &Path) -> ObjectPath {
+    let mut encoded = String::new();
+    for ch in keyspace_path.to_string_lossy().chars() {
+        match ch {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '.' | '-' | '_' => encoded.push(ch),
+            '/' => encoded.push_str("=s"),
+            '=' => encoded.push_str("=="),
+            other => {
+                let mut buffer = [0u8; 4];
+                for byte in other.encode_utf8(&mut buffer).bytes() {
+                    encoded.push_str(&format!("=x{byte:02x}"));
+                }
+            }
+        }
+    }
+    ObjectPath::from(config.root_prefix.as_str()).join(encoded)
+}
+
+fn store_error(error: slatedb::object_store::Error) -> slatedb::Error {
+    slatedb::Error::unavailable(format!("keyspace object store: {error}"))
+}
+
+/// List every object under `prefix` (iterative multi-level
+/// `list_with_delimiter` walk — no stream combinators needed).
+async fn list_remote_prefix(
+    store: &dyn ObjectStore,
+    prefix: &ObjectPath,
+) -> Result<Vec<ObjectMeta>, slatedb::Error> {
+    let mut pending = vec![prefix.clone()];
+    let mut objects = Vec::new();
+    while let Some(level) = pending.pop() {
+        let listing = store.list_with_delimiter(Some(&level)).await.map_err(store_error)?;
+        objects.extend(listing.objects);
+        pending.extend(listing.common_prefixes);
+    }
+    Ok(objects)
+}
+
+async fn purge_remote_prefix(store: &dyn ObjectStore, prefix: &ObjectPath) -> Result<(), slatedb::Error> {
+    for meta in list_remote_prefix(store, prefix).await? {
+        store.delete(&meta.location).await.map_err(store_error)?;
+    }
+    Ok(())
+}
+
+/// Upload a local directory tree (a restored checkpoint) under `prefix`,
+/// preserving the relative layout.
+async fn upload_dir_to_remote(
+    store: &dyn ObjectStore,
+    prefix: &ObjectPath,
+    root: &Path,
+) -> Result<(), slatedb::Error> {
+    fn collect(root: &Path, dir: &Path, out: &mut Vec<(Vec<String>, PathBuf)>) -> io::Result<()> {
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if entry.file_type()?.is_dir() {
+                collect(root, &path, out)?;
+            } else {
+                let relative = path
+                    .strip_prefix(root)
+                    .expect("walked file is under the walk root")
+                    .components()
+                    .map(|component| component.as_os_str().to_string_lossy().into_owned())
+                    .collect();
+                out.push((relative, path));
+            }
+        }
+        Ok(())
+    }
+    let mut files = Vec::new();
+    collect(root, root, &mut files).map_err(io_error)?;
+    for (relative, path) in files {
+        let bytes = fs::read(&path).map_err(io_error)?;
+        let mut location = prefix.clone();
+        for part in relative {
+            location = location.join(part);
+        }
+        store.put(&location, PutPayload::from(bytes)).await.map_err(store_error)?;
+    }
+    Ok(())
+}
+
+/// Download the given objects into `dir`, mapping each location's path
+/// relative to `prefix` onto the local relative layout.
+async fn download_remote_objects(
+    store: &dyn ObjectStore,
+    prefix: &ObjectPath,
+    locations: &[ObjectPath],
+    dir: &Path,
+) -> Result<(), slatedb::Error> {
+    let prefix_str = format!("{prefix}/");
+    for location in locations {
+        let relative = location
+            .as_ref()
+            .strip_prefix(&prefix_str)
+            .expect("listed object location is under the listed prefix");
+        let mut target = dir.to_owned();
+        for part in relative.split('/') {
+            target = target.join(part);
+        }
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent).map_err(io_error)?;
+        }
+        let bytes =
+            store.get(location).await.map_err(store_error)?.bytes().await.map_err(store_error)?;
+        fs::write(&target, bytes).map_err(io_error)?;
+    }
+    Ok(())
+}
+
+/// The remote half of an S3-backed keyspace: the bucket-root store plus this
+/// keyspace's exclusive prefix (the `Db` itself sees a `PrefixStore`).
+struct RemoteStore {
+    store: Arc<dyn ObjectStore>,
+    prefix: ObjectPath,
+}
+
 /// A SlateDB-backed keyspace over a `LocalFileSystem` object store rooted at
-/// the keyspace directory.
+/// the keyspace directory (U2), or over a prefix of an S3-compatible bucket
+/// (U2S3) with the local directory retained as the lifecycle marker.
 pub(super) struct SlateKeyspace {
     db: Arc<Db>,
     path: PathBuf,
+    remote: Option<RemoteStore>,
 }
 
 impl SlateKeyspace {
@@ -116,9 +311,42 @@ impl SlateKeyspace {
         let store: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(path).map_err(|error| {
             Arc::new(slatedb::Error::unavailable(format!("local object store at {path:?}: {error}")))
         })?);
-        let db = bridge(async move { Db::builder("keyspace", store).with_settings(settings()).build().await })
+        let db = bridge(async move { Db::builder(DB_SUBDIR, store).with_settings(settings()).build().await })
             .map_err(Arc::new)?;
-        Ok(Self { db: Arc::new(db), path: path.to_owned() })
+        Ok(Self { db: Arc::new(db), path: path.to_owned(), remote: None })
+    }
+
+    /// Open over the configured S3-compatible store (TB-P8, profile U2S3).
+    ///
+    /// The local keyspace directory is the lifecycle marker — storage
+    /// recovery wipes it to mean "start empty" and checkpoint recovery
+    /// repopulates it with the checkpointed store files (those are the only
+    /// two states an open can observe; there is no state-preserving reopen
+    /// without a checkpoint). Either way the remote prefix's previous
+    /// contents are stale: purge them, and when a restored subtree is
+    /// present, upload it as the new store state.
+    pub(super) fn open_s3(path: &Path) -> Result<Self, Arc<slatedb::Error>> {
+        fs::create_dir_all(path).map_err(|error| Arc::new(io_error(error)))?;
+        let config = s3_config().map_err(Arc::new)?;
+        let store = build_s3_store(config).map_err(Arc::new)?;
+        let prefix = object_prefix(config, path);
+        let restored_root = path.join(DB_SUBDIR).is_dir().then(|| path.to_owned());
+        {
+            let store = store.clone();
+            let prefix = prefix.clone();
+            bridge(async move {
+                purge_remote_prefix(store.as_ref(), &prefix).await?;
+                if let Some(root) = restored_root {
+                    upload_dir_to_remote(store.as_ref(), &prefix, &root).await?;
+                }
+                Ok(())
+            })
+            .map_err(Arc::new)?;
+        }
+        let prefixed: Arc<dyn ObjectStore> = Arc::new(PrefixStore::new(store.clone(), prefix.clone()));
+        let db = bridge(async move { Db::builder(DB_SUBDIR, prefixed).with_settings(settings()).build().await })
+            .map_err(Arc::new)?;
+        Ok(Self { db: Arc::new(db), path: path.to_owned(), remote: Some(RemoteStore { store, prefix }) })
     }
 
     pub(super) fn shared_db(&self) -> Arc<Db> {
@@ -210,7 +438,13 @@ impl SlateKeyspace {
     pub(super) fn checkpoint(&self, checkpoint_keyspace_dir: &Path) -> Result<(), Arc<slatedb::Error>> {
         let db = self.db.clone();
         bridge(async move { db.flush().await }).map_err(Arc::new)?;
+        match &self.remote {
+            None => self.checkpoint_local(checkpoint_keyspace_dir),
+            Some(remote) => Self::checkpoint_remote(remote, checkpoint_keyspace_dir),
+        }
+    }
 
+    fn checkpoint_local(&self, checkpoint_keyspace_dir: &Path) -> Result<(), Arc<slatedb::Error>> {
         let manifest_dir = find_manifest_dir(&self.path).map_err(|error| Arc::new(io_error(error)))?;
         let pinned_manifest = match &manifest_dir {
             Some(dir) => {
@@ -236,6 +470,50 @@ impl SlateKeyspace {
                 .map_err(|error| Arc::new(io_error(error)))?;
         }
         Ok(())
+    }
+
+    /// The S3 checkpoint is the same manifest-pinning algorithm as
+    /// [`Self::checkpoint_local`], executed through the object-store API and
+    /// *downloading* into the local checkpoint directory — the checkpoint on
+    /// disk has the identical shape either way, so checkpoint restore (a
+    /// local file sync followed by [`Self::open_s3`]'s upload) needs no
+    /// engine-specific code.
+    fn checkpoint_remote(remote: &RemoteStore, checkpoint_keyspace_dir: &Path) -> Result<(), Arc<slatedb::Error>> {
+        let manifest_prefix = format!("{}/", remote.prefix.clone().join(DB_SUBDIR).join(MANIFEST_SUBDIR));
+        let store = remote.store.clone();
+        let prefix = remote.prefix.clone();
+        let dir = checkpoint_keyspace_dir.to_owned();
+        bridge(async move {
+            let objects = list_remote_prefix(store.as_ref(), &prefix).await?;
+            let is_manifest = |location: &ObjectPath| location.as_ref().starts_with(&manifest_prefix);
+            // pin the lexicographically last manifest object — the same
+            // ordering the LocalFS path applies to manifest file names
+            let pinned =
+                objects.iter().map(|meta| &meta.location).filter(|location| is_manifest(location)).max().cloned();
+            let mut to_copy: Vec<ObjectPath> = objects
+                .iter()
+                .map(|meta| meta.location.clone())
+                .filter(|location| !is_manifest(location))
+                .collect();
+            to_copy.extend(pinned);
+            download_remote_objects(store.as_ref(), &prefix, &to_copy, &dir).await
+        })
+        .map_err(Arc::new)
+    }
+
+    /// Delete every object under this keyspace's remote prefix (no-op on the
+    /// LocalFS lane, where deleting the local directory is already complete).
+    /// The engine is closed first so no background flush races the purge; the
+    /// second close attempted later by `Drop` is a swallowed error.
+    pub(super) fn purge_remote(&self) -> Result<(), Arc<slatedb::Error>> {
+        let Some(remote) = &self.remote else {
+            return Ok(());
+        };
+        let db = self.db.clone();
+        let _ = bridge(async move { db.close().await });
+        let store = remote.store.clone();
+        let prefix = remote.prefix.clone();
+        bridge(async move { purge_remote_prefix(store.as_ref(), &prefix).await }).map_err(Arc::new)
     }
 
     pub(super) fn reset(&self) -> Result<(), Arc<slatedb::Error>> {
@@ -276,7 +554,16 @@ impl SlateKeyspace {
     }
 
     pub(super) fn estimate_size_in_bytes(&self) -> u64 {
-        dir_size(&self.path).unwrap_or(0)
+        match &self.remote {
+            None => dir_size(&self.path).unwrap_or(0),
+            Some(remote) => {
+                let store = remote.store.clone();
+                let prefix = remote.prefix.clone();
+                bridge(async move { list_remote_prefix(store.as_ref(), &prefix).await })
+                    .map(|objects| objects.iter().map(|meta| meta.size).sum())
+                    .unwrap_or(0)
+            }
+        }
     }
 
     /// Exact key count by full scan. The RocksDB path serves an O(1) engine
@@ -471,7 +758,7 @@ fn copy_dir_recursive_excluding(from: &Path, to: &Path, exclude_dir: Option<&Pat
 /// Discovered rather than hardcoded so a layout change fails loudly in
 /// tests, not silently: no manifest dir means nothing to pin.
 fn find_manifest_dir(keyspace_path: &Path) -> io::Result<Option<PathBuf>> {
-    let candidate = keyspace_path.join("keyspace").join("manifest");
+    let candidate = keyspace_path.join(DB_SUBDIR).join(MANIFEST_SUBDIR);
     if candidate.is_dir() { Ok(Some(candidate)) } else { Ok(None) }
 }
 

@@ -16,6 +16,9 @@
 //! - `U2` — SlateDB LocalFS keyspaces + file WAL (TB-P7, ADR-0001): the
 //!   candidate engine over a local object store, with TypeDB's WAL remaining
 //!   the durability authority.
+//! - `U2S3` — SlateDB keyspaces over an S3-compatible object store (TB-P8):
+//!   the same U2 semantics with the data path exercised through the S3 API
+//!   (local MinIO stand-in for Cloudflare R2); file WAL unchanged.
 //! - `U3` — SlateDB + remote WAL simulation. Not yet available; fail-closed.
 //! - `U4` — production remote object-store lane. Not yet available; fail-closed.
 //!
@@ -39,6 +42,12 @@ pub enum StorageBackendProfile {
     U1ForkRocksFileWal,
     /// SlateDB LocalFS keyspaces + file WAL (TB-P7).
     U2SlateLocalFs,
+    /// SlateDB over an S3-compatible object store + file WAL (TB-P8): U2
+    /// semantics with the data path speaking the same S3 API Cloudflare R2
+    /// serves, against a local stand-in (MinIO) in the L0 lane. The WAL
+    /// remains the local file WAL — this profile moves only the keyspace
+    /// object store off the local filesystem.
+    U2S3SlateS3FileWal,
     /// SlateDB remote-WAL-simulation lane (unavailable).
     U3SlateRemoteSim,
     /// Production remote object-store lane (unavailable).
@@ -51,6 +60,7 @@ impl StorageBackendProfile {
             Self::U0PristineUpstream => "U0",
             Self::U1ForkRocksFileWal => "U1",
             Self::U2SlateLocalFs => "U2",
+            Self::U2S3SlateS3FileWal => "U2S3",
             Self::U3SlateRemoteSim => "U3",
             Self::U4ProductionRemote => "U4",
         }
@@ -61,6 +71,7 @@ impl StorageBackendProfile {
             "U0" => Some(Self::U0PristineUpstream),
             "U1" | "" => Some(Self::U1ForkRocksFileWal),
             "U2" => Some(Self::U2SlateLocalFs),
+            "U2S3" => Some(Self::U2S3SlateS3FileWal),
             "U3" => Some(Self::U3SlateRemoteSim),
             "U4" => Some(Self::U4ProductionRemote),
             _ => None,
@@ -68,9 +79,16 @@ impl StorageBackendProfile {
     }
 
     fn file_wal_available(&self) -> bool {
-        // U2 pairs SlateDB keyspaces with the file WAL: the KV engine swaps,
-        // durability authority does not.
-        matches!(self, Self::U0PristineUpstream | Self::U1ForkRocksFileWal | Self::U2SlateLocalFs)
+        // U2/U2S3 pair SlateDB keyspaces with the file WAL: the KV engine
+        // (and, for U2S3, its object store) swaps, durability authority
+        // does not.
+        matches!(
+            self,
+            Self::U0PristineUpstream
+                | Self::U1ForkRocksFileWal
+                | Self::U2SlateLocalFs
+                | Self::U2S3SlateS3FileWal
+        )
     }
 }
 

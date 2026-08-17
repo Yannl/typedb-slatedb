@@ -110,6 +110,57 @@ Verified: full `storage` crate suite baseline-equal on U2 vs the U1 oracle
 (8 + 14+1ign + 4 + 5/2-todo-stubs + 10 + 6), re-verified after the
 hardening pass on both profiles; U1 unchanged.
 
+## TB-P8 — S3-compatible object store for SlateDB keyspaces (U2S3 profile)
+
+Files: `Cargo.toml` (workspace `slatedb` dep gains the `aws` feature —
+`object_store`'s S3 client compiled into the existing pinned version, no
+new dependency), `Cargo.lock` (feature-implied additions only),
+`storage/factory.rs`, `storage/keyspace/slate.rs`,
+`storage/keyspace/keyspace.rs`.
+
+Behavior-preservation argument: `U2S3` is U2 with the object store swapped
+under SlateDB — the engine contract, MVCC layer, WAL, and every read/write
+option are byte-identical code paths. All U2S3-specific logic is selected
+only when the profile is `U2S3`; under every other profile the changed
+files compile to the previous behavior (`remote: None` short-circuits).
+
+1. `factory.rs` — new fail-closed profile `U2S3` (SlateDB over an
+   S3-compatible store + file WAL). Selection is explicit; unknown values
+   still error, unavailable profiles still refuse to fall back.
+2. `slate.rs` — S3 configuration from `TYPEDB_S3_*` (endpoint, bucket,
+   credentials required; region defaults to `auto`, root prefix to
+   `typedb`), resolved once per process like the profile itself.
+   Conditional put stays on `object_store`'s default `ETagMatch` — the
+   standard-HTTP-preconditions mode Cloudflare R2 and MinIO implement,
+   which SlateDB's manifest CAS requires.
+3. `slate.rs` — keyspace directory → object prefix mapping is injective
+   (`=`-escape encoding of the absolute path), so no two keyspace
+   directories can share remote state and a reopened directory finds its
+   own.
+4. `slate.rs` — the local keyspace directory remains the lifecycle marker:
+   storage recovery wipes it to mean "start empty" and checkpoint recovery
+   repopulates it (there is no state-preserving reopen without a
+   checkpoint). `open_s3` purges the remote prefix and, when a restored
+   `keyspace/` subtree is present, uploads it as the new store state —
+   preserving the disposable-store semantics of ADR-0003 exactly.
+5. `slate.rs` — the S3 checkpoint runs the same manifest-pinning algorithm
+   as the LocalFS lane through the object-store API and *downloads* into
+   the local checkpoint directory, so the on-disk checkpoint shape is
+   identical and checkpoint restore (`recovery/checkpoint.rs`) needs no
+   engine-specific code.
+6. `keyspace.rs` — keyspace delete purges the remote prefix before
+   removing the local directory (deleting only locally would leak objects
+   a later open of the same path would then purge as stale); new typed
+   `KeyspaceDeleteError::RemotePurge`.
+7. `slate.rs` — `estimate_size_in_bytes` sums remote object sizes on the
+   S3 lane (same metrics-only caller as the LocalFS `dir_size`).
+
+Verified: full `storage` crate suite on U2S3 against a local MinIO
+(RELEASE.2025-09-07) is baseline-equal with the U1 oracle and U2
+(8 + 14+1ign + 4 + 5/2-todo-stubs + 10 + 6); the 2 reds are the documented
+upstream `todo!()` stubs. Full-corpus evidence under
+`docs/evidence/G3/u2s3-full/`.
+
 ## Staged runfile arrangements (Bazel-equivalence, no test edits)
 
 Recorded at BT-P2 (see `docs/evidence/G1/u0-baseline.json`):

@@ -167,7 +167,7 @@ mod controller {
 
     impl Controller {
         pub fn new() -> Self {
-            Controller { session: 0, next_seq: 1, next_lsn: 1, next_control: 1, ..Default::default() }
+            Controller { session: 0, next_seq: 1, next_lsn: 0, next_control: 1, ..Default::default() }
         }
 
         pub fn open_session(&mut self) -> u64 {
@@ -286,8 +286,10 @@ mod controller {
 
         /// Sync barrier: all earlier ops resolved AND journal durable
         /// through the barrier (§9.6).
-        pub fn sync_satisfied(&self) -> (u64, u64, bool) {
-            let head_lsn = self.next_lsn - 1;
+        pub fn sync_satisfied(&self) -> (i64, u64, bool) {
+            // base-0 LSNs: the empty head is -1, exactly like the SQL lane's
+            // COALESCE(MAX(append_lsn), -1)
+            let head_lsn = self.next_lsn as i64 - 1;
             let head_ctrl = self.next_control - 1;
             (head_lsn, head_ctrl, self.journal_durable_seq >= head_ctrl)
         }
@@ -444,7 +446,7 @@ mod tests {
                 // invariants: contiguous LSN and TypeSequence over whatever
                 // was finalized — no holes regardless of kill point
                 for (i, d) in c.tail.iter().enumerate() {
-                    assert_eq!(d.append_lsn, i as u64 + 1);
+                    assert_eq!(d.append_lsn, i as u64);
                     assert_eq!(d.type_sequence, i as u64 + 1);
                 }
                 assert_eq!(c.tail.len() as u64, finalized);
@@ -461,7 +463,7 @@ mod tests {
         let mut s = FaultyStore::new(vec![Fault::AmbiguousStored]);
         let mut client = RemoteWalClient::open(&mut c);
         let d = client.append(&mut c, &mut s, b"pay", true, None, None, None).unwrap().unwrap();
-        assert_eq!(d.append_lsn, 1);
+        assert_eq!(d.append_lsn, 0);
         assert_eq!(s.inner.objects.len(), 1);
 
         // not-stored-and-lost: absent on read-back, retried same op, succeeds
@@ -469,7 +471,7 @@ mod tests {
         let mut s = FaultyStore::new(vec![Fault::AmbiguousNotStored]);
         let mut client = RemoteWalClient::open(&mut c);
         let d = client.append(&mut c, &mut s, b"pay", true, None, None, None).unwrap().unwrap();
-        assert_eq!(d.append_lsn, 1);
+        assert_eq!(d.append_lsn, 0);
 
         // clean failure: typed error, nothing consumed
         let mut c = Controller::new();
@@ -480,12 +482,12 @@ mod tests {
             Err(WriteError::UploadFailed)
         );
         assert_eq!(c.tail.len(), 0);
-        assert_eq!(c.next_lsn_probe(), 1);
+        assert_eq!(c.next_lsn_probe(), 0);
     }
 
     impl Controller {
         fn next_lsn_probe(&self) -> u64 {
-            self.tail.len() as u64 + 1
+            self.tail.len() as u64
         }
     }
 
@@ -523,7 +525,7 @@ mod tests {
             client.append(&mut c, &mut s, format!("p{i}").as_bytes(), true, None, None, None).unwrap();
         }
         let (lsn, ctrl, durable) = c.sync_satisfied();
-        assert_eq!((lsn, ctrl, durable), (3, 3, false), "not durable before flush");
+        assert_eq!((lsn, ctrl, durable), (2, 3, false), "not durable before flush");
         // flush with an ambiguous publication in the middle
         let mut fs = FaultyStore { inner: s, script: vec![Fault::None, Fault::AmbiguousStored, Fault::None], calls: 0 };
         let published = c.flush_outbox(&mut fs);

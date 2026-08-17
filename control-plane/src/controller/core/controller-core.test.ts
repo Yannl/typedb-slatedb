@@ -43,6 +43,7 @@ function req(overrides: Partial<FinalizeRequest> = {}): FinalizeRequest {
     operationId: id,
     requestDigest: `digest-${id}`,
     sequencingKind: "SEQUENCED",
+    recordType: 2, // CommitRecord's durability record type
     logicalKey: null,
     payloadKey: `payload/${id}`,
     payloadDigest: `pd-${id}`,
@@ -262,6 +263,7 @@ test("SQL projection and pure reducer replay are trace-equivalent over a generat
       assert.ok(row.ok);
       assert.equal(rec.payloadDigest, row.payloadDigest);
       assert.equal(rec.typeSequence, row.typeSequence);
+      assert.equal(rec.recordType, row.recordType);
     }
   }
 });
@@ -292,12 +294,99 @@ test("status recovery is never blocked by budgets: duplicate status retry succee
   assert.deepEqual(conflicting, { ok: false, error: "STATUS_CONFLICT" });
 });
 
+test("register fences the predecessor: a new actor's register revokes the old actor's append authority (inv. 17, three-lane pin)", () => {
+  // Both Rust reference lanes open sessions through a monotone counter that
+  // implicitly fences every predecessor (remote-wal-spike open_session,
+  // wal_model open_session + stale_session_is_fenced_without_allocation);
+  // the SQL lane must produce the same trace: register(new) -> old is fenced.
+  const core = boot();
+  assert.ok(core.finalizeWalRecord(req()).ok);
+  core.registerSession("db1", 3, "sess-2"); // restart: strictly newer actor
+  assert.deepEqual(core.finalizeWalRecord(req()), { ok: false, error: "SESSION_FENCED" });
+  assert.ok(core.finalizeWalRecord(req({ startupSessionId: "sess-2" })).ok);
+  assert.equal(core.auditContiguity("db1", 3).count, 2);
+});
+
+test("a fenced actor cannot re-take authority by re-registering", () => {
+  const core = boot();
+  core.registerSession("db1", 3, "sess-2"); // fences sess-1
+  core.registerSession("db1", 3, "sess-1"); // stale actor retries registration
+  // sess-1 stays fenced; sess-2 keeps authority
+  assert.deepEqual(core.finalizeWalRecord(req()), { ok: false, error: "SESSION_FENCED" });
+  assert.ok(core.finalizeWalRecord(req({ startupSessionId: "sess-2" })).ok);
+});
+
+test("one actor spans a generation rollover without fencing itself", () => {
+  const core = boot();
+  assert.ok(core.finalizeWalRecord(req()).ok);
+  core.registerSession("db1", 4, "sess-1"); // same actor, next generation
+  assert.ok(core.finalizeWalRecord(req()).ok); // generation 3 still writable
+  assert.ok(core.finalizeWalRecord(req({ generation: 4 })).ok);
+});
+
+test("head reports the TypeSequence, not the physical LSN", () => {
+  const core = boot();
+  assert.deepEqual(core.head("db1", 3), { headLsn: -1, headTypeSequence: 0 });
+  core.finalizeWalRecord(req({ sequencingKind: "SEQUENCED" }));
+  core.finalizeWalRecord(req({ sequencingKind: "UNSEQUENCED" }));
+  core.finalizeWalRecord(req({ sequencingKind: "UNSEQUENCED" }));
+  // 3 physical records, 1 sequenced: lsn head 2, sequence head 1 — the two
+  // MUST diverge here or `current()`/`previous()` built on this endpoint
+  // would corrupt recovery arithmetic
+  assert.deepEqual(core.head("db1", 3), { headLsn: 2, headTypeSequence: 1 });
+});
+
+test("scan replays in physical order with type_sequence floor, type filter, pinned bound, and paging", () => {
+  const core = boot();
+  core.finalizeWalRecord(req({ sequencingKind: "SEQUENCED", recordType: 2 }));    // lsn 0, ts 1
+  core.finalizeWalRecord(req({ sequencingKind: "UNSEQUENCED", recordType: 10 })); // lsn 1, ts 1
+  core.finalizeWalRecord(req({ sequencingKind: "SEQUENCED", recordType: 2 }));    // lsn 2, ts 2
+  core.finalizeWalRecord(req({ sequencingKind: "SEQUENCED", recordType: 2 }));    // lsn 3, ts 3
+  const pinned = core.openIterator("db1", 3).headLsn;
+  core.finalizeWalRecord(req({ sequencingKind: "SEQUENCED", recordType: 2 }));    // lsn 4 - after the pin
+
+  // full replay from sequence 1 under the pinned bound: physical order,
+  // unsequenced records interleaved, the post-pin append invisible
+  const all = core.scan("db1", 3, { fromTypeSequence: 1, fromLsn: 0, throughLsn: pinned, recordType: null, limit: 100 });
+  assert.deepEqual(all.records.map((r) => [r.appendLsn, r.typeSequence, r.recordType]),
+    [[0, 1, 2], [1, 1, 10], [2, 2, 2], [3, 3, 2]]);
+  assert.equal(all.nextFromLsn, null);
+
+  // sequence floor: from ts 2 excludes the ts-1 records (both of them)
+  const fromTs2 = core.scan("db1", 3, { fromTypeSequence: 2, fromLsn: 0, throughLsn: pinned, recordType: null, limit: 100 });
+  assert.deepEqual(fromTs2.records.map((r) => r.appendLsn), [2, 3]);
+
+  // type filter is a catalogue property, no payload fetch required
+  const statsOnly = core.scan("db1", 3, { fromTypeSequence: 0, fromLsn: 0, throughLsn: pinned, recordType: 10, limit: 100 });
+  assert.deepEqual(statsOnly.records.map((r) => r.appendLsn), [1]);
+
+  // paging: limit 2 hands back a cursor that resumes exactly, no overlap
+  const page1 = core.scan("db1", 3, { fromTypeSequence: 1, fromLsn: 0, throughLsn: pinned, recordType: null, limit: 2 });
+  assert.deepEqual(page1.records.map((r) => r.appendLsn), [0, 1]);
+  assert.equal(page1.nextFromLsn, 2);
+  const page2 = core.scan("db1", 3, { fromTypeSequence: 1, fromLsn: page1.nextFromLsn!, throughLsn: pinned, recordType: null, limit: 2 });
+  assert.deepEqual(page2.records.map((r) => r.appendLsn), [2, 3]);
+  assert.equal(page2.nextFromLsn, null);
+});
+
+test("lastByType returns the physically last record of the type; absence is typed NOT_FOUND", () => {
+  const core = boot();
+  assert.deepEqual(core.lastByType("db1", 3, 10), { ok: false, error: "NOT_FOUND" });
+  core.finalizeWalRecord(req({ sequencingKind: "UNSEQUENCED", recordType: 10 }));
+  core.finalizeWalRecord(req({ sequencingKind: "SEQUENCED", recordType: 2 }));
+  core.finalizeWalRecord(req({ sequencingKind: "UNSEQUENCED", recordType: 10 }));
+  const last = core.lastByType("db1", 3, 10);
+  assert.ok(last.ok);
+  assert.equal(last.record.appendLsn, 2);
+  assert.equal(last.record.recordType, 10);
+});
+
 test("negative control: reducer refuses LSN holes (mutant must fail equivalence)", () => {
   const events: WalRecordEvent[] = [
     { databaseId: "db1", generation: 1, appendLsn: 0, typeSequence: 1, sequencingKind: "SEQUENCED",
-      payloadKey: "k0", payloadDigest: "d0", logicalKey: null },
+      recordType: 2, payloadKey: "k0", payloadDigest: "d0", logicalKey: null },
     { databaseId: "db1", generation: 1, appendLsn: 2, typeSequence: 2, sequencingKind: "SEQUENCED",
-      payloadKey: "k2", payloadDigest: "d2", logicalKey: null },
+      recordType: 2, payloadKey: "k2", payloadDigest: "d2", logicalKey: null },
   ];
   assert.throws(() => replay(events), /contiguity violation/);
 });

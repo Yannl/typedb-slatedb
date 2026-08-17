@@ -51,12 +51,15 @@ export const SCHEMA = `
     unsequenced_logical_key TEXT,
     startup_session_id TEXT NOT NULL,
     control_seq INTEGER NOT NULL,
+    record_type INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY(database_id, generation, append_lsn),
     UNIQUE(database_id, generation, finalization_operation_id)
   );
   CREATE UNIQUE INDEX IF NOT EXISTS wal_status_singleton
     ON wal_tail(database_id, generation, unsequenced_logical_key)
     WHERE unsequenced_logical_key IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS wal_type_scan
+    ON wal_tail(database_id, generation, record_type, append_lsn);
   CREATE TABLE IF NOT EXISTS control_outbox(
     control_seq INTEGER PRIMARY KEY,
     database_id TEXT NOT NULL,
@@ -97,10 +100,26 @@ export interface FinalizeRequest {
   operationId: string;
   requestDigest: string;
   sequencingKind: "SEQUENCED" | "UNSEQUENCED";
+  /** TypeDB durability record type (u8); catalogued so type-filtered replay
+   *  (`iter_type_from`, `find_last_type`) is a server-side index scan rather
+   *  than a payload fetch per record. */
+  recordType: number;
   logicalKey: string | null;
   payloadKey: string;
   payloadDigest: string;
   payloadLength: number;
+}
+
+/** One catalogued WAL tail row, as returned by the scan/last read paths. */
+export interface WalDescriptor {
+  appendLsn: number;
+  typeSequence: number;
+  sequencingKind: string;
+  recordType: number;
+  payloadKey: string;
+  payloadDigest: string;
+  payloadLength: number;
+  logicalKey: string | null;
 }
 
 export type FinalizeResult = Typed<{ appendLsn: number; typeSequence: number; controlSeq: number; replayed: boolean }> | TypedErr;
@@ -111,13 +130,47 @@ export class ControllerCore {
   constructor(sql: SyncSql) {
     this.sql = sql;
     this.sql.exec(SCHEMA);
+    // pre-record_type dev state (CREATE TABLE IF NOT EXISTS cannot add
+    // columns to an existing table): additive migration, idempotent
+    try {
+      this.sql.exec(`ALTER TABLE wal_tail ADD COLUMN record_type INTEGER NOT NULL DEFAULT 0`);
+    } catch {
+      // column already exists
+    }
   }
 
+  /**
+   * Register a session AND fence every other live session of the database
+   * (takeover-at-open). Both Rust reference lanes already do this
+   * (remote-wal-spike `Controller::register`, protocol-models
+   * `WalState::register`); a register that leaves the predecessor able to
+   * append would let two processes allocate concurrently after a restart —
+   * exactly the divergence class ADR-0006's three-lane rule exists to
+   * prevent. Re-registering the same session is idempotent and fences
+   * nothing of its own.
+   */
   registerSession(databaseId: string, generation: number, startupSessionId: string): void {
-    this.sql.exec(
-      `INSERT OR IGNORE INTO sessions(database_id, generation, startup_session_id) VALUES (?,?,?)`,
-      databaseId, generation, startupSessionId,
-    );
+    this.sql.transaction(() => {
+      // The authority unit is the ACTOR (startup session), not the
+      // (generation, session) pair: one live process may span a generation
+      // rollover without fencing itself. A superseded (fenced) actor can
+      // never re-take authority — the models' session counter only moves
+      // forward — so its re-register is a no-op, leaving it fenced and the
+      // current owner untouched.
+      const fencedRows = this.sql.exec(
+        `SELECT 1 FROM sessions WHERE database_id=? AND startup_session_id=? AND fenced=1 LIMIT 1`,
+        databaseId, startupSessionId,
+      );
+      if (fencedRows.length) return;
+      this.sql.exec(
+        `UPDATE sessions SET fenced=1 WHERE database_id=? AND startup_session_id<>?`,
+        databaseId, startupSessionId,
+      );
+      this.sql.exec(
+        `INSERT OR IGNORE INTO sessions(database_id, generation, startup_session_id) VALUES (?,?,?)`,
+        databaseId, generation, startupSessionId,
+      );
+    });
   }
 
   fenceSession(databaseId: string, generation: number, startupSessionId: string): void {
@@ -265,11 +318,11 @@ export class ControllerCore {
     this.sql.exec(
       `INSERT INTO wal_tail(database_id, generation, append_lsn, type_sequence, sequencing_kind,
          payload_key, payload_digest, payload_length, finalization_operation_id, request_digest,
-         unsequenced_logical_key, startup_session_id, control_seq)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         unsequenced_logical_key, startup_session_id, control_seq, record_type)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       req.databaseId, req.generation, appendLsn, typeSequence, req.sequencingKind,
       req.payloadKey, req.payloadDigest, req.payloadLength, req.operationId, req.requestDigest,
-      req.logicalKey, req.startupSessionId, controlSeq,
+      req.logicalKey, req.startupSessionId, controlSeq, req.recordType,
     );
     // outbox row in the SAME transaction as the projection mutation (section 7.4)
     this.sql.exec(
@@ -277,7 +330,8 @@ export class ControllerCore {
        VALUES (?,?,?,?)`,
       controlSeq, req.databaseId, "WAL_RECORD_FINALIZED",
       JSON.stringify({ databaseId: req.databaseId, generation: req.generation, appendLsn, typeSequence,
-                       sequencingKind: req.sequencingKind, payloadKey: req.payloadKey,
+                       sequencingKind: req.sequencingKind, recordType: req.recordType,
+                       payloadKey: req.payloadKey,
                        payloadDigest: req.payloadDigest, logicalKey: req.logicalKey }),
     );
     return { ok: true as const, appendLsn, typeSequence, controlSeq, replayed: false };
@@ -323,9 +377,9 @@ export class ControllerCore {
 
   /** Exact lookup (CT-P5): missing rows are typed NOT_FOUND, never EOF. */
   exactLookup(databaseId: string, generation: number, appendLsn: number):
-    Typed<{ payloadKey: string; payloadDigest: string; typeSequence: number }> | TypedErr {
+    Typed<{ payloadKey: string; payloadDigest: string; typeSequence: number; recordType: number }> | TypedErr {
     const rows = this.sql.exec(
-      `SELECT payload_key, payload_digest, type_sequence FROM wal_tail
+      `SELECT payload_key, payload_digest, type_sequence, record_type FROM wal_tail
        WHERE database_id=? AND generation=? AND append_lsn=?`,
       databaseId, generation, appendLsn,
     );
@@ -335,6 +389,7 @@ export class ControllerCore {
       payloadKey: String(rows[0].payload_key),
       payloadDigest: String(rows[0].payload_digest),
       typeSequence: Number(rows[0].type_sequence),
+      recordType: Number(rows[0].record_type),
     };
   }
 
@@ -347,6 +402,63 @@ export class ControllerCore {
     return { headLsn: Number(head.lsn) };
   }
 
+  /**
+   * WAL head: the highest AppendLsn AND the highest TypeSequence. The
+   * durability client's `current()`/`previous()` need the TypeSequence —
+   * the audit's `maxLsn` is a physical position, not a sequence number.
+   */
+  head(databaseId: string, generation: number): { headLsn: number; headTypeSequence: number } {
+    const head = this.sql.exec(
+      `SELECT COALESCE(MAX(append_lsn), -1) AS lsn, COALESCE(MAX(type_sequence), 0) AS ts
+       FROM wal_tail WHERE database_id=? AND generation=?`,
+      databaseId, generation,
+    )[0];
+    return { headLsn: Number(head.lsn), headTypeSequence: Number(head.ts) };
+  }
+
+  /**
+   * Ordered replay scan (physical AppendLsn order — the reference WAL's
+   * iteration order), filtered by `type_sequence >= fromTypeSequence` and
+   * optionally by record type, bounded by `throughLsn` (the pinned iterator
+   * snapshot: pages of one logical iteration must not observe later
+   * appends) and paged by (`fromLsn`, `limit`).
+   */
+  scan(
+    databaseId: string,
+    generation: number,
+    opts: { fromTypeSequence: number; fromLsn: number; throughLsn: number; recordType: number | null; limit: number },
+  ): { records: WalDescriptor[]; nextFromLsn: number | null } {
+    const typeFilter = opts.recordType === null ? "" : "AND record_type=?";
+    const params: unknown[] = [databaseId, generation, opts.fromTypeSequence, opts.fromLsn, opts.throughLsn];
+    if (opts.recordType !== null) params.push(opts.recordType);
+    params.push(opts.limit + 1); // one extra row decides whether a next page exists
+    const rows = this.sql.exec(
+      `SELECT append_lsn, type_sequence, sequencing_kind, record_type, payload_key, payload_digest,
+              payload_length, unsequenced_logical_key
+       FROM wal_tail
+       WHERE database_id=? AND generation=? AND type_sequence>=? AND append_lsn>=? AND append_lsn<=?
+         ${typeFilter}
+       ORDER BY append_lsn LIMIT ?`,
+      ...params,
+    );
+    const page = rows.slice(0, opts.limit).map((row) => descriptorOf(row));
+    const nextFromLsn = rows.length > opts.limit ? page[page.length - 1].appendLsn + 1 : null;
+    return { records: page, nextFromLsn };
+  }
+
+  /** Last record of a type in physical order (`find_last_type`). */
+  lastByType(databaseId: string, generation: number, recordType: number): Typed<{ record: WalDescriptor }> | TypedErr {
+    const rows = this.sql.exec(
+      `SELECT append_lsn, type_sequence, sequencing_kind, record_type, payload_key, payload_digest,
+              payload_length, unsequenced_logical_key
+       FROM wal_tail WHERE database_id=? AND generation=? AND record_type=?
+       ORDER BY append_lsn DESC LIMIT 1`,
+      databaseId, generation, recordType,
+    );
+    if (!rows.length) return { ok: false, error: "NOT_FOUND" };
+    return { ok: true, record: descriptorOf(rows[0]) };
+  }
+
   /** Contiguity audit: the tail must have no LSN holes. */
   auditContiguity(databaseId: string, generation: number): { contiguous: boolean; count: number; maxLsn: number } {
     const r = this.sql.exec(
@@ -356,6 +468,19 @@ export class ControllerCore {
     )[0];
     return { contiguous: Number(r.n) === Number(r.m) + 1, count: Number(r.n), maxLsn: Number(r.m) };
   }
+}
+
+function descriptorOf(row: SqlRow): WalDescriptor {
+  return {
+    appendLsn: Number(row.append_lsn),
+    typeSequence: Number(row.type_sequence),
+    sequencingKind: String(row.sequencing_kind),
+    recordType: Number(row.record_type),
+    payloadKey: String(row.payload_key),
+    payloadDigest: String(row.payload_digest),
+    payloadLength: Number(row.payload_length),
+    logicalKey: row.unsequenced_logical_key === null ? null : String(row.unsequenced_logical_key),
+  };
 }
 
 export class BatchAbort extends Error {

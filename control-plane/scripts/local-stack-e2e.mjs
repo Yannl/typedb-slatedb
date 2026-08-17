@@ -49,7 +49,7 @@ check("payload upload digest agrees", up1.body.sha256hex === digest1);
 const finalizeRequest = {
   databaseId: DB, generation: GEN, startupSessionId: SESSION,
   operationId: "op-1", requestDigest: "rd-1",
-  sequencingKind: "SEQUENCED", logicalKey: null,
+  sequencingKind: "SEQUENCED", recordType: 2, logicalKey: null,
   payloadKey: `${DB}/g1/p1`, payloadDigest: digest1, payloadLength: payload1.length,
 };
 const f1 = await api("POST", "/wal/finalize", finalizeRequest);
@@ -77,6 +77,7 @@ const statusDigest = sha256hex(statusPayload);
 await api("PUT", `/payload/${DB}/g1/status-a`, statusPayload, true);
 const s1 = await api("POST", "/wal/finalize", {
   ...finalizeRequest, operationId: "st-1", requestDigest: "rd-s1", sequencingKind: "UNSEQUENCED",
+  recordType: 1,
   logicalKey: "status:cp", payloadKey: `${DB}/g1/status-a`, payloadDigest: statusDigest, payloadLength: statusPayload.length,
 });
 check("status singleton accepted", s1.body.ok === true);
@@ -130,6 +131,91 @@ const peek3 = await api("GET", `/outbox/${DB}?limit=10`);
 check("acked events are not redelivered", peek3.body.events.length === 0);
 const ackAgain = await api("POST", `/outbox/${DB}/ack`, { upToControlSeq: maxSeq });
 check("duplicate ack is idempotent", ackAgain.body.acked === 0);
+
+// 10. register-fences-predecessor over HTTP (takeover; three-lane pin)
+await api("POST", "/session/register", { databaseId: DB, generation: GEN, startupSessionId: "sess-2" });
+const payload2 = Buffer.from("commit-record-2");
+await api("PUT", `/payload/${DB}/g1/p2`, payload2, true);
+const takeover = await api("POST", "/wal/finalize", {
+  ...finalizeRequest, startupSessionId: "sess-2", operationId: "op-2", requestDigest: "rd-2",
+  payloadKey: `${DB}/g1/p2`, payloadDigest: sha256hex(payload2), payloadLength: payload2.length,
+});
+check("new actor appends after taking over", takeover.body.ok === true && takeover.body.appendLsn === 2);
+await api("POST", "/session/register", { databaseId: DB, generation: GEN, startupSessionId: "sess-3" });
+const fencedByRegister = await api("POST", "/wal/finalize", {
+  ...finalizeRequest, startupSessionId: "sess-2", operationId: "op-2b", requestDigest: "rd-2b",
+  payloadKey: `${DB}/g1/p2`, payloadDigest: sha256hex(payload2), payloadLength: payload2.length,
+});
+check("register fences the predecessor",
+  fencedByRegister.status === 409 && fencedByRegister.body.error === "SESSION_FENCED");
+const payload3 = Buffer.from("commit-record-3");
+await api("PUT", `/payload/${DB}/g1/p3`, payload3, true);
+const f3 = await api("POST", "/wal/finalize", {
+  ...finalizeRequest, startupSessionId: "sess-3", operationId: "op-3", requestDigest: "rd-3",
+  payloadKey: `${DB}/g1/p3`, payloadDigest: sha256hex(payload3), payloadLength: payload3.length,
+});
+check("current actor appends lsn 3", f3.body.ok === true && f3.body.appendLsn === 3);
+
+// 11. head: TypeSequence, not physical LSN (they diverge here: 4 records, 3 sequenced)
+const head = await api("GET", `/wal/${DB}/${GEN}/head`);
+check("head reports lsn and type sequence",
+  head.body.ok === true && head.body.headLsn === 3 && head.body.headTypeSequence === 3,
+  JSON.stringify(head.body));
+
+// 12. pinned iterator + ordered scan with verified inline payloads
+const iter = await api("POST", `/wal/${DB}/${GEN}/iterator`);
+check("iterator pins the head", iter.body.ok === true && iter.body.headLsn === 3);
+const scan = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=1&throughLsn=${iter.body.headLsn}&limit=100`);
+check("scan replays in physical order",
+  scan.body.ok === true &&
+  JSON.stringify(scan.body.records.map((r) => [r.appendLsn, r.typeSequence, r.recordType])) ===
+    JSON.stringify([[0, 1, 2], [1, 1, 1], [2, 2, 2], [3, 3, 2]]),
+  JSON.stringify(scan.body.records?.map((r) => [r.appendLsn, r.typeSequence, r.recordType])));
+check("scan payloads round-trip",
+  Buffer.from(scan.body.records[0].payloadBase64, "base64").equals(payload1) &&
+  Buffer.from(scan.body.records[3].payloadBase64, "base64").equals(payload3));
+const scanTyped = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&throughLsn=${iter.body.headLsn}&recordType=1&limit=100`);
+check("scan filters by record type", scanTyped.body.records.length === 1 && scanTyped.body.records[0].appendLsn === 1);
+const scanUnbounded = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&limit=100`);
+check("unbounded scan is refused (pinned snapshot is mandatory)",
+  scanUnbounded.status === 400 && scanUnbounded.body.error === "MISSING_THROUGH_LSN");
+
+// 13. last-by-type
+const last = await api("GET", `/wal/${DB}/${GEN}/last?recordType=1`);
+check("last-by-type finds the status record", last.body.ok === true && last.body.record.appendLsn === 1);
+const lastMiss = await api("GET", `/wal/${DB}/${GEN}/last?recordType=99`);
+check("last-by-type miss is typed NOT_FOUND", lastMiss.status === 404 && lastMiss.body.error === "NOT_FOUND");
+const badType = await api("POST", "/wal/finalize", {
+  ...finalizeRequest, startupSessionId: "sess-3", operationId: "op-bad-type", requestDigest: "rd-bt", recordType: 999,
+});
+check("out-of-range record type is a typed 400", badType.status === 400 && badType.body.error === "INVALID_RECORD_TYPE");
+
+// 14. batch finalize: all-or-nothing over HTTP
+const batchA = Buffer.from("batch-record-A");
+const batchB = Buffer.from("batch-record-B");
+await api("PUT", `/payload/${DB}/g1/ba`, batchA, true);
+await api("PUT", `/payload/${DB}/g1/bb`, batchB, true);
+const batchOk = await api("POST", "/wal/finalize-batch", { requests: [
+  { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-1", requestDigest: "rd-bb1",
+    payloadKey: `${DB}/g1/ba`, payloadDigest: sha256hex(batchA), payloadLength: batchA.length },
+  { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-2", requestDigest: "rd-bb2",
+    payloadKey: `${DB}/g1/bb`, payloadDigest: sha256hex(batchB), payloadLength: batchB.length },
+]});
+check("batch finalize allocates contiguously",
+  batchOk.body.ok === true && JSON.stringify(batchOk.body.results.map((r) => r.appendLsn)) === JSON.stringify([4, 5]),
+  JSON.stringify(batchOk.body));
+const batchAborted = await api("POST", "/wal/finalize-batch", { requests: [
+  { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-3", requestDigest: "rd-bb3",
+    payloadKey: `${DB}/g1/ba`, payloadDigest: sha256hex(batchA), payloadLength: batchA.length },
+  { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-4", requestDigest: "rd-bb4",
+    sequencingKind: "UNSEQUENCED", recordType: 1, logicalKey: "status:cp",
+    payloadKey: `${DB}/g1/bb`, payloadDigest: sha256hex(batchB), payloadLength: batchB.length },
+]});
+check("failing member aborts the whole batch",
+  batchAborted.status === 409 && batchAborted.body.error === "STATUS_CONFLICT");
+const auditAfterBatch = await api("GET", `/wal/${DB}/${GEN}/audit`);
+check("aborted batch allocated nothing",
+  auditAfterBatch.body.contiguous === true && auditAfterBatch.body.count === 6, JSON.stringify(auditAfterBatch.body));
 
 console.log(failures === 0 ? "\nL1 LOCAL STACK E2E: ALL PASS" : `\nL1 LOCAL STACK E2E: ${failures} FAILURES`);
 process.exit(failures === 0 ? 0 : 1);

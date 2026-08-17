@@ -80,7 +80,7 @@ pub struct WalState {
 
 impl WalState {
     pub fn new() -> Self {
-        WalState { next_type_sequence: 1, next_append_lsn: 1, next_control_seq: 1, ..Default::default() }
+        WalState { next_type_sequence: 1, next_append_lsn: 0, next_control_seq: 1, ..Default::default() }
     }
 
     pub fn open_session(&mut self) -> u64 {
@@ -156,14 +156,18 @@ impl WalState {
         self.by_operation.get(&operation_id).map(|&ix| &self.records[ix])
     }
 
-    /// Sync barrier: proves the exact physical prefix (inv. 36–37).
-    pub fn sync_barrier(&self) -> (AppendLsn, ControlSeq) {
-        (self.next_append_lsn - 1, self.next_control_seq - 1)
+    /// Sync barrier: proves the exact physical prefix (inv. 36–37). LSNs are
+    /// base-0 (as in the production SQL core), so the barrier LSN is signed:
+    /// the empty head is -1, exactly the SQL lane's COALESCE(MAX,-1).
+    pub fn sync_barrier(&self) -> (i64, ControlSeq) {
+        (self.next_append_lsn as i64 - 1, self.next_control_seq - 1)
     }
 
     /// Fixed iterator snapshot (inv. 41–43): captures the head at creation.
+    /// `through_append_lsn` is EXCLUSIVE (= the head + 1), so an empty
+    /// capture needs no signed sentinel under base-0 LSNs.
     pub fn capture_iterator(&self, from_sequence: TypeSequence) -> IteratorSnapshot {
-        IteratorSnapshot { from_sequence, through_append_lsn: self.next_append_lsn - 1, valid: true }
+        IteratorSnapshot { from_sequence, through_append_lsn: self.next_append_lsn, valid: true }
     }
 
     /// Iterate under a snapshot: later appends are invisible; a requested
@@ -176,7 +180,7 @@ impl WalState {
         let head_sequence = self
             .records
             .iter()
-            .filter(|r| r.append_lsn <= snap.through_append_lsn)
+            .filter(|r| r.append_lsn < snap.through_append_lsn)
             .filter(|r| matches!(r.sequencing, SequencingKind::Sequenced))
             .map(|r| r.type_sequence)
             .max();
@@ -185,7 +189,7 @@ impl WalState {
                 let first_present = self
                     .records
                     .iter()
-                    .filter(|r| r.append_lsn <= snap.through_append_lsn)
+                    .filter(|r| r.append_lsn < snap.through_append_lsn)
                     .filter(|r| matches!(r.sequencing, SequencingKind::Sequenced))
                     .any(|r| r.type_sequence == snap.from_sequence);
                 if !first_present && snap.from_sequence != 0 {
@@ -210,7 +214,7 @@ impl WalState {
         Ok(self
             .records
             .iter()
-            .filter(|r| r.append_lsn <= snap.through_append_lsn)
+            .filter(|r| r.append_lsn < snap.through_append_lsn)
             .filter(|r| match r.sequencing {
                 SequencingKind::Sequenced => r.type_sequence >= snap.from_sequence,
                 SequencingKind::Unsequenced { .. } => r.type_sequence >= snap.from_sequence,
@@ -226,7 +230,7 @@ impl WalState {
     pub fn check_invariants(&self) -> Result<(), String> {
         // contiguous AppendLsn from genesis (inv. 5)
         for (i, r) in self.records.iter().enumerate() {
-            if r.append_lsn != (i as u64) + 1 {
+            if r.append_lsn != (i as u64) {
                 return Err(format!("AppendLsn hole at index {i}: {}", r.append_lsn));
             }
         }
@@ -271,6 +275,8 @@ impl WalState {
 #[derive(Clone, Debug)]
 pub struct IteratorSnapshot {
     pub from_sequence: TypeSequence,
+    /// Exclusive bound: records with `append_lsn < through_append_lsn` are in
+    /// the snapshot.
     pub through_append_lsn: AppendLsn,
     pub valid: bool,
 }
@@ -358,7 +364,7 @@ mod tests {
         w.finalize(s, 2, 2, seq(), None).unwrap(); // seq 2
         let u = w.finalize(s, 3, 3, status(2), Some(true)).unwrap();
         assert_eq!(u.type_sequence, 2);
-        assert_eq!(u.append_lsn, 3);
+        assert_eq!(u.append_lsn, 2);
         let v = w.finalize(s, 4, 4, seq(), None).unwrap();
         assert_eq!(v.type_sequence, 3);
         w.check_invariants().unwrap();
@@ -391,7 +397,7 @@ mod tests {
             w.finalize(s, op, op, if op % 2 == 0 { status(op - 1) } else { seq() }, if op % 2 == 0 { Some(true) } else { None }).unwrap();
         }
         let (lsn, cseq) = w.sync_barrier();
-        assert_eq!(lsn, 5);
+        assert_eq!(lsn, 4);
         assert_eq!(cseq, 5);
         // everything at or below the barrier is present and contiguous
         let snap = w.capture_iterator(0);
@@ -490,8 +496,9 @@ mod tests {
         let mut snap = w.capture_iterator(0);
         let before = w.iterate(&snap).unwrap().len();
         w.finalize(s, 2, 2, seq(), None).unwrap();
-        // mutation: moving head (the bug this guards against)
-        snap.through_append_lsn = w.next_append_lsn - 1;
+        // mutation: moving head (the bug this guards against) — the broken
+        // snapshot tracks the live exclusive bound instead of the captured one
+        snap.through_append_lsn = w.next_append_lsn;
         let after = w.iterate(&snap).unwrap().len();
         assert_ne!(before, after, "moving-head mutant must be observable");
     }

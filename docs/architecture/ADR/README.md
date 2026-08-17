@@ -17,6 +17,7 @@ ADRs explain *why it is that way and what else was on the table*.
 | [ADR-0008](ADR-0008-upstream-corpus-as-oracle.md) | Upstream corpus is the conformance oracle; upstream defects get corrected expectations, never edits | accepted |
 | [ADR-0009](ADR-0009-local-first-parity-ladder.md) | Local-first on the L0–L3 fidelity ladder; Cloudflare is the last step | accepted |
 | [ADR-0010](ADR-0010-cargo-only-federated-workspaces.md) | Cargo-only builds, federated workspaces, machine-verified source lock | accepted |
+| [ADR-0011](ADR-0011-actor-scoped-fencing-takeover-at-register.md) | Fencing is actor-scoped; registering is takeover-at-open (fences every other actor) | accepted |
 
 Numbering is chronological by decision, not by importance. A decision is
 reversed only by a new ADR that names the one it supersedes.

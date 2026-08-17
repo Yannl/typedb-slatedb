@@ -11,8 +11,10 @@ is the v16 brief; this page is the operational digest.
 | G1 | Complete upstream test catalogue + pristine U0 baseline | **green** (`docs/evidence/G1/`) |
 | — | Safe boundaries (TB-P1..P3, BT-P3), pure models, local protocol spikes | **green** (`docs/evidence/G3/`, models in `tools/protocol-models`) |
 | TB-P7 / U2 | SlateDB keyspace engine, corpus parity vs oracle | **green** — full corpus: 106 executables, 104 green, 0 timeouts; the 2 red are documented upstream defects (`u2-vs-oracle-comparison.json`) |
+| TB-P8 / U2S3 | SlateDB over an S3-compatible store (MinIO as the local R2 stand-in) | **green** — storage crate suite baseline-equal vs the oracle; corpus evidence under `docs/evidence/G3/u2s3-full/` |
+| U3.0 | Remote-WAL protocol completion on the control plane (record types, head, pinned scans, last-by-type, batch, register-fences-predecessor) | **green** — pinned across all three lanes; L1 E2E 35/35 |
 | G2 | Real-platform measurements (latency/cost/amplification kill gate) | **blocked** on SI-G0-3 |
-| U3/U4, broad TypeDB semantic phases | remote WAL lanes and beyond | gated on G2 |
+| U3/U4, broad TypeDB semantic phases | remote WAL client wiring (U3.1+) and beyond | U3.1–U3.4 scoped (see parity plan); G2 still gates production lanes |
 
 ### Open blockers
 
@@ -70,6 +72,23 @@ TYPEDB_STORAGE_PROFILE=U2 python3 tools/catalog/run_u0.py --reap \
     --out docs/evidence/G3/u2-full
 ```
 
+For `U2S3`, additionally start a local MinIO and export the S3 lane's
+configuration (all required unless noted):
+
+```sh
+MINIO_ROOT_USER=typedb MINIO_ROOT_PASSWORD=typedb-secret \
+    minio server /path/to/minio-data --address 127.0.0.1:9000 &
+curl -X PUT http://127.0.0.1:9000/typedb-keyspaces \
+    --user typedb:typedb-secret --aws-sigv4 "aws:amz:us-east-1:s3"
+export TYPEDB_STORAGE_PROFILE=U2S3 \
+    TYPEDB_S3_ENDPOINT=http://127.0.0.1:9000 \
+    TYPEDB_S3_BUCKET=typedb-keyspaces \
+    TYPEDB_S3_REGION=us-east-1 \
+    TYPEDB_S3_ACCESS_KEY_ID=typedb \
+    TYPEDB_S3_SECRET_ACCESS_KEY=typedb-secret
+# TYPEDB_S3_PREFIX (default "typedb") scopes all keys under one root
+```
+
 Compare against the oracle baseline (`docs/evidence/G3/u1-full/`): the
 pass/fail profile must be identical (including the two upstream `todo!()`
 stubs in `test_recovery`). Any new failure is a stop-the-line defect in the
@@ -113,3 +132,15 @@ Build caches dominate: `sources/typedb/target` (~15 GB warm),
 `tools/target` (~4 GB). Both are safely deletable (cold rebuild ≈ 30–45
 min). Evidence and locks are small; never delete `sources/fixtures` or
 `sources/assembly-artifacts` (pinned artifacts).
+
+In a disk-constrained sandbox, put this in `~/.cargo/config.toml` before
+building — full debuginfo plus the incremental cache roughly double the
+target directory (~25 GB → ~15 GB) for no benefit in a run-once CI lane:
+
+```toml
+[profile.dev]
+debug = 0
+
+[build]
+incremental = false
+```

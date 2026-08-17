@@ -27,8 +27,9 @@
 //! ## What is deliberately not here yet
 //!
 //! Checkpointing, size estimation and deletion. They are separate concerns with their own
-//! semantics. `checkpoint` now ships: it flushes, pins the manifest, and lets the caller
-//! copy the store's files without compaction pulling them out from under it.
+//! semantics. `checkpoint` ships: it flushes, pins the manifest, and lets the caller copy the
+//! store's files without compaction pulling them out from under it. Where the durability point
+//! sits is answered on [`KeyspaceSet::write`].
 
 use std::{ops::Bound, sync::Arc};
 
@@ -136,6 +137,33 @@ impl KeyspaceSet {
     /// RocksDB gives TypeDB one atomic `WriteBatch` per keyspace; SlateDB's batch is atomic
     /// across the whole database, so a batch touching several keyspaces is *more* atomic than
     /// upstream, never less.
+    /// Apply a batch. Returns once the write is *visible*, not once it is durable.
+    ///
+    /// ## Where the durability point sits
+    ///
+    /// This is the question the whole backend turns on, so it is answered here rather than at
+    /// a call site.
+    ///
+    /// Upstream sets `write_options.disable_wal(true)` on RocksDB (`keyspace.rs`), so a
+    /// committed write lands in the memtable and nowhere else — it is *not* durable when the
+    /// call returns. TypeDB is fine with that because it keeps its own WAL in the `durability`
+    /// crate: the WAL is the durability point, and each keyspace is a materialization that
+    /// replay can rebuild.
+    ///
+    /// This matches that contract exactly. `write_with_options` returns a `WriteHandle` whose
+    /// `await_durable` waits for SlateDB's WAL flush; dropping the handle without awaiting is
+    /// what makes the write asynchronous-durable rather than synchronous-durable.
+    ///
+    /// Dropping the handle is safe, and that is a property worth stating rather than assuming:
+    /// `WriteHandle` has no `Drop` impl and holds only a sequence number and a waiter closure,
+    /// so discarding it cannot cancel or roll back a write that has already been applied. Had
+    /// it been a cancellation guard — as such handles often are — this line would silently
+    /// discard every commit, and every read-your-writes test would still pass, because the
+    /// memtable would answer correctly right up until the process restarted.
+    ///
+    /// Awaiting durability here instead would put an object-store round trip in TypeDB's
+    /// commit path for a guarantee TypeDB does not use and does not want. [`Self::flush`] and
+    /// [`Self::checkpoint`] are the explicit barriers for callers that do.
     pub fn write(&self, batch: Batch) -> Result<(), KeyspaceError> {
         self.block(self.db.write_with_options(batch.inner, &WriteOptions::default()))
             .map(|_| ())

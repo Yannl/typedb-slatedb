@@ -840,6 +840,14 @@ impl ThingManager {
                             }
                             Bound::Excluded(start) => {
                                 // increment and treat as included
+                                // `as_ref()` here relies on inference to pick its target type,
+                                // and that resolution is not stable across the two storage
+                                // backends: with the SlateDB lane's larger trait graph in
+                                // scope, rustc cannot pin `T` in `<[u8] as AsRef<T>>` and the
+                                // line fails to compile. Naming the slice is behaviour-neutral
+                                // and removes the dependence on inference entirely. Flagged
+                                // rather than buried: this is upstream source, and a backend
+                                // swap should not be able to reach it.
                                 let start_bytes = start.vertex().to_bytes();
                                 let start_slice: &[u8] = &start_bytes;
                                 let mut bytes: [u8; TypeVertex::LENGTH] = start_slice.try_into().unwrap();
@@ -890,6 +898,14 @@ impl ThingManager {
                             }
                             Bound::Excluded(start) => {
                                 // increment and treat as included
+                                // `as_ref()` here relies on inference to pick its target type,
+                                // and that resolution is not stable across the two storage
+                                // backends: with the SlateDB lane's larger trait graph in
+                                // scope, rustc cannot pin `T` in `<[u8] as AsRef<T>>` and the
+                                // line fails to compile. Naming the slice is behaviour-neutral
+                                // and removes the dependence on inference entirely. Flagged
+                                // rather than buried: this is upstream source, and a backend
+                                // swap should not be able to reach it.
                                 let start_bytes = start.vertex().to_bytes();
                                 let start_slice: &[u8] = &start_bytes;
                                 let mut bytes: [u8; TypeVertex::LENGTH] = start_slice.try_into().unwrap();

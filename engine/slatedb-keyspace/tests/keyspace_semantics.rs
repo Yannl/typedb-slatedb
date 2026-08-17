@@ -235,3 +235,37 @@ fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
         }
     }
 }
+
+#[test]
+fn a_write_is_visible_immediately_and_survives_dropping_its_durability_handle() {
+    // The engine discards the WriteHandle that `write_with_options` returns, which is what
+    // makes commits asynchronous-durable and keeps an object-store round trip out of TypeDB's
+    // commit path. That is only sound because dropping the handle cannot cancel the write.
+    //
+    // If it ever could, every read-your-writes assertion would still pass — the memtable would
+    // answer correctly — and the loss would only appear after a restart. So this test does both
+    // halves: read back through the live handle, then reopen from disk and read again.
+    let dir = tempfile::tempdir().unwrap();
+    let set = KeyspaceSet::open_local(dir.path()).unwrap();
+
+    let mut batch = Batch::new();
+    for i in 0u8..64 {
+        batch.put(KeyspaceId(0), &[i], b"v");
+    }
+    set.write(batch).unwrap();
+
+    // Visible without any flush.
+    assert_eq!(set.keyspace(KeyspaceId(0)).stats().unwrap().0, 64);
+
+    // And still there once an explicit barrier has run and the store is reopened.
+    set.flush().unwrap();
+    set.close().unwrap();
+    drop(set);
+
+    let reopened = KeyspaceSet::open_local(dir.path()).unwrap();
+    assert_eq!(
+        reopened.keyspace(KeyspaceId(0)).stats().unwrap().0,
+        64,
+        "writes acknowledged before flush must survive the explicit barrier"
+    );
+}

@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use slatedb_keyspace::{
     config::{env, MIN_WAL_FLUSHES_BEFORE_L0_FLUSH},
-    Backend, KeyspaceError, R2Credentials, StoreConfig, Tuning,
+    Backend, R2Credentials, StoreConfig, Tuning,
 };
 
 fn credentials() -> R2Credentials {
@@ -50,7 +50,8 @@ fn the_environment_selects_the_backend() {
     std::env::set_var(env::BUCKET, "knowledge-base");
     let error = R2Credentials::from_env().unwrap_err();
     let message = error.to_string();
-    assert!(matches!(error, KeyspaceError::Config(_)), "got {error:?}");
+    assert_eq!(error.operation, slatedb_keyspace::Operation::Configure, "got {error:?}");
+    assert_eq!(error.retry, slatedb_keyspace::RetryClass::Permanent, "got {error:?}");
     assert!(
         message.contains(env::ACCESS_KEY_ID) && message.contains(env::SECRET_ACCESS_KEY),
         "the error must name the variables that are missing, got: {message}"

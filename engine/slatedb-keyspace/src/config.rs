@@ -49,9 +49,7 @@
 
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
-use slatedb::config::{
-    GarbageCollectorDirectoryOptions, GarbageCollectorOptions, ObjectStoreCacheOptions, Settings,
-};
+use slatedb::config::{ObjectStoreCacheOptions, Settings};
 
 use crate::error::KeyspaceError;
 
@@ -159,7 +157,7 @@ impl R2Credentials {
                 .into_iter()
                 .filter(|name| !present.contains(name))
                 .collect();
-            return Err(KeyspaceError::Config(format!(
+            return Err(KeyspaceError::config(format!(
                 "R2 is partially configured: {} set, {} missing. \
                  Set all four or none — falling back to local storage here would silently \
                  discard the database when the process is replaced.",
@@ -216,7 +214,7 @@ impl R2Credentials {
             // not fail loudly — it would let two writers both believe they hold the lease.
             .with_conditional_put(object_store::aws::S3ConditionalPut::ETagMatch)
             .build()
-            .map_err(|error| KeyspaceError::Open(format!("could not reach R2: {error}")))?;
+            .map_err(|error| KeyspaceError::open(format!("could not reach R2: {error}")))?;
         Ok(Arc::new(store))
     }
 }
@@ -480,7 +478,7 @@ impl Tuning {
         // be honoured, and a build that cannot honour it must not claim it.
         #[cfg(not(feature = "wal_disable"))]
         if !self.wal_enabled {
-            return Err(KeyspaceError::Config(
+            return Err(KeyspaceError::config(
                 "wal_enabled=false requires the `wal_disable` feature. Without it SlateDB keeps \
                  its write-ahead log whatever this profile says, and the attestation would be \
                  false rather than merely incomplete."
@@ -488,21 +486,21 @@ impl Tuning {
             ));
         }
         if self.wal_enabled {
-            return Err(KeyspaceError::Config(
+            return Err(KeyspaceError::config(
                 "wal_enabled must be false: TypeDB's durability crate is the sole WAL authority, \
                  and a second WAL is both redundant and a delete-capable GC obligation"
                     .to_string(),
             ));
         }
         if self.gc_interval.is_some() {
-            return Err(KeyspaceError::Config(
+            return Err(KeyspaceError::config(
                 "garbage collection must be disabled: pre-G13 GC is report-only (brief I-77) and \
                  collection deletes authoritative objects (brief I-84)"
                     .to_string(),
             ));
         }
         if self.l0_ceiling > SAFE_L0_CEILING && !self.external_compaction_arranged {
-            return Err(KeyspaceError::Config(format!(
+            return Err(KeyspaceError::config(format!(
                 "l0_ceiling is {} but the safe bound without external compaction is {}. With no \
                  in-process compactor L0 never shrinks, so this many SSTs may have to be read \
                  for a single lookup — each one a billed request. Arrange external compaction \
@@ -511,13 +509,13 @@ impl Tuning {
             )));
         }
         if self.max_wal_flushes_before_l0_flush < MIN_WAL_FLUSHES_BEFORE_L0_FLUSH {
-            return Err(KeyspaceError::Config(format!(
+            return Err(KeyspaceError::config(format!(
                 "max_wal_flushes_before_l0_flush is {} but SlateDB requires at least {}",
                 self.max_wal_flushes_before_l0_flush, MIN_WAL_FLUSHES_BEFORE_L0_FLUSH,
             )));
         }
         if self.cache_dir.is_some() && self.cache_max_bytes == 0 {
-            return Err(KeyspaceError::Config(
+            return Err(KeyspaceError::config(
                 "a block cache directory is set but cache_max_bytes is 0, so nothing would ever \
                  be cached; either raise the limit or clear cache_dir"
                     .to_string(),
@@ -563,12 +561,9 @@ impl Tuning {
 
     /// Translate to SlateDB's own settings type.
     pub fn to_settings(&self) -> Settings {
-        let gc_directory = GarbageCollectorDirectoryOptions {
-            interval: self.gc_interval,
-            min_age: self.gc_min_age,
-            dry_run: false,
-        };
-
+        // `gc_interval`/`gc_min_age` are retained on `Tuning` so a post-G13 profile has
+        // somewhere to record the answer, but pre-G13 GC is off unconditionally (see
+        // `garbage_collector_options` below), so no `GarbageCollectorDirectoryOptions` is built.
         Settings {
             flush_interval: self.flush_interval,
             #[cfg(feature = "wal_disable")]

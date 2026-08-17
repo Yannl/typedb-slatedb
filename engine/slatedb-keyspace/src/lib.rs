@@ -54,10 +54,16 @@ use slatedb::{
 
 pub mod config;
 pub mod error;
+pub mod identity;
+pub mod qualification;
+pub mod runtime;
 pub mod safety;
 
 pub use config::{Backend, R2Credentials, StoreConfig, Tuning};
-pub use error::KeyspaceError;
+pub use error::{KeyspaceError, Operation, RetryClass};
+pub use identity::StoreIdentity;
+pub use qualification::{production_qualification, FeatureStatus, ProductionQualification};
+pub use runtime::StorageRuntime;
 pub use safety::{DeleteGuard, PostureAttestation};
 
 /// Re-exported so callers can build keys and values for [`Batch::put_prefixed`] without
@@ -115,16 +121,13 @@ pub fn clone_checkpoint(
 ) -> Result<(), KeyspaceError> {
     use slatedb::{admin::AdminBuilder, CloneSourceSpec};
 
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .map_err(|e| KeyspaceError::Open(e.to_string()))?;
+    let runtime = StorageRuntime::shared();
 
     let admin = AdminBuilder::new(target_prefix.to_string(), object_store).build();
     let source = CloneSourceSpec::with_checkpoint(source_prefix.to_string(), checkpoint);
 
-    block_on(&runtime, admin.create_clone_builder_from_source(source).build())
-        .map_err(|e| KeyspaceError::Write(format!("cloning checkpoint {checkpoint}: {e}")))
+    block_on(runtime.tokio(), admin.create_clone_builder_from_source(source).build())
+        .map_err(|e| KeyspaceError::slatedb(Operation::CloneCheckpoint, e))
 }
 
 /// Keys deleted per batch by [`Keyspace::clear`].
@@ -205,16 +208,87 @@ where
 }
 
 /// A key count and byte total, with the instant it was computed.
+#[derive(Clone, Copy)]
 struct CachedEstimate {
     keys: u64,
     bytes: u64,
     computed_at: Instant,
+    /// True when the scan hit [`EstimateLimits::max_bytes`] and stopped early, making the
+    /// figures a lower bound rather than a point-in-time exact count.
+    truncated: bool,
 }
 
-/// Owns the SlateDB handle and the runtime every call is bridged onto.
+/// Bounds on the statistics scan behind [`Keyspace::estimated_stats`].
+///
+/// Against an object store, a "statistics" call that walks the whole store is a sustained
+/// network transfer. These limits are what turn it from an unbounded liability into a
+/// budgeted one: a deadline and a byte cap bound any single scan, the freshness window
+/// bounds how often one runs, and the stale grace bounds how long an old answer may stand in
+/// when a fresh one is unavailable.
+#[derive(Debug, Clone, Copy)]
+pub struct EstimateLimits {
+    /// How long a computed estimate is served before a recompute is attempted.
+    pub ttl: Duration,
+    /// How far past `ttl` a stale estimate may still be served when a fresh one cannot be
+    /// produced right now (recompute in flight, admission limit reached, or scan failing).
+    /// Past `ttl + stale_grace` the caller gets an error instead of an arbitrarily old lie.
+    pub stale_grace: Duration,
+    /// Wall-clock budget for one scan. On expiry the scan future is dropped — cancellation,
+    /// not abandonment: nothing keeps running in the background.
+    pub deadline: Duration,
+    /// Maximum key+value bytes one scan may examine before stopping and reporting a
+    /// truncated (lower-bound) estimate.
+    pub max_bytes: u64,
+}
+
+impl Default for EstimateLimits {
+    fn default() -> Self {
+        Self {
+            ttl: DEFAULT_ESTIMATE_TTL,
+            stale_grace: Duration::from_secs(3600),
+            deadline: Duration::from_secs(30),
+            max_bytes: 256 * 1024 * 1024,
+        }
+    }
+}
+
+/// Per-keyspace estimate state. The mutex around it is held only for state transitions —
+/// never across the scan itself, which is the defect the previous design had: a standard
+/// mutex held across a potentially remote full-store scan serializes every caller behind
+/// arbitrary network time.
+struct EstimateState {
+    cached: Option<CachedEstimate>,
+    /// Single-flight: true while one caller is computing. Concurrent callers are served the
+    /// stale value or an error; they never start a second scan.
+    inflight: bool,
+    /// Observability: consecutive-failure count and the last failure's description.
+    failures: u64,
+    last_failure: Option<String>,
+}
+
+impl EstimateState {
+    fn new() -> Self {
+        Self { cached: None, inflight: false, failures: 0, last_failure: None }
+    }
+}
+
+/// A snapshot of one keyspace's estimate health, for diagnostics.
+#[derive(Debug, Clone)]
+pub struct EstimateHealth {
+    /// Consecutive scan failures since the last success.
+    pub failures: u64,
+    /// Description of the most recent failure, if any since the last success.
+    pub last_failure: Option<String>,
+    /// Whether the current cached figure is a truncated lower bound.
+    pub truncated: bool,
+    /// Age of the cached figure, if one exists.
+    pub age: Option<Duration>,
+}
+
+/// Owns the SlateDB handle; bridges every call onto a shared [`StorageRuntime`].
 pub struct KeyspaceSet {
     db: Arc<Db>,
-    runtime: Arc<tokio::runtime::Runtime>,
+    runtime: Arc<StorageRuntime>,
     /// Prefetch settings for full range walks. Held rather than recomputed so `iterate_from`
     /// stays allocation-free on a hot path.
     scan_options: ScanOptions,
@@ -227,9 +301,10 @@ pub struct KeyspaceSet {
     /// which address the store by prefix rather than through the open `Db`.
     object_store: Arc<dyn object_store::ObjectStore>,
     path: String,
-    /// Per-keyspace memo for [`Keyspace::estimated_stats`], indexed by keyspace id.
-    estimates: Vec<Mutex<Option<CachedEstimate>>>,
-    estimate_ttl: Duration,
+    /// Per-keyspace memo for [`Keyspace::estimated_stats`], indexed by keyspace id. The
+    /// mutex guards state transitions only; scans run outside it.
+    estimates: Vec<Mutex<EstimateState>>,
+    estimate_limits: EstimateLimits,
     attestation: PostureAttestation,
 }
 
@@ -267,8 +342,38 @@ impl KeyspaceSet {
         })
     }
 
-    /// Open exactly as `config` describes.
+    /// Open a store addressed by an exact [`StoreIdentity`] rather than a raw prefix.
+    ///
+    /// This is the production entry point for object-store backends: the prefix becomes a
+    /// function of every coordinate that must separate two coexisting stores, so two
+    /// databases, two generations, two materialization attempts or a stale actor cannot
+    /// address the same bytes. See [`identity`] for the collision analysis.
+    pub fn open_for_identity(
+        identity: &StoreIdentity,
+        store: Arc<dyn object_store::ObjectStore>,
+        tuning: Tuning,
+    ) -> Result<Self, KeyspaceError> {
+        Self::open_with(StoreConfig {
+            backend: Backend::ObjectStore { path: identity.prefix(), store },
+            tuning,
+        })
+    }
+
+    /// Open exactly as `config` describes, on the process-wide shared runtime.
     pub fn open_with(config: StoreConfig) -> Result<Self, KeyspaceError> {
+        Self::open_with_runtime(config, StorageRuntime::shared())
+    }
+
+    /// Open exactly as `config` describes, bridging onto `runtime`.
+    ///
+    /// The runtime is shared and process-wide by default ([`Self::open_with`]); a private
+    /// one is for tests and for callers that need hard isolation between stores. Opening N
+    /// databases on the shared runtime adds no threads — the fixed defect was one
+    /// multi-threaded runtime per open store.
+    pub fn open_with_runtime(
+        config: StoreConfig,
+        runtime: Arc<StorageRuntime>,
+    ) -> Result<Self, KeyspaceError> {
         let StoreConfig { backend, tuning } = config;
         tuning.validate()?;
 
@@ -280,10 +385,10 @@ impl KeyspaceSet {
         let (path, store) = match backend {
             Backend::Local { path } => {
                 std::fs::create_dir_all(&path).map_err(|error| {
-                    KeyspaceError::Open(format!("could not create {}: {error}", path.display()))
+                    KeyspaceError::open(format!("could not create {}: {error}", path.display()))
                 })?;
                 let store = object_store::local::LocalFileSystem::new_with_prefix(&path)
-                    .map_err(|error| KeyspaceError::Open(error.to_string()))?;
+                    .map_err(|error| KeyspaceError::open(error.to_string()))?;
                 ("typedb".to_string(), Arc::new(store) as Arc<dyn object_store::ObjectStore>)
             }
             Backend::ObjectStore { path, store } => (path, store),
@@ -296,7 +401,7 @@ impl KeyspaceSet {
         // storage bill becomes a surprise.
         if let Some(cache_dir) = &tuning.cache_dir {
             std::fs::create_dir_all(cache_dir).map_err(|error| {
-                KeyspaceError::Open(format!(
+                KeyspaceError::open(format!(
                     "could not create block cache directory {}: {error}",
                     cache_dir.display()
                 ))
@@ -325,25 +430,17 @@ impl KeyspaceSet {
             durability_filter: "Memory",
         };
         if !attestation.is_compliant() {
-            return Err(KeyspaceError::Config(format!(
+            return Err(KeyspaceError::config(format!(
                 "refusing to open with a non-compliant storage posture ({attestation}): {}",
                 attestation.violations().join("; "),
             )));
         }
 
-        let runtime = Arc::new(
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .map_err(|e| KeyspaceError::Open(e.to_string()))?,
-        );
-        let db = runtime
-            .block_on(
-                Db::builder(path.clone(), Arc::clone(&store))
-                    .with_settings(settings.clone())
-                    .build(),
-            )
-            .map_err(|e| KeyspaceError::Open(e.to_string()))?;
+        let db = block_on(
+            runtime.tokio(),
+            Db::builder(path.clone(), Arc::clone(&store)).with_settings(settings.clone()).build(),
+        )
+        .map_err(|e| KeyspaceError::slatedb(Operation::Open, e))?;
 
         Ok(Self {
             db: Arc::new(db),
@@ -353,8 +450,8 @@ impl KeyspaceSet {
             scan_options: tuning.scan_options(),
             read_options: tuning.read_options(),
             local_directory,
-            estimates: (0..KEYSPACE_MAXIMUM_COUNT).map(|_| Mutex::new(None)).collect(),
-            estimate_ttl: DEFAULT_ESTIMATE_TTL,
+            estimates: (0..KEYSPACE_MAXIMUM_COUNT).map(|_| Mutex::new(EstimateState::new())).collect(),
+            estimate_limits: EstimateLimits::default(),
             attestation,
         })
     }
@@ -378,7 +475,13 @@ impl KeyspaceSet {
 
     /// Override how long a key-count estimate is cached. Chiefly for tests.
     pub fn with_estimate_ttl(mut self, ttl: Duration) -> Self {
-        self.estimate_ttl = ttl;
+        self.estimate_limits.ttl = ttl;
+        self
+    }
+
+    /// Override the full set of estimate-scan limits. Chiefly for tests.
+    pub fn with_estimate_limits(mut self, limits: EstimateLimits) -> Self {
+        self.estimate_limits = limits;
         self
     }
 
@@ -387,7 +490,7 @@ impl KeyspaceSet {
         F: std::future::Future + Send,
         F::Output: Send,
     {
-        block_on(&self.runtime, fut)
+        block_on(self.runtime.tokio(), fut)
     }
 
     pub fn keyspace(&self, id: KeyspaceId) -> Keyspace<'_> {
@@ -457,11 +560,13 @@ impl KeyspaceSet {
             for handle in handles {
                 let file = reader
                     .open_with_handle(handle)
-                    .map_err(|e| KeyspaceError::Get(e.to_string()))?;
+                    .map_err(|e| KeyspaceError::slatedb(Operation::Estimate, e))?;
                 // An SST written before stats existed, or with the block omitted, reports None.
                 // Skipping it undercounts rather than failing: this is a diagnostic figure, and
                 // refusing to answer at all is worse than answering low.
-                if let Some(stats) = file.stats().await.map_err(|e| KeyspaceError::Get(e.to_string()))? {
+                if let Some(stats) =
+                    file.stats().await.map_err(|e| KeyspaceError::slatedb(Operation::Estimate, e))?
+                {
                     total += stats.num_rows();
                 }
             }
@@ -522,15 +627,15 @@ impl KeyspaceSet {
         }
         self.block(self.db.write_with_options(batch.inner, &WriteOptions::default()))
             .map(|_| ())
-            .map_err(|e| KeyspaceError::Write(e.to_string()))
+            .map_err(|e| KeyspaceError::slatedb(Operation::BatchWrite, e))
     }
 
     pub fn flush(&self) -> Result<(), KeyspaceError> {
-        self.block(self.db.flush()).map_err(|e| KeyspaceError::Write(e.to_string()))
+        self.block(self.db.flush()).map_err(|e| KeyspaceError::slatedb(Operation::Flush, e))
     }
 
     pub fn close(&self) -> Result<(), KeyspaceError> {
-        self.block(self.db.close()).map_err(|e| KeyspaceError::Write(e.to_string()))
+        self.block(self.db.close()).map_err(|e| KeyspaceError::slatedb(Operation::Close, e))
     }
 
     /// Make every acknowledged write durable and pin the resulting state.
@@ -550,7 +655,7 @@ impl KeyspaceSet {
             CheckpointOptions { lifetime: Some(CHECKPOINT_LIFETIME), ..CheckpointOptions::default() };
         let result = self
             .block(self.db.create_checkpoint(CheckpointScope::All, &options))
-            .map_err(|e| KeyspaceError::Write(e.to_string()))?;
+            .map_err(|e| KeyspaceError::slatedb(Operation::Checkpoint, e))?;
         Ok(result.id)
     }
 
@@ -581,7 +686,7 @@ impl KeyspaceSet {
         let source = CloneSourceSpec::with_checkpoint(self.path.clone(), checkpoint);
 
         self.block(admin.create_clone_builder_from_source(source).build())
-            .map_err(|e| KeyspaceError::Write(format!("cloning checkpoint {checkpoint}: {e}")))
+            .map_err(|e| KeyspaceError::slatedb(Operation::CloneCheckpoint, e))
     }
 
     /// The prefix this store's objects live under.
@@ -603,7 +708,8 @@ impl KeyspaceSet {
     /// Unlike [`Self::size_bytes`], which is deliberately cache-only because it is polled every
     /// 15 seconds, this is called rarely and correctness is worth the round trip.
     pub fn checkpoints(&self) -> Result<Vec<slatedb::Checkpoint>, KeyspaceError> {
-        self.block(self.db.refresh_manifest()).map_err(|e| KeyspaceError::Get(e.to_string()))?;
+        self.block(self.db.refresh_manifest())
+            .map_err(|e| KeyspaceError::slatedb(Operation::Checkpoint, e))?;
         Ok(self.db.manifest().checkpoints().to_vec())
     }
 
@@ -623,7 +729,7 @@ impl KeyspaceSet {
         let admin =
             AdminBuilder::new(self.path.clone(), Arc::clone(&self.object_store)).build();
         self.block(admin.delete_checkpoint(id))
-            .map_err(|e| KeyspaceError::Write(format!("releasing checkpoint {id}: {e}")))
+            .map_err(|e| KeyspaceError::slatedb(Operation::ReleaseCheckpoint, e))
     }
 }
 
@@ -707,20 +813,20 @@ impl Keyspace<'_> {
         self.set
             .block(self.set.db.put(physical_key(self.id, key), value))
             .map(|_| ())
-            .map_err(|e| KeyspaceError::Put(e.to_string()))
+            .map_err(|e| KeyspaceError::slatedb(Operation::Put, e))
     }
 
     pub fn delete(&self, key: &[u8]) -> Result<(), KeyspaceError> {
         self.set
             .block(self.set.db.delete(physical_key(self.id, key)))
             .map(|_| ())
-            .map_err(|e| KeyspaceError::Put(e.to_string()))
+            .map_err(|e| KeyspaceError::slatedb(Operation::Put, e))
     }
 
     pub fn get(&self, key: &[u8]) -> Result<Option<Bytes>, KeyspaceError> {
         self.set
             .block(self.set.db.get_with_options(physical_key(self.id, key), &self.set.read_options))
-            .map_err(|e| KeyspaceError::Get(e.to_string()))
+            .map_err(|e| KeyspaceError::slatedb(Operation::Get, e))
     }
 
     /// The greatest key `<= key`, matching RocksDB's `seek_for_prev`.
@@ -737,9 +843,9 @@ impl Keyspace<'_> {
         let mut iter = self
             .set
             .block(self.set.db.scan_with_options((start, end), &options))
-            .map_err(|e| KeyspaceError::Iterate(e.to_string()))?;
+            .map_err(|e| KeyspaceError::slatedb(Operation::GetPrev, e))?;
         let first =
-            self.set.block(iter.next()).map_err(|e| KeyspaceError::Iterate(e.to_string()))?;
+            self.set.block(iter.next()).map_err(|e| KeyspaceError::slatedb(Operation::GetPrev, e))?;
         Ok(first.map(|kv| (logical_key(&kv.key).to_vec(), kv.value)))
     }
 
@@ -812,49 +918,168 @@ impl Keyspace<'_> {
     /// Prefer [`Self::estimated_stats`] for anything polled. This exists for callers that
     /// genuinely need an exact figure and know what they are asking for.
     pub fn stats(&self) -> Result<(u64, u64), KeyspaceError> {
+        let (keys, bytes, _truncated) = self.scan_stats(u64::MAX, None)?;
+        Ok((keys, bytes))
+    }
+
+    /// The scan behind [`Self::stats`] and [`Self::estimated_stats`], with a byte budget and an
+    /// optional wall-clock deadline.
+    ///
+    /// Stops and reports `truncated = true` once it has examined `max_bytes` of key+value data
+    /// or reached `deadline`, so a single statistics call against a large object-store keyspace
+    /// has a bounded cost in both bytes and time. Deadline enforcement is a loop check rather
+    /// than `tokio::time::timeout` on purpose: each `advance()` already bridges its own
+    /// `block_on`, and wrapping the whole synchronous scan in another `block_on` would nest two
+    /// on the same runtime. Stopping the loop *is* the cancellation — dropping the iterator
+    /// leaves nothing running in the background. `u64::MAX` / `None` disable the caps for
+    /// [`Self::stats`]'s exact contract.
+    fn scan_stats(
+        &self,
+        max_bytes: u64,
+        deadline: Option<Instant>,
+    ) -> Result<(u64, u64, bool), KeyspaceError> {
         let mut keys = 0u64;
         let mut bytes = 0u64;
         let mut iterator = self.iterate_from(&[])?;
         while let Some((key, value)) = iterator.advance()? {
             keys += 1;
             bytes += (key.len() + value.len()) as u64;
-        }
-        Ok((keys, bytes))
-    }
-
-    /// `(key_count, total_bytes)` for this keyspace, memoized for [`DEFAULT_ESTIMATE_TTL`].
-    ///
-    /// Matches the contract of the RocksDB properties it replaces, which upstream calls
-    /// *estimates* and reads in constant time. The figure here is exact when computed and goes
-    /// stale between recomputations, which is the trade that makes a polled metric affordable:
-    /// TypeDB's diagnostics loop asks every 15 seconds, and answering each of those with a
-    /// scan would mean a continuous full pass over the store — on object storage, a permanent
-    /// background transfer of the entire database, billed per request.
-    ///
-    /// Only the count justifies a scan at all. Total size has a free answer from the manifest;
-    /// see [`KeyspaceSet::size_bytes`].
-    pub fn estimated_stats(&self) -> Result<(u64, u64), KeyspaceError> {
-        let slot = self
-            .set
-            .estimates
-            .get(self.id.0 as usize)
-            .ok_or_else(|| KeyspaceError::Config(format!("keyspace id {} out of range", self.id.0)))?;
-
-        // The lock is held across the scan on purpose. Two threads finding the entry stale at
-        // once should produce one scan, not two: with the scan outside the lock, the 15-second
-        // diagnostics poll and any concurrent caller would each start their own pass over the
-        // store, which is precisely the cost this memo exists to avoid.
-        let mut guard = slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-
-        if let Some(cached) = guard.as_ref() {
-            if cached.computed_at.elapsed() < self.set.estimate_ttl {
-                return Ok((cached.keys, cached.bytes));
+            if bytes >= max_bytes {
+                return Ok((keys, bytes, true));
+            }
+            // Check the clock only every so often — `Instant::now` is cheap but not free, and a
+            // per-entry call would show up on a tight in-memory scan.
+            if let Some(deadline) = deadline {
+                if keys % 4096 == 0 && Instant::now() >= deadline {
+                    return Ok((keys, bytes, true));
+                }
             }
         }
+        Ok((keys, bytes, false))
+    }
 
-        let (keys, bytes) = self.stats()?;
-        *guard = Some(CachedEstimate { keys, bytes, computed_at: Instant::now() });
-        Ok((keys, bytes))
+    /// `(key_count, total_bytes)` for this keyspace: exact when computed, memoized, and bounded.
+    ///
+    /// Matches the contract of the RocksDB properties it replaces — read in constant time,
+    /// called *estimate* because it goes stale between recomputations — but adds the
+    /// discipline an object store demands, because here the recomputation is a network scan
+    /// rather than a property lookup. See [`EstimateLimits`] for each bound. In particular the
+    /// per-keyspace mutex is **not** held across the scan: it guards only the state
+    /// transitions, so a slow remote scan cannot serialize every caller behind it.
+    ///
+    /// The concurrency contract:
+    ///
+    /// - A fresh cached value (within [`EstimateLimits::ttl`]) is returned immediately.
+    /// - When stale, exactly one caller computes (single-flight, via [`EstimateState::inflight`]
+    ///   and the process-wide scan-admission semaphore); others are served the stale value if
+    ///   it is within [`EstimateLimits::stale_grace`], and an error only once even that has
+    ///   expired.
+    /// - A scan that hits [`EstimateLimits::max_bytes`] or [`EstimateLimits::deadline`] yields
+    ///   a truncated lower bound, recorded as such and visible through [`Self::estimate_health`].
+    ///
+    /// Only the count justifies a scan at all; total size has a free manifest answer in
+    /// [`KeyspaceSet::size_bytes`].
+    pub fn estimated_stats(&self) -> Result<(u64, u64), KeyspaceError> {
+        let limits = self.set.estimate_limits;
+        let slot = self.estimate_slot()?;
+
+        // Phase 1 — decide, holding the lock only long enough to read state and claim the
+        // single-flight slot. Never across the scan.
+        let claim = {
+            let mut guard = slot.lock().unwrap_or_else(|p| p.into_inner());
+            match guard.cached {
+                Some(cached) if cached.computed_at.elapsed() < limits.ttl => {
+                    return Ok((cached.keys, cached.bytes));
+                }
+                _ => {}
+            }
+            if guard.inflight {
+                // Another caller is already scanning. Serve the stale value if it is still
+                // inside the grace window, rather than starting a second scan.
+                return self.serve_stale(&guard, limits, "a recompute is already in flight");
+            }
+            guard.inflight = true;
+            true
+        };
+        debug_assert!(claim);
+
+        // Ensure the single-flight flag is cleared however we leave, including on an early
+        // return or a panic in the scan.
+        struct ClearInflight<'a>(&'a Mutex<EstimateState>);
+        impl Drop for ClearInflight<'_> {
+            fn drop(&mut self) {
+                self.0.lock().unwrap_or_else(|p| p.into_inner()).inflight = false;
+            }
+        }
+        let _clear = ClearInflight(slot);
+
+        // Phase 2 — admission. If the process is already running its budget of scans, do not
+        // queue behind them; fall back to the stale-cache policy.
+        let Some(_permit) = self.set.runtime.try_admit_scan() else {
+            let guard = slot.lock().unwrap_or_else(|p| p.into_inner());
+            return self.serve_stale(&guard, limits, "the scan-admission limit is reached");
+        };
+
+        // Phase 3 — the scan, under a wall-clock deadline and byte cap, with no lock held.
+        let deadline = Instant::now().checked_add(limits.deadline);
+        let outcome = self.scan_stats(limits.max_bytes, deadline);
+
+        // Phase 4 — record the outcome and answer.
+        let mut guard = slot.lock().unwrap_or_else(|p| p.into_inner());
+        match outcome {
+            Ok((keys, bytes, truncated)) => {
+                guard.cached =
+                    Some(CachedEstimate { keys, bytes, computed_at: Instant::now(), truncated });
+                guard.failures = 0;
+                guard.last_failure = None;
+                Ok((keys, bytes))
+            }
+            Err(error) => {
+                let message = error.to_string();
+                guard.failures += 1;
+                guard.last_failure = Some(message.clone());
+                self.serve_stale(&guard, limits, &message)
+            }
+        }
+    }
+
+    /// A diagnostic view of this keyspace's estimate health: failures and staleness.
+    pub fn estimate_health(&self) -> Result<EstimateHealth, KeyspaceError> {
+        let slot = self.estimate_slot()?;
+        let guard = slot.lock().unwrap_or_else(|p| p.into_inner());
+        Ok(EstimateHealth {
+            failures: guard.failures,
+            last_failure: guard.last_failure.clone(),
+            truncated: guard.cached.map(|c| c.truncated).unwrap_or(false),
+            age: guard.cached.map(|c| c.computed_at.elapsed()),
+        })
+    }
+
+    fn estimate_slot(&self) -> Result<&Mutex<EstimateState>, KeyspaceError> {
+        self.set.estimates.get(self.id.0 as usize).ok_or_else(|| {
+            KeyspaceError::config(format!("keyspace id {} out of range", self.id.0))
+        })
+    }
+
+    /// Serve a cached value that is stale but within [`EstimateLimits::stale_grace`], or fail.
+    fn serve_stale(
+        &self,
+        guard: &EstimateState,
+        limits: EstimateLimits,
+        why: &str,
+    ) -> Result<(u64, u64), KeyspaceError> {
+        match guard.cached {
+            Some(cached) if cached.computed_at.elapsed() < limits.ttl + limits.stale_grace => {
+                Ok((cached.keys, cached.bytes))
+            }
+            _ => Err(KeyspaceError::new(
+                Operation::Estimate,
+                RetryClass::Transient,
+                format!(
+                    "no fresh estimate and none within the stale-cache grace window ({why})"
+                ),
+            )),
+        }
     }
 
     /// A forward iterator positioned at the first key `>= from`, bounded to this keyspace.
@@ -870,7 +1095,7 @@ impl Keyspace<'_> {
         let iter = self
             .set
             .block(self.set.db.scan_with_options((start, end), &self.set.scan_options))
-            .map_err(|e| KeyspaceError::Iterate(e.to_string()))?;
+            .map_err(|e| KeyspaceError::slatedb(Operation::Iterate, e))?;
         Ok(KeyspaceIterator {
             runtime: Arc::clone(&self.set.runtime),
             inner: iter,
@@ -891,7 +1116,7 @@ impl Keyspace<'_> {
 /// explicit costs one refcount and removes the need for any caller to reach `'static` by
 /// transmuting a borrow.
 pub struct KeyspaceIterator {
-    runtime: Arc<tokio::runtime::Runtime>,
+    runtime: Arc<StorageRuntime>,
     inner: slatedb::DbIterator,
     current: Option<(Vec<u8>, Bytes)>,
 }
@@ -899,8 +1124,8 @@ pub struct KeyspaceIterator {
 impl KeyspaceIterator {
     /// Advance and return the new position.
     pub fn advance(&mut self) -> Result<Option<(&[u8], &[u8])>, KeyspaceError> {
-        let next = block_on(&self.runtime, self.inner.next())
-            .map_err(|e| KeyspaceError::Iterate(e.to_string()))?;
+        let next = block_on(self.runtime.tokio(), self.inner.next())
+            .map_err(|e| KeyspaceError::slatedb(Operation::Iterate, e))?;
         self.current = next.map(|kv| (logical_key(&kv.key).to_vec(), kv.value));
         Ok(self.peek())
     }
@@ -912,8 +1137,8 @@ impl KeyspaceIterator {
 
     /// Move to the first key `>= key`. Forward-only, like RocksDB's `seek` on a forward cursor.
     pub fn seek(&mut self, keyspace: KeyspaceId, key: &[u8]) -> Result<(), KeyspaceError> {
-        block_on(&self.runtime, self.inner.seek(physical_key(keyspace, key)))
-            .map_err(|e| KeyspaceError::Iterate(e.to_string()))?;
+        block_on(self.runtime.tokio(), self.inner.seek(physical_key(keyspace, key)))
+            .map_err(|e| KeyspaceError::slatedb(Operation::Iterate, e))?;
         self.current = None;
         Ok(())
     }

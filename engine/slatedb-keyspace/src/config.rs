@@ -175,9 +175,21 @@ impl R2Credentials {
             .unwrap_or_else(|| format!("https://{}.r2.cloudflarestorage.com", self.account_id))
     }
 
+    /// Whether the configured endpoint is plaintext HTTP.
+    ///
+    /// True only for an explicitly overridden `http://` endpoint, which in practice means a
+    /// local simulator — MinIO or the workerd R2 shim under `build/simulator`. Real R2 is
+    /// always `https`, and the derived endpoint is built as `https`, so this cannot silently
+    /// downgrade a production deployment: reaching it requires an operator to have typed
+    /// `http://` into [`env::ENDPOINT`] themselves.
+    fn allows_plaintext(&self) -> bool {
+        self.endpoint.as_deref().is_some_and(|endpoint| endpoint.starts_with("http://"))
+    }
+
     /// Build the `object_store` handle R2 is reached through.
     pub fn build(&self) -> Result<Arc<dyn object_store::ObjectStore>, KeyspaceError> {
         let store = object_store::aws::AmazonS3Builder::new()
+            .with_allow_http(self.allows_plaintext())
             .with_bucket_name(&self.bucket)
             .with_access_key_id(&self.access_key_id)
             .with_secret_access_key(&self.secret_access_key)

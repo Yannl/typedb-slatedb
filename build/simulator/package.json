@@ -1,0 +1,9 @@
+{
+  "name": "typedb-r2-simulator",
+  "private": true,
+  "type": "module",
+  "description": "Local R2 simulator: MinIO for S3 wire fidelity, workerd for R2 storage semantics.",
+  "dependencies": {
+    "miniflare": "^4.0.0"
+  }
+}

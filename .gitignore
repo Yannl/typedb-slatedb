@@ -21,3 +21,12 @@ bazel-typedb/
 # so the published directory is never missing while a multi-hour run is in progress.
 /docs/evidence/**/.run-*.staging/
 /engine/*/target/
+
+# R2 simulator runtime: downloaded binaries, node_modules, bucket data and logs.
+# `build/simulator/sim.sh up` recreates all of it.
+/build/simulator/bin/
+/build/simulator/node_modules/
+/build/simulator/data/
+/build/simulator/*.log
+/build/simulator/.sim.pids
+/build/simulator/package-lock.json

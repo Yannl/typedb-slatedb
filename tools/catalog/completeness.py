@@ -157,6 +157,18 @@ def check_build_declarations(catalog):
                 continue
             found.append({"build_file": rel, "rule": callee, "name": name})
             crate_unit = name.startswith("test_crate_") and name[len("test_crate_"):] in unit_targets
+            # a test_crate_* rule tests the library declared in ITS OWN
+            # BUILD directory; when the Bazel library label differs from the
+            # cargo package name (admin/client's ":client" is cargo package
+            # "typedb-admin"), the sibling Cargo.toml's package identifies
+            # the unit target that covers it - directory identity, not an
+            # allowlist guess
+            if name.startswith("test_crate_") and not crate_unit:
+                sibling = build.parent / "Cargo.toml"
+                if sibling.exists():
+                    pkg = re.search(r"^\s*name\s*=\s*\"([^\"]+)\"", sibling.read_text(), re.M)
+                    if pkg and pkg.group(1).replace("-", "_") in unit_targets:
+                        crate_unit = True
             if callee == "rust_test" and name not in cargo_targets and not crate_unit \
                     and not BUILD_ALLOWLIST.get((rel, name)):
                 error(f"{rel}: rust_test '{name}' has no cargo-catalogued target and no allowlist entry")

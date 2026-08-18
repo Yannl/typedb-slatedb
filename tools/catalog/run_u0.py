@@ -156,12 +156,16 @@ def required_executable_targets():
     in the catalogue's id space).
     """
     if not CATALOG.exists():
-        return None, None
+        return None, None, {}
     cat = json.loads(CATALOG.read_text())
     leaves = {}
     for lc in cat["leaf_cases"]:
         leaves[lc["target_id"]] = leaves.get(lc["target_id"], 0) + 1
-    required, case_bearing = set(), set()
+    # exclusions are declared against CATALOGUE ids; translate them into the
+    # runner's row-id space here, or they silently never match
+    declared_by_catalog_id = {e["subject_id"]: e.get("reason")
+                              for e in cat.get("exclusions", []) if e.get("subject_id")}
+    required, case_bearing, excluded = set(), set(), {}
     for t in cat["targets"]:
         if t.get("origin") != "CARGO":
             continue
@@ -169,10 +173,14 @@ def required_executable_targets():
         if not pkg or not tgt:
             continue
         rid = f"{pkg}:{tgt}"
+        n = leaves.get(t["target_id"], 0)
+        if n == 0 and t["target_id"] in declared_by_catalog_id:
+            excluded[rid] = declared_by_catalog_id[t["target_id"]]
+            continue
         required.add(rid)
-        if leaves.get(t["target_id"], 0) > 0:
+        if n > 0:
             case_bearing.add(rid)
-    return required, case_bearing
+    return required, case_bearing, excluded
 
 
 def sha256_file(p):
@@ -369,6 +377,39 @@ def needs_behaviour_fixture(execs):
             or str(e.get("package_root", "")).startswith(behaviour_prefix)]
 
 
+def reverdict(out_dir):
+    """Recompute a run's verdict from its immutable results.
+
+    A verdict is a function of (results, policy, denominator). When the policy
+    or the catalogue is repaired, the honest move is to re-derive the verdict
+    over the SAME archived rows - not to re-run a two-hour corpus, and not to
+    leave a verdict standing that was computed against a denominator now known
+    to be wrong. The results file is never touched.
+    """
+    results_file = out_dir / "u0-results.json"
+    if not results_file.exists():
+        sys.exit(f"no results at {results_file}")
+    data = json.loads(results_file.read_text())
+    results = data["results"]
+    ledger, anomalies = verdict_policy.load_ledger()
+    required, case_bearing, excluded = required_executable_targets()
+    anomalies += verdict_policy.classify_rows(results, ledger,
+                                              expected_case_bearing=case_bearing)
+    if required is not None:
+        anomalies += verdict_policy.denominator_anomalies(results, required, excluded)
+    rc = verdict_policy.verdict_exit_code(
+        anomalies, True, out_dir,
+        extra={"producer": "tools/catalog/run_u0.py --verdict-only",
+               "re_derived_from": str(results_file.relative_to(REPO)),
+               "denominator_checked": required is not None,
+               "executables": len(results)})
+    for a in anomalies:
+        print(f"ANOMALY: {a}", file=sys.stderr)
+    print(f"VERDICT: {'GREEN' if rc == 0 else 'RED'} ({len(anomalies)} anomaly/anomalies), "
+          f"re-derived over {len(results)} archived row(s)", file=sys.stderr)
+    return rc
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--filter", default=None)
@@ -379,7 +420,13 @@ def main():
     ap.add_argument("--package", action="append", default=None,
                     help="restrict cargo compilation/discovery to these packages")
     ap.add_argument("--out", default=str(REPO / "docs" / "evidence" / "G1" / "u0-results"))
+    ap.add_argument("--verdict-only", action="store_true",
+                    help="re-derive the verdict from an existing results file without "
+                         "re-running anything (use after a catalogue or policy repair)")
     args = ap.parse_args()
+
+    if args.verdict_only:
+        return reverdict(pathlib.Path(args.out).resolve())
 
     # What this run actually exercised. The output directory name used to be
     # the only record of the profile, which makes a misfiled run
@@ -469,17 +516,14 @@ def main():
     # corpus was indistinguishable from a passed one to anything that reads
     # process results. The verdict below is the only exit path.
     ledger, anomalies = verdict_policy.load_ledger()
-    required, case_bearing = required_executable_targets()
+    required, case_bearing, excluded = required_executable_targets()
     selection_complete = not (args.filter or args.skip or args.package)
     anomalies += verdict_policy.classify_rows(
         results, ledger,
         expected_case_bearing=case_bearing if selection_complete else None)
     denominator_checked = False
     if selection_complete and required is not None:
-        declared = {e["target_id"]: e.get("reason")
-                    for e in json.loads(CATALOG.read_text()).get("exclusions", [])
-                    if e.get("target_id")}
-        anomalies += verdict_policy.denominator_anomalies(results, required, declared)
+        anomalies += verdict_policy.denominator_anomalies(results, required, excluded)
         denominator_checked = True
     rc = verdict_policy.verdict_exit_code(
         anomalies, selection_complete, out_dir,

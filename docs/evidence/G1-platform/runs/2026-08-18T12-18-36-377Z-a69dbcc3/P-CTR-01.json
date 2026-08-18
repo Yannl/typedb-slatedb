@@ -1,0 +1,285 @@
+{
+  "probe_id": "P-CTR-01",
+  "title": "Lifecycle state machine",
+  "spec_section": "## P-CTR-01 — Lifecycle state machine",
+  "mode": "mock",
+  "injected_fault": null,
+  "started_at": "2026-08-18T12:18:36.396Z",
+  "finished_at": "2026-08-18T12:18:36.397Z",
+  "verdict": "PASS",
+  "expected_outcome": "lifecycle converges to platform truth: concurrent start idempotent, stop-while-starting converges, duplicate stop is a no-op, stale callbacks are rejected and never corrupt state",
+  "actual_outcome": "all 9 checks passed",
+  "checks": [
+    {
+      "label": "lifecycle reset (got 200)",
+      "ok": true
+    },
+    {
+      "label": "cold start enters starting@gen1 (got {\"state\":\"starting\",\"generation\":1})",
+      "ok": true
+    },
+    {
+      "label": "concurrent start is idempotent, no second instance (got {\"state\":\"starting\",\"generation\":1,\"idempotent\":true})",
+      "ok": true
+    },
+    {
+      "label": "stop while starting converges (got {\"state\":\"stopped\",\"noop\":false})",
+      "ok": true
+    },
+    {
+      "label": "duplicate stop is an explicit no-op (got {\"state\":\"stopped\",\"noop\":true})",
+      "ok": true
+    },
+    {
+      "label": "restart advances the generation (got {\"state\":\"starting\",\"generation\":2})",
+      "ok": true
+    },
+    {
+      "label": "current-generation callback completes startup (got {\"state\":\"running\"})",
+      "ok": true
+    },
+    {
+      "label": "stale lifecycle callback rejected (got 409)",
+      "ok": true
+    },
+    {
+      "label": "platform truth intact after stale callback (got {\"state\":\"running\",\"generation\":2,\"startCount\":2})",
+      "ok": true
+    }
+  ],
+  "exchanges": [
+    {
+      "seq": 1,
+      "at": "2026-08-18T12:18:36.397Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/lifecycle/reset",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "73d1749b13b66f4c7e25e546d78f07322e5d13c1c003b9cb4275ebc3ea65bba8",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 11,
+        "body_sha256": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93",
+        "body_preview": "{\"ok\":true}"
+      },
+      "response_sha256": "d4a677d42a9d4d999ac650db5cb5b9f01bfbaa57f1d4256a5a347c22799e81f9"
+    },
+    {
+      "seq": 2,
+      "at": "2026-08-18T12:18:36.397Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/lifecycle/start",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "3e17950b6fae9b240a04dadb32cc3b8562c8d7c0a930d66ac56346528a19eaf3",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 35,
+        "body_sha256": "d38141752db7f29ee8981bfa1d46190cc130ce8af64bf1b273e2e867cdc34521",
+        "body_preview": "{\"state\":\"starting\",\"generation\":1}"
+      },
+      "response_sha256": "aec3eb5310d32eb11acdb6b1d1bf08fb15c76d12d3e517d135b487bc59f69ea6"
+    },
+    {
+      "seq": 3,
+      "at": "2026-08-18T12:18:36.397Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/lifecycle/start",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "3e17950b6fae9b240a04dadb32cc3b8562c8d7c0a930d66ac56346528a19eaf3",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 53,
+        "body_sha256": "30348928ce5bed2e84737fb39f82a1bdd2584bfaa99f288bb23f944476414cc8",
+        "body_preview": "{\"state\":\"starting\",\"generation\":1,\"idempotent\":true}"
+      },
+      "response_sha256": "7b03d4b61582c8f2a51293ab4105109c2700478636a321f2c5fb9ef5e295f871"
+    },
+    {
+      "seq": 4,
+      "at": "2026-08-18T12:18:36.397Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/lifecycle/stop",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "99a63b74f78e1457f12e3afd9e8d863b08c6cff8c2da14d6e72dd984299fc3e5",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 32,
+        "body_sha256": "20aff92a6997f9d40f4bf1d8268a88fac7c571d9a7c9578bd0db10ec7bc328af",
+        "body_preview": "{\"state\":\"stopped\",\"noop\":false}"
+      },
+      "response_sha256": "2f65d9158e829709eab88e3fd4fa4f9587c4056e84adb279fd1b6cd69d6d4511"
+    },
+    {
+      "seq": 5,
+      "at": "2026-08-18T12:18:36.397Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/lifecycle/stop",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "99a63b74f78e1457f12e3afd9e8d863b08c6cff8c2da14d6e72dd984299fc3e5",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 31,
+        "body_sha256": "f657127e5a3c0ab344da7bebca78dd38527a6fc7dd3eba0d71074238bc187ba4",
+        "body_preview": "{\"state\":\"stopped\",\"noop\":true}"
+      },
+      "response_sha256": "ac12dcc1183d37be38003b46d6f7f89073612b78390a0f39c8be1cde2a4ff82a"
+    },
+    {
+      "seq": 6,
+      "at": "2026-08-18T12:18:36.397Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/lifecycle/start",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "3e17950b6fae9b240a04dadb32cc3b8562c8d7c0a930d66ac56346528a19eaf3",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 35,
+        "body_sha256": "62811faa169f1a67bc9736926d0b8ddc47bb966aa53ca9918cf9b1d3590ac866",
+        "body_preview": "{\"state\":\"starting\",\"generation\":2}"
+      },
+      "response_sha256": "2d1d4ef978adfbd88d0f449138152ea4078b611f66f0f92b84a97e88fb06ff1f"
+    },
+    {
+      "seq": 7,
+      "at": "2026-08-18T12:18:36.397Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/lifecycle/port-ready",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 16,
+        "body_sha256": "1a8b638ae979fac2184d4fbab8d647828af012c6bba062efa6cf5a215c6187c5",
+        "body_preview": "{\"generation\":2}"
+      },
+      "request_sha256": "28ccdeb81b84b2473480a09a085db1baf78f9c4a948e59bcde30a60c343292d2",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 19,
+        "body_sha256": "6e56df2840ad9e139ac71ca67454a7a2e682ce17fe54edd522a7b29a77a1eba8",
+        "body_preview": "{\"state\":\"running\"}"
+      },
+      "response_sha256": "abd9085d9c1decd80391954b69ad077820cc83603616e442bd8162a48faa3763"
+    },
+    {
+      "seq": 8,
+      "at": "2026-08-18T12:18:36.397Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/lifecycle/port-ready",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 16,
+        "body_sha256": "fa02354bd70e0b908b245c66be4bbc6626f0e5c7dae4b4953d802d0b647b1ffb",
+        "body_preview": "{\"generation\":1}"
+      },
+      "request_sha256": "1dbee5a8fa4b27c588015c9494c9ea9f7f4bbebc1a339ecf5ccb44b78bbda7de",
+      "response": {
+        "status": 409,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 51,
+        "body_sha256": "ec217d48fd8ffad9c4089286912a6123998978fbd9832b0d9a7fc352d8f6785e",
+        "body_preview": "{\"error\":\"stale lifecycle callback\",\"generation\":2}"
+      },
+      "response_sha256": "de86361c722adeddaec1a2ddfb0ad5050c4cc28045e58f0d77fef61a7a6df743"
+    },
+    {
+      "seq": 9,
+      "at": "2026-08-18T12:18:36.397Z",
+      "request": {
+        "service": "harness",
+        "method": "GET",
+        "path": "/ctr/lifecycle/status",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "89662ec78a194aaf4bfd2f50088eea87ba9b8f4e1cc7ca94debee08e4c682567",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 49,
+        "body_sha256": "70ab74cc69f1215ef32792f7866c6c6442cf61faa600037adc74d94638abc891",
+        "body_preview": "{\"state\":\"running\",\"generation\":2,\"startCount\":2}"
+      },
+      "response_sha256": "d5041c8fc9d2c6a0b25b3bf012b16d3004cfd55f05e1f3df1ce260dee10d7f87"
+    }
+  ],
+  "notes": []
+}

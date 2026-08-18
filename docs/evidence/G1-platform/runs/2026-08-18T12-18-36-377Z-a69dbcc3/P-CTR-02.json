@@ -1,0 +1,221 @@
+{
+  "probe_id": "P-CTR-02",
+  "title": "Mixed rollout",
+  "spec_section": "## P-CTR-02 — Mixed rollout",
+  "mode": "mock",
+  "injected_fault": null,
+  "started_at": "2026-08-18T12:18:36.397Z",
+  "finished_at": "2026-08-18T12:18:36.398Z",
+  "verdict": "PASS",
+  "expected_outcome": "only declared (worker, image) tuples are admitted; an unsupported image never becomes database-ready; completion requires observed convergence",
+  "actual_outcome": "all 7 checks passed",
+  "checks": [
+    {
+      "label": "rollout reset (got 200)",
+      "ok": true
+    },
+    {
+      "label": "declared tuple (worker 2, image 1) admitted (got 200)",
+      "ok": true
+    },
+    {
+      "label": "deployment is not complete before observed convergence (got {\"image\":1,\"ready\":false})",
+      "ok": true
+    },
+    {
+      "label": "convergence observed (got 200)",
+      "ok": true
+    },
+    {
+      "label": "declared tuple becomes ready only after convergence (got {\"image\":1,\"ready\":true})",
+      "ok": true
+    },
+    {
+      "label": "undeclared tuple (worker 2, image 0) refused (got 409)",
+      "ok": true
+    },
+    {
+      "label": "unsupported image never database-ready (got {\"image\":1,\"ready\":true})",
+      "ok": true
+    }
+  ],
+  "exchanges": [
+    {
+      "seq": 1,
+      "at": "2026-08-18T12:18:36.398Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/rollout/reset",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 43,
+        "body_sha256": "af193711c1c2a83bbc21414b4488ecccbccb0de7b50b0654e87a4453425f8d10",
+        "body_preview": "{\"workerVersion\":2,\"supportedImages\":[1,2]}"
+      },
+      "request_sha256": "5e13fde28634bc36bfbf39e191bd21ecc343fc14b94e6c6b7f5f643cda0ead0f",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 11,
+        "body_sha256": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93",
+        "body_preview": "{\"ok\":true}"
+      },
+      "response_sha256": "d4a677d42a9d4d999ac650db5cb5b9f01bfbaa57f1d4256a5a347c22799e81f9"
+    },
+    {
+      "seq": 2,
+      "at": "2026-08-18T12:18:36.398Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/rollout/deploy",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 11,
+        "body_sha256": "6028bf96ca7954f9477ec18240b71a9f10778d74f6381adc73fafcc8c74bfb62",
+        "body_preview": "{\"image\":1}"
+      },
+      "request_sha256": "7988f36762344a75e41eaf490770304c803b94287d9cd5b945502ead42e8090a",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 27,
+        "body_sha256": "b4b0ae08f9528100e1791854a4add84f18090e619e5a529e70a073c700ded1ee",
+        "body_preview": "{\"accepted\":true,\"image\":1}"
+      },
+      "response_sha256": "1e1f6a7885f17ccfa41419ff9fa7d5c1634754d2ae0a030abb78d1f2f4818fd3"
+    },
+    {
+      "seq": 3,
+      "at": "2026-08-18T12:18:36.398Z",
+      "request": {
+        "service": "harness",
+        "method": "GET",
+        "path": "/ctr/rollout/status",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "6453138334217b0686d8d127fa2edc11d8ec19fda06b3e6e88caae857e2e7e9a",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 25,
+        "body_sha256": "0ba04edfb70ad3c558e4ac714b65aecc0d31ab93951ff0e1410677a4d2465e30",
+        "body_preview": "{\"image\":1,\"ready\":false}"
+      },
+      "response_sha256": "d471c95c10117c0bcec5f7523e7e0999f53feabf6a234419c15e6fbe4980df18"
+    },
+    {
+      "seq": 4,
+      "at": "2026-08-18T12:18:36.398Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/rollout/observe-convergence",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "ff58d5c5f15816a2151570134cc02b0e43365ecffecabfadca373b38dcee4f97",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 18,
+        "body_sha256": "1a641af559b995de27ca50fc101d4d9a110fd371a77e3176e21a473af1fa4221",
+        "body_preview": "{\"converged\":true}"
+      },
+      "response_sha256": "66529c9bd48c243c68bb426bdfff39f3b61a2d0eb5d5ca87b997a6b496d4eaeb"
+    },
+    {
+      "seq": 5,
+      "at": "2026-08-18T12:18:36.398Z",
+      "request": {
+        "service": "harness",
+        "method": "GET",
+        "path": "/ctr/rollout/status",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "6453138334217b0686d8d127fa2edc11d8ec19fda06b3e6e88caae857e2e7e9a",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 24,
+        "body_sha256": "b69dd5e16401798ce1c33509b8148a89a58cf9cc359e451a49f973e08a857304",
+        "body_preview": "{\"image\":1,\"ready\":true}"
+      },
+      "response_sha256": "68b531d1204efd69ff276704a1877fed6471d18d424ec4f3c5b64f5e399106d2"
+    },
+    {
+      "seq": 6,
+      "at": "2026-08-18T12:18:36.398Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/rollout/deploy",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 11,
+        "body_sha256": "c4baff33a7b3340af647142c253e997a9d8f8b3df0ee30008fa7f728f7f8f50c",
+        "body_preview": "{\"image\":0}"
+      },
+      "request_sha256": "51f275462f59eb1cb761347f60f055f17bd706cf07f1b883e49042689f82ec70",
+      "response": {
+        "status": 409,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 59,
+        "body_sha256": "c47ad7544539fcc9700d50097c974b339813c27f2ed34322e954940f4503a216",
+        "body_preview": "{\"error\":\"outside compatibility envelope\",\"accepted\":false}"
+      },
+      "response_sha256": "b7b8fe9e4aad76a7049b9cb058c6d8281aaec1a7b053de578b7e8a79bb0bfb04"
+    },
+    {
+      "seq": 7,
+      "at": "2026-08-18T12:18:36.398Z",
+      "request": {
+        "service": "harness",
+        "method": "GET",
+        "path": "/ctr/rollout/status",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "6453138334217b0686d8d127fa2edc11d8ec19fda06b3e6e88caae857e2e7e9a",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 24,
+        "body_sha256": "b69dd5e16401798ce1c33509b8148a89a58cf9cc359e451a49f973e08a857304",
+        "body_preview": "{\"image\":1,\"ready\":true}"
+      },
+      "response_sha256": "68b531d1204efd69ff276704a1877fed6471d18d424ec4f3c5b64f5e399106d2"
+    }
+  ],
+  "notes": []
+}

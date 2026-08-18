@@ -1,0 +1,353 @@
+{
+  "probe_id": "P-R2-03",
+  "title": "Bucket Locks",
+  "spec_section": "## P-R2-03 — Bucket Locks",
+  "mode": "mock",
+  "injected_fault": null,
+  "started_at": "2026-08-18T12:18:36.384Z",
+  "finished_at": "2026-08-18T12:18:36.386Z",
+  "verdict": "PASS",
+  "expected_outcome": "locked mutations fail as documented; lock policy machine-verifiable; runtime principals cannot alter policy",
+  "actual_outcome": "all 11 checks passed",
+  "checks": [
+    {
+      "label": "seed object created (got 200)",
+      "ok": true
+    },
+    {
+      "label": "admin lock configuration accepted (got 200)",
+      "ok": true
+    },
+    {
+      "label": "overwrite of locked object denied (got 403)",
+      "ok": true
+    },
+    {
+      "label": "delete of locked object denied (got 403)",
+      "ok": true
+    },
+    {
+      "label": "locked bytes unchanged after denied mutations",
+      "ok": true
+    },
+    {
+      "label": "new object under locked prefix creatable (got 200)",
+      "ok": true
+    },
+    {
+      "label": "new object immediately covered by lock (got 403)",
+      "ok": true
+    },
+    {
+      "label": "delete outside lock rules allowed (got 204)",
+      "ok": true
+    },
+    {
+      "label": "retrieved lock policy is exactly the configured policy",
+      "ok": true
+    },
+    {
+      "label": "runtime principal lock mutation denied (got 403)",
+      "ok": true
+    },
+    {
+      "label": "lock policy unchanged after denied mutation attempt",
+      "ok": true
+    }
+  ],
+  "exchanges": [
+    {
+      "seq": 1,
+      "at": "2026-08-18T12:18:36.384Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-03/locked/a",
+        "headers": {},
+        "body_length": 16,
+        "body_sha256": "3132ed172795eab431225157dbe4b80c62e720dafdfc7384f087156153075ba1",
+        "body_preview": "locked-object-v1"
+      },
+      "request_sha256": "0cd477fde3f1da6abee28abbf7ae14ce4d268f4e80e054f7b60a14dcf82a619e",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"3132ed172795eab4\"",
+          "x-mock-commit-seq": "7"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "8936bfa4f0471064881ae10dfecf37d8c4a6e619627304d82a56460effc3740d"
+    },
+    {
+      "seq": 2,
+      "at": "2026-08-18T12:18:36.385Z",
+      "request": {
+        "service": "cfapi",
+        "method": "PUT",
+        "path": "/r2/buckets/mock-bucket/lock",
+        "headers": {
+          "x-cf-authz": "admin"
+        },
+        "body_length": 108,
+        "body_sha256": "b83986a6add00318fb4ee5b082a589cefcbca1789237c498f65e06889cf376c1",
+        "body_preview": "{\"rules\":[{\"prefix\":\"probes/msymppeh-4779dbc6/p-r2-03/locked/\",\"allowOverwrite\":false,\"allowDelete\":false}]}"
+      },
+      "request_sha256": "a938547fc4a1ec9dd0f201624db1398415b22018c0efdc287a2de1ebba701e84",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 11,
+        "body_sha256": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93",
+        "body_preview": "{\"ok\":true}"
+      },
+      "response_sha256": "d4a677d42a9d4d999ac650db5cb5b9f01bfbaa57f1d4256a5a347c22799e81f9"
+    },
+    {
+      "seq": 3,
+      "at": "2026-08-18T12:18:36.385Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-03/locked/a",
+        "headers": {},
+        "body_length": 18,
+        "body_sha256": "81029ca79330220705e5c8a25993b5b63189c964042c0a6b02a047e21a5e1dd8",
+        "body_preview": "must-not-overwrite"
+      },
+      "request_sha256": "a5eb0c23763289905293303be8d918b6058388298a0b06881295984db4484e02",
+      "response": {
+        "status": 403,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 80,
+        "body_sha256": "f0bfd08b4f8d7ffa2535da8f46fbc9f9319b5d912c91a6866b114ac8ec13118e",
+        "body_preview": "{\"error\":\"lock rule probes/msymppeh-4779dbc6/p-r2-03/locked/ forbids overwrite\"}"
+      },
+      "response_sha256": "02cf00cfee2a0ca318d359af3711efb801388f08d7263e69be1123f8f7b5bb92"
+    },
+    {
+      "seq": 4,
+      "at": "2026-08-18T12:18:36.385Z",
+      "request": {
+        "service": "r2",
+        "method": "DELETE",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-03/locked/a",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "28c4d7e400c96c39990a196508c25dc9a76cd1cb455c5047f62863b3d3ea0a4b",
+      "response": {
+        "status": 403,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 77,
+        "body_sha256": "9a6428e09cd1275006a1c10e2913d0f16b097ae72aa0d5c7d8bc6bb4328adbb8",
+        "body_preview": "{\"error\":\"lock rule probes/msymppeh-4779dbc6/p-r2-03/locked/ forbids delete\"}"
+      },
+      "response_sha256": "5c6f7e7f9bc0da2c33e278bc250b7b5e74c1b6d63b3e935510de17b817378c83"
+    },
+    {
+      "seq": 5,
+      "at": "2026-08-18T12:18:36.385Z",
+      "request": {
+        "service": "r2",
+        "method": "GET",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-03/locked/a",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "657c4adacff15674d659e4ef77f9da0b51dd85bd2c0e723fc3d0d9b173233520",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"3132ed172795eab4\"",
+          "x-mock-commit-seq": "7"
+        },
+        "body_length": 16,
+        "body_sha256": "3132ed172795eab431225157dbe4b80c62e720dafdfc7384f087156153075ba1",
+        "body_preview": "locked-object-v1"
+      },
+      "response_sha256": "172c96a9bbe549c066d8780350da07e756b534195c9db6827db881118cba9c6c"
+    },
+    {
+      "seq": 6,
+      "at": "2026-08-18T12:18:36.385Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-03/locked/new",
+        "headers": {},
+        "body_length": 14,
+        "body_sha256": "03737773b51577658135a263ab6550112ea6f14ddf0ba6aa0de60847187b83a0",
+        "body_preview": "new-under-lock"
+      },
+      "request_sha256": "d1015a5b33588261d99894c3ffdabc639d4ba8149d62722e60f5bae65f9dffb0",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"03737773b5157765\"",
+          "x-mock-commit-seq": "8"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "cd174b662dc870a39cabe0374d71a1d673107499397ed90b08fa77276e3c8d59"
+    },
+    {
+      "seq": 7,
+      "at": "2026-08-18T12:18:36.385Z",
+      "request": {
+        "service": "r2",
+        "method": "DELETE",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-03/locked/new",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "23c5aa092325202d111b3ff99ba198bb2b6d3e1f4c817dc1d9b9a18dcfa69c77",
+      "response": {
+        "status": 403,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 77,
+        "body_sha256": "9a6428e09cd1275006a1c10e2913d0f16b097ae72aa0d5c7d8bc6bb4328adbb8",
+        "body_preview": "{\"error\":\"lock rule probes/msymppeh-4779dbc6/p-r2-03/locked/ forbids delete\"}"
+      },
+      "response_sha256": "5c6f7e7f9bc0da2c33e278bc250b7b5e74c1b6d63b3e935510de17b817378c83"
+    },
+    {
+      "seq": 8,
+      "at": "2026-08-18T12:18:36.385Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-03/free/b",
+        "headers": {},
+        "body_length": 4,
+        "body_sha256": "ad95d5fa651ba86d8923fe1238d24a4f1988a752acfe426ac72ac7c04471bc17",
+        "body_preview": "free"
+      },
+      "request_sha256": "894342c046a97990076255a0d6c499d7b4b6af2a04cb7e0907dc2e02d35ef04e",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"ad95d5fa651ba86d\"",
+          "x-mock-commit-seq": "9"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "14cbc15c32c19a26b207d167299c3d207ce30ab39003044cead737b39b8e5eaf"
+    },
+    {
+      "seq": 9,
+      "at": "2026-08-18T12:18:36.385Z",
+      "request": {
+        "service": "r2",
+        "method": "DELETE",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-03/free/b",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "db8e8ae38e731dcd49c8b79254dba42c4c5522f8729c9e1e8bf70340e8ec4c53",
+      "response": {
+        "status": 204,
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "38e1d9c5228fbc7493d2dd8125c85934d4114d1c49a52dcaadbdd85e516a134d"
+    },
+    {
+      "seq": 10,
+      "at": "2026-08-18T12:18:36.385Z",
+      "request": {
+        "service": "cfapi",
+        "method": "GET",
+        "path": "/r2/buckets/mock-bucket/lock",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "f69beb9f5f7628258e42ef5509dbb1d8b1fd67c0d0ff60a3b1e292a437e86c1f",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 108,
+        "body_sha256": "b83986a6add00318fb4ee5b082a589cefcbca1789237c498f65e06889cf376c1",
+        "body_preview": "{\"rules\":[{\"prefix\":\"probes/msymppeh-4779dbc6/p-r2-03/locked/\",\"allowOverwrite\":false,\"allowDelete\":false}]}"
+      },
+      "response_sha256": "9d1d86aeb193664bf7eb657107ca69016836f6965e8ded2a24f914bd2edf5cd0"
+    },
+    {
+      "seq": 11,
+      "at": "2026-08-18T12:18:36.385Z",
+      "request": {
+        "service": "cfapi",
+        "method": "PUT",
+        "path": "/r2/buckets/mock-bucket/lock",
+        "headers": {},
+        "body_length": 12,
+        "body_sha256": "da506c8a9c8a9f31aa00eaeef23d49764b9ace97158a1a0a7aa628e6d446b0fb",
+        "body_preview": "{\"rules\":[]}"
+      },
+      "request_sha256": "ade1eaaa767f4e05f85b0d0418d64d984a785e2fa35e9e11031f75be462bb059",
+      "response": {
+        "status": 403,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 54,
+        "body_sha256": "51af1a8a682d558caec6826d83962eb48030b224f20152b758c858c66da42995",
+        "body_preview": "{\"error\":\"runtime principal cannot alter lock policy\"}"
+      },
+      "response_sha256": "0a50e531d1ba1607e766b1aecef28697cd4bdcf6e2964a9b35cd84433d268553"
+    },
+    {
+      "seq": 12,
+      "at": "2026-08-18T12:18:36.385Z",
+      "request": {
+        "service": "cfapi",
+        "method": "GET",
+        "path": "/r2/buckets/mock-bucket/lock",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "f69beb9f5f7628258e42ef5509dbb1d8b1fd67c0d0ff60a3b1e292a437e86c1f",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 108,
+        "body_sha256": "b83986a6add00318fb4ee5b082a589cefcbca1789237c498f65e06889cf376c1",
+        "body_preview": "{\"rules\":[{\"prefix\":\"probes/msymppeh-4779dbc6/p-r2-03/locked/\",\"allowOverwrite\":false,\"allowDelete\":false}]}"
+      },
+      "response_sha256": "9d1d86aeb193664bf7eb657107ca69016836f6965e8ded2a24f914bd2edf5cd0"
+    }
+  ],
+  "notes": []
+}

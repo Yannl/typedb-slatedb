@@ -1,0 +1,403 @@
+{
+  "probe_id": "P-R2-04",
+  "title": "Checksums and multipart identity",
+  "spec_section": "## P-R2-04 — Checksums and multipart identity",
+  "mode": "mock",
+  "injected_fault": null,
+  "started_at": "2026-08-18T12:18:36.387Z",
+  "finished_at": "2026-08-18T12:18:36.389Z",
+  "verdict": "PASS",
+  "expected_outcome": "checksum headers verified and echoed, never substituting the application SHA-256; identical-byte part retry idempotent; changed bytes require a new UploadAttemptId; completed bytes match the application manifest",
+  "actual_outcome": "all 14 checks passed",
+  "checks": [
+    {
+      "label": "checksummed PUT accepted (got 200)",
+      "ok": true
+    },
+    {
+      "label": "provider echoes the stored sha256 checksum on read",
+      "ok": true
+    },
+    {
+      "label": "application SHA-256 over readback matches the manifest value",
+      "ok": true
+    },
+    {
+      "label": "multipart create accepted (got 200)",
+      "ok": true
+    },
+    {
+      "label": "uploadId extracted",
+      "ok": true
+    },
+    {
+      "label": "part 1 upload accepted (got 200)",
+      "ok": true
+    },
+    {
+      "label": "byte-identical retry under the same UploadAttemptId is idempotent",
+      "ok": true
+    },
+    {
+      "label": "changed bytes under same UploadAttemptId refused (got 409)",
+      "ok": true
+    },
+    {
+      "label": "changed bytes under new UploadAttemptId accepted (got 200)",
+      "ok": true
+    },
+    {
+      "label": "part 2 upload accepted (got 200)",
+      "ok": true
+    },
+    {
+      "label": "multipart completion accepted (got 200)",
+      "ok": true
+    },
+    {
+      "label": "completed object application SHA-256 matches the part manifest",
+      "ok": true
+    },
+    {
+      "label": "multipart abort accepted (got 204)",
+      "ok": true
+    },
+    {
+      "label": "part upload after abort refused (got 404)",
+      "ok": true
+    }
+  ],
+  "exchanges": [
+    {
+      "seq": 1,
+      "at": "2026-08-18T12:18:36.388Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-04/single",
+        "headers": {
+          "x-amz-checksum-sha256": "xMn0j3lKs8MWzOsg4vk4ctDZTi0Vr3M6QfEe4kTfT1U="
+        },
+        "body_length": 24,
+        "body_sha256": "c4c9f48f794ab3c316cceb20e2f93872d0d94e2d15af733a41f11ee244df4f55",
+        "body_preview": "p-r2-04 single-part body"
+      },
+      "request_sha256": "e780f9e7adf6fdc11179c5b09ec84cea1860dc9dfb44309f06761f6f44fb2bfe",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"c4c9f48f794ab3c3\"",
+          "x-mock-commit-seq": "10",
+          "x-amz-checksum-sha256": "xMn0j3lKs8MWzOsg4vk4ctDZTi0Vr3M6QfEe4kTfT1U="
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "6b5a3c0bd733cb80c9fd55a652ccc14768251bbe88590af417d0c05762a69c5c"
+    },
+    {
+      "seq": 2,
+      "at": "2026-08-18T12:18:36.388Z",
+      "request": {
+        "service": "r2",
+        "method": "GET",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-04/single",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "1a94cfbd15b6e1bc0ddd8141212ef88005c84a3dbef5013aef439348f977f49a",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"c4c9f48f794ab3c3\"",
+          "x-mock-commit-seq": "10",
+          "x-amz-checksum-sha256": "xMn0j3lKs8MWzOsg4vk4ctDZTi0Vr3M6QfEe4kTfT1U="
+        },
+        "body_length": 24,
+        "body_sha256": "c4c9f48f794ab3c316cceb20e2f93872d0d94e2d15af733a41f11ee244df4f55",
+        "body_preview": "p-r2-04 single-part body"
+      },
+      "response_sha256": "dd9b4928342b9828534af5f4ae95b160d3d5d4d92cf567c2aed20f2ca3d30284"
+    },
+    {
+      "seq": 3,
+      "at": "2026-08-18T12:18:36.388Z",
+      "request": {
+        "service": "r2",
+        "method": "POST",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-04/multipart?uploads",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "c09d799e41f62cd917cee0abe18d288d824a8509299106092265317ab82e2b77",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 23,
+        "body_sha256": "ad74d546c38ab1780dde668763ddd0d66cad98266b91b30f619afce7f27d9e8f",
+        "body_preview": "{\"uploadId\":\"upload-1\"}"
+      },
+      "response_sha256": "fae268141dba4611c6f5d21655995a438de46ac6b8985611f9fbdc66107007de"
+    },
+    {
+      "seq": 4,
+      "at": "2026-08-18T12:18:36.388Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-04/multipart?uploadId=upload-1&partNumber=1",
+        "headers": {
+          "x-upload-attempt-id": "attempt-1"
+        },
+        "body_length": 1024,
+        "body_sha256": "deaa5e0d46c63d9d80284253e9c13021296ab7ab3ff14b4ce418df62cdc59d31",
+        "body_preview": "part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part"
+      },
+      "request_sha256": "82c8c4d90354d8c2e0084dc9658d298ad71d3caf0b2e687f0c78b04b21e5805d",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"deaa5e0d46c63d9d\""
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "8727a659c791ad593c2f215198121742c8bdf7f1ea943e15ab82ab52f8bf3991"
+    },
+    {
+      "seq": 5,
+      "at": "2026-08-18T12:18:36.388Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-04/multipart?uploadId=upload-1&partNumber=1",
+        "headers": {
+          "x-upload-attempt-id": "attempt-1"
+        },
+        "body_length": 1024,
+        "body_sha256": "deaa5e0d46c63d9d80284253e9c13021296ab7ab3ff14b4ce418df62cdc59d31",
+        "body_preview": "part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part-one.part"
+      },
+      "request_sha256": "82c8c4d90354d8c2e0084dc9658d298ad71d3caf0b2e687f0c78b04b21e5805d",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"deaa5e0d46c63d9d\""
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "8727a659c791ad593c2f215198121742c8bdf7f1ea943e15ab82ab52f8bf3991"
+    },
+    {
+      "seq": 6,
+      "at": "2026-08-18T12:18:36.389Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-04/multipart?uploadId=upload-1&partNumber=1",
+        "headers": {
+          "x-upload-attempt-id": "attempt-1"
+        },
+        "body_length": 1024,
+        "body_sha256": "4e4725fb6ad994b15f66c96d797a23fbc5e6ac302b81d3f0a5134f96c3a3ee73",
+        "body_preview": "PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART"
+      },
+      "request_sha256": "0ab2a60d66ffb41abcb61343f41b4883408e7d4cfd4f04cb7585dbe974394881",
+      "response": {
+        "status": 409,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 72,
+        "body_sha256": "3d4b8144c6a9edc6b290ab20f7c1a5d32a57f03871c1951a7ca05dda24774f0b",
+        "body_preview": "{\"error\":\"attempt-corruption: changed bytes under same UploadAttemptId\"}"
+      },
+      "response_sha256": "d37d39ecdfe517fd2a17efddbaade7d671e38b9de2c64fa4af7000776474a4fb"
+    },
+    {
+      "seq": 7,
+      "at": "2026-08-18T12:18:36.389Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-04/multipart?uploadId=upload-1&partNumber=1",
+        "headers": {
+          "x-upload-attempt-id": "attempt-2"
+        },
+        "body_length": 1024,
+        "body_sha256": "4e4725fb6ad994b15f66c96d797a23fbc5e6ac302b81d3f0a5134f96c3a3ee73",
+        "body_preview": "PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART"
+      },
+      "request_sha256": "7cefafc9b7f72eb92f2ea211de10ad8f76e59531c55ef8634b20698feaddf946",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"4e4725fb6ad994b1\""
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "95c5e58c566a06b5699fc22de4746af3d72df59d1bca2a59580726ef2e79f5d5"
+    },
+    {
+      "seq": 8,
+      "at": "2026-08-18T12:18:36.389Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-04/multipart?uploadId=upload-1&partNumber=2",
+        "headers": {
+          "x-upload-attempt-id": "attempt-1"
+        },
+        "body_length": 512,
+        "body_sha256": "f02122582f3a98f701a2faae8d7b5b2553b5f0ad94f7b9e01acdcc042f9a2cd4",
+        "body_preview": "part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part-two.part"
+      },
+      "request_sha256": "4be2766eeccb5670db27d72da797dae7c4461fbebe367367e972f78f9c0e6462",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"f02122582f3a98f7\""
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "39a1f023f0573044a5b5da1cf5de542eb7ad26032a3dcfdc0749f16164b95ed6"
+    },
+    {
+      "seq": 9,
+      "at": "2026-08-18T12:18:36.389Z",
+      "request": {
+        "service": "r2",
+        "method": "POST",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-04/multipart?uploadId=upload-1",
+        "headers": {},
+        "body_length": 191,
+        "body_sha256": "ca15411cb0435eb72e9a6d204a24e520c408b662e4d699e23589e98de57e7311",
+        "body_preview": "<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>\"4e4725fb6ad994b1\"</ETag></Part><Part><PartNumber>2</PartNumber><ETag>\"f02122582f3a98f7\"</ETag></Part></CompleteMultipartUpload>"
+      },
+      "request_sha256": "445324c504adcab4e6e43f35384bfefce4f606033b8ac1c8137382bd44d10e93",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"f6e77d1285f5e7e2\"",
+          "x-mock-composite": "true"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "d683d9e2cb4c8f52693d7a34f682181c785573a76bb07d08ebea6da7123cd566"
+    },
+    {
+      "seq": 10,
+      "at": "2026-08-18T12:18:36.389Z",
+      "request": {
+        "service": "r2",
+        "method": "GET",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-04/multipart",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "77d3ac174d98dbfd0ed19e47a721aad6962a274e0270b1659e24addfa91bf93c",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"f6e77d1285f5e7e2\"",
+          "x-mock-commit-seq": "11"
+        },
+        "body_length": 1536,
+        "body_sha256": "f6e77d1285f5e7e226f839f13bcbfc3722f3b1e19d3d0f39ea420c3bd0f4a0f1",
+        "body_preview": "PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART-ONE!PART"
+      },
+      "response_sha256": "c0a73ea19b89a85f563d709b290ecde51115b9d5f2ab241cff72fbdb3d57e470"
+    },
+    {
+      "seq": 11,
+      "at": "2026-08-18T12:18:36.389Z",
+      "request": {
+        "service": "r2",
+        "method": "POST",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-04/multipart-abort?uploads",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "04fd7f5d17d4f7a83b5b230ea02b3bb421d384dae535e4a55a7f7b80708fb05d",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 23,
+        "body_sha256": "233828c0015ec0c0f83eb881fb018408547e40ccc4ccb5138c1cfb7a05934b96",
+        "body_preview": "{\"uploadId\":\"upload-2\"}"
+      },
+      "response_sha256": "3505ef335d02a8709c848c0c0d53916143519515f10c0ed5c4c84e864e0fe467"
+    },
+    {
+      "seq": 12,
+      "at": "2026-08-18T12:18:36.389Z",
+      "request": {
+        "service": "r2",
+        "method": "DELETE",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-04/multipart-abort?uploadId=upload-2",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "91371dc844874b48d207cce2fb4fe1ee96de0768319e9bf8115a9d7881039aa5",
+      "response": {
+        "status": 204,
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "38e1d9c5228fbc7493d2dd8125c85934d4114d1c49a52dcaadbdd85e516a134d"
+    },
+    {
+      "seq": 13,
+      "at": "2026-08-18T12:18:36.389Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-04/multipart-abort?uploadId=upload-2&partNumber=1",
+        "headers": {
+          "x-upload-attempt-id": "attempt-1"
+        },
+        "body_length": 4,
+        "body_sha256": "089001a35679a33ef3db0ca350db9b9a2f0136e0e327577b04b3b98127470961",
+        "body_preview": "late"
+      },
+      "request_sha256": "b4af65db867971d5e022638cf4ddc37c853be728d7348b143501c4e9d2ae0541",
+      "response": {
+        "status": 404,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 26,
+        "body_sha256": "37919ef517ed62234eb884f7c6d7ec7dd94f41bc87c2ec89746c54c64b893264",
+        "body_preview": "{\"error\":\"no such upload\"}"
+      },
+      "response_sha256": "5da58267c3a6ad1cb09d1204ea25feef3f64058beca35b5d6027b752a922dfdb"
+    }
+  ],
+  "notes": []
+}

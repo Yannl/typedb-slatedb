@@ -1,0 +1,627 @@
+{
+  "probe_id": "P-DO-03",
+  "title": "Overload and storage budgets",
+  "spec_section": "## P-DO-03 — Overload and storage budgets",
+  "mode": "mock",
+  "injected_fault": null,
+  "started_at": "2026-08-18T12:18:36.393Z",
+  "finished_at": "2026-08-18T12:18:36.395Z",
+  "verdict": "PASS",
+  "expected_outcome": "mutations shed at the soft budget, before unsafe growth toward the hard limit; shedding is explicit (reason header, metrics, alert), never a blind acceptance",
+  "actual_outcome": "all 7 checks passed",
+  "checks": [
+    {
+      "label": "overload state reset (got 200)",
+      "ok": true
+    },
+    {
+      "label": "every mutation is either accepted or explicitly shed",
+      "ok": true
+    },
+    {
+      "label": "acceptance stops exactly at the soft budget (got 8)",
+      "ok": true
+    },
+    {
+      "label": "every shed response carries an explicit shed reason",
+      "ok": true
+    },
+    {
+      "label": "stored rows (8) held at the soft budget, far from the hard limit",
+      "ok": true
+    },
+    {
+      "label": "metrics count every shed mutation (got 12)",
+      "ok": true
+    },
+    {
+      "label": "overload alert fired",
+      "ok": true
+    }
+  ],
+  "exchanges": [
+    {
+      "seq": 1,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/reset",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 39,
+        "body_sha256": "3c222a731268cc23c1ac93580eaf167235530c2bfd0a7a256b4d4869ee1b9273",
+        "body_preview": "{\"softBudgetRows\":8,\"hardLimitRows\":12}"
+      },
+      "request_sha256": "52774b7b83da36dd3e54de3423b5f1679f315eb9b179bfb9328f7870ffa3384b",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 11,
+        "body_sha256": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93",
+        "body_preview": "{\"ok\":true}"
+      },
+      "response_sha256": "d4a677d42a9d4d999ac650db5cb5b9f01bfbaa57f1d4256a5a347c22799e81f9"
+    },
+    {
+      "seq": 2,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/mutate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4ffaef72c467d998cd03f8a51add7ef06bd7f6001d6a750e6016684f5285ce0b",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 10,
+        "body_sha256": "74e2d27c7e03e296805655ddfae226dbae96b8a79693f8d6c403115a3e2e2bbc",
+        "body_preview": "{\"rows\":1}"
+      },
+      "response_sha256": "ea1ec7623663af0b2f54e3bb656c453151fd9553afe3065cfd37d3a694b647a3"
+    },
+    {
+      "seq": 3,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/mutate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4ffaef72c467d998cd03f8a51add7ef06bd7f6001d6a750e6016684f5285ce0b",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 10,
+        "body_sha256": "19b98918aa59c26ee086d8a818e64fded188be8b6e213ac21eea6ec19fa3bc00",
+        "body_preview": "{\"rows\":2}"
+      },
+      "response_sha256": "56ae39305e83fcf0287b3f90ed04099c3e88187946902b471cbc0e67a42b2d3c"
+    },
+    {
+      "seq": 4,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/mutate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4ffaef72c467d998cd03f8a51add7ef06bd7f6001d6a750e6016684f5285ce0b",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 10,
+        "body_sha256": "2bafd4629cc04e701c66d3854982e073924fa77d4fdc31b2803184ff5a42cecc",
+        "body_preview": "{\"rows\":3}"
+      },
+      "response_sha256": "7886259e06b751a972b794e52c0cef073828ba311dd792a629563703f0a42f4b"
+    },
+    {
+      "seq": 5,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/mutate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4ffaef72c467d998cd03f8a51add7ef06bd7f6001d6a750e6016684f5285ce0b",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 10,
+        "body_sha256": "c324861695cdb2b5f18e3675c71638207c3c31e3e312067660b9986d8f07acc0",
+        "body_preview": "{\"rows\":4}"
+      },
+      "response_sha256": "8b0c3cd2928ec2dd424b6a25f4caf13315bd99a053893ef7cf0b5542a6f6d7e0"
+    },
+    {
+      "seq": 6,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/mutate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4ffaef72c467d998cd03f8a51add7ef06bd7f6001d6a750e6016684f5285ce0b",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 10,
+        "body_sha256": "2f547f38cbd49cd530f0b2fda5d9b07bfc645e37e7a481c49aeae6f0399aabf0",
+        "body_preview": "{\"rows\":5}"
+      },
+      "response_sha256": "f532ee384bb78734c89d69cfc39f65d71a0c9cdff9ccc76b7d224a164dcca358"
+    },
+    {
+      "seq": 7,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/mutate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4ffaef72c467d998cd03f8a51add7ef06bd7f6001d6a750e6016684f5285ce0b",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 10,
+        "body_sha256": "0c937c8be7d3e44ffefbab843fed0e5cebd9e0852cd34321bba5aeacc15f8a0f",
+        "body_preview": "{\"rows\":6}"
+      },
+      "response_sha256": "72677cedc9a78284be6318ac632ce4750c1f71ea70bc3624981c4c3c3b920ab9"
+    },
+    {
+      "seq": 8,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/mutate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4ffaef72c467d998cd03f8a51add7ef06bd7f6001d6a750e6016684f5285ce0b",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 10,
+        "body_sha256": "49e047acb9c83e4a54fec7e12f4da0f8cefbbe7bd1921801497bf57878a729b5",
+        "body_preview": "{\"rows\":7}"
+      },
+      "response_sha256": "916a1f1680237950bc4710156c0488e87d1fa2cd6919738fb6b2751ce0bfe4bd"
+    },
+    {
+      "seq": 9,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/mutate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4ffaef72c467d998cd03f8a51add7ef06bd7f6001d6a750e6016684f5285ce0b",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 10,
+        "body_sha256": "7586aa091193d9538070af1827bb441a77a8fb09267eb8d0254dd69a0dd8457c",
+        "body_preview": "{\"rows\":8}"
+      },
+      "response_sha256": "d842587d737e5a8cda20c50138f80ddcb0d3d4c6970dda331219b03632d2693f"
+    },
+    {
+      "seq": 10,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/mutate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4ffaef72c467d998cd03f8a51add7ef06bd7f6001d6a750e6016684f5285ce0b",
+      "response": {
+        "status": 429,
+        "headers": {
+          "content-type": "application/json",
+          "x-shed-reason": "row-budget"
+        },
+        "body_length": 16,
+        "body_sha256": "82d612116e9bbc11acaf36d2e4597c1ce8bf01b50f909c0704934d586f9341f2",
+        "body_preview": "{\"error\":\"shed\"}"
+      },
+      "response_sha256": "c8ce6f0b2f848e9ead5182ed0f4e7397f43c35892f46950a45d70346f98647fd"
+    },
+    {
+      "seq": 11,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/mutate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4ffaef72c467d998cd03f8a51add7ef06bd7f6001d6a750e6016684f5285ce0b",
+      "response": {
+        "status": 429,
+        "headers": {
+          "content-type": "application/json",
+          "x-shed-reason": "row-budget"
+        },
+        "body_length": 16,
+        "body_sha256": "82d612116e9bbc11acaf36d2e4597c1ce8bf01b50f909c0704934d586f9341f2",
+        "body_preview": "{\"error\":\"shed\"}"
+      },
+      "response_sha256": "c8ce6f0b2f848e9ead5182ed0f4e7397f43c35892f46950a45d70346f98647fd"
+    },
+    {
+      "seq": 12,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/mutate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4ffaef72c467d998cd03f8a51add7ef06bd7f6001d6a750e6016684f5285ce0b",
+      "response": {
+        "status": 429,
+        "headers": {
+          "content-type": "application/json",
+          "x-shed-reason": "row-budget"
+        },
+        "body_length": 16,
+        "body_sha256": "82d612116e9bbc11acaf36d2e4597c1ce8bf01b50f909c0704934d586f9341f2",
+        "body_preview": "{\"error\":\"shed\"}"
+      },
+      "response_sha256": "c8ce6f0b2f848e9ead5182ed0f4e7397f43c35892f46950a45d70346f98647fd"
+    },
+    {
+      "seq": 13,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/mutate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4ffaef72c467d998cd03f8a51add7ef06bd7f6001d6a750e6016684f5285ce0b",
+      "response": {
+        "status": 429,
+        "headers": {
+          "content-type": "application/json",
+          "x-shed-reason": "row-budget"
+        },
+        "body_length": 16,
+        "body_sha256": "82d612116e9bbc11acaf36d2e4597c1ce8bf01b50f909c0704934d586f9341f2",
+        "body_preview": "{\"error\":\"shed\"}"
+      },
+      "response_sha256": "c8ce6f0b2f848e9ead5182ed0f4e7397f43c35892f46950a45d70346f98647fd"
+    },
+    {
+      "seq": 14,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/mutate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4ffaef72c467d998cd03f8a51add7ef06bd7f6001d6a750e6016684f5285ce0b",
+      "response": {
+        "status": 429,
+        "headers": {
+          "content-type": "application/json",
+          "x-shed-reason": "row-budget"
+        },
+        "body_length": 16,
+        "body_sha256": "82d612116e9bbc11acaf36d2e4597c1ce8bf01b50f909c0704934d586f9341f2",
+        "body_preview": "{\"error\":\"shed\"}"
+      },
+      "response_sha256": "c8ce6f0b2f848e9ead5182ed0f4e7397f43c35892f46950a45d70346f98647fd"
+    },
+    {
+      "seq": 15,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/mutate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4ffaef72c467d998cd03f8a51add7ef06bd7f6001d6a750e6016684f5285ce0b",
+      "response": {
+        "status": 429,
+        "headers": {
+          "content-type": "application/json",
+          "x-shed-reason": "row-budget"
+        },
+        "body_length": 16,
+        "body_sha256": "82d612116e9bbc11acaf36d2e4597c1ce8bf01b50f909c0704934d586f9341f2",
+        "body_preview": "{\"error\":\"shed\"}"
+      },
+      "response_sha256": "c8ce6f0b2f848e9ead5182ed0f4e7397f43c35892f46950a45d70346f98647fd"
+    },
+    {
+      "seq": 16,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/mutate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4ffaef72c467d998cd03f8a51add7ef06bd7f6001d6a750e6016684f5285ce0b",
+      "response": {
+        "status": 429,
+        "headers": {
+          "content-type": "application/json",
+          "x-shed-reason": "row-budget"
+        },
+        "body_length": 16,
+        "body_sha256": "82d612116e9bbc11acaf36d2e4597c1ce8bf01b50f909c0704934d586f9341f2",
+        "body_preview": "{\"error\":\"shed\"}"
+      },
+      "response_sha256": "c8ce6f0b2f848e9ead5182ed0f4e7397f43c35892f46950a45d70346f98647fd"
+    },
+    {
+      "seq": 17,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/mutate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4ffaef72c467d998cd03f8a51add7ef06bd7f6001d6a750e6016684f5285ce0b",
+      "response": {
+        "status": 429,
+        "headers": {
+          "content-type": "application/json",
+          "x-shed-reason": "row-budget"
+        },
+        "body_length": 16,
+        "body_sha256": "82d612116e9bbc11acaf36d2e4597c1ce8bf01b50f909c0704934d586f9341f2",
+        "body_preview": "{\"error\":\"shed\"}"
+      },
+      "response_sha256": "c8ce6f0b2f848e9ead5182ed0f4e7397f43c35892f46950a45d70346f98647fd"
+    },
+    {
+      "seq": 18,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/mutate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4ffaef72c467d998cd03f8a51add7ef06bd7f6001d6a750e6016684f5285ce0b",
+      "response": {
+        "status": 429,
+        "headers": {
+          "content-type": "application/json",
+          "x-shed-reason": "row-budget"
+        },
+        "body_length": 16,
+        "body_sha256": "82d612116e9bbc11acaf36d2e4597c1ce8bf01b50f909c0704934d586f9341f2",
+        "body_preview": "{\"error\":\"shed\"}"
+      },
+      "response_sha256": "c8ce6f0b2f848e9ead5182ed0f4e7397f43c35892f46950a45d70346f98647fd"
+    },
+    {
+      "seq": 19,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/mutate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4ffaef72c467d998cd03f8a51add7ef06bd7f6001d6a750e6016684f5285ce0b",
+      "response": {
+        "status": 429,
+        "headers": {
+          "content-type": "application/json",
+          "x-shed-reason": "row-budget"
+        },
+        "body_length": 16,
+        "body_sha256": "82d612116e9bbc11acaf36d2e4597c1ce8bf01b50f909c0704934d586f9341f2",
+        "body_preview": "{\"error\":\"shed\"}"
+      },
+      "response_sha256": "c8ce6f0b2f848e9ead5182ed0f4e7397f43c35892f46950a45d70346f98647fd"
+    },
+    {
+      "seq": 20,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/mutate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4ffaef72c467d998cd03f8a51add7ef06bd7f6001d6a750e6016684f5285ce0b",
+      "response": {
+        "status": 429,
+        "headers": {
+          "content-type": "application/json",
+          "x-shed-reason": "row-budget"
+        },
+        "body_length": 16,
+        "body_sha256": "82d612116e9bbc11acaf36d2e4597c1ce8bf01b50f909c0704934d586f9341f2",
+        "body_preview": "{\"error\":\"shed\"}"
+      },
+      "response_sha256": "c8ce6f0b2f848e9ead5182ed0f4e7397f43c35892f46950a45d70346f98647fd"
+    },
+    {
+      "seq": 21,
+      "at": "2026-08-18T12:18:36.394Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/overload/mutate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4ffaef72c467d998cd03f8a51add7ef06bd7f6001d6a750e6016684f5285ce0b",
+      "response": {
+        "status": 429,
+        "headers": {
+          "content-type": "application/json",
+          "x-shed-reason": "row-budget"
+        },
+        "body_length": 16,
+        "body_sha256": "82d612116e9bbc11acaf36d2e4597c1ce8bf01b50f909c0704934d586f9341f2",
+        "body_preview": "{\"error\":\"shed\"}"
+      },
+      "response_sha256": "c8ce6f0b2f848e9ead5182ed0f4e7397f43c35892f46950a45d70346f98647fd"
+    },
+    {
+      "seq": 22,
+      "at": "2026-08-18T12:18:36.395Z",
+      "request": {
+        "service": "harness",
+        "method": "GET",
+        "path": "/do/overload/metrics",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "86b561cce5de81a3c5396de8c873c1149c1c8582df0def356f6510f4bbcf33f2",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 81,
+        "body_sha256": "9a75436f1d3f4a4ade609f8d4458ced5e634b94889e32be2fc3a9871b6bd522c",
+        "body_preview": "{\"rows\":8,\"shedCount\":12,\"alertFired\":true,\"softBudgetRows\":8,\"hardLimitRows\":12}"
+      },
+      "response_sha256": "0c86daef1287709bf2b9e265165fe111f22ee3bafc4767d5479d3465cc068faa"
+    }
+  ],
+  "notes": []
+}

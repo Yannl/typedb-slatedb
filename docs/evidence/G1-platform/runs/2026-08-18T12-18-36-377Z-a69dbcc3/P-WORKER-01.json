@@ -1,0 +1,155 @@
+{
+  "probe_id": "P-WORKER-01",
+  "title": "Gateway bounds",
+  "spec_section": "## P-WORKER-01 — Gateway bounds",
+  "mode": "mock",
+  "injected_fault": null,
+  "started_at": "2026-08-18T12:18:36.401Z",
+  "finished_at": "2026-08-18T12:18:36.414Z",
+  "verdict": "PASS",
+  "expected_outcome": "streaming stays within the buffer bound (no full buffering); no success receipt before exact remote resolution; six-connection saturation queues instead of failing incorrectly",
+  "actual_outcome": "all 9 checks passed",
+  "checks": [
+    {
+      "label": "gateway reset (got 200)",
+      "ok": true
+    },
+    {
+      "label": "streamed object is complete (got 1048576 bytes)",
+      "ok": true
+    },
+    {
+      "label": "streamed bytes match the deterministic pattern",
+      "ok": true
+    },
+    {
+      "label": "gateway held at most 65536 bytes in memory (bound 65536) — no full buffering",
+      "ok": true
+    },
+    {
+      "label": "upstream 5xx surfaces as gateway failure (got 502)",
+      "ok": true
+    },
+    {
+      "label": "no success receipt issued for an unresolved remote operation",
+      "ok": true
+    },
+    {
+      "label": "connection permits capped at six (got 6)",
+      "ok": true
+    },
+    {
+      "label": "excess connection queued, not dropped (got 1)",
+      "ok": true
+    },
+    {
+      "label": "saturation produced no incorrect success",
+      "ok": true
+    }
+  ],
+  "exchanges": [
+    {
+      "seq": 1,
+      "at": "2026-08-18T12:18:36.401Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/worker/gateway/reset",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 21,
+        "body_sha256": "a83d104d7974cf6c0db1368b165d494c1e4932a9dc9e48eebfa29730233e82fe",
+        "body_preview": "{\"bufferBound\":65536}"
+      },
+      "request_sha256": "1d968ca30f7e6865bb27e14fcd7d440e037a5e7cff336fa7608e4c7fa40f8c82",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 11,
+        "body_sha256": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93",
+        "body_preview": "{\"ok\":true}"
+      },
+      "response_sha256": "d4a677d42a9d4d999ac650db5cb5b9f01bfbaa57f1d4256a5a347c22799e81f9"
+    },
+    {
+      "seq": 2,
+      "at": "2026-08-18T12:18:36.413Z",
+      "request": {
+        "service": "harness",
+        "method": "GET",
+        "path": "/worker/gateway/stream?bytes=1048576",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4b9a86cb817d7d2983d211b544875303581587a4b01f4aa67a82fcf6905d9846",
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-max-buffered-bytes": "65536",
+          "x-buffer-bound": "65536"
+        },
+        "body_length": 1048576,
+        "body_sha256": "631b84027d6b9e52b539c4e8373622d23032dfadc64d60af87339c9037e4f769",
+        "body_preview": "?????????\t\n????????????????????? !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~?????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????"
+      },
+      "response_sha256": "48846f2f503371b37a20251345240f2aa6a67266a6f28d6cc060564c7e0d0e35"
+    },
+    {
+      "seq": 3,
+      "at": "2026-08-18T12:18:36.414Z",
+      "request": {
+        "service": "harness",
+        "method": "GET",
+        "path": "/worker/gateway/object?fail=r2-500",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "354279369b4fe7cbf423667094857d16d02e0b8a2ddd52b441091a2c2250710b",
+      "response": {
+        "status": 502,
+        "headers": {
+          "content-type": "application/json",
+          "x-success-receipt": "none"
+        },
+        "body_length": 27,
+        "body_sha256": "4a6fd21f0c4ebe9e2e00767659e04a6db2560cc8f3cdd4858a66e82df8540f03",
+        "body_preview": "{\"error\":\"upstream r2 500\"}"
+      },
+      "response_sha256": "5cf110fea7c52f088b843874006ec9a5acc5a10e6235385cdfab049a50d2b91e"
+    },
+    {
+      "seq": 4,
+      "at": "2026-08-18T12:18:36.414Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/worker/gateway/saturate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 17,
+        "body_sha256": "a15b95aadff36ac0bd3dd43f0d580f6b2e7aa83727143819573bf9e0f86ebee4",
+        "body_preview": "{\"connections\":7}"
+      },
+      "request_sha256": "d5190667cede944096f09ee4adeb9ab66049407a8cf50ca094e25d8090509df5",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 56,
+        "body_sha256": "87e6736e476ed7f2bdb57c4473888c7396b3b3b2a4198b02d5606260d3698ea4",
+        "body_preview": "{\"peakConcurrent\":6,\"queued\":1,\"incorrectSuccess\":false}"
+      },
+      "response_sha256": "19311f1701c08881983ba63bc6c15d5d2aa762787b0954119cf830ee643a6115"
+    }
+  ],
+  "notes": []
+}

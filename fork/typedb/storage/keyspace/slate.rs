@@ -33,7 +33,10 @@
 use std::{
     fs, io,
     path::{Path, PathBuf},
-    sync::{Arc, OnceLock, atomic::{AtomicU64, Ordering}},
+    sync::{
+        Arc, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use async_trait::async_trait;
@@ -43,13 +46,9 @@ use slatedb::{
     bytes::Bytes as SlateBytes,
     config::{ReadOptions, ScanOptions, Settings, WriteOptions},
     object_store::{
-        CopyOptions, GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, ObjectStore,
-        RenameOptions,
-        ObjectStoreExt, PutMultipartOptions, PutOptions, PutPayload, PutResult,
-        aws::AmazonS3Builder,
-        local::LocalFileSystem,
-        path::Path as ObjectPath,
-        prefix::PrefixStore,
+        CopyOptions, GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, ObjectStore, ObjectStoreExt,
+        PutMultipartOptions, PutOptions, PutPayload, PutResult, RenameOptions, aws::AmazonS3Builder,
+        local::LocalFileSystem, path::Path as ObjectPath, prefix::PrefixStore,
     },
 };
 
@@ -300,10 +299,7 @@ fn store_error(error: slatedb::object_store::Error) -> slatedb::Error {
 
 /// List every object under `prefix` (iterative multi-level
 /// `list_with_delimiter` walk — no stream combinators needed).
-async fn list_remote_prefix(
-    store: &dyn ObjectStore,
-    prefix: &ObjectPath,
-) -> Result<Vec<ObjectMeta>, slatedb::Error> {
+async fn list_remote_prefix(store: &dyn ObjectStore, prefix: &ObjectPath) -> Result<Vec<ObjectMeta>, slatedb::Error> {
     let mut pending = vec![prefix.clone()];
     let mut objects = Vec::new();
     while let Some(level) = pending.pop() {
@@ -361,25 +357,15 @@ impl ObjectStore for NoDeleteStore {
         self.inner.put_multipart_opts(location, opts).await
     }
 
-    async fn get_opts(
-        &self,
-        location: &ObjectPath,
-        options: GetOptions,
-    ) -> slatedb::object_store::Result<GetResult> {
+    async fn get_opts(&self, location: &ObjectPath, options: GetOptions) -> slatedb::object_store::Result<GetResult> {
         self.inner.get_opts(location, options).await
     }
 
-    fn list(
-        &self,
-        prefix: Option<&ObjectPath>,
-    ) -> BoxStream<'static, slatedb::object_store::Result<ObjectMeta>> {
+    fn list(&self, prefix: Option<&ObjectPath>) -> BoxStream<'static, slatedb::object_store::Result<ObjectMeta>> {
         self.inner.list(prefix)
     }
 
-    async fn list_with_delimiter(
-        &self,
-        prefix: Option<&ObjectPath>,
-    ) -> slatedb::object_store::Result<ListResult> {
+    async fn list_with_delimiter(&self, prefix: Option<&ObjectPath>) -> slatedb::object_store::Result<ListResult> {
         self.inner.list_with_delimiter(prefix).await
     }
 
@@ -440,20 +426,14 @@ impl ObjectStore for NoDeleteStore {
 
 /// Upload a local directory tree (a restored checkpoint) under `prefix`,
 /// preserving the relative layout.
-async fn upload_dir_to_remote(
-    store: &dyn ObjectStore,
-    prefix: &ObjectPath,
-    root: &Path,
-) -> Result<(), slatedb::Error> {
+async fn upload_dir_to_remote(store: &dyn ObjectStore, prefix: &ObjectPath, root: &Path) -> Result<(), slatedb::Error> {
     fn collect(root: &Path, dir: &Path, out: &mut Vec<(Vec<String>, PathBuf)>) -> io::Result<()> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
             // the local disk cache and the materialisation marker are
             // machine-local state, never store state
-            if dir == root
-                && (entry.file_name() == OBJECT_CACHE_SUBDIR || entry.file_name() == MATERIALIZATION_FILE)
-            {
+            if dir == root && (entry.file_name() == OBJECT_CACHE_SUBDIR || entry.file_name() == MATERIALIZATION_FILE) {
                 continue;
             }
             if entry.file_type()?.is_dir() {
@@ -493,10 +473,8 @@ async fn download_remote_objects(
 ) -> Result<(), slatedb::Error> {
     let prefix_str = format!("{prefix}/");
     for location in locations {
-        let relative = location
-            .as_ref()
-            .strip_prefix(&prefix_str)
-            .expect("listed object location is under the listed prefix");
+        let relative =
+            location.as_ref().strip_prefix(&prefix_str).expect("listed object location is under the listed prefix");
         let mut target = dir.to_owned();
         for part in relative.split('/') {
             target = target.join(part);
@@ -504,8 +482,7 @@ async fn download_remote_objects(
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent).map_err(io_error)?;
         }
-        let bytes =
-            store.get(location).await.map_err(store_error)?.bytes().await.map_err(store_error)?;
+        let bytes = store.get(location).await.map_err(store_error)?.bytes().await.map_err(store_error)?;
         fs::write(&target, bytes).map_err(io_error)?;
     }
     Ok(())
@@ -586,13 +563,11 @@ impl SlateKeyspace {
         if let Some(root) = restored_root {
             let store = store.clone();
             let prefix = prefix.clone();
-            bridge(async move { upload_dir_to_remote(store.as_ref(), &prefix, &root).await })
-                .map_err(Arc::new)?;
+            bridge(async move { upload_dir_to_remote(store.as_ref(), &prefix, &root).await }).map_err(Arc::new)?;
         }
         // recorded for diagnostics and the GC report; written AFTER the seed
         // upload so it can never itself be uploaded as store state
-        fs::write(path.join(MATERIALIZATION_FILE), &materialization)
-            .map_err(|error| Arc::new(io_error(error)))?;
+        fs::write(path.join(MATERIALIZATION_FILE), &materialization).map_err(|error| Arc::new(io_error(error)))?;
         let prefixed: Arc<dyn ObjectStore> = Arc::new(PrefixStore::new(store.clone(), prefix.clone()));
         let mut settings = settings();
         if let Some(cache_bytes) = cache_bytes {
@@ -806,11 +781,8 @@ impl SlateKeyspace {
             let pinned = manifests.iter().map(|meta| &meta.location).max().cloned();
             let objects = list_remote_prefix(store.as_ref(), &prefix).await?;
             let is_manifest = |location: &ObjectPath| location.as_ref().starts_with(&manifest_prefix);
-            let mut to_copy: Vec<ObjectPath> = objects
-                .iter()
-                .map(|meta| meta.location.clone())
-                .filter(|location| !is_manifest(location))
-                .collect();
+            let mut to_copy: Vec<ObjectPath> =
+                objects.iter().map(|meta| meta.location.clone()).filter(|location| !is_manifest(location)).collect();
             to_copy.extend(pinned);
             download_remote_objects(store.as_ref(), &prefix, &to_copy, &dir).await
         })
@@ -1126,7 +1098,7 @@ mod retry_channel_tests {
     //! fails `non_transient_kinds_fail_closed…`; removing the bound fails
     //! `the_retry_budget_is_bounded`.
 
-    use super::{retry_transient, TRANSIENT_RETRIES};
+    use super::{TRANSIENT_RETRIES, retry_transient};
 
     #[test]
     fn unavailable_is_retried_within_the_budget() {
@@ -1139,8 +1111,7 @@ mod retry_channel_tests {
     #[test]
     fn the_retry_budget_is_bounded() {
         let transient = slatedb::Error::unavailable("s3 outage".to_string());
-        assert!(!retry_transient(&transient, TRANSIENT_RETRIES),
-            "an exhausted budget must fail closed, not spin");
+        assert!(!retry_transient(&transient, TRANSIENT_RETRIES), "an exhausted budget must fail closed, not spin");
     }
 
     #[test]
@@ -1150,8 +1121,11 @@ mod retry_channel_tests {
             slatedb::Error::data("corrupt sst".to_string()),
             slatedb::Error::internal("bug".to_string()),
         ] {
-            assert!(!retry_transient(&error, 0),
-                "{:?} must never be retried - retrying would mask corruption or a bug", error.kind());
+            assert!(
+                !retry_transient(&error, 0),
+                "{:?} must never be retried - retrying would mask corruption or a bug",
+                error.kind()
+            );
         }
     }
 }
@@ -1171,10 +1145,17 @@ mod read_contract_tests {
     //! committed frontier and the same options see the row — same-handle
     //! read-your-writes without dirty reads (inv. 75).
 
-    use std::{sync::Arc, time::{Duration, Instant}};
+    use std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    };
 
     use fail_parallel::FailPointRegistry;
-    use slatedb::{Db, config::ReadOptions, object_store::{ObjectStore, local::LocalFileSystem}};
+    use slatedb::{
+        Db,
+        config::ReadOptions,
+        object_store::{ObjectStore, local::LocalFileSystem},
+    };
     use test_utils::create_tmp_dir;
 
     use super::{bridge, read_options, scan_options, settings, write_options};
@@ -1183,8 +1164,7 @@ mod read_contract_tests {
     fn paused_precommit_write_is_invisible_to_committed_frontier_reads() {
         let dir = create_tmp_dir("slate-read-contract");
         let registry = Arc::new(FailPointRegistry::new());
-        let store: Arc<dyn ObjectStore> =
-            Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
+        let store: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
         let db = Arc::new(
             bridge({
                 let registry = registry.clone();
@@ -1203,9 +1183,9 @@ mod read_contract_tests {
         // read through the production options, before any flush
         {
             let db = db.clone();
-            bridge(async move {
-                db.put_with_options(b"k-committed", b"v1", &Default::default(), &write_options()).await
-            })
+            bridge(
+                async move { db.put_with_options(b"k-committed", b"v1", &Default::default(), &write_options()).await },
+            )
             .unwrap();
         }
         let committed = {
@@ -1219,9 +1199,9 @@ mod read_contract_tests {
         let writer = {
             let db = db.clone();
             std::thread::spawn(move || {
-                bridge(async move {
-                    db.put_with_options(b"k-pending", b"v2", &Default::default(), &write_options()).await
-                })
+                bridge(
+                    async move { db.put_with_options(b"k-pending", b"v2", &Default::default(), &write_options()).await },
+                )
             })
         };
 
@@ -1233,10 +1213,8 @@ mod read_contract_tests {
         loop {
             let dirty_probe = {
                 let db = db.clone();
-                bridge(async move {
-                    db.get_with_options(b"k-pending", &ReadOptions::default().with_dirty(true)).await
-                })
-                .unwrap()
+                bridge(async move { db.get_with_options(b"k-pending", &ReadOptions::default().with_dirty(true)).await })
+                    .unwrap()
             };
             if dirty_probe.is_some() {
                 break;
@@ -1258,9 +1236,8 @@ mod read_contract_tests {
         let pending_scan: Vec<_> = {
             let db = db.clone();
             bridge(async move {
-                let mut iterator = db
-                    .scan_with_options(b"k-pending".to_vec()..b"k-pending\xff".to_vec(), &scan_options())
-                    .await?;
+                let mut iterator =
+                    db.scan_with_options(b"k-pending".to_vec()..b"k-pending\xff".to_vec(), &scan_options()).await?;
                 let mut rows = Vec::new();
                 while let Some(row) = iterator.next().await? {
                     rows.push(row.key);
@@ -1345,8 +1322,7 @@ mod materialization_tests {
     use test_utils::create_tmp_dir;
 
     use super::{
-        FORMAT_VERSION_SEGMENT, MATERIALIZATION_FILE, NoDeleteStore, SlateKeyspace, bridge,
-        list_remote_prefix,
+        FORMAT_VERSION_SEGMENT, MATERIALIZATION_FILE, NoDeleteStore, SlateKeyspace, bridge, list_remote_prefix,
     };
 
     const BASE: &str = "it-base";
@@ -1421,9 +1397,7 @@ mod materialization_tests {
             "materialisation B must write under its own namespace",
         );
         assert!(
-            after_b.keys().all(|location| {
-                !location.contains(&id_b) || !location.contains(&id_a)
-            }),
+            after_b.keys().all(|location| { !location.contains(&id_b) || !location.contains(&id_a) }),
             "materialisation namespaces must be disjoint",
         );
 
@@ -1513,12 +1487,7 @@ mod materialization_tests {
         std::fs::create_dir_all(&*keyspace_dir).unwrap();
         std::fs::write(keyspace_dir.join(super::OBJECT_CACHE_SUBDIR), b"not a directory").unwrap();
 
-        let opened = SlateKeyspace::open_remote(
-            inner.clone(),
-            ObjectPath::from(BASE),
-            &keyspace_dir,
-            Some(1 << 20),
-        );
+        let opened = SlateKeyspace::open_remote(inner.clone(), ObjectPath::from(BASE), &keyspace_dir, Some(1 << 20));
         assert!(
             opened.is_err(),
             "an unclearable object cache must refuse the open, not serve another \

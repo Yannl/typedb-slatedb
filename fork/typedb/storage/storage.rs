@@ -43,7 +43,6 @@ use crate::{
     durability_client::{DurabilityClient, DurabilityClientError},
     error::{MVCCStorageError, MVCCStorageErrorKind},
     isolation_manager::{IsolationManager, ValidatedCommit},
-    post_wal_guard::{PostWalCommitGuard, UnresolvedReason},
     iterator::MVCCRangeIterator,
     key_range::KeyRange,
     key_value::{StorageKey, StorageKeyReference},
@@ -51,6 +50,7 @@ use crate::{
         IteratorPool, Keyspace, KeyspaceError, KeyspaceId, KeyspaceOpenError, KeyspaceSet, Keyspaces,
         iterator::KeyspaceRangeIterator, rocks_resources::RocksResources,
     },
+    post_wal_guard::{PostWalCommitGuard, UnresolvedReason},
     record::{CommitRecord, LegacyCommitRecordV1, StatusRecord},
     recovery::{
         checkpoint::{CheckpointCreateError, CheckpointLoadError, CheckpointReader, CheckpointWriter},
@@ -397,9 +397,7 @@ impl<Durability> MVCCStorage<Durability> {
                 }
                 commit_profile.snapshot_isolation_manager_notified();
 
-                if let Err(error) =
-                    Self::persist_commit_status(true, commit_sequence_number, &self.durability_client)
-                {
+                if let Err(error) = Self::persist_commit_status(true, commit_sequence_number, &self.durability_client) {
                     // the commit is complete and visible; only its status
                     // cache is missing. Recovery must re-derive it - turning
                     // this into a returned error would tell the caller the
@@ -421,8 +419,7 @@ impl<Durability> MVCCStorage<Durability> {
 
                 fail_point!(COMMIT_REJECTED_WITHOUT_PERSISTING_STATUS);
 
-                if let Err(error) =
-                    Self::persist_commit_status(false, commit_sequence_number, &self.durability_client)
+                if let Err(error) = Self::persist_commit_status(false, commit_sequence_number, &self.durability_client)
                 {
                     // a deterministic abort without its durable certificate
                     // leaves recovery unable to tell abort from unresolved

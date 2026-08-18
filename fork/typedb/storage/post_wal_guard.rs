@@ -108,7 +108,9 @@ pub enum Resolution {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum State {
-    Armed { sequence: Option<SequenceNumber> },
+    Armed {
+        sequence: Option<SequenceNumber>,
+    },
     Resolved(Resolution),
     /// Terminal, but recorded rather than executed: used by tests to observe
     /// the transition the production guard turns into a process abort.

@@ -79,13 +79,15 @@ jobs:
       - run: npm ci
       - name: typecheck
         run: npx tsc --noEmit
-      - name: controller core, state, journal and capability suites
+      - name: controller core, state, journal, capability, key-config and lifecycle suites
         run: |
           node --test --experimental-strip-types \
             src/controller/core/controller-core.test.ts \
             src/controller/core/controller-state.test.ts \
             src/controller/core/journal.test.ts \
-            src/controller/core/capability.test.ts
+            src/controller/core/capability.test.ts \
+            src/controller/core/key-config.test.ts \
+            src/controller/core/lifecycle.test.ts
       - name: the standing outbox mutant is still killed
         # an expected-red run: if this passes, the mutant stopped being caught
         run: |

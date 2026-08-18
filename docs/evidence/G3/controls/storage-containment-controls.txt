@@ -58,3 +58,75 @@ MUTANT: the `rename_opts` override removed (ObjectStore's default
         copy-then-delete restored)
   not ok - keyspace::slate::materialization_tests::a_blocked_rename_leaves_no_copy_behind
   test result: FAILED. 24 passed; 1 failed   -> restored: 25 passed; 0 failed
+
+# ---------------------------------------------------------------------------
+# Batch 2: Q-27 (copy), Q-13, Q-23, Q-22, Q-16 — same toolchain, same lane.
+# Suite is now 27 tests: +1 copy-mode control, +1 cursor-ownership control.
+
+$ cargo +1.93.0 test -p storage --lib --locked
+test result: ok. 27 passed; 0 failed; 0 ignored
+
+(One run of this suite showed 2 failures that were ENVIRONMENTAL — MinIO had
+died and both failures were `Connection refused (os error 111)` against
+127.0.0.1:9000. Recorded because the rule is diagnose-before-acting: the
+failures disappeared on restarting MinIO, with no code change.)
+
+## Q-27 (second half) - copies through the runtime principal are Create-only
+`copy_opts` on the no-delete runtime store refuses any `CopyMode` other than
+`Create` with a typed NotImplemented; overwriting copy is exactly the
+"mutate an immutable object" primitive the no-delete contract excludes.
+
+CONTROL: keyspace::slate::materialization_tests::
+         copies_through_the_runtime_principal_are_create_only
+MUTANT: the mode gate removed (every CopyMode forwarded to the inner store)
+  not ok - copies_through_the_runtime_principal_are_create_only
+  test result: FAILED. 26 passed; 1 failed   -> restored: 27 passed; 0 failed
+
+## Q-13 - object-store retries are BOUNDED
+`settings.object_store_max_retries = Some(8)` in `SlateKeyspace::settings()`.
+Upstream default is unbounded retry, which converts a persistent R2/S3 fault
+into an infinite silent stall of the flush path. Bound chosen with the bridge
+deadline below (OD-006). No standalone mutant: the setting is a constant read
+by the upstream crate, and the assertion that would observe it (a fault
+injected 9 deep) belongs to the failpoints lane; the value is asserted by
+inspection in settings() and covered by the compile-time type (Option<u32>).
+
+## Q-23 - the async->sync bridge is BOUNDED and LOUD
+`bridge()` waits with `recv_timeout(30s)` in a loop: every 30s it logs an
+ERROR naming the operation still pending; at 600s it `std::process::abort()`s
+(fail-stop beats a silent forever-hang holding storage locks — same doctrine
+as Q-01). A disconnected channel (runtime died mid-operation) panics
+immediately instead of returning garbage. Deadline + retry bound recorded as
+OD-006 in docs/owner-decisions.json.
+No mutant executed: killing the deadline means a 600-second hanging test per
+run, which the flake-ledger doctrine excludes from the fast suite; the
+failpoints lane owns the induced-stall measurement (NEXT-SESSION item).
+
+## Q-22 - cursor drop order is STRUCTURAL, not declaration-order
+`RocksCursor` holds `iterator: ManuallyDrop<DBRawIterator<'static>>` plus
+`Arc<DB>`; an explicit `Drop` impl drops the iterator first, always, so field
+reordering can no longer reintroduce the use-after-free. The control also
+proves co-ownership: the cursor keeps the DB alive after every other handle
+is gone.
+
+CONTROL: keyspace::cursor::rocks_cursor_tests::
+         a_cursor_keeps_its_database_alive_after_every_other_handle_is_gone
+MUTANT: fields reordered `db` first, plain iterator field, `Drop` impl and
+        `ManuallyDrop` removed — i.e. the audited defect reintroduced
+        (drop order back on declaration order, db dies first)
+  running 1 test
+  pthread lock: Invalid argument
+  process didn't exit successfully: (signal: 6, SIGABRT: process abort signal)
+  -> restored: test result: ok. 1 passed (filtered); full suite 27 passed; 0 failed
+
+  Caveat, recorded honestly: the mutant dies via undefined behaviour
+  (iterator destroyed after its DB), so the SIGABRT is an observed outcome,
+  not a guaranteed one — UB is not required to crash. It DID kill the mutant
+  on this toolchain (rustc 1.93.0, librocksdb-sys bundled), and the structural
+  ordering plus the co-ownership assertion are the durable closure.
+
+## Q-16 - the "checkpoint" is relabelled to what it is
+`checkpoint()` doc now states: CONFORMANCE-LANE fixture exporter, not a
+production checkpoint. No behavioural change, no mutant applicable; the
+closure is that no prose anywhere claims a durable checkpoint exists (the
+v16 audit's Q-16 row points here).

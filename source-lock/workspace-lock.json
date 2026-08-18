@@ -1,7 +1,7 @@
 {
   "document": "workspace release binding (brief v16 \u00a70.2.1; generated, never hand-edited)",
   "generated_by": "tools/source-lock/generate_workspace_lock.py",
-  "repo_commit": "9bd480ec5d0404fda3dba2f023066e43a6403893",
+  "repo_commit": "85c3e1ec3a04e8fd59774a4a70ca02633adbf522",
   "source_lock_sha256": "9cf330d8d30de531c94bdb40ecfcde38a84f5dc124d6289a8b61568af8a51860",
   "workspaces": {
     "fork/typedb": {
@@ -26,7 +26,7 @@
   "fork_staging": {
     "fork_root": "fork/typedb",
     "staged_file_count": 776,
-    "staged_tree_sha256": "395e1468b2d066eb70b5d5d8385478232607f51bec7031f3981313fe2f73f0a4",
+    "staged_tree_sha256": "2aa06f92db239477a0cd7d8d5c2aeca85e2b29f7e75d6d190da2aece3318547d",
     "note": "sources/typedb under test == locked TB revision + this patch set"
   },
   "slatedb_consumption": {

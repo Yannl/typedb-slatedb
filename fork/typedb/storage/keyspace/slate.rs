@@ -46,8 +46,8 @@ use slatedb::{
     bytes::Bytes as SlateBytes,
     config::{ReadOptions, ScanOptions, Settings, WriteOptions},
     object_store::{
-        CopyOptions, GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, ObjectStore, ObjectStoreExt,
-        PutMultipartOptions, PutOptions, PutPayload, PutResult, RenameOptions, aws::AmazonS3Builder,
+        CopyMode, CopyOptions, GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, ObjectStore,
+        ObjectStoreExt, PutMultipartOptions, PutOptions, PutPayload, PutResult, RenameOptions, aws::AmazonS3Builder,
         local::LocalFileSystem, path::Path as ObjectPath, prefix::PrefixStore,
     },
 };
@@ -73,12 +73,49 @@ fn runtime() -> &'static tokio::runtime::Runtime {
 /// runtime); it blocks that thread exactly as the equivalent RocksDB syscall
 /// would.
 fn bridge<T: Send + 'static>(future: impl std::future::Future<Output = T> + Send + 'static) -> T {
+    // Q-13/Q-23 containment: the bridge is BOUNDED. It used to block the
+    // calling thread forever; combined with unbounded lower-layer retries
+    // that made an object-store outage a silent, undiagnosable hang. The
+    // wait now reports every 30s and fail-stops at the deadline - a task
+    // stuck this long is a wedged storage runtime, and neither returning
+    // garbage nor waiting forever is sound. Caller-side cancellation is the
+    // OPEN remainder (it needs fallible signatures up the read stack).
+    // Deadline: containment default, owner decision OD-006.
+    const REPORT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+    const DEADLINE: std::time::Duration = std::time::Duration::from_secs(600);
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
     runtime().spawn(async move {
         // a dropped receiver means the caller thread died; nothing to do
         let _ = sender.send(future.await);
     });
-    receiver.recv().expect("SlateDB storage task terminated without a result (panicked?)")
+    let started = std::time::Instant::now();
+    loop {
+        match receiver.recv_timeout(REPORT_INTERVAL) {
+            Ok(value) => return value,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                let waited = started.elapsed();
+                if waited >= DEADLINE {
+                    logger::error!(
+                        "FATAL: a SlateDB storage task has not completed after {}s. The storage \
+                         runtime is wedged (object store unreachable past its bounded retries, or \
+                         a task deadlock); blocking further is indistinguishable from a hang and \
+                         returning without a result is unsound. Aborting so recovery restarts \
+                         from the durability log.",
+                        waited.as_secs(),
+                    );
+                    std::process::abort()
+                }
+                logger::error!(
+                    "a SlateDB storage task is still running after {}s (deadline {}s)",
+                    waited.as_secs(),
+                    DEADLINE.as_secs(),
+                );
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                panic!("SlateDB storage task terminated without a result (panicked?)")
+            }
+        }
+    }
 }
 
 fn write_options() -> WriteOptions {
@@ -150,6 +187,14 @@ fn settings() -> Settings {
     // compactor-less tests take (settings.l0_max_ssts = 10_000).
     settings.l0_max_ssts = 1_000_000;
     settings.l0_max_ssts_per_key = 1_000_000;
+    // Q-13: SlateDB's wrapper-level object-store retries default to None,
+    // which is documented as "retry transient errors indefinitely". An
+    // infinite lower-layer retry converts an outage into a silent hang that
+    // no caller deadline can see past. Bounded here; the exhausted error
+    // surfaces through the fallible seam and get_prev's own bounded retry
+    // policy decides what is transient (A10). Containment default, not an
+    // SLO (docs/owner-decisions.json OD-006).
+    settings.object_store_max_retries = Some(8);
     settings
 }
 
@@ -375,6 +420,23 @@ impl ObjectStore for NoDeleteStore {
         to: &ObjectPath,
         options: CopyOptions,
     ) -> slatedb::object_store::Result<()> {
+        // Q-27 remainder: copies are CREATE-ONLY through the runtime
+        // principal. An overwrite-mode copy is a delete of the destination's
+        // bytes wearing a copy's name - under the immutable materialisation
+        // posture (inv. 81-83) no runtime path may replace existing
+        // authoritative bytes, and refusing here means a misrouted copy
+        // fails closed instead of clobbering. Create-mode copies (the only
+        // kind the checkpoint paths issue) pass through and collide safely
+        // on the inner store's precondition.
+        if !matches!(options.mode, CopyMode::Create) {
+            return Err(slatedb::object_store::Error::NotImplemented {
+                operation: format!(
+                    "copy {from} -> {to} in overwrite mode (V16 inv. 81-83: the runtime storage \
+                     principal must not replace existing authoritative bytes; use create mode)"
+                ),
+                implementer: "NoDeleteStore".to_owned(),
+            });
+        }
         self.inner.copy_opts(from, to, options).await
     }
 
@@ -712,6 +774,16 @@ impl SlateKeyspace {
     /// pinning (RocksDB's `Checkpoint` is atomic; a naive directory copy is
     /// not, because a concurrent memtable auto-flush can land a new manifest
     /// whose SSTs the copy misses):
+    ///
+    /// **Q-16 scope statement — this is the CONFORMANCE-LANE fixture
+    /// exporter, not a production checkpoint.** Closure is derived by
+    /// listing and copying under the materialisation prefix, which is sound
+    /// here only because the conformance runner is single-actor by
+    /// construction and GC/compaction are disabled. A production checkpoint
+    /// requires a controller-frozen global cut, parsed manifest-root
+    /// closure, an independent scratch-restore digest, and controller-only
+    /// activation (F6r/16.3) — none of which this function claims. Do not
+    /// wire it into any production path.
     ///
     /// 1. flush the memtable (the checkpoint watermark was captured by the
     ///    caller before this, so the flush covers it);
@@ -1325,7 +1397,8 @@ mod materialization_tests {
     use std::{collections::BTreeMap, sync::Arc};
 
     use slatedb::object_store::{
-        ObjectStore, ObjectStoreExt, PutPayload, local::LocalFileSystem, path::Path as ObjectPath,
+        CopyMode, CopyOptions, ObjectStore, ObjectStoreExt, PutPayload, local::LocalFileSystem,
+        path::Path as ObjectPath,
     };
     use test_utils::create_tmp_dir;
 
@@ -1512,6 +1585,61 @@ mod materialization_tests {
             "a cache the process cannot clear must be an error - discarding it opens the \
              keyspace on entries keyed to a previous materialisation's object paths",
         );
+    }
+
+    #[test]
+    fn copies_through_the_runtime_principal_are_create_only() {
+        // Q-27 remainder: an overwrite-mode copy is a delete of the
+        // destination's bytes wearing a copy's name. Create-mode copies pass
+        // through (colliding safely on the inner store's precondition);
+        // overwrite mode is refused before the inner store sees it.
+        let (_store_dir, inner) = remote_fixture();
+        let store = Arc::new(NoDeleteStore::new(inner));
+        let source = ObjectPath::from("copy/source");
+        let occupied = ObjectPath::from("copy/occupied");
+        bridge({
+            let (store, source, occupied) = (store.clone(), source.clone(), occupied.clone());
+            async move {
+                store.put(&source, PutPayload::from_static(b"source bytes")).await?;
+                store.put(&occupied, PutPayload::from_static(b"authoritative bytes")).await
+            }
+        })
+        .unwrap();
+
+        // the plain `copy()` extension defaults to OVERWRITE mode: refused
+        let overwrite = bridge({
+            let (store, source, occupied) = (store.clone(), source.clone(), occupied.clone());
+            async move { store.copy(&source, &occupied).await }
+        });
+        assert!(
+            matches!(overwrite, Err(slatedb::object_store::Error::NotImplemented { .. })),
+            "an overwrite-mode copy must be a typed denial, got: {overwrite:?}",
+        );
+        let survives = bridge({
+            let (inner, occupied) = (store.inner.clone(), occupied.clone());
+            async move { inner.get(&occupied).await?.bytes().await }
+        })
+        .unwrap();
+        assert_eq!(&survives[..], b"authoritative bytes", "the destination is untouched");
+
+        // create-mode copy to a fresh destination passes through
+        let fresh = ObjectPath::from("copy/fresh");
+        bridge({
+            let (store, source, fresh) = (store.clone(), source.clone(), fresh.clone());
+            async move {
+                store.copy_opts(&source, &fresh, CopyOptions { mode: CopyMode::Create, ..Default::default() }).await
+            }
+        })
+        .unwrap();
+        // and a create-mode copy onto an EXISTING destination fails on the
+        // inner store's own precondition, not by silently overwriting
+        let collision = bridge({
+            let (store, source, occupied) = (store.clone(), source.clone(), occupied.clone());
+            async move {
+                store.copy_opts(&source, &occupied, CopyOptions { mode: CopyMode::Create, ..Default::default() }).await
+            }
+        });
+        assert!(collision.is_err(), "create-mode collision must not overwrite");
     }
 
     #[test]

@@ -51,6 +51,16 @@
       "why_safe": "Both live entries are upstream defects (todo!() stubs and a declared #[ignore]) that fail identically on the RocksDB oracle, so they are baseline-equal rather than port debt. The dates are placeholders chosen to be finite.",
       "owner_decision_changes": "The maximum permitted exclusion lifetime and who may extend one.",
       "referenced_by": ["tools/catalog/verdict.py", "docs/evidence/flake-ledger.json"]
+    },
+    {
+      "id": "OD-006",
+      "status": "OPEN",
+      "title": "Storage async-bridge deadline and object-store retry bound",
+      "question": "How long may a single storage operation wait on the async->sync bridge before fail-stop, and how many times may SlateDB retry a failing object-store call?",
+      "default_in_force": "Bridge: report every 30 s (ERROR log naming the pending operation), abort the process at 600 s (fork/typedb/storage/keyspace/slate.rs, bridge()). Object store: object_store_max_retries = Some(8) in SlateKeyspace::settings(), replacing the upstream unbounded default.",
+      "why_safe": "The previous behaviour was an unbounded recv() over an unbounded retry loop: a persistent R2/S3 fault presented as a silent forever-hang holding storage locks. Fail-stop with a named operation is the same doctrine as Q-01's guard, and 600 s / 8 retries are far beyond any healthy operation, so the bounds fire only on genuine faults. Neither value is tuned for availability.",
+      "owner_decision_changes": "Both values, the report cadence, and whether the terminal action stays a process abort or becomes a typed storage-unavailable error surfaced through fallible read/write signatures.",
+      "referenced_by": ["fork/typedb/storage/keyspace/slate.rs", "docs/evidence/G3/controls/storage-containment-controls.txt"]
     }
   ]
 }

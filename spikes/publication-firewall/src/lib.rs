@@ -119,28 +119,13 @@ impl FirewalledStore {
         operation: &'static str,
         path: &ObjectPath,
     ) -> slatedb::object_store::Result<()> {
-        let publication = Self::is_publication_path(path);
-        let allowed = !publication || self.credential_domain == self.authority.current();
-        self.log.lock().unwrap().push(MutationAttempt {
-            path: path.to_string(),
+        admit_gate(
+            &self.authority,
+            &self.log,
+            self.credential_domain,
             operation,
-            credential_domain: self.credential_domain,
-            publication,
-            allowed,
-        });
-        if allowed {
-            return Ok(());
-        }
-        Err(slatedb::object_store::Error::Generic {
-            store: "PublicationFirewall",
-            source: format!(
-                "publication fenced: credential domain {} is revoked (current {}); \
-                 {operation} {path} refused",
-                self.credential_domain,
-                self.authority.current(),
-            )
-            .into(),
-        })
+            path,
+        )
     }
 }
 
@@ -236,30 +221,44 @@ impl ObjectStore for FirewalledStore {
                 let inner = inner.clone();
                 async move {
                     let location = location?;
-                    let publication = FirewalledStore::is_publication_path(&location);
-                    let allowed = !publication || this_domain == authority.current();
-                    log.lock().unwrap().push(MutationAttempt {
-                        path: location.to_string(),
-                        operation: "delete",
-                        credential_domain: this_domain,
-                        publication,
-                        allowed,
-                    });
-                    if !allowed {
-                        return Err(slatedb::object_store::Error::Generic {
-                            store: "PublicationFirewall",
-                            source: format!(
-                                "publication fenced: credential domain {this_domain} is revoked; \
-                                 delete {location} refused"
-                            )
-                            .into(),
-                        });
-                    }
+                    admit_gate(&authority, &log, this_domain, "delete", &location)?;
                     inner.delete(&location).await.map(|()| location)
                 }
             })
             .boxed()
     }
+}
+
+/// The one gate. Free function (not `&self`) so the `'static` delete stream
+/// can share it with the ordinary methods - the gate logic must never fork.
+fn admit_gate(
+    authority: &PublicationAuthority,
+    log: &Mutex<Vec<MutationAttempt>>,
+    credential_domain: u64,
+    operation: &'static str,
+    path: &ObjectPath,
+) -> slatedb::object_store::Result<()> {
+    let publication = FirewalledStore::is_publication_path(path);
+    let allowed = !publication || credential_domain == authority.current();
+    log.lock().unwrap().push(MutationAttempt {
+        path: path.to_string(),
+        operation,
+        credential_domain,
+        publication,
+        allowed,
+    });
+    if allowed {
+        return Ok(());
+    }
+    Err(slatedb::object_store::Error::Generic {
+        store: "PublicationFirewall",
+        source: format!(
+            "publication fenced: credential domain {credential_domain} is revoked (current {}); \
+             {operation} {path} refused",
+            authority.current(),
+        )
+        .into(),
+    })
 }
 
 #[cfg(test)]

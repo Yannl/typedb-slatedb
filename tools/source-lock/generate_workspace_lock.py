@@ -20,6 +20,7 @@ Modes:
                       generated_at is not recorded at all); non-zero on
                       drift. Wired into lint_source_lock.py.
 """
+import argparse
 import hashlib
 import json
 import pathlib
@@ -29,6 +30,15 @@ import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 OUT = REPO / "source-lock" / "workspace-lock.json"
+
+# one definition each: the fork-file iterator comes from stage.py (a private
+# copy here silently diverged the lock's digest from what staging does the
+# moment either side changed), and the rustfmt pin from run_static (which
+# executes it)
+sys.path.insert(0, str(REPO / "tools" / "fork"))
+sys.path.insert(0, str(REPO / "tools" / "catalog"))
+import stage  # noqa: E402
+from run_static import RUSTFMT_TOOLCHAIN  # noqa: E402
 
 WORKSPACES = {
     "fork/typedb": {"manifest": "fork/typedb/Cargo.toml", "lockfile": "fork/typedb/Cargo.lock"},
@@ -53,7 +63,7 @@ ARTIFACTS = [
 
 TOOLCHAINS = {
     "rust_parity": "1.93.0",
-    "rustfmt_pinned_nightly": "nightly-2026-04-15",
+    "rustfmt_pinned_nightly": RUSTFMT_TOOLCHAIN,
     # the qualification lane is recorded by its evidence run, not asserted here
 }
 
@@ -77,16 +87,7 @@ def fork_staging() -> dict:
     executed tree's identity exactly `locked revision + this digest`.
     """
     fork_root = REPO / "fork" / "typedb"
-    skip_dirs = {".git", "target", "node_modules"}
-    fork_only = {"PORT-LEDGER.md", "UPSTREAM-PROVENANCE"}
-    files = []
-    for f in sorted(fork_root.rglob("*")):
-        if not f.is_file():
-            continue
-        rel = f.relative_to(fork_root)
-        if rel.parts[0] in skip_dirs or str(rel) in fork_only:
-            continue
-        files.append((str(rel), sha256(f)))
+    files = [(str(rel), sha256(fork_root / rel)) for rel in stage.fork_files()]
     h = hashlib.sha256()
     for rel, digest in files:
         h.update(f"{rel}\0{digest}\0".encode())
@@ -154,8 +155,15 @@ VOLATILE = {"repo_commit"}
 
 
 def main() -> int:
+    # argparse, deliberately: with bare sys.argv sniffing a mistyped
+    # `--chek` silently fell through to GENERATE mode and overwrote the
+    # committed lock - a verify that becomes a write on a typo
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check", action="store_true",
+                        help="regenerate in memory and diff against the committed file")
+    args = parser.parse_args()
     doc = build()
-    if "--check" in sys.argv:
+    if args.check:
         if not OUT.exists():
             print("workspace-lock: MISSING (run the generator)")
             return 1

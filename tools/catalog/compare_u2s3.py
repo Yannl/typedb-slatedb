@@ -27,6 +27,7 @@ never accept, and each one is closed by a specific rule here:
 
 Usage: compare_u2s3.py <run-dir-name>   (under docs/evidence/G3/)
 """
+import argparse
 import json
 import pathlib
 import sys
@@ -113,9 +114,12 @@ def profiles(rows):
 
 
 def main():
-    run_dir = sys.argv[1] if len(sys.argv) > 1 else "u2s3-full"
-    u2s3 = json.load(open(REPO / f"docs/evidence/G3/{run_dir}/u0-results.json"))
-    u1 = json.load(open(REPO / "docs/evidence/G3/u1-full/u0-results.json"))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("run_dir", nargs="?", default="u2s3-full",
+                        help="evidence dir under docs/evidence/G3 to compare against the U1 oracle")
+    run_dir = parser.parse_args().run_dir
+    u2s3 = json.loads((REPO / f"docs/evidence/G3/{run_dir}/u0-results.json").read_text())
+    u1 = json.loads((REPO / "docs/evidence/G3/u1-full/u0-results.json").read_text())
 
     def by_target(run):
         out = {}
@@ -194,7 +198,7 @@ def main():
         "divergent_targets": diffs,
         "unexplained_count": len(unexplained),
     }
-    path = REPO / (f"docs/evidence/G3/u2s3-vs-oracle-comparison.json" if run_dir == "u2s3-full"
+    path = REPO / ("docs/evidence/G3/u2s3-vs-oracle-comparison.json" if run_dir == "u2s3-full"
                    else f"docs/evidence/G3/{run_dir}-vs-oracle-comparison.json")
     path.write_text(json.dumps(out, indent=1) + "\n")
     print(json.dumps(out["u2s3_summary"], indent=1))

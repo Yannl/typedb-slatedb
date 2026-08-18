@@ -28,7 +28,7 @@
  * to development keys.
  */
 
-import { fromHex, utf8 } from "./journal-crypto.ts";
+import { fromHex, hex, utf8 } from "./journal-crypto.ts";
 
 /** The known development constants. Centralised so "is this a dev key?" is
  *  a set-membership question, not a grep. */
@@ -84,11 +84,6 @@ function requireManagedKey(name: string, value: string | undefined, devConstant:
   return bytes;
 }
 
-function hex(bytes: Uint8Array): string {
-  let out = "";
-  for (const b of bytes) out += b.toString(16).padStart(2, "0");
-  return out;
-}
 
 export function resolveKeyConfig(env: KeyConfigEnv): ResolvedKeys {
   const profile = env.CONTROLLER_KEY_PROFILE ?? "managed";

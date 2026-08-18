@@ -519,12 +519,8 @@ impl<Durability> MVCCStorage<Durability> {
         Ok(false)
     }
 
-    /// Wait for a requested durability sync and surface its outcome as a typed
-    /// error. A disconnected channel means the durability service shut down (or
-    /// died) without acknowledging - never a success.
     /// Fail-stop on commit-path sync ambiguity (see call sites for rationale).
     fn fatal_commit_durability_ambiguity(name: &str, error: &DurabilityClientError) -> ! {
-        use tracing::error;
         error!(
             "FATAL: WAL sync could not be confirmed while committing to storage '{name}': {error:?}. \
              Commit durability is ambiguous; aborting so recovery can re-derive state from the WAL."
@@ -532,6 +528,9 @@ impl<Durability> MVCCStorage<Durability> {
         std::process::abort()
     }
 
+    /// Wait for a requested durability sync and surface its outcome as a typed
+    /// error. A disconnected channel means the durability service shut down (or
+    /// died) without acknowledging - never a success.
     fn confirm_sync(
         sync_notifier: &mpsc::Receiver<Result<(), DurabilityServiceError>>,
     ) -> Result<(), DurabilityClientError> {

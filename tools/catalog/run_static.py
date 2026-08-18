@@ -41,11 +41,7 @@ def bazel_glob(package_dir: pathlib.Path, patterns, exclude=()):
     """Bazel glob: relative patterns, files only, stops at subpackage boundaries."""
     results = set()
     for pattern in patterns:
-        if "**" in pattern:
-            candidates = package_dir.glob(pattern)
-        else:
-            candidates = package_dir.glob(pattern)
-        for path in candidates:
+        for path in package_dir.glob(pattern):
             if not path.is_file():
                 continue
             rel = path.relative_to(package_dir)
@@ -66,7 +62,6 @@ def bazel_glob(package_dir: pathlib.Path, patterns, exclude=()):
 
 
 def parse_rule_block(build_text: str, rule: str, name: str) -> str:
-    pattern = re.compile(rule + r"\(\s*\n(?:[^()]*\((?:[^()]*\([^()]*\))*[^()]*\))*?[^()]*?name = \"" + re.escape(name) + r"\"", re.S)
     # simpler: find each rule invocation by balancing parens
     for m in re.finditer(rule + r"\(", build_text):
         depth, i = 1, m.end()
@@ -87,14 +82,11 @@ def eval_rule_attrs(block: str, package_dir: pathlib.Path):
     inner = block[block.index("(") + 1 : block.rindex(")")]
     attrs = {}
 
+    # Bazel applies exclude within the glob call itself
     def glob(patterns, exclude=(), **_kwargs):
-        return bazel_glob(package_dir, patterns, exclude=())  # exclude applied by caller attr, see below
-
-    # We must keep glob() exclude semantics: Bazel applies exclude within the glob call.
-    def glob_full(patterns, exclude=(), **_kwargs):
         return bazel_glob(package_dir, patterns, exclude=exclude)
 
-    namespace = {"glob": glob_full, "True": True, "False": False}
+    namespace = {"glob": glob, "True": True, "False": False}
 
     def record(**kwargs):
         attrs.update(kwargs)
@@ -158,7 +150,8 @@ def run_checkstyle(target_id: str):
     files = sorted(set(include if all(isinstance(i, str) for i in include) else sum(include, [])))
     exclude = attrs.get("exclude", [])
     if exclude:
-        files = [f for f in files if f not in set(exclude) and not any(fnmatch.fnmatch(f, p) for p in exclude)]
+        excluded = set(exclude)
+        files = [f for f in files if f not in excluded and not any(fnmatch.fnmatch(f, p) for p in exclude)]
     header_regexes = load_header_regexes(attrs.get("license_type", "mpl-header"))
     failures = []
     checked = 0
@@ -244,7 +237,7 @@ def main():
 
     catalog = json.loads(CATALOG.read_text())
     static_targets = sorted({l["target_id"] for l in catalog["leaf_cases"] if l["kind"] == "STATIC_CHECK"})
-    checkstyle_targets = [t for t in static_targets if ":checkstyle" in t.rsplit(":", 1)[-1] or t.rsplit(":", 1)[-1].startswith("checkstyle")]
+    checkstyle_targets = [t for t in static_targets if t.rsplit(":", 1)[-1].startswith("checkstyle")]
     rustfmt_targets = [t for t in static_targets if t.rsplit(":", 1)[-1].startswith("rustfmt")]
     other = [t for t in static_targets if t not in checkstyle_targets and t not in rustfmt_targets]
 

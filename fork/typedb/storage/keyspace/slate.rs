@@ -806,16 +806,13 @@ impl SlateKeyspace {
 
     fn checkpoint_local(&self, checkpoint_keyspace_dir: &Path) -> Result<(), Arc<slatedb::Error>> {
         let manifest_dir = find_manifest_dir(&self.path).map_err(|error| Arc::new(io_error(error)))?;
+        // lexicographic max = newest manifest, same pin as checkpoint_remote
         let pinned_manifest = match &manifest_dir {
-            Some(dir) => {
-                let mut entries: Vec<PathBuf> = fs::read_dir(dir)
-                    .map_err(|error| Arc::new(io_error(error)))?
-                    .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-                    .filter(|path| path.is_file())
-                    .collect();
-                entries.sort();
-                entries.into_iter().next_back()
-            }
+            Some(dir) => fs::read_dir(dir)
+                .map_err(|error| Arc::new(io_error(error)))?
+                .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+                .filter(|path| path.is_file())
+                .max(),
             None => None,
         };
 

@@ -19,6 +19,7 @@ exec permission for the test to spawn it.
 """
 import gzip
 import hashlib
+import json
 import pathlib
 import shutil
 import subprocess
@@ -36,8 +37,13 @@ NAME = f"typedb-all-linux-x86_64-{VERSION}"
 # tools/fork/stage.py and the source-lock lint)
 OUT = REPO / "sources" / "assembly-artifacts" / "typedb-all-linux-x86_64.tar.gz"
 
-CONSOLE_SHA = "058145121f478f2f8ad10991cd17e64e12957b93e0836ac180fe9d095a4c4e40"
-LOADER_SHA = "c46fba13d835701e43778a2ea1e2dbf0e031d206c55c6c8fec28e03c274d37f9"
+
+def locked_fixture_sha(node_id):
+    """Fixture digests come from source-lock.json (the authority), never a
+    third hand-copied constant that can drift from it."""
+    lock = json.loads((REPO / "source-lock" / "source-lock.json").read_text())
+    node = next(n for n in lock["nodes"] if n["id"] == node_id)
+    return node["sha256"]
 
 
 def sha256(p):
@@ -57,8 +63,13 @@ def main():
 
     console_tar = FIX / "console" / "typedb-console-linux-x86_64-3.12.0.tar.gz"
     loader_tar = FIX / "loader" / "typedb-loader-linux-x86_64-3.12.0.tar.gz"
-    assert sha256(console_tar) == CONSOLE_SHA, "console fixture hash mismatch"
-    assert sha256(loader_tar) == LOADER_SHA, "loader fixture hash mismatch"
+    # sys.exit, not assert: under `python3 -O` asserts are STRIPPED, and a
+    # tampered fixture would be silently packaged into the archive the
+    # corpus runs - the exact fail-open this toolchain exists to prevent
+    if sha256(console_tar) != locked_fixture_sha("TCONSOLE"):
+        sys.exit("console fixture hash mismatch against source-lock.json")
+    if sha256(loader_tar) != locked_fixture_sha("TLOADER"):
+        sys.exit("loader fixture hash mismatch against source-lock.json")
 
     with tempfile.TemporaryDirectory() as td:
         td = pathlib.Path(td)

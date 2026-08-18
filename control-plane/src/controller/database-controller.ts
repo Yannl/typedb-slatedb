@@ -33,7 +33,6 @@ import {
 } from "./core/capability.ts";
 
 export interface Env {
-  CONTAINER_LIFECYCLE: DurableObjectNamespace;
   /** Q-24: key posture. "managed" (the default when unset - a lost variable
    *  refuses, it never downgrades) requires provisioned hex keys via the
    *  variables below; "local-dev" is the L1 scaffolding posture with loud
@@ -109,51 +108,51 @@ export class DatabaseControllerDO extends DurableObject {
    * synchronous validate -> allocate -> outbox transaction.
    */
   finalizeWalRecord(req: FinalizeRequest): FinalizeResult {
-    return this.core().finalizeWalRecord(req);
+    return this.controllerCore.finalizeWalRecord(req);
   }
 
   finalizeBatch(
     reqs: FinalizeRequest[], envelope?: Parameters<ControllerCore["finalizeBatch"]>[1],
   ): ReturnType<ControllerCore["finalizeBatch"]> {
-    return this.core().finalizeBatch(reqs, envelope);
+    return this.controllerCore.finalizeBatch(reqs, envelope);
   }
 
   registerSession(databaseId: string, generation: number, startupSessionId: string): void {
-    this.core().registerSession(databaseId, generation, startupSessionId);
+    this.controllerCore.registerSession(databaseId, generation, startupSessionId);
   }
 
   reserveSession(databaseId: string, generation: number, startupSessionId: string, holder: string):
     ReturnType<ControllerCore["reserveSession"]> {
-    return this.core().reserveSession(databaseId, generation, startupSessionId, holder);
+    return this.controllerCore.reserveSession(databaseId, generation, startupSessionId, holder);
   }
 
   attestSession(databaseId: string, startupSessionId: string, processNonce: string):
     ReturnType<ControllerCore["attestSession"]> {
-    return this.core().attestSession(databaseId, startupSessionId, processNonce);
+    return this.controllerCore.attestSession(databaseId, startupSessionId, processNonce);
   }
 
   activateSession(
     databaseId: string, startupSessionId: string,
     proof: Parameters<ControllerCore["activateSession"]>[2],
   ): ReturnType<ControllerCore["activateSession"]> {
-    return this.core().activateSession(databaseId, startupSessionId, proof);
+    return this.controllerCore.activateSession(databaseId, startupSessionId, proof);
   }
 
   renewLease(databaseId: string, startupSessionId: string, leaseMs: number):
     ReturnType<ControllerCore["renewLease"]> {
-    return this.core().renewLease(databaseId, startupSessionId, leaseMs);
+    return this.controllerCore.renewLease(databaseId, startupSessionId, leaseMs);
   }
 
   beginDrain(databaseId: string, startupSessionId: string): ReturnType<ControllerCore["beginDrain"]> {
-    return this.core().beginDrain(databaseId, startupSessionId);
+    return this.controllerCore.beginDrain(databaseId, startupSessionId);
   }
 
   revokeSession(databaseId: string, startupSessionId: string): ReturnType<ControllerCore["revokeSession"]> {
-    return this.core().revokeSession(databaseId, startupSessionId);
+    return this.controllerCore.revokeSession(databaseId, startupSessionId);
   }
 
   fenceSession(databaseId: string, startupSessionId: string): void {
-    this.core().fenceSession(databaseId, startupSessionId);
+    this.controllerCore.fenceSession(databaseId, startupSessionId);
   }
 
   setBudgets(
@@ -161,23 +160,23 @@ export class DatabaseControllerDO extends DurableObject {
     budgets: Parameters<ControllerCore["setBudgets"]>[1],
     startupSessionId: string,
   ): ReturnType<ControllerCore["setBudgets"]> {
-    return this.core().setBudgets(databaseId, budgets, startupSessionId);
+    return this.controllerCore.setBudgets(databaseId, budgets, startupSessionId);
   }
 
   exactLookup(databaseId: string, generation: number, appendLsn: bigint): ReturnType<ControllerCore["exactLookup"]> {
-    return this.core().exactLookup(databaseId, generation, appendLsn);
+    return this.controllerCore.exactLookup(databaseId, generation, appendLsn);
   }
 
   auditContiguity(databaseId: string, generation: number): ReturnType<ControllerCore["auditContiguity"]> {
-    return this.core().auditContiguity(databaseId, generation);
+    return this.controllerCore.auditContiguity(databaseId, generation);
   }
 
   head(databaseId: string, generation: number): ReturnType<ControllerCore["head"]> {
-    return this.core().head(databaseId, generation);
+    return this.controllerCore.head(databaseId, generation);
   }
 
   openIterator(databaseId: string, generation: number): ReturnType<ControllerCore["openIterator"]> {
-    return this.core().openIterator(databaseId, generation);
+    return this.controllerCore.openIterator(databaseId, generation);
   }
 
   scan(
@@ -185,36 +184,36 @@ export class DatabaseControllerDO extends DurableObject {
     generation: number,
     opts: Parameters<ControllerCore["scan"]>[2],
   ): ReturnType<ControllerCore["scan"]> {
-    return this.core().scan(databaseId, generation, opts);
+    return this.controllerCore.scan(databaseId, generation, opts);
   }
 
   lastByType(databaseId: string, generation: number, recordType: number): ReturnType<ControllerCore["lastByType"]> {
-    return this.core().lastByType(databaseId, generation, recordType);
+    return this.controllerCore.lastByType(databaseId, generation, recordType);
   }
 
   queryOperation(
     databaseId: string, generation: number, operationId: string, startupSessionId: string,
   ): ReturnType<ControllerCore["queryOperation"]> {
-    return this.core().queryOperation(databaseId, generation, operationId, startupSessionId);
+    return this.controllerCore.queryOperation(databaseId, generation, operationId, startupSessionId);
   }
 
   resolveSnapshot(databaseId: string, generation: number, snapshotId: string):
     ReturnType<ControllerCore["resolveSnapshot"]> {
-    return this.core().resolveSnapshot(databaseId, generation, snapshotId);
+    return this.controllerCore.resolveSnapshot(databaseId, generation, snapshotId);
   }
 
   outboxPeek(limit: number): ReturnType<ControllerCore["outboxPeek"]> {
-    return this.core().outboxPeek(limit);
+    return this.controllerCore.outboxPeek(limit);
   }
 
   outboxAck(
     databaseId: string, upToControlSeq: bigint, startupSessionId: string,
   ): ReturnType<ControllerCore["outboxAck"]> {
-    return this.core().outboxAck(databaseId, upToControlSeq, startupSessionId);
+    return this.controllerCore.outboxAck(databaseId, upToControlSeq, startupSessionId);
   }
 
   verifyJournal(): ReturnType<ControllerCore["verifyJournal"]> {
-    return this.core().verifyJournal();
+    return this.controllerCore.verifyJournal();
   }
 
   /**
@@ -235,7 +234,7 @@ export class DatabaseControllerDO extends DurableObject {
     maxBytes?: number;
     ttlMs?: number;
   }): { token: string; key?: string; expiresAtMs: number; incarnation: number } {
-    const incarnation = this.core().currentIncarnation();
+    const incarnation = this.controllerCore.currentIncarnation();
     const expiresAtMs = Date.now() + Math.min(Math.max(spec.ttlMs ?? 60_000, 1), 3_600_000);
     const key = spec.method === "PUT_PAYLOAD" && spec.digest !== undefined
       ? `p/${spec.databaseId}/${spec.digest}`
@@ -286,22 +285,22 @@ export class DatabaseControllerDO extends DurableObject {
     const nowMs = Date.now();
     const checked = checkCapability(this.capabilityKey, token, {
       ...expect,
-      currentIncarnation: this.core().currentIncarnation(),
+      currentIncarnation: this.controllerCore.currentIncarnation(),
       nowMs,
     });
     if (!checked.ok) return checked;
-    if (!this.core().burnCapabilityNonce(checked.payload.nonce, checked.payload.expiresAtMs, nowMs)) {
+    if (!this.controllerCore.burnCapabilityNonce(checked.payload.nonce, checked.payload.expiresAtMs, nowMs)) {
       return { ok: false, error: "CAPABILITY_REPLAYED" };
     }
     return checked;
   }
 
   bumpIncarnation(): number {
-    return this.core().bumpIncarnation();
+    return this.controllerCore.bumpIncarnation();
   }
 
   openCheckpointCut(databaseId: string, generation: number, cutId: string): ReturnType<ControllerCore["openCheckpointCut"]> {
-    return this.core().openCheckpointCut(databaseId, generation, cutId);
+    return this.controllerCore.openCheckpointCut(databaseId, generation, cutId);
   }
 
   activateCheckpointCut(
@@ -309,19 +308,15 @@ export class DatabaseControllerDO extends DurableObject {
     cutId: string,
     evidence: Parameters<ControllerCore["activateCheckpointCut"]>[2],
   ): ReturnType<ControllerCore["activateCheckpointCut"]> {
-    return this.core().activateCheckpointCut(databaseId, cutId, evidence);
+    return this.controllerCore.activateCheckpointCut(databaseId, cutId, evidence);
   }
 
   activeCheckpointCut(databaseId: string, generation: number): ReturnType<ControllerCore["activeCheckpointCut"]> {
-    return this.core().activeCheckpointCut(databaseId, generation);
+    return this.controllerCore.activeCheckpointCut(databaseId, generation);
   }
 
   verifyJournalAnchored(): ReturnType<ControllerCore["verifyJournalAnchored"]> {
-    return this.core().verifyJournalAnchored();
-  }
-
-  private core(): ControllerCore {
-    return this.controllerCore;
+    return this.controllerCore.verifyJournalAnchored();
   }
 
   /** Register (or reschedule) a periodic task and arm the alarm. */

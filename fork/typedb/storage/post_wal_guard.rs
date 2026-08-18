@@ -115,6 +115,12 @@ enum State {
     /// Terminal, but recorded rather than executed: used by tests to observe
     /// the transition the production guard turns into a process abort.
     Unresolved(UnresolvedReason),
+    /// Terminal test-mode record of an attempted second terminal transition
+    /// (production: process abort). Without this the illegal arm of the
+    /// transition table was unobservable in tests.
+    IllegalTransition {
+        action: &'static str,
+    },
 }
 
 /// Armed across the post-WAL region of one commit.
@@ -148,12 +154,18 @@ impl PostWalCommitGuard {
     /// append with an exact sequence may advance the known-assigned
     /// obligation; an ambiguous outcome must not invent one.
     pub fn append_accepted(&mut self, sequence: SequenceNumber) {
-        match &mut self.state {
-            State::Armed { sequence: slot } => *slot = Some(sequence),
-            other => Self::illegal(&self.database, "append_accepted", other, self.fail_stop),
+        if let State::Armed { sequence: slot } = &mut self.state {
+            *slot = Some(sequence);
+        } else {
+            self.illegal("append_accepted");
         }
     }
 
+    /// No production caller yet, deliberately: the current lane arms the
+    /// guard immediately before `sequenced_write`, so no pre-append exit
+    /// exists. The J.5 resolver's proved-KNOWN_NOT_APPENDED path (directive
+    /// §9.2 step 1) lands here when it is built; the transition table keeps
+    /// the slot so that build cannot invent a second, weaker exit.
     pub fn resolved_known_not_appended(&mut self) {
         self.transition(Resolution::KnownNotAppended);
     }
@@ -194,21 +206,26 @@ impl PostWalCommitGuard {
     }
 
     fn transition(&mut self, resolution: Resolution) {
-        match &self.state {
-            State::Armed { .. } => self.state = State::Resolved(resolution),
-            other => Self::illegal(&self.database, "resolve", other, self.fail_stop),
+        if matches!(self.state, State::Armed { .. }) {
+            self.state = State::Resolved(resolution);
+        } else {
+            self.illegal("resolve");
         }
     }
 
-    fn illegal(database: &str, action: &str, state: &State, fail_stop: bool) {
+    fn illegal(&mut self, action: &'static str) {
         let message = format!(
-            "FATAL: illegal post-WAL guard transition '{action}' from {state:?} in database \
-             '{database}': a commit obligation may reach a terminal state exactly once."
+            "FATAL: illegal post-WAL guard transition '{action}' from {:?} in database \
+             '{}': a commit obligation may reach a terminal state exactly once.",
+            self.state, self.database,
         );
-        if fail_stop {
+        if self.fail_stop {
             logger::error!("{message}");
             std::process::abort()
         }
+        // test mode: record the attempt as terminal so the illegal arm of
+        // the transition table is observable, never silently swallowed
+        self.state = State::IllegalTransition { action };
     }
 
     #[cfg(test)]
@@ -228,6 +245,14 @@ impl PostWalCommitGuard {
     pub fn resolution(&self) -> Option<&Resolution> {
         match &self.state {
             State::Resolved(resolution) => Some(resolution),
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn illegal_action(&self) -> Option<&'static str> {
+        match self.state {
+            State::IllegalTransition { action } => Some(action),
             _ => None,
         }
     }
@@ -326,5 +351,23 @@ mod tests {
         guard.append_accepted(seq(2));
         assert!(guard.is_armed(), "nothing resolves an obligation implicitly");
         guard.resolved_visibility_complete(seq(2));
+    }
+
+    /// The illegal arm of the transition table: a second terminal transition
+    /// (or a post-terminal append) is recorded, never absorbed - in
+    /// production each of these aborts the process.
+    #[test]
+    fn a_second_terminal_transition_is_illegal_and_observable() {
+        let mut guard = PostWalCommitGuard::arm_for_test("db");
+        guard.append_accepted(seq(4));
+        guard.resolved_visibility_complete(seq(4));
+        guard.resolved_abort(seq(4)); // double resolve: the defect under test
+        assert_eq!(guard.illegal_action(), Some("resolve"));
+        assert_eq!(guard.resolution(), None, "an illegal transition is terminal, not a quiet keep-first");
+
+        let mut late_append = PostWalCommitGuard::arm_for_test("db");
+        late_append.resolved_known_not_appended();
+        late_append.append_accepted(seq(5));
+        assert_eq!(late_append.illegal_action(), Some("append_accepted"));
     }
 }

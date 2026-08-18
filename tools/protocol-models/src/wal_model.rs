@@ -26,12 +26,14 @@ pub type ControlSeq = u64;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SequencingKind {
     Sequenced,
-    Unsequenced { logical_key: Option<StatusKey> },
+    Unsequenced { logical_key: Option<WalStatusKey> },
 }
 
-/// StatusKey = (record type, target commit sequence) — brief §9.5.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct StatusKey {
+/// WalStatusKey = (record type, target commit sequence) — brief §9.5.
+/// (Named apart from resolver_model::StatusKey, which keys resolution
+/// certificates by (database, generation, commit sequence).)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct WalStatusKey {
     pub record_type: u16,
     pub target_sequence: TypeSequence,
 }
@@ -74,13 +76,18 @@ pub struct WalState {
     next_control_seq: ControlSeq,
     records: Vec<FinalizedRecord>,
     by_operation: BTreeMap<OperationId, usize>,
-    status_singletons: BTreeMap<StatusKey, usize>,
+    status_singletons: BTreeMap<WalStatusKey, usize>,
     current_session: u64,
 }
 
 impl WalState {
     pub fn new() -> Self {
-        WalState { next_type_sequence: 1, next_append_lsn: 0, next_control_seq: 1, ..Default::default() }
+        WalState {
+            next_type_sequence: 1,
+            next_append_lsn: 0,
+            next_control_seq: 1,
+            ..Default::default()
+        }
     }
 
     pub fn open_session(&mut self) -> u64 {
@@ -113,7 +120,10 @@ impl WalState {
             return Err(FinalizeError::OperationDigestConflict);
         }
         // status singleton dedupe/conflict BEFORE any allocation (inv. 49–51)
-        if let SequencingKind::Unsequenced { logical_key: Some(key) } = &sequencing {
+        if let SequencingKind::Unsequenced {
+            logical_key: Some(key),
+        } = &sequencing
+        {
             if let Some(&ix) = self.status_singletons.get(key) {
                 let existing = &self.records[ix];
                 if existing.verdict == verdict {
@@ -145,7 +155,10 @@ impl WalState {
         let ix = self.records.len();
         self.records.push(record.clone());
         self.by_operation.insert(operation_id, ix);
-        if let SequencingKind::Unsequenced { logical_key: Some(key) } = sequencing {
+        if let SequencingKind::Unsequenced {
+            logical_key: Some(key),
+        } = sequencing
+        {
             self.status_singletons.insert(key, ix);
         }
         Ok(record)
@@ -153,7 +166,9 @@ impl WalState {
 
     /// Lost-response resolution: query by operation id (inv. 35).
     pub fn query_operation(&self, operation_id: OperationId) -> Option<&FinalizedRecord> {
-        self.by_operation.get(&operation_id).map(|&ix| &self.records[ix])
+        self.by_operation
+            .get(&operation_id)
+            .map(|&ix| &self.records[ix])
     }
 
     /// Sync barrier: proves the exact physical prefix (inv. 36–37). LSNs are
@@ -167,7 +182,11 @@ impl WalState {
     /// `through_append_lsn` is EXCLUSIVE (= the head + 1), so an empty
     /// capture needs no signed sentinel under base-0 LSNs.
     pub fn capture_iterator(&self, from_sequence: TypeSequence) -> IteratorSnapshot {
-        IteratorSnapshot { from_sequence, through_append_lsn: self.next_append_lsn, valid: true }
+        IteratorSnapshot {
+            from_sequence,
+            through_append_lsn: self.next_append_lsn,
+            valid: true,
+        }
     }
 
     /// Iterate under a snapshot: later appends are invisible; a requested
@@ -177,48 +196,45 @@ impl WalState {
         if !snap.valid {
             return Err(IterError::SnapshotInvalid);
         }
-        let head_sequence = self
+        // a sequenced start inside the captured, populated range must exist:
+        // absence there is a hole (corruption); a start below the model's
+        // genesis floor is a legitimate pre-history read
+        let sequenced_in_snapshot = |r: &&FinalizedRecord| {
+            r.append_lsn < snap.through_append_lsn
+                && matches!(r.sequencing, SequencingKind::Sequenced)
+        };
+        if let Some(head) = self
             .records
             .iter()
-            .filter(|r| r.append_lsn < snap.through_append_lsn)
-            .filter(|r| matches!(r.sequencing, SequencingKind::Sequenced))
+            .filter(sequenced_in_snapshot)
             .map(|r| r.type_sequence)
-            .max();
-        if let Some(head) = head_sequence {
-            if snap.from_sequence <= head {
-                let first_present = self
-                    .records
-                    .iter()
-                    .filter(|r| r.append_lsn < snap.through_append_lsn)
-                    .filter(|r| matches!(r.sequencing, SequencingKind::Sequenced))
-                    .any(|r| r.type_sequence == snap.from_sequence);
-                if !first_present && snap.from_sequence != 0 {
-                    // start strictly inside the captured range must exist
-                    if snap.from_sequence <= head {
-                        // it may legitimately be a pre-genesis floor; only a
-                        // gap inside the range is corruption
-                        let min_seq = self
-                            .records
-                            .iter()
-                            .filter(|r| matches!(r.sequencing, SequencingKind::Sequenced))
-                            .map(|r| r.type_sequence)
-                            .min()
-                            .unwrap_or(0);
-                        if snap.from_sequence >= min_seq {
-                            return Err(IterError::MissingRecord);
-                        }
-                    }
-                }
+            .max()
+        {
+            let present = self
+                .records
+                .iter()
+                .filter(sequenced_in_snapshot)
+                .any(|r| r.type_sequence == snap.from_sequence);
+            let min_seq = self
+                .records
+                .iter()
+                .filter(|r| matches!(r.sequencing, SequencingKind::Sequenced))
+                .map(|r| r.type_sequence)
+                .min()
+                .unwrap_or(0);
+            if snap.from_sequence != 0
+                && snap.from_sequence <= head
+                && snap.from_sequence >= min_seq
+                && !present
+            {
+                return Err(IterError::MissingRecord);
             }
         }
         Ok(self
             .records
             .iter()
             .filter(|r| r.append_lsn < snap.through_append_lsn)
-            .filter(|r| match r.sequencing {
-                SequencingKind::Sequenced => r.type_sequence >= snap.from_sequence,
-                SequencingKind::Unsequenced { .. } => r.type_sequence >= snap.from_sequence,
-            })
+            .filter(|r| r.type_sequence >= snap.from_sequence)
             .collect())
     }
 
@@ -257,9 +273,12 @@ impl WalState {
         // status records are admissible (finalize dedupes them by
         // None == None), so this must not unwrap the verdict — a second
         // record for the same key is the violation regardless of verdicts.
-        let mut status_records: BTreeMap<StatusKey, Option<bool>> = BTreeMap::new();
+        let mut status_records: BTreeMap<WalStatusKey, Option<bool>> = BTreeMap::new();
         for r in &self.records {
-            if let SequencingKind::Unsequenced { logical_key: Some(k) } = &r.sequencing {
+            if let SequencingKind::Unsequenced {
+                logical_key: Some(k),
+            } = &r.sequencing
+            {
                 if let Some(prev) = status_records.insert(*k, r.verdict) {
                     return Err(format!(
                         "two physical records for status key {k:?} (verdicts {prev:?} / {:?})",
@@ -289,7 +308,12 @@ mod tests {
         SequencingKind::Sequenced
     }
     fn status(target: TypeSequence) -> SequencingKind {
-        SequencingKind::Unsequenced { logical_key: Some(StatusKey { record_type: 1, target_sequence: target }) }
+        SequencingKind::Unsequenced {
+            logical_key: Some(WalStatusKey {
+                record_type: 1,
+                target_sequence: target,
+            }),
+        }
     }
 
     /// inv. 31: failed uploads consume nothing; holes are impossible by
@@ -326,7 +350,10 @@ mod tests {
         assert_eq!(first, dup);
         assert_eq!(w.records().len(), 1);
         // corrupted retry: same op, different digest
-        assert_eq!(w.finalize(s, 7, 9999, seq(), None), Err(FinalizeError::OperationDigestConflict));
+        assert_eq!(
+            w.finalize(s, 7, 9999, seq(), None),
+            Err(FinalizeError::OperationDigestConflict)
+        );
         // lost-response query path
         assert_eq!(w.query_operation(7).unwrap(), &first);
         w.check_invariants().unwrap();
@@ -344,12 +371,15 @@ mod tests {
         let st = w.finalize(s, 2, 22, status(1), Some(true)).unwrap();
         // same key, same verdict, DIFFERENT operation (recovery repair path):
         // returns the original record, does not append (deterministic op id
-        // is derived from StatusKey+verdict in production; model allows any)
+        // is derived from WalStatusKey+verdict in production; model allows any)
         let repair = w.finalize(s, 3, 33, status(1), Some(true)).unwrap();
         assert_eq!(repair.append_lsn, st.append_lsn);
         assert_eq!(w.records().len(), 2);
         // opposite verdict: fatal, and nothing appended
-        assert_eq!(w.finalize(s, 4, 44, status(1), Some(false)), Err(FinalizeError::StatusConflict));
+        assert_eq!(
+            w.finalize(s, 4, 44, status(1), Some(false)),
+            Err(FinalizeError::StatusConflict)
+        );
         assert_eq!(w.records().len(), 2);
         w.check_invariants().unwrap();
     }
@@ -380,11 +410,21 @@ mod tests {
             w.finalize(s, op, op, seq(), None).unwrap();
         }
         let snap = w.capture_iterator(2);
-        let before: Vec<AppendLsn> = w.iterate(&snap).unwrap().iter().map(|r| r.append_lsn).collect();
+        let before: Vec<AppendLsn> = w
+            .iterate(&snap)
+            .unwrap()
+            .iter()
+            .map(|r| r.append_lsn)
+            .collect();
         for op in 5..=8u64 {
             w.finalize(s, op, op, seq(), None).unwrap();
         }
-        let after: Vec<AppendLsn> = w.iterate(&snap).unwrap().iter().map(|r| r.append_lsn).collect();
+        let after: Vec<AppendLsn> = w
+            .iterate(&snap)
+            .unwrap()
+            .iter()
+            .map(|r| r.append_lsn)
+            .collect();
         assert_eq!(before, after, "iterator observed post-capture appends");
     }
 
@@ -394,7 +434,14 @@ mod tests {
         let mut w = WalState::new();
         let s = w.open_session();
         for op in 1..=5u64 {
-            w.finalize(s, op, op, if op % 2 == 0 { status(op - 1) } else { seq() }, if op % 2 == 0 { Some(true) } else { None }).unwrap();
+            w.finalize(
+                s,
+                op,
+                op,
+                if op % 2 == 0 { status(op - 1) } else { seq() },
+                if op % 2 == 0 { Some(true) } else { None },
+            )
+            .unwrap();
         }
         let (lsn, cseq) = w.sync_barrier();
         assert_eq!(lsn, 4);
@@ -412,7 +459,10 @@ mod tests {
         let s1 = w.open_session();
         w.finalize(s1, 1, 1, seq(), None).unwrap();
         let _s2 = w.open_session(); // restart: strictly newer session
-        assert_eq!(w.finalize(s1, 2, 2, seq(), None), Err(FinalizeError::Fenced));
+        assert_eq!(
+            w.finalize(s1, 2, 2, seq(), None),
+            Err(FinalizeError::Fenced)
+        );
         assert_eq!(w.records().len(), 1);
         w.check_invariants().unwrap();
     }
@@ -428,8 +478,11 @@ mod tests {
         let s1 = w.open_session();
         w.finalize(s1, 1, 1, seq(), None).unwrap();
         let _s2 = w.open_session(); // fence s1
-        // identical (operation_id, digest) retry from the fenced holder
-        assert_eq!(w.finalize(s1, 1, 1, seq(), None), Err(FinalizeError::Fenced));
+                                    // identical (operation_id, digest) retry from the fenced holder
+        assert_eq!(
+            w.finalize(s1, 1, 1, seq(), None),
+            Err(FinalizeError::Fenced)
+        );
         // durable history untouched
         assert_eq!(w.records().len(), 1);
         w.check_invariants().unwrap();
@@ -446,7 +499,10 @@ mod tests {
         w.finalize(s, 2, 2, seq(), None).unwrap();
         // deliberately corrupt: remove the middle record
         w.records.remove(0);
-        assert!(w.check_invariants().is_err(), "checker must catch an AppendLsn hole");
+        assert!(
+            w.check_invariants().is_err(),
+            "checker must catch an AppendLsn hole"
+        );
     }
 
     #[test]
@@ -468,7 +524,10 @@ mod tests {
         w.next_append_lsn += 1;
         w.next_control_seq += 1;
         w.records.push(dup);
-        assert!(w.check_invariants().is_err(), "checker must catch conflicting status records");
+        assert!(
+            w.check_invariants().is_err(),
+            "checker must catch conflicting status records"
+        );
     }
 
     /// Regression (review finding): finalize admits a verdict-less status

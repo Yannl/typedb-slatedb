@@ -25,6 +25,69 @@ Rules:
   conformance plan calls a "platform fact" still requires L3. Local lanes
   prove *our* logic; L3 proves *their* platform.
 
+## The canonical stack: `stack/` (Alchemy as IaC/orchestrator — R3 audit A-01)
+
+Round-3 direction: **Alchemy (pinned `2.0.0-beta.72`, upstream commit
+`6b73819a…`) is the canonical Cloudflare IaC/orchestrator**; the retained
+`control-plane/wrangler.toml` is a *validated view*, never an independent
+source of truth. Everything lives in the top-level `stack/` package:
+
+- **`stack/graph.data.mjs`** — the single source of truth for the logical
+  graph: worker name/entry, compatibility date, `CONTROLLER` →
+  `DatabaseControllerDO` (SQLite DO), the **declared-ahead** `CONTAINER` →
+  `DatabaseContainerDO` namespace (activates automatically once the class
+  is exported from the worker entry), `PAYLOADS` R2 binding, `[vars]`
+  posture, `CONTROLLER_*` secret schema, and the production-env invariants
+  (`CONTROLLER_KEY_PROFILE=managed`; `CONTROLLER_SURFACE` **must be
+  absent** — fail-closed).
+- **`stack/alchemy.run.ts`** — the canonical Alchemy program (local file
+  state only). `alchemy dev` runs the real worker-entry bundle on the
+  Alchemy-pinned workerd and emulates the R2 binding locally.
+- **`stack/cli.mjs`** — the one command:
+  - `node cli.mjs dev` (mode `native`): no-cloud guard → wrangler
+    consistency check → source-locked native **MinIO** (S3 half; loopback,
+    random per-run credentials, per-run data dir, readiness = SigV4
+    ListBuckets round-trip) → `alchemy dev` (Worker/DO/local-R2 half) →
+    `dev:` identity assertion → run-identity manifest (digests of graph,
+    wrangler.toml, lockfile, MinIO binary).
+  - `node cli.mjs down --verify-clean`: kills recorded process groups,
+    verifies ports released and no survivors from ANY recorded run;
+    nonzero otherwise.
+  - `node cli.mjs graph` / `check-wrangler`: canonical-JSON graph and the
+    toml drift check (CI-runnable, offline).
+- **`stack/graph-diff.mjs`** — mode differential with an explicit
+  allowlist (endpoints, secret values, provider identity,
+  native-vs-container execution); binding names, DO classes, compat date,
+  budgets, and backend identity differing is a hard failure.
+- **Zero-cloud-risk rule** (`stack/no-cloud-guard.mjs`): the local command
+  hard-fails if `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID` are set,
+  statically refuses `remote()`/live/bridge imports and any resource kind
+  outside the local-provider allowlist, and asserts every persisted
+  resource is `providerMode=local` with a `dev:` physical id. Upstream
+  wart, handled: alchemy `2.0.0-beta.72` resolves the credential *chain*
+  even for purely-local providers, so the CLI injects self-evidently fake
+  placeholder values (all-zero account id, non-token string) into the
+  child env after stripping the real ones — they cannot authenticate, so
+  an accidental live call fails closed.
+- **Source lock**: `ALCHEMY` (npm, exact pin + integrity, cross-checked
+  against `stack/package-lock.json` and the rangeless spec in
+  `stack/package.json`), `WORKERD_ALCHEMY` (the EFFECTIVE workerd
+  `1.20260704.1` that `alchemy dev` executes — deliberately locked as a
+  SEPARATE line from the wrangler-resolved `WORKERD 1.20260811.1`; any
+  runtime-sensitive result must name its line; converging them is tracked
+  follow-up), and `MINIO` (exact release binary, sha256-verified on every
+  use, cached uncommitted under `sources/minio/`).
+- **What Alchemy local R2 is NOT**: it has **no S3 endpoint** (no SigV4,
+  no XML API, no S3 conditional/multipart surface) — it exists only as a
+  Worker binding inside the workerd proxy. The TypeDB/SlateDB
+  `object_store` path therefore keeps the pinned native MinIO; an S3
+  facade over local R2 is explicitly rejected.
+- **Known limits here**: `alchemy dev` serves on its default port 1337
+  (one stack instance at a time); the ContainerDO execution lane (L2)
+  still needs a Docker daemon and stays blocked in this sandbox; wiring
+  the exact TypeDB release binary + fault proxy into `stack dev` is the
+  next PR on this path.
+
 ## Should local dev use a "local dev TypeDB stack" (plain TypeDB), or the production backend?
 
 Both — they serve two different users, and the whole conformance programme
@@ -118,7 +181,10 @@ the session record; the staged plan:
    crate suite baseline-equal on U2, upstream corpus run archived under
    `docs/evidence/G3/u2-full/`.
 3. **L2 bring-up on a Docker-equipped machine**: production container image
-   + wrangler dev containers; add a one-command `npm run stack:local`.
+   + the ContainerDO lane under Alchemy (`Cloudflare.Container` attaches
+   the OCI image to the declared `CONTAINER` namespace). The one-command
+   entry point exists now — `stack/cli.mjs dev` (see the canonical-stack
+   section above); the container lane extends it, it does not replace it.
 4. **Outbox → consumer path in L1** — DONE: at-least-once peek/ack contract
    through core/DO/worker; node E2E green including redelivery-without-ack
    and idempotent duplicate ack.

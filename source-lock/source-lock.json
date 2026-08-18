@@ -326,6 +326,56 @@
         "offline_reproducible_build"
       ],
       "status": "recorded_environment_lock"
+    },
+    {
+      "id": "ALCHEMY",
+      "kind": "npm",
+      "name": "alchemy",
+      "version": "2.0.0-beta.72",
+      "integrity": "sha512-3nD1U4hWdGTqJp3eeEXumEYQL6WmoFL8blzWB0VnodM8JD8ginGr9vYsexsrpqyH78tU/r6EBLBkzbbKgAwIQg==",
+      "tarball": "https://registry.npmjs.org/alchemy/-/alchemy-2.0.0-beta.72.tgz",
+      "upstream_repository": "https://github.com/alchemy-run/alchemy",
+      "upstream_commit": "6b73819a02f609e8942b1d9286dc197fbca200ab",
+      "license": "Apache-2.0",
+      "consumer_lockfile": "stack/package-lock.json",
+      "note": "Canonical Cloudflare IaC/orchestrator (R3 audit A-01, directive section 6.7). Pinned EXACTLY - never @next or a range; the beta moves fast and version identity is release identity. Peer runtime pinned exactly in stack/package.json: effect 4.0.0-rc.110, @effect/platform-node 4.0.0-rc.110 (resolved in the same lockfile). Local R2 has NO S3 endpoint (section 6.3): the TypeDB/SlateDB S3 half stays on the MINIO node, never on an S3 facade over local R2.",
+      "role": [
+        "iac_orchestrator",
+        "local_cloudflare_simulator"
+      ],
+      "status": "locked"
+    },
+    {
+      "id": "WORKERD_ALCHEMY",
+      "kind": "toolchain",
+      "name": "workerd",
+      "version": "1.20260704.1",
+      "integrity": "sha512-GDZ0jzIYDYfN7rCt/oFJv4BG3QJ+4IS2kfRvxEMY9VKIfPhzo63PH69Ir7ug8LfORCgCtmfkiQVXrqbot7pZTQ==",
+      "tarball": "https://registry.npmjs.org/workerd/-/workerd-1.20260704.1.tgz",
+      "confirmed_from": "alchemy@2.0.0-beta.72 -> @alchemy.run/cloudflare-runtime@2.0.0-beta.72 dependencies: workerd 1.20260704.1 (resolved in stack/package-lock.json)",
+      "consumer_lockfile": "stack/package-lock.json",
+      "note": "The EFFECTIVE workerd binary `alchemy dev` executes - qualified and locked deliberately (directive section 6.1): it is an OLDER line than the WRANGLER-resolved workerd 1.20260811.1 (node WORKERD). Adopting Alchemy must not silently change the runtime under the L1 lanes; any Workers-runtime-sensitive result must name which of the two workerd lines produced it, and closing the two onto one line is tracked follow-up work.",
+      "role": [
+        "local_runtime_via_alchemy"
+      ],
+      "status": "locked"
+    },
+    {
+      "id": "MINIO",
+      "kind": "artifact",
+      "name": "minio-linux-amd64",
+      "version": "2025-09-07T16-13-09Z",
+      "url": "https://dl.min.io/server/minio/release/linux-amd64/archive/minio.RELEASE.2025-09-07T16-13-09Z",
+      "url_provenance": "dl.min.io canonical archive path (redirects to the github.com/minio/minio release asset); release name from dl.min.io/server/minio/release/linux-amd64/minio.sha256sum on 2026-08-18",
+      "sha256": "7c5bd8512c6e966455b1d198209358b2d191c77a83ab377c4073281065fb855f",
+      "sha256_provenance": "computed locally from the downloaded bytes AND equal to the published minio.RELEASE.2025-09-07T16-13-09Z.sha256sum",
+      "license": "AGPL-3.0-only (minio/minio; used as an unmodified local dev/test server binary, not linked or distributed)",
+      "cache_path": "sources/minio/minio-RELEASE.2025-09-07T16-13-09Z",
+      "note": "Native S3 backend for the TypeDB/SlateDB half of the local stack (directive sections 6.3/7.2): SlateDB consumes a real S3 endpoint (SigV4/XML/conditional/multipart) which Alchemy local R2 cannot provide. Materialized on demand by stack/minio.mjs into the gitignored cache_path (NEVER committed); the fetcher re-verifies sha256 on every use, including cache hits, and quarantines mismatches. Loopback only, random per-run credentials, per-run data dir.",
+      "role": [
+        "local_s3_backend"
+      ],
+      "status": "locked"
     }
   ],
   "policies": {

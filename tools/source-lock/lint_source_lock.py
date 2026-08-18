@@ -76,6 +76,31 @@ CARGO_DEP_NODES = {
 # it wherever the package appears there
 NPM_LOCKFILE = "control-plane/package-lock.json"
 
+# R3 A-01 (Alchemy adoption): pins resolved by the stack/ workspace, not
+# control-plane. Each lock node here must agree EXACTLY (version AND
+# integrity) with stack/package-lock.json, and its direct dependency spec in
+# stack/package.json - when it is a direct dependency - must be the exact
+# version, never a range: version identity is release identity for the
+# fast-moving alchemy beta. A missing lockfile or missing resolution is a
+# failure, not a skip: these nodes exist to pin what stack/ actually runs
+# (WORKERD_ALCHEMY is the EFFECTIVE workerd `alchemy dev` executes, which
+# is deliberately a different line than the WRANGLER-resolved WORKERD node).
+STACK_NPM_LOCKFILE = "stack/package-lock.json"
+STACK_PACKAGE_JSON = "stack/package.json"
+STACK_LOCK_PINS = {
+    "ALCHEMY": "alchemy",
+    "WORKERD_ALCHEMY": "workerd",
+}
+
+# artifacts materialized into an uncommitted cache under sources/ (which is
+# gitignored) instead of committed fixtures: verified against the locked
+# sha256 whenever the file is present. Absence is NOT a failure - they are
+# fetched on demand by their consumers (stack/minio.mjs), which re-verify
+# the digest on every use and refuse mismatches.
+CACHED_ARTIFACTS = {
+    "MINIO": "minio/minio-RELEASE.2025-09-07T16-13-09Z",
+}
+
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 OCI_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -457,6 +482,62 @@ def main() -> int:
 
     if ws_check.returncode != 0:
         failures.append(f"workspace-lock: {ws_check.stdout.strip() or ws_check.stderr.strip()}")
+
+    # stack/ workspace pins (R3 A-01): exact agreement with the stack
+    # lockfile, SRI-shaped integrity, and exact (rangeless) direct specs
+    stack_lock_path = repo_root / STACK_NPM_LOCKFILE
+    stack_pkg_path = repo_root / STACK_PACKAGE_JSON
+    for nid, pkg in STACK_LOCK_PINS.items():
+        node = nodes.get(nid)
+        if node is None:
+            failures.append(f"{nid}: missing from lock")
+            continue
+        integrity = node.get("integrity")
+        if not (isinstance(integrity, str) and NPM_INTEGRITY.match(integrity)):
+            failures.append(
+                f"{nid}: integrity missing or not sha512-<86 base64 chars>==: {integrity!r}")
+        if not stack_lock_path.exists():
+            failures.append(f"{nid}: consumer lockfile missing at {STACK_NPM_LOCKFILE}")
+            continue
+        packages = json.loads(stack_lock_path.read_text()).get("packages", {})
+        entry = packages.get(f"node_modules/{pkg}")
+        if entry is None:
+            failures.append(f"{nid}: {pkg} not resolved in {STACK_NPM_LOCKFILE}")
+            continue
+        if entry.get("version") != node.get("version"):
+            failures.append(
+                f"{nid}: version mismatch vs {STACK_NPM_LOCKFILE} "
+                f"want {node.get('version')!r} got {entry.get('version')!r}")
+        if entry.get("integrity") != integrity:
+            failures.append(
+                f"{nid}: integrity mismatch vs {STACK_NPM_LOCKFILE} "
+                f"want {integrity!r} got {entry.get('integrity')!r}")
+        if stack_pkg_path.exists():
+            spec = (json.loads(stack_pkg_path.read_text())
+                    .get("dependencies", {}).get(pkg))
+            if spec is not None and spec != node.get("version"):
+                failures.append(
+                    f"{nid}: {STACK_PACKAGE_JSON} pins {pkg} as {spec!r} - "
+                    f"must be the exact locked version {node.get('version')!r}, never a range")
+        else:
+            failures.append(f"{nid}: {STACK_PACKAGE_JSON} missing")
+
+    # cached (uncommitted) artifacts: digest-verified whenever materialized
+    for nid, rel in CACHED_ARTIFACTS.items():
+        node = nodes.get(nid)
+        if node is None:
+            failures.append(f"{nid}: missing from lock")
+            continue
+        if node.get("kind") != "artifact":
+            failures.append(f"{nid}: expected kind 'artifact', got {node.get('kind')!r}")
+            continue
+        p = sources / rel
+        if p.exists():
+            got = sha256(p)
+            if got != node.get("sha256"):
+                failures.append(
+                    f"{nid}: cached artifact sha256 mismatch at sources/{rel} "
+                    f"want {node.get('sha256')} got {got}")
 
     for nid, rel in ARTIFACTS.items():
         node = nodes.get(nid)

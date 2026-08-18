@@ -1,0 +1,19 @@
+{
+  "name": "typedb-r2-stack",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Canonical local stack orchestration: Alchemy-declared Cloudflare graph (Worker/DO/R2 binding) + source-locked native MinIO for the TypeDB/SlateDB S3 half.",
+  "type": "module",
+  "scripts": {
+    "dev": "node cli.mjs dev",
+    "down": "node cli.mjs down --verify-clean",
+    "graph": "node cli.mjs graph",
+    "check:wrangler": "node cli.mjs check-wrangler",
+    "test": "node --test 'test/**/*.test.mjs'"
+  },
+  "dependencies": {
+    "@effect/platform-node": "4.0.0-rc.110",
+    "alchemy": "2.0.0-beta.72",
+    "effect": "4.0.0-rc.110"
+  }
+}

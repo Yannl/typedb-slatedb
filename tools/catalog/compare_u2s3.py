@@ -40,11 +40,16 @@ EXPLAINED = {
     "storage:storage": {
         "u2s3": ["18/0/0 ok"],
         "u1": ["8/0/0 ok"],
-        "reason": "additive port-layer tests: the storage lib gained the V16 F2 "
-                  "read-contract control plus the F3 materialisation/posture, A6 "
-                  "memo and A10 retry-channel controls - unit tests of the SlateDB "
-                  "adapter module, which does not exist on the U1/RocksDB baseline. "
-                  "Zero baseline tests changed outcome.",
+        "reason": "additive port-layer tests, counted rather than assumed: the U1 "
+                  "oracle's 8 are the upstream storage lib's unit tests; the U2S3 "
+                  "run's 18 are those 8 plus the 10 #[test] functions in "
+                  "fork/typedb/storage/keyspace/slate.rs (retry_channel_tests, "
+                  "read_contract_tests, posture_tests, materialization_tests) - a "
+                  "module that does not exist on the RocksDB baseline at all. "
+                  "8 + 10 = 18 exactly, so zero baseline tests changed outcome. "
+                  "Adding a control to slate.rs moves this number and the comparison "
+                  "goes red until the declaration is updated: that is the intended "
+                  "behaviour, not a nuisance.",
     },
     "storage:test_recovery": {
         "u2s3": ["5/2/0 rc=101"],

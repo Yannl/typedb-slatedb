@@ -44,6 +44,7 @@ use slatedb::{
     config::{ReadOptions, ScanOptions, Settings, WriteOptions},
     object_store::{
         CopyOptions, GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, ObjectStore,
+        RenameOptions,
         ObjectStoreExt, PutMultipartOptions, PutOptions, PutPayload, PutResult,
         aws::AmazonS3Builder,
         local::LocalFileSystem,
@@ -391,6 +392,32 @@ impl ObjectStore for NoDeleteStore {
         self.inner.copy_opts(from, to, options).await
     }
 
+    /// Q-27: refuse the composite BEFORE its copy half runs.
+    ///
+    /// `ObjectStore`'s default `rename_opts` is `copy_opts(from, to)` then
+    /// `delete(from)`. Denying only `delete_stream` therefore denies the
+    /// deletion but not the copy: the rename returns an error while a full
+    /// duplicate of the object has already landed at the destination, and
+    /// the caller believes nothing happened. Under the immutable
+    /// materialisation posture that stray object is exactly what must not
+    /// exist - a second copy of authoritative bytes under a name nobody
+    /// activated. Refusing here means a blocked rename leaves the store
+    /// byte-identical.
+    async fn rename_opts(
+        &self,
+        from: &ObjectPath,
+        to: &ObjectPath,
+        _options: RenameOptions,
+    ) -> slatedb::object_store::Result<()> {
+        Err(slatedb::object_store::Error::NotImplemented {
+            operation: format!(
+                "rename {from} -> {to} (V16 inv. 84: rename is copy-then-delete; the runtime \
+                 storage principal has no delete authority, and the copy half must not run either)"
+            ),
+            implementer: "NoDeleteStore".to_owned(),
+        })
+    }
+
     fn delete_stream(
         &self,
         locations: BoxStream<'static, slatedb::object_store::Result<ObjectPath>>,
@@ -578,7 +605,21 @@ impl SlateKeyspace {
             // materialisations — a surviving entry would serve the previous
             // materialisation's bytes for this one's object paths.
             let cache_dir = path.join(OBJECT_CACHE_SUBDIR);
-            let _ = fs::remove_dir_all(&cache_dir);
+            // Q-14: this wipe is CORRECTNESS-critical, not hygiene - the
+            // paragraph above says why - so its failure cannot be discarded.
+            // `let _ = remove_dir_all(..)` meant that a cache directory this
+            // process could not clear (a permission change, a leftover file
+            // where the directory belongs, an I/O error) was silently kept,
+            // and the keyspace then opened on top of entries keyed to a
+            // PREVIOUS materialisation's identical object paths. That serves
+            // the wrong bytes under valid metadata, which is worse than
+            // failing to open. NotFound is the one benign outcome: there was
+            // nothing to wipe.
+            match fs::remove_dir_all(&cache_dir) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(Arc::new(io_error(error))),
+            }
             fs::create_dir_all(&cache_dir).map_err(|error| Arc::new(io_error(error)))?;
             settings.object_store_cache_options.root_folder = Some(cache_dir);
             settings.object_store_cache_options.max_cache_size_bytes = Some(cache_bytes);
@@ -1454,6 +1495,89 @@ mod materialization_tests {
         keyspace.put(b"k4", b"v4").unwrap();
         let second = keyspace.estimate_key_count().unwrap();
         assert_eq!(second, 2, "within the TTL the memoised count is served (proves the memo is written)");
+    }
+
+    #[test]
+    fn a_cache_wipe_that_fails_refuses_the_open() {
+        // Q-14: the cache wipe is correctness-critical. Cache entries are
+        // keyed by STORE-RELATIVE paths, which repeat across
+        // materialisations, so a surviving entry serves the PREVIOUS
+        // materialisation's bytes for this one's object paths. Discarding
+        // the wipe's error meant opening on top of exactly that.
+        //
+        // The failure is injected the way it actually happens: something
+        // that is not a directory occupies the cache path, so
+        // `remove_dir_all` cannot clear it.
+        let (_store_dir, inner) = remote_fixture();
+        let keyspace_dir = create_tmp_dir("slate-cache-wipe");
+        std::fs::create_dir_all(&*keyspace_dir).unwrap();
+        std::fs::write(keyspace_dir.join(super::OBJECT_CACHE_SUBDIR), b"not a directory").unwrap();
+
+        let opened = SlateKeyspace::open_remote(
+            inner.clone(),
+            ObjectPath::from(BASE),
+            &keyspace_dir,
+            Some(1 << 20),
+        );
+        assert!(
+            opened.is_err(),
+            "an unclearable object cache must refuse the open, not serve another \
+             materialisation's bytes under this one's paths",
+        );
+
+        // and with the obstruction gone the same open succeeds, so the
+        // refusal is about the failure, not about caching at all
+        std::fs::remove_file(keyspace_dir.join(super::OBJECT_CACHE_SUBDIR)).unwrap();
+        assert!(
+            SlateKeyspace::open_remote(inner, ObjectPath::from(BASE), &keyspace_dir, Some(1 << 20)).is_ok(),
+            "a clearable cache directory must open normally",
+        );
+    }
+
+    #[test]
+    fn a_blocked_rename_leaves_no_copy_behind() {
+        // Q-27: ObjectStore's default `rename_opts` is copy-then-delete.
+        // Blocking only `delete_stream` blocked the deletion but not the
+        // copy, so a refused rename still left a full duplicate of the
+        // object at the destination - a second copy of authoritative bytes
+        // under a name nobody activated, while the caller was told the
+        // rename failed. The refusal must therefore come BEFORE the copy,
+        // and the store must be byte-identical afterwards.
+        let (_store_dir, inner) = remote_fixture();
+        let store = Arc::new(NoDeleteStore::new(inner));
+        let from = ObjectPath::from("rename/source");
+        let to = ObjectPath::from("rename/destination");
+        bridge({
+            let payload = PutPayload::from_static(b"authoritative bytes");
+            let (from, store) = (from.clone(), store.clone());
+            async move { store.put(&from, payload).await }
+        })
+        .unwrap();
+
+        let denial = bridge({
+            let (from, to, store) = (from.clone(), to.clone(), store.clone());
+            async move { store.rename(&from, &to).await }
+        });
+        assert!(
+            matches!(denial, Err(slatedb::object_store::Error::NotImplemented { .. })),
+            "rename through the runtime principal must be a typed denial, got: {denial:?}",
+        );
+
+        // the source survives...
+        let source = bridge({
+            let (from, inner) = (from.clone(), store.inner.clone());
+            async move { inner.head(&from).await }
+        });
+        assert!(source.is_ok(), "the source must survive a denied rename");
+        // ...and NOTHING was written at the destination
+        let destination = bridge({
+            let (to, inner) = (to.clone(), store.inner.clone());
+            async move { inner.head(&to).await }
+        });
+        assert!(
+            matches!(destination, Err(slatedb::object_store::Error::NotFound { .. })),
+            "a denied rename must not leave a copy at the destination, got: {destination:?}",
+        );
     }
 
     #[test]

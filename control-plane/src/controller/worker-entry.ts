@@ -48,10 +48,17 @@
 export { DatabaseControllerDO } from "./database-controller.ts";
 
 import { u64FromWire } from "./core/procedures.ts";
+import { canonicalJson } from "./core/journal-crypto.ts";
+import { resolveKeyConfig } from "./core/key-config.ts";
 
 interface Env {
   CONTROLLER: DurableObjectNamespace;
   PAYLOADS: R2Bucket;
+  /** Q-24/Q-02: key posture + issuance credential; see core/key-config.ts. */
+  CONTROLLER_KEY_PROFILE?: string;
+  CONTROLLER_JOURNAL_KEY?: string;
+  CONTROLLER_CAPABILITY_KEY?: string;
+  CONTROLLER_ISSUER_SECRET?: string;
 }
 
 function json(body: unknown, status = 200): Response {
@@ -137,12 +144,54 @@ async function mapBounded<T, R>(items: T[], limit: number, fn: (item: T) => Prom
   return results;
 }
 
-const PAYLOAD_FETCH_CONCURRENCY = 8;
+/** Platform hard ceiling: six simultaneous outgoing connections per Worker
+ *  invocation (contract lock `typedb-r2-v16-cloudflare-contract-lock.json`,
+ *  brief §"maximum current shape"). The pool was set to eight, which is not
+ *  a tuning choice but a request the platform cannot serve - the seventh and
+ *  eighth connections queue or fail depending on the runtime, and a local
+ *  simulator that tolerates them proves nothing about R2. */
+const R2_SUBREQUEST_CEILING = 6;
+const PAYLOAD_FETCH_CONCURRENCY = R2_SUBREQUEST_CEILING;
+
+/** Hard admission bound on any single request body, enforced BEFORE the body
+ *  is read (contract F9: 8 MiB per data-path object). The payload route used
+ *  to buffer the whole body and only then consult the capability's budget, so
+ *  the first oversized object was always admitted, fully materialised, and
+ *  base64-expanded in a 128 MiB isolate before anything refused it. */
+const MAX_REQUEST_BODY_BYTES = 8 * 1024 * 1024;
+
+/** Declared-length admission: refuse before reading. A request with no
+ *  content-length is refused too - an unbounded stream cannot be admitted
+ *  against a byte budget, and accepting it is how the bound becomes
+ *  advisory. Returns null when admissible. */
+function refuseOversizedBody(request: Request, limit = MAX_REQUEST_BODY_BYTES): Response | null {
+  const declared = request.headers.get("content-length");
+  if (declared === null || !/^\d+$/.test(declared)) {
+    return json({ ok: false, error: "CONTENT_LENGTH_REQUIRED", limit }, 411);
+  }
+  const length = Number(declared);
+  if (!Number.isSafeInteger(length) || length > limit) {
+    return json({ ok: false, error: "REQUEST_BODY_TOO_LARGE", declared, limit }, 413);
+  }
+  return null;
+}
 
 /** Hard per-response byte budget for scan pages (payload bytes, pre-base64):
  *  a full page must fit working memory in the 128 MiB worker isolate with
  *  headroom for the base64 expansion and JSON envelope. */
 const SCAN_PAGE_BYTE_BUDGET = 8 * 1024 * 1024;
+
+/** Constant-shape credential comparison: XOR-fold over equal-length byte
+ *  views so a mismatch position does not shape the timing. (The length check
+ *  leaks length, which the issuer secret does not need to hide.) */
+function credentialsEqual(presented: string, expected: string): boolean {
+  const a = new TextEncoder().encode(presented);
+  const b = new TextEncoder().encode(expected);
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
 
 /** Record types are u8 in TypeDB durability; anything else is a client bug
  *  surfaced as a typed 400, never coerced. */
@@ -169,6 +218,29 @@ function exactGeneration(raw: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
+/**
+ * Q-18: the replay/dedupe digest is RECOMPUTED over the canonical request,
+ * never taken from the caller.
+ *
+ * `request_digest` is the key that decides whether a retry is the same
+ * operation (return the original receipt) or a different one under a reused
+ * id (typed conflict). A caller-supplied digest makes that decision a claim
+ * rather than a fact: send operation X's id with body Y and X's digest, and
+ * the controller hands back X's receipt for Y. The digest therefore covers
+ * exactly the authority-bearing fields of the request, in a fixed order,
+ * with the caller's own `requestDigest` excluded from its own input.
+ */
+const DIGESTED_FIELDS = [
+  "databaseId", "generation", "startupSessionId", "operationId", "sequencingKind",
+  "recordType", "logicalKey", "payloadKey", "payloadDigest", "payloadLength",
+] as const;
+
+async function canonicalRequestDigest(req: Record<string, unknown>): Promise<string> {
+  const subject: Record<string, unknown> = {};
+  for (const field of DIGESTED_FIELDS) subject[field] = req[field] ?? null;
+  return sha256hex(new TextEncoder().encode(canonicalJson(subject)).buffer as ArrayBuffer);
+}
+
 /** Sequence-valued query parameters (F7): exact u64 from a decimal string,
  *  over the full range - no 2^53 cliff. Returns null when invalid. */
 function nonNegativeU64(raw: string | null, fallback: bigint): bigint | null {
@@ -191,19 +263,34 @@ export default {
     const stubFor = (databaseId: string) =>
       env.CONTROLLER.get(env.CONTROLLER.idFromName(databaseId)) as unknown as {
         registerSession(db: string, generation: number, session: string): Promise<void>;
+        reserveSession(db: string, generation: number, session: string, holder: string):
+          Promise<{ ok: boolean } & Record<string, unknown>>;
+        attestSession(db: string, session: string, processNonce: string):
+          Promise<{ ok: boolean } & Record<string, unknown>>;
+        activateSession(db: string, session: string, proof: object):
+          Promise<{ ok: boolean } & Record<string, unknown>>;
+        renewLease(db: string, session: string, leaseMs: number):
+          Promise<{ ok: boolean } & Record<string, unknown>>;
+        beginDrain(db: string, session: string): Promise<{ ok: boolean } & Record<string, unknown>>;
+        revokeSession(db: string, session: string): Promise<{ ok: boolean } & Record<string, unknown>>;
         fenceSession(db: string, session: string): Promise<void>;
-        setBudgets(db: string, budgets: object): Promise<void>;
+        setBudgets(db: string, budgets: object, session: string):
+          Promise<{ ok: true } | { ok: false; error: string }>;
         finalizeWalRecord(req: object): Promise<Record<string, unknown>>;
-        finalizeBatch(reqs: object[]): Promise<Record<string, unknown>[] | Record<string, unknown>>;
+        finalizeBatch(reqs: object[], envelope?: object):
+          Promise<Record<string, unknown>[] | Record<string, unknown>>;
         exactLookup(db: string, generation: number, lsn: bigint): Promise<Record<string, unknown>>;
         auditContiguity(db: string, generation: number): Promise<Record<string, unknown>>;
         head(db: string, generation: number): Promise<Record<string, unknown>>;
         openIterator(db: string, generation: number): Promise<Record<string, unknown>>;
+        resolveSnapshot(db: string, generation: number, snapshotId: string):
+          Promise<{ ok: true; headLsn: bigint } | { ok: false; error: string }>;
         scan(db: string, generation: number, opts: object): Promise<{
           records: Record<string, unknown>[]; nextFromLsn: bigint | null;
         }>;
         lastByType(db: string, generation: number, recordType: number): Promise<Record<string, unknown>>;
-        queryOperation(db: string, generation: number, operationId: string): Promise<Record<string, unknown>>;
+        queryOperation(db: string, generation: number, operationId: string, session: string):
+          Promise<Record<string, unknown>>;
       };
 
     /** F9 middleware: verify-and-burn the request's capability at the
@@ -222,7 +309,56 @@ export default {
       return null;
     };
 
+    /** Same check, but hands the ACTOR back to the route.
+     *
+     *  Donor A4: procedures that act on authority state revalidate the actor
+     *  at the core, beneath this layer. The route therefore needs to know
+     *  which actor the token was issued to, and a token with no session
+     *  binding cannot authorize such a procedure at all - it would leave the
+     *  core with nothing to revalidate. */
+    const requireCapabilityWithSession = async (
+      databaseId: string,
+      expect: { method: string; key?: string; bodyDigest?: string; bodyLength?: number },
+    ): Promise<{ denied: Response } | { session: string }> => {
+      const token = request.headers.get("x-capability");
+      if (token === null) return { denied: json({ ok: false, error: "CAPABILITY_REQUIRED" }, 401) };
+      const stub = stubFor(databaseId) as unknown as {
+        useCapability(token: string, expect: object): Promise<
+          { ok: boolean; payload?: { session?: string } } & Record<string, unknown>>;
+      };
+      const verdict = await stub.useCapability(token, { databaseId, ...expect });
+      if (!verdict.ok) return { denied: json(verdict, 403) };
+      const session = verdict.payload?.session;
+      if (typeof session !== "string" || session.length === 0) {
+        return { denied: json({ ok: false, error: "CAPABILITY_RESTRICTION_MISSING", restriction: "session" }, 403) };
+      }
+      return { session };
+    };
+
+    /** Core-level authority outcomes surfaced as protocol shapes. */
+    const sessionRefusal = (result: { ok: false; error: string }): Response | null =>
+      result.error === "SESSION_FENCED" || result.error === "SESSION_UNKNOWN"
+        ? json({ ok: false, error: result.error }, 409)
+        : null;
+
     if (request.method === "POST" && path === "/capability") {
+      // Q-02: issuance is CREDENTIALED in every posture. The audit's finding
+      // was that a self-issued capability does not create authentication;
+      // requiring the issuer secret here means no configuration state exists
+      // in which an anonymous caller can mint authority. Resolution is
+      // fail-closed: a worker whose key config cannot resolve refuses
+      // issuance outright rather than falling back to open issuance.
+      let issuerSecret: string;
+      try {
+        issuerSecret = resolveKeyConfig(env).issuerSecret;
+      } catch (error) {
+        return json({ ok: false, error: "KEY_CONFIG_INVALID",
+                      detail: error instanceof Error ? error.message : String(error) }, 500);
+      }
+      const presented = request.headers.get("x-issuer-authorization");
+      if (presented === null || !credentialsEqual(presented, issuerSecret)) {
+        return json({ ok: false, error: "ISSUER_UNAUTHORIZED" }, 401);
+      }
       const spec = (await request.json()) as {
         principal: string; databaseId: string; method: string; digest?: string; maxBytes?: number; ttlMs?: number;
       };
@@ -247,7 +383,15 @@ export default {
       if (parts.length !== 3 || parts[0] !== "p") {
         return json({ ok: false, error: "INVALID_PAYLOAD_KEY", key }, 400);
       }
+      const tooLarge = refuseOversizedBody(request);
+      if (tooLarge) return tooLarge;
       const bytes = await request.arrayBuffer();
+      if (bytes.byteLength > MAX_REQUEST_BODY_BYTES) {
+        // declared length lied; the read is bounded by the platform anyway,
+        // but the refusal must not depend on the client's honesty
+        return json({ ok: false, error: "REQUEST_BODY_TOO_LARGE",
+                      observed: bytes.byteLength, limit: MAX_REQUEST_BODY_BYTES }, 413);
+      }
       const digest = await sha256hex(bytes);
       const denied = await requireCapability(parts[1], {
         method: "PUT_PAYLOAD", key, bodyDigest: digest, bodyLength: bytes.byteLength,
@@ -288,6 +432,71 @@ export default {
       return json({ ok: true });
     }
 
+    // ---- Q-03 / 12.4 lifecycle routes (SESSION_ADMIN-gated) -------------
+    // Registration is the legacy macro over these; the real flow is
+    // reserve -> attest -> activate, and ONLY activation fences.
+    if (request.method === "POST" && path === "/session/reserve") {
+      const b = (await request.json()) as {
+        databaseId: string; generation: number; startupSessionId: string; holder: string;
+      };
+      if (exactGeneration(b.generation) === null) {
+        return json({ ok: false, error: "INVALID_GENERATION", observed: b.generation ?? null }, 400);
+      }
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      if (denied) return denied;
+      const result = await stubFor(b.databaseId)
+        .reserveSession(b.databaseId, b.generation, b.startupSessionId, b.holder);
+      return json(result, result.ok ? 200 : 409);
+    }
+
+    if (request.method === "POST" && path === "/session/attest") {
+      const b = (await request.json()) as { databaseId: string; startupSessionId: string; processNonce: string };
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      if (denied) return denied;
+      const result = await stubFor(b.databaseId)
+        .attestSession(b.databaseId, b.startupSessionId, b.processNonce);
+      return json(result, result.ok ? 200 : 409);
+    }
+
+    if (request.method === "POST" && path === "/session/activate") {
+      const b = (await request.json()) as {
+        databaseId: string; startupSessionId: string; processNonce: string; generation: number; leaseMs: number;
+      };
+      if (exactGeneration(b.generation) === null) {
+        return json({ ok: false, error: "INVALID_GENERATION", observed: b.generation ?? null }, 400);
+      }
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      if (denied) return denied;
+      const result = await stubFor(b.databaseId).activateSession(b.databaseId, b.startupSessionId, {
+        processNonce: b.processNonce, generation: b.generation, leaseMs: b.leaseMs,
+      });
+      return json(result, result.ok ? 200 : 409);
+    }
+
+    if (request.method === "POST" && path === "/session/renew") {
+      const b = (await request.json()) as { databaseId: string; startupSessionId: string; leaseMs: number };
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      if (denied) return denied;
+      const result = await stubFor(b.databaseId).renewLease(b.databaseId, b.startupSessionId, b.leaseMs);
+      return json(result, result.ok ? 200 : 409);
+    }
+
+    if (request.method === "POST" && path === "/session/drain") {
+      const b = (await request.json()) as { databaseId: string; startupSessionId: string };
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      if (denied) return denied;
+      const result = await stubFor(b.databaseId).beginDrain(b.databaseId, b.startupSessionId);
+      return json(result, result.ok ? 200 : 409);
+    }
+
+    if (request.method === "POST" && path === "/session/revoke") {
+      const b = (await request.json()) as { databaseId: string; startupSessionId: string };
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      if (denied) return denied;
+      const result = await stubFor(b.databaseId).revokeSession(b.databaseId, b.startupSessionId);
+      return json(result, result.ok ? 200 : 409);
+    }
+
     if (request.method === "POST" && path === "/session/fence") {
       const b = (await request.json()) as { databaseId: string; generation: number; startupSessionId: string };
       if (exactGeneration(b.generation) === null) {
@@ -305,13 +514,14 @@ export default {
       const b = (await request.json()) as {
         databaseId: string; maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number;
       };
-      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
-      if (denied) return denied;
-      await stubFor(b.databaseId).setBudgets(b.databaseId, {
+      const auth = await requireCapabilityWithSession(b.databaseId, { method: "SESSION_ADMIN" });
+      if ("denied" in auth) return auth.denied;
+      const result = await stubFor(b.databaseId).setBudgets(b.databaseId, {
         maxUnpublishedOutbox: b.maxUnpublishedOutbox,
         maxPayloadLength: b.maxPayloadLength,
         maxTailRecords: b.maxTailRecords,
-      });
+      }, auth.session);
+      if (!result.ok) return sessionRefusal(result) ?? json(result, 409);
       return json({ ok: true });
     }
 
@@ -345,17 +555,37 @@ export default {
       if (denied) return denied;
       const receiptError = await verifyReceipt(req);
       if (receiptError !== null) return receiptError;
-      const result = await stubFor(req.databaseId).finalizeWalRecord(req);
+      // Q-18: the dedupe key is derived here, not asserted by the caller
+      const computedDigest = await canonicalRequestDigest(req);
+      if (typeof req.requestDigest === "string" && req.requestDigest !== computedDigest) {
+        return json({ ok: false, error: "REQUEST_DIGEST_MISMATCH",
+                      computed: computedDigest, supplied: req.requestDigest }, 400);
+      }
+      const result = await stubFor(req.databaseId)
+        .finalizeWalRecord({ ...req, requestDigest: computedDigest });
       return json(result, result.ok ? 200 : 409);
     }
 
     if (request.method === "POST" && path === "/wal/finalize-batch") {
+      const tooLargeBatch = refuseOversizedBody(request);
+      if (tooLargeBatch) return tooLargeBatch;
       const body = (await request.json()) as {
+        batchOperationId?: unknown; batchDigest?: unknown;
         requests: ({ databaseId: string; payloadKey: string; payloadDigest: string; payloadLength: number }
           & Record<string, unknown>)[];
       };
       if (!Array.isArray(body.requests) || body.requests.length === 0) {
         return json({ ok: false, error: "EMPTY_BATCH" }, 400);
+      }
+      // directive 12.6: a batch is ONE authority envelope with an identity.
+      // Without it the batch cannot be replayed, conflicted or audited, and
+      // the release baseline (one-record finalization) always remains open.
+      if (typeof body.batchOperationId !== "string" || body.batchOperationId.length === 0) {
+        return json({ ok: false, error: "BATCH_ENVELOPE_REQUIRED",
+                      hint: "batchOperationId is required; batchDigest is optional and only checked" }, 400);
+      }
+      if (body.batchDigest !== undefined && typeof body.batchDigest !== "string") {
+        return json({ ok: false, error: "BATCH_DIGEST_MISMATCH" }, 400);
       }
       const databaseId = body.requests[0].databaseId;
       const batchSession = String((body.requests[0] as { startupSessionId?: unknown }).startupSessionId ?? "");
@@ -381,7 +611,20 @@ export default {
       const receiptErrors = await mapBounded(body.requests, PAYLOAD_FETCH_CONCURRENCY, verifyReceipt);
       const firstReceiptError = receiptErrors.find((error) => error !== null);
       if (firstReceiptError) return firstReceiptError;
-      const result = await stubFor(databaseId).finalizeBatch(body.requests);
+      // Q-18: same rule for every batch member - the digest is derived here
+      const digested: Record<string, unknown>[] = [];
+      for (const req of body.requests) {
+        const computed = await canonicalRequestDigest(req);
+        if (typeof req.requestDigest === "string" && req.requestDigest !== computed) {
+          return json({ ok: false, error: "REQUEST_DIGEST_MISMATCH", operationId: req.operationId ?? null,
+                        computed, supplied: req.requestDigest }, 400);
+        }
+        digested.push({ ...req, requestDigest: computed });
+      }
+      const result = await stubFor(databaseId).finalizeBatch(digested, {
+        batchOperationId: body.batchOperationId,
+        ...(body.batchDigest !== undefined ? { batchDigest: body.batchDigest } : {}),
+      });
       // all-or-nothing: an array is N successes; a single typed error aborted
       // (and rolled back) the whole batch
       if (Array.isArray(result)) return json({ ok: true, results: result });
@@ -438,20 +681,38 @@ export default {
       if (recordType !== null && invalidRecordType(recordType)) {
         return json({ ok: false, error: "INVALID_RECORD_TYPE", observed: recordTypeParam }, 400);
       }
-      const throughLsnParam = url.searchParams.get("throughLsn");
-      if (throughLsnParam === null) {
-        // an unbounded scan would observe appends made after the iteration
-        // started (inv. 41-42): the pinned snapshot bound is mandatory
-        return json({ ok: false, error: "MISSING_THROUGH_LSN" }, 400);
+      // Q-12 / directive 12.6: the cut is SERVER-owned. The caller presents
+      // the opaque snapshot id it was given at `POST .../iterator`; it may
+      // not name a `throughLsn` itself, because a caller that holds the cut
+      // can widen it between pages (observing appends made after iteration
+      // started, inv. 41-42) or narrow it (silently skipping records a
+      // consumer believes it replayed).
+      const snapshotIdParam = url.searchParams.get("snapshotId");
+      if (snapshotIdParam === null) {
+        return json({ ok: false, error: "MISSING_SNAPSHOT_ID",
+                      hint: "POST /wal/{db}/{generation}/iterator returns snapshotId" }, 400);
       }
+      if (url.searchParams.get("throughLsn") !== null) {
+        return json({ ok: false, error: "CALLER_SUPPLIED_SNAPSHOT_BOUND",
+                      hint: "the cut is carried by snapshotId; throughLsn is not accepted" }, 400);
+      }
+      const resolved = await stubFor(db).resolveSnapshot(db, gen, snapshotIdParam);
+      if (!resolved.ok) return json(resolved, 400);
+      const throughLsn = resolved.headLsn;
       const fromTypeSequence = nonNegativeU64(url.searchParams.get("fromTs"), 0n);
       const fromLsn = nonNegativeU64(url.searchParams.get("fromLsn"), 0n);
-      const throughLsn = nonNegativeU64(throughLsnParam, 0n);
       const rawLimit = nonNegativeInt(url.searchParams.get("limit"), 100);
       const rawMaxBytes = nonNegativeInt(url.searchParams.get("maxBytes"), SCAN_PAGE_BYTE_BUDGET);
-      if (fromTypeSequence === null || fromLsn === null || throughLsn === null || rawLimit === null
+      if (fromTypeSequence === null || fromLsn === null || rawLimit === null
           || rawMaxBytes === null) {
         return json({ ok: false, error: "INVALID_PARAMETER" }, 400);
+      }
+      if (fromLsn > throughLsn) {
+        // a continuation outside its own snapshot is a client defect, not an
+        // empty page: answering "no records" would look like a completed
+        // replay
+        return json({ ok: false, error: "CONTINUATION_OUTSIDE_SNAPSHOT",
+                      fromLsn, throughLsn }, 400);
       }
       const limit = Math.min(Math.max(rawLimit, 1), 1000);
       const maxBytes = Math.min(Math.max(rawMaxBytes, 1), SCAN_PAGE_BYTE_BUDGET);
@@ -463,6 +724,24 @@ export default {
       // any payload is fetched - a worker never materialises an unbounded
       // multi-payload response. Always at least one record makes progress;
       // the cut is reported through nextFromLsn exactly like a limit cut.
+      // A descriptor whose declared payload exceeds the whole page budget is
+      // REFUSED before any fetch - "record zero" is not an exception
+      // (directive §12.6). Admitting it was the one path by which a single
+      // oversized object could still be materialised and base64-expanded in
+      // a 128 MiB isolate, and it made the byte bound advisory for exactly
+      // the record that needed it most. The record stays reachable through
+      // the exact-lookup route, so refusing here wedges nothing.
+      const first = page.records[0] as { payloadLength: number; appendLsn: unknown } | undefined;
+      if (first !== undefined && Number(first.payloadLength) > maxBytes) {
+        return json({
+          ok: false,
+          error: "RECORD_EXCEEDS_PAGE_BUDGET",
+          appendLsn: first.appendLsn,
+          payloadLength: Number(first.payloadLength),
+          maxBytes,
+          hint: "fetch this record through /wal/{db}/{generation}/{lsn}",
+        }, 413);
+      }
       let cut = page.records.length;
       let budget = maxBytes;
       for (const [index, record] of page.records.entries()) {
@@ -493,13 +772,20 @@ export default {
       const [, db, generation, operationId] = walOperation;
       const gen = exactGeneration(generation);
       if (gen === null) return json({ ok: false, error: "INVALID_GENERATION", observed: generation }, 400);
-      const denied = await requireCapability(db, { method: "WAL_READ" });
-      if (denied) return denied;
-      // read surface: immutable durable history stays queryable by operation
-      // identity even after the finalizing session is fenced (V16; the
-      // finalize-RETRY path still answers SESSION_FENCED per inv. 38)
-      const result = await stubFor(db).queryOperation(db, gen, decodeURIComponent(operationId));
-      if (!result.ok) return json(result, 404);
+      const auth = await requireCapabilityWithSession(db, { method: "WAL_READ" });
+      if ("denied" in auth) return auth.denied;
+      // Read surface: immutable durable history stays queryable by operation
+      // identity across a fence of some OTHER actor (V16; the finalize-RETRY
+      // path still answers SESSION_FENCED per inv. 38). "By the current
+      // actor" is load-bearing, so the core revalidates the caller's own
+      // session (donor A4): a fenced actor holding an unexpired WAL_READ
+      // capability reads nothing.
+      const result = await stubFor(db).queryOperation(
+        db, gen, decodeURIComponent(operationId), auth.session);
+      if (!result.ok) {
+        const refusal = sessionRefusal(result as { ok: false; error: string });
+        return refusal ?? json(result, 404);
+      }
       return json(result);
     }
 
@@ -533,17 +819,22 @@ export default {
 
     const outboxAck = path.match(/^\/outbox\/([^/]+)\/ack$/);
     if (request.method === "POST" && outboxAck) {
-      const denied = await requireCapability(outboxAck[1], { method: "OUTBOX" });
-      if (denied) return denied;
+      const auth = await requireCapabilityWithSession(outboxAck[1], { method: "OUTBOX" });
+      if ("denied" in auth) return auth.denied;
       const b = (await request.json()) as { upToControlSeq: number | string };
-      const stub = stubFor(outboxAck[1]) as unknown as { outboxAck(seq: bigint): Promise<number> };
+      const stub = stubFor(outboxAck[1]) as unknown as {
+        outboxAck(db: string, seq: bigint, session: string):
+          Promise<{ ok: true; acked: number } | { ok: false; error: string }>;
+      };
       let upTo: bigint;
       try {
         upTo = u64FromWire(b.upToControlSeq, "upToControlSeq");
       } catch {
         return json({ ok: false, error: "INVALID_PARAMETER", field: "upToControlSeq" }, 400);
       }
-      return json({ ok: true, acked: await stub.outboxAck(upTo) });
+      const result = await stub.outboxAck(outboxAck[1], upTo, auth.session);
+      if (!result.ok) return sessionRefusal(result) ?? json(result, 409);
+      return json({ ok: true, acked: result.acked });
     }
 
     const cutOpen = path.match(/^\/checkpoint\/([^/]+)\/(\d+)\/cut$/);

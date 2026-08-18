@@ -26,16 +26,22 @@ import {
   type SqlRow,
   type SyncSql,
 } from "./core/procedures.ts";
-import { fromHex, utf8 } from "./core/journal-crypto.ts";
-import { checkCapability, mintCapability, type CapabilityCheck, type CapabilityPayload } from "./core/capability.ts";
+import { resolveKeyConfig } from "./core/key-config.ts";
+import {
+  checkCapability, mintCapability, MAX_CAPABILITY_BYTES, REQUIRED_RESTRICTIONS,
+  type CapabilityCheck, type CapabilityPayload,
+} from "./core/capability.ts";
 
 export interface Env {
   CONTAINER_LIFECYCLE: DurableObjectNamespace;
-  /** Hex journal MAC key (F8). Unset = the core's loud dev default; a
-   *  managed secret is a G2 provisioning item. */
+  /** Q-24: key posture. "managed" (the default when unset - a lost variable
+   *  refuses, it never downgrades) requires provisioned hex keys via the
+   *  variables below; "local-dev" is the L1 scaffolding posture with loud
+   *  dev constants. Resolution and policy: core/key-config.ts. */
+  CONTROLLER_KEY_PROFILE?: string;
   CONTROLLER_JOURNAL_KEY?: string;
-  /** Hex capability MAC key (F9) - distinct from the journal key. */
   CONTROLLER_CAPABILITY_KEY?: string;
+  CONTROLLER_ISSUER_SECRET?: string;
 }
 
 export class DatabaseControllerDO extends DurableObject {
@@ -68,12 +74,14 @@ export class DatabaseControllerDO extends DurableObject {
           .toArray() as SqlRow[],
       transaction: <T,>(fn: () => T): T => storage.transactionSync(fn),
     };
-    this.controllerCore = new ControllerCore(adapter, {
-      journalKey: env.CONTROLLER_JOURNAL_KEY ? fromHex(env.CONTROLLER_JOURNAL_KEY) : undefined,
-    });
-    this.capabilityKey = env.CONTROLLER_CAPABILITY_KEY
-      ? fromHex(env.CONTROLLER_CAPABILITY_KEY)
-      : utf8("dev-insecure-capability-key");
+    // Q-24: fail closed on key configuration. resolveKeyConfig THROWS on a
+    // managed deployment with absent/empty/malformed/dev-constant keys,
+    // which fails DO construction, which makes every route on this
+    // authority refuse - there is no downgrade path from inside the
+    // process, and no route that serves before the check runs.
+    const keys = resolveKeyConfig(env);
+    this.controllerCore = new ControllerCore(adapter, { journalKey: keys.journalKey });
+    this.capabilityKey = keys.capabilityKey;
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS databases(
         database_id TEXT PRIMARY KEY,
@@ -104,20 +112,56 @@ export class DatabaseControllerDO extends DurableObject {
     return this.core().finalizeWalRecord(req);
   }
 
-  finalizeBatch(reqs: FinalizeRequest[]): ReturnType<ControllerCore["finalizeBatch"]> {
-    return this.core().finalizeBatch(reqs);
+  finalizeBatch(
+    reqs: FinalizeRequest[], envelope?: Parameters<ControllerCore["finalizeBatch"]>[1],
+  ): ReturnType<ControllerCore["finalizeBatch"]> {
+    return this.core().finalizeBatch(reqs, envelope);
   }
 
   registerSession(databaseId: string, generation: number, startupSessionId: string): void {
     this.core().registerSession(databaseId, generation, startupSessionId);
   }
 
+  reserveSession(databaseId: string, generation: number, startupSessionId: string, holder: string):
+    ReturnType<ControllerCore["reserveSession"]> {
+    return this.core().reserveSession(databaseId, generation, startupSessionId, holder);
+  }
+
+  attestSession(databaseId: string, startupSessionId: string, processNonce: string):
+    ReturnType<ControllerCore["attestSession"]> {
+    return this.core().attestSession(databaseId, startupSessionId, processNonce);
+  }
+
+  activateSession(
+    databaseId: string, startupSessionId: string,
+    proof: Parameters<ControllerCore["activateSession"]>[2],
+  ): ReturnType<ControllerCore["activateSession"]> {
+    return this.core().activateSession(databaseId, startupSessionId, proof);
+  }
+
+  renewLease(databaseId: string, startupSessionId: string, leaseMs: number):
+    ReturnType<ControllerCore["renewLease"]> {
+    return this.core().renewLease(databaseId, startupSessionId, leaseMs);
+  }
+
+  beginDrain(databaseId: string, startupSessionId: string): ReturnType<ControllerCore["beginDrain"]> {
+    return this.core().beginDrain(databaseId, startupSessionId);
+  }
+
+  revokeSession(databaseId: string, startupSessionId: string): ReturnType<ControllerCore["revokeSession"]> {
+    return this.core().revokeSession(databaseId, startupSessionId);
+  }
+
   fenceSession(databaseId: string, startupSessionId: string): void {
     this.core().fenceSession(databaseId, startupSessionId);
   }
 
-  setBudgets(databaseId: string, budgets: Parameters<ControllerCore["setBudgets"]>[1]): void {
-    this.core().setBudgets(databaseId, budgets);
+  setBudgets(
+    databaseId: string,
+    budgets: Parameters<ControllerCore["setBudgets"]>[1],
+    startupSessionId: string,
+  ): ReturnType<ControllerCore["setBudgets"]> {
+    return this.core().setBudgets(databaseId, budgets, startupSessionId);
   }
 
   exactLookup(databaseId: string, generation: number, appendLsn: bigint): ReturnType<ControllerCore["exactLookup"]> {
@@ -148,16 +192,25 @@ export class DatabaseControllerDO extends DurableObject {
     return this.core().lastByType(databaseId, generation, recordType);
   }
 
-  queryOperation(databaseId: string, generation: number, operationId: string): ReturnType<ControllerCore["queryOperation"]> {
-    return this.core().queryOperation(databaseId, generation, operationId);
+  queryOperation(
+    databaseId: string, generation: number, operationId: string, startupSessionId: string,
+  ): ReturnType<ControllerCore["queryOperation"]> {
+    return this.core().queryOperation(databaseId, generation, operationId, startupSessionId);
+  }
+
+  resolveSnapshot(databaseId: string, generation: number, snapshotId: string):
+    ReturnType<ControllerCore["resolveSnapshot"]> {
+    return this.core().resolveSnapshot(databaseId, generation, snapshotId);
   }
 
   outboxPeek(limit: number): ReturnType<ControllerCore["outboxPeek"]> {
     return this.core().outboxPeek(limit);
   }
 
-  outboxAck(upToControlSeq: bigint): number {
-    return this.core().outboxAck(upToControlSeq);
+  outboxAck(
+    databaseId: string, upToControlSeq: bigint, startupSessionId: string,
+  ): ReturnType<ControllerCore["outboxAck"]> {
+    return this.core().outboxAck(databaseId, upToControlSeq, startupSessionId);
   }
 
   verifyJournal(): ReturnType<ControllerCore["verifyJournal"]> {
@@ -187,6 +240,24 @@ export class DatabaseControllerDO extends DurableObject {
     const key = spec.method === "PUT_PAYLOAD" && spec.digest !== undefined
       ? `p/${spec.databaseId}/${spec.digest}`
       : undefined;
+    // Issuance is fail-closed on the same restriction table verification
+    // enforces. Minting a PUT_PAYLOAD token with no digest/budget used to
+    // produce a token that authorized ANY key, ANY body and ANY length; it
+    // now produces nothing at all, so the two ends cannot disagree about
+    // what a capability is allowed to leave unbound.
+    const derived: Record<string, unknown> = {
+      session: spec.session, key, digest: spec.digest, maxBytes: spec.maxBytes,
+    };
+    for (const required of REQUIRED_RESTRICTIONS[spec.method] ?? []) {
+      if (derived[required] === undefined) {
+        throw new Error(`CAPABILITY_RESTRICTION_MISSING: ${spec.method} requires ${required}`);
+      }
+    }
+    if (spec.maxBytes !== undefined
+        && (!Number.isSafeInteger(spec.maxBytes) || spec.maxBytes < 0 || spec.maxBytes > MAX_CAPABILITY_BYTES)) {
+      throw new Error(
+        `CAPABILITY_BUDGET_ABOVE_CEILING: ${spec.maxBytes} exceeds the ${MAX_CAPABILITY_BYTES}-byte data-path ceiling`);
+    }
     const payload: CapabilityPayload = {
       principal: spec.principal,
       databaseId: spec.databaseId,

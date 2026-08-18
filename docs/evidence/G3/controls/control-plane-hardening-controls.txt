@@ -1,0 +1,279 @@
+# Executed negative controls: control-plane hardening (Q-09, Q-11, Q-18, Q-25, Q-26, donor A4)
+#
+# Every entry below was run in this session. "MUTANT" lines reintroduce the
+# audited defect and record which named test goes red; each is restored
+# immediately afterwards and the suite re-run green.
+
+$ node --test --experimental-strip-types src/controller/core/controller-core.test.ts
+# pass 26 / # fail 0
+$ node --test --experimental-strip-types src/controller/core/controller-state.test.ts
+# pass 5 / # fail 0
+$ node --test --experimental-strip-types src/controller/core/journal.test.ts
+# pass 7 / # fail 0
+$ node --test --experimental-strip-types src/controller/core/capability.test.ts
+# pass 5 / # fail 0
+$ CONTROLLER_MUTANT=drop-outbox-event node --test ... controller-core.test.ts
+# pass 23 / # fail 1        (the standing outbox mutant is still killed)
+
+## donor A4 - core-level per-procedure session revalidation
+MUTANT: requireLiveSession() returns {ok:true} unconditionally
+  not ok 10 - a finalized operation stays queryable by operation id after its session is fenced
+  not ok 24 - donor A4: authority procedures revalidate the actor at the core, beneath the capability layer
+  # pass 22 / # fail 2      -> restored: # pass 24 / # fail 0
+
+## Q-26 - capability restrictions are mandatory, not optional
+MUTANT A: the method-mandatory restriction loop removed
+  not ok 5 - WAL_FINALIZE stays session-bound (donor A3) and the binding is mandatory
+  # pass 4 / # fail 1
+MUTANT B: both mandatory-restriction layers removed (exact pre-fix behaviour)
+  not ok 1 - a PUT_PAYLOAD token that omits its restrictions is refused, not widened
+  not ok 4 - a request that needs a restriction cannot be satisfied by a token that declines to bind one
+  not ok 5 - WAL_FINALIZE stays session-bound (donor A3) and the binding is mandatory
+  # pass 2 / # fail 3       -> restored: # pass 5 / # fail 0
+  (MUTANT B reproduces the audit's executed finding: a correctly-MACed
+   PUT_PAYLOAD token with no key/digest/maxBytes, checked against a different
+   key, a different digest and a 999,999,999-byte length, was accepted.)
+
+## Q-09 - versioned, ordered, transactional migrations
+MUTANT: the record_type-dependent index moved back into migration v1
+  not ok 25 - Q-09: a database created before record_type existed can still be opened and migrated
+  # pass 24 / # fail 1      -> restored: # pass 25 / # fail 0
+
+## Q-11 - durable idempotency aliases
+MUTANT: status-singleton dedupe answers without recording the alias
+  not ok 26 - Q-11: a dedupe answer is durable under the operation id the client actually used
+  # pass 25 / # fail 1      -> restored: # pass 26 / # fail 0
+
+## Q-25 - no delete authority before G13
+$ python3 tools/maintenance/s3_gc.py --delete mat-1
+REFUSED: physical deletion is unavailable before G13.
+  missing gate record: docs/evidence/G13/delete-authority-gate.json
+  ...
+rc=1
+$ grep -c 'DELETE' tools/maintenance/s3_gc.py     # no DELETE request remains in the file
+(only the explanatory comment matches; the delete implementation is gone, not flag-guarded)
+
+## Q-20 - contract subrequest ceiling
+PAYLOAD_FETCH_CONCURRENCY is now R2_SUBREQUEST_CEILING = 6 (was 8), sourced
+from contract/typedb-r2-v16-cloudflare-contract-lock.json
+("simultaneous outgoing connections per invocation is six").
+
+## Still to run in this environment
+The workerd lanes (npx vitest run, wrangler dev + scripts/local-stack-e2e.mjs)
+were NOT re-run at the time of this commit: a full U2S3 corpus run was
+executing and the E2E's contention would risk timing out corpus targets that
+take hours to re-measure. The E2E script was updated for the new session-bound
+routes and the Q-18 digest rule, and re-run afterwards - see the run recorded
+below this line when it exists.
+
+## Workerd lanes, re-run after the corpus contention window closed
+$ npx vitest run
+Test Files 2 passed (2) / Tests 8 passed (8)
+
+$ rm -rf .wrangler/state && npx wrangler dev --port 8787
+$ node scripts/local-stack-e2e.mjs
+L1 LOCAL STACK E2E: ALL PASS   (65 checks, was 61)
+
+New checks in this run:
+  PASS  a caller-supplied request digest that disagrees with the request is refused
+        {"error":"REQUEST_DIGEST_MISMATCH","computed":"6f677f31...","supplied":"ffffffff..."}   (Q-18)
+  PASS  an unregistered actor cannot ack the outbox
+        {"error":"SESSION_UNKNOWN"}                                                             (donor A4)
+  PASS  a fenced actor cannot read the operation surface
+        {"error":"SESSION_FENCED"}                                                              (donor A4)
+  PASS  a first record larger than the page budget is refused, not admitted
+        {"error":"RECORD_EXCEEDS_PAGE_BUDGET","appendLsn":"0","payloadLength":15,"maxBytes":1}  (12.6)
+Changed check:
+  PASS  register fences the predecessor, and the refusal names no holder
+        {"ok":false,"error":"SESSION_FENCED"}   - the body now carries exactly {ok,error}       (12.5)
+
+The outbox section moved ahead of the fencing section: donor A4 makes the
+outbox drainable only by a LIVE actor, and the previous order acked it after
+fencing the only registered session. Event counts moved 4 -> 3 accordingly
+(the SESSION_FENCED command now lands after the ack rather than before it).
+
+## Q-17 - append cost bounded by the request, not by history
+Admission answered "how deep is the outbox?" and "how long is the tail?" with
+COUNT(*) over the whole table on every finalisation (and the outbox count had
+no index at all). Both are transactionally maintained singleton counters now,
+backfilled by migration v5 so an existing database is correct at first open,
+with a partial index over unpublished rows for the ordered drain.
+
+$ node --test ... controller-core.test.ts
+# pass 27 / # fail 0     (new: "Q-17: maintained usage counters agree with the
+                          history they replace, on every path")
+
+MUTANT: drainOutbox marks a row published but forgets the counter
+  not ok 7  - bounded admission fail-closed: payload, outbox depth, tail budget
+  not ok 27 - Q-17: maintained usage counters agree with the history they replace
+  # pass 25 / # fail 2    -> restored: # pass 27 / # fail 0
+
+Found while writing that control: outboxAck's UPDATE was not scoped by
+database_id, so one database's consumer could mark another's control events
+published. One DO per database hides it in production; it is wrong wherever a
+core holds more than one, and the counter made it visible. Now scoped.
+
+$ npx wrangler dev + node scripts/local-stack-e2e.mjs (re-run after Q-17)
+L1 LOCAL STACK E2E: ALL PASS   (65 checks)
+
+## Q-12 / 12.6 - the iteration cut is SERVER-owned
+Opening an iterator returned only a head, and every subsequent scan page
+accepted a caller-supplied `throughLsn`. That is not a pinned view: the
+client held the cut, so it could widen it between pages (observing appends
+made after iteration started, inv. 41-42) or narrow it (silently skipping
+records a consumer believes it replayed). The iterator now returns an opaque
+snapshot id MACed over (database, generation, head, incarnation), the scan
+route refuses a caller-supplied bound outright, and a continuation outside
+its own snapshot is typed rather than an empty page.
+
+$ node --test ... controller-core.test.ts       # pass 28 / # fail 0
+MUTANT: resolveSnapshot accepts the cut unauthenticated (the pre-fix posture)
+  not ok 28 - Q-12: the iteration cut is server-owned - a snapshot id cannot be
+              forged, widened or reused
+  # pass 27 / # fail 1   -> restored: # pass 28 / # fail 0
+
+$ npx vitest run                                 Test Files 2 passed / Tests 8 passed
+$ node scripts/local-stack-e2e.mjs               L1 LOCAL STACK E2E: ALL PASS
+  PASS  iterator pins the head and returns an opaque server-owned snapshot id
+        {"headLsn":"3","snapshotId":"3.b7f8921bff6e26bb..."}
+  PASS  unbounded scan is refused          {"error":"MISSING_SNAPSHOT_ID"}
+  PASS  a caller-supplied scan bound is refused
+        {"error":"CALLER_SUPPLIED_SNAPSHOT_BOUND"}
+  PASS  a snapshot id whose head was rewritten is refused   {"error":"INVALID_SNAPSHOT_ID"}
+  PASS  a snapshot id from another generation is refused    {"error":"INVALID_SNAPSHOT_ID"}
+  PASS  a continuation outside its own snapshot is a typed refusal, not an empty page
+        {"error":"CONTINUATION_OUTSIDE_SNAPSHOT","fromLsn":"9","throughLsn":"3"}
+
+## 12.6 - the batch is one authority envelope with an identity
+/wal/finalize-batch was deployable while the v16 batch schema was absent: no
+BatchOperationId, no canonical batch digest, no K/byte limits, and no way to
+answer a replayed batch. The envelope is now required (an unnamed batch is
+refused, one-record finalization always remains open), the digest is computed
+server-side from the ordered members' own canonical request digests, a
+supplied digest is only ever CHECKED, and one batch id may never name a
+different set of members - including a reordering.
+
+$ node --test ... controller-core.test.ts      # pass 29 / # fail 0
+  new: "12.6: a batch is one authority envelope with an identity, a digest and limits"
+       covers: unnamed batch, empty batch, K ceiling, byte ceiling
+       (allocating nothing), wrong supplied digest, success, same id with
+       different members, same id with reordered members.
+
+$ node scripts/local-stack-e2e.mjs             L1 LOCAL STACK E2E: ALL PASS
+  PASS  a batch without an envelope is refused
+        {"error":"BATCH_ENVELOPE_REQUIRED"}
+  PASS  the same batch id with different members is a permanent conflict
+        {"error":"BATCH_DIGEST_CONFLICT"}
+
+## Q-24 / Q-02 - fail-closed keys, credentialed issuance
+core/key-config.ts: two named postures. "managed" (the default when the
+profile variable is LOST - refusal, never downgrade) requires provisioned
+hex keys >= 32 bytes, pairwise distinct, and refuses the development
+constants EVEN WHEN CONFIGURED EXPLICITLY; "local-dev" is the L1 posture and
+names itself in wrangler.toml. resolveKeyConfig throws -> DO construction
+fails -> every route refuses. /capability now requires x-issuer-authorization
+in EVERY posture, so no configuration state exists with anonymous issuance.
+
+$ node --test ... key-config.test.ts        # pass 7 / # fail 0
+  (managed refuses: absent, empty, non-hex, odd-length, short, dev-constant,
+   shared journal/capability key, unknown profile; unset profile == managed)
+
+## Q-12 / Q-10 - mandatory budgets, exact authority-sized values
+finalizeStep: a database with NO budget row denies writes
+(ADMISSION_REJECTED_NO_BUDGET) - "no budget means unlimited" inverted the
+fail direction. The check sits after replay/dedupe so a lost-response retry
+still gets its receipt. setBudgets validates each field as an exact integer
+in [1, ceiling] below the immutable platform maxima (8 MiB payload, 100k
+outbox, 10M tail); payloadLength on the finalize wire is exact or refused.
+
+$ node --test ... controller-core.test.ts   # pass 31 / # fail 0
+  new: "Q-12: a database with no validated budget row denies writes"
+       "Q-10: budgets and payload lengths are exact at the boundary"
+$ npx vitest run                            Test Files 2 passed / Tests 8 passed
+$ node scripts/local-stack-e2e.mjs          L1 LOCAL STACK E2E: ALL PASS (76 checks, was 71)
+  PASS  anonymous capability issuance is refused      {"error":"ISSUER_UNAUTHORIZED"}
+  PASS  a wrong issuer credential is refused          {"error":"ISSUER_UNAUTHORIZED"}
+  PASS  a database with no budget row denies writes   {"error":"ADMISSION_REJECTED_NO_BUDGET"}
+  PASS  a validated budget opens admission
+  PASS  a fractional budget is a typed refusal        {"error":"INVALID_BUDGET","field":"maxUnpublishedOutbox"}
+
+## Q-03 / 12.4 - the startup-session lifecycle
+Takeover-at-open is gone as a MECHANISM: activateSession is the only code
+that fences, and it is one transaction that revalidates reservation,
+attested process nonce, controller incarnation and generation first.
+Authority lives under a controller-time lease over a persisted NONDECREASING
+floor; finalize/setBudgets/outboxAck revalidate the lease before any
+counter/outbox is consumed; expiry is terminal. Session ids are single-use.
+The legacy registerSession is a macro over reserve->attest->activate, so the
+three-lane pin (register-fences-predecessor) keeps its trace while the
+directive's rule ("a new random session id cannot fence anyone" outside the
+protocol) holds structurally. Reads survive expiry (12.4: expiry blocks new
+mutations, it does not make durable history unreadable).
+
+$ node --test ... lifecycle.test.ts          # pass 13 / # fail 0
+  (reservation/attestation grant nothing; random-id activation refused at
+   every stage while the incumbent keeps appending; hijacked nonce refused;
+   stale incarnation refused; generation mismatch refused; spent ids
+   permanent; expiry blocks mutations pre-allocation and is terminal;
+   backward clock jump cannot extend a lease; forward jump fails closed;
+   renewal from controller time; drain retains authority, revoke ends it;
+   activation idempotent for a lost response only; legacy macro = lifecycle)
+
+MUTANT A: activation verifies nothing (takeover-at-open restored)
+  not ok 2, 3, 4, 12    # pass 9 / # fail 4     -> restored: 13/0
+MUTANT B: lease revalidation removed from the finalize path
+  not ok 6, 8, 9        # pass 10 / # fail 3    -> restored: 13/0
+
+$ full core suites: lifecycle 13, core 31, state 5, journal 7, capability 5,
+  key-config 7; vitest 8/8; L1 E2E 84/84 ALL PASS (8 new lifecycle checks
+  over HTTP: reserve, activate-before-attest refused, attest, hijacked
+  nonce refused, ghost-id activation refused, verified activation + lease,
+  renewal, spent-id refusal).
+
+Honest remainder: on L1 the lifecycle's CALLERS are gated by SESSION_ADMIN
+capabilities, not real container attestation - the external attestation
+root, provider-enforced routing/ingress fencing, and the external recovery
+lock for incarnation recovery are real-platform work and stay OPEN.
+
+## Q-17 remainder - hot-path SQL is index-backed, append latency ~constant
+New suite: control-plane/src/controller/core/query-plans.test.ts (in CI).
+
+Layer 1 (deterministic): a recording SQL shim captures every SELECT/UPDATE/
+DELETE the hot paths execute (finalize sequenced/unsequenced/replay/batch,
+exact read, head, pinned scan typed+untyped, operation query, last-by-type,
+outbox peek/ack, capability-nonce burn) and EXPLAIN QUERY PLANs each one.
+A bare `SCAN table` fails; the only SCANs admitted are the partial
+outbox_unpublished index walk (cardinality = unpublished backlog, budget-
+bounded) and `... LIMIT 1` early-terminating index peeks.
+
+Layer 2 (measured): plan text LIES about aggregates. The old head lookup
+  SELECT MAX(append_lsn), MAX(type_sequence) FROM wal_tail
+  WHERE database_id=? AND generation=?
+prints the same `SEARCH wal_tail USING INDEX sqlite_autoindex_wal_tail_1`
+line as an O(1) seek while walking EVERY row of the generation on each
+append (two aggregates over different columns defeat SQLite's min/max
+optimisation). Fixed to a single PK-index seek (`ORDER BY append_lsn DESC
+LIMIT 1`; TypeSequence is nondecreasing in append order so the newest row
+carries both maxima) in finalizeStep and head(). The control seeds a 500k-row
+synthetic fixture and asserts per-append latency within 8x of a 1k-row
+baseline.
+
+Also fixed under layer 1: burnCapabilityNonce's lazy expiry sweep
+(`DELETE FROM capability_nonces WHERE expires_at <= ?`) had no index -
+a full scan of every live nonce on every burn. Migration v8 adds
+capability_nonce_expiry ON capability_nonces(expires_at).
+
+MUTANT A: head lookup reverted to the double MAX
+  not ok 2 - append latency is ~constant in history (large synthetic fixture)
+  error: 'append latency grew with history: 924087ns/append at 1k rows,
+          109660813ns/append at 500k rows (118.7x)'        (bound: 8x)
+  NOTE the plan test stays GREEN under this mutant ("ok 1") - recorded
+  because it proves the ratio control is the only killer for this defect
+  class, exactly why the suite has two layers.
+MUTANT B: migration v8's capability_nonce_expiry index dropped
+  not ok 1 - every statement the hot paths execute is index-backed
+  hot-path statement is not index-backed:
+    plan: SCAN capability_nonces
+  (the ratio test stays green - the two layers kill disjoint defects)
+-> restored: 70/70 across the seven controller suites; vitest workerd lane
+   8/8; tsc --noEmit clean.

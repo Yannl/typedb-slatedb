@@ -1,0 +1,10 @@
+{
+ "green": true,
+ "complete_selection": true,
+ "anomaly_count": 0,
+ "anomalies": [],
+ "producer": "tools/catalog/run_u0.py --verdict-only",
+ "re_derived_from": "docs/evidence/G3/u2s3-full-3/u0-results.json",
+ "denominator_checked": true,
+ "executables": 106
+}

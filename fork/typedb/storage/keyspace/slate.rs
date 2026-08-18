@@ -33,7 +33,10 @@
 use std::{
     fs, io,
     path::{Path, PathBuf},
-    sync::{Arc, OnceLock, atomic::{AtomicU64, Ordering}},
+    sync::{
+        Arc, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use async_trait::async_trait;
@@ -43,12 +46,9 @@ use slatedb::{
     bytes::Bytes as SlateBytes,
     config::{ReadOptions, ScanOptions, Settings, WriteOptions},
     object_store::{
-        CopyOptions, GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, ObjectStore,
-        ObjectStoreExt, PutMultipartOptions, PutOptions, PutPayload, PutResult,
-        aws::AmazonS3Builder,
-        local::LocalFileSystem,
-        path::Path as ObjectPath,
-        prefix::PrefixStore,
+        CopyMode, CopyOptions, GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, ObjectStore,
+        ObjectStoreExt, PutMultipartOptions, PutOptions, PutPayload, PutResult, RenameOptions, aws::AmazonS3Builder,
+        local::LocalFileSystem, path::Path as ObjectPath, prefix::PrefixStore,
     },
 };
 
@@ -73,12 +73,49 @@ fn runtime() -> &'static tokio::runtime::Runtime {
 /// runtime); it blocks that thread exactly as the equivalent RocksDB syscall
 /// would.
 fn bridge<T: Send + 'static>(future: impl std::future::Future<Output = T> + Send + 'static) -> T {
+    // Q-13/Q-23 containment: the bridge is BOUNDED. It used to block the
+    // calling thread forever; combined with unbounded lower-layer retries
+    // that made an object-store outage a silent, undiagnosable hang. The
+    // wait now reports every 30s and fail-stops at the deadline - a task
+    // stuck this long is a wedged storage runtime, and neither returning
+    // garbage nor waiting forever is sound. Caller-side cancellation is the
+    // OPEN remainder (it needs fallible signatures up the read stack).
+    // Deadline: containment default, owner decision OD-006.
+    const REPORT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+    const DEADLINE: std::time::Duration = std::time::Duration::from_secs(600);
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
     runtime().spawn(async move {
         // a dropped receiver means the caller thread died; nothing to do
         let _ = sender.send(future.await);
     });
-    receiver.recv().expect("SlateDB storage task terminated without a result (panicked?)")
+    let started = std::time::Instant::now();
+    loop {
+        match receiver.recv_timeout(REPORT_INTERVAL) {
+            Ok(value) => return value,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                let waited = started.elapsed();
+                if waited >= DEADLINE {
+                    logger::error!(
+                        "FATAL: a SlateDB storage task has not completed after {}s. The storage \
+                         runtime is wedged (object store unreachable past its bounded retries, or \
+                         a task deadlock); blocking further is indistinguishable from a hang and \
+                         returning without a result is unsound. Aborting so recovery restarts \
+                         from the durability log.",
+                        waited.as_secs(),
+                    );
+                    std::process::abort()
+                }
+                logger::error!(
+                    "a SlateDB storage task is still running after {}s (deadline {}s)",
+                    waited.as_secs(),
+                    DEADLINE.as_secs(),
+                );
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                panic!("SlateDB storage task terminated without a result (panicked?)")
+            }
+        }
+    }
 }
 
 fn write_options() -> WriteOptions {
@@ -150,6 +187,14 @@ fn settings() -> Settings {
     // compactor-less tests take (settings.l0_max_ssts = 10_000).
     settings.l0_max_ssts = 1_000_000;
     settings.l0_max_ssts_per_key = 1_000_000;
+    // Q-13: SlateDB's wrapper-level object-store retries default to None,
+    // which is documented as "retry transient errors indefinitely". An
+    // infinite lower-layer retry converts an outage into a silent hang that
+    // no caller deadline can see past. Bounded here; the exhausted error
+    // surfaces through the fallible seam and get_prev's own bounded retry
+    // policy decides what is transient (A10). Containment default, not an
+    // SLO (docs/owner-decisions.json OD-006).
+    settings.object_store_max_retries = Some(8);
     settings
 }
 
@@ -299,10 +344,7 @@ fn store_error(error: slatedb::object_store::Error) -> slatedb::Error {
 
 /// List every object under `prefix` (iterative multi-level
 /// `list_with_delimiter` walk — no stream combinators needed).
-async fn list_remote_prefix(
-    store: &dyn ObjectStore,
-    prefix: &ObjectPath,
-) -> Result<Vec<ObjectMeta>, slatedb::Error> {
+async fn list_remote_prefix(store: &dyn ObjectStore, prefix: &ObjectPath) -> Result<Vec<ObjectMeta>, slatedb::Error> {
     let mut pending = vec![prefix.clone()];
     let mut objects = Vec::new();
     while let Some(level) = pending.pop() {
@@ -360,25 +402,15 @@ impl ObjectStore for NoDeleteStore {
         self.inner.put_multipart_opts(location, opts).await
     }
 
-    async fn get_opts(
-        &self,
-        location: &ObjectPath,
-        options: GetOptions,
-    ) -> slatedb::object_store::Result<GetResult> {
+    async fn get_opts(&self, location: &ObjectPath, options: GetOptions) -> slatedb::object_store::Result<GetResult> {
         self.inner.get_opts(location, options).await
     }
 
-    fn list(
-        &self,
-        prefix: Option<&ObjectPath>,
-    ) -> BoxStream<'static, slatedb::object_store::Result<ObjectMeta>> {
+    fn list(&self, prefix: Option<&ObjectPath>) -> BoxStream<'static, slatedb::object_store::Result<ObjectMeta>> {
         self.inner.list(prefix)
     }
 
-    async fn list_with_delimiter(
-        &self,
-        prefix: Option<&ObjectPath>,
-    ) -> slatedb::object_store::Result<ListResult> {
+    async fn list_with_delimiter(&self, prefix: Option<&ObjectPath>) -> slatedb::object_store::Result<ListResult> {
         self.inner.list_with_delimiter(prefix).await
     }
 
@@ -388,7 +420,50 @@ impl ObjectStore for NoDeleteStore {
         to: &ObjectPath,
         options: CopyOptions,
     ) -> slatedb::object_store::Result<()> {
+        // Q-27 remainder: copies are CREATE-ONLY through the runtime
+        // principal. An overwrite-mode copy is a delete of the destination's
+        // bytes wearing a copy's name - under the immutable materialisation
+        // posture (inv. 81-83) no runtime path may replace existing
+        // authoritative bytes, and refusing here means a misrouted copy
+        // fails closed instead of clobbering. Create-mode copies (the only
+        // kind the checkpoint paths issue) pass through and collide safely
+        // on the inner store's precondition.
+        if !matches!(options.mode, CopyMode::Create) {
+            return Err(slatedb::object_store::Error::NotImplemented {
+                operation: format!(
+                    "copy {from} -> {to} in overwrite mode (V16 inv. 81-83: the runtime storage \
+                     principal must not replace existing authoritative bytes; use create mode)"
+                ),
+                implementer: "NoDeleteStore".to_owned(),
+            });
+        }
         self.inner.copy_opts(from, to, options).await
+    }
+
+    /// Q-27: refuse the composite BEFORE its copy half runs.
+    ///
+    /// `ObjectStore`'s default `rename_opts` is `copy_opts(from, to)` then
+    /// `delete(from)`. Denying only `delete_stream` therefore denies the
+    /// deletion but not the copy: the rename returns an error while a full
+    /// duplicate of the object has already landed at the destination, and
+    /// the caller believes nothing happened. Under the immutable
+    /// materialisation posture that stray object is exactly what must not
+    /// exist - a second copy of authoritative bytes under a name nobody
+    /// activated. Refusing here means a blocked rename leaves the store
+    /// byte-identical.
+    async fn rename_opts(
+        &self,
+        from: &ObjectPath,
+        to: &ObjectPath,
+        _options: RenameOptions,
+    ) -> slatedb::object_store::Result<()> {
+        Err(slatedb::object_store::Error::NotImplemented {
+            operation: format!(
+                "rename {from} -> {to} (V16 inv. 84: rename is copy-then-delete; the runtime \
+                 storage principal has no delete authority, and the copy half must not run either)"
+            ),
+            implementer: "NoDeleteStore".to_owned(),
+        })
     }
 
     fn delete_stream(
@@ -411,22 +486,38 @@ impl ObjectStore for NoDeleteStore {
     }
 }
 
+/// Clear the local object cache before a keyspace opens on it.
+///
+/// Q-14: this is CORRECTNESS-critical, not hygiene. Cache entries are keyed
+/// by STORE-RELATIVE paths, and those paths repeat across materialisations -
+/// so an entry that survives from a previous materialisation is served for
+/// THIS one's object paths. That is wrong bytes under valid metadata, which
+/// is strictly worse than failing to open.
+///
+/// The failure that matters is a PARTIAL wipe: `remove_dir_all` deleting
+/// some entries and erroring midway leaves the directory present, so the
+/// `create_dir_all` that follows succeeds and the survivors are used. The
+/// call site discarded this error (`let _ = fs::remove_dir_all(..)`), which
+/// is why the partial case was silent. `NotFound` is the one benign
+/// outcome: there was nothing to wipe.
+fn wipe_object_cache(cache_dir: &Path) -> io::Result<()> {
+    match fs::remove_dir_all(cache_dir) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
 /// Upload a local directory tree (a restored checkpoint) under `prefix`,
 /// preserving the relative layout.
-async fn upload_dir_to_remote(
-    store: &dyn ObjectStore,
-    prefix: &ObjectPath,
-    root: &Path,
-) -> Result<(), slatedb::Error> {
+async fn upload_dir_to_remote(store: &dyn ObjectStore, prefix: &ObjectPath, root: &Path) -> Result<(), slatedb::Error> {
     fn collect(root: &Path, dir: &Path, out: &mut Vec<(Vec<String>, PathBuf)>) -> io::Result<()> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
             // the local disk cache and the materialisation marker are
             // machine-local state, never store state
-            if dir == root
-                && (entry.file_name() == OBJECT_CACHE_SUBDIR || entry.file_name() == MATERIALIZATION_FILE)
-            {
+            if dir == root && (entry.file_name() == OBJECT_CACHE_SUBDIR || entry.file_name() == MATERIALIZATION_FILE) {
                 continue;
             }
             if entry.file_type()?.is_dir() {
@@ -466,10 +557,8 @@ async fn download_remote_objects(
 ) -> Result<(), slatedb::Error> {
     let prefix_str = format!("{prefix}/");
     for location in locations {
-        let relative = location
-            .as_ref()
-            .strip_prefix(&prefix_str)
-            .expect("listed object location is under the listed prefix");
+        let relative =
+            location.as_ref().strip_prefix(&prefix_str).expect("listed object location is under the listed prefix");
         let mut target = dir.to_owned();
         for part in relative.split('/') {
             target = target.join(part);
@@ -477,8 +566,7 @@ async fn download_remote_objects(
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent).map_err(io_error)?;
         }
-        let bytes =
-            store.get(location).await.map_err(store_error)?.bytes().await.map_err(store_error)?;
+        let bytes = store.get(location).await.map_err(store_error)?.bytes().await.map_err(store_error)?;
         fs::write(&target, bytes).map_err(io_error)?;
     }
     Ok(())
@@ -559,13 +647,11 @@ impl SlateKeyspace {
         if let Some(root) = restored_root {
             let store = store.clone();
             let prefix = prefix.clone();
-            bridge(async move { upload_dir_to_remote(store.as_ref(), &prefix, &root).await })
-                .map_err(Arc::new)?;
+            bridge(async move { upload_dir_to_remote(store.as_ref(), &prefix, &root).await }).map_err(Arc::new)?;
         }
         // recorded for diagnostics and the GC report; written AFTER the seed
         // upload so it can never itself be uploaded as store state
-        fs::write(path.join(MATERIALIZATION_FILE), &materialization)
-            .map_err(|error| Arc::new(io_error(error)))?;
+        fs::write(path.join(MATERIALIZATION_FILE), &materialization).map_err(|error| Arc::new(io_error(error)))?;
         let prefixed: Arc<dyn ObjectStore> = Arc::new(PrefixStore::new(store.clone(), prefix.clone()));
         let mut settings = settings();
         if let Some(cache_bytes) = cache_bytes {
@@ -578,7 +664,7 @@ impl SlateKeyspace {
             // materialisations — a surviving entry would serve the previous
             // materialisation's bytes for this one's object paths.
             let cache_dir = path.join(OBJECT_CACHE_SUBDIR);
-            let _ = fs::remove_dir_all(&cache_dir);
+            wipe_object_cache(&cache_dir).map_err(|error| Arc::new(io_error(error)))?;
             fs::create_dir_all(&cache_dir).map_err(|error| Arc::new(io_error(error)))?;
             settings.object_store_cache_options.root_folder = Some(cache_dir);
             settings.object_store_cache_options.max_cache_size_bytes = Some(cache_bytes);
@@ -689,6 +775,16 @@ impl SlateKeyspace {
     /// not, because a concurrent memtable auto-flush can land a new manifest
     /// whose SSTs the copy misses):
     ///
+    /// **Q-16 scope statement — this is the CONFORMANCE-LANE fixture
+    /// exporter, not a production checkpoint.** Closure is derived by
+    /// listing and copying under the materialisation prefix, which is sound
+    /// here only because the conformance runner is single-actor by
+    /// construction and GC/compaction are disabled. A production checkpoint
+    /// requires a controller-frozen global cut, parsed manifest-root
+    /// closure, an independent scratch-restore digest, and controller-only
+    /// activation (F6r/16.3) — none of which this function claims. Do not
+    /// wire it into any production path.
+    ///
     /// 1. flush the memtable (the checkpoint watermark was captured by the
     ///    caller before this, so the flush covers it);
     /// 2. pin the CURRENT latest manifest file — SSTs are immutable and GC
@@ -765,11 +861,8 @@ impl SlateKeyspace {
             let pinned = manifests.iter().map(|meta| &meta.location).max().cloned();
             let objects = list_remote_prefix(store.as_ref(), &prefix).await?;
             let is_manifest = |location: &ObjectPath| location.as_ref().starts_with(&manifest_prefix);
-            let mut to_copy: Vec<ObjectPath> = objects
-                .iter()
-                .map(|meta| meta.location.clone())
-                .filter(|location| !is_manifest(location))
-                .collect();
+            let mut to_copy: Vec<ObjectPath> =
+                objects.iter().map(|meta| meta.location.clone()).filter(|location| !is_manifest(location)).collect();
             to_copy.extend(pinned);
             download_remote_objects(store.as_ref(), &prefix, &to_copy, &dir).await
         })
@@ -1085,7 +1178,7 @@ mod retry_channel_tests {
     //! fails `non_transient_kinds_fail_closed…`; removing the bound fails
     //! `the_retry_budget_is_bounded`.
 
-    use super::{retry_transient, TRANSIENT_RETRIES};
+    use super::{TRANSIENT_RETRIES, retry_transient};
 
     #[test]
     fn unavailable_is_retried_within_the_budget() {
@@ -1098,8 +1191,7 @@ mod retry_channel_tests {
     #[test]
     fn the_retry_budget_is_bounded() {
         let transient = slatedb::Error::unavailable("s3 outage".to_string());
-        assert!(!retry_transient(&transient, TRANSIENT_RETRIES),
-            "an exhausted budget must fail closed, not spin");
+        assert!(!retry_transient(&transient, TRANSIENT_RETRIES), "an exhausted budget must fail closed, not spin");
     }
 
     #[test]
@@ -1109,8 +1201,11 @@ mod retry_channel_tests {
             slatedb::Error::data("corrupt sst".to_string()),
             slatedb::Error::internal("bug".to_string()),
         ] {
-            assert!(!retry_transient(&error, 0),
-                "{:?} must never be retried - retrying would mask corruption or a bug", error.kind());
+            assert!(
+                !retry_transient(&error, 0),
+                "{:?} must never be retried - retrying would mask corruption or a bug",
+                error.kind()
+            );
         }
     }
 }
@@ -1130,10 +1225,17 @@ mod read_contract_tests {
     //! committed frontier and the same options see the row — same-handle
     //! read-your-writes without dirty reads (inv. 75).
 
-    use std::{sync::Arc, time::{Duration, Instant}};
+    use std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    };
 
     use fail_parallel::FailPointRegistry;
-    use slatedb::{Db, config::ReadOptions, object_store::{ObjectStore, local::LocalFileSystem}};
+    use slatedb::{
+        Db,
+        config::ReadOptions,
+        object_store::{ObjectStore, local::LocalFileSystem},
+    };
     use test_utils::create_tmp_dir;
 
     use super::{bridge, read_options, scan_options, settings, write_options};
@@ -1142,8 +1244,7 @@ mod read_contract_tests {
     fn paused_precommit_write_is_invisible_to_committed_frontier_reads() {
         let dir = create_tmp_dir("slate-read-contract");
         let registry = Arc::new(FailPointRegistry::new());
-        let store: Arc<dyn ObjectStore> =
-            Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
+        let store: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
         let db = Arc::new(
             bridge({
                 let registry = registry.clone();
@@ -1162,9 +1263,9 @@ mod read_contract_tests {
         // read through the production options, before any flush
         {
             let db = db.clone();
-            bridge(async move {
-                db.put_with_options(b"k-committed", b"v1", &Default::default(), &write_options()).await
-            })
+            bridge(
+                async move { db.put_with_options(b"k-committed", b"v1", &Default::default(), &write_options()).await },
+            )
             .unwrap();
         }
         let committed = {
@@ -1178,9 +1279,9 @@ mod read_contract_tests {
         let writer = {
             let db = db.clone();
             std::thread::spawn(move || {
-                bridge(async move {
-                    db.put_with_options(b"k-pending", b"v2", &Default::default(), &write_options()).await
-                })
+                bridge(
+                    async move { db.put_with_options(b"k-pending", b"v2", &Default::default(), &write_options()).await },
+                )
             })
         };
 
@@ -1192,10 +1293,8 @@ mod read_contract_tests {
         loop {
             let dirty_probe = {
                 let db = db.clone();
-                bridge(async move {
-                    db.get_with_options(b"k-pending", &ReadOptions::default().with_dirty(true)).await
-                })
-                .unwrap()
+                bridge(async move { db.get_with_options(b"k-pending", &ReadOptions::default().with_dirty(true)).await })
+                    .unwrap()
             };
             if dirty_probe.is_some() {
                 break;
@@ -1217,9 +1316,8 @@ mod read_contract_tests {
         let pending_scan: Vec<_> = {
             let db = db.clone();
             bridge(async move {
-                let mut iterator = db
-                    .scan_with_options(b"k-pending".to_vec()..b"k-pending\xff".to_vec(), &scan_options())
-                    .await?;
+                let mut iterator =
+                    db.scan_with_options(b"k-pending".to_vec()..b"k-pending\xff".to_vec(), &scan_options()).await?;
                 let mut rows = Vec::new();
                 while let Some(row) = iterator.next().await? {
                     rows.push(row.key);
@@ -1299,13 +1397,13 @@ mod materialization_tests {
     use std::{collections::BTreeMap, sync::Arc};
 
     use slatedb::object_store::{
-        ObjectStore, ObjectStoreExt, PutPayload, local::LocalFileSystem, path::Path as ObjectPath,
+        CopyMode, CopyOptions, ObjectStore, ObjectStoreExt, PutPayload, local::LocalFileSystem,
+        path::Path as ObjectPath,
     };
     use test_utils::create_tmp_dir;
 
     use super::{
-        FORMAT_VERSION_SEGMENT, MATERIALIZATION_FILE, NoDeleteStore, SlateKeyspace, bridge,
-        list_remote_prefix,
+        FORMAT_VERSION_SEGMENT, MATERIALIZATION_FILE, NoDeleteStore, SlateKeyspace, bridge, list_remote_prefix,
     };
 
     const BASE: &str = "it-base";
@@ -1380,9 +1478,7 @@ mod materialization_tests {
             "materialisation B must write under its own namespace",
         );
         assert!(
-            after_b.keys().all(|location| {
-                !location.contains(&id_b) || !location.contains(&id_a)
-            }),
+            after_b.keys().all(|location| { !location.contains(&id_b) || !location.contains(&id_a) }),
             "materialisation namespaces must be disjoint",
         );
 
@@ -1454,6 +1550,142 @@ mod materialization_tests {
         keyspace.put(b"k4", b"v4").unwrap();
         let second = keyspace.estimate_key_count().unwrap();
         assert_eq!(second, 2, "within the TTL the memoised count is served (proves the memo is written)");
+    }
+
+    #[test]
+    fn a_failed_object_cache_wipe_is_propagated_not_discarded() {
+        // Q-14. The call site used to be `let _ = fs::remove_dir_all(..)`.
+        //
+        // The failure that matters is a PARTIAL wipe - remove_dir_all
+        // deleting some entries and erroring midway - because the
+        // create_dir_all that follows then SUCCEEDS (the directory is still
+        // there) and the surviving entries are served for this
+        // materialisation's object paths. So the assertion has to be on the
+        // wipe's own result, not on whether the open happens to fail for
+        // some other reason: injecting an obstruction that also breaks
+        // create_dir_all would pass whether or not the error is discarded,
+        // which is no control at all.
+        let dir = create_tmp_dir("slate-cache-wipe");
+        let cache = dir.join("object-cache");
+
+        // nothing to wipe is benign
+        assert!(super::wipe_object_cache(&cache).is_ok(), "absent cache is not an error");
+
+        // a real cache directory with contents is cleared, and reported cleared
+        std::fs::create_dir_all(cache.join("nested")).unwrap();
+        std::fs::write(cache.join("nested").join("entry"), b"stale bytes").unwrap();
+        assert!(super::wipe_object_cache(&cache).is_ok());
+        assert!(!cache.exists(), "the wipe must actually remove the cache");
+
+        // and a wipe that CANNOT succeed is reported, never swallowed
+        std::fs::write(&cache, b"not a directory").unwrap();
+        let refused = super::wipe_object_cache(&cache);
+        assert!(
+            refused.is_err(),
+            "a cache the process cannot clear must be an error - discarding it opens the \
+             keyspace on entries keyed to a previous materialisation's object paths",
+        );
+    }
+
+    #[test]
+    fn copies_through_the_runtime_principal_are_create_only() {
+        // Q-27 remainder: an overwrite-mode copy is a delete of the
+        // destination's bytes wearing a copy's name. Create-mode copies pass
+        // through (colliding safely on the inner store's precondition);
+        // overwrite mode is refused before the inner store sees it.
+        let (_store_dir, inner) = remote_fixture();
+        let store = Arc::new(NoDeleteStore::new(inner));
+        let source = ObjectPath::from("copy/source");
+        let occupied = ObjectPath::from("copy/occupied");
+        bridge({
+            let (store, source, occupied) = (store.clone(), source.clone(), occupied.clone());
+            async move {
+                store.put(&source, PutPayload::from_static(b"source bytes")).await?;
+                store.put(&occupied, PutPayload::from_static(b"authoritative bytes")).await
+            }
+        })
+        .unwrap();
+
+        // the plain `copy()` extension defaults to OVERWRITE mode: refused
+        let overwrite = bridge({
+            let (store, source, occupied) = (store.clone(), source.clone(), occupied.clone());
+            async move { store.copy(&source, &occupied).await }
+        });
+        assert!(
+            matches!(overwrite, Err(slatedb::object_store::Error::NotImplemented { .. })),
+            "an overwrite-mode copy must be a typed denial, got: {overwrite:?}",
+        );
+        let survives = bridge({
+            let (inner, occupied) = (store.inner.clone(), occupied.clone());
+            async move { inner.get(&occupied).await?.bytes().await }
+        })
+        .unwrap();
+        assert_eq!(&survives[..], b"authoritative bytes", "the destination is untouched");
+
+        // create-mode copy to a fresh destination passes through
+        let fresh = ObjectPath::from("copy/fresh");
+        bridge({
+            let (store, source, fresh) = (store.clone(), source.clone(), fresh.clone());
+            async move {
+                store.copy_opts(&source, &fresh, CopyOptions { mode: CopyMode::Create, ..Default::default() }).await
+            }
+        })
+        .unwrap();
+        // and a create-mode copy onto an EXISTING destination fails on the
+        // inner store's own precondition, not by silently overwriting
+        let collision = bridge({
+            let (store, source, occupied) = (store.clone(), source.clone(), occupied.clone());
+            async move {
+                store.copy_opts(&source, &occupied, CopyOptions { mode: CopyMode::Create, ..Default::default() }).await
+            }
+        });
+        assert!(collision.is_err(), "create-mode collision must not overwrite");
+    }
+
+    #[test]
+    fn a_blocked_rename_leaves_no_copy_behind() {
+        // Q-27: ObjectStore's default `rename_opts` is copy-then-delete.
+        // Blocking only `delete_stream` blocked the deletion but not the
+        // copy, so a refused rename still left a full duplicate of the
+        // object at the destination - a second copy of authoritative bytes
+        // under a name nobody activated, while the caller was told the
+        // rename failed. The refusal must therefore come BEFORE the copy,
+        // and the store must be byte-identical afterwards.
+        let (_store_dir, inner) = remote_fixture();
+        let store = Arc::new(NoDeleteStore::new(inner));
+        let from = ObjectPath::from("rename/source");
+        let to = ObjectPath::from("rename/destination");
+        bridge({
+            let payload = PutPayload::from_static(b"authoritative bytes");
+            let (from, store) = (from.clone(), store.clone());
+            async move { store.put(&from, payload).await }
+        })
+        .unwrap();
+
+        let denial = bridge({
+            let (from, to, store) = (from.clone(), to.clone(), store.clone());
+            async move { store.rename(&from, &to).await }
+        });
+        assert!(
+            matches!(denial, Err(slatedb::object_store::Error::NotImplemented { .. })),
+            "rename through the runtime principal must be a typed denial, got: {denial:?}",
+        );
+
+        // the source survives...
+        let source = bridge({
+            let (from, inner) = (from.clone(), store.inner.clone());
+            async move { inner.head(&from).await }
+        });
+        assert!(source.is_ok(), "the source must survive a denied rename");
+        // ...and NOTHING was written at the destination
+        let destination = bridge({
+            let (to, inner) = (to.clone(), store.inner.clone());
+            async move { inner.head(&to).await }
+        });
+        assert!(
+            matches!(destination, Err(slatedb::object_store::Error::NotFound { .. })),
+            "a denied rename must not leave a copy at the destination, got: {destination:?}",
+        );
     }
 
     #[test]

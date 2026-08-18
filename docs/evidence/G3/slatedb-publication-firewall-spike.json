@@ -1,0 +1,46 @@
+{
+  "claim": "Candidate B of the ADR-0012 decision spike (a provider-enforced publication firewall over STOCK crates.io slatedb 0.15.0, fresh credential domain per authority rotation) is implemented, its qualifying matrix passes (4/4), and the mutant that removes the firewall gate is killed by both fencing cases. With this, BOTH candidates of the directive's two-candidate spike (J.3/D4, AC-FORK-SPIKE) are built and measured.",
+  "status": "candidate implemented and measured - NOT the normative decision; comparison recorded in ADR-0012",
+  "directive_item": "F4/F5 OPEN-P0; directive J.3/D4 (AC-FORK-SPIKE); NEXT-SESSION follow-up 4",
+  "crate": "spikes/publication-firewall (workspace-external, publish = false, nothing links it)",
+  "base": {
+    "crate": "slatedb",
+    "version": "0.15.0 (exact pin, crates.io, UNPATCHED - that is the point of this candidate)",
+    "features": ["wal_disable"],
+    "default_features": false
+  },
+  "mechanism": {
+    "shape": "ObjectStore wrapper (FirewalledStore) bound to a per-handle credential domain; a PublicationAuthority cell (the controller stand-in / provider-credential model) names the currently authorized domain; every MUTATION of a publication path (any path with a 'manifest' segment) is admitted only when handle domain == authorized domain; reads and data-path writes (SSTs) always pass - a revoked writer can at worst strand orphan bytes.",
+    "provider_mapping": "in production the same predicate is enforced server-side by scoped credentials (R2 API tokens / IAM session credentials) that the controller rotates; the spike enforces it in-process so semantics are measurable offline"
+  },
+  "toolchain": "rustc 1.93.0",
+  "executed": [
+    {
+      "command": "cargo +1.93.0 test (spikes/publication-firewall)",
+      "result": "test result: ok. 4 passed; 0 failed",
+      "cases": [
+        "every_publication_path_flows_through_the_firewall (coverage: a full open/put/flush/close cycle's manifest publications are all firewall-visible and path-identifiable; data writes are distinguishable)",
+        "a_revoked_writer_cannot_publish_and_a_successor_can (SL-P1 pause-fence-resume: rotation alone fences the stale flush at the store boundary, successor opens and publishes, predecessor's durable prefix intact, refusals are manifest-path-only)",
+        "a_stale_reopen_is_refused_at_open (the directive's stale-reopen case: open itself publishes, so a revoked domain cannot reacquire a writer)",
+        "the_firewall_vocabulary_has_no_epoch_in_it (the measured structural LIMIT, as an executable fact: the firewall observes paths/opaque bytes only)"
+      ]
+    },
+    {
+      "mutant": "the domain gate removed from FirewalledStore::admit (allowed = true)",
+      "result": "test result: FAILED. 2 passed; 2 failed - a_revoked_writer_cannot_publish_and_a_successor_can FAILED, a_stale_reopen_is_refused_at_open FAILED",
+      "restored": "test result: ok. 4 passed; 0 failed"
+    }
+  ],
+  "measured_findings": {
+    "coverage_advantage_over_upstream_fencing": "the firewall sits on the ONLY channel to storage, so it gates every publication path including the Admin/StoredManifest checkpoint paths that bypass upstream's FenceableManifest fencing types entirely - Candidate A has to patch those paths one by one.",
+    "q13_interaction_observed": "first run HUNG: with the stock default object_store_max_retries: None ('retry transient errors indefinitely'), the firewall's refusal put flush() into an infinite retry loop - the fenced writer hung instead of failing. Candidate B inherits this hazard on every refusal path and requires the bounded-retry posture (Some(n)) to fail closed; Candidate A's typed Fenced error is terminal by construction. This was a real defect in the spike's first posture() and is recorded, not hidden.",
+    "failure_surface": "the stale writer observes an opaque object_store::Error::Generic surfaced through whatever operation happened to publish (flush, open) - not a typed fenced outcome. Upstream cannot distinguish 'fenced' from 'store outage', so its retry/recovery classification treats fencing as infrastructure failure.",
+    "inv_78_80_not_satisfiable": "the firewall decides WHO may publish but the epoch NUMBERS inside manifests remain internally allocated by stock SlateDB; no wrapper of this shape can make publications carry controller-minted SlateWriterEpoch/SlateCompactorEpoch values, and adopting the store's own numbering is the prohibited observe-and-bind. This is a structural gap of Candidate B, permanent at any wrapper thickness.",
+    "granularity": "fencing is per credential domain (per handle), not per (writer, compactor) epoch pair; separating writer from compactor authority requires distinct domains, which the provider credential model supports but the spike models with a single cell."
+  },
+  "comparison_inputs_for_adr_0012": {
+    "candidate_a": "exact external epochs on every publication (inv. 78-80 satisfied), typed Fenced outcomes, ~90 non-test patch lines over the digest-pinned crate, fork maintenance cost, patches upstreamable",
+    "candidate_b": "zero fork cost, total path coverage including Admin, provider-enforceable server-side (defense in depth even if the process is compromised), but inv. 78-80 unsatisfiable, opaque failure surface, and fail-closed only under a bounded-retry posture",
+    "note": "the candidates COMPOSE: B's provider-enforced credential rotation is defense-in-depth underneath A's exact epochs, and nothing in A precludes deploying B's credential model as the storage-side backstop. The decision recorded in ADR-0012 weighs A as the fencing mechanism of record with B's credential rotation as the platform backstop, NOT an either/or."
+  }
+}

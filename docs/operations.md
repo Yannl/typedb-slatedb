@@ -5,13 +5,21 @@ is the v16 brief; this page is the operational digest.
 
 ## Gate status
 
+**How to read this table.** A gate is green only when its machine validator
+derives green from immutable raw inputs, and every producer that feeds it
+fails closed. Both producers now do (`tools/catalog/verdict.py`), the
+catalogue is schema-checked against the normative v14 contract
+(`tools/catalog/validate_catalog.py`), and the source locks pass in the
+staged state with the fork patch set bound by digest. What that buys is a
+trustworthy red, not an automatic green.
+
 | Gate | Meaning | Status |
 |---|---|---|
-| G0 | Source graph materialised, identities resolved, offline build proven | **green** (evidence: `docs/evidence/G0/`) |
-| G1 | Complete upstream test catalogue + pristine U0 baseline | **green** (`docs/evidence/G1/`) |
+| G0 | Source graph materialised, identities resolved, offline build proven | **green** — `lint_source_lock.py` and `generate_workspace_lock.py --check` both pass, including the staged-fork digest; the remaining G0 stop item is SI-G0-1 (Mode-Q Bazel cquery snapshot, unexecuted here) |
+| G1 | Complete upstream test catalogue + pristine U0 baseline | **not green, but for a stated reason** — the catalogue is now regenerated from a PRISTINE worktree (revision `2256711a`, clean), schema-valid against the normative v14 contract (`validate_catalog.py`: 0 errors, was 116), leaf ids unique (4,740/4,740, was 4,711), and joinable to results: the U2S3 corpus's 106 rows equal the 106 required executable targets exactly, so `run_u0.py --verdict-only` reports **GREEN** and `completeness.py` exits 0. What keeps G1 red is the rest of the matrix: required pairs now span U0..U4 as the conformance plan demands, and **U3 and U4 have zero coverage**; the Mode-Q Bazel oracle (SI-G0-1) is also absent. |
 | — | Safe boundaries (TB-P1..P3, BT-P3), pure models, local protocol spikes | **green** (`docs/evidence/G3/`, models in `tools/protocol-models`) |
 | TB-P7 / U2 | SlateDB keyspace engine, corpus parity vs oracle | **green** — full corpus: 106 executables, 104 green, 0 timeouts; the 2 red are documented upstream defects (`u2-vs-oracle-comparison.json`) |
-| TB-P8 / U2S3 | SlateDB over an S3-compatible store (MinIO as the local R2 stand-in) | **green** — full corpus structurally equal to the U1 oracle: 106 executables, 105 green, 0 timeouts, 0 unexplained divergences (`u2s3-vs-oracle-comparison.json`; strictly closer to the oracle than U2 — bench_iam green) |
+| TB-P8 / U2S3 | SlateDB over an S3-compatible store (MinIO as the local R2 stand-in) | **green** — latest run `docs/evidence/G3/u2s3-full-3/`: 106 executables, 105 green, 1 ledgered red (upstream `todo!()` stubs), 0 timeouts, 462/2/1 cases. Verdict GREEN with the denominator checked (106 required == 106 rows); oracle comparison 4 divergent / **0 unexplained** under the union-walking comparator. Each row names its executed tree (checkout `2256711a` + staged-fork digest `cc0d283a`), not the outer repo commit. |
 | U3.0 | Remote-WAL protocol completion on the control plane (record types, head, pinned scans, last-by-type, batch, register-fences-predecessor) | **green** — pinned across all three lanes; L1 E2E 35/35 |
 | G2 | Real-platform measurements (latency/cost/amplification kill gate) | **blocked** on SI-G0-3 |
 | U3/U4, broad TypeDB semantic phases | remote WAL client wiring (U3.1+) and beyond | U3.1–U3.4 scoped (see parity plan); G2 still gates production lanes |
@@ -62,6 +70,46 @@ G2 measurements — not for debugging logic.
    DO transaction throughput, outbox lag, cost amplification).
 
 ## Runbooks
+
+### Check the truth plane before trusting a run
+
+```sh
+python3 tools/dev/doctor.py                       # every lane runnable?
+python3 tools/source-lock/lint_source_lock.py     # source + staged-fork identity
+python3 tools/catalog/validate_catalog.py         # catalogue vs the v14 contract schema
+python3 tools/catalog/validate_catalog.py --self-test
+python3 tools/catalog/completeness.py --self-test
+python3 tools/catalog/evidence_mutants.py         # the producers' own negative controls
+```
+
+Run `doctor.py` FIRST. This session's only environment failure was a cold
+build dying on a missing `protoc` roughly ten minutes in; doctor would have
+said so in a second.
+
+Every producer now returns a terminal verdict:
+
+- `run_u0.py` writes `verdict.json` and a `COMPLETE` marker, and exits
+  nonzero on any red row, timeout, unknown crash rc, unledgered
+  failure/ignore, stale ledger entry, missing required target, or
+  case-bearing target that reported zero cases. A `--filter`/`--skip`/
+  `--package` run is recorded as PARTIAL and can never be a corpus verdict.
+- `run_static.py` exits nonzero on any FAIL/ERROR row, and on an empty
+  selection.
+- `compare_u2s3.py` walks the union of both sides, folds the process outcome
+  into each profile, and requires every classification to declare the exact
+  expected profiles on both sides.
+
+### Reconstruct the SlateDB fork (ADR-0012 Candidate A)
+
+```sh
+python3 tools/fork/materialize_slatedb.py          # crate + patches -> sources/slatedb-fork
+python3 tools/fork/materialize_slatedb.py --check  # verify without materialising
+```
+
+The fork is a patch series over the digest-pinned crate, not a vendored
+tree; the check fails if a patch was edited without re-recording the tree
+digest. It is **not** wired into any lane: `sources/typedb` consumes
+crates.io until ADR-0012 is decided and G2 passes.
 
 ### Re-run the full corpus on a profile
 

@@ -40,6 +40,9 @@ import pathlib
 import re
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import verdict as verdict_policy  # noqa: E402
+
 REPO = pathlib.Path(__file__).resolve().parents[2]
 TB = REPO / "sources" / "typedb"
 BH = REPO / "sources" / "typedb-behaviour"
@@ -266,38 +269,68 @@ def check_failpoints(catalog):
 
 # ------------------------------------------------------------- flake ledger
 
-def check_ledger(results_dir):
-    ledger_entries = json.loads(LEDGER.read_text())["entries"] if LEDGER.exists() else []
-    for e in ledger_entries:
-        if not e.get("reason"):
-            error(f"ledger: {e.get('target_id')} entry has no reason - exclusions must be explained")
-        expiry = e.get("expiry")
-        if not expiry or datetime.date.fromisoformat(expiry) < datetime.date.today():
-            error(f"ledger: {e.get('target_id')} entry expired ({expiry}) - re-justify or retire it")
-    by_target = {e["target_id"]: e for e in ledger_entries}
+def required_targets_from_catalog(catalog):
+    """The executable denominator, joined to the runner's row ids.
+
+    The catalogue's target ids (`cargo:<pkg>:<kind>:<target>`) and the
+    runner's row ids (`<pkg>:<target>`) live in different id spaces, which is
+    why NONE of the 106 result ids could be found in the catalogue and the
+    denominator was never actually checked. The cargo package/target pair the
+    catalogue already records is the join, and every target it declares
+    zero-case (bench targets, crates with no #[test]) is subtracted here with
+    its declared reason rather than silently ignored.
+    """
+    declared = {e["subject_id"]: e.get("reason") for e in catalog.get("exclusions", [])}
+    leaves = {}
+    for lc in catalog["leaf_cases"]:
+        leaves[lc["target_id"]] = leaves.get(lc["target_id"], 0) + 1
+    required, case_bearing, excluded = set(), set(), {}
+    for t in catalog["targets"]:
+        if t.get("origin") != "CARGO":
+            continue
+        pkg, tgt = t.get("cargo_package"), t.get("cargo_target")
+        if not pkg or not tgt:
+            continue
+        rid = f"{pkg}:{tgt}"
+        n = leaves.get(t["target_id"], 0)
+        # see run_u0.required_executable_targets: only [[bench]] targets are
+        # exempt from producing a row; a crate with no #[test] still runs and
+        # reports zero cases
+        is_bench = t["target_id"].split(":")[2:3] == ["bench"]
+        if is_bench:
+            excluded[rid] = declared.get(
+                t["target_id"], "cargo target kind == bench: compiled, never executed as a test")
+            continue
+        required.add(rid)
+        if n > 0:
+            case_bearing.add(rid)
+    return required, case_bearing, excluded
+
+
+def check_ledger(results_dir, catalog=None, ledger_path=None):
+    """Fail-closed policy over an executed run.
+
+    Three mutants the previous version accepted, each closed here:
+      - a results file containing ONLY the ledgered rows (the denominator was
+        never compared against the catalogue, so a corpus of two rows passed);
+      - a row with an unknown `rc=127` crash and zero parsed failures (only
+        `failed`/`ignored`/`timed_out` were inspected, never the exit code);
+      - a case-bearing target reporting zero cases (a binary that silently
+        ran nothing looked identical to one with no tests).
+    """
+    ledger, problems = verdict_policy.load_ledger(ledger_path or LEDGER)
+    for p in problems:
+        error(p)
     results = json.loads((results_dir / "u0-results.json").read_text())["results"]
-    live = set()
-    for r in results:
-        failed, ignored = r.get("failed", 0), r.get("ignored", 0)
-        if r.get("timed_out"):
-            error(f"results: {r['target_id']} timed out - never ledgerable, always a defect")
-            continue
-        if failed == 0 and ignored == 0:
-            continue
-        entry = by_target.get(r["target_id"])
-        if entry is None:
-            error(f"results: {r['target_id']} has {failed} failed / {ignored} ignored cases "
-                  f"with NO flake-ledger entry - every tolerated anomaly must be ledgered")
-            continue
-        live.add(r["target_id"])
-        if failed != entry.get("expected_failed", 0) or ignored != entry.get("expected_ignored", 0):
-            error(f"results: {r['target_id']} failed/ignored = {failed}/{ignored} but the ledger "
-                  f"entry expects {entry.get('expected_failed', 0)}/{entry.get('expected_ignored', 0)}")
-    for target_id in by_target:
-        if target_id not in live:
-            error(f"ledger: entry for {target_id} matched no anomaly in {results_dir.name} - "
-                  f"stale exclusions must be retired, not carried")
-    return len(results), len(ledger_entries)
+    required = case_bearing = None
+    if catalog is not None:
+        required, case_bearing, excluded = required_targets_from_catalog(catalog)
+        for a in verdict_policy.denominator_anomalies(results, required, excluded):
+            error(a)
+    for a in verdict_policy.classify_rows(results, ledger,
+                                          expected_case_bearing=case_bearing):
+        error(a)
+    return len(results), len(ledger)
 
 
 # ---------------------------------------------------------------- self-test
@@ -353,18 +386,56 @@ def self_test():
         failures.append(f"self-test: two-Examples expansion expected 4 leaves, got {count} ({errors})")
     del errors[:]
 
-    # 5. an unledgered failure must fail the ledger check
+    # 5. results-policy mutants - each one was ACCEPTED before this change
     import tempfile
-    with tempfile.TemporaryDirectory() as tmp:
-        tmpdir = pathlib.Path(tmp)
-        (tmpdir / "u0-results.json").write_text(json.dumps({
-            "results": [{"target_id": "x:t", "failed": 1, "ignored": 0}]}))
-        expect_errors("unledgered failure", lambda: check_ledger(tmpdir))
+
+    def with_results(rows, cat=None, ledger=None):
+        """A results dir plus an EMPTY ledger by default: these controls test
+        the results policy, not the committed project ledger (whose entries
+        would otherwise fire as stale against every synthetic run)."""
+        tmpdir = pathlib.Path(tempfile.mkdtemp())
+        (tmpdir / "u0-results.json").write_text(json.dumps({"results": rows}))
+        lp = tmpdir / "ledger.json"
+        lp.write_text(json.dumps({"entries": ledger or []}))
+        return lambda: check_ledger(tmpdir, cat, lp)
+
+    def row(tid, p=1, f=0, i=0, rc=0, to=False):
+        return {"target_id": tid, "passed": p, "failed": f, "ignored": i,
+                "exit_code": rc, "timed_out": to}
+
+    mini_catalog = {
+        "targets": [
+            {"target_id": "cargo:x:unit:t", "origin": "CARGO",
+             "cargo_package": "x", "cargo_target": "t"},
+            {"target_id": "cargo:y:unit:u", "origin": "CARGO",
+             "cargo_package": "y", "cargo_target": "u"},
+        ],
+        "leaf_cases": [{"target_id": "cargo:x:unit:t"}, {"target_id": "cargo:y:unit:u"}],
+        "exclusions": [],
+    }
+    expect_errors("unledgered failure", with_results([row("x:t", f=1, rc=101)]))
+    expect_errors("results truncated to the ledgered rows only",
+                  with_results([row("x:t")], mini_catalog))
+    expect_errors("unknown rc=127 crash row with zero parsed failures",
+                  with_results([row("x:t", rc=127), row("y:u")], mini_catalog))
+    expect_errors("case-bearing target that ran zero cases",
+                  with_results([row("x:t", p=0), row("y:u")], mini_catalog))
+    expect_errors("timeout row", with_results([row("x:t", to=True, rc=None),
+                                               row("y:u")], mini_catalog))
+    expect_errors("row for a target the catalogue does not declare",
+                  with_results([row("x:t"), row("y:u"), row("ghost:g")], mini_catalog))
+    # and the clean case must be accepted, or the checks above prove nothing
+    clean = with_results([row("x:t"), row("y:u")], mini_catalog)
+    del errors[:]
+    clean()
+    if errors:
+        failures.append(f"self-test: a clean run was rejected: {errors}")
+    del errors[:]
 
     for f in failures:
         print(f"SELF-TEST FAIL: {f}", file=sys.stderr)
     print(f"self-test: {'FAIL' if failures else 'PASS'} "
-          f"(5 negative-control groups)", file=sys.stderr)
+          f"(10 negative-control groups + clean-run control)", file=sys.stderr)
     return 1 if failures else 0
 
 
@@ -391,9 +462,13 @@ def main():
         "failpoint_leaves": fp_actual,
     }
     if args.results:
-        results_count, ledger_count = check_ledger(args.results)
+        results_count, ledger_count = check_ledger(args.results, catalog)
         report["results_targets"] = results_count
         report["ledger_entries"] = ledger_count
+        required, case_bearing, excluded = required_targets_from_catalog(catalog)
+        report["required_executable_targets"] = len(required)
+        report["case_bearing_targets"] = len(case_bearing)
+        report["declared_zero_case_targets"] = len(excluded)
 
     print(json.dumps(report, indent=2))
     for e in errors:

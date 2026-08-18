@@ -1,0 +1,11 @@
+{
+  "document": "SlateDB fork provenance (ADR-0012 external epochs)",
+  "upstream_crate": "slatedb",
+  "upstream_version": "0.15.0",
+  "upstream_crate_sha256": "35ca56b01922b15aa69fe3abb62cadc985d86032c9647e4606e211c4da751a76",
+  "patches": [
+    "0001-external-controller-issued-epochs.patch"
+  ],
+  "patched_tree_sha256": "0b3b0d20add727a62cc70f60b6fbef7a6df24244772a37d2d4e8898bf730a403",
+  "note": "reconstruct with tools/fork/materialize_slatedb.py; the patch series is the fork, the crate is the base"
+}

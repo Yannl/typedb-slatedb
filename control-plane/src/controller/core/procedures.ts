@@ -60,8 +60,6 @@ export const SCHEMA = `
   CREATE UNIQUE INDEX IF NOT EXISTS wal_status_singleton
     ON wal_tail(database_id, generation, unsequenced_logical_key)
     WHERE unsequenced_logical_key IS NOT NULL;
-  CREATE INDEX IF NOT EXISTS wal_type_scan
-    ON wal_tail(database_id, generation, record_type, append_lsn);
   CREATE TABLE IF NOT EXISTS control_outbox(
     control_seq BLOB PRIMARY KEY,
     database_id TEXT NOT NULL,
@@ -119,6 +117,42 @@ export const SCHEMA = `
  * representation violation, never a silent reinterpretation. */
 
 export const U64_MAX = (1n << 64n) - 1n;
+
+/** Batch envelope (directive 12.6): a batch is one authority envelope with
+ *  an id and a canonical digest, not an unnamed list of requests. */
+export interface BatchEnvelope {
+  batchOperationId: string;
+  /** optional and only ever CHECKED against the server's computation */
+  batchDigest?: string;
+}
+
+/** K and byte ceilings for one batch. Both are containment defaults, not
+ *  approved SLOs (docs/owner-decisions.json). */
+export const MAX_BATCH_MEMBERS = 64;
+export const MAX_BATCH_BYTES = 8 * 1024 * 1024;
+
+/** Q-10/Q-12: immutable platform-safe maxima that configured budgets must
+ *  sit BELOW. A budget is a narrowing of these, never a widening: a budget
+ *  row carrying 2^60 tail records is a typo or an attack, and either way it
+ *  must not become the admission policy. Containment defaults, not SLOs. */
+export const MAX_PAYLOAD_LENGTH_CEILING = 8 * 1024 * 1024;
+export const MAX_OUTBOX_DEPTH_CEILING = 100_000;
+export const MAX_TAIL_RECORDS_CEILING = 10_000_000;
+
+/** Exact non-negative safe integer in [1, ceiling], or the field name that
+ *  failed. Floats, negatives, zero, NaN, strings and overflow all refuse -
+ *  a coerced budget is an unreviewed policy. */
+function validateBudgetField(name: string, value: unknown, ceiling: number): string | null {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1 || value > ceiling) {
+    return name;
+  }
+  return null;
+}
+
+/** The control outbox is per DATABASE, not per generation: control events
+ *  outlive the generation that produced them. Its usage counter therefore
+ *  needs a generation slot that no real generation can occupy. */
+const OUTBOX_GENERATION = -1;
 
 /** Encode an exact u64 as its 8-byte big-endian SQL blob. */
 export function u64Blob(value: bigint, context: string): Uint8Array {
@@ -179,9 +213,31 @@ export type TypedErr =
   | { ok: false; error: "ADMISSION_REJECTED_TAIL_BUDGET"; limit: number }
   | { ok: false; error: "OPERATION_DIGEST_CONFLICT" }
   | { ok: false; error: "STATUS_CONFLICT" }
-  | { ok: false; error: "SESSION_FENCED"; fencedBy: string | null }
+  | { ok: false; error: "SESSION_FENCED" }
   | { ok: false; error: "SESSION_UNKNOWN" }
-  | { ok: false; error: "NOT_FOUND" };
+  | { ok: false; error: "NOT_FOUND" }
+  // batch envelope (directive 12.6)
+  | { ok: false; error: "EMPTY_BATCH" }
+  | { ok: false; error: "BATCH_ENVELOPE_REQUIRED" }
+  | { ok: false; error: "BATCH_TOO_MANY_MEMBERS"; limit: number }
+  | { ok: false; error: "BATCH_TOO_MANY_BYTES"; limit: number }
+  | { ok: false; error: "BATCH_DIGEST_MISMATCH" }
+  | { ok: false; error: "BATCH_DIGEST_CONFLICT" }
+  // Q-12: a database with no validated budget row denies writes
+  | { ok: false; error: "ADMISSION_REJECTED_NO_BUDGET" }
+  // Q-10: authority-sized wire values are exact or refused, never coerced
+  | { ok: false; error: "INVALID_BUDGET"; field: string }
+  | { ok: false; error: "INVALID_PAYLOAD_LENGTH"; observed: unknown }
+  // Q-03 / 12.4 lifecycle
+  | { ok: false; error: "SESSION_ID_ALREADY_USED" }
+  | { ok: false; error: "SESSION_NOT_RESERVED" }
+  | { ok: false; error: "SESSION_NOT_ATTESTED" }
+  | { ok: false; error: "PROCESS_NONCE_MISMATCH" }
+  | { ok: false; error: "STALE_INCARNATION"; current: number }
+  | { ok: false; error: "GENERATION_MISMATCH"; reserved: number }
+  | { ok: false; error: "SESSION_NOT_ACTIVE"; state: string }
+  | { ok: false; error: "SESSION_LEASE_EXPIRED" }
+  | { ok: false; error: "INVALID_LEASE"; observed: unknown };
 
 export interface FinalizeRequest {
   databaseId: string;
@@ -224,21 +280,462 @@ export class ControllerCore {
    *  production provisioning of a managed secret is a G2 gate item. */
   private readonly journalKey: Uint8Array;
 
-  constructor(sql: SyncSql, options?: { journalKey?: Uint8Array }) {
+  private readonly wallClock: () => number;
+
+  constructor(sql: SyncSql, options?: { journalKey?: Uint8Array; now?: () => number }) {
     this.sql = sql;
     this.journalKey = options?.journalKey ?? utf8("dev-insecure-journal-key");
-    this.sql.exec(SCHEMA);
-    // pre-record_type dev state (CREATE TABLE IF NOT EXISTS cannot add
-    // columns to an existing table): additive migration, idempotent.
-    // NOTE (F7 blob representation): rows written before the u64-blob change
-    // stored INTEGER sequences; they are NOT migrated - u64FromSql fails
-    // closed on them with a typed representation violation. Dev lanes
-    // recreate their state; there is no production data behind this schema.
-    try {
-      this.sql.exec(`ALTER TABLE wal_tail ADD COLUMN record_type INTEGER NOT NULL DEFAULT 0`);
-    } catch {
-      // column already exists
+    this.wallClock = options?.now ?? Date.now;
+    this.migrate();
+  }
+
+  /**
+   * Controller time (§12.4): a persisted, nondecreasing floor over the wall
+   * clock. Every lease computation reads THIS, never Date.now() directly,
+   * so a backward clock jump cannot extend a lease - the floor simply stops
+   * advancing until the wall clock catches up. Forward jumps make leases
+   * expire early, which fails closed (a new session is required; expiry is
+   * terminal, there is no resurrection).
+   */
+  controllerNow(): number {
+    const wall = this.wallClock();
+    const rows = this.sql.exec(`SELECT value FROM controller_meta WHERE key='time_floor_ms'`);
+    const floor = rows.length ? Number(rows[0].value) : 0;
+    if (wall > floor) {
+      this.sql.exec(
+        `INSERT INTO controller_meta(key, value) VALUES ('time_floor_ms', ?)
+         ON CONFLICT(key) DO UPDATE SET value=?`, wall, wall);
+      return wall;
     }
+    return floor;
+  }
+
+  /**
+   * Ordered, transactional, idempotent schema migration (Q-09).
+   *
+   * The previous sequence could not migrate an existing database at all:
+   * the declarative schema script created `wal_type_scan` over
+   * `wal_tail(record_type)` and ran BEFORE the `ALTER TABLE ... ADD COLUMN
+   * record_type` that introduces the column. On a fresh database that works
+   * (CREATE TABLE already declares the column); on a database created before
+   * the column existed, the CREATE INDEX raises "no such column" inside the
+   * schema script, the whole script aborts, and construction fails - so the
+   * ALTER meant to fix it was unreachable. The ordering, not the SQL, was
+   * the defect.
+   *
+   * The fix is to make order explicit and recorded: declarative tables
+   * first, additive columns second (driven by PRAGMA table_info, so it is
+   * correct on both fresh and old databases), dependent indexes last, each
+   * step transactional and stamped in `schema_migrations`.
+   *
+   * NOTE (F7 blob representation): rows written before the u64-blob change
+   * stored INTEGER sequences; they are NOT migrated - u64FromSql fails
+   * closed on them with a typed representation violation rather than
+   * reinterpreting them.
+   */
+  private migrate(): void {
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS schema_migrations(
+      version INTEGER PRIMARY KEY,
+      applied_at_ms INTEGER NOT NULL
+    )`);
+    const applied = new Set(
+      this.sql.exec(`SELECT version FROM schema_migrations`).map((r) => Number(r.version)),
+    );
+    for (const step of ControllerCore.MIGRATIONS) {
+      if (applied.has(step.version)) continue;
+      this.sql.transaction(() => {
+        step.up(this.sql);
+        this.sql.exec(`INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?,?)`,
+          step.version, Date.now());
+      });
+    }
+  }
+
+  /** Columns added after the original table shape. Applied by name against
+   *  PRAGMA table_info, so the step is a no-op on a fresh database (where
+   *  CREATE TABLE already declares them) and additive on an old one. */
+  private static readonly ADDITIVE_COLUMNS: ReadonlyArray<{ table: string; column: string; ddl: string }> = [
+    { table: "wal_tail", column: "record_type", ddl: "INTEGER NOT NULL DEFAULT 0" },
+  ];
+
+  private static readonly MIGRATIONS: ReadonlyArray<{ version: number; up: (sql: SyncSql) => void }> = [
+    { version: 1, up: (sql) => { sql.exec(SCHEMA); } },
+    {
+      version: 2,
+      up: (sql) => {
+        for (const { table, column, ddl } of ControllerCore.ADDITIVE_COLUMNS) {
+          const present = sql.exec(`PRAGMA table_info(${table})`).some((r) => String(r.name) === column);
+          if (!present) sql.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+        }
+      },
+    },
+    {
+      version: 3,
+      up: (sql) => {
+        // dependent on the v2 column: never earlier than the column itself
+        sql.exec(`CREATE INDEX IF NOT EXISTS wal_type_scan
+                  ON wal_tail(database_id, generation, record_type, append_lsn)`);
+      },
+    },
+    {
+      version: 4,
+      up: (sql) => {
+        // Q-11: durable idempotency aliases. A status-singleton dedupe
+        // answers a FRESH operation id with the original record's receipt;
+        // without an alias that operation id exists nowhere, so a client
+        // that lost the response a second time can never re-resolve the
+        // receipt it was given. The alias makes the answer durable and
+        // queryable under the id the client actually used.
+        sql.exec(`CREATE TABLE IF NOT EXISTS operation_aliases(
+          database_id TEXT NOT NULL,
+          generation INTEGER NOT NULL,
+          operation_id TEXT NOT NULL,
+          append_lsn BLOB NOT NULL,
+          request_digest TEXT NOT NULL,
+          PRIMARY KEY(database_id, generation, operation_id)
+        )`);
+      },
+    },
+    {
+      version: 5,
+      up: (sql) => {
+        // Q-17: append cost must be bounded by the REQUEST, not by history.
+        // Admission used to answer "how deep is the outbox?" and "how long is
+        // the tail?" with COUNT(*) over the whole table on every single
+        // finalisation, so append latency grew with the database's history -
+        // and the outbox count had no index to lean on at all. These are
+        // transactionally maintained singletons instead, backfilled here so
+        // an existing database is correct from the first open.
+        sql.exec(`CREATE TABLE IF NOT EXISTS usage_counters(
+          database_id TEXT NOT NULL,
+          generation INTEGER NOT NULL,
+          scope TEXT NOT NULL,
+          value INTEGER NOT NULL,
+          PRIMARY KEY(database_id, generation, scope)
+        )`);
+        // ordered unpublished drain: partial index so peek/ack walk an index
+        // rather than filtering the whole journal
+        sql.exec(`CREATE INDEX IF NOT EXISTS outbox_unpublished
+                  ON control_outbox(control_seq) WHERE published=0`);
+        for (const row of sql.exec(
+          `SELECT database_id, generation, COUNT(*) AS n FROM wal_tail
+           GROUP BY database_id, generation`)) {
+          sql.exec(`INSERT OR REPLACE INTO usage_counters(database_id, generation, scope, value)
+                    VALUES (?,?,'tail',?)`, row.database_id, row.generation, row.n);
+        }
+        for (const row of sql.exec(
+          `SELECT database_id, COUNT(*) AS n FROM control_outbox WHERE published=0
+           GROUP BY database_id`)) {
+          sql.exec(`INSERT OR REPLACE INTO usage_counters(database_id, generation, scope, value)
+                    VALUES (?,${OUTBOX_GENERATION},'outbox_unpublished',?)`, row.database_id, row.n);
+        }
+      },
+    },
+    {
+      version: 6,
+      up: (sql) => {
+        // Directive 12.6: /wal/finalize-batch was deployable while the v16
+        // batch schema was absent - no BatchOperationId, no canonical batch
+        // digest, no K/byte limits, and no way to answer a replayed batch
+        // with its original results. This is that identity.
+        sql.exec(`CREATE TABLE IF NOT EXISTS batch_operations(
+          database_id TEXT NOT NULL,
+          generation INTEGER NOT NULL,
+          batch_operation_id TEXT NOT NULL,
+          batch_digest TEXT NOT NULL,
+          member_count INTEGER NOT NULL,
+          member_operation_ids TEXT NOT NULL,
+          control_seq BLOB,
+          PRIMARY KEY(database_id, generation, batch_operation_id)
+        )`);
+      },
+    },
+    {
+      version: 7,
+      up: (sql) => {
+        // Q-03 / directive 12.4: the startup-session lifecycle. Activation
+        // is the ONLY operation that fences; a session id that never went
+        // through reserve -> attest -> activate is not an authority, however
+        // fresh or random it is.
+        sql.exec(`CREATE TABLE IF NOT EXISTS startup_sessions(
+          database_id TEXT NOT NULL,
+          startup_session_id TEXT NOT NULL,
+          generation INTEGER NOT NULL,
+          incarnation INTEGER NOT NULL,
+          holder TEXT NOT NULL,
+          process_nonce TEXT,
+          state TEXT NOT NULL CHECK(state IN
+            ('RESERVED','ATTESTED','ACTIVE','DRAINING','REVOKED','EXPIRED','ABANDONED')),
+          lease_deadline_ms INTEGER,
+          reserved_at_ms INTEGER NOT NULL,
+          activated_at_ms INTEGER,
+          PRIMARY KEY(database_id, startup_session_id)
+        )`);
+        sql.exec(`CREATE INDEX IF NOT EXISTS startup_sessions_live
+                  ON startup_sessions(database_id, state)`);
+      },
+    },
+    {
+      version: 8,
+      up: (sql) => {
+        // Q-17: the lazy expiry sweep in burnCapabilityNonce deletes by
+        // expires_at, which had no index - a full table scan of every live
+        // nonce on EVERY capability burn. Range walk instead.
+        sql.exec(`CREATE INDEX IF NOT EXISTS capability_nonce_expiry
+                  ON capability_nonces(expires_at)`);
+      },
+    },
+  ];
+
+  // ------------------------------------------------------------------
+  // Q-03 / directive 12.4: the startup-session lifecycle.
+  //
+  // The pre-fix behaviour was takeover-at-open: any fresh session id could
+  // fence every live actor by calling register. The lifecycle splits
+  // identity from authority. Reservation and attestation grant NOTHING;
+  // activation is one transaction that revalidates reservation, attestation
+  // nonce, controller incarnation and generation before it fences anyone;
+  // authority then lives under a controller-time lease that every
+  // finalisation revalidates, and expiry is terminal - a dead session is
+  // replaced, never resurrected.
+  //
+  // Pre-G2 honesty: on the L1 facade the caller of these procedures is
+  // gated by SESSION_ADMIN capabilities, not by real container attestation
+  // - the external attestation root and provider-enforced routing are
+  // real-platform work and stay OPEN. What this closes is the PROTOCOL
+  // hole: there is no longer any code path in which an unactivated id
+  // fences an authority or appends under one.
+  // ------------------------------------------------------------------
+
+  /** Reserve a session id. Grants nothing; single-use per id (a reused id
+   *  is a permanent refusal - ids are identities, not slots). Idempotent
+   *  for an exact repeat of the same reservation while still RESERVED. */
+  reserveSession(databaseId: string, generation: number, startupSessionId: string, holder: string):
+    Typed<{ state: "RESERVED" }> | TypedErr {
+    if (typeof startupSessionId !== "string" || startupSessionId.length === 0
+        || typeof holder !== "string" || holder.length === 0) {
+      return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
+    }
+    return this.sql.transaction(() => {
+      const existing = this.sql.exec(
+        `SELECT state, generation, holder FROM startup_sessions
+         WHERE database_id=? AND startup_session_id=?`, databaseId, startupSessionId);
+      if (existing.length) {
+        const row = existing[0];
+        if (String(row.state) === "RESERVED" && Number(row.generation) === generation
+            && String(row.holder) === holder) {
+          return { ok: true as const, state: "RESERVED" as const }; // idempotent retry
+        }
+        return { ok: false as const, error: "SESSION_ID_ALREADY_USED" as const };
+      }
+      this.sql.exec(
+        `INSERT INTO startup_sessions(database_id, startup_session_id, generation, incarnation,
+           holder, state, reserved_at_ms) VALUES (?,?,?,?,?,'RESERVED',?)`,
+        databaseId, startupSessionId, generation, this.currentIncarnation(), holder,
+        this.controllerNow());
+      return { ok: true as const, state: "RESERVED" as const };
+    });
+  }
+
+  /** Bind the reservation to one process. Still grants nothing. A second
+   *  process presenting a different nonce for the same reservation is a
+   *  conflict, not a race winner. */
+  attestSession(databaseId: string, startupSessionId: string, processNonce: string):
+    Typed<{ state: "ATTESTED" }> | TypedErr {
+    if (typeof processNonce !== "string" || processNonce.length === 0) {
+      return { ok: false as const, error: "PROCESS_NONCE_MISMATCH" as const };
+    }
+    return this.sql.transaction(() => {
+      const rows = this.sql.exec(
+        `SELECT state, process_nonce FROM startup_sessions
+         WHERE database_id=? AND startup_session_id=?`, databaseId, startupSessionId);
+      if (!rows.length) return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
+      const state = String(rows[0].state);
+      if (state === "ATTESTED" && String(rows[0].process_nonce) === processNonce) {
+        return { ok: true as const, state: "ATTESTED" as const }; // idempotent retry
+      }
+      if (state !== "RESERVED") return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
+      this.sql.exec(
+        `UPDATE startup_sessions SET state='ATTESTED', process_nonce=?
+         WHERE database_id=? AND startup_session_id=?`,
+        processNonce, databaseId, startupSessionId);
+      return { ok: true as const, state: "ATTESTED" as const };
+    });
+  }
+
+  /**
+   * The ONE transaction that authorizes takeover (12.4). Verifies, inside
+   * the transaction: the reservation exists and is ATTESTED; the presented
+   * process nonce is the attested one; the controller incarnation has not
+   * moved since reservation; the generation is the reserved one; the lease
+   * is a sane duration. Only then does it fence the predecessors and
+   * establish the active session under a controller-time lease.
+   */
+  activateSession(
+    databaseId: string, startupSessionId: string,
+    proof: { processNonce: string; generation: number; leaseMs: number },
+  ): Typed<{ leaseDeadlineMs: number; fencedPredecessors: number }> | TypedErr {
+    if (typeof proof.leaseMs !== "number" || !Number.isSafeInteger(proof.leaseMs)
+        || proof.leaseMs < 1_000 || proof.leaseMs > 24 * 60 * 60 * 1000) {
+      return { ok: false as const, error: "INVALID_LEASE" as const, observed: proof.leaseMs };
+    }
+    return this.sql.transaction(() => {
+      const rows = this.sql.exec(
+        `SELECT state, process_nonce, incarnation, generation, lease_deadline_ms
+         FROM startup_sessions WHERE database_id=? AND startup_session_id=?`,
+        databaseId, startupSessionId);
+      if (!rows.length) return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
+      const row = rows[0];
+      const state = String(row.state);
+      const now = this.controllerNow();
+      if (state === "ACTIVE" && String(row.process_nonce) === proof.processNonce) {
+        // lost-response retry of a completed activation: same outcome again
+        return { ok: true as const, leaseDeadlineMs: Number(row.lease_deadline_ms),
+                 fencedPredecessors: 0 };
+      }
+      if (state !== "ATTESTED") return { ok: false as const, error: "SESSION_NOT_ATTESTED" as const };
+      if (String(row.process_nonce) !== proof.processNonce) {
+        return { ok: false as const, error: "PROCESS_NONCE_MISMATCH" as const };
+      }
+      const currentIncarnation = this.currentIncarnation();
+      if (Number(row.incarnation) !== currentIncarnation) {
+        // the controller moved on since this reservation: the reservation is
+        // evidence about a superseded authority, not this one
+        return { ok: false as const, error: "STALE_INCARNATION" as const, current: currentIncarnation };
+      }
+      if (Number(row.generation) !== proof.generation) {
+        return { ok: false as const, error: "GENERATION_MISMATCH" as const, reserved: Number(row.generation) };
+      }
+      const leaseDeadlineMs = now + proof.leaseMs;
+      // fence-and-establish: exactly the legacy takeover semantics, but
+      // reachable ONLY through the verified protocol above
+      const fencedCount = Number(this.sql.exec(
+        `SELECT COUNT(*) AS n FROM sessions WHERE database_id=? AND startup_session_id<>? AND fenced=0`,
+        databaseId, startupSessionId)[0].n);
+      this.sql.exec(
+        `UPDATE sessions SET fenced=1 WHERE database_id=? AND startup_session_id<>?`,
+        databaseId, startupSessionId);
+      this.sql.exec(
+        `UPDATE startup_sessions SET state='ACTIVE', lease_deadline_ms=?, activated_at_ms=?
+         WHERE database_id=? AND startup_session_id=?`,
+        leaseDeadlineMs, now, databaseId, startupSessionId);
+      this.sql.exec(
+        `INSERT OR IGNORE INTO sessions(database_id, generation, startup_session_id) VALUES (?,?,?)`,
+        databaseId, proof.generation, startupSessionId);
+      this.sql.exec(
+        `UPDATE startup_sessions SET state='REVOKED'
+         WHERE database_id=? AND startup_session_id<>? AND state IN ('ACTIVE','DRAINING')`,
+        databaseId, startupSessionId);
+      this.appendCommand(databaseId, "SESSION_ACTIVATED", {
+        databaseId, generation: proof.generation, startupSessionId,
+        fencedPredecessors: fencedCount, leaseDeadlineMs,
+      });
+      return { ok: true as const, leaseDeadlineMs, fencedPredecessors: fencedCount };
+    });
+  }
+
+  /** Extend an unexpired lease from controller time. An expired lease is
+   *  TERMINAL: renewal refuses and the state moves to EXPIRED - a backward
+   *  clock jump cannot resurrect it because controllerNow never decreases. */
+  renewLease(databaseId: string, startupSessionId: string, leaseMs: number):
+    Typed<{ leaseDeadlineMs: number }> | TypedErr {
+    if (typeof leaseMs !== "number" || !Number.isSafeInteger(leaseMs)
+        || leaseMs < 1_000 || leaseMs > 24 * 60 * 60 * 1000) {
+      return { ok: false as const, error: "INVALID_LEASE" as const, observed: leaseMs };
+    }
+    return this.sql.transaction(() => {
+      const rows = this.sql.exec(
+        `SELECT state, lease_deadline_ms FROM startup_sessions
+         WHERE database_id=? AND startup_session_id=?`, databaseId, startupSessionId);
+      if (!rows.length) return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
+      const state = String(rows[0].state);
+      if (state !== "ACTIVE" && state !== "DRAINING") {
+        return { ok: false as const, error: "SESSION_NOT_ACTIVE" as const, state };
+      }
+      const now = this.controllerNow();
+      if (Number(rows[0].lease_deadline_ms) <= now) {
+        this.expireSession(databaseId, startupSessionId);
+        return { ok: false as const, error: "SESSION_LEASE_EXPIRED" as const };
+      }
+      const leaseDeadlineMs = now + leaseMs;
+      this.sql.exec(
+        `UPDATE startup_sessions SET lease_deadline_ms=? WHERE database_id=? AND startup_session_id=?`,
+        leaseDeadlineMs, databaseId, startupSessionId);
+      return { ok: true as const, leaseDeadlineMs };
+    });
+  }
+
+  /** ACTIVE -> DRAINING: authority retained for in-flight work under the
+   *  existing lease; a successor's activation (or revoke/expiry) ends it. */
+  beginDrain(databaseId: string, startupSessionId: string):
+    Typed<{ state: "DRAINING" }> | TypedErr {
+    return this.sql.transaction(() => {
+      const rows = this.sql.exec(
+        `SELECT state FROM startup_sessions WHERE database_id=? AND startup_session_id=?`,
+        databaseId, startupSessionId);
+      if (!rows.length) return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
+      const state = String(rows[0].state);
+      if (state === "DRAINING") return { ok: true as const, state: "DRAINING" as const };
+      if (state !== "ACTIVE") return { ok: false as const, error: "SESSION_NOT_ACTIVE" as const, state };
+      this.sql.exec(
+        `UPDATE startup_sessions SET state='DRAINING' WHERE database_id=? AND startup_session_id=?`,
+        databaseId, startupSessionId);
+      this.appendCommand(databaseId, "SESSION_DRAINING", { databaseId, startupSessionId });
+      return { ok: true as const, state: "DRAINING" as const };
+    });
+  }
+
+  /** Revoke a session's authority outright (terminal). */
+  revokeSession(databaseId: string, startupSessionId: string): Typed<{ state: "REVOKED" }> | TypedErr {
+    return this.sql.transaction(() => {
+      const rows = this.sql.exec(
+        `SELECT state FROM startup_sessions WHERE database_id=? AND startup_session_id=?`,
+        databaseId, startupSessionId);
+      if (!rows.length) return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
+      if (String(rows[0].state) === "REVOKED") return { ok: true as const, state: "REVOKED" as const };
+      this.sql.exec(
+        `UPDATE startup_sessions SET state='REVOKED' WHERE database_id=? AND startup_session_id=?`,
+        databaseId, startupSessionId);
+      this.sql.exec(
+        `UPDATE sessions SET fenced=1 WHERE database_id=? AND startup_session_id=?`,
+        databaseId, startupSessionId);
+      this.appendCommand(databaseId, "SESSION_REVOKED", { databaseId, startupSessionId });
+      return { ok: true as const, state: "REVOKED" as const };
+    });
+  }
+
+  /** Terminal expiry, journaled. Caller holds the transaction. */
+  private expireSession(databaseId: string, startupSessionId: string): void {
+    this.sql.exec(
+      `UPDATE startup_sessions SET state='EXPIRED' WHERE database_id=? AND startup_session_id=?`,
+      databaseId, startupSessionId);
+    this.appendCommand(databaseId, "SESSION_LEASE_EXPIRED", { databaseId, startupSessionId });
+  }
+
+  /**
+   * Lifecycle gate for authority-bearing mutations (12.4): a
+   * lifecycle-managed session must be ACTIVE or DRAINING with an unexpired
+   * controller-time lease BEFORE counters/outbox are consumed. A session
+   * with no lifecycle row is the legacy L1 lane (registerSession routes
+   * through the lifecycle, so post-migration cores always have rows; the
+   * no-row case covers databases migrated with live legacy sessions).
+   */
+  private requireLeasedAuthority(databaseId: string, startupSessionId: string):
+    { ok: true } | { ok: false; error: "SESSION_NOT_ACTIVE"; state: string }
+    | { ok: false; error: "SESSION_LEASE_EXPIRED" } {
+    const rows = this.sql.exec(
+      `SELECT state, lease_deadline_ms FROM startup_sessions
+       WHERE database_id=? AND startup_session_id=?`, databaseId, startupSessionId);
+    if (!rows.length) return { ok: true };
+    const state = String(rows[0].state);
+    if (state !== "ACTIVE" && state !== "DRAINING") {
+      return { ok: false as const, error: "SESSION_NOT_ACTIVE" as const, state };
+    }
+    if (Number(rows[0].lease_deadline_ms) <= this.controllerNow()) {
+      this.expireSession(databaseId, startupSessionId);
+      return { ok: false as const, error: "SESSION_LEASE_EXPIRED" as const };
+    }
+    return { ok: true };
   }
 
   /**
@@ -251,44 +748,68 @@ export class ControllerCore {
    * prevent. Re-registering the same session is idempotent and fences
    * nothing of its own.
    */
+  /**
+   * Legacy register: the L1 lane's one-call takeover, REWIRED THROUGH the
+   * lifecycle (Q-03 / 12.4) rather than fencing directly.
+   *
+   * The three reference lanes (this core, remote-wal-spike, protocol-models)
+   * pin register-fences-predecessor (ADR-0006), and the directive requires
+   * that only the lifecycle protocol authorizes takeover. Both hold at once
+   * by making register a macro: reserve -> attest -> activate in one
+   * transaction, with a synthetic holder ("legacy-register") and process
+   * nonce and a default lease. The observable trace is unchanged; the
+   * MECHANISM is now exactly one - `activateSession` is the only code that
+   * fences, and every register leaves a lifecycle row with a real lease
+   * that finalisation revalidates.
+   *
+   * A generation ROLLOVER by the incumbent actor re-reserves under the same
+   * id (ids are single-use for NEW actors, but the same live actor moving
+   * generations is the documented rollover case) - handled by treating an
+   * ACTIVE self re-register as a lease renewal + generation update.
+   */
   registerSession(databaseId: string, generation: number, startupSessionId: string): void {
+    const LEGACY_LEASE_MS = 15 * 60 * 1000;
     this.sql.transaction(() => {
-      // The authority unit is the ACTOR (startup session), not the
-      // (generation, session) pair: one live process may span a generation
-      // rollover without fencing itself. A superseded (fenced) actor can
-      // never re-take authority — the models' session counter only moves
-      // forward — so its re-register is a no-op, leaving it fenced and the
-      // current owner untouched.
+      // a superseded (fenced) actor can never re-take authority - the
+      // models' session counter only moves forward
       const fencedRows = this.sql.exec(
         `SELECT 1 FROM sessions WHERE database_id=? AND startup_session_id=? AND fenced=1 LIMIT 1`,
         databaseId, startupSessionId,
       );
       if (fencedRows.length) return;
-      // command ledger (F7r): the fence-and-register is journaled ONLY when
-      // it changes authority state - an idempotent re-register writes no
-      // ledger entry (replaying the ledger must reproduce state exactly,
-      // and a no-op that appends would break trace equivalence)
-      const fencedCount = Number(this.sql.exec(
-        `SELECT COUNT(*) AS n FROM sessions WHERE database_id=? AND startup_session_id<>? AND fenced=0`,
-        databaseId, startupSessionId,
-      )[0].n);
-      const known = this.sql.exec(
-        `SELECT 1 FROM sessions WHERE database_id=? AND generation=? AND startup_session_id=?`,
-        databaseId, generation, startupSessionId,
-      ).length > 0;
-      this.sql.exec(
-        `UPDATE sessions SET fenced=1 WHERE database_id=? AND startup_session_id<>?`,
-        databaseId, startupSessionId,
-      );
-      this.sql.exec(
-        `INSERT OR IGNORE INTO sessions(database_id, generation, startup_session_id) VALUES (?,?,?)`,
-        databaseId, generation, startupSessionId,
-      );
-      if (!known || fencedCount > 0) {
-        this.appendCommand(databaseId, "SESSION_REGISTERED", {
-          databaseId, generation, startupSessionId, fencedPredecessors: fencedCount,
-        });
+
+      const lifecycle = this.sql.exec(
+        `SELECT state FROM startup_sessions WHERE database_id=? AND startup_session_id=?`,
+        databaseId, startupSessionId);
+      const nonce = `legacy-nonce-${startupSessionId}`;
+      if (lifecycle.length && ["ACTIVE", "DRAINING"].includes(String(lifecycle[0].state))) {
+        // idempotent re-register / rollover by the live actor: refresh the
+        // lease, record the (possibly new) generation, fence nobody
+        this.sql.exec(
+          `UPDATE startup_sessions SET lease_deadline_ms=?, generation=?
+           WHERE database_id=? AND startup_session_id=?`,
+          this.controllerNow() + LEGACY_LEASE_MS, generation, databaseId, startupSessionId);
+        const known = this.sql.exec(
+          `SELECT 1 FROM sessions WHERE database_id=? AND generation=? AND startup_session_id=?`,
+          databaseId, generation, startupSessionId).length > 0;
+        this.sql.exec(
+          `INSERT OR IGNORE INTO sessions(database_id, generation, startup_session_id) VALUES (?,?,?)`,
+          databaseId, generation, startupSessionId);
+        if (!known) {
+          this.appendCommand(databaseId, "SESSION_REGISTERED", {
+            databaseId, generation, startupSessionId, fencedPredecessors: 0,
+          });
+        }
+        return;
       }
+      const reserved = this.reserveSession(databaseId, generation, startupSessionId, "legacy-register");
+      if (!reserved.ok) throw new Error(`legacy register: reserve failed: ${reserved.error}`);
+      const attested = this.attestSession(databaseId, startupSessionId, nonce);
+      if (!attested.ok) throw new Error(`legacy register: attest failed: ${attested.error}`);
+      const activated = this.activateSession(databaseId, startupSessionId, {
+        processNonce: nonce, generation, leaseMs: LEGACY_LEASE_MS,
+      });
+      if (!activated.ok) throw new Error(`legacy register: activate failed: ${activated.error}`);
     });
   }
 
@@ -306,21 +827,77 @@ export class ControllerCore {
         `UPDATE sessions SET fenced=1 WHERE database_id=? AND startup_session_id=?`,
         databaseId, startupSessionId,
       );
+      // the lifecycle row moves with the fence: a fenced actor's session is
+      // REVOKED, not left nominally ACTIVE under a lease nobody honours
+      this.sql.exec(
+        `UPDATE startup_sessions SET state='REVOKED'
+         WHERE database_id=? AND startup_session_id=? AND state IN ('ACTIVE','DRAINING')`,
+        databaseId, startupSessionId,
+      );
       if (live > 0) {
         this.appendCommand(databaseId, "SESSION_FENCED", { databaseId, startupSessionId });
       }
     });
   }
 
-  setBudgets(databaseId: string, b: { maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number }): void {
+  /**
+   * Donor A4: per-procedure actor revalidation AT THE CORE, beneath the
+   * capability layer.
+   *
+   * The capability layer proves a token was issued to an actor; it cannot
+   * prove the actor is still the authority when the token is USED. A
+   * capability has a TTL, so there is a window in which a session is fenced
+   * and its already-minted, still-unexpired token keeps working - the
+   * fenced actor could still move budgets, ack the outbox out from under
+   * the live actor, or read the operation surface. The window closes only
+   * where the authority state actually lives, which is here.
+   *
+   * No holder attribution is returned (v16 inv. 38 / ADR-0006): a fenced
+   * actor learns that it is fenced, never who superseded it.
+   */
+  private requireLiveSession(databaseId: string, startupSessionId: string):
+    { ok: true } | { ok: false; error: "SESSION_UNKNOWN" | "SESSION_FENCED" } {
+    if (typeof startupSessionId !== "string" || startupSessionId.length === 0) {
+      return { ok: false, error: "SESSION_UNKNOWN" };
+    }
+    const rows = this.sql.exec(
+      `SELECT fenced FROM sessions WHERE database_id=? AND startup_session_id=?`,
+      databaseId, startupSessionId,
+    );
+    if (!rows.length) return { ok: false, error: "SESSION_UNKNOWN" };
+    // an actor spans generations; it is live only if NO row for it is fenced
+    if (rows.some((r) => Number(r.fenced) === 1)) return { ok: false, error: "SESSION_FENCED" };
+    return { ok: true };
+  }
+
+  setBudgets(
+    databaseId: string,
+    b: { maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number },
+    startupSessionId: string,
+  ): { ok: true } | { ok: false; error: "SESSION_UNKNOWN" | "SESSION_FENCED" }
+    | { ok: false; error: "INVALID_BUDGET"; field: string }
+    | { ok: false; error: "SESSION_NOT_ACTIVE"; state: string }
+    | { ok: false; error: "SESSION_LEASE_EXPIRED" } {
+    const authority = this.requireLiveSession(databaseId, startupSessionId);
+    if (!authority.ok) return authority;
+    // Q-10: budgets are authority-sized values; exact or refused. Validated
+    // BELOW the immutable platform ceilings - a budget widens nothing.
+    const leasedBudget = this.requireLeasedAuthority(databaseId, startupSessionId);
+    if (!leasedBudget.ok) return leasedBudget;
+    const bad =
+      validateBudgetField("maxUnpublishedOutbox", b.maxUnpublishedOutbox, MAX_OUTBOX_DEPTH_CEILING)
+      ?? validateBudgetField("maxPayloadLength", b.maxPayloadLength, MAX_PAYLOAD_LENGTH_CEILING)
+      ?? validateBudgetField("maxTailRecords", b.maxTailRecords, MAX_TAIL_RECORDS_CEILING);
+    if (bad !== null) return { ok: false as const, error: "INVALID_BUDGET" as const, field: bad };
     this.sql.transaction(() => {
       this.sql.exec(
         `INSERT OR REPLACE INTO budgets(database_id, max_unpublished_outbox, max_payload_length, max_tail_records)
          VALUES (?,?,?,?)`,
         databaseId, b.maxUnpublishedOutbox, b.maxPayloadLength, b.maxTailRecords,
       );
-      this.appendCommand(databaseId, "BUDGETS_SET", { databaseId, ...b });
+      this.appendCommand(databaseId, "BUDGETS_SET", { databaseId, ...b, startupSessionId });
     });
+    return { ok: true };
   }
 
   /**
@@ -333,7 +910,51 @@ export class ControllerCore {
   }
 
   /** Batch candidate (J.4): N records finalised in ONE transaction - all or nothing. */
-  finalizeBatch(reqs: FinalizeRequest[]): FinalizeResult[] | TypedErr {
+  /**
+   * Directive 12.6: a batch is ONE authority envelope with an identity.
+   *
+   * `/wal/finalize-batch` was deployable while the v16 batch schema was
+   * absent: no `BatchOperationId`, no canonical batch digest, no K/byte
+   * limits, and - the part that actually bites - no way to answer a replayed
+   * batch. A client whose response was lost had to either re-send (and get
+   * per-member replays, which works only because members carry their own
+   * ids) or guess. The envelope makes the batch itself replayable and makes
+   * "the same id with different members" a permanent conflict rather than a
+   * second, different batch under a name that was already used.
+   *
+   * The digest is computed here from the members' own canonical digests, in
+   * order; a caller-supplied `batchDigest` is only ever checked against it
+   * (Q-18's rule, applied to the envelope).
+   */
+  finalizeBatch(reqs: FinalizeRequest[], envelope?: BatchEnvelope): FinalizeResult[] | TypedErr {
+    if (reqs.length === 0) return { ok: false as const, error: "EMPTY_BATCH" as const };
+    if (reqs.length > MAX_BATCH_MEMBERS) {
+      return { ok: false as const, error: "BATCH_TOO_MANY_MEMBERS" as const, limit: MAX_BATCH_MEMBERS };
+    }
+    const declaredBytes = reqs.reduce((n, r) => n + (Number(r.payloadLength) || 0), 0);
+    if (declaredBytes > MAX_BATCH_BYTES) {
+      return { ok: false as const, error: "BATCH_TOO_MANY_BYTES" as const, limit: MAX_BATCH_BYTES };
+    }
+    if (envelope === undefined) {
+      // A batch with no identity cannot be replayed, conflicted or audited.
+      // Refusing is the release-baseline posture the directive asks for:
+      // one-record finalization always works, batching needs its envelope.
+      return { ok: false as const, error: "BATCH_ENVELOPE_REQUIRED" as const };
+    }
+    const { databaseId, generation } = reqs[0];
+    const computedDigest = this.batchDigest(envelope.batchOperationId, reqs);
+    if (envelope.batchDigest !== undefined && envelope.batchDigest !== computedDigest) {
+      return { ok: false as const, error: "BATCH_DIGEST_MISMATCH" as const };
+    }
+    const prior = this.sql.exec(
+      `SELECT batch_digest, member_operation_ids FROM batch_operations
+       WHERE database_id=? AND generation=? AND batch_operation_id=?`,
+      databaseId, generation, envelope.batchOperationId,
+    );
+    if (prior.length && String(prior[0].batch_digest) !== computedDigest) {
+      // one batch id, one set of members, forever
+      return { ok: false as const, error: "BATCH_DIGEST_CONFLICT" as const };
+    }
     try {
       return this.sql.transaction(() => {
         const results: FinalizeResult[] = [];
@@ -342,12 +963,31 @@ export class ControllerCore {
           if (!r.ok) throw new BatchAbort(r); // rollback of every prior record
           results.push(r);
         }
+        this.sql.exec(
+          `INSERT OR IGNORE INTO batch_operations(database_id, generation, batch_operation_id,
+             batch_digest, member_count, member_operation_ids, control_seq)
+           VALUES (?,?,?,?,?,?,?)`,
+          databaseId, generation, envelope.batchOperationId, computedDigest, reqs.length,
+          JSON.stringify(reqs.map((r) => r.operationId)),
+          results.length ? u64Blob(results[0].ok ? results[0].controlSeq : 0n, "control_seq") : null,
+        );
         return results;
       });
     } catch (e) {
       if (e instanceof BatchAbort) return e.result;
       throw e;
     }
+  }
+
+  /** Canonical batch digest: the ordered members' own canonical request
+   *  digests under the batch id, in a domain-separated envelope. Reordering
+   *  the members is a DIFFERENT batch - order is part of the contract. */
+  private batchDigest(batchOperationId: string, reqs: FinalizeRequest[]): string {
+    return hex(sha256(utf8(canonicalJson({
+      domain: "wal-finalize-batch/v1",
+      batchOperationId,
+      members: reqs.map((r) => r.requestDigest),
+    }))));
   }
 
   /** One finalisation step; assumes the caller holds the open transaction. */
@@ -364,26 +1004,30 @@ export class ControllerCore {
     );
     if (!session.length) return { ok: false as const, error: "SESSION_UNKNOWN" as const };
     if (Number(session[0].fenced)) {
-      // Attribution, not a credential (donor A3): the fenced actor learns
-      // WHO superseded it — the first question in a fence incident is "who
-      // is the writer now?". This disclosure is only SAFE because the
-      // session id is no longer sufficient to write: WAL_FINALIZE authority
-      // requires a capability BOUND to the session (worker-entry's finalize
-      // guard passes the session; capability.ts enforces the binding), and
-      // the controller issues a session-bound finalize capability only to
-      // the actor it admitted as that session. A leaked id without such a
-      // capability finalizes nothing. Served from the authority row
-      // read-only; it can never change this call's outcome.
-      const live = this.sql.exec(
-        `SELECT startup_session_id FROM sessions WHERE database_id=? AND fenced=0 LIMIT 1`,
-        req.databaseId,
-      );
-      return {
-        ok: false as const,
-        error: "SESSION_FENCED" as const,
-        fencedBy: live.length ? String(live[0].startup_session_id) : null,
-      };
+      // A stale actor receives EXACTLY `SESSION_FENCED` - no result fields
+      // and NO holder attribution (v16 inv. 38, ADR-0006, and the
+      // convergence directive's §12.5 correction).
+      //
+      // The previous version returned `fencedBy`, reasoning that the id was
+      // no longer a credential once finalize capabilities became
+      // session-bound. Two things are wrong with that. The attribution was
+      // read from "any unfenced session of this database" without the
+      // generation/materialisation authority scope, so it could name a
+      // session that is not the holder of the scope the caller asked about;
+      // and a refusal surface that answers "who is the writer now?" to an
+      // actor that has just been superseded is an identity oracle whose
+      // safety depends on every OTHER control staying perfect. Attribution
+      // belongs in privileged audit telemetry, which is where the
+      // SESSION_REGISTERED/SESSION_FENCED command-ledger entries already
+      // record it from the correctly scoped durable transition.
+      return { ok: false as const, error: "SESSION_FENCED" as const };
     }
+
+    // Q-03 / 12.4: authority is LEASED. The fence check above says the actor
+    // was not superseded; this says its lease is still running on controller
+    // time. Both must hold before any counter or outbox row is consumed.
+    const leased = this.requireLeasedAuthority(req.databaseId, req.startupSessionId);
+    if (!leased.ok) return leased;
 
     // exact-once replay by operation identity
     const replay = this.sql.exec(
@@ -419,6 +1063,12 @@ export class ControllerCore {
         // duplicate identical status: idempotent accept of the original;
         // conflicting status: typed rejection. Never both accepted.
         if (existing[0].payload_digest === req.payloadDigest) {
+          // Q-11: make the answer durable under the id the CLIENT used.
+          // Returning the original record's receipt for a fresh operation id
+          // without recording the mapping left that operation queryable
+          // nowhere - a second lost response had nothing to resolve against.
+          const aliasConflict = this.recordOperationAlias(req, existing[0].append_lsn as Uint8Array);
+          if (aliasConflict) return aliasConflict;
           return {
             ok: true as const,
             appendLsn: u64FromSql(existing[0].append_lsn, "append_lsn"),
@@ -431,42 +1081,53 @@ export class ControllerCore {
       }
     }
 
-    // bounded admission, fail-closed, BEFORE any allocation
+    // Q-10: payloadLength is authority-sized (it is compared against the
+    // budget and stored); a float, negative, NaN or non-number must refuse
+    // here, never coerce or compare as garbage
+    if (typeof req.payloadLength !== "number" || !Number.isSafeInteger(req.payloadLength)
+        || req.payloadLength < 0) {
+      return { ok: false as const, error: "INVALID_PAYLOAD_LENGTH" as const, observed: req.payloadLength };
+    }
+
+    // bounded admission, fail-closed, BEFORE any allocation. Q-12: a missing
+    // budget row DENIES writes - "no budget means unlimited" inverted the
+    // fail direction, and a database nobody configured admitted everything.
+    // The check sits after replay/dedupe deliberately: a lost-response retry
+    // allocates nothing and must still get its receipt.
     const budget = this.sql.exec(`SELECT * FROM budgets WHERE database_id=?`, req.databaseId)[0];
-    if (budget) {
-      if (req.payloadLength > Number(budget.max_payload_length)) {
-        return { ok: false as const, error: "ADMISSION_REJECTED_PAYLOAD_LENGTH" as const, limit: Number(budget.max_payload_length) };
-      }
-      const unpublished = Number(
-        this.sql.exec(
-          `SELECT COUNT(*) AS n FROM control_outbox WHERE database_id=? AND published=0`,
-          req.databaseId,
-        )[0].n,
-      );
-      if (unpublished >= Number(budget.max_unpublished_outbox)) {
-        return { ok: false as const, error: "ADMISSION_REJECTED_OUTBOX_DEPTH" as const, limit: Number(budget.max_unpublished_outbox) };
-      }
-      const tail = Number(
-        this.sql.exec(
-          `SELECT COUNT(*) AS n FROM wal_tail WHERE database_id=? AND generation=?`,
-          req.databaseId, req.generation,
-        )[0].n,
-      );
-      if (tail >= Number(budget.max_tail_records)) {
-        return { ok: false as const, error: "ADMISSION_REJECTED_TAIL_BUDGET" as const, limit: Number(budget.max_tail_records) };
-      }
+    if (!budget) {
+      return { ok: false as const, error: "ADMISSION_REJECTED_NO_BUDGET" as const };
+    }
+    if (req.payloadLength > Number(budget.max_payload_length)) {
+      return { ok: false as const, error: "ADMISSION_REJECTED_PAYLOAD_LENGTH" as const, limit: Number(budget.max_payload_length) };
+    }
+    const unpublished = this.usage(req.databaseId, OUTBOX_GENERATION, "outbox_unpublished");
+    if (unpublished >= Number(budget.max_unpublished_outbox)) {
+      return { ok: false as const, error: "ADMISSION_REJECTED_OUTBOX_DEPTH" as const, limit: Number(budget.max_unpublished_outbox) };
+    }
+    const tail = this.usage(req.databaseId, req.generation, "tail");
+    if (tail >= Number(budget.max_tail_records)) {
+      return { ok: false as const, error: "ADMISSION_REJECTED_TAIL_BUDGET" as const, limit: Number(budget.max_tail_records) };
     }
 
     // late atomic allocation: contiguous AppendLsn, monotone TypeSequence
     // (sequenced records advance it; unsequenced reuse the current one),
-    // global ControlSeq - all inside the caller's transaction. MAX over the
-    // BE-blob columns is exact bytewise u64 ordering; an empty head is NULL
-    // (never a -1 sentinel, which has no u64 blob encoding).
+    // global ControlSeq - all inside the caller's transaction. The head is
+    // ONE seek down the primary-key index, not an aggregate: TypeSequence is
+    // nondecreasing in append order, so the newest row carries both maxima.
+    // The previous MAX(append_lsn), MAX(type_sequence) pair defeated
+    // SQLite's min/max optimisation (two aggregates over different columns)
+    // and walked every row of the (database, generation) prefix on EVERY
+    // append - O(history) latency wearing an O(1) plan's SEARCH label
+    // (Q-17; killed by the latency-ratio control in query-plans.test.ts).
+    // BE-blob columns order exactly as the u64s do; an empty head is an
+    // absent row (never a -1 sentinel, which has no u64 blob encoding).
     const head = this.sql.exec(
-      `SELECT MAX(append_lsn) AS lsn, MAX(type_sequence) AS ts
-       FROM wal_tail WHERE database_id=? AND generation=?`,
+      `SELECT append_lsn AS lsn, type_sequence AS ts
+       FROM wal_tail WHERE database_id=? AND generation=?
+       ORDER BY append_lsn DESC LIMIT 1`,
       req.databaseId, req.generation,
-    )[0];
+    )[0] ?? { lsn: null, ts: null };
     const appendLsn = head.lsn === null ? 0n : u64FromSql(head.lsn, "max_append_lsn") + 1n;
     const headTypeSequence = head.ts === null ? 0n : u64FromSql(head.ts, "max_type_sequence");
     const typeSequence = req.sequencingKind === "SEQUENCED" ? headTypeSequence + 1n : headTypeSequence;
@@ -483,6 +1144,7 @@ export class ControllerCore {
       req.payloadKey, req.payloadDigest, req.payloadLength, req.operationId, req.requestDigest,
       req.logicalKey, req.startupSessionId, u64Blob(controlSeq, "control_seq"), req.recordType,
     );
+    this.bumpUsage(req.databaseId, req.generation, "tail", 1);
     // outbox row in the SAME transaction as the projection mutation (section
     // 7.4). Sequence values are canonically DECIMAL STRINGS in the body:
     // JSON numbers stop being exact at 2^53. The row is a hash-chained,
@@ -704,6 +1366,32 @@ export class ControllerCore {
     return hex(asHash(rows[rows.length - 1].entry_hash, "entry_hash"));
   }
 
+  /**
+   * Read a transactionally maintained usage counter (Q-17).
+   *
+   * Missing means zero: a database that has never appended has no row, and
+   * inventing one at open would be a write on a read path.
+   */
+  private usage(databaseId: string, generation: number, scope: string): number {
+    const rows = this.sql.exec(
+      `SELECT value FROM usage_counters WHERE database_id=? AND generation=? AND scope=?`,
+      databaseId, generation, scope,
+    );
+    return rows.length ? Number(rows[0].value) : 0;
+  }
+
+  /** Move a usage counter by `delta` inside the caller's transaction. The
+   *  upsert and the row it accounts for are always in the SAME transaction,
+   *  so a rollback cannot leave the counter describing a row that is not
+   *  there (or vice versa). */
+  private bumpUsage(databaseId: string, generation: number, scope: string, delta: number): void {
+    this.sql.exec(
+      `INSERT INTO usage_counters(database_id, generation, scope, value) VALUES (?,?,?,?)
+       ON CONFLICT(database_id, generation, scope) DO UPDATE SET value = value + ?`,
+      databaseId, generation, scope, delta, delta,
+    );
+  }
+
   /** Chain-append one journal/outbox row. Caller holds the transaction. */
   private appendJournalEntry(controlSeq: bigint, databaseId: string, kind: string, canonicalBody: string): void {
     const tail = this.sql.exec(`SELECT entry_hash FROM control_outbox ORDER BY control_seq DESC LIMIT 1`);
@@ -715,6 +1403,7 @@ export class ControllerCore {
        VALUES (?,?,?,?,?,?,?)`,
       u64Blob(controlSeq, "control_seq"), databaseId, kind, canonicalBody, prevHash, entryHash, mac,
     );
+    this.bumpUsage(databaseId, OUTBOX_GENERATION, "outbox_unpublished", 1);
   }
 
   /**
@@ -760,12 +1449,16 @@ export class ControllerCore {
     // crash between publish and mark yields at-least-once delivery to the
     // bus, deduplicated downstream by control_seq (the exactly-once identity).
     const rows = this.sql.exec(
-      `SELECT control_seq, kind, canonical_body FROM control_outbox WHERE published=0 ORDER BY control_seq`,
+      `SELECT control_seq, database_id, kind, canonical_body FROM control_outbox
+       WHERE published=0 ORDER BY control_seq`,
     );
     let published = 0;
     for (const row of rows) {
       publish({ controlSeq: u64FromSql(row.control_seq, "control_seq"), kind: String(row.kind), body: String(row.canonical_body) });
       this.sql.exec(`UPDATE control_outbox SET published=1 WHERE control_seq=?`, row.control_seq);
+      // the counter moves with the row, in the same step (Q-17): a marking
+      // path that forgets it silently wedges admission at the old depth
+      this.bumpUsage(String(row.database_id), OUTBOX_GENERATION, "outbox_unpublished", -1);
       published += 1;
     }
     return published;
@@ -787,13 +1480,31 @@ export class ControllerCore {
       }));
   }
 
-  outboxAck(upToControlSeq: bigint): number {
+  outboxAck(databaseId: string, upToControlSeq: bigint, startupSessionId: string):
+    Typed<{ acked: number }> | { ok: false; error: "SESSION_UNKNOWN" | "SESSION_FENCED" }
+    | { ok: false; error: "SESSION_NOT_ACTIVE"; state: string }
+    | { ok: false; error: "SESSION_LEASE_EXPIRED" } {
+    const authority = this.requireLiveSession(databaseId, startupSessionId);
+    if (!authority.ok) return authority;
+    const leasedAck = this.requireLeasedAuthority(databaseId, startupSessionId);
+    if (!leasedAck.ok) return leasedAck;
     const bound = u64Blob(upToControlSeq, "up_to_control_seq");
     return this.sql.transaction(() => {
+      // bounded by the ack window, not by history: the partial index over
+      // unpublished rows makes this a range walk, and the counter it
+      // maintains is what admission reads
+      // scoped to the acking database: the ack is per-database authority, and
+      // an unscoped UPDATE would let one database's consumer mark another's
+      // control events published. One DO per database hides this in
+      // production; it is wrong wherever a core holds more than one.
       const before = Number(this.sql.exec(
-        `SELECT COUNT(*) AS n FROM control_outbox WHERE published=0 AND control_seq <= ?`, bound)[0].n);
-      this.sql.exec(`UPDATE control_outbox SET published=1 WHERE published=0 AND control_seq <= ?`, bound);
-      return before;
+        `SELECT COUNT(*) AS n FROM control_outbox
+         WHERE database_id=? AND published=0 AND control_seq <= ?`, databaseId, bound)[0].n);
+      this.sql.exec(
+        `UPDATE control_outbox SET published=1
+         WHERE database_id=? AND published=0 AND control_seq <= ?`, databaseId, bound);
+      if (before > 0) this.bumpUsage(databaseId, OUTBOX_GENERATION, "outbox_unpublished", -before);
+      return { ok: true as const, acked: before };
     });
   }
 
@@ -818,12 +1529,71 @@ export class ControllerCore {
   /** Fixed iterator snapshot (CT-P3): head is pinned at open; reads are
    *  exact. `-1n` is the empty-head sentinel (a JS value only - it never
    *  touches the u64 blob encoding). */
-  openIterator(databaseId: string, generation: number): { headLsn: bigint } {
+  /**
+   * Pin an iteration snapshot and hand back an OPAQUE, server-owned id
+   * (Q-12 / directive 12.6).
+   *
+   * Returning only `headLsn` and then accepting a caller-supplied
+   * `throughLsn` on every page is not a pinned view: the client holds the
+   * cut, so it can widen it between pages and observe appends made after
+   * iteration started (inv. 41-42) - or narrow it, and silently skip
+   * records a consumer believes it replayed. The snapshot id is MACed over
+   * (database, generation, head, incarnation), so the bound travels back
+   * unforgeably and the server, not the caller, decides what the cut was.
+   *
+   * The id is stateless by design: it carries the cut rather than naming a
+   * row, so pinning costs no storage and a controller restart invalidates
+   * every outstanding snapshot through the incarnation binding - which is
+   * the correct behaviour, since a new incarnation may have recovered to a
+   * different frontier.
+   */
+  openIterator(databaseId: string, generation: number):
+    { headLsn: bigint; snapshotId: string } {
     const head = this.sql.exec(
       `SELECT MAX(append_lsn) AS lsn FROM wal_tail WHERE database_id=? AND generation=?`,
       databaseId, generation,
     )[0];
-    return { headLsn: head.lsn === null ? -1n : u64FromSql(head.lsn, "max_append_lsn") };
+    const headLsn = head.lsn === null ? -1n : u64FromSql(head.lsn, "max_append_lsn");
+    return { headLsn, snapshotId: this.mintSnapshotId(databaseId, generation, headLsn) };
+  }
+
+  private snapshotPreimage(databaseId: string, generation: number, headLsn: bigint): Uint8Array {
+    return utf8(canonicalJson({
+      domain: "wal-iteration-snapshot/v1",
+      databaseId,
+      generation,
+      headLsn: headLsn.toString(),
+      incarnation: this.currentIncarnation(),
+    }));
+  }
+
+  private mintSnapshotId(databaseId: string, generation: number, headLsn: bigint): string {
+    const mac = hmacSha256(this.journalKey, this.snapshotPreimage(databaseId, generation, headLsn));
+    return `${headLsn.toString()}.${hex(mac)}`;
+  }
+
+  /**
+   * Resolve a snapshot id back to its pinned head, or refuse.
+   *
+   * A caller may not supply a raw `throughLsn`; it must present the id it
+   * was given. Anything else - a forged MAC, a rewritten head, an id minted
+   * under a superseded incarnation - is a typed refusal, never a scan over
+   * a cut nobody pinned.
+   */
+  resolveSnapshot(databaseId: string, generation: number, snapshotId: string):
+    Typed<{ headLsn: bigint }> | { ok: false; error: "INVALID_SNAPSHOT_ID" } {
+    if (typeof snapshotId !== "string") return { ok: false, error: "INVALID_SNAPSHOT_ID" };
+    const dot = snapshotId.lastIndexOf(".");
+    if (dot <= 0) return { ok: false, error: "INVALID_SNAPSHOT_ID" };
+    const headText = snapshotId.slice(0, dot);
+    const macHex = snapshotId.slice(dot + 1);
+    if (!/^-?\d+$/.test(headText) || !/^[0-9a-f]{64}$/.test(macHex)) {
+      return { ok: false, error: "INVALID_SNAPSHOT_ID" };
+    }
+    const headLsn = BigInt(headText);
+    const expected = hmacSha256(this.journalKey, this.snapshotPreimage(databaseId, generation, headLsn));
+    if (!bytesEqual(expected, fromHexInternal(macHex))) return { ok: false, error: "INVALID_SNAPSHOT_ID" };
+    return { ok: true, headLsn };
   }
 
   /**
@@ -832,11 +1602,14 @@ export class ControllerCore {
    * the audit's `maxLsn` is a physical position, not a sequence number.
    */
   head(databaseId: string, generation: number): { headLsn: bigint; headTypeSequence: bigint } {
+    // one PK-index seek: the newest row carries both maxima (TypeSequence is
+    // nondecreasing in append order) - see the Q-17 note in finalizeStep
     const head = this.sql.exec(
-      `SELECT MAX(append_lsn) AS lsn, MAX(type_sequence) AS ts
-       FROM wal_tail WHERE database_id=? AND generation=?`,
+      `SELECT append_lsn AS lsn, type_sequence AS ts
+       FROM wal_tail WHERE database_id=? AND generation=?
+       ORDER BY append_lsn DESC LIMIT 1`,
       databaseId, generation,
-    )[0];
+    )[0] ?? { lsn: null, ts: null };
     return {
       headLsn: head.lsn === null ? -1n : u64FromSql(head.lsn, "max_append_lsn"),
       headTypeSequence: head.ts === null ? 0n : u64FromSql(head.ts, "max_type_sequence"),
@@ -894,21 +1667,70 @@ export class ControllerCore {
    * hide the immutable durable record itself: lost-response recovery and
    * forensics by the CURRENT actor resolve here.
    */
-  queryOperation(databaseId: string, generation: number, operationId: string):
-    Typed<{ record: WalDescriptor; requestDigest: string; controlSeq: bigint }> | TypedErr {
-    const rows = this.sql.exec(
+  queryOperation(databaseId: string, generation: number, operationId: string, startupSessionId: string):
+    Typed<{ record: WalDescriptor; requestDigest: string; controlSeq: bigint }>
+    | TypedErr | { ok: false; error: "SESSION_UNKNOWN" | "SESSION_FENCED" } {
+    // "by the CURRENT actor" is the whole point of this surface: a fenced
+    // actor must not keep reading the immutable history it can no longer
+    // extend, and its unexpired WAL_READ capability must not let it.
+    const authority = this.requireLiveSession(databaseId, startupSessionId);
+    if (!authority.ok) return authority;
+    let rows = this.sql.exec(
       `SELECT append_lsn, type_sequence, sequencing_kind, record_type, payload_key, payload_digest,
               payload_length, unsequenced_logical_key, request_digest, control_seq
        FROM wal_tail WHERE database_id=? AND generation=? AND finalization_operation_id=?`,
       databaseId, generation, operationId,
     );
-    if (!rows.length) return { ok: false, error: "NOT_FOUND" };
+    if (!rows.length) {
+      // Q-11: an operation answered by status-singleton dedupe resolves
+      // through its durable alias to the record it was answered with
+      const alias = this.sql.exec(
+        `SELECT append_lsn FROM operation_aliases
+         WHERE database_id=? AND generation=? AND operation_id=?`,
+        databaseId, generation, operationId,
+      );
+      if (!alias.length) return { ok: false, error: "NOT_FOUND" };
+      rows = this.sql.exec(
+        `SELECT append_lsn, type_sequence, sequencing_kind, record_type, payload_key, payload_digest,
+                payload_length, unsequenced_logical_key, request_digest, control_seq
+         FROM wal_tail WHERE database_id=? AND generation=? AND append_lsn=?`,
+        databaseId, generation, alias[0].append_lsn,
+      );
+      if (!rows.length) return { ok: false, error: "NOT_FOUND" };
+    }
     return {
       ok: true,
       record: descriptorOf(rows[0]),
       requestDigest: String(rows[0].request_digest),
       controlSeq: u64FromSql(rows[0].control_seq, "control_seq"),
     };
+  }
+
+  /**
+   * Record `operationId -> the physical record it was answered with`.
+   *
+   * Returns a typed conflict when the same operation id was already aliased
+   * with a different request digest: one operation id may resolve to exactly
+   * one answer, and a second, different request under it is a client defect,
+   * never a silent re-point.
+   */
+  private recordOperationAlias(
+    req: FinalizeRequest, appendLsn: Uint8Array,
+  ): { ok: false; error: "OPERATION_DIGEST_CONFLICT" } | null {
+    const prior = this.sql.exec(
+      `SELECT request_digest FROM operation_aliases
+       WHERE database_id=? AND generation=? AND operation_id=?`,
+      req.databaseId, req.generation, req.operationId,
+    );
+    if (prior.length && String(prior[0].request_digest) !== req.requestDigest) {
+      return { ok: false as const, error: "OPERATION_DIGEST_CONFLICT" as const };
+    }
+    this.sql.exec(
+      `INSERT OR IGNORE INTO operation_aliases(database_id, generation, operation_id, append_lsn, request_digest)
+       VALUES (?,?,?,?,?)`,
+      req.databaseId, req.generation, req.operationId, appendLsn, req.requestDigest,
+    );
+    return null;
   }
 
   /** Last record of a type in physical order (`find_last_type`). */

@@ -57,6 +57,8 @@ function boot(): { core: ControllerCore; db: InstanceType<typeof Database> } {
   const { sql, db } = makeSql();
   const core = new ControllerCore(sql, { journalKey: KEY });
   core.registerSession("db1", 1, "sess-1");
+  // Q-12: writes are denied without a validated budget row
+  core.setBudgets("db1", { maxUnpublishedOutbox: 10_000, maxPayloadLength: 1_000_000, maxTailRecords: 1_000_000 }, "sess-1");
   return { core, db };
 }
 
@@ -109,7 +111,7 @@ test("the journal chains and verifies over real finalisations", () => {
   for (let i = 0; i < 5; i++) assert.ok(core.finalizeWalRecord(req()).ok);
   const verdict = core.verifyJournal();
   assert.ok(verdict.ok, JSON.stringify(verdict));
-  assert.equal(verdict.length, 6); // the SESSION_REGISTERED command + 5 finalisations
+  assert.equal(verdict.length, 7); // register + fixture BUDGETS_SET + 5 finalisations
   assert.equal(verdict.headHash.length, 64);
   // draining/acking must not touch authentication state
   core.drainOutbox(() => {});
@@ -123,37 +125,37 @@ test("tamper matrix: every interior manipulation is a typed detection", () => {
     const { core, db } = boot();
     for (let i = 0; i < 4; i++) core.finalizeWalRecord(req());
     db.prepare(`UPDATE control_outbox SET canonical_body = replace(canonical_body, 'SEQUENCED', 'UNSEQUENCED')
-                WHERE control_seq = ?`).run(u64Blob(2n, "t"));
+                WHERE control_seq = ?`).run(u64Blob(3n, "t"));
     const v = core.verifyJournal();
-    assert.deepEqual(v, { ok: false, error: "JOURNAL_HASH_MISMATCH", atControlSeq: "2" });
+    assert.deepEqual(v, { ok: false, error: "JOURNAL_HASH_MISMATCH", atControlSeq: "3" });
   }
   // kind edit
   {
     const { core, db } = boot();
     for (let i = 0; i < 3; i++) core.finalizeWalRecord(req());
-    db.prepare(`UPDATE control_outbox SET kind = 'FORGED_KIND' WHERE control_seq = ?`).run(u64Blob(3n, "t"));
+    db.prepare(`UPDATE control_outbox SET kind = 'FORGED_KIND' WHERE control_seq = ?`).run(u64Blob(4n, "t"));
     const v = core.verifyJournal();
-    assert.deepEqual(v, { ok: false, error: "JOURNAL_HASH_MISMATCH", atControlSeq: "3" });
+    assert.deepEqual(v, { ok: false, error: "JOURNAL_HASH_MISMATCH", atControlSeq: "4" });
   }
   // reorder (swap two bodies wholesale, hashes included): linkage breaks
   {
     const { core, db } = boot();
     for (let i = 0; i < 4; i++) core.finalizeWalRecord(req());
-    const row2 = db.prepare(`SELECT canonical_body, prev_hash, entry_hash, mac FROM control_outbox WHERE control_seq=?`).get(u64Blob(2n, "t")) as Record<string, unknown>;
     const row3 = db.prepare(`SELECT canonical_body, prev_hash, entry_hash, mac FROM control_outbox WHERE control_seq=?`).get(u64Blob(3n, "t")) as Record<string, unknown>;
+    const row4 = db.prepare(`SELECT canonical_body, prev_hash, entry_hash, mac FROM control_outbox WHERE control_seq=?`).get(u64Blob(4n, "t")) as Record<string, unknown>;
     const put = db.prepare(`UPDATE control_outbox SET canonical_body=?, prev_hash=?, entry_hash=?, mac=? WHERE control_seq=?`);
-    put.run(row3.canonical_body, row3.prev_hash, row3.entry_hash, row3.mac, u64Blob(2n, "t"));
-    put.run(row2.canonical_body, row2.prev_hash, row2.entry_hash, row2.mac, u64Blob(3n, "t"));
+    put.run(row4.canonical_body, row4.prev_hash, row4.entry_hash, row4.mac, u64Blob(3n, "t"));
+    put.run(row3.canonical_body, row3.prev_hash, row3.entry_hash, row3.mac, u64Blob(4n, "t"));
     const v = core.verifyJournal();
-    assert.ok(!v.ok && v.error === "JOURNAL_CHAIN_BROKEN" && v.atControlSeq === "2", JSON.stringify(v));
+    assert.ok(!v.ok && v.error === "JOURNAL_CHAIN_BROKEN" && v.atControlSeq === "3", JSON.stringify(v));
   }
   // interior deletion: contiguity gap
   {
     const { core, db } = boot();
     for (let i = 0; i < 4; i++) core.finalizeWalRecord(req());
-    db.prepare(`DELETE FROM control_outbox WHERE control_seq = ?`).run(u64Blob(2n, "t"));
+    db.prepare(`DELETE FROM control_outbox WHERE control_seq = ?`).run(u64Blob(3n, "t"));
     const v = core.verifyJournal();
-    assert.deepEqual(v, { ok: false, error: "JOURNAL_GAP", atControlSeq: "3" });
+    assert.deepEqual(v, { ok: false, error: "JOURNAL_GAP", atControlSeq: "4" });
   }
   // forged rewrite WITHOUT the key: attacker recomputes hashes for a
   // modified suffix but cannot mint valid MACs
@@ -163,16 +165,17 @@ test("tamper matrix: every interior manipulation is a typed detection", () => {
     const rows = db.prepare(`SELECT control_seq, kind, canonical_body, prev_hash FROM control_outbox ORDER BY control_seq`).all() as Record<string, unknown>[];
     // rewrite entry 2's body and recompute its hash + entry 3's linkage,
     // using a WRONG key for the MACs (the real key never leaves the core)
-    const forgedBody = String(rows[1].canonical_body).replace('"generation":1', '"generation":9');
-    const forgedHash2 = sha256(rows[1].prev_hash as Uint8Array, u64Blob(2n, "t"), utf8(String(rows[1].kind)), utf8(forgedBody));
-    const forgedMac2 = hmacSha256(utf8("wrong-key"), forgedHash2);
-    const forgedHash3 = sha256(forgedHash2, u64Blob(3n, "t"), utf8(String(rows[2].kind)), utf8(String(rows[2].canonical_body)));
+    const forgedBody = String(rows[2].canonical_body).replace('"generation":1', '"generation":9');
+    assert.notEqual(forgedBody, String(rows[2].canonical_body), "the forged edit must actually change the body");
+    const forgedHash3 = sha256(rows[2].prev_hash as Uint8Array, u64Blob(3n, "t"), utf8(String(rows[2].kind)), utf8(forgedBody));
     const forgedMac3 = hmacSha256(utf8("wrong-key"), forgedHash3);
+    const forgedHash4 = sha256(forgedHash3, u64Blob(4n, "t"), utf8(String(rows[3].kind)), utf8(String(rows[3].canonical_body)));
+    const forgedMac4 = hmacSha256(utf8("wrong-key"), forgedHash4);
     const put = db.prepare(`UPDATE control_outbox SET canonical_body=?, prev_hash=?, entry_hash=?, mac=? WHERE control_seq=?`);
-    put.run(forgedBody, rows[1].prev_hash, forgedHash2, forgedMac2, u64Blob(2n, "t"));
-    put.run(String(rows[2].canonical_body), forgedHash2, forgedHash3, forgedMac3, u64Blob(3n, "t"));
+    put.run(forgedBody, rows[2].prev_hash, forgedHash3, forgedMac3, u64Blob(3n, "t"));
+    put.run(String(rows[3].canonical_body), forgedHash3, forgedHash4, forgedMac4, u64Blob(4n, "t"));
     const v = core.verifyJournal();
-    assert.deepEqual(v, { ok: false, error: "JOURNAL_MAC_INVALID", atControlSeq: "2" });
+    assert.deepEqual(v, { ok: false, error: "JOURNAL_MAC_INVALID", atControlSeq: "3" });
   }
 });
 
@@ -186,11 +189,11 @@ test("boundary pin: tail truncation is invisible to PLAIN chain verification", (
   const { core, db } = boot();
   for (let i = 0; i < 4; i++) core.finalizeWalRecord(req());
   const before = core.verifyJournal();
-  assert.ok(before.ok && before.length === 5); // register command + 4 finalisations
-  db.prepare(`DELETE FROM control_outbox WHERE control_seq = ?`).run(u64Blob(5n, "t"));
+  assert.ok(before.ok && before.length === 6); // register + fixture budgets + 4 finalisations
+  db.prepare(`DELETE FROM control_outbox WHERE control_seq = ?`).run(u64Blob(6n, "t"));
   const truncated = core.verifyJournal();
   assert.ok(truncated.ok, "truncation is undetectable without the external anchor - by construction");
-  assert.equal(truncated.length, 4);
+  assert.equal(truncated.length, 5);
   assert.notEqual(truncated.headHash, before.headHash,
     "the head hash DOES change - an external anchor of (length, headHash) detects truncation");
 });
@@ -199,6 +202,7 @@ test("a wrong journal key fails verification wholesale", () => {
   const { sql, db } = makeSql();
   const core = new ControllerCore(sql, { journalKey: KEY });
   core.registerSession("db1", 1, "sess-1");
+  core.setBudgets("db1", { maxUnpublishedOutbox: 100, maxPayloadLength: 1000, maxTailRecords: 100 }, "sess-1");
   core.finalizeWalRecord(req());
   const wrongKeyView = new ControllerCore(sql, { journalKey: utf8("other-key") });
   const v = wrongKeyView.verifyJournal();

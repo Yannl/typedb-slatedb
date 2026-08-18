@@ -271,6 +271,25 @@ def main():
     out.write_text(json.dumps(summary, indent=1) + "\n")
     print(json.dumps({k: summary[k] for k in ("total", "pass", "fail", "error")}))
 
+    # ---- terminal verdict (Q-29) -------------------------------------
+    # This producer used to write FAIL and ERROR rows and still exit zero: a
+    # deliberately-broken rustfmt run archived 78 pass / 63 fail with rc=0,
+    # so any CI step invoking it recorded a green static lane over a red one.
+    # There is no ledger for static checks - a formatting/checkstyle rule
+    # either passes or the lane is red.
+    anomalies = [f"{r['target_id']}: {r['status']}"
+                 + (f" ({', '.join(r.get('failures', [])[:3])})" if r.get("failures") else "")
+                 + (f" ({r['detail']})" if r.get("detail") else "")
+                 for r in results if r["status"] != "PASS"]
+    if not results:
+        anomalies.append("static: the catalogue selected ZERO static targets - "
+                         "an empty static lane is never a pass")
+    for a in anomalies:
+        print(f"ANOMALY: {a}", file=sys.stderr)
+    print(f"VERDICT: {'GREEN' if not anomalies else 'RED'} "
+          f"({len(anomalies)} anomaly/anomalies)", file=sys.stderr)
+    return 1 if anomalies else 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

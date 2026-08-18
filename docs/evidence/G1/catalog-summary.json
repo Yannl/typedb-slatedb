@@ -11,5 +11,8 @@
   "leaf_cases_total": 4740,
   "declared_ignored": 1,
   "fixtures": 4,
-  "build_recon_targets": 226
+  "build_recon_targets": 226,
+  "enumerated_tree": "/home/user/typedb-slatedb/sources/typedb-pristine",
+  "enumerated_tree_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+  "enumerated_tree_dirty": false
 }

@@ -13,3 +13,24 @@ new_sqlite_classes = ["DatabaseControllerDO"]
 [[r2_buckets]]
 binding = "PAYLOADS"
 bucket_name = "typedb-payloads-local"
+
+# Q-24: this top-level config IS the L1 local-dev posture, and it says so.
+# The managed posture is selected by [env.production]: no keys are configured
+# there - they are provisioned as secrets (`wrangler secret put`, env
+# production) - and resolveKeyConfig fails DO construction if any of them is
+# absent, malformed, a dev constant, or below policy. A production deploy
+# that lost its secrets refuses every request; it never runs on dev keys.
+[vars]
+CONTROLLER_KEY_PROFILE = "local-dev"
+
+[env.production]
+[env.production.vars]
+CONTROLLER_KEY_PROFILE = "managed"
+
+[[env.production.durable_objects.bindings]]
+name = "CONTROLLER"
+class_name = "DatabaseControllerDO"
+
+[[env.production.r2_buckets]]
+binding = "PAYLOADS"
+bucket_name = "typedb-payloads"

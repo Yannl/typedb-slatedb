@@ -50,6 +50,7 @@ use crate::{
         IteratorPool, Keyspace, KeyspaceError, KeyspaceId, KeyspaceOpenError, KeyspaceSet, Keyspaces,
         iterator::KeyspaceRangeIterator, rocks_resources::RocksResources,
     },
+    post_wal_guard::{PostWalCommitGuard, UnresolvedReason},
     record::{CommitRecord, LegacyCommitRecordV1, StatusRecord},
     recovery::{
         checkpoint::{CheckpointCreateError, CheckpointLoadError, CheckpointReader, CheckpointWriter},
@@ -69,6 +70,7 @@ pub mod iterator;
 pub mod key_range;
 pub mod key_value;
 pub mod keyspace;
+pub mod post_wal_guard;
 pub mod record;
 pub mod recovery;
 pub mod sequence_number;
@@ -247,13 +249,62 @@ impl<Durability> MVCCStorage<Durability> {
         SchemaSnapshot::new_with_open_sequence_number(self, open_sequence_number)
     }
 
+    /// Containment bound on the watermark wait (Q-01, directive rule 12:
+    /// snapshot admission "never ... spin-waits forever").
+    ///
+    /// The loop below waits for concurrent commits to become visible. If a
+    /// commit's obligation is left unresolved, the watermark never reaches
+    /// the target and this wait never ends - which is how an unresolved
+    /// post-WAL error used to present itself: not as an error, but as every
+    /// subsequent snapshot open hanging with no diagnostic at all.
+    ///
+    /// A wait this long means a slot is stuck, not that the machine is busy:
+    /// the value is a containment default, not an approved SLO. The exact
+    /// bound is an owner decision (see docs/owner-decisions.json OD-002);
+    /// until one exists the safe behaviour is a loud, bounded fail-stop
+    /// rather than an indefinite hang.
+    const WATERMARK_WAIT_DEADLINE: Duration = Duration::from_secs(600);
+    /// How often the wait reports that it is still waiting.
+    const WATERMARK_WAIT_REPORT_INTERVAL: Duration = Duration::from_secs(30);
+
     fn wait_for_watermark(&self, target: SequenceNumber) -> SequenceNumber {
         // We can alternatively also block commits from returning until the watermark rises
         // See detailed analysis at https://github.com/typedb/typedb/pull/7254/
         let mut watermark = self.snapshot_watermark();
+        if watermark >= target {
+            return watermark;
+        }
+        let started = std::time::Instant::now();
+        let mut last_report = started;
         while watermark < target {
             sleep(Duration::from_micros(WATERMARK_WAIT_INTERVAL_MICROSECONDS));
             watermark = self.snapshot_watermark();
+            let waited = started.elapsed();
+            if waited >= Self::WATERMARK_WAIT_DEADLINE {
+                logger::error!(
+                    "FATAL: snapshot admission in database '{}' waited {}s for the visibility \
+                     watermark to reach {} (it is at {}). A wait this long means a commit \
+                     obligation is unresolved and the slot will never be crossed; opening a \
+                     snapshot above it, or waiting further, are both wrong. Aborting so recovery \
+                     re-derives the outcome from the durability log.",
+                    self.name,
+                    waited.as_secs(),
+                    target.number(),
+                    watermark.number(),
+                );
+                std::process::abort()
+            }
+            if last_report.elapsed() >= Self::WATERMARK_WAIT_REPORT_INTERVAL {
+                last_report = std::time::Instant::now();
+                logger::error!(
+                    "snapshot admission in database '{}' has waited {}s for the visibility \
+                     watermark to reach {} (it is at {})",
+                    self.name,
+                    waited.as_secs(),
+                    target.number(),
+                    watermark.number(),
+                );
+            }
         }
         watermark
     }
@@ -277,10 +328,24 @@ impl<Durability> MVCCStorage<Durability> {
 
         commit_profile.commit_size(commit_record.operations().len());
 
-        let commit_sequence_number = self
-            .durability_client
-            .sequenced_write(&commit_record)
-            .map_err(|error| Durability { name: self.name.clone(), typedb_source: error })?;
+        // Q-01: everything from here to a terminal resolution is the
+        // post-obligation region. The guard is armed BEFORE the append,
+        // because an error returned by the append itself already carries an
+        // unknown outcome - transport failure is not proof of non-append
+        // (directive rule 13). Every exit below resolves it explicitly; a
+        // path that escapes without resolving fail-stops in Drop rather than
+        // leaving an isolation slot pending and the watermark wedged.
+        let mut obligation = PostWalCommitGuard::arm(&self.name);
+        let commit_sequence_number = match self.durability_client.sequenced_write(&commit_record) {
+            Ok(sequence) => {
+                obligation.append_accepted(sequence);
+                sequence
+            }
+            Err(error) => {
+                obligation.unresolved(UnresolvedReason::AppendOutcomeUnknown, &error);
+                return Err(Durability { name: self.name.clone(), typedb_source: error });
+            }
+        };
         commit_profile.snapshot_durable_write_data_submitted();
 
         fail_point!(COMMIT_DATA_UNSYNC_IN_WAL);
@@ -310,22 +375,38 @@ impl<Durability> MVCCStorage<Durability> {
                 // Write to the k-v store
                 commit_profile.snapshot_durable_write_data_confirmed();
 
-                self.keyspaces
-                    .write(write_batches)
-                    .map_err(|error| Keyspace { name: self.name.clone(), source: Arc::new(error) })?;
+                // Q-01: a keyspace apply failure AFTER a positive resolution
+                // is a committed-and-unavailable transaction, never an abort
+                // and never permission to re-execute (directive rule 8). It
+                // used to return an ordinary error while the durable record
+                // stood and the slot stayed Validated.
+                if let Err(error) = self.keyspaces.write(write_batches) {
+                    obligation.unresolved(UnresolvedReason::KeyspaceApplyAfterCommit, &error);
+                    return Err(Keyspace { name: self.name.clone(), source: Arc::new(error) });
+                }
                 commit_profile.snapshot_storage_written();
 
                 fail_point!(COMMIT_APPLIED_WITHOUT_PERSISTING_STATUS);
 
                 // Inform the isolation manager and increment the watermark
-                self.isolation_manager
-                    .applied(commit_sequence_number)
-                    .map_err(|error| Internal { name: self.name.clone(), source: Arc::new(error) })?;
+                if let Err(error) = self.isolation_manager.applied(commit_sequence_number) {
+                    // the slot is not in the state this code believes it is;
+                    // continuing would publish an outcome nobody decided
+                    obligation.unresolved(UnresolvedReason::IsolationTransition, &error);
+                    return Err(Internal { name: self.name.clone(), source: Arc::new(error) });
+                }
                 commit_profile.snapshot_isolation_manager_notified();
 
-                Self::persist_commit_status(true, commit_sequence_number, &self.durability_client)
-                    .map_err(|error| Durability { name: self.name.clone(), typedb_source: error })?;
+                if let Err(error) = Self::persist_commit_status(true, commit_sequence_number, &self.durability_client) {
+                    // the commit is complete and visible; only its status
+                    // cache is missing. Recovery must re-derive it - turning
+                    // this into a returned error would tell the caller the
+                    // commit failed when it did not.
+                    obligation.unresolved(UnresolvedReason::StatusRecordAfterApply, &error);
+                    return Err(Durability { name: self.name.clone(), typedb_source: error });
+                }
                 commit_profile.snapshot_durable_write_commit_status_submitted();
+                obligation.resolved_visibility_complete(commit_sequence_number);
                 Ok(commit_sequence_number)
             }
             Ok(ValidatedCommit::Conflict(conflict)) => {
@@ -338,9 +419,15 @@ impl<Durability> MVCCStorage<Durability> {
 
                 fail_point!(COMMIT_REJECTED_WITHOUT_PERSISTING_STATUS);
 
-                Self::persist_commit_status(false, commit_sequence_number, &self.durability_client)
-                    .map_err(|error| Durability { name: self.name.clone(), typedb_source: error })?;
+                if let Err(error) = Self::persist_commit_status(false, commit_sequence_number, &self.durability_client)
+                {
+                    // a deterministic abort without its durable certificate
+                    // leaves recovery unable to tell abort from unresolved
+                    obligation.unresolved(UnresolvedReason::StatusRecordAfterAbort, &error);
+                    return Err(Durability { name: self.name.clone(), typedb_source: error });
+                }
                 commit_profile.snapshot_durable_write_commit_status_submitted();
+                obligation.resolved_abort(commit_sequence_number);
                 Err(StorageCommitError::Isolation { name: self.name.clone(), conflict })
             }
             Err(error) => {
@@ -348,11 +435,24 @@ impl<Durability> MVCCStorage<Durability> {
                 // the one the caller must see even if the sync also failed
                 let _ = sync_notifier.recv();
                 commit_profile.snapshot_durable_write_data_confirmed();
+                // Q-01: a validation INFRASTRUCTURE error is not an abort
+                // verdict (directive rule 6). The record is durable and
+                // undecided; only a deterministic conflict over the immutable
+                // basis may resolve abort. Previously this returned an
+                // ordinary error and left the slot pending forever.
+                obligation.unresolved(UnresolvedReason::ValidationInfrastructure, &error);
                 Err(Durability { name: self.name.clone(), typedb_source: error })
             }
         };
 
-        self.update_highest_committed_snapshot(commit_sequence_number);
+        // Q-01: the committed frontier advances only on a RESOLVED path. It
+        // used to be updated unconditionally, including on error returns -
+        // which is what turned an unresolved commit into an unbounded hang:
+        // `open_snapshot_*` waits for the watermark to reach this value, and
+        // an unresolved slot never lets it.
+        if result.is_ok() || matches!(result, Err(StorageCommitError::Isolation { .. })) {
+            self.update_highest_committed_snapshot(commit_sequence_number);
+        }
         result
     }
 

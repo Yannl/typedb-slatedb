@@ -6,8 +6,9 @@ handle structurally lacks delete authority). Every superseded or retired
 materialisation therefore remains in the bucket as orphan bytes (inv. 83).
 This tool is the SEPARATED maintenance principal that accounts for them:
 
-    python3 tools/maintenance/s3_gc.py               # report (default, only mode that needs no delete credential)
-    python3 tools/maintenance/s3_gc.py --delete m... # delete the NAMED materialisations, maintenance credential required
+    python3 tools/maintenance/s3_gc.py               # report (the only mode that exists)
+    python3 tools/maintenance/s3_gc.py --delete m... # REFUSED before G13 (Q-25): no delete
+                                                     # implementation exists in this file
 
 Report mode lists, per keyspace prefix, every materialisation with object
 count, bytes, and last-modified — and NEVER issues a delete. Delete mode
@@ -105,30 +106,43 @@ def main():
     )
     args = parser.parse_args()
 
+    if args.delete:
+        # ------------------------------------------------------------------
+        # Q-25 (P0 pre-G13): physical deletion is NOT AVAILABLE in this
+        # release line, and the refusal is unconditional.
+        #
+        # A separated maintenance credential is a NECESSARY precondition for
+        # deletion, never a sufficient one. Before an object of an
+        # authoritative namespace may be destroyed the contract requires all
+        # of: proved unreachability from every live catalogue/manifest root,
+        # a pin against a concurrent restore, retention/legal clearance, a
+        # recorded approval, an IAM principal whose credential ancestry
+        # cannot reach the runtime, and a proven restore path. G13 is the
+        # gate that builds those; until it exists, a tool that deletes
+        # whenever a credential check happens to pass is a shipped path to
+        # erasing authoritative state (inv. 84).
+        #
+        # The delete IMPLEMENTATION is gone, not merely guarded: there is no
+        # DELETE request anywhere in this file, so no flag, environment
+        # variable or code path can make one effective. The flag itself is
+        # retained so that reaching for it produces this explanation rather
+        # than sending an operator looking for another tool.
+        sys.exit(
+            "REFUSED: physical deletion is unavailable before G13.\n"
+            "  missing gate record: docs/evidence/G13/delete-authority-gate.json\n"
+            "  required and absent: reachability closure over every live catalogue/manifest\n"
+            "    root; restore pin; retention/legal clearance; recorded approval; separated\n"
+            "    IAM principal with no runtime credential ancestry; proven restore path.\n"
+            "  this tool contains no delete implementation at all - the G13 work adds one\n"
+            "    behind that gate, it is not being suppressed by a flag here.\n"
+            "  available today: report mode (no arguments) - inventory only."
+        )
+
+
     endpoint = env("TYPEDB_S3_ENDPOINT")
     bucket = env("TYPEDB_S3_BUCKET")
     region = os.environ.get("TYPEDB_S3_REGION", "auto")
     root_prefix = os.environ.get("TYPEDB_S3_PREFIX", "typedb")
-
-    if args.delete:
-        # the SEPARATED principal: never the runtime's key material
-        key_id = env("TYPEDB_S3_MAINT_ACCESS_KEY_ID")
-        secret = env("TYPEDB_S3_MAINT_SECRET_ACCESS_KEY")
-        runtime_key = os.environ.get("TYPEDB_S3_ACCESS_KEY_ID")
-        if runtime_key and runtime_key == key_id:
-            sys.exit(
-                "refusing to delete: the maintenance credential equals the runtime credential "
-                "(TYPEDB_S3_MAINT_ACCESS_KEY_ID == TYPEDB_S3_ACCESS_KEY_ID); inv. 84 requires a separated principal"
-            )
-        wanted = set(args.delete)
-        deleted = 0
-        for key, _size, _mtime in list_all(endpoint, bucket, region, key_id, secret, root_prefix + "/"):
-            split = materialization_of(key, root_prefix)
-            if split and split[2] in wanted:
-                s3_request(endpoint, bucket, region, key_id, secret, "DELETE", path=key)
-                deleted += 1
-        print(f"deleted {deleted} objects across {len(wanted)} named materialisations")
-        return
 
     # report mode: the runtime read credential suffices; no delete is ever issued
     key_id = env("TYPEDB_S3_ACCESS_KEY_ID")

@@ -1,0 +1,17 @@
+
+running 9 tests
+[2m2026-08-18T03:20:27.639583Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-18T03:20:27.926428Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-18T03:20:27.929170Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-18T03:20:27.930283Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running write query:
+insert
+        $_ isa person, has age 12, has name 'John';
+        $_ isa person, has age 14;
+        $_ isa person, has name 'Leila';
+        $_ isa person;
+    
+[2m2026-08-18T03:20:28.055781Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+[2m2026-08-18T03:20:28.059010Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+.........
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.97s
+

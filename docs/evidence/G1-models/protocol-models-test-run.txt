@@ -1,32 +1,63 @@
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.01s
-     Running unittests src/lib.rs (target/debug/deps/protocol_models-3bd054317a44115c)
+    Finished `test` profile [unoptimized] target(s) in 0.05s
+     Running unittests src/lib.rs (tools/target/debug/deps/protocol_models-eff1a4aac91899b6)
 
-running 25 tests
+running 37 tests
 test command_model::tests::broken_no_intent_proof_mutant_is_observable ... ok
 test command_model::tests::expiry_is_availability_not_outcome ... ok
-test command_model::tests::no_reexecution_after_intent_across_crash_points ... ok
 test command_model::tests::no_intent_proof_detects_interleaved_finalisation ... ok
+test command_model::tests::later_epoch_proof_cannot_erase_terminal_outcome ... ok
+test command_model::tests::no_reexecution_after_intent_across_crash_points ... ok
+test command_model::tests::proof_closes_only_the_proven_attempt ... ok
 test command_model::tests::reservation_idempotent_and_conflicting ... ok
-test fencing_model::tests::incarnation_rotation_revokes_old_epochs ... ok
 test fencing_model::tests::ambiguous_open_never_reuses_epoch ... ok
+test fencing_model::tests::incarnation_rotation_revokes_old_epochs ... ok
 test fencing_model::tests::paused_stale_writer_cannot_publish_after_fence ... ok
-test journal_model::tests::any_tamper_is_rejected ... ok
+test fencing_model::tests::weakened_fence_mutant_is_observable ... ok
 test journal_model::tests::any_gap_is_rejected ... ok
 test journal_model::tests::competing_heads_quarantine ... ok
+test journal_model::tests::any_tamper_is_rejected ... ok
 test journal_model::tests::forged_anchor_digest_is_caught ... ok
 test journal_model::tests::rollback_below_anchor_is_rejected ... ok
-test fencing_model::tests::weakened_fence_mutant_is_observable ... ok
 test journal_model::tests::valid_history_replays ... ok
-test wal_model::tests::invariant_checker_catches_lsn_hole ... ok
+test resolver_model::tests::conflict_rule_is_exactly_the_isolation_window ... ok
+test resolver_model::tests::duplicate_physical_singleton_quarantines ... ok
+test resolver_model::tests::conflicting_certificates_quarantine_never_overwrite ... ok
+test resolver_model::tests::every_basis_field_is_bound_by_the_digest ... ok
+test resolver_model::tests::same_certificate_retry_returns_the_original_record ... ok
+test resolver_model::tests::infrastructure_error_never_fabricates_a_verdict ... ok
+test wal_model::tests::fenced_replay_of_durable_record_is_fenced_not_replayed ... ok
+test resolver_model::tests::weakened_mutants_are_observable ... ok
+test wal_model::tests::checker_handles_verdictless_status_record_without_panicking ... ok
 test wal_model::tests::fixed_iterator_is_immune_to_later_appends ... ok
+test wal_model::tests::invariant_checker_catches_lsn_hole ... ok
 test wal_model::tests::invariant_checker_catches_duplicate_status ... ok
 test wal_model::tests::iterator_checker_catches_moving_head ... ok
 test wal_model::tests::lost_response_resolution_by_operation_id ... ok
+test wal_model::tests::stale_session_is_fenced_without_allocation ... ok
 test wal_model::tests::status_singleton_dedupe_and_conflict ... ok
 test wal_model::tests::sync_barrier_covers_physical_prefix ... ok
-test wal_model::tests::unsequenced_stamps_previous_sequence ... ok
 test wal_model::tests::no_holes_under_failed_upload_interleavings ... ok
-test wal_model::tests::stale_session_is_fenced_without_allocation ... ok
+test wal_model::tests::unsequenced_stamps_previous_sequence ... ok
+test resolver_model::tests::one_basis_one_resolution_everywhere ... ok
 
-test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
+   Doc-tests protocol_models
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+--- executed mutants for the J.3 resolver model (resolver_model.rs) ---
+MUTANT 1: isolation-window check removed from resolve() (every committed
+          writer convicts)
+  test resolver_model::tests::conflict_rule_is_exactly_the_isolation_window ... FAILED
+  test result: FAILED. 7 passed; 1 failed (resolver filter)
+MUTANT 2: StatusStore::admit made last-write-wins (second certificate
+          overwrites the first)
+  test resolver_model::tests::conflicting_certificates_quarantine_never_overwrite ... FAILED
+  test resolver_model::tests::same_certificate_retry_returns_the_original_record ... FAILED
+  test resolver_model::tests::weakened_mutants_are_observable ... FAILED
+  test result: FAILED. 5 passed; 3 failed (resolver filter)
+-> restored: 37 passed; 0 failed (full crate)

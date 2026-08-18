@@ -84,10 +84,7 @@ impl StorageBackendProfile {
         // does not.
         matches!(
             self,
-            Self::U0PristineUpstream
-                | Self::U1ForkRocksFileWal
-                | Self::U2SlateLocalFs
-                | Self::U2S3SlateS3FileWal
+            Self::U0PristineUpstream | Self::U1ForkRocksFileWal | Self::U2SlateLocalFs | Self::U2S3SlateS3FileWal
         )
     }
 }

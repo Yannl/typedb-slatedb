@@ -35,6 +35,8 @@ describe("DatabaseControllerDO on workerd", () => {
     const stub = testEnv.CONTROLLER.get(testEnv.CONTROLLER.idFromName("t1"));
     await runInDurableObject(stub, async (instance: DatabaseControllerDO) => {
       instance.registerSession("db1", 1, "sess-1");
+      instance.setBudgets("db1",
+        { maxUnpublishedOutbox: 1000, maxPayloadLength: 100_000, maxTailRecords: 100_000 }, "sess-1");
       const r1 = instance.finalizeWalRecord(finalizeReq("op-1"));
       expect(r1).toMatchObject({ ok: true, appendLsn: 0n, typeSequence: 1n, replayed: false });
       const replay = instance.finalizeWalRecord(finalizeReq("op-1"));
@@ -66,6 +68,8 @@ describe("DatabaseControllerDO on workerd", () => {
     const stub = testEnv.CONTROLLER.get(testEnv.CONTROLLER.idFromName("t2"));
     await runInDurableObject(stub, async (instance: DatabaseControllerDO) => {
       instance.registerSession("db1", 1, "sess-1");
+      instance.setBudgets("db1",
+        { maxUnpublishedOutbox: 1000, maxPayloadLength: 100_000, maxTailRecords: 100_000 }, "sess-1");
       const s1 = instance.finalizeWalRecord(
         finalizeReq("st-1", { sequencingKind: "UNSEQUENCED", logicalKey: "status:cp", payloadDigest: "pd-A" }),
       );
@@ -81,13 +85,15 @@ describe("DatabaseControllerDO on workerd", () => {
     const stub = testEnv.CONTROLLER.get(testEnv.CONTROLLER.idFromName("t3"));
     await runInDurableObject(stub, async (instance: DatabaseControllerDO) => {
       instance.registerSession("db1", 1, "sess-1");
+      instance.setBudgets("db1",
+        { maxUnpublishedOutbox: 1000, maxPayloadLength: 100_000, maxTailRecords: 100_000 }, "sess-1");
       expect(instance.finalizeWalRecord(finalizeReq("a-1"))).toMatchObject({ ok: true });
       expect(
         instance.finalizeWalRecord(finalizeReq("a-2", { sequencingKind: "UNSEQUENCED", recordType: 10 })),
       ).toMatchObject({ ok: true });
       // takeover: the new actor's register revokes the old actor's authority
       instance.registerSession("db1", 1, "sess-2");
-      expect(instance.finalizeWalRecord(finalizeReq("a-3"))).toEqual({ ok: false, error: "SESSION_FENCED", fencedBy: "sess-2" });
+      expect(instance.finalizeWalRecord(finalizeReq("a-3"))).toEqual({ ok: false, error: "SESSION_FENCED" });
       expect(
         instance.finalizeWalRecord(finalizeReq("a-4", { startupSessionId: "sess-2" })),
       ).toMatchObject({ ok: true, appendLsn: 2n });

@@ -1,0 +1,428 @@
+diff -ruN orig/Cargo.toml slatedb-0.15.0/Cargo.toml
+--- orig/Cargo.toml	1970-01-01 00:00:01.000000000 +0000
++++ slatedb-0.15.0/Cargo.toml	2026-08-18 03:44:39.911566674 +0000
+@@ -41,6 +41,11 @@
+     "test-util",
+ ]
+ aws = ["object_store/aws"]
++# Production-lane posture (ADR-0012): opening a writer WITHOUT a
++# controller-issued external epoch is refused rather than falling back to
++# upstream's internal `stored + 1` allocation. Local conformance lanes are
++# single-actor by construction and build without this feature.
++external_epoch_required = []
+ azure = ["object_store/azure"]
+ bench-internal = []
+ bencher = [
+diff -ruN orig/src/db/builder.rs slatedb-0.15.0/src/db/builder.rs
+--- orig/src/db/builder.rs	2006-07-24 01:21:28.000000000 +0000
++++ slatedb-0.15.0/src/db/builder.rs	2026-08-18 03:44:26.124208686 +0000
+@@ -194,6 +194,7 @@
+     filter_policies: Vec<Arc<dyn FilterPolicy>>,
+     metrics_recorder: Arc<dyn MetricsRecorder>,
+     segment_extractor: Option<Arc<dyn crate::prefix_extractor::PrefixExtractor>>,
++    external_writer_epoch: Option<u64>,
+ }
+ 
+ impl<P: Into<Path>> DbBuilder<P> {
+@@ -223,9 +224,31 @@
+             filter_policies: default_filter_policies(),
+             metrics_recorder: Arc::new(NoopMetricsRecorder::new()),
+             segment_extractor: None,
++            external_writer_epoch: None,
+         }
+     }
+ 
++    /// Open with an EXACT, controller-issued writer epoch (ADR-0012, V16
++    /// inv. 78-80).
++    ///
++    /// Upstream allocates the writer epoch internally as `stored + 1`. That
++    /// is observe-and-bind: the value is derived from what this process read,
++    /// so it cannot compose with a controller that is separately fencing the
++    /// same actor - both allocators race and the manifest keeps whichever
++    /// landed last. With this set, the controller decides the number and the
++    /// manifest either claims exactly it or returns `Fenced` before writing
++    /// anything, so replaying a spent epoch is refused rather than bumped
++    /// over.
++    ///
++    /// Build with the `external_epoch_required` feature to make the absence
++    /// of an external epoch a refusal at open instead of a silent fallback
++    /// to internal allocation. Local conformance lanes (single-actor by
++    /// construction) build without it and keep upstream behaviour.
++    pub fn with_external_writer_epoch(mut self, epoch: u64) -> Self {
++        self.external_writer_epoch = Some(epoch);
++        self
++    }
++
+     /// Set the segment extractor (RFC-0024). When configured, every
+     /// write is routed through the extractor and the database tracks
+     /// per-segment LSM state. The extractor must be configured at
+@@ -614,6 +637,7 @@
+             &self.settings,
+             system_clock.clone(),
+             task_executor.clone(),
++            self.external_writer_epoch,
+         );
+         let WriterFenceResult {
+             manifest,
+diff -ruN orig/src/error.rs slatedb-0.15.0/src/error.rs
+--- orig/src/error.rs	2006-07-24 01:21:28.000000000 +0000
++++ slatedb-0.15.0/src/error.rs	2026-08-18 03:47:44.546933164 +0000
+@@ -74,6 +74,15 @@
+     #[error("invalid DB state error")]
+     InvalidDBState,
+ 
++    /// The build requires a controller-issued external epoch (feature
++    /// `external_epoch_required`) and none was configured. Internal epoch
++    /// allocation is observe-and-bind: the writer reads the stored epoch and
++    /// picks its successor, so two actors that both "won" can each believe
++    /// they hold the newest epoch across a partition. The production lane
++    /// refuses that mode rather than falling back to it.
++    #[error("external writer epoch required: internal allocation is observe-and-bind")]
++    ExternalEpochRequired,
++
+     #[error("wal store reconfiguration unsupported")]
+     WalStoreReconfigurationError,
+ 
+@@ -700,6 +709,10 @@
+             // Data errors
+             SlateDBError::InvalidFlatbuffer(err) => Error::data(msg).with_source(Box::new(err)),
+             SlateDBError::InvalidDBState => Error::data(msg),
++            // A misconfiguration, not a data or transient fault: the caller
++            // must supply a controller-issued epoch, and retrying the same
++            // open unchanged will fail identically.
++            SlateDBError::ExternalEpochRequired => Error::invalid(msg),
+             #[cfg(any(
+                 feature = "snappy",
+                 feature = "zlib",
+diff -ruN orig/src/fence.rs slatedb-0.15.0/src/fence.rs
+--- orig/src/fence.rs	2006-07-24 01:21:28.000000000 +0000
++++ slatedb-0.15.0/src/fence.rs	2026-08-18 03:44:39.911260098 +0000
+@@ -22,6 +22,10 @@
+     manifest_update_timeout: Duration,
+     system_clock: Arc<dyn SystemClock>,
+     task_executor: Arc<MessageHandlerExecutor>,
++    /// Controller-issued writer epoch (ADR-0012). `None` selects upstream's
++    /// internal allocation, which the `external_epoch_required` feature
++    /// refuses outright.
++    external_writer_epoch: Option<u64>,
+     #[cfg_attr(not(test), allow(dead_code))]
+     fp_tx: FailPointTx,
+ }
+@@ -40,6 +44,7 @@
+         settings: &Settings,
+         system_clock: Arc<dyn SystemClock>,
+         task_executor: Arc<MessageHandlerExecutor>,
++        external_writer_epoch: Option<u64>,
+     ) -> Self {
+         Self::new_with_fp_handle(
+             closed_result_reader,
+@@ -48,6 +53,7 @@
+             settings,
+             system_clock,
+             task_executor,
++            external_writer_epoch,
+             FailPointTx::dummy(),
+         )
+     }
+@@ -59,6 +65,7 @@
+         settings: &Settings,
+         system_clock: Arc<dyn SystemClock>,
+         task_executor: Arc<MessageHandlerExecutor>,
++        external_writer_epoch: Option<u64>,
+         fp_tx: FailPointTx,
+     ) -> Self {
+         Self {
+@@ -69,6 +76,7 @@
+             manifest_update_timeout: settings.manifest_update_timeout,
+             system_clock,
+             task_executor,
++            external_writer_epoch,
+             fp_tx,
+         }
+     }
+@@ -97,12 +105,36 @@
+         )
+         .await?;
+ 
+-        let manifest = FenceableManifest::init_writer(
+-            stored_manifest,
+-            self.manifest_update_timeout,
+-            self.system_clock.clone(),
+-        )
+-        .await?;
++        // ADR-0012: the epoch is issued by the controller, not chosen from
++        // whatever this process happened to read. Under the production-lane
++        // feature an unset epoch is a REFUSAL, not a fallback - a fallback is
++        // how a fail-closed posture silently becomes optional.
++        let manifest = match self.external_writer_epoch {
++            Some(epoch) => {
++                FenceableManifest::init_writer_with_epoch(
++                    stored_manifest,
++                    self.manifest_update_timeout,
++                    self.system_clock.clone(),
++                    epoch,
++                )
++                .await?
++            }
++            None => {
++                #[cfg(feature = "external_epoch_required")]
++                {
++                    return Err(SlateDBError::ExternalEpochRequired);
++                }
++                #[cfg(not(feature = "external_epoch_required"))]
++                {
++                    FenceableManifest::init_writer(
++                        stored_manifest,
++                        self.manifest_update_timeout,
++                        self.system_clock.clone(),
++                    )
++                    .await?
++                }
++            }
++        };
+         self.fail_point_send("FenceManifest");
+ 
+         let mut manifest = manifest.into();
+@@ -214,6 +246,7 @@
+                 &settings,
+                 system_clock.clone(),
+                 task_executor.clone(),
++                None,
+                 fp_tx,
+             );
+             Self {
+diff -ruN orig/src/manifest/store.rs slatedb-0.15.0/src/manifest/store.rs
+--- orig/src/manifest/store.rs	2006-07-24 01:21:28.000000000 +0000
++++ slatedb-0.15.0/src/manifest/store.rs	2026-08-18 03:46:51.890695272 +0000
+@@ -49,6 +49,62 @@
+         Ok(Self { inner: fr, clock })
+     }
+ 
++    /// Claim an EXACT, externally issued writer epoch (ADR-0012 / V16
++    /// inv. 78-80).
++    ///
++    /// `init_writer` allocates `stored + 1` internally. That is
++    /// observe-and-bind: the epoch is chosen from what this process happened
++    /// to read, so it cannot compose with a controller that is separately
++    /// fencing the same actor - the two allocators race, and the manifest
++    /// records whichever landed last. Here the controller decides, and the
++    /// store either claims that exact number or refuses.
++    ///
++    /// Fail-closed: `external_epoch <= stored.writer_epoch` returns `Fenced`
++    /// BEFORE any write, so a controller replaying an old epoch is refused
++    /// rather than bumped over. Detection of a later epoch is unchanged: the
++    /// local handle still fences on any manifest with a greater epoch.
++    pub(crate) async fn init_writer_with_epoch(
++        stored_manifest: StoredManifest,
++        manifest_update_timeout: Duration,
++        system_clock: Arc<dyn SystemClock>,
++        external_epoch: u64,
++    ) -> Result<Self, SlateDBError> {
++        let clock = system_clock.clone();
++        let fr = FenceableTransactionalObject::init_with_epoch(
++            stored_manifest.inner,
++            manifest_update_timeout,
++            system_clock,
++            external_epoch,
++            |m: &Manifest| m.writer_epoch,
++            |m: &mut Manifest, e: u64| m.writer_epoch = e,
++        )
++        .await?;
++        Ok(Self { inner: fr, clock })
++    }
++
++    /// The compactor twin of [`Self::init_writer_with_epoch`]. Compactor
++    /// revocation IS issuing a newer compactor epoch to a successor: the old
++    /// job fences out on its next manifest CAS and its already-published
++    /// SSTs stay orphan bytes (inv. 83), never referenced.
++    pub(crate) async fn init_compactor_with_epoch(
++        stored_manifest: StoredManifest,
++        manifest_update_timeout: Duration,
++        system_clock: Arc<dyn SystemClock>,
++        external_epoch: u64,
++    ) -> Result<Self, SlateDBError> {
++        let clock = system_clock.clone();
++        let fr = FenceableTransactionalObject::init_with_epoch(
++            stored_manifest.inner,
++            manifest_update_timeout,
++            system_clock,
++            external_epoch,
++            |m: &Manifest| m.compactor_epoch,
++            |m: &mut Manifest, e: u64| m.compactor_epoch = e,
++        )
++        .await?;
++        Ok(Self { inner: fr, clock })
++    }
++
+     pub(crate) async fn init_compactor(
+         stored_manifest: StoredManifest,
+         manifest_update_timeout: Duration,
+@@ -730,6 +786,168 @@
+         }
+     }
+ 
++    // ----------------------------------------------------------------
++    // ADR-0012 external (controller-issued) epochs: the qualifying matrix
++    // from docs/design/slatedb-external-epochs.md.
++    // ----------------------------------------------------------------
++
++    #[tokio::test]
++    async fn external_writer_epoch_is_claimed_exactly() {
++        let ms = new_memory_manifest_store();
++        let state = ManifestCore::new();
++        StoredManifest::create_new_db(ms.clone(), state.clone(), Arc::new(DefaultSystemClock::new()))
++            .await
++            .unwrap();
++        let timeout = Duration::from_secs(300);
++        // The controller issues a number the store did NOT choose: internal
++        // allocation would have produced 1 here.
++        for epoch in [7u64, 9, 10] {
++            let sm = StoredManifest::load(ms.clone(), Arc::new(DefaultSystemClock::new()))
++                .await
++                .unwrap();
++            let fenceable = FenceableManifest::init_writer_with_epoch(
++                sm,
++                timeout,
++                Arc::new(DefaultSystemClock::new()),
++                epoch,
++            )
++            .await
++            .unwrap();
++            assert_eq!(fenceable.local_epoch(), epoch);
++            let manifest = ms.read_latest_manifest().await.unwrap();
++            assert_eq!(manifest.manifest.writer_epoch, epoch, "the exact issued epoch is stored");
++        }
++    }
++
++    #[tokio::test]
++    async fn a_replayed_or_stale_external_epoch_is_refused_before_any_write() {
++        let ms = new_memory_manifest_store();
++        let state = ManifestCore::new();
++        StoredManifest::create_new_db(ms.clone(), state.clone(), Arc::new(DefaultSystemClock::new()))
++            .await
++            .unwrap();
++        let timeout = Duration::from_secs(300);
++        let sm = StoredManifest::load(ms.clone(), Arc::new(DefaultSystemClock::new()))
++            .await
++            .unwrap();
++        FenceableManifest::init_writer_with_epoch(sm, timeout, Arc::new(DefaultSystemClock::new()), 5)
++            .await
++            .unwrap();
++        let before = ms.read_latest_manifest().await.unwrap();
++
++        for stale in [5u64, 4, 1, 0] {
++            let sm = StoredManifest::load(ms.clone(), Arc::new(DefaultSystemClock::new()))
++                .await
++                .unwrap();
++            let result = FenceableManifest::init_writer_with_epoch(
++                sm,
++                timeout,
++                Arc::new(DefaultSystemClock::new()),
++                stale,
++            )
++            .await;
++            assert!(
++                matches!(result, Err(error::SlateDBError::Fenced)),
++                "replaying epoch {stale} must be refused, got {}",
++                result.err().map(|e| e.to_string()).unwrap_or_else(|| "Ok(..)".to_owned())
++            );
++        }
++        let after = ms.read_latest_manifest().await.unwrap();
++        assert_eq!(
++            before.manifest.writer_epoch, after.manifest.writer_epoch,
++            "a refused claim writes nothing at all"
++        );
++    }
++
++    #[tokio::test]
++    async fn a_successor_external_epoch_fences_the_incumbent() {
++        let ms = new_memory_manifest_store();
++        let state = ManifestCore::new();
++        StoredManifest::create_new_db(ms.clone(), state.clone(), Arc::new(DefaultSystemClock::new()))
++            .await
++            .unwrap();
++        let timeout = Duration::from_secs(300);
++        let sm = StoredManifest::load(ms.clone(), Arc::new(DefaultSystemClock::new()))
++            .await
++            .unwrap();
++        let mut incumbent =
++            FenceableManifest::init_writer_with_epoch(sm, timeout, Arc::new(DefaultSystemClock::new()), 3)
++                .await
++                .unwrap();
++        let sm2 = StoredManifest::load(ms.clone(), Arc::new(DefaultSystemClock::new()))
++            .await
++            .unwrap();
++        FenceableManifest::init_writer_with_epoch(sm2, timeout, Arc::new(DefaultSystemClock::new()), 4)
++            .await
++            .unwrap();
++        assert!(matches!(incumbent.refresh().await, Err(error::SlateDBError::Fenced)));
++    }
++
++    #[tokio::test]
++    async fn external_epochs_are_exact_beyond_the_double_precision_cliff() {
++        // F7's exactness rule reaches the storage engine: an epoch above
++        // 2^53 must round-trip through issue -> manifest -> read unchanged.
++        let ms = new_memory_manifest_store();
++        let state = ManifestCore::new();
++        StoredManifest::create_new_db(ms.clone(), state.clone(), Arc::new(DefaultSystemClock::new()))
++            .await
++            .unwrap();
++        let timeout = Duration::from_secs(300);
++        let epoch = (1u64 << 53) + 1;
++        let sm = StoredManifest::load(ms.clone(), Arc::new(DefaultSystemClock::new()))
++            .await
++            .unwrap();
++        FenceableManifest::init_writer_with_epoch(sm, timeout, Arc::new(DefaultSystemClock::new()), epoch)
++            .await
++            .unwrap();
++        assert_eq!(ms.read_latest_manifest().await.unwrap().manifest.writer_epoch, epoch);
++        // and its immediate predecessor is still refused, i.e. nothing was
++        // rounded to a neighbouring representable value
++        let sm = StoredManifest::load(ms.clone(), Arc::new(DefaultSystemClock::new()))
++            .await
++            .unwrap();
++        let result =
++            FenceableManifest::init_writer_with_epoch(sm, timeout, Arc::new(DefaultSystemClock::new()), epoch)
++                .await;
++        assert!(matches!(result, Err(error::SlateDBError::Fenced)));
++    }
++
++    #[tokio::test]
++    async fn external_compactor_epoch_revokes_a_running_compactor() {
++        // Revocation IS issuing a newer compactor epoch to a successor: the
++        // draining job fences on its next manifest CAS (inv. 83).
++        let ms = new_memory_manifest_store();
++        let state = ManifestCore::new();
++        StoredManifest::create_new_db(ms.clone(), state.clone(), Arc::new(DefaultSystemClock::new()))
++            .await
++            .unwrap();
++        let timeout = Duration::from_secs(300);
++        let sm = StoredManifest::load(ms.clone(), Arc::new(DefaultSystemClock::new()))
++            .await
++            .unwrap();
++        let mut running = FenceableManifest::init_compactor_with_epoch(
++            sm,
++            timeout,
++            Arc::new(DefaultSystemClock::new()),
++            11,
++        )
++        .await
++        .unwrap();
++        assert_eq!(ms.read_latest_manifest().await.unwrap().manifest.compactor_epoch, 11);
++        let sm2 = StoredManifest::load(ms.clone(), Arc::new(DefaultSystemClock::new()))
++            .await
++            .unwrap();
++        FenceableManifest::init_compactor_with_epoch(
++            sm2,
++            timeout,
++            Arc::new(DefaultSystemClock::new()),
++            12,
++        )
++        .await
++        .unwrap();
++        assert!(matches!(running.refresh().await, Err(error::SlateDBError::Fenced)));
++    }
++
+     #[tokio::test]
+     async fn test_should_fail_refresh_on_writer_fenced() {
+         let ms = new_memory_manifest_store();

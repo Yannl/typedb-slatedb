@@ -1,0 +1,68 @@
+{
+  "claim": "Candidate A of the ADR-0012 exact-pin decision spike (a minimal upstream/fork patch that accepts controller-issued writer and compactor epochs) is implemented against the pinned crates.io slatedb 0.15.0, builds, and its qualifying matrix passes; the mutant that restores internal observe-and-bind allocation is killed by three of the five new cases.",
+  "status": "candidate implemented and measured - NOT the normative decision",
+  "directive_item": "F4/F5 OPEN-P0; directive sections 11.2-11.5 and 28.8",
+  "base": {
+    "crate": "slatedb",
+    "version": "0.15.0",
+    "sha256": "35ca56b01922b15aa69fe3abb62cadc985d86032c9647e4606e211c4da751a76",
+    "source_lock_node": "SL"
+  },
+  "fork_form": {
+    "kind": "patch series over the pinned crate",
+    "patches": ["fork/slatedb/patches/0001-external-controller-issued-epochs.patch"],
+    "reconstruct": "python3 tools/fork/materialize_slatedb.py",
+    "verify": "python3 tools/fork/materialize_slatedb.py --check",
+    "patched_tree_sha256": "0b3b0d20add727a62cc70f60b6fbef7a6df24244772a37d2d4e8898bf730a403"
+  },
+  "correction_to_the_staged_design": {
+    "assumed": "docs/design/slatedb-external-epochs.md staged the fork as having to build exact-epoch claiming on top of FenceableTransactionalObject, describing external issuance as something upstream lacks.",
+    "measured": "slatedb-txn-obj 0.15.0 already exports FenceableTransactionalObject::init_with_epoch as a PUBLIC function with exactly the required fail-closed semantics (epoch <= stored -> Fenced before any write), and slatedb already uses it internally for the compactions object (compactions_store.rs, compactor_state_protocols.rs).",
+    "consequence": "The fork is wiring, not mechanism: five files, ~300 added lines, about half of them tests. This materially lowers the cost and the upstreamability risk of Candidate A and must be weighed in the ADR-0012 decision rather than left as a design assumption."
+  },
+  "patch_size": {
+    "files_changed": 5,
+    "files": ["Cargo.toml", "src/db/builder.rs", "src/error.rs", "src/fence.rs", "src/manifest/store.rs"],
+    "added_lines_total": 299,
+    "added_lines_excluding_tests_and_comments": "approximately 90"
+  },
+  "toolchain": "rustc 1.93.0 (254b59607 2026-01-19)",
+  "executed": [
+    {
+      "command": "cargo +1.93.0 test --lib --no-default-features --features test-util manifest::store",
+      "result": "34 passed; 0 failed; 0 ignored (29 pre-existing upstream cases + 5 new)",
+      "new_cases": [
+        "external_writer_epoch_is_claimed_exactly",
+        "a_replayed_or_stale_external_epoch_is_refused_before_any_write",
+        "a_successor_external_epoch_fences_the_incumbent",
+        "external_epochs_are_exact_beyond_the_double_precision_cliff",
+        "external_compactor_epoch_revokes_a_running_compactor"
+      ]
+    },
+    {
+      "command": "cargo +1.93.0 check --lib --no-default-features --features external_epoch_required",
+      "result": "compiles; the production-lane refusal branch is live"
+    },
+    {
+      "command": "MUTANT: init_writer_with_epoch reverted to FenceableTransactionalObject::init (observe-and-bind restored, external argument ignored)",
+      "result": "31 passed; 3 failed",
+      "killed": [
+        "external_writer_epoch_is_claimed_exactly",
+        "a_replayed_or_stale_external_epoch_is_refused_before_any_write",
+        "external_epochs_are_exact_beyond_the_double_precision_cliff"
+      ],
+      "survived": [
+        "a_successor_external_epoch_fences_the_incumbent",
+        "external_compactor_epoch_revokes_a_running_compactor"
+      ],
+      "reading": "Deliberate and load-bearing: internal allocation still provides mutual exclusion, so the fencing cases survive. Only the exactness cases distinguish 'someone is fenced' from 'the authority the controller chose is the one that holds the fence'. A mutant that killed all five would mean the tests were testing fencing, not external issuance."
+    }
+  ],
+  "not_established": [
+    "the ADR-0012 decision itself: Candidate B (a provider-enforced publication firewall over stock SlateDB with a fresh credential domain) is not implemented, so no comparison verdict exists",
+    "production-lane activation: sources/typedb still consumes crates.io; no [patch.crates-io] entry is wired, and none may be before the decision and a real G2 pass",
+    "controller-side epoch issuance (allocating an exact u64 per writer incarnation) - U3.2",
+    "compactor orchestrator plumbing: only the manifest-level init_compactor_with_epoch exists; CompactorBuilder is untouched",
+    "any real-platform (R2/DO) behaviour - these are local object-store tests"
+  ]
+}

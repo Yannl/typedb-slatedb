@@ -1,9 +1,27 @@
 # SlateDB external epochs: the ADR-0012 fork, at file/symbol level
 
-**Status:** staged design (F4/F5 remain OPEN-P0). This document pins the
-exact upstream insertion points so the fork is a bounded, reviewable diff,
-not an open-ended vendoring. Verified against crates.io `slatedb-0.15.0`
-source (the pinned lane version).
+**Status:** **IMPLEMENTED as ADR-0012 Candidate A** — see
+`fork/slatedb/PATCH-LEDGER.md` and
+`docs/evidence/G3/slatedb-external-epoch-spike.json`. The patch series
+builds against the pinned crate, its qualifying matrix passes (34/34 in
+`manifest::store`, five of them new), and the observe-and-bind mutant is
+killed. F4/F5 are **no longer unbuilt**, but they are also **not decided**:
+ADR-0012 requires this candidate to be compared against a
+provider-enforced publication firewall over stock SlateDB before either is
+normative, and the production lane stays on crates.io until that decision
+and a real G2 pass.
+
+**Correction to §"What upstream already has" below.** This document
+originally described external issuance as something upstream lacks. That is
+wrong at this pin: `slatedb-txn-obj 0.15.0` already exports
+`FenceableTransactionalObject::init_with_epoch` publicly, with exactly the
+fail-closed semantics required (`epoch <= stored` → `Fenced` before any
+write), and SlateDB already uses it for its compactions object. What is
+missing is only the wiring to the *manifest's* writer/compactor epochs and
+a builder knob — which is why the realised patch is five files and roughly
+90 non-test lines rather than an open-ended vendoring. The paragraphs below
+are retained as the design record; where they conflict with the patch
+ledger, the ledger is what was built.
 
 ## What upstream already has
 

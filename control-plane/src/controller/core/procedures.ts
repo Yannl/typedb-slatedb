@@ -475,6 +475,16 @@ export class ControllerCore {
                   ON startup_sessions(database_id, state)`);
       },
     },
+    {
+      version: 8,
+      up: (sql) => {
+        // Q-17: the lazy expiry sweep in burnCapabilityNonce deletes by
+        // expires_at, which had no index - a full table scan of every live
+        // nonce on EVERY capability burn. Range walk instead.
+        sql.exec(`CREATE INDEX IF NOT EXISTS capability_nonce_expiry
+                  ON capability_nonces(expires_at)`);
+      },
+    },
   ];
 
   // ------------------------------------------------------------------
@@ -1102,14 +1112,22 @@ export class ControllerCore {
 
     // late atomic allocation: contiguous AppendLsn, monotone TypeSequence
     // (sequenced records advance it; unsequenced reuse the current one),
-    // global ControlSeq - all inside the caller's transaction. MAX over the
-    // BE-blob columns is exact bytewise u64 ordering; an empty head is NULL
-    // (never a -1 sentinel, which has no u64 blob encoding).
+    // global ControlSeq - all inside the caller's transaction. The head is
+    // ONE seek down the primary-key index, not an aggregate: TypeSequence is
+    // nondecreasing in append order, so the newest row carries both maxima.
+    // The previous MAX(append_lsn), MAX(type_sequence) pair defeated
+    // SQLite's min/max optimisation (two aggregates over different columns)
+    // and walked every row of the (database, generation) prefix on EVERY
+    // append - O(history) latency wearing an O(1) plan's SEARCH label
+    // (Q-17; killed by the latency-ratio control in query-plans.test.ts).
+    // BE-blob columns order exactly as the u64s do; an empty head is an
+    // absent row (never a -1 sentinel, which has no u64 blob encoding).
     const head = this.sql.exec(
-      `SELECT MAX(append_lsn) AS lsn, MAX(type_sequence) AS ts
-       FROM wal_tail WHERE database_id=? AND generation=?`,
+      `SELECT append_lsn AS lsn, type_sequence AS ts
+       FROM wal_tail WHERE database_id=? AND generation=?
+       ORDER BY append_lsn DESC LIMIT 1`,
       req.databaseId, req.generation,
-    )[0];
+    )[0] ?? { lsn: null, ts: null };
     const appendLsn = head.lsn === null ? 0n : u64FromSql(head.lsn, "max_append_lsn") + 1n;
     const headTypeSequence = head.ts === null ? 0n : u64FromSql(head.ts, "max_type_sequence");
     const typeSequence = req.sequencingKind === "SEQUENCED" ? headTypeSequence + 1n : headTypeSequence;
@@ -1584,11 +1602,14 @@ export class ControllerCore {
    * the audit's `maxLsn` is a physical position, not a sequence number.
    */
   head(databaseId: string, generation: number): { headLsn: bigint; headTypeSequence: bigint } {
+    // one PK-index seek: the newest row carries both maxima (TypeSequence is
+    // nondecreasing in append order) - see the Q-17 note in finalizeStep
     const head = this.sql.exec(
-      `SELECT MAX(append_lsn) AS lsn, MAX(type_sequence) AS ts
-       FROM wal_tail WHERE database_id=? AND generation=?`,
+      `SELECT append_lsn AS lsn, type_sequence AS ts
+       FROM wal_tail WHERE database_id=? AND generation=?
+       ORDER BY append_lsn DESC LIMIT 1`,
       databaseId, generation,
-    )[0];
+    )[0] ?? { lsn: null, ts: null };
     return {
       headLsn: head.lsn === null ? -1n : u64FromSql(head.lsn, "max_append_lsn"),
       headTypeSequence: head.ts === null ? 0n : u64FromSql(head.ts, "max_type_sequence"),

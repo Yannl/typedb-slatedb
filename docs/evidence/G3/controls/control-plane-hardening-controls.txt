@@ -234,3 +234,46 @@ Honest remainder: on L1 the lifecycle's CALLERS are gated by SESSION_ADMIN
 capabilities, not real container attestation - the external attestation
 root, provider-enforced routing/ingress fencing, and the external recovery
 lock for incarnation recovery are real-platform work and stay OPEN.
+
+## Q-17 remainder - hot-path SQL is index-backed, append latency ~constant
+New suite: control-plane/src/controller/core/query-plans.test.ts (in CI).
+
+Layer 1 (deterministic): a recording SQL shim captures every SELECT/UPDATE/
+DELETE the hot paths execute (finalize sequenced/unsequenced/replay/batch,
+exact read, head, pinned scan typed+untyped, operation query, last-by-type,
+outbox peek/ack, capability-nonce burn) and EXPLAIN QUERY PLANs each one.
+A bare `SCAN table` fails; the only SCANs admitted are the partial
+outbox_unpublished index walk (cardinality = unpublished backlog, budget-
+bounded) and `... LIMIT 1` early-terminating index peeks.
+
+Layer 2 (measured): plan text LIES about aggregates. The old head lookup
+  SELECT MAX(append_lsn), MAX(type_sequence) FROM wal_tail
+  WHERE database_id=? AND generation=?
+prints the same `SEARCH wal_tail USING INDEX sqlite_autoindex_wal_tail_1`
+line as an O(1) seek while walking EVERY row of the generation on each
+append (two aggregates over different columns defeat SQLite's min/max
+optimisation). Fixed to a single PK-index seek (`ORDER BY append_lsn DESC
+LIMIT 1`; TypeSequence is nondecreasing in append order so the newest row
+carries both maxima) in finalizeStep and head(). The control seeds a 500k-row
+synthetic fixture and asserts per-append latency within 8x of a 1k-row
+baseline.
+
+Also fixed under layer 1: burnCapabilityNonce's lazy expiry sweep
+(`DELETE FROM capability_nonces WHERE expires_at <= ?`) had no index -
+a full scan of every live nonce on every burn. Migration v8 adds
+capability_nonce_expiry ON capability_nonces(expires_at).
+
+MUTANT A: head lookup reverted to the double MAX
+  not ok 2 - append latency is ~constant in history (large synthetic fixture)
+  error: 'append latency grew with history: 924087ns/append at 1k rows,
+          109660813ns/append at 500k rows (118.7x)'        (bound: 8x)
+  NOTE the plan test stays GREEN under this mutant ("ok 1") - recorded
+  because it proves the ratio control is the only killer for this defect
+  class, exactly why the suite has two layers.
+MUTANT B: migration v8's capability_nonce_expiry index dropped
+  not ok 1 - every statement the hot paths execute is index-backed
+  hot-path statement is not index-backed:
+    plan: SCAN capability_nonces
+  (the ratio test stays green - the two layers kill disjoint defects)
+-> restored: 70/70 across the seven controller suites; vitest workerd lane
+   8/8; tsc --noEmit clean.

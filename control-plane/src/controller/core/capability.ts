@@ -35,6 +35,12 @@ export interface CapabilityPayload {
    *  the controller only issues a session-bound finalize capability to the
    *  actor it admitted as that session (donor A3). */
   session?: string;
+  /** the database generation this capability authorizes (WAL_FINALIZE only),
+   *  as a CANONICAL DECIMAL STRING so the full u64 range is exact on the wire
+   *  (audit C-05): a finalize token minted for generation N cannot be
+   *  replayed against generation N+1 after a rollover - the generation is
+   *  part of the authority, not just a request field. */
+  generation?: string;
   /** exact object key (PUT_PAYLOAD only; issuer-derived, content-addressed) */
   key?: string;
   /** required sha256 hex of the body (PUT_PAYLOAD only) */
@@ -60,6 +66,7 @@ export type CapabilityCheck =
       | "CAPABILITY_BUDGET_EXCEEDED"
       | "CAPABILITY_RESTRICTION_MISSING"
       | "CAPABILITY_BUDGET_ABOVE_CEILING"
+      | "CAPABILITY_GENERATION_MISMATCH"
       | "CAPABILITY_STALE_INCARNATION" };
 
 /**
@@ -73,13 +80,19 @@ export type CapabilityCheck =
  * restrictions are therefore required by name; a token missing one is
  * refused before any of the value comparisons run.
  */
-export const REQUIRED_RESTRICTIONS: Record<string, ReadonlyArray<"session" | "key" | "digest" | "maxBytes">> = {
+export const REQUIRED_RESTRICTIONS: Record<string, ReadonlyArray<"session" | "generation" | "key" | "digest" | "maxBytes">> = {
   PUT_PAYLOAD: ["key", "digest", "maxBytes"],
   // the batch route authorizes as WAL_FINALIZE (one session-bound token, one
   // transaction) - a separate batch method name here would be unreachable
-  // policy nothing mints or expects
-  WAL_FINALIZE: ["session"],
+  // policy nothing mints or expects. Finalize binds session AND generation
+  // (audit C-05): the token authorizes one actor in one generation, so a
+  // rollover invalidates it.
+  WAL_FINALIZE: ["session", "generation"],
 };
+
+/** Canonical decimal u64 syntax for capability-bound sequence values: `0`
+ *  or a nonzero digit followed by digits (no aliases like "00"). */
+const CANONICAL_U64 = /^(0|[1-9]\d*)$/;
 
 /**
  * Hard ceiling on any byte budget a capability may carry (contract F9: the
@@ -129,13 +142,22 @@ export function checkCapability(
   expect: {
     method: string;
     databaseId: string;
-    currentIncarnation: number;
+    /** the authority's current incarnation. OMIT it (undefined) for a
+     *  stateless FRAMING pre-check at the outer worker (audit C-03): the
+     *  worker verifies MAC/expiry/audience/method/key/digest/session/
+     *  generation before ANY Durable Object contact, so a junk token never
+     *  instantiates, migrates or binds a DO; the authoritative incarnation
+     *  check + nonce claim then run inside the DO. */
+    currentIncarnation?: number;
     nowMs: number;
     /** when set, the capability MUST carry a matching session binding - a
      *  finalize request cannot be authorized by a session-unbound token
      *  (donor A3): the actor identity is part of the authority, not just a
      *  field in the request body. */
     session?: string;
+    /** the request's generation as a canonical decimal string; when set, the
+     *  token's bound generation must match exactly (audit C-05). */
+    generation?: string;
     key?: string;
     bodyDigest?: string;
     bodyLength?: number;
@@ -159,7 +181,9 @@ export function checkCapability(
     return { ok: false, error: "CAPABILITY_MALFORMED" };
   }
   if (expect.nowMs >= payload.expiresAtMs) return { ok: false, error: "CAPABILITY_EXPIRED" };
-  if (payload.incarnation !== expect.currentIncarnation) return { ok: false, error: "CAPABILITY_STALE_INCARNATION" };
+  if (expect.currentIncarnation !== undefined && payload.incarnation !== expect.currentIncarnation) {
+    return { ok: false, error: "CAPABILITY_STALE_INCARNATION" };
+  }
   if (payload.method !== expect.method) return { ok: false, error: "CAPABILITY_METHOD_MISMATCH" };
   if (payload.databaseId !== expect.databaseId) return { ok: false, error: "CAPABILITY_AUDIENCE_MISMATCH" };
   // session binding: when the route demands a session (finalize), the token
@@ -167,6 +191,15 @@ export function checkCapability(
   // knowing a session id cannot be turned into write authority
   if (expect.session !== undefined && payload.session !== expect.session) {
     return { ok: false, error: "CAPABILITY_SESSION_MISMATCH" };
+  }
+  // generation binding (audit C-05): a finalize token authorizes one
+  // generation. The bound value must be canonical decimal, and it must equal
+  // the request's generation - a token minted for N cannot finalize N+1.
+  if (payload.generation !== undefined && !CANONICAL_U64.test(payload.generation)) {
+    return { ok: false, error: "CAPABILITY_MALFORMED" };
+  }
+  if (expect.generation !== undefined && payload.generation !== expect.generation) {
+    return { ok: false, error: "CAPABILITY_GENERATION_MISMATCH" };
   }
   // mandatory-by-method restrictions: absence is refusal, not permission
   for (const required of REQUIRED_RESTRICTIONS[payload.method] ?? []) {

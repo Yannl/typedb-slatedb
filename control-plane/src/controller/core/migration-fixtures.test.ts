@@ -265,29 +265,36 @@ test("capability use is an idempotent outcome machine, not a bare burn (C-P0-08)
   const core = new ControllerCore(sqlOver(db), { journalKey: KEY });
   const now = 1_000;
   const expires = 10_000;
-  // first presentation admits and records IN_FLIGHT
+  // first presentation admits and records IN_FLIGHT (non-terminal)
   const first = core.claimCapability("nonce-1", "use-digest-A", expires, now);
-  assert.deepEqual(first, { ok: true, fresh: true, state: "IN_FLIGHT", outcome: null });
+  assert.deepEqual(first, { ok: true, fresh: true, state: "IN_FLIGHT", terminal: false, response: null });
   // identical retry admits with the recorded state - a lost response is
   // recoverable because the authorized procedures are idempotent
   const retry = core.claimCapability("nonce-1", "use-digest-A", expires, now + 1);
-  assert.deepEqual(retry, { ok: true, fresh: false, state: "IN_FLIGHT", outcome: null });
+  assert.deepEqual(retry, { ok: true, fresh: false, state: "IN_FLIGHT", terminal: false, response: null });
   // a DIFFERENT request under the used token is a replay refusal
   const stolen = core.claimCapability("nonce-1", "use-digest-B", expires, now + 2);
   assert.deepEqual(stolen, { ok: false, error: "CAPABILITY_REPLAYED" });
-  // resolution is durable and returned to identical retries
-  core.resolveCapabilityUse("nonce-1", "RESOLVED_SUCCESS", '{"appendLsn":"7"}');
+  // resolution stores the response envelope; an identical retry of a
+  // TERMINAL use replays it verbatim and is marked terminal (C-02)
+  core.resolveCapabilityUse("nonce-1", "RESOLVED_SUCCESS", '{"status":200,"body":{"appendLsn":"7"}}');
   const afterResolve = core.claimCapability("nonce-1", "use-digest-A", expires, now + 3);
   assert.deepEqual(afterResolve, {
-    ok: true, fresh: false, state: "RESOLVED_SUCCESS", outcome: '{"appendLsn":"7"}',
+    ok: true, fresh: false, state: "RESOLVED_SUCCESS", terminal: true,
+    response: '{"status":200,"body":{"appendLsn":"7"}}',
   });
-  // AMBIGUOUS stays retryable - it is a recorded uncertainty, not an abort
-  core.resolveCapabilityUse("nonce-1", "AMBIGUOUS", "provider timeout");
-  const ambiguous = core.claimCapability("nonce-1", "use-digest-A", expires, now + 4);
-  assert.ok(ambiguous.ok && ambiguous.state === "AMBIGUOUS");
-  // expiry prunes the use record with the token it belongs to
-  const expired = core.claimCapability("nonce-2", "use-digest-C", now + 5, now + 5);
+  // C-02: a SECOND, DIFFERENT terminal transition is a consistency
+  // violation - it quarantines rather than mutating a settled outcome
+  assert.throws(() => core.resolveCapabilityUse("nonce-1", "RESOLVED_REJECTED", "{}"),
+    /DATABASE_QUARANTINED/);
+  // and the database is now terminally quarantined: a reopen refuses
+  assert.throws(() => new ControllerCore(sqlOver(db), { journalKey: KEY }), /DATABASE_QUARANTINED/);
+  // expiry prunes the use record with the token it belongs to (fresh core,
+  // since the first was quarantined by the consistency-violation test above)
+  const db2 = new Database(":memory:");
+  const core2 = new ControllerCore(sqlOver(db2), { journalKey: KEY });
+  const expired = core2.claimCapability("nonce-2", "use-digest-C", now + 5, now + 5);
   assert.ok(expired.ok && expired.fresh);
-  const reused = core.claimCapability("nonce-2", "use-digest-DIFFERENT", expires, now + 6);
+  const reused = core2.claimCapability("nonce-2", "use-digest-DIFFERENT", expires, now + 6);
   assert.ok(reused.ok && reused.fresh, "an expired use is pruned, the nonce check is over live tokens");
 });

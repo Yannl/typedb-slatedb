@@ -92,4 +92,23 @@ describe("payload facade on workerd (capability boundary)", () => {
     expect(dedup.status).toBe(200);
     expect(((await dedup.json()) as { deduplicated?: boolean }).deduplicated).toBe(true);
   });
+
+  it("C-03: a junk capability is refused by the worker FRAME check, before any DO/R2 work", async () => {
+    // a forged, non-token string on a data route to a database that was
+    // never provisioned. The outer worker verifies the token's framing/MAC
+    // with its OWN key before contacting the DO, so a junk token cannot
+    // instantiate, migrate or bind a Durable Object (audit C-03). The
+    // refusal is the frame-level typed error.
+    const forged = await SELF.fetch("https://facade.local/wal/never-provisioned-db/1/head", {
+      method: "GET", headers: { "x-capability": "not-a-real-token" },
+    });
+    expect(forged.status).toBe(400); // CAPABILITY_MALFORMED at the frame check
+    expect(((await forged.json()) as { error: string }).error).toBe("CAPABILITY_MALFORMED");
+    // a well-formed but wrong-MAC token is a 403, still at the frame check
+    const wrongMac = "eyJhIjoxfQ.".padEnd(75, "0"); // base64url body + 64 hex zeros
+    const forgedMac = await SELF.fetch("https://facade.local/wal/never-provisioned-db/1/head", {
+      method: "GET", headers: { "x-capability": wrongMac },
+    });
+    expect([400, 403]).toContain(forgedMac.status);
+  });
 });

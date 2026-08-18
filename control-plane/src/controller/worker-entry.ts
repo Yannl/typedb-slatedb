@@ -51,6 +51,7 @@ export { DatabaseControllerDO };
 import { MAX_BATCH_BYTES, MAX_BATCH_MEMBERS, u64FromWire, type FinalizeRequest } from "./core/procedures.ts";
 import { devOnlyRoute } from "./surface.ts";
 import { canonicalJson } from "./core/journal-crypto.ts";
+import { checkCapability } from "./core/capability.ts";
 import { resolveKeyConfig } from "./core/key-config.ts";
 
 interface Env {
@@ -319,56 +320,141 @@ export default {
     // surface - the class itself - and nothing hand-maintained to drift.
     const stubFor = (databaseId: string) => env.CONTROLLER.get(env.CONTROLLER.idFromName(databaseId));
 
-    /** The ONE F9 verification core: verify-and-claim the request's
-     *  capability at the database's authority. Both route-facing shapes
-     *  below delegate here so the check can never fork. `useDigest` is the
-     *  canonical digest of the ONE request being authorized (C-P0-08) -
-     *  the claim binds the token's nonce to it durably. */
-    const verifyCapability = async (
-      databaseId: string,
-      expect: { method: string; session?: string; key?: string; bodyDigest?: string; bodyLength?: number },
-      useDigest: string,
-    ) => {
+    type CapExpect = { method: string; session?: string; generation?: string;
+                       key?: string; bodyDigest?: string; bodyLength?: number };
+
+    /**
+     * Stateless capability FRAMING pre-check at the outer worker (audit
+     * C-03): verify MAC, expiry, audience, method, key/digest/session/
+     * generation using the worker's own resolved capability key BEFORE any
+     * Durable Object is contacted. A junk, forged, expired, wrong-audience
+     * or wrong-method token is refused here, so it never instantiates,
+     * migrates or binds a DO. The authoritative incarnation check and the
+     * single-request nonce claim then run inside the DO. Returns the token
+     * on success, or the typed denial Response.
+     */
+    const frameCheck = (databaseId: string, expect: CapExpect): { token: string } | { denied: Response } => {
       const token = request.headers.get("x-capability");
-      if (token === null) {
-        return { authorized: false as const, denied: json({ ok: false, error: "CAPABILITY_REQUIRED" }, 401) };
+      if (token === null) return { denied: json({ ok: false, error: "CAPABILITY_REQUIRED" }, 401) };
+      let capabilityKey: Uint8Array;
+      try {
+        capabilityKey = resolveKeyConfig(env).capabilityKey;
+      } catch (error) {
+        return { denied: json({ ok: false, error: "KEY_CONFIG_INVALID",
+                                detail: error instanceof Error ? error.message : String(error) }, 500) };
       }
-      const verdict = await stubFor(databaseId).useCapability(token, { databaseId, ...expect }, useDigest);
+      // currentIncarnation omitted: the DO owns the authoritative check
+      const framed = checkCapability(capabilityKey, token, { databaseId, ...expect, nowMs: Date.now() });
+      if (!framed.ok) return { denied: json(framed, framed.error === "CAPABILITY_MALFORMED" ? 400 : 403) };
+      return { token };
+    };
+
+    /** Mutating routes: frame-check (no DO on failure), then verify-and-CLAIM
+     *  at the authority. `useDigest` is the canonical digest of the ONE
+     *  request authorized (C-02): the claim binds the nonce to it, and a
+     *  terminal use replays its stored response instead of re-executing. */
+    const verifyCapability = async (databaseId: string, expect: CapExpect, useDigest: string) => {
+      const framed = frameCheck(databaseId, expect);
+      if ("denied" in framed) return { authorized: false as const, denied: framed.denied };
+      const verdict = await stubFor(databaseId).useCapability(framed.token, { databaseId, ...expect }, useDigest);
       if (!verdict.ok) return { authorized: false as const, denied: json(verdict, 403) };
       return { authorized: true as const, verdict };
     };
 
-    /** Read routes bind the use to the request line (method + path + query);
-     *  they resolve no outcome - reads are side-effect-free, so the recorded
-     *  IN_FLIGHT row simply ages out with the token. */
+    /** Read routes: frame-check then verify WITHOUT claiming a durable use
+     *  row (audit C-07) - reads are side-effect-free, so they must not write
+     *  to the control tables. Incarnation and session are still enforced. */
+    const verifyRead = async (databaseId: string, expect: CapExpect):
+      Promise<{ authorized: true; payload: { session?: string } } | { authorized: false; denied: Response }> => {
+      const framed = frameCheck(databaseId, expect);
+      if ("denied" in framed) return { authorized: false as const, denied: framed.denied };
+      const verdict = await stubFor(databaseId).checkCapabilityOnly(framed.token, { databaseId, ...expect });
+      if (!verdict.ok) return { authorized: false as const, denied: json(verdict, 403) };
+      return { authorized: true as const, payload: verdict.payload };
+    };
+
+    /** C-02 terminal replay: when a claim is a non-fresh, terminal use, the
+     *  stored response is returned verbatim and the route body NEVER runs.
+     *  A non-fresh, non-terminal use (a crash between effect and resolve)
+     *  is a bounded typed retry, never a blind re-execution. Returns a
+     *  Response to short-circuit with, or null to proceed and execute. */
+    const replayTerminal = (verdict: { claim?: { fresh: boolean; terminal: boolean; response: string | null } }):
+      Response | null => {
+      const claim = verdict.claim;
+      if (claim === undefined || claim.fresh) return null;
+      if (claim.terminal && claim.response !== null) {
+        const stored = JSON.parse(claim.response) as { status: number; body: unknown };
+        return json(stored.body, stored.status);
+      }
+      if (claim.terminal) return json({ ok: true, replayed: true }, 200);
+      return json({ ok: false, error: "CAPABILITY_IN_FLIGHT",
+                    hint: "a prior use of this token has not resolved; retry" }, 409);
+    };
+
+    /** Resolve a claimed use to its terminal outcome, storing the response
+     *  envelope so an identical retry replays it (C-02). `nonce` comes from
+     *  the verified payload. */
+    const resolveUse = async (
+      databaseId: string, nonce: string, ok: boolean, status: number, body: unknown,
+    ): Promise<void> => {
+      // sequence values are bigint end-to-end; the stored envelope encodes
+      // them as decimal strings exactly as json() sends them on the wire, so
+      // a replayed response is byte-identical to the original (C-02)
+      await stubFor(databaseId).resolveCapabilityUse(
+        nonce, ok ? "RESOLVED_SUCCESS" : "RESOLVED_REJECTED",
+        JSON.stringify({ status, body }, (_k, v) => (typeof v === "bigint" ? v.toString() : v)));
+    };
+
+    /** A mutating route in one wrapper (C-02): frame-check + claim, replay a
+     *  terminal use, else execute and resolve. `execute` returns the
+     *  {status, body} to send; the wrapper stores it as the use outcome. */
+    const withMutation = async (
+      databaseId: string, expect: CapExpect, useDigest: string,
+      execute: (payload: { session?: string }) => Promise<{ status: number; body: unknown }>,
+    ): Promise<Response> => {
+      const auth = await verifyCapability(databaseId, expect, useDigest);
+      if (!auth.authorized) return auth.denied;
+      const replay = replayTerminal(auth.verdict);
+      if (replay !== null) return replay;
+      const nonce = auth.verdict.payload?.nonce;
+      try {
+        const result = await execute(auth.verdict.payload);
+        if (typeof nonce === "string") {
+          const ok = result.status >= 200 && result.status < 300;
+          await resolveUse(databaseId, nonce, ok, result.status, result.body);
+        }
+        return json(result.body, result.status);
+      } catch (error) {
+        // C-02: infrastructure/transport uncertainty is recorded AMBIGUOUS
+        // and stays retryable - never silently converted into a burned token
+        if (typeof nonce === "string") {
+          await stubFor(databaseId).resolveCapabilityUse(nonce, "AMBIGUOUS",
+            JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+        }
+        throw error;
+      }
+    };
+
+    /** Read routes bind the use to the request line (method + path + query). */
     const routeUseDigest = () =>
       useDigestOf({ method: request.method, path, search: url.search });
 
-    /** null = authorized; otherwise the typed 401/403. */
+    /** null = authorized; otherwise the typed 401/403. Read helper (no claim). */
     const requireCapability = async (
-      databaseId: string,
-      expect: { method: string; session?: string; key?: string; bodyDigest?: string; bodyLength?: number },
-      useDigest: string,
+      databaseId: string, expect: CapExpect, _useDigest: string,
     ): Promise<Response | null> => {
-      const auth = await verifyCapability(databaseId, expect, useDigest);
+      const auth = await verifyRead(databaseId, expect);
       return auth.authorized ? null : auth.denied;
     };
 
-    /** Same check, but hands the ACTOR back to the route.
-     *
-     *  Donor A4: procedures that act on authority state revalidate the actor
-     *  at the core, beneath this layer. The route therefore needs to know
-     *  which actor the token was issued to, and a token with no session
-     *  binding cannot authorize such a procedure at all - it would leave the
-     *  core with nothing to revalidate. */
+    /** Read helper that also hands back the session (WAL_READ operation
+     *  query). No durable claim (C-07). */
     const requireCapabilityWithSession = async (
-      databaseId: string,
-      expect: { method: string; key?: string; bodyDigest?: string; bodyLength?: number },
-      useDigest: string,
+      databaseId: string, expect: CapExpect, _useDigest: string,
     ): Promise<{ denied: Response } | { session: string }> => {
-      const auth = await verifyCapability(databaseId, expect, useDigest);
+      const auth = await verifyRead(databaseId, expect);
       if (!auth.authorized) return { denied: auth.denied };
-      const session = auth.verdict.payload?.session;
+      const session = auth.payload?.session;
       if (typeof session !== "string" || session.length === 0) {
         return { denied: json({ ok: false, error: "CAPABILITY_RESTRICTION_MISSING", restriction: "session" }, 403) };
       }
@@ -418,9 +504,11 @@ export default {
 
     const adminBump = path.match(/^\/admin\/([^/]+)\/incarnation\/bump$/);
     if (request.method === "POST" && adminBump) {
-      const denied = await requireCapability(adminBump[1], { method: "SESSION_ADMIN" }, await routeUseDigest());
-      if (denied) return denied;
-      return json({ ok: true, incarnation: await stubFor(adminBump[1]).bumpIncarnation() });
+      // incarnation bump is NOT idempotent (each call increments), so it is a
+      // single-request mutation: a replayed token returns the stored result
+      return withMutation(adminBump[1], { method: "SESSION_ADMIN" }, await routeUseDigest(), async () => ({
+        status: 200, body: { ok: true, incarnation: await stubFor(adminBump[1]).bumpIncarnation() },
+      }));
     }
 
     if (request.method === "PUT" && path.startsWith("/payload/")) {
@@ -446,46 +534,34 @@ export default {
                       observed: bytes.byteLength, limit: MAX_REQUEST_BODY_BYTES }, 413);
       }
       const digest = await sha256hex(bytes);
-      const auth = await verifyCapability(parts[1], {
-        method: "PUT_PAYLOAD", key, bodyDigest: digest, bodyLength: bytes.byteLength,
-      }, await useDigestOf({ method: "PUT_PAYLOAD", key, digest, length: bytes.byteLength }));
-      if (!auth.authorized) return auth.denied;
-      const nonce = auth.verdict.payload.nonce;
-      const resolve = (state: "RESOLVED_SUCCESS" | "RESOLVED_REJECTED" | "AMBIGUOUS", outcome?: string) =>
-        stubFor(parts[1]).resolveCapabilityUse(nonce, state, outcome);
       // payload immutability: puts are create-or-identical, never overwrite.
       // The create is a CONDITIONAL put (If-None-Match: *), not get-then-put:
       // two concurrent puts of different bytes must never both succeed, and a
       // read-then-write window would allow exactly that. Under the capability
       // boundary a different-bytes put at this key cannot even reach here
       // (digest binding); the conditional create remains as defense in depth.
-      try {
+      // withMutation records the terminal outcome so an identical retry
+      // replays it, and a thrown provider error is recorded AMBIGUOUS.
+      return withMutation(parts[1], {
+        method: "PUT_PAYLOAD", key, bodyDigest: digest, bodyLength: bytes.byteLength,
+      }, await useDigestOf({ method: "PUT_PAYLOAD", key, digest, length: bytes.byteLength }), async () => {
         for (let attempt = 0; attempt < 3; attempt++) {
           const created = await env.PAYLOADS.put(key, bytes, {
             onlyIf: new Headers({ "if-none-match": "*" }),
           });
-          if (created !== null) {
-            await resolve("RESOLVED_SUCCESS", digest);
-            return json({ key, sha256hex: digest, length: bytes.byteLength });
-          }
+          if (created !== null) return { status: 200, body: { key, sha256hex: digest, length: bytes.byteLength } };
           const existing = await env.PAYLOADS.get(key);
           if (existing === null) continue; // lost a delete/create race; retry the conditional create
           const existingDigest = await sha256hex(await existing.arrayBuffer());
           if (existingDigest !== digest) {
-            await resolve("RESOLVED_REJECTED", "PAYLOAD_IMMUTABILITY_VIOLATION");
-            return json({ ok: false, error: "PAYLOAD_IMMUTABILITY_VIOLATION", key, existing: existingDigest }, 409);
+            return { status: 409, body: { ok: false, error: "PAYLOAD_IMMUTABILITY_VIOLATION", key, existing: existingDigest } };
           }
-          await resolve("RESOLVED_SUCCESS", digest);
-          return json({ key, sha256hex: digest, length: bytes.byteLength, deduplicated: true });
+          return { status: 200, body: { key, sha256hex: digest, length: bytes.byteLength, deduplicated: true } };
         }
-        await resolve("AMBIGUOUS", "PAYLOAD_RACE_UNRESOLVED");
-        return json({ ok: false, error: "PAYLOAD_RACE_UNRESOLVED", key }, 503);
-      } catch (error) {
-        // C-P0-08: provider/transport uncertainty is recorded, then
-        // surfaced - never silently converted into a burned token
-        await resolve("AMBIGUOUS", error instanceof Error ? error.message : String(error));
-        throw error;
-      }
+        // exhausted the race retries: surface as retryable, not a burned
+        // success - withMutation marks a thrown error AMBIGUOUS
+        throw new Error("PAYLOAD_RACE_UNRESOLVED");
+      });
     }
 
     if (request.method === "POST" && path === "/session/register") {
@@ -494,11 +570,11 @@ export default {
       const b = parsed.body as unknown as { databaseId: string; generation: number; startupSessionId: string };
       const gen = generationOr(b.generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" },
-        await useDigestOf({ path, body: parsed.body }));
-      if (denied) return denied;
-      await stubFor(b.databaseId).registerSession(b.databaseId, gen, b.startupSessionId);
-      return json({ ok: true });
+      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsed.body }), async () => {
+          await stubFor(b.databaseId).registerSession(b.databaseId, gen, b.startupSessionId);
+          return { status: 200, body: { ok: true } };
+        });
     }
 
     // ---- Q-03 / 12.4 lifecycle routes (SESSION_ADMIN-gated) -------------
@@ -512,24 +588,24 @@ export default {
       };
       const gen = generationOr(b.generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" },
-        await useDigestOf({ path, body: parsed.body }));
-      if (denied) return denied;
-      const result = await stubFor(b.databaseId)
-        .reserveSession(b.databaseId, gen, b.startupSessionId, b.holder);
-      return json(result, result.ok ? 200 : 409);
+      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsed.body }), async () => {
+          const result = await stubFor(b.databaseId)
+            .reserveSession(b.databaseId, gen, b.startupSessionId, b.holder);
+          return { status: result.ok ? 200 : 409, body: result };
+        });
     }
 
     if (request.method === "POST" && path === "/session/attest") {
       const parsed = await readJson(request);
       if ("errorResponse" in parsed) return parsed.errorResponse;
       const b = parsed.body as unknown as { databaseId: string; startupSessionId: string; processNonce: string };
-      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" },
-        await useDigestOf({ path, body: parsed.body }));
-      if (denied) return denied;
-      const result = await stubFor(b.databaseId)
-        .attestSession(b.databaseId, b.startupSessionId, b.processNonce);
-      return json(result, result.ok ? 200 : 409);
+      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsed.body }), async () => {
+          const result = await stubFor(b.databaseId)
+            .attestSession(b.databaseId, b.startupSessionId, b.processNonce);
+          return { status: result.ok ? 200 : 409, body: result };
+        });
     }
 
     if (request.method === "POST" && path === "/session/activate") {
@@ -540,46 +616,46 @@ export default {
       };
       const gen = generationOr(b.generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" },
-        await useDigestOf({ path, body: parsed.body }));
-      if (denied) return denied;
-      const result = await stubFor(b.databaseId).activateSession(b.databaseId, b.startupSessionId, {
-        processNonce: b.processNonce, generation: gen, leaseMs: b.leaseMs,
-      });
-      return json(result, result.ok ? 200 : 409);
+      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsed.body }), async () => {
+          const result = await stubFor(b.databaseId).activateSession(b.databaseId, b.startupSessionId, {
+            processNonce: b.processNonce, generation: gen, leaseMs: b.leaseMs,
+          });
+          return { status: result.ok ? 200 : 409, body: result };
+        });
     }
 
     if (request.method === "POST" && path === "/session/renew") {
       const parsed = await readJson(request);
       if ("errorResponse" in parsed) return parsed.errorResponse;
       const b = parsed.body as unknown as { databaseId: string; startupSessionId: string; leaseMs: number };
-      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" },
-        await useDigestOf({ path, body: parsed.body }));
-      if (denied) return denied;
-      const result = await stubFor(b.databaseId).renewLease(b.databaseId, b.startupSessionId, b.leaseMs);
-      return json(result, result.ok ? 200 : 409);
+      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsed.body }), async () => {
+          const result = await stubFor(b.databaseId).renewLease(b.databaseId, b.startupSessionId, b.leaseMs);
+          return { status: result.ok ? 200 : 409, body: result };
+        });
     }
 
     if (request.method === "POST" && path === "/session/drain") {
       const parsed = await readJson(request);
       if ("errorResponse" in parsed) return parsed.errorResponse;
       const b = parsed.body as unknown as { databaseId: string; startupSessionId: string };
-      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" },
-        await useDigestOf({ path, body: parsed.body }));
-      if (denied) return denied;
-      const result = await stubFor(b.databaseId).beginDrain(b.databaseId, b.startupSessionId);
-      return json(result, result.ok ? 200 : 409);
+      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsed.body }), async () => {
+          const result = await stubFor(b.databaseId).beginDrain(b.databaseId, b.startupSessionId);
+          return { status: result.ok ? 200 : 409, body: result };
+        });
     }
 
     if (request.method === "POST" && path === "/session/revoke") {
       const parsed = await readJson(request);
       if ("errorResponse" in parsed) return parsed.errorResponse;
       const b = parsed.body as unknown as { databaseId: string; startupSessionId: string };
-      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" },
-        await useDigestOf({ path, body: parsed.body }));
-      if (denied) return denied;
-      const result = await stubFor(b.databaseId).revokeSession(b.databaseId, b.startupSessionId);
-      return json(result, result.ok ? 200 : 409);
+      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsed.body }), async () => {
+          const result = await stubFor(b.databaseId).revokeSession(b.databaseId, b.startupSessionId);
+          return { status: result.ok ? 200 : 409, body: result };
+        });
     }
 
     if (request.method === "POST" && path === "/session/fence") {
@@ -590,11 +666,11 @@ export default {
       if (gen instanceof Response) return gen;
       // the fence is actor-wide: any `generation` in the body is accepted for
       // wire compatibility but does not scope the revocation
-      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" },
-        await useDigestOf({ path, body: parsed.body }));
-      if (denied) return denied;
-      await stubFor(b.databaseId).fenceSession(b.databaseId, b.startupSessionId);
-      return json({ ok: true });
+      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsed.body }), async () => {
+          await stubFor(b.databaseId).fenceSession(b.databaseId, b.startupSessionId);
+          return { status: 200, body: { ok: true } };
+        });
     }
 
     if (request.method === "POST" && path === "/budgets") {
@@ -603,28 +679,32 @@ export default {
       const b = parsed.body as unknown as {
         databaseId: string; maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number;
       };
-      const auth = await requireCapabilityWithSession(b.databaseId, { method: "SESSION_ADMIN" },
-        await useDigestOf({ path, body: parsed.body }));
-      if ("denied" in auth) return auth.denied;
-      const result = await stubFor(b.databaseId).setBudgets(b.databaseId, {
-        maxUnpublishedOutbox: b.maxUnpublishedOutbox,
-        maxPayloadLength: b.maxPayloadLength,
-        maxTailRecords: b.maxTailRecords,
-      }, auth.session);
-      if (!result.ok) return sessionRefusal(result) ?? json(result, 409);
-      return json({ ok: true });
+      // BUDGETS_SET appends a journal row per call, so budgets is a
+      // single-request mutation: the audit's "reuse one token twice -> two
+      // BUDGETS_SET rows" mutant is killed by the terminal replay (C-02).
+      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsed.body }), async (payload) => {
+          const session = payload.session;
+          if (typeof session !== "string" || session.length === 0) {
+            return { status: 403, body: { ok: false, error: "CAPABILITY_RESTRICTION_MISSING", restriction: "session" } };
+          }
+          const result = await stubFor(b.databaseId).setBudgets(b.databaseId, {
+            maxUnpublishedOutbox: b.maxUnpublishedOutbox,
+            maxPayloadLength: b.maxPayloadLength,
+            maxTailRecords: b.maxTailRecords,
+          }, session);
+          return { status: result.ok ? 200 : 409, body: result.ok ? { ok: true } : result };
+        });
     }
 
     // data-path receipt verification BEFORE the DO's synchronous
     // finalisation: the object must exist and match digest + length
-    const verifyReceipt = async (req: { payloadKey: string; payloadDigest: string; payloadLength: number }) => {
+    const verifyReceipt = async (req: { payloadKey: string; payloadDigest: string; payloadLength: number }):
+      Promise<{ status: number; body: unknown } | null> => {
       const result = await fetchVerified(env, req.payloadKey, req.payloadDigest, req.payloadLength);
       if ("buffer" in result) return null;
-      if (result.error === "MISSING") return json({ ok: false, error: "PAYLOAD_MISSING", key: req.payloadKey }, 422);
-      return json(
-        { ok: false, error: "PAYLOAD_DIGEST_MISMATCH", observed: result.observed, length: result.length },
-        422,
-      );
+      if (result.error === "MISSING") return { status: 422, body: { ok: false, error: "PAYLOAD_MISSING", key: req.payloadKey } };
+      return { status: 422, body: { ok: false, error: "PAYLOAD_DIGEST_MISMATCH", observed: result.observed, length: result.length } };
     };
 
     /** C-P0-07: the R2 payload key is SERVER-derived and content-addressed;
@@ -650,10 +730,6 @@ export default {
       return null;
     };
 
-    /** Encode a finalize outcome for the durable capability-use record. */
-    const outcomeOf = (result: unknown): string =>
-      JSON.stringify(result, (_k, v) => (typeof v === "bigint" ? v.toString() : v));
-
     if (request.method === "POST" && path === "/wal/finalize") {
       const parsedFinalize = await readJson(request);
       if ("errorResponse" in parsedFinalize) return parsedFinalize.errorResponse;
@@ -675,32 +751,22 @@ export default {
         return json({ ok: false, error: "REQUEST_DIGEST_MISMATCH",
                       computed: computedDigest, supplied: req.requestDigest }, 400);
       }
-      // the finalize capability MUST be bound to the request's session
-      // (donor A3): a session id in the body is not by itself write authority
-      const auth = await verifyCapability(req.databaseId, {
-        method: "WAL_FINALIZE", session: String((req as { startupSessionId?: unknown }).startupSessionId ?? ""),
-      }, computedDigest);
-      if (!auth.authorized) return auth.denied;
-      const nonce = auth.verdict.payload.nonce;
-      try {
+      // the finalize capability MUST be bound to the request's session AND
+      // generation (donor A3 + audit C-05): neither a session id in the body
+      // nor a token from another generation is write authority
+      return withMutation(req.databaseId, {
+        method: "WAL_FINALIZE",
+        session: String((req as { startupSessionId?: unknown }).startupSessionId ?? ""),
+        generation: String(gen),
+      }, computedDigest, async () => {
         const receiptError = await verifyReceipt(req);
-        if (receiptError !== null) {
-          await stubFor(req.databaseId).resolveCapabilityUse(nonce, "RESOLVED_REJECTED", "RECEIPT_INVALID");
-          return receiptError;
-        }
+        if (receiptError !== null) return receiptError;
         // the wire body is validated field-by-field above and again in the
         // core; the cast is the JSON boundary, not a trust statement
         const result = await stubFor(req.databaseId)
           .finalizeWalRecord({ ...req, requestDigest: computedDigest } as unknown as FinalizeRequest);
-        await stubFor(req.databaseId).resolveCapabilityUse(
-          nonce, result.ok ? "RESOLVED_SUCCESS" : "RESOLVED_REJECTED", outcomeOf(result));
-        return json(result, result.ok ? 200 : 409);
-      } catch (error) {
-        // C-P0-08: infrastructure uncertainty stays AMBIGUOUS and retryable
-        await stubFor(req.databaseId).resolveCapabilityUse(
-          nonce, "AMBIGUOUS", error instanceof Error ? error.message : String(error));
-        throw error;
-      }
+        return { status: result.ok ? 200 : 409, body: result };
+      });
     }
 
     if (request.method === "POST" && path === "/wal/finalize-batch") {
@@ -772,34 +838,28 @@ export default {
         digested.push({ ...req, requestDigest: computed });
         memberDigests.push(computed);
       }
-      // the capability use binds the batch identity: same batch retries,
-      // any other batch under the same token replays (C-P0-08/09)
-      const auth = await verifyCapability(databaseId, { method: "WAL_FINALIZE", session: batchSession },
-        await useDigestOf({ batchOperationId: body.batchOperationId, members: memberDigests }));
-      if (!auth.authorized) return auth.denied;
-      const nonce = auth.verdict.payload.nonce;
-      try {
-        const receiptErrors = await mapBounded(body.requests, PAYLOAD_FETCH_CONCURRENCY, verifyReceipt);
-        const firstReceiptError = receiptErrors.find((error) => error !== null);
-        if (firstReceiptError) {
-          await stubFor(databaseId).resolveCapabilityUse(nonce, "RESOLVED_REJECTED", "RECEIPT_INVALID");
-          return firstReceiptError;
-        }
-        const result = await stubFor(databaseId).finalizeBatch(digested as unknown as FinalizeRequest[], {
-          batchOperationId: body.batchOperationId,
-          ...(body.batchDigest !== undefined ? { batchDigest: body.batchDigest } : {}),
+      // the capability use binds the batch identity AND the generation (all
+      // members share one generation, checked above): same batch retries,
+      // any other batch under the same token replays (audit C-02/C-05)
+      const batchGeneration = String(exactGeneration(body.requests[0].generation));
+      const batchOperationId = body.batchOperationId; // narrowed to string above
+      const batchDigest = body.batchDigest;
+      return withMutation(databaseId,
+        { method: "WAL_FINALIZE", session: batchSession, generation: batchGeneration },
+        await useDigestOf({ batchOperationId, members: memberDigests }), async () => {
+          const receiptErrors = await mapBounded(body.requests, PAYLOAD_FETCH_CONCURRENCY, verifyReceipt);
+          const firstReceiptError = receiptErrors.find((error) => error !== null);
+          if (firstReceiptError) return firstReceiptError;
+          const result = await stubFor(databaseId).finalizeBatch(digested as unknown as FinalizeRequest[], {
+            batchOperationId,
+            ...(batchDigest !== undefined ? { batchDigest } : {}),
+          });
+          // all-or-nothing: an array is N successes; a single typed error
+          // aborted (and rolled back) the whole batch
+          return Array.isArray(result)
+            ? { status: 200, body: { ok: true, results: result } }
+            : { status: 409, body: result };
         });
-        // all-or-nothing: an array is N successes; a single typed error
-        // aborted (and rolled back) the whole batch
-        await stubFor(databaseId).resolveCapabilityUse(
-          nonce, Array.isArray(result) ? "RESOLVED_SUCCESS" : "RESOLVED_REJECTED", outcomeOf(result));
-        if (Array.isArray(result)) return json({ ok: true, results: result });
-        return json(result, 409);
-      } catch (error) {
-        await stubFor(databaseId).resolveCapabilityUse(
-          nonce, "AMBIGUOUS", error instanceof Error ? error.message : String(error));
-        throw error;
-      }
     }
 
     const walRead = path.match(/^\/wal\/([^/]+)\/(\d+)\/(\d+)$/);
@@ -1001,19 +1061,27 @@ export default {
     if (request.method === "POST" && outboxAck) {
       const parsedAck = await readJson(request);
       if ("errorResponse" in parsedAck) return parsedAck.errorResponse;
-      const auth = await requireCapabilityWithSession(outboxAck[1], { method: "OUTBOX" },
-        await useDigestOf({ path, body: parsedAck.body }));
-      if ("denied" in auth) return auth.denied;
       const b = parsedAck.body as unknown as { upToControlSeq: number | string };
+      // parse the bound BEFORE the claim: a malformed value is a 400 that
+      // must not burn the token
       let upTo: bigint;
       try {
         upTo = u64FromWire(b.upToControlSeq, "upToControlSeq");
       } catch {
         return json({ ok: false, error: "INVALID_PARAMETER", field: "upToControlSeq" }, 400);
       }
-      const result = await stubFor(outboxAck[1]).outboxAck(outboxAck[1], upTo, auth.session);
-      if (!result.ok) return sessionRefusal(result) ?? json(result, 409);
-      return json({ ok: true, acked: result.acked });
+      // ack marks rows published (a mutation): single-request via withMutation
+      return withMutation(outboxAck[1], { method: "OUTBOX" },
+        await useDigestOf({ path, body: parsedAck.body }), async (payload) => {
+          const session = payload.session;
+          if (typeof session !== "string" || session.length === 0) {
+            return { status: 403, body: { ok: false, error: "CAPABILITY_RESTRICTION_MISSING", restriction: "session" } };
+          }
+          const result = await stubFor(outboxAck[1]).outboxAck(outboxAck[1], upTo, session);
+          return result.ok
+            ? { status: 200, body: { ok: true, acked: result.acked } }
+            : { status: 409, body: result };
+        });
     }
 
     const cutOpen = path.match(/^\/checkpoint\/([^/]+)\/(\d+)\/cut$/);
@@ -1024,25 +1092,25 @@ export default {
       if (cutGen instanceof Response) return cutGen;
       const parsedCut = await readJson(request);
       if ("errorResponse" in parsedCut) return parsedCut.errorResponse;
-      const denied = await requireCapability(cutOpen[1], { method: "SESSION_ADMIN" },
-        await useDigestOf({ path, body: parsedCut.body }));
-      if (denied) return denied;
       const b = parsedCut.body as unknown as { cutId: string };
-      const result = await stubFor(cutOpen[1]).openCheckpointCut(cutOpen[1], cutGen, b.cutId);
-      return json(result, result.ok ? 200 : 409);
+      return withMutation(cutOpen[1], { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsedCut.body }), async () => {
+          const result = await stubFor(cutOpen[1]).openCheckpointCut(cutOpen[1], cutGen, b.cutId);
+          return { status: result.ok ? 200 : 409, body: result };
+        });
     }
 
     const cutActivate = path.match(/^\/checkpoint\/([^/]+)\/cut\/([^/]+)\/activate$/);
     if (request.method === "POST" && cutActivate) {
       const parsedEvidence = await readJson(request);
       if ("errorResponse" in parsedEvidence) return parsedEvidence.errorResponse;
-      const denied = await requireCapability(cutActivate[1], { method: "SESSION_ADMIN" },
-        await useDigestOf({ path, body: parsedEvidence.body }));
-      if (denied) return denied;
       const b = parsedEvidence.body as unknown as { materializations: string[]; logicalDigest: string };
-      const result = await stubFor(cutActivate[1])
-        .activateCheckpointCut(cutActivate[1], decodeURIComponent(cutActivate[2]), b);
-      return json(result, result.ok ? 200 : 409);
+      return withMutation(cutActivate[1], { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsedEvidence.body }), async () => {
+          const result = await stubFor(cutActivate[1])
+            .activateCheckpointCut(cutActivate[1], decodeURIComponent(cutActivate[2]), b);
+          return { status: result.ok ? 200 : 409, body: result };
+        });
     }
 
     const cutActive = path.match(/^\/checkpoint\/([^/]+)\/(\d+)\/active$/);

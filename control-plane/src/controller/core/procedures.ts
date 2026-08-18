@@ -295,6 +295,11 @@ export type FinalizeResult = Typed<{ appendLsn: bigint; typeSequence: bigint; co
 /** 32 zero bytes: the hash-chain genesis ancestor. */
 const GENESIS_HASH = new Uint8Array(32);
 
+/** Terminal capability-use states (audit C-02): once a use reaches one of
+ *  these, its stored response is replayed verbatim and it never re-executes
+ *  or transitions to a different terminal. */
+const TERMINAL_USE_STATES = new Set(["RESOLVED_SUCCESS", "RESOLVED_REJECTED"]);
+
 /**
  * The v2 journal-entry preimage (audit C-P1-04): domain-separated and
  * length-framed via framedHash, and it BINDS THE DATABASE IDENTITY. The v1
@@ -308,6 +313,35 @@ function journalEntryHash(
 ): Uint8Array {
   return framedHash("typedb-journal-entry/v2",
     prevHash, controlSeqBytes, utf8(databaseId), utf8(kind), utf8(body));
+}
+
+/**
+ * The v1 journal-entry preimage: the raw, unframed `prev || seq || kind ||
+ * body` concatenation (no database identity, no length framing) used before
+ * migration v11. It exists ONLY so v11 can AUTHENTICATE a legacy chain
+ * under its original rule before reframing it to v2 - never to write new
+ * entries. Round-2's v11 recomputed hashes from the current body and
+ * rewrote mismatches, which re-signed tampered history as authentic
+ * (audit C-01); the authenticated transition below refuses to do that.
+ */
+function journalEntryHashV1(
+  prevHash: Uint8Array, controlSeqBytes: Uint8Array, kind: string, body: string,
+): Uint8Array {
+  return sha256(prevHash, controlSeqBytes, utf8(kind), utf8(body));
+}
+
+/** A migration detected inauthentic durable state. Caught by migrate(),
+ *  which records a durable quarantine (in its OWN transaction, so the
+ *  rolled-back migration never rewrites the suspect bytes) and refuses to
+ *  serve the database until a human intervenes. */
+class MigrationQuarantine extends Error {
+  readonly reason: string;
+  readonly detail: string;
+  constructor(reason: string, detail: string) {
+    super(`${reason}: ${detail}`);
+    this.reason = reason;
+    this.detail = detail;
+  }
 }
 
 export class ControllerCore {
@@ -374,6 +408,19 @@ export class ControllerCore {
       version INTEGER PRIMARY KEY,
       applied_at_ms INTEGER NOT NULL
     )`);
+    // audit C-01: a database quarantined by an authenticated-migration
+    // failure (or any detected consistency violation) refuses to open at
+    // all. The record survives reopen, so the refusal is terminal until a
+    // human clears it - a suspect database is never silently served.
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS controller_quarantine(
+      id INTEGER PRIMARY KEY CHECK(id=1),
+      reason TEXT NOT NULL, detail TEXT, at_ms INTEGER NOT NULL
+    )`);
+    const quarantined = this.sql.exec(`SELECT reason, detail FROM controller_quarantine WHERE id=1`);
+    if (quarantined.length) {
+      throw new Error(`DATABASE_QUARANTINED: ${quarantined[0].reason}`
+        + (quarantined[0].detail ? ` - ${String(quarantined[0].detail)}` : ""));
+    }
     const applied = new Set(
       this.sql.exec(`SELECT version FROM schema_migrations`).map((r) => Number(r.version)),
     );
@@ -388,12 +435,60 @@ export class ControllerCore {
     }
     for (const step of ControllerCore.MIGRATIONS) {
       if (applied.has(step.version)) continue;
-      this.sql.transaction(() => {
-        step.up(this.sql, this);
-        this.sql.exec(`INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?,?)`,
-          step.version, Date.now());
-      });
+      try {
+        this.sql.transaction(() => {
+          step.up(this.sql, this);
+          this.sql.exec(`INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?,?)`,
+            step.version, Date.now());
+        });
+      } catch (error) {
+        if (error instanceof MigrationQuarantine) {
+          // record the quarantine in a SEPARATE, committed transaction: the
+          // migration's own transaction (including any partial rewrite) has
+          // already rolled back, so the suspect bytes are untouched
+          this.sql.transaction(() => {
+            this.sql.exec(
+              `INSERT OR REPLACE INTO controller_quarantine(id, reason, detail, at_ms) VALUES (1,?,?,?)`,
+              error.reason, error.detail, Date.now());
+          });
+          throw new Error(`DATABASE_QUARANTINED: ${error.reason} - ${error.detail}`);
+        }
+        throw error;
+      }
     }
+  }
+
+  /**
+   * Authenticate an ordered control_outbox snapshot under a specific journal
+   * framing (audit C-01). Every row must be contiguous from ControlSeq 1,
+   * chain from the genesis ancestor, carry an entry hash equal to the
+   * recomputation under `framing`, and carry a MAC that verifies under the
+   * journal key. Returns the head hash on success, or the first failing
+   * ControlSeq. Pure over its inputs - no writes.
+   */
+  private static authenticateChain(
+    rows: SqlRow[], journalKey: Uint8Array, framing: "v1" | "v2",
+  ): { ok: true; headHash: string } | { ok: false; atControlSeq: string } {
+    let expectedSeq = 1n;
+    let prev: Uint8Array = GENESIS_HASH;
+    for (const row of rows) {
+      const seq = u64FromSql(row.control_seq, "control_seq");
+      const at = seq.toString();
+      if (seq !== expectedSeq) return { ok: false, atControlSeq: at };
+      const seqBytes = u64Blob(seq, "control_seq");
+      const storedPrev = asHash(row.prev_hash, "prev_hash");
+      const storedEntry = asHash(row.entry_hash, "entry_hash");
+      const storedMac = asHash(row.mac, "mac");
+      if (!bytesEqual(storedPrev, prev)) return { ok: false, atControlSeq: at };
+      const recomputed = framing === "v2"
+        ? journalEntryHash(prev, seqBytes, String(row.database_id), String(row.kind), String(row.canonical_body))
+        : journalEntryHashV1(prev, seqBytes, String(row.kind), String(row.canonical_body));
+      if (!bytesEqual(storedEntry, recomputed)) return { ok: false, atControlSeq: at };
+      if (!bytesEqual(storedMac, hmacSha256(journalKey, storedEntry))) return { ok: false, atControlSeq: at };
+      prev = storedEntry;
+      expectedSeq = seq + 1n;
+    }
+    return { ok: true, headHash: hex(prev) };
   }
 
   /** Columns added after the original table shape. Applied by name against
@@ -577,33 +672,44 @@ export class ControllerCore {
     {
       version: 11,
       up: (sql, core) => {
-        // Audit C-P1-04: re-frame the journal chain under the v2
-        // domain-separated, length-framed preimage (see journalEntryHash).
-        // Recomputes the whole chain from genesis and rewrites rows whose
-        // stored hashes/MACs differ; a chain already v2-framed (e.g. one the
-        // v9 rebuild produced) rewrites nothing, so the step is idempotent.
+        // Audit C-01: migrating the journal to v2 framing is a TRUST
+        // TRANSITION, not a repair loop. Round-2 recomputed each row's hash
+        // from its CURRENT body and rewrote mismatches, so tampering a body
+        // and forcing v11 to re-run re-signed the forgery as authentic. The
+        // authenticated transition instead AUTHENTICATES the legacy chain
+        // under its original rule FIRST, and only reframes genuine history:
+        //  - if the whole chain authenticates under the v1 (unframed)
+        //    preimage + MAC, it is genuine legacy history -> reframe to v2
+        //    and journal a certificate binding the old and new roots;
+        //  - else if it authenticates under v2 (e.g. a v9 rebuild, or a
+        //    database already at v2), it is already migrated -> no-op;
+        //  - else the stored bytes are not authentic under either rule ->
+        //    QUARANTINE and rewrite nothing.
         const rows = sql.exec(
           `SELECT control_seq, database_id, kind, canonical_body, prev_hash, entry_hash, mac
            FROM control_outbox ORDER BY control_seq`);
-        let prev: Uint8Array = GENESIS_HASH;
-        let reframed = 0;
-        for (const row of rows) {
-          const seqBytes = u64Blob(u64FromSql(row.control_seq, "control_seq"), "control_seq");
-          const entryHash = journalEntryHash(
-            prev, seqBytes, String(row.database_id), String(row.kind), String(row.canonical_body));
-          const mac = hmacSha256(core.journalKey, entryHash);
-          if (!bytesEqual(asHash(row.prev_hash, "prev_hash"), prev)
-              || !bytesEqual(asHash(row.entry_hash, "entry_hash"), entryHash)
-              || !bytesEqual(asHash(row.mac, "mac"), mac)) {
+        if (rows.length === 0) return;
+        const asV1 = ControllerCore.authenticateChain(rows, core.journalKey, "v1");
+        if (asV1.ok) {
+          let prev: Uint8Array = GENESIS_HASH;
+          for (const row of rows) {
+            const seqBytes = u64Blob(u64FromSql(row.control_seq, "control_seq"), "control_seq");
+            const entryHash = journalEntryHash(
+              prev, seqBytes, String(row.database_id), String(row.kind), String(row.canonical_body));
             sql.exec(`UPDATE control_outbox SET prev_hash=?, entry_hash=?, mac=? WHERE control_seq=?`,
-              prev, entryHash, mac, seqBytes);
-            reframed += 1;
+              prev, entryHash, hmacSha256(core.journalKey, entryHash), seqBytes);
+            prev = entryHash;
           }
-          prev = entryHash;
+          core.appendCommand("@controller", "JOURNAL_MIGRATED_V1_TO_V2", {
+            rows: rows.length, oldRoot: asV1.headHash, newRoot: hex(prev),
+          });
+          return;
         }
-        if (reframed > 0) {
-          core.appendCommand("@controller", "JOURNAL_REFRAMED_V2", { reframed });
-        }
+        const asV2 = ControllerCore.authenticateChain(rows, core.journalKey, "v2");
+        if (asV2.ok) return; // already v2-framed and authentic: idempotent
+        throw new MigrationQuarantine("JOURNAL_NOT_AUTHENTIC",
+          `control_outbox authenticates under neither v1 (fails at seq ${asV1.atControlSeq}) `
+          + `nor v2 (fails at seq ${asV2.atControlSeq}); refusing to re-sign unverified history`);
       },
     },
     {
@@ -624,6 +730,24 @@ export class ControllerCore {
           used_at_ms INTEGER NOT NULL
         )`);
         sql.exec(`CREATE INDEX IF NOT EXISTS capability_use_expiry ON capability_uses(expires_at)`);
+      },
+    },
+    {
+      version: 13,
+      up: (sql) => {
+        // Audit C-02: a capability use stores the canonical RESPONSE
+        // envelope of the one request it authorized, so an identical retry
+        // of a TERMINAL use returns the stored response verbatim and NEVER
+        // re-executes the effect (the round-2 machine recorded only a state
+        // string, so the worker had nothing to replay and re-ran the
+        // mutation - two BUDGETS_SET rows for one token). `response` holds
+        // {status, body} as canonical JSON for terminal states; NULL while
+        // IN_FLIGHT/AMBIGUOUS.
+        for (const column of ["response TEXT"]) {
+          const name = column.split(" ")[0];
+          const present = sql.exec(`PRAGMA table_info(capability_uses)`).some((r) => String(r.name) === name);
+          if (!present) sql.exec(`ALTER TABLE capability_uses ADD COLUMN ${column}`);
+        }
       },
     },
   ];
@@ -1472,36 +1596,76 @@ export class ControllerCore {
    * the live-token window.
    */
   claimCapability(nonce: string, useDigest: string, expiresAtMs: number, nowMs: number):
-    { ok: true; fresh: boolean; state: string; outcome: string | null }
+    { ok: true; fresh: boolean; state: string; terminal: boolean; response: string | null }
     | { ok: false; error: "CAPABILITY_REPLAYED" } {
     return this.sql.transaction(() => {
       this.sql.exec(`DELETE FROM capability_uses WHERE expires_at <= ?`, nowMs);
       const prior = this.sql.exec(
-        `SELECT use_digest, state, outcome FROM capability_uses WHERE nonce=?`, nonce);
+        `SELECT use_digest, state, response FROM capability_uses WHERE nonce=?`, nonce);
       if (prior.length) {
         if (String(prior[0].use_digest) !== useDigest) {
           return { ok: false as const, error: "CAPABILITY_REPLAYED" as const };
         }
-        return { ok: true as const, fresh: false, state: String(prior[0].state),
-                 outcome: prior[0].outcome === null ? null : String(prior[0].outcome) };
+        const state = String(prior[0].state);
+        return {
+          ok: true as const, fresh: false, state, terminal: TERMINAL_USE_STATES.has(state),
+          response: prior[0].response === null ? null : String(prior[0].response),
+        };
       }
       this.sql.exec(
         `INSERT INTO capability_uses(nonce, use_digest, state, expires_at, used_at_ms)
          VALUES (?,?,'IN_FLIGHT',?,?)`, nonce, useDigest, expiresAtMs, nowMs);
-      return { ok: true as const, fresh: true, state: "IN_FLIGHT", outcome: null };
+      return { ok: true as const, fresh: true, state: "IN_FLIGHT", terminal: false, response: null };
     });
   }
 
-  /** Record the durable outcome of a claimed use. Idempotent; an unknown or
-   *  expired-and-pruned nonce is a no-op (the authority record of what
-   *  happened lives in wal_tail/journal - this is the per-use outcome
-   *  index, not a second source of truth). */
+  /**
+   * Record the terminal outcome (and stored response envelope) of a claimed
+   * use (audit C-02). Legal transitions only:
+   *   IN_FLIGHT   -> RESOLVED_SUCCESS | RESOLVED_REJECTED | AMBIGUOUS
+   *   AMBIGUOUS   -> RESOLVED_SUCCESS | RESOLVED_REJECTED   (a resolver settled it)
+   *   <terminal>  -> the SAME terminal with the SAME response   (idempotent)
+   * A second, DIFFERENT terminal transition (the audit's reject->success
+   * mutation) is a consistency violation: it quarantines the database rather
+   * than silently mutating a settled authority outcome. An unknown or
+   * expired-and-pruned nonce is a no-op - the durable authority record lives
+   * in wal_tail/journal; this table is the per-use replay index.
+   */
   resolveCapabilityUse(
-    nonce: string, state: "RESOLVED_SUCCESS" | "RESOLVED_REJECTED" | "AMBIGUOUS", outcome?: string,
+    nonce: string, state: "RESOLVED_SUCCESS" | "RESOLVED_REJECTED" | "AMBIGUOUS", response?: string,
   ): void {
+    // The transition check runs OUTSIDE a transaction so that a detected
+    // consistency violation can quarantine durably (a quarantine written
+    // inside a rolled-back transaction would vanish). DO calls are
+    // serialized per object, so the read-then-act has no concurrent writer.
+    const rows = this.sql.exec(`SELECT state, response FROM capability_uses WHERE nonce=?`, nonce);
+    if (!rows.length) return;
+    const current = String(rows[0].state);
+    if (TERMINAL_USE_STATES.has(current)) {
+      const sameResponse = (rows[0].response === null ? null : String(rows[0].response)) === (response ?? null);
+      if (current === state && sameResponse) return; // idempotent re-resolution
+      this.quarantineNow("CAPABILITY_OUTCOME_MUTATION",
+        `nonce ${nonce}: attempted ${current} -> ${state}; a settled outcome is final`);
+    }
+    if (current !== "IN_FLIGHT" && current !== "AMBIGUOUS") {
+      this.quarantineNow("CAPABILITY_OUTCOME_MUTATION", `nonce ${nonce}: illegal source state ${current}`);
+    }
     this.sql.exec(
-      `UPDATE capability_uses SET state=?, outcome=? WHERE nonce=?`,
-      state, outcome ?? null, nonce);
+      `UPDATE capability_uses SET state=?, response=? WHERE nonce=?`, state, response ?? null, nonce);
+  }
+
+  /**
+   * Record a durable quarantine and refuse the current operation (audit
+   * C-01/C-02). MUST be called outside an enclosing transaction so the
+   * INSERT commits; every subsequent open then refuses at construction (see
+   * migrate). Throws so the in-flight request fails closed rather than
+   * proceeding on suspect state.
+   */
+  private quarantineNow(reason: string, detail: string): never {
+    this.sql.exec(
+      `INSERT OR REPLACE INTO controller_quarantine(id, reason, detail, at_ms) VALUES (1,?,?,?)`,
+      reason, detail, this.wallClock());
+    throw new Error(`DATABASE_QUARANTINED: ${reason} - ${detail}`);
   }
 
   /** Allocate the next global ControlSeq (exact bytewise-u64 max + 1). */

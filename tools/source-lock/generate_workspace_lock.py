@@ -66,6 +66,38 @@ def sha256(path: pathlib.Path) -> str:
     return h.hexdigest()
 
 
+def fork_staging() -> dict:
+    """Deterministic identity of the fork patch set (§20.2).
+
+    `sources/typedb` under test is the locked upstream revision with
+    `fork/typedb` staged over it, which makes it permanently "dirty" to a
+    lint that only knows revisions. That left the fork's own content
+    unpinned: any edit to a staged file produced a differently-behaving tree
+    with an identical lock. Binding the fork file set by digest makes the
+    executed tree's identity exactly `locked revision + this digest`.
+    """
+    fork_root = REPO / "fork" / "typedb"
+    skip_dirs = {".git", "target", "node_modules"}
+    fork_only = {"PORT-LEDGER.md", "UPSTREAM-PROVENANCE"}
+    files = []
+    for f in sorted(fork_root.rglob("*")):
+        if not f.is_file():
+            continue
+        rel = f.relative_to(fork_root)
+        if rel.parts[0] in skip_dirs or str(rel) in fork_only:
+            continue
+        files.append((str(rel), sha256(f)))
+    h = hashlib.sha256()
+    for rel, digest in files:
+        h.update(f"{rel}\0{digest}\0".encode())
+    return {
+        "fork_root": "fork/typedb",
+        "staged_file_count": len(files),
+        "staged_tree_sha256": h.hexdigest(),
+        "note": "sources/typedb under test == locked TB revision + this patch set",
+    }
+
+
 def slatedb_consumption() -> dict:
     """Version + feature surface of every slatedb consumer, from manifests."""
     out = {}
@@ -100,6 +132,7 @@ def build() -> dict:
         ).stdout.strip(),
         "source_lock_sha256": sha256(REPO / "source-lock" / "source-lock.json"),
         "workspaces": {},
+        "fork_staging": fork_staging(),
         "slatedb_consumption": slatedb_consumption(),
         "toolchains": TOOLCHAINS,
         "artifacts": {},

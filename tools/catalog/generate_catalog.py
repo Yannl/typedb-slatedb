@@ -397,6 +397,21 @@ def main():
             "serial_group": "server-port",
             "port_status": "BYTE_IDENTICAL",
         })
+        # Scenario names repeat inside a feature file (upstream writes the
+        # same name for genuinely different scenarios). Keying leaves on the
+        # name alone silently collapsed 29 rows onto 27 ids, so the catalogue
+        # claimed 4,740 leaves while offering only 4,711 addressable ones -
+        # a denominator that cannot be joined case-by-case. An occurrence
+        # ordinal disambiguates without inventing a name: the FIRST
+        # occurrence keeps the bare id (stable against the previous
+        # catalogue), later ones carry `@2`, `@3`, ... in file order.
+        seen_names = {}
+
+        def uniq(base):
+            k = seen_names.get(base, 0) + 1
+            seen_names[base] = k
+            return base if k == 1 else f"{base}@{k}"
+
         for s in data["scenarios"]:
             n = s["outline_examples"]
             if n == 0:
@@ -405,7 +420,7 @@ def main():
                 continue
             if n is None:
                 leaf_cases.append({
-                    "leaf_case_id": f"cucumber:{ref}::{s['name']}",
+                    "leaf_case_id": uniq(f"cucumber:{ref}::{s['name']}"),
                     "target_id": f"cucumber-corpus:{ref}",
                     "kind": "CUCUMBER",
                     "display_name": s["name"],
@@ -416,7 +431,7 @@ def main():
             else:
                 for i in range(n):
                     leaf_cases.append({
-                        "leaf_case_id": f"cucumber:{ref}::{s['name']}#ex{i+1}",
+                        "leaf_case_id": uniq(f"cucumber:{ref}::{s['name']}#ex{i+1}"),
                         "target_id": f"cucumber-corpus:{ref}",
                         "kind": "CUCUMBER",
                         "display_name": f"{s['name']} [example {i+1}/{n}]",
@@ -425,11 +440,21 @@ def main():
                         "resource_group": "server-port",
                     })
 
+    # The failpoint leaves used to name `cargo:typedb:test:test_fail_points`,
+    # a target that does not exist in this catalogue's own target table (the
+    # cargo package is `typedb_server_bin`), leaving 44 leaves dangling off a
+    # phantom parent. Resolve the id from the cargo target table and fail
+    # closed if the target is not there.
+    fp_target = next(
+        (f"cargo:{t['package']}:{t['kind']}:{t['target_name']}"
+         for t in cargo_targets if t["target_name"] == "test_fail_points"), None)
+    if fp_target is None:
+        raise RuntimeError("failpoint leaves have no cargo target named test_fail_points")
     for ctx in fp_contexts:
         for member in fp_members:
             leaf_cases.append({
-                "leaf_case_id": f"cargo:typedb:test:test_fail_points::{ctx}::{member}",
-                "target_id": "cargo:typedb:test:test_fail_points",
+                "leaf_case_id": f"{fp_target}::{ctx}::{member}",
+                "target_id": fp_target,
                 "kind": "FAILPOINT",
                 "display_name": f"{ctx}[{member}]",
                 "source_hash": fp_test_hash,
@@ -496,10 +521,67 @@ def main():
                 "resource_group": None,
             })
 
+    # ---- referential integrity, uniqueness, and denominator ------------
+    # Every one of these was silently violated by the previous catalogue and
+    # nothing in the toolchain noticed. They are hard errors here: a
+    # catalogue that cannot be joined to a run is not a denominator.
+    target_ids = {t["target_id"] for t in targets}
+    seen_leaf = {}
     for lc in leaf_cases:
-        required_pairs.append({"leaf_case_id": lc["leaf_case_id"],
-                               "profile_id": "U0",
-                               "reason": "pristine baseline"})
+        if lc["leaf_case_id"] in seen_leaf:
+            raise RuntimeError(
+                f"duplicate leaf_case_id {lc['leaf_case_id']!r} - leaf ids must be unique")
+        seen_leaf[lc["leaf_case_id"]] = lc
+        if lc["target_id"] not in target_ids:
+            raise RuntimeError(
+                f"leaf {lc['leaf_case_id']!r} references unknown target {lc['target_id']!r}")
+
+    # ---- required (leaf, profile) pairs --------------------------------
+    # The conformance plan requires EVERY required pair executed across the
+    # U0..U4 profile matrix; the previous catalogue emitted U0 only, so the
+    # contractual denominator was understated by a factor of five and no
+    # profile beyond the baseline could ever be shown incomplete. Static and
+    # script leaves are backend-independent and stay U0-only.
+    BACKEND_INDEPENDENT = {"STATIC_CHECK", "SCRIPT"}
+    for lc in leaf_cases:
+        if lc["kind"] in BACKEND_INDEPENDENT:
+            required_pairs.append({"leaf_case_id": lc["leaf_case_id"],
+                                   "profile_id": "U0",
+                                   "reason": "backend-independent check"})
+            continue
+        for prof in ("U0", "U1", "U2", "U3", "U4"):
+            required_pairs.append({
+                "leaf_case_id": lc["leaf_case_id"],
+                "profile_id": prof,
+                "reason": "conformance plan: every required (leaf, profile) pair executed"})
+
+    # ---- declared zero-case targets ------------------------------------
+    # A target with no leaves is legitimate (a crate with no #[test], a
+    # [[bench]] that the cargo test lane compiles but never runs). What is
+    # NOT legitimate is leaving that invisible: an intentional zero and a
+    # silently-lost suite look identical. Each one is declared here, so the
+    # completeness checker can require that the declaration matches reality.
+    leaves_per_target = {}
+    for lc in leaf_cases:
+        leaves_per_target[lc["target_id"]] = leaves_per_target.get(lc["target_id"], 0) + 1
+    for t in sorted(targets, key=lambda x: x["target_id"]):
+        if leaves_per_target.get(t["target_id"], 0):
+            continue
+        is_bench = t["target_id"].split(":")[2:3] == ["bench"]
+        exclusions.append({
+            "subject_id": t["target_id"],
+            "predicate": ("cargo target kind == bench" if is_bench
+                          else "libtest enumeration returns zero cases"),
+            "reason": ("[[bench]] targets are compiled by the cargo test lane but "
+                       "carry no libtest cases and are never executed as tests; "
+                       "benchmark measurement is a separate, non-conformance lane"
+                       if is_bench else
+                       "the crate declares no #[test] functions at this pin; the "
+                       "zero is enumerated from the compiled binary, not assumed"),
+            "owner": "conformance-catalogue",
+            "expiry": "2027-12-31",
+            "replacement_test_id": None,
+        })
 
     exclusions.append({
         "subject_id": "bazel:mac-signing-and-installer-targets",

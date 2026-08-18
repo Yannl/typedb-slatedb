@@ -1,13 +1,86 @@
 #!/usr/bin/env python3
-"""Generate docs/evidence/G3/u2s3-vs-oracle-comparison.json: structural
-equality of the U2S3 corpus run against the U1 oracle baseline, with the
-same corrected-expectation policy the U2 comparison used."""
-import json, pathlib, sys
+"""Symmetric, exact comparison of a SlateDB-over-S3 corpus run against the
+U1 RocksDB oracle baseline.
+
+The previous comparator accepted three mutants an oracle comparison must
+never accept, and each one is closed by a specific rule here:
+
+  1. It iterated the U2S3 side only, so a target present in the ORACLE and
+     missing from the run compared equal by never being looked at. Removing
+     `answer:answer` from the run was accepted.
+     -> the comparison walks the UNION of both sides; a target absent from
+        either side is a difference.
+
+  2. Its per-target profile was `(passed, failed, ignored)` and ignored the
+     process outcome, so a target that TIMED OUT with unchanged counts (a
+     timeout typically leaves 0/0/0, but a partially-parsed log keeps the
+     previous numbers) compared equal to a clean run.
+     -> the profile carries the process outcome (`ok` / `rc=<n>` / `TIMEOUT`)
+        alongside the counts.
+
+  3. Its classifications were free prose keyed by target id, so ANY profile
+     for a classified target was "explained" - changing `storage:storage` to
+     0 passed / 999 failed stayed accepted.
+     -> a classification declares the EXACT expected profiles on both sides.
+        A classified target whose measured profile differs from the declared
+        one is UNEXPLAINED, exactly like an unclassified one.
+
+Usage: compare_u2s3.py <run-dir-name>   (under docs/evidence/G3/)
+"""
+import json
+import pathlib
+import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
-RUN_DIR = sys.argv[1] if len(sys.argv) > 1 else "u2s3-full"
-u2s3 = json.load(open(REPO / f"docs/evidence/G3/{RUN_DIR}/u0-results.json"))
-u1 = json.load(open(REPO / "docs/evidence/G3/u1-full/u0-results.json"))
+
+# Every entry declares the EXACT expected profile on both sides. The profile
+# spelling is "<passed>/<failed>/<ignored> <outcome>", outcome being `ok`,
+# `rc=<n>` or `TIMEOUT`. "ABSENT" means the side has no row at all.
+EXPLAINED = {
+    "storage:storage": {
+        "u2s3": ["18/0/0 ok"],
+        "u1": ["8/0/0 ok"],
+        "reason": "additive port-layer tests: the storage lib gained the V16 F2 "
+                  "read-contract control plus the F3 materialisation/posture, A6 "
+                  "memo and A10 retry-channel controls - unit tests of the SlateDB "
+                  "adapter module, which does not exist on the U1/RocksDB baseline. "
+                  "Zero baseline tests changed outcome.",
+    },
+    "storage:test_recovery": {
+        "u2s3": ["5/2/0 rc=101"],
+        "u1": ["5/2/0 rc=101"],
+        "reason": "baseline-identical: the 2 failures are upstream todo!() stubs "
+                  "(wal_missing_records_*) that fail on every backend.",
+    },
+    "storage:test_isolation": {
+        "u2s3": ["14/0/1 ok"],
+        "u1": ["14/0/1 ok"],
+        "reason": "baseline-identical: g0_dirty_writes is #[ignore] upstream.",
+    },
+    "typedb_server_bin:test_fail_points": {
+        "u2s3": ["2/0/0 ok"],
+        "u1": ["0/0/0 TIMEOUT"],
+        "reason": "corrected expectation: the U1 baseline row is itself a 1800s "
+                  "TIMEOUT; the corrected oracle profile is U2's measured 2 passed / "
+                  "0 failed at a raised timeout (u2-full: 2099s at 3600s).",
+    },
+    "typedb_server_bin:bench_concurrency": {
+        "u2s3": ["0/0/0 ok"],
+        "u1": ["ABSENT"],
+        "reason": "absent from the U1 baseline: the executable was dropped by the "
+                  "pre-fix (package,target) dedupe collapse and first measured on "
+                  "the U2 run; it contains 0 test cases on every lane.",
+    },
+    "typedb_server_bin:bench_iam": {
+        "u2s3": ["1/0/0 ok"],
+        "u1": ["ABSENT"],
+        "reason": "absent from the U1 baseline (same dedupe collapse) and GREEN on "
+                  "U2S3 where U2 is red: the upstream environment defect (the test "
+                  "queries a database whose TempDir storage dir was deleted at the "
+                  "end of setup) cannot trigger when keyspace data lives in the "
+                  "object store, so U2S3 matches U0/RocksDB directly.",
+    },
+}
 
 
 def target_name(r):
@@ -19,77 +92,113 @@ def target_name(r):
     return r["raw_log"].rsplit("/", 1)[-1].rsplit("__", 1)[-1][: -len(".log")]
 
 
-def by_target(run):
-    out = {}
-    for r in run["results"]:
-        out.setdefault(target_name(r), []).append(r)
-    return out
+def outcome(r):
+    if r.get("timed_out"):
+        return "TIMEOUT"
+    rc = r.get("exit_code")
+    return "ok" if rc == 0 else f"rc={rc}"
+
+
+def profile_of(r):
+    return f"{r['passed']}/{r['failed']}/{r['ignored']} {outcome(r)}"
 
 
 def profiles(rows):
-    return sorted((r["passed"], r["failed"], r["ignored"]) for r in rows)
+    return sorted(profile_of(r) for r in rows) if rows else ["ABSENT"]
 
 
-a, b = by_target(u2s3), by_target(u1)
+def main():
+    run_dir = sys.argv[1] if len(sys.argv) > 1 else "u2s3-full"
+    u2s3 = json.load(open(REPO / f"docs/evidence/G3/{run_dir}/u0-results.json"))
+    u1 = json.load(open(REPO / "docs/evidence/G3/u1-full/u0-results.json"))
 
-EXPLAINED = {
-    "storage:storage": "additive port-layer test: the storage lib gained the V16 F2 read-contract negative control (read_contract_tests::paused_precommit_write_is_invisible_to_committed_frontier_reads, commit 65da032) - a unit test of the SlateDB adapter module, which does not exist on the U1/RocksDB baseline. 9 = the baseline's 8 + this control; zero baseline tests changed outcome",
-    "storage:test_recovery": "baseline-identical: the 2 failures are upstream todo!() stubs (wal_missing_records_*) that fail on every backend; U0/U1 record the same 5/2",
-    "typedb_server_bin:test_fail_points": "corrected expectation: the U1 baseline row itself is a 1800s TIMEOUT (0/0); the corrected oracle profile is U2's measured 2 passed / 0 failed at a raised timeout (u2-full: 2099s at 3600s; U2S3 measured 2572s at 7200s) - equal to it",
-    "typedb_server_bin:bench_concurrency": "absent from the U1 baseline: the executable was silently dropped by the pre-fix (package,target) dedupe collapse and first measured on the U2 run (see u2-vs-oracle-comparison.json denominator_note); it contains 0 test cases on every lane, so equality is trivial",
-    "typedb_server_bin:bench_iam": "absent from the U1 baseline (same dedupe collapse), and GREEN on U2S3 where U2 is red: the upstream environment defect (the test queries a database whose TempDir storage dir was deleted at the end of setup; finding-bench-iam-deleted-storage-dir.md) cannot trigger when keyspace data lives in the object store, so U2S3 matches the U0/RocksDB behaviour directly",
-}
+    def by_target(run):
+        out = {}
+        for r in run["results"]:
+            out.setdefault(target_name(r), []).append(r)
+        return out
 
-green = red = timeout = 0
-cases = {"passed": 0, "failed": 0, "ignored": 0}
-for r in u2s3["results"]:
-    ok = r["exit_code"] == 0 and not r["timed_out"]
-    green += ok
-    red += not ok
-    timeout += bool(r["timed_out"])
-    for k in cases:
-        cases[k] += r[k]
+    a, b = by_target(u2s3), by_target(u1)
 
-diffs = []
-for name, group in sorted(a.items()):
-    base = b.get(name)
-    if base is not None and profiles(group) == profiles(base):
-        continue
-    tid = group[0]["target_id"]
-    diffs.append({
-        "target": tid,
-        "u2s3_profile": " + ".join(f"{x[0]} passed / {x[1]} failed" for x in profiles(group)),
-        "u1_profile": (" + ".join(f"{x[0]} passed / {x[1]} failed" for x in profiles(base)) if base else "ABSENT"),
-        "u1_timed_out": bool(base and any(x["timed_out"] for x in base)),
-        "classification": EXPLAINED.get(tid, "UNEXPLAINED - stop the line"),
-    })
+    green = red = timeout = 0
+    cases = {"passed": 0, "failed": 0, "ignored": 0}
+    for r in u2s3["results"]:
+        ok = r["exit_code"] == 0 and not r["timed_out"]
+        green += ok
+        red += not ok
+        timeout += bool(r["timed_out"])
+        for k in cases:
+            cases[k] += r[k]
 
-out = {
-    "claim": "U2S3 (SlateDB keyspaces over an S3-compatible object store - local MinIO standing in for Cloudflare R2 - with file WAL) runs the complete applicable upstream TypeDB test corpus with a pass/fail profile structurally equal to the U1 RocksDB oracle baseline, under the corrected expectations for known upstream-defective targets",
-    "u2s3_run": f"docs/evidence/G3/{RUN_DIR}/u0-results.json",
-    "u1_baseline": "docs/evidence/G3/u1-full/u0-results.json",
-    "s3_endpoint": "MinIO (S3 API) at 127.0.0.1:9000, bucket typedb-keyspaces",
-    "u2s3_summary": {
-        "executables": len(u2s3["results"]),
-        "green": green,
-        "red": red,
-        "timeout": timeout,
-        "cases_passed": cases["passed"],
-        "cases_failed": cases["failed"],
-        "cases_ignored": cases["ignored"],
-    },
-    "method": "per-target case-profile multiset equality (passed/failed/ignored) against the U1 oracle, joined on target name (the U1 manifest predates the package-id discovery fix); every inequality must carry a documented classification or the comparison fails",
-    "divergent_targets": diffs,
-    "notes": [
-        "test_concept, test_query and test_fail_points rows are re-runs on a quiet machine: the first pass ran under full-workspace build contention (2 spurious timeouts) and predates the four-spelling behaviour-fixture fix in run_u0.py (false reds from unreadable feature paths in exactly the four tests using non-canonical fixture paths).",
-        "test_fail_points requires a raised timeout on every lane (the U1 baseline row itself is a 1800s timeout; U2 measured 2099s green at 3600s; U2S3 2572s at 7200s).",
-        "bench_iam is the one target where U2S3 is strictly closer to the oracle than U2: object-store-resident keyspaces are immune to the deleted-TempDir environment defect that reds it on LocalFS SlateDB.",
-    ],
-}
-unexplained = [d for d in diffs if d["classification"].startswith("UNEXPLAINED")]
-path = REPO / ("docs/evidence/G3/u2s3-vs-oracle-comparison.json" if RUN_DIR == "u2s3-full"
-               else f"docs/evidence/G3/{RUN_DIR}-vs-oracle-comparison.json")
-path.write_text(json.dumps(out, indent=1) + "\n")
-print(json.dumps(out["u2s3_summary"], indent=1))
-print(f"divergent: {len(diffs)}, unexplained: {len(unexplained)}")
-sys.exit(1 if unexplained else 0)
+    diffs = []
+    # UNION of both sides: a target that exists only in the oracle is a
+    # missing execution, which is exactly as much a divergence as a red one.
+    for name in sorted(set(a) | set(b)):
+        run_rows, base_rows = a.get(name), b.get(name)
+        run_profile, base_profile = profiles(run_rows), profiles(base_rows)
+        if run_rows and base_rows and run_profile == base_profile:
+            continue
+        tid = (run_rows or base_rows)[0]["target_id"]
+        exp = EXPLAINED.get(tid)
+        if exp and run_profile == sorted(exp["u2s3"]) and base_profile == sorted(exp["u1"]):
+            classification = f"EXPLAINED: {exp['reason']}"
+        elif exp:
+            classification = (
+                f"UNEXPLAINED - stop the line: a classification exists for this "
+                f"target but declares u2s3={sorted(exp['u2s3'])} u1={sorted(exp['u1'])}, "
+                f"and the measured profiles are u2s3={run_profile} u1={base_profile}")
+        elif not run_rows:
+            classification = ("UNEXPLAINED - stop the line: present in the U1 oracle "
+                              "and ABSENT from this run (the corpus shrank)")
+        else:
+            classification = "UNEXPLAINED - stop the line"
+        diffs.append({
+            "target": tid,
+            "u2s3_profile": " + ".join(run_profile),
+            "u1_profile": " + ".join(base_profile),
+            "u1_timed_out": bool(base_rows and any(x["timed_out"] for x in base_rows)),
+            "classification": classification,
+        })
+
+    unexplained = [d for d in diffs if d["classification"].startswith("UNEXPLAINED")]
+    out = {
+        "claim": "U2S3 (SlateDB keyspaces over an S3-compatible object store - local "
+                 "MinIO standing in for Cloudflare R2 - with file WAL) runs the "
+                 "complete applicable upstream TypeDB test corpus with a pass/fail "
+                 "profile structurally equal to the U1 RocksDB oracle baseline, under "
+                 "the declared corrected expectations for known upstream-defective "
+                 "targets",
+        "u2s3_run": f"docs/evidence/G3/{run_dir}/u0-results.json",
+        "u1_baseline": "docs/evidence/G3/u1-full/u0-results.json",
+        "s3_endpoint": "MinIO (S3 API) at 127.0.0.1:9000, bucket typedb-keyspaces",
+        "u2s3_summary": {
+            "executables": len(u2s3["results"]),
+            "green": green,
+            "red": red,
+            "timeout": timeout,
+            "cases_passed": cases["passed"],
+            "cases_failed": cases["failed"],
+            "cases_ignored": cases["ignored"],
+        },
+        "method": "union-of-both-sides per-target profile multiset equality, where a "
+                  "profile is <passed>/<failed>/<ignored> plus the process outcome "
+                  "(ok | rc=<n> | TIMEOUT), joined on target name (the U1 manifest "
+                  "predates the package-id discovery fix). Every inequality must match "
+                  "a classification that declares the exact expected profiles on both "
+                  "sides, or the comparison fails.",
+        "divergent_targets": diffs,
+        "unexplained_count": len(unexplained),
+    }
+    path = REPO / (f"docs/evidence/G3/u2s3-vs-oracle-comparison.json" if run_dir == "u2s3-full"
+                   else f"docs/evidence/G3/{run_dir}-vs-oracle-comparison.json")
+    path.write_text(json.dumps(out, indent=1) + "\n")
+    print(json.dumps(out["u2s3_summary"], indent=1))
+    print(f"divergent: {len(diffs)}, unexplained: {len(unexplained)}")
+    for d in unexplained:
+        print(f"UNEXPLAINED {d['target']}: u2s3={d['u2s3_profile']} "
+              f"u1={d['u1_profile']}", file=sys.stderr)
+    return 1 if unexplained else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

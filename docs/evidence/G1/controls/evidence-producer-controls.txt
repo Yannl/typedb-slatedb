@@ -1,0 +1,41 @@
+# Executed negative controls for the evidence producers
+
+$ python3 tools/catalog/evidence_mutants.py
+comparator (tools/catalog/compare_u2s3.py)
+  PASS  identical run is accepted
+  PASS  dropped target is rejected
+  PASS  timeout with unchanged counts is rejected
+  PASS  classified target with a different profile is rejected
+  PASS  target absent from the oracle is rejected
+verdict policy (tools/catalog/verdict.py)
+  PASS  expected corpus (ledgered red only) is green
+  PASS  an unledgered failure is red
+  PASS  a timeout is red
+  PASS  an unknown crash rc is red
+  PASS  an unledgered ignore is red
+  PASS  a ledgered target that stops firing is red
+  PASS  a case-bearing target that ran zero cases is red
+  PASS  a ledgered failure with the wrong count is red
+  PASS  a missing required target is red
+  PASS  an unexpected extra target is red
+  PASS  an exclusion for a target that ran anyway is red
+  PASS  an expired ledger entry is reported, not silently honoured
+run_static (tools/catalog/run_static.py)
+  PASS  run_static returns its verdict from main()
+  PASS  run_static treats an empty selection as red
+run_u0 (tools/catalog/run_u0.py)
+  PASS  run_u0 returns its verdict from main()
+  PASS  run_u0 refuses to call a filtered run a corpus verdict
+  PASS  run_u0 measures the toolchain instead of asserting it
+  PASS  run_u0 records the executed tree, not just the outer repo commit
+  PASS  run_u0 checks the denominator against the catalogue
+evidence mutants: 24/24 controls held
+exit=0
+
+$ python3 tools/catalog/completeness.py --self-test
+self-test: PASS (10 negative-control groups + clean-run control)
+exit=0
+
+$ python3 tools/catalog/validate_catalog.py --self-test
+validate_catalog self-test: PASS (7 negative controls + baseline)
+exit=0

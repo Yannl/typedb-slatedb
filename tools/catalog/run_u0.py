@@ -25,6 +25,10 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 TB = REPO / "sources" / "typedb"
 TOOLCHAIN = "+1.93.0"
 DEFAULT_TIMEOUT = 1800
+CATALOG = REPO / "docs" / "evidence" / "G1" / "upstream-test-catalog.json"
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import verdict as verdict_policy  # noqa: E402
 
 ENV_BASE = {
     **os.environ,
@@ -89,6 +93,86 @@ def discover_executables(packages=None):
     ordered = sorted(seen.values(), key=lambda e: (
         any(e["target"].startswith(p) for p in ORDER_LAST), e["package"], e["target"]))
     return ordered
+
+
+def executed_toolchain():
+    """The toolchain string must be MEASURED, never asserted.
+
+    The manifest used to hardcode "rust 1.93.0 parity lane" whatever compiler
+    actually produced the binaries, so a run made on a different rustc filed
+    itself under the pinned lane's name. That is precisely the class of claim
+    this project is not allowed to make.
+    """
+    out = subprocess.run(["cargo", TOOLCHAIN, "--version"],
+                         capture_output=True, text=True)
+    if out.returncode != 0:
+        sys.exit(f"toolchain {TOOLCHAIN} is not installed: {out.stderr.strip()}")
+    rustc = subprocess.run(["rustc", TOOLCHAIN, "--version"],
+                           capture_output=True, text=True).stdout.strip()
+    return {"cargo": out.stdout.strip(), "rustc": rustc,
+            "requested": TOOLCHAIN.lstrip("+")}
+
+
+def executed_tree_identity():
+    """What was actually built, not what the outer repository says it is.
+
+    `sources/typedb` is the PINNED checkout with the fork staged on top of it
+    (tools/fork/stage.py). The outer-repo commit alone therefore does not
+    identify the executed tree: two different fork states stage into the same
+    upstream revision. Record the checkout revision, whether it is dirty, and
+    a digest over the staged working tree so a result row names the bytes
+    that produced it.
+    """
+    def git(*a):
+        return subprocess.run(["git", "-C", str(TB), *a],
+                              capture_output=True, text=True).stdout.strip()
+    status = subprocess.run(["git", "-C", str(TB), "status", "--porcelain"],
+                            capture_output=True, text=True).stdout
+    import hashlib
+    h = hashlib.sha256()
+    # `git status --porcelain` lists exactly the staged-fork delta against the
+    # pinned revision; hashing the delta's contents (not just its names) makes
+    # the identity sensitive to a silent edit of an already-staged file.
+    for line in sorted(status.splitlines()):
+        rel = line[3:].strip().strip('"')
+        h.update(line.encode() + b"\0")
+        f = TB / rel
+        if f.is_file():
+            h.update(f.read_bytes())
+    return {
+        "checkout_revision": git("rev-parse", "HEAD"),
+        "dirty": bool(status.strip()),
+        "staged_delta_files": len([l for l in status.splitlines() if l.strip()]),
+        "staged_delta_sha256": h.hexdigest(),
+    }
+
+
+def required_executable_targets():
+    """Catalogue targets that MUST produce a result row, and the case-bearing
+    subset. The catalogue's own `target_id` (`cargo:<pkg>:<kind>:<target>`) is
+    not the runner's row id (`<pkg>:<target>`); the join is the cargo
+    package/target pair the catalogue already records, and without it the
+    denominator was never checked at all (none of the 106 result ids exists
+    in the catalogue's id space).
+    """
+    if not CATALOG.exists():
+        return None, None
+    cat = json.loads(CATALOG.read_text())
+    leaves = {}
+    for lc in cat["leaf_cases"]:
+        leaves[lc["target_id"]] = leaves.get(lc["target_id"], 0) + 1
+    required, case_bearing = set(), set()
+    for t in cat["targets"]:
+        if t.get("origin") != "CARGO":
+            continue
+        pkg, tgt = t.get("cargo_package"), t.get("cargo_target")
+        if not pkg or not tgt:
+            continue
+        rid = f"{pkg}:{tgt}"
+        required.add(rid)
+        if leaves.get(t["target_id"], 0) > 0:
+            case_bearing.add(rid)
+    return required, case_bearing
 
 
 def sha256_file(p):
@@ -307,14 +391,19 @@ def main():
     # telling the truth about itself).
     profile = os.environ.get("TYPEDB_STORAGE_PROFILE") or "U0/U1 (unset: RocksDB oracle)"
     archive = REPO / "sources" / "assembly-artifacts" / "typedb-all-linux-x86_64.tar.gz"
+    tree = executed_tree_identity()
     run_manifest = {
         "profile": profile,
-        "toolchain": "rust 1.93.0 parity lane",
+        "toolchain": executed_toolchain(),
         "storage_profile_env": os.environ.get("TYPEDB_STORAGE_PROFILE"),
         "assembly_archive_sha256": sha256_file(archive) if archive.exists() else None,
         "repo_commit": subprocess.run(
             ["git", "-C", str(REPO), "rev-parse", "HEAD"],
             capture_output=True, text=True).stdout.strip(),
+        "repo_dirty": bool(subprocess.run(
+            ["git", "-C", str(REPO), "status", "--porcelain"],
+            capture_output=True, text=True).stdout.strip()),
+        "executed_tree": tree,
     }
 
     out_dir = pathlib.Path(args.out).resolve()
@@ -375,6 +464,40 @@ def main():
     (out_dir / "u0-summary.json").write_text(json.dumps(total, indent=2) + "\n")
     print(json.dumps(total, indent=2))
 
+    # ---- terminal verdict (Q-30) -------------------------------------
+    # Until now this producer archived red rows and exited zero, so a failed
+    # corpus was indistinguishable from a passed one to anything that reads
+    # process results. The verdict below is the only exit path.
+    ledger, anomalies = verdict_policy.load_ledger()
+    required, case_bearing = required_executable_targets()
+    selection_complete = not (args.filter or args.skip or args.package)
+    anomalies += verdict_policy.classify_rows(
+        results, ledger,
+        expected_case_bearing=case_bearing if selection_complete else None)
+    denominator_checked = False
+    if selection_complete and required is not None:
+        declared = {e["target_id"]: e.get("reason")
+                    for e in json.loads(CATALOG.read_text()).get("exclusions", [])
+                    if e.get("target_id")}
+        anomalies += verdict_policy.denominator_anomalies(results, required, declared)
+        denominator_checked = True
+    rc = verdict_policy.verdict_exit_code(
+        anomalies, selection_complete, out_dir,
+        extra={"producer": "tools/catalog/run_u0.py",
+               "run": run_manifest,
+               "denominator_checked": denominator_checked,
+               "executables": len(results),
+               "selection": {"filter": args.filter, "skip": args.skip,
+                             "package": args.package}})
+    for a in anomalies:
+        print(f"ANOMALY: {a}", file=sys.stderr)
+    if not selection_complete:
+        print("VERDICT: PARTIAL (a filtered/skipped/package-scoped run can never "
+              "be a corpus verdict)", file=sys.stderr)
+    print(f"VERDICT: {'GREEN' if rc == 0 else 'RED'} "
+          f"({len(anomalies)} anomaly/anomalies)", file=sys.stderr)
+    return rc
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

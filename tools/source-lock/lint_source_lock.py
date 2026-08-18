@@ -97,6 +97,41 @@ def sha256(path: pathlib.Path) -> str:
     return h.hexdigest()
 
 
+def check_staged_fork(dest):
+    """The staged tree must be exactly `locked revision + the locked fork`.
+
+    Returns [] when sources/typedb carries the complete fork patch set and
+    that patch set matches the digest in workspace-lock.json; otherwise the
+    exact reason. Nothing here tolerates a partially staged or hand-edited
+    tree: those are the states in which a run's evidence names bytes nobody
+    can reconstruct.
+    """
+    out = []
+    stage = subprocess.run(
+        [sys.executable, str(REPO / "tools" / "fork" / "stage.py"), "--check"],
+        capture_output=True, text=True)
+    state = stage.stdout.strip().splitlines()[0] if stage.stdout.strip() else "UNKNOWN"
+    if not state.startswith("STAGED:"):
+        out.append(f"TB: sources/typedb is dirty but not cleanly staged - {state}")
+        return out
+    ws_path = REPO / "source-lock" / "workspace-lock.json"
+    if not ws_path.exists():
+        out.append("TB: workspace-lock.json missing - the staged fork has no locked identity")
+        return out
+    locked = json.loads(ws_path.read_text()).get("fork_staging")
+    if not locked:
+        out.append("TB: workspace-lock.json records no fork_staging digest - "
+                   "regenerate it (tools/source-lock/generate_workspace_lock.py)")
+        return out
+    gen = subprocess.run(
+        [sys.executable, str(REPO / "tools" / "source-lock" / "generate_workspace_lock.py"),
+         "--check"], capture_output=True, text=True)
+    if gen.returncode != 0:
+        out.append("TB: staged fork digest does not match workspace-lock.json "
+                   "(see generate_workspace_lock.py --check)")
+    return out
+
+
 def main() -> int:
     failures = []
     lock = json.loads(LOCK.read_text())
@@ -127,7 +162,17 @@ def main() -> int:
         dirty = subprocess.run(["git", "-C", str(d), "status", "--porcelain"],
                                capture_output=True, text=True).stdout.strip()
         if dirty:
-            failures.append(f"{nid}: dirty tree at sources/{dirname}")
+            if nid == "TB":
+                # sources/typedb is legitimately dirty while the fork is
+                # staged over the locked revision (tools/fork/stage.py). A
+                # blanket "dirty tree" failure made the ONLY runnable state
+                # of the test lane permanently red, which trains readers to
+                # ignore the lint. Accept exactly one dirty state - fully
+                # staged, with the fork patch set matching the digest bound
+                # in workspace-lock.json - and fail everything else.
+                failures.extend(check_staged_fork(d))
+            else:
+                failures.append(f"{nid}: dirty tree at sources/{dirname}")
 
     for nid, lock_rels in REGISTRY_NODES.items():
         node = nodes.get(nid)

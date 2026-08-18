@@ -1,0 +1,32 @@
+# Executed negative controls: staged-fork identity in the source-lock lint
+#
+# Before this change the lint failed with a bare "TB: dirty tree at
+# sources/typedb" in the ONLY state the test lane can actually run in (the
+# fork staged over the locked revision), and the fork patch set itself had no
+# locked identity at all: any edit to a staged file produced a
+# differently-behaving tree under an unchanged lock.
+
+$ python3 tools/source-lock/lint_source_lock.py          # staged, in-lock
+SOURCE-LOCK LINT: PASS (9 git nodes, 2 artifacts, 23 lock nodes)
+exit=0
+
+# MUTANT A - a hand edit to a staged file in sources/typedb (a tree that is
+# neither upstream nor the fork)
+$ echo "// mutant" >> sources/typedb/storage/keyspace/slate.rs
+$ python3 tools/source-lock/lint_source_lock.py
+SOURCE-LOCK LINT: FAIL
+  - TB: sources/typedb is dirty but not cleanly staged - MIXED: 1 fork patches unstaged, 0 stale staged files, 23 paths diverge from the locked revision
+exit=1
+# restored -> PASS
+
+# MUTANT B - an edit to fork/typedb, staged, without regenerating the lock
+# (the executed tree changes while the lock claims it did not)
+$ echo "// fork mutant" >> fork/typedb/storage/keyspace/slate.rs && python3 tools/fork/stage.py
+$ python3 tools/source-lock/lint_source_lock.py
+SOURCE-LOCK LINT: FAIL
+  - TB: staged fork digest does not match workspace-lock.json (see generate_workspace_lock.py --check)
+  - workspace-lock: workspace-lock DRIFT in 'fork_staging':
+    now:       staged_tree_sha256 a6d3505755b16b30ee6bddcc35fd5e84708bbfb05ff09ac5415aff85cfbce699
+    committed: staged_tree_sha256 dbcab06c9da32ef129db5bf0faf6d406f7685743b99246ab59008f939a53b726
+exit=1
+# restored -> PASS

@@ -1,0 +1,124 @@
+name: gates
+
+# Q-21: nothing enforced the gates this repository asserts. Every check below
+# was executed by hand before it was written down here, and every one of them
+# fails closed - that is the precondition that made a root workflow worth
+# having at all. A producer that archives red rows and exits zero cannot be
+# wired into CI, because CI would record it green.
+#
+# What is deliberately NOT here: the full U2S3 corpus. It needs a ~9 GB Rust
+# build, a running MinIO and roughly two hours, and its evidence is committed
+# under docs/evidence/G3/ with a machine-checkable verdict.json. CI verifies
+# the TRUTH PLANE - the tools, the locks, the catalogue and the control plane -
+# and the corpus is verified by its own archived verdict.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  truth-plane:
+    # The checkers' own negative controls, and the catalogue against the
+    # normative contract schema. No checkout of the pinned sources is needed:
+    # these validate committed artefacts and the tools themselves.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: evidence producers kill their own mutants
+        run: python3 tools/catalog/evidence_mutants.py
+      - name: completeness negative controls
+        run: python3 tools/catalog/completeness.py --self-test
+      - name: catalogue validator negative controls
+        run: python3 tools/catalog/validate_catalog.py --self-test
+      - name: catalogue conforms to the normative v14 contract schema
+        run: python3 tools/catalog/validate_catalog.py
+      - name: no delete authority before G13
+        # the refusal is the assertion: this MUST exit nonzero
+        run: |
+          if python3 tools/maintenance/s3_gc.py --delete probe-materialization; then
+            echo "s3_gc.py --delete did not refuse; inv. 84 is not enforced" >&2
+            exit 1
+          fi
+
+  source-identity:
+    # The locks, against a real materialisation of the pinned source graph.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: materialise the pinned source graph
+        run: python3 tools/source-lock/materialize_sources.py
+      - name: source lock
+        run: python3 tools/source-lock/lint_source_lock.py
+      - name: workspace lock has not drifted
+        run: python3 tools/source-lock/generate_workspace_lock.py --check
+      - name: the SlateDB fork reconstructs to its recorded digest
+        run: python3 tools/fork/materialize_slatedb.py --check
+
+  control-plane:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: control-plane
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - name: typecheck
+        run: npx tsc --noEmit
+      - name: controller core, state, journal and capability suites
+        run: |
+          node --test --experimental-strip-types \
+            src/controller/core/controller-core.test.ts \
+            src/controller/core/controller-state.test.ts \
+            src/controller/core/journal.test.ts \
+            src/controller/core/capability.test.ts
+      - name: the standing outbox mutant is still killed
+        # an expected-red run: if this passes, the mutant stopped being caught
+        run: |
+          if CONTROLLER_MUTANT=drop-outbox-event node --test --experimental-strip-types \
+               src/controller/core/controller-core.test.ts; then
+            echo "the drop-outbox mutant was NOT caught" >&2
+            exit 1
+          fi
+      - name: workerd lane
+        run: npx vitest run
+
+  storage:
+    # The Rust lanes that fit in a CI budget: the pure protocol models and the
+    # storage library's own unit tests (which include the SlateDB adapter's
+    # read-contract, materialisation, posture, memo and retry controls). The
+    # full corpus is not here - see the header.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@1.93.0
+      - name: native prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler cmake pkg-config libclang-dev
+      - name: materialise and stage the fork
+        run: |
+          python3 tools/source-lock/materialize_sources.py
+          python3 tools/fork/stage.py
+      - name: protocol models
+        run: cargo +1.93.0 test --manifest-path tools/Cargo.toml -p protocol-models --locked
+      - name: storage library
+        working-directory: sources/typedb
+        run: cargo +1.93.0 test -p storage --lib --locked

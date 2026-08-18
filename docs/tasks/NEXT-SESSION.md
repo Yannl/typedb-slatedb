@@ -76,11 +76,11 @@ minutes in on a missing `protoc`. Doctor reports that in one second.
    dependency — it is post-G2 only where the playbook says so, and the
    response document's F7/F8 rows itemise it.
 
-3. **Q-08 probe harness.** Build the P-R2/P-DO/P-CTR/P-WORKER disposable
-   probe applications and the evidence validator (manifest-driven,
-   harness-omission mutants). Their *execution* is credential-blocked, but
-   the directive is explicit that the harness must exist before requesting
-   SI-G0-3.
+3. **Q-08 probe harness: BUILT (2026-08-18).** All 14 normative IDs exist
+   with fail-closed aggregation, sealed evidence bundles and an 18-control
+   self-test (`control-plane/probes/`, CI-enforced). Their *execution*
+   remains credential-blocked (SI-G0-3); the ledger's G2 entry also needs
+   the owner-approved envelope before any live run.
 
 4. **Q-19 / Q-12 streaming remainder.** Streaming/backpressure framing for
    payload and scan surfaces instead of accumulated base64; whole-object

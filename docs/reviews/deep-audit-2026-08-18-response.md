@@ -63,17 +63,23 @@ S-P1-01 (get_prev terminal fail-stop; cursor seek fallback only for the
 documented contract error kinds, everything else poisons), S-P1-04
 (injective non-UTF-8 object prefix encoding).
 
-## Storage findings - part 2 and PR4b (in progress at time of writing)
+## Storage findings - part 2 (PR5 remainder) and PR4b
 
-S-P0-01 (bounded SlateDB uploader via the fork's patch series), S-P0-02
-(bounded post-WAL waits), S-P0-06 (typed backend seam), S-P0-07/08
-(ADR-0012 candidate enforcement/TOCTOU), S-P0-09/S-P1-02-Rust (checked
-sequence exhaustion), and C-P0-01 (Rust L1 client rewritten to the current
-protocol, proven on real workerd) are being implemented in this same
-change series; their terminal status is recorded in the ledger's PR4b/PR5
-actions and the commits that follow `864e727` on this branch. If any of
-them lands short of CLOSED, the ledger - not this paragraph - is the
-authority on what remains.
+| Finding | Status | Where |
+|---|---|---|
+| C-P0-01 Rust client protocol drift | **CLOSED** | `l1_client.rs` rewritten to the deployed protocol (credentialed issuance, single-request capabilities, canonical content-addressed keys, server-derived request digest, canonical-decimal u64, snapshot-bound scans, typed errors); shared 22-check suite executed 22/22 against real workerd; 3 mutants killed (`99038fc`). Wire types stay hand-mirrored (no codegen) - kept honest by contract tests, recorded. |
+| S-P0-01 unbounded SST upload retry | **CLOSED** | slatedb patch `0002-bounded-l0-sst-upload-retry.patch`: shutdown escape decoupled from wal_enabled; non-transient errors terminal on first sight; transient errors bounded (8 attempts) then typed L0SstUploadRetriesExhausted fails the flush loudly. Bound proven against a permanently failing store with WAL off; upstream-loop mutant killed; provenance restamped and `--check` byte-identical. |
+| S-P0-02 post-WAL raw recv()/spins | **CLOSED** | All four sites bounded under the EXISTING OD-002/OD-006 policy constants (no new policy invented): typed SyncAcknowledgementTimeout / PredecessorWaitTimeout, threaded so a validation infrastructure error is never an abort verdict; 6 tests, 2 mutants killed. |
+| S-P0-06 product seam | **CLOSED** (local), registry OPEN | Typed `StorageBackend` chosen at the constructor (no global); one profile→backend decision point; U3/U4 are typed BackendNotYetAvailable refusals before any engine touch; silent-fallback mutant killed. The controller-owned per-database backend registry is post-G2. |
+| S-P0-07 Candidate A helper-only proof | **CLOSED** | Test-only patch `0003`: the ENFORCED public `Db::builder` path proves exact epoch storage, stale-replay Fenced refusal with no write, MAX-boundary fencing (no wrap-over), and the executed `external_epoch_required` refusal. The audit's named surviving mutant (builder field ignored) now kills 3 tests. |
+| S-P0-08 Candidate B TOCTOU | **CLOSED** (spike scope) | The gate is one atomic conditional operation: admitted publications hold the authority read guard across the provider mutation; rotation takes the write guard; multipart complete() re-gated. Concurrent park-inside-provider test + 2 mutants killed. The spike still models the provider in-process (recorded). |
+| S-P0-09 / S-P1-02 (Rust) sequence wrap | **CLOSED** | Checked arithmetic end to end: WAL increment CAS with typed SequenceExhausted and no mutation on exhaustion; checkpoint replay successors typed; spike rotation typed; 10 boundary tests at u64::MAX, 3 mutants killed. |
+
+Totals for part 2: storage lib 55 (11 new), durability 20 (8 new), slatedb
+fork uploader 13 / builder 11 / manifest 34 (full fork lib 2003 passed with
+8 pre-existing baseline-equal failures in `db_cache_manager`, verified
+identical on the unpatched tree), spike 7; ten executed mutants, all
+killed and restored.
 
 ## What this response deliberately does not do
 

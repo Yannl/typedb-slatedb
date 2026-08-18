@@ -118,6 +118,19 @@ export const SCHEMA = `
 
 export const U64_MAX = (1n << 64n) - 1n;
 
+/** Batch envelope (directive 12.6): a batch is one authority envelope with
+ *  an id and a canonical digest, not an unnamed list of requests. */
+export interface BatchEnvelope {
+  batchOperationId: string;
+  /** optional and only ever CHECKED against the server's computation */
+  batchDigest?: string;
+}
+
+/** K and byte ceilings for one batch. Both are containment defaults, not
+ *  approved SLOs (docs/owner-decisions.json). */
+export const MAX_BATCH_MEMBERS = 64;
+export const MAX_BATCH_BYTES = 8 * 1024 * 1024;
+
 /** The control outbox is per DATABASE, not per generation: control events
  *  outlive the generation that produced them. Its usage counter therefore
  *  needs a generation slot that no real generation can occupy. */
@@ -184,7 +197,14 @@ export type TypedErr =
   | { ok: false; error: "STATUS_CONFLICT" }
   | { ok: false; error: "SESSION_FENCED" }
   | { ok: false; error: "SESSION_UNKNOWN" }
-  | { ok: false; error: "NOT_FOUND" };
+  | { ok: false; error: "NOT_FOUND" }
+  // batch envelope (directive 12.6)
+  | { ok: false; error: "EMPTY_BATCH" }
+  | { ok: false; error: "BATCH_ENVELOPE_REQUIRED" }
+  | { ok: false; error: "BATCH_TOO_MANY_MEMBERS"; limit: number }
+  | { ok: false; error: "BATCH_TOO_MANY_BYTES"; limit: number }
+  | { ok: false; error: "BATCH_DIGEST_MISMATCH" }
+  | { ok: false; error: "BATCH_DIGEST_CONFLICT" };
 
 export interface FinalizeRequest {
   databaseId: string;
@@ -354,6 +374,25 @@ export class ControllerCore {
         }
       },
     },
+    {
+      version: 6,
+      up: (sql) => {
+        // Directive 12.6: /wal/finalize-batch was deployable while the v16
+        // batch schema was absent - no BatchOperationId, no canonical batch
+        // digest, no K/byte limits, and no way to answer a replayed batch
+        // with its original results. This is that identity.
+        sql.exec(`CREATE TABLE IF NOT EXISTS batch_operations(
+          database_id TEXT NOT NULL,
+          generation INTEGER NOT NULL,
+          batch_operation_id TEXT NOT NULL,
+          batch_digest TEXT NOT NULL,
+          member_count INTEGER NOT NULL,
+          member_operation_ids TEXT NOT NULL,
+          control_seq BLOB,
+          PRIMARY KEY(database_id, generation, batch_operation_id)
+        )`);
+      },
+    },
   ];
 
   /**
@@ -485,7 +524,51 @@ export class ControllerCore {
   }
 
   /** Batch candidate (J.4): N records finalised in ONE transaction - all or nothing. */
-  finalizeBatch(reqs: FinalizeRequest[]): FinalizeResult[] | TypedErr {
+  /**
+   * Directive 12.6: a batch is ONE authority envelope with an identity.
+   *
+   * `/wal/finalize-batch` was deployable while the v16 batch schema was
+   * absent: no `BatchOperationId`, no canonical batch digest, no K/byte
+   * limits, and - the part that actually bites - no way to answer a replayed
+   * batch. A client whose response was lost had to either re-send (and get
+   * per-member replays, which works only because members carry their own
+   * ids) or guess. The envelope makes the batch itself replayable and makes
+   * "the same id with different members" a permanent conflict rather than a
+   * second, different batch under a name that was already used.
+   *
+   * The digest is computed here from the members' own canonical digests, in
+   * order; a caller-supplied `batchDigest` is only ever checked against it
+   * (Q-18's rule, applied to the envelope).
+   */
+  finalizeBatch(reqs: FinalizeRequest[], envelope?: BatchEnvelope): FinalizeResult[] | TypedErr {
+    if (reqs.length === 0) return { ok: false as const, error: "EMPTY_BATCH" as const };
+    if (reqs.length > MAX_BATCH_MEMBERS) {
+      return { ok: false as const, error: "BATCH_TOO_MANY_MEMBERS" as const, limit: MAX_BATCH_MEMBERS };
+    }
+    const declaredBytes = reqs.reduce((n, r) => n + (Number(r.payloadLength) || 0), 0);
+    if (declaredBytes > MAX_BATCH_BYTES) {
+      return { ok: false as const, error: "BATCH_TOO_MANY_BYTES" as const, limit: MAX_BATCH_BYTES };
+    }
+    if (envelope === undefined) {
+      // A batch with no identity cannot be replayed, conflicted or audited.
+      // Refusing is the release-baseline posture the directive asks for:
+      // one-record finalization always works, batching needs its envelope.
+      return { ok: false as const, error: "BATCH_ENVELOPE_REQUIRED" as const };
+    }
+    const { databaseId, generation } = reqs[0];
+    const computedDigest = this.batchDigest(envelope.batchOperationId, reqs);
+    if (envelope.batchDigest !== undefined && envelope.batchDigest !== computedDigest) {
+      return { ok: false as const, error: "BATCH_DIGEST_MISMATCH" as const };
+    }
+    const prior = this.sql.exec(
+      `SELECT batch_digest, member_operation_ids FROM batch_operations
+       WHERE database_id=? AND generation=? AND batch_operation_id=?`,
+      databaseId, generation, envelope.batchOperationId,
+    );
+    if (prior.length && String(prior[0].batch_digest) !== computedDigest) {
+      // one batch id, one set of members, forever
+      return { ok: false as const, error: "BATCH_DIGEST_CONFLICT" as const };
+    }
     try {
       return this.sql.transaction(() => {
         const results: FinalizeResult[] = [];
@@ -494,12 +577,31 @@ export class ControllerCore {
           if (!r.ok) throw new BatchAbort(r); // rollback of every prior record
           results.push(r);
         }
+        this.sql.exec(
+          `INSERT OR IGNORE INTO batch_operations(database_id, generation, batch_operation_id,
+             batch_digest, member_count, member_operation_ids, control_seq)
+           VALUES (?,?,?,?,?,?,?)`,
+          databaseId, generation, envelope.batchOperationId, computedDigest, reqs.length,
+          JSON.stringify(reqs.map((r) => r.operationId)),
+          results.length ? u64Blob(results[0].ok ? results[0].controlSeq : 0n, "control_seq") : null,
+        );
         return results;
       });
     } catch (e) {
       if (e instanceof BatchAbort) return e.result;
       throw e;
     }
+  }
+
+  /** Canonical batch digest: the ordered members' own canonical request
+   *  digests under the batch id, in a domain-separated envelope. Reordering
+   *  the members is a DIFFERENT batch - order is part of the contract. */
+  private batchDigest(batchOperationId: string, reqs: FinalizeRequest[]): string {
+    return hex(sha256(utf8(canonicalJson({
+      domain: "wal-finalize-batch/v1",
+      batchOperationId,
+      members: reqs.map((r) => r.requestDigest),
+    }))));
   }
 
   /** One finalisation step; assumes the caller holds the open transaction. */

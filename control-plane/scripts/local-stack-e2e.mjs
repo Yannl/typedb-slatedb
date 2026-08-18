@@ -380,7 +380,7 @@ const batchA = Buffer.from("batch-record-A");
 const batchB = Buffer.from("batch-record-B");
 const upA = await uploadPayload(batchA);
 const upB = await uploadPayload(batchB);
-const batchOk = await api("POST", "/wal/finalize-batch", { requests: [
+const batchOk = await api("POST", "/wal/finalize-batch", { batchOperationId: "bo-1", requests: [
   { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-1",
     payloadKey: upA.key, payloadDigest: upA.digest, payloadLength: batchA.length },
   { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-2",
@@ -389,7 +389,7 @@ const batchOk = await api("POST", "/wal/finalize-batch", { requests: [
 check("batch finalize allocates contiguously",
   batchOk.body.ok === true && JSON.stringify(batchOk.body.results.map((r) => r.appendLsn)) === JSON.stringify(["4", "5"]),
   JSON.stringify(batchOk.body));
-const batchAborted = await api("POST", "/wal/finalize-batch", { requests: [
+const batchAborted = await api("POST", "/wal/finalize-batch", { batchOperationId: "bo-2", requests: [
   { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-3",
     payloadKey: upA.key, payloadDigest: upA.digest, payloadLength: batchA.length },
   { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-4",
@@ -401,6 +401,23 @@ check("failing member aborts the whole batch",
 const auditAfterBatch = await api("GET", `/wal/${DB}/${GEN}/audit`);
 check("aborted batch allocated nothing",
   auditAfterBatch.body.contiguous === true && auditAfterBatch.body.count === 6, JSON.stringify(auditAfterBatch.body));
+
+// 12.6: a batch without its envelope is refused, and one batch id may never
+// name a different set of members
+const batchUnnamed = await api("POST", "/wal/finalize-batch", { requests: [
+  { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-5",
+    payloadKey: upA.key, payloadDigest: upA.digest, payloadLength: batchA.length },
+] });
+check("a batch without an envelope is refused",
+  batchUnnamed.status === 400 && batchUnnamed.body.error === "BATCH_ENVELOPE_REQUIRED",
+  JSON.stringify(batchUnnamed.body));
+const batchReused = await api("POST", "/wal/finalize-batch", { batchOperationId: "bo-1", requests: [
+  { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-6",
+    payloadKey: upA.key, payloadDigest: upA.digest, payloadLength: batchA.length },
+] });
+check("the same batch id with different members is a permanent conflict",
+  batchReused.status === 409 && batchReused.body.error === "BATCH_DIGEST_CONFLICT",
+  JSON.stringify(batchReused.body));
 
 // 15. F9 capability refusal matrix - every denial is typed, nothing reaches
 // the authority or the store

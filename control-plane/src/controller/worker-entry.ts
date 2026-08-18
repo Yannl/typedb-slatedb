@@ -249,7 +249,8 @@ export default {
         setBudgets(db: string, budgets: object, session: string):
           Promise<{ ok: true } | { ok: false; error: string }>;
         finalizeWalRecord(req: object): Promise<Record<string, unknown>>;
-        finalizeBatch(reqs: object[]): Promise<Record<string, unknown>[] | Record<string, unknown>>;
+        finalizeBatch(reqs: object[], envelope?: object):
+          Promise<Record<string, unknown>[] | Record<string, unknown>>;
         exactLookup(db: string, generation: number, lsn: bigint): Promise<Record<string, unknown>>;
         auditContiguity(db: string, generation: number): Promise<Record<string, unknown>>;
         head(db: string, generation: number): Promise<Record<string, unknown>>;
@@ -456,12 +457,25 @@ export default {
     }
 
     if (request.method === "POST" && path === "/wal/finalize-batch") {
+      const tooLargeBatch = refuseOversizedBody(request);
+      if (tooLargeBatch) return tooLargeBatch;
       const body = (await request.json()) as {
+        batchOperationId?: unknown; batchDigest?: unknown;
         requests: ({ databaseId: string; payloadKey: string; payloadDigest: string; payloadLength: number }
           & Record<string, unknown>)[];
       };
       if (!Array.isArray(body.requests) || body.requests.length === 0) {
         return json({ ok: false, error: "EMPTY_BATCH" }, 400);
+      }
+      // directive 12.6: a batch is ONE authority envelope with an identity.
+      // Without it the batch cannot be replayed, conflicted or audited, and
+      // the release baseline (one-record finalization) always remains open.
+      if (typeof body.batchOperationId !== "string" || body.batchOperationId.length === 0) {
+        return json({ ok: false, error: "BATCH_ENVELOPE_REQUIRED",
+                      hint: "batchOperationId is required; batchDigest is optional and only checked" }, 400);
+      }
+      if (body.batchDigest !== undefined && typeof body.batchDigest !== "string") {
+        return json({ ok: false, error: "BATCH_DIGEST_MISMATCH" }, 400);
       }
       const databaseId = body.requests[0].databaseId;
       const batchSession = String((body.requests[0] as { startupSessionId?: unknown }).startupSessionId ?? "");
@@ -497,7 +511,10 @@ export default {
         }
         digested.push({ ...req, requestDigest: computed });
       }
-      const result = await stubFor(databaseId).finalizeBatch(digested);
+      const result = await stubFor(databaseId).finalizeBatch(digested, {
+        batchOperationId: body.batchOperationId,
+        ...(body.batchDigest !== undefined ? { batchDigest: body.batchDigest } : {}),
+      });
       // all-or-nothing: an array is N successes; a single typed error aborted
       // (and rolled back) the whole batch
       if (Array.isArray(result)) return json({ ok: true, results: result });

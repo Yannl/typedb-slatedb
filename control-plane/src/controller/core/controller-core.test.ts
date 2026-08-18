@@ -8,7 +8,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { ControllerCore, u64Blob, type FinalizeRequest, type SyncSql } from "./procedures.ts";
+import {
+  ControllerCore, MAX_BATCH_BYTES, MAX_BATCH_MEMBERS, u64Blob,
+  type FinalizeRequest, type SyncSql,
+} from "./procedures.ts";
 import { replay, type WalRecordEvent } from "./reducer.ts";
 
 const MUTANT = process.env.CONTROLLER_MUTANT ?? "";
@@ -191,7 +194,7 @@ test("batch candidate: all-or-nothing equivalence with per-record finalisation",
   const triple2 = [req(), req({ sequencingKind: "UNSEQUENCED" }), req()];
 
   for (const r of triple1) assert.ok(perRecord.finalizeWalRecord(r).ok);
-  const batchResult = batched.finalizeBatch(triple2);
+  const batchResult = batched.finalizeBatch(triple2, { batchOperationId: "batch-triple" });
   assert.ok(Array.isArray(batchResult));
   assert.deepEqual(
     batchResult.map((r) => (r.ok ? [r.appendLsn, r.typeSequence] : r)),
@@ -202,7 +205,7 @@ test("batch candidate: all-or-nothing equivalence with per-record finalisation",
   // failing member aborts the whole batch: nothing allocated
   const failing = boot();
   failing.setBudgets("db1", { maxUnpublishedOutbox: 100, maxPayloadLength: 10, maxTailRecords: 100 }, "sess-1");
-  const aborted = failing.finalizeBatch([req({ payloadLength: 5 }), req({ payloadLength: 50 })]);
+  const aborted = failing.finalizeBatch([req({ payloadLength: 5 }), req({ payloadLength: 50 })], { batchOperationId: "batch-1" });
   assert.ok(!Array.isArray(aborted) && aborted.error === "ADMISSION_REJECTED_PAYLOAD_LENGTH");
   assert.equal(failing.auditContiguity("db1", 3).count, 0);
 });
@@ -657,7 +660,7 @@ test("Q-17: maintained usage counters agree with the history they replace, on ev
   for (let i = 0; i < 5; i++) assert.ok(core.finalizeWalRecord(req()).ok);
   agree("finalisations");
 
-  const batched = core.finalizeBatch([req(), req()]);
+  const batched = core.finalizeBatch([req(), req()], { batchOperationId: "batch-2" });
   assert.ok(Array.isArray(batched) && batched.length === 2);
   agree("a batch");
 
@@ -724,4 +727,46 @@ test("Q-12: the iteration cut is server-owned - a snapshot id cannot be forged, 
   const reopened = core.openIterator("db1", 3);
   assert.ok(core.resolveSnapshot("db1", 3, reopened.snapshotId).ok);
   assert.notEqual(reopened.snapshotId, opened.snapshotId);
+});
+
+test("12.6: a batch is one authority envelope with an identity, a digest and limits", () => {
+  const core = boot();
+  const members = [req(), req()];
+
+  // an unnamed batch is refused: it cannot be replayed, conflicted or
+  // audited, and one-record finalization always remains open
+  assert.deepEqual(core.finalizeBatch(members), { ok: false, error: "BATCH_ENVELOPE_REQUIRED" });
+  assert.deepEqual(core.finalizeBatch([], { batchOperationId: "b" }),
+    { ok: false, error: "EMPTY_BATCH" });
+
+  // K and byte ceilings, before any allocation
+  const many = Array.from({ length: MAX_BATCH_MEMBERS + 1 }, () => req());
+  const tooMany = core.finalizeBatch(many, { batchOperationId: "b-many" });
+  assert.ok(!Array.isArray(tooMany) && tooMany.error === "BATCH_TOO_MANY_MEMBERS");
+  const tooBig = core.finalizeBatch(
+    [req({ payloadLength: MAX_BATCH_BYTES }), req({ payloadLength: 1 })],
+    { batchOperationId: "b-big" });
+  assert.ok(!Array.isArray(tooBig) && tooBig.error === "BATCH_TOO_MANY_BYTES");
+  assert.equal(core.auditContiguity("db1", 3).count, 0, "a refused batch allocates nothing");
+
+  // the digest is computed from the ordered members; a supplied one is only
+  // ever CHECKED against it (Q-18's rule, applied to the envelope)
+  const wrongDigest = core.finalizeBatch(members,
+    { batchOperationId: "b-1", batchDigest: "f".repeat(64) });
+  assert.ok(!Array.isArray(wrongDigest) && wrongDigest.error === "BATCH_DIGEST_MISMATCH");
+
+  const ok = core.finalizeBatch(members, { batchOperationId: "b-1" });
+  assert.ok(Array.isArray(ok) && ok.length === 2);
+
+  // one batch id, one set of members, forever: the same id with DIFFERENT
+  // members is a permanent conflict, not a second batch under a used name
+  const different = core.finalizeBatch([req(), req()], { batchOperationId: "b-1" });
+  assert.ok(!Array.isArray(different) && different.error === "BATCH_DIGEST_CONFLICT");
+
+  // ...and the members that conflict allocated nothing
+  assert.equal(core.auditContiguity("db1", 3).count, 2);
+
+  // member ORDER is part of the identity
+  const reversed = core.finalizeBatch([members[1], members[0]], { batchOperationId: "b-1" });
+  assert.ok(!Array.isArray(reversed) && reversed.error === "BATCH_DIGEST_CONFLICT");
 });

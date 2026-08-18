@@ -107,8 +107,10 @@ export class DatabaseControllerDO extends DurableObject {
     return this.core().finalizeWalRecord(req);
   }
 
-  finalizeBatch(reqs: FinalizeRequest[]): ReturnType<ControllerCore["finalizeBatch"]> {
-    return this.core().finalizeBatch(reqs);
+  finalizeBatch(
+    reqs: FinalizeRequest[], envelope?: Parameters<ControllerCore["finalizeBatch"]>[1],
+  ): ReturnType<ControllerCore["finalizeBatch"]> {
+    return this.core().finalizeBatch(reqs, envelope);
   }
 
   registerSession(databaseId: string, generation: number, startupSessionId: string): void {

@@ -143,3 +143,24 @@ $ node scripts/local-stack-e2e.mjs               L1 LOCAL STACK E2E: ALL PASS
   PASS  a snapshot id from another generation is refused    {"error":"INVALID_SNAPSHOT_ID"}
   PASS  a continuation outside its own snapshot is a typed refusal, not an empty page
         {"error":"CONTINUATION_OUTSIDE_SNAPSHOT","fromLsn":"9","throughLsn":"3"}
+
+## 12.6 - the batch is one authority envelope with an identity
+/wal/finalize-batch was deployable while the v16 batch schema was absent: no
+BatchOperationId, no canonical batch digest, no K/byte limits, and no way to
+answer a replayed batch. The envelope is now required (an unnamed batch is
+refused, one-record finalization always remains open), the digest is computed
+server-side from the ordered members' own canonical request digests, a
+supplied digest is only ever CHECKED, and one batch id may never name a
+different set of members - including a reordering.
+
+$ node --test ... controller-core.test.ts      # pass 29 / # fail 0
+  new: "12.6: a batch is one authority envelope with an identity, a digest and limits"
+       covers: unnamed batch, empty batch, K ceiling, byte ceiling
+       (allocating nothing), wrong supplied digest, success, same id with
+       different members, same id with reordered members.
+
+$ node scripts/local-stack-e2e.mjs             L1 LOCAL STACK E2E: ALL PASS
+  PASS  a batch without an envelope is refused
+        {"error":"BATCH_ENVELOPE_REQUIRED"}
+  PASS  the same batch id with different members is a permanent conflict
+        {"error":"BATCH_DIGEST_CONFLICT"}

@@ -1,0 +1,21 @@
+# ADR-0012 Candidate B spike: a provider-enforced publication firewall over
+# STOCK crates.io SlateDB (no fork, no patches). Explicitly NON-PRODUCTION -
+# this crate exists so the two-candidate fork decision has both sides
+# measured (directive J.3/D4, AC-FORK-SPIKE). It is deliberately outside
+# every workspace: nothing production links it.
+[package]
+name = "publication-firewall-spike"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# the exact pin the U2 lanes consume (fork/typedb Cargo.toml TB-P7);
+# object_store comes through slatedb's re-export so versions cannot skew
+slatedb = { version = "=0.15.0", default-features = false, features = ["wal_disable"] }
+async-trait = "0.1"
+futures = "0.3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+[lib]
+path = "src/lib.rs"

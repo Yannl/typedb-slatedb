@@ -15,4 +15,5 @@
 pub mod command_model;
 pub mod fencing_model;
 pub mod journal_model;
+pub mod resolver_model;
 pub mod wal_model;

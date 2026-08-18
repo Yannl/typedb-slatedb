@@ -55,6 +55,50 @@ defects, audit F12).
 5. No observe-and-bind fallback ships. This is a named release-gate stop
    condition.
 
+## The two-candidate spike (J.3/D4), both sides measured
+
+The directive forbids deciding the fork question by shortcut: both
+candidates had to be built and measured. They now are.
+
+**Candidate A — soft fork carrying exact external epochs.** Measured in
+`docs/evidence/G3/slatedb-external-epoch-spike.json`: a five-file patch
+series over the digest-pinned crate (~90 non-test lines — `slatedb-txn-obj`
+0.15.0 already exports `FenceableTransactionalObject::init_with_epoch`
+publicly, so the fork is wiring, not mechanism), qualifying matrix 34/34,
+observe-and-bind mutant killed by three of five new cases. Satisfies
+inv. 78–80 exactly; publications carry controller-minted epochs; rejected
+publications get typed `Fenced` outcomes.
+
+**Candidate B — publication firewall over stock SlateDB.** Measured in
+`docs/evidence/G3/slatedb-publication-firewall-spike.json` (crate:
+`spikes/publication-firewall`, workspace-external, non-production): an
+`ObjectStore` wrapper bound to a controller-rotated credential domain gates
+every manifest-path mutation; 4/4 qualifying cases (full-cycle coverage,
+pause-fence-resume, stale reopen, the vocabulary limit) and the gate-removal
+mutant killed by both fencing cases. Measured findings:
+
+- **Coverage advantage:** the firewall sits on the only channel to storage,
+  so it gates *every* publication path — including the `Admin`/
+  `StoredManifest` checkpoint paths that bypass upstream fencing types,
+  which Candidate A must patch one by one.
+- **Structural gap, permanent:** the firewall decides *who* may publish;
+  the epoch *numbers* remain internally allocated. No wrapper of this shape
+  can satisfy inv. 78–80, and adopting the store's numbering is the
+  prohibited observe-and-bind.
+- **Failure surface:** a fenced writer observes an opaque store error that
+  upstream cannot distinguish from an outage; and under the stock unbounded
+  retry default the first spike run HUNG on the refusal (the Q-13 hazard,
+  observed live) — Candidate B fails closed only under a bounded-retry
+  posture, where Candidate A's typed `Fenced` is terminal by construction.
+
+**Resolution of the comparison:** the candidates compose rather than
+compete. Candidate A remains the fencing mechanism of record (it is the
+only one that can satisfy inv. 78–80); Candidate B's provider-enforced
+credential rotation is adopted as the storage-side backstop underneath it
+(defense in depth: server-side revocation holds even if the process is
+compromised). This section records the measured comparison; production
+integration of either half stays behind the existing gates.
+
 ## Consequences
 
 - ADR-0001's consume-only rule survives where it earns its keep (local

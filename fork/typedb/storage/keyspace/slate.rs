@@ -393,14 +393,92 @@ fn s3_config() -> Result<&'static S3Config, slatedb::Error> {
         .map_err(|message| slatedb::Error::unavailable(message.clone()))
 }
 
-/// Optional disk-cache budget: unset, unparsable or 0 disables the cache
-/// (misconfiguration degrades to remote reads, never to a wrong cache).
-fn s3_cache_bytes() -> Option<usize> {
-    let raw = std::env::var(S3_CACHE_BYTES_ENV).ok()?;
-    match raw.trim().parse::<usize>() {
-        Ok(0) | Err(_) => None,
-        Ok(bytes) => Some(bytes),
+/// O-01: the remote key-count memo TTL. A metrics scrape re-scanning the whole
+/// authoritative store on every ~15s poll is an availability hazard on the
+/// remote lane; inside this window the memo answers with zero remote I/O.
+const REMOTE_KEY_COUNT_TTL: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// O-01: a misconfigured cache budget must be a TYPED startup refusal, not a
+/// silent fallback that disables the intended protection. This distinguishes
+/// three cases the old `s3_cache_bytes` collapsed into `None`:
+/// - unset            -> `Ok(None)` (cache deliberately off);
+/// - explicit `0`     -> `Ok(None)` (operator explicitly disabled it);
+/// - anything else bad -> `Err`     (was silently `None` — the exact "invalid
+///   config silently disables protection" defect).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum CacheConfigError {
+    Invalid { value: String },
+}
+
+pub(super) fn validate_cache_config(raw: Option<&str>) -> Result<Option<usize>, CacheConfigError> {
+    match raw {
+        None => Ok(None),
+        Some(text) => match text.trim().parse::<usize>() {
+            Ok(0) => Ok(None),
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(_) => Err(CacheConfigError::Invalid { value: text.to_owned() }),
+        },
     }
+}
+
+/// Optional disk-cache budget, validated at startup (O-01). Unset or an explicit
+/// `0` disables the cache; a set-but-invalid value is a typed refusal so a
+/// fat-fingered budget cannot silently degrade every read to a remote round trip
+/// while the operator believes the cache is on.
+fn s3_cache_bytes() -> Result<Option<usize>, CacheConfigError> {
+    let raw = std::env::var(S3_CACHE_BYTES_ENV).ok();
+    validate_cache_config(raw.as_deref())
+}
+
+/// Render an invalid cache budget as a typed engine-open failure (O-01).
+fn cache_config_error(error: &CacheConfigError) -> slatedb::Error {
+    match error {
+        CacheConfigError::Invalid { value } => slatedb::Error::unavailable(format!(
+            "invalid {S3_CACHE_BYTES_ENV} value {value:?}: expected a byte count (0 or unset disables the cache); \
+             refusing rather than silently disabling the read cache"
+        )),
+    }
+}
+
+/// O-01: is a memoised remote key count still fresh? Inside the TTL the cached
+/// value is authoritative and NO remote scan runs; outside it (or with no memo)
+/// a scan is required. Extracted so "a second call inside the TTL performs zero
+/// remote I/O" is a deterministic, mutant-killable test — removing this TTL
+/// check (always returning `None`) makes that test rescan and fail.
+fn remote_key_count_is_fresh(
+    memo: Option<(std::time::Instant, u64)>,
+    ttl: std::time::Duration,
+    now: std::time::Instant,
+) -> Option<u64> {
+    match memo {
+        Some((at, count)) if now.saturating_duration_since(at) < ttl => Some(count),
+        _ => None,
+    }
+}
+
+/// O-01: drive a key count through the bounded-staleness memo. On the remote
+/// lane a fresh memo short-circuits with zero I/O; otherwise the scan runs, and
+/// its result is cached ONLY on success (a failed scan never caches a fabricated
+/// count). The memo lock is held only for the two O(1) accesses, never across
+/// the scan (audit F12). On the local lane the cache is bypassed (a local scan
+/// is cheap and exactness beats staleness).
+fn key_count_with_memo<E>(
+    memo: &std::sync::Mutex<Option<(std::time::Instant, u64)>>,
+    ttl: std::time::Duration,
+    cache_enabled: bool,
+    scan: impl FnOnce() -> Result<u64, E>,
+) -> Result<u64, E> {
+    if cache_enabled {
+        let current = *memo.lock().unwrap();
+        if let Some(count) = remote_key_count_is_fresh(current, ttl, std::time::Instant::now()) {
+            return Ok(count);
+        }
+    }
+    let count = scan()?;
+    if cache_enabled {
+        *memo.lock().unwrap() = Some((std::time::Instant::now(), count));
+    }
+    Ok(count)
 }
 
 fn build_s3_store(config: &S3Config) -> Result<Arc<dyn ObjectStore>, slatedb::Error> {
@@ -1016,7 +1094,26 @@ async fn download_remote_objects(
             fs::create_dir_all(parent).map_err(io_error)?;
         }
         let bytes = store.get(location).await.map_err(store_error)?.bytes().await.map_err(store_error)?;
-        fs::write(&target, bytes).map_err(io_error)?;
+        // R-06: fsync the downloaded file AND its parent directory. A checkpoint
+        // the caller goes on to declare COMPLETE must not lose a downloaded SST
+        // (or its directory entry) to a crash that empties the page cache; a
+        // bare `fs::write` leaves both only in the page cache.
+        write_and_fsync(&target, &bytes).map_err(io_error)?;
+    }
+    Ok(())
+}
+
+/// Write `bytes` to `path` and make the file AND its parent directory entry
+/// durable (R-06). Extracted so the write-then-fsync sequence is one auditable
+/// unit at every remote-download site.
+fn write_and_fsync(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    {
+        let mut file = fs::File::create(path)?;
+        io::Write::write_all(&mut file, bytes)?;
+        file.sync_all()?;
+    }
+    if let Some(parent) = path.parent() {
+        fs::File::open(parent)?.sync_all()?;
     }
     Ok(())
 }
@@ -1074,7 +1171,10 @@ impl SlateKeyspace {
         let config = s3_config().map_err(Arc::new)?;
         let store = build_s3_store(config).map_err(Arc::new)?;
         let base_prefix = object_prefix(config, path);
-        Self::open_remote(store, base_prefix, path, s3_cache_bytes())
+        // O-01: validate the cache budget at startup. An invalid budget is a
+        // typed open failure, never a silent fallback that disables the cache.
+        let cache_bytes = s3_cache_bytes().map_err(|error| Arc::new(cache_config_error(&error)))?;
+        Self::open_remote(store, base_prefix, path, cache_bytes)
     }
 
     /// Open over a remote object store, under a FRESH immutable
@@ -1443,9 +1543,14 @@ impl SlateKeyspace {
     /// bytes are excluded on both lanes, exactly as before.
     pub(super) fn estimate_size_in_bytes(&self) -> u64 {
         let manifest = self.db.manifest();
-        let l0: u64 = manifest.l0().iter().map(|sst| sst.estimate_size()).sum();
-        let compacted: u64 = manifest.compacted().iter().map(|run| run.estimate_size()).sum();
-        l0 + compacted
+        // O-01: saturating wide aggregation. A no-compactor lane can accumulate
+        // a very large L0; summing raw estimates with `+` risks an overflow that
+        // panics in debug and wraps to a tiny fabricated size in release. The
+        // metric saturates at u64::MAX instead — a large-but-true ceiling, never
+        // a wrapped lie.
+        let l0 = manifest.l0().iter().fold(0u64, |acc, sst| acc.saturating_add(sst.estimate_size()));
+        let compacted = manifest.compacted().iter().fold(0u64, |acc, run| acc.saturating_add(run.estimate_size()));
+        l0.saturating_add(compacted)
     }
 
     /// Key count for periodic database metrics. The RocksDB path serves an
@@ -1460,33 +1565,24 @@ impl SlateKeyspace {
     /// is that two callers racing an expired memo may both scan; the
     /// diagnostics loop is single-threaded, so that race is theoretical.
     pub(super) fn estimate_key_count(&self) -> Result<u64, Arc<slatedb::Error>> {
-        const REMOTE_KEY_COUNT_TTL: std::time::Duration = std::time::Duration::from_secs(60);
         let remote = self.remote.is_some();
-        if remote {
-            if let Some((computed_at, count)) = *self.key_count_memo.lock().unwrap() {
-                if computed_at.elapsed() < REMOTE_KEY_COUNT_TTL {
-                    return Ok(count);
-                }
-            }
-        }
         let db = self.db.clone();
-        let count = bridge(async move {
-            let mut iterator = db.scan_with_options(.., &scan_options()).await?;
-            let mut count = 0u64;
-            while iterator.next().await?.is_some() {
-                count += 1;
-            }
-            Ok(count)
+        // O-01: a second call inside the TTL returns the memo and issues ZERO
+        // remote I/O; a FAILED scan is never cached (no fabricated count); the
+        // per-key increment saturates rather than overflowing. The decision and
+        // driver are extracted (below) so those three properties are hermetic,
+        // deterministic tests.
+        key_count_with_memo(&self.key_count_memo, REMOTE_KEY_COUNT_TTL, remote, || {
+            bridge(async move {
+                let mut iterator = db.scan_with_options(.., &scan_options()).await?;
+                let mut count = 0u64;
+                while iterator.next().await?.is_some() {
+                    count = count.saturating_add(1);
+                }
+                Ok(count)
+            })
+            .map_err(Arc::new)
         })
-        .map_err(Arc::new)?;
-        // Populate the memo so the TTL actually bounds the remote scan
-        // (without this write the memo above was dead code and every ~15s
-        // metrics poll re-scanned the whole store — donor A6). The lock is
-        // taken only for this O(1) store, never across the scan above.
-        if remote {
-            *self.key_count_memo.lock().unwrap() = Some((std::time::Instant::now(), count));
-        }
-        Ok(count)
     }
 }
 
@@ -2921,5 +3017,124 @@ mod immutability_boundary_tests {
         let (active_id, state) = journal.get(location.as_ref()).copied().expect("a journal entry exists");
         assert_eq!(active_id, 2, "the second attempt is the active one");
         assert_eq!(state, AttemptState::Uncommitted);
+    }
+}
+
+#[cfg(test)]
+mod metrics_budget_tests {
+    //! O-01: metrics are total, typed, and budgeted. The memo decision/driver
+    //! and cache-config validation are pure, so these properties are hermetic
+    //! deterministic tests with executable mutants.
+
+    use std::{
+        cell::Cell,
+        sync::Mutex,
+        time::{Duration, Instant},
+    };
+
+    use super::{CacheConfigError, key_count_with_memo, remote_key_count_is_fresh, validate_cache_config};
+
+    #[test]
+    fn a_second_call_inside_the_ttl_performs_zero_remote_io() {
+        // O-01 flagship: within the TTL the memo answers and the scan closure is
+        // NEVER invoked. Removing the TTL freshness check (the mutant) makes the
+        // second call rescan and this assertion fails.
+        let memo = Mutex::new(None);
+        let ttl = Duration::from_secs(60);
+        let scans = Cell::new(0u32);
+        let scan = || {
+            scans.set(scans.get() + 1);
+            Ok::<u64, ()>(7)
+        };
+
+        let first = key_count_with_memo(&memo, ttl, true, &scan).unwrap();
+        let second = key_count_with_memo(&memo, ttl, true, &scan).unwrap();
+
+        assert_eq!(first, 7);
+        assert_eq!(second, 7, "the memoised count is served inside the TTL");
+        assert_eq!(scans.get(), 1, "the second call inside the TTL must issue ZERO remote scans");
+    }
+
+    #[test]
+    fn an_expired_memo_triggers_exactly_one_rescan() {
+        // positive control: outside the TTL a rescan runs (the cache is not
+        // simply pinned forever).
+        let past = Instant::now().checked_sub(Duration::from_secs(120)).unwrap();
+        let memo = Mutex::new(Some((past, 3u64)));
+        let ttl = Duration::from_secs(60);
+        let scans = Cell::new(0u32);
+        let scan = || {
+            scans.set(scans.get() + 1);
+            Ok::<u64, ()>(9)
+        };
+        let count = key_count_with_memo(&memo, ttl, true, &scan).unwrap();
+        assert_eq!(count, 9, "an expired memo rescans");
+        assert_eq!(scans.get(), 1);
+    }
+
+    #[test]
+    fn a_failed_scan_is_never_cached() {
+        // O-01: "never cache a fabricated value". A failing scan must leave the
+        // memo untouched, and a subsequent successful scan must still run.
+        let memo: Mutex<Option<(Instant, u64)>> = Mutex::new(None);
+        let ttl = Duration::from_secs(60);
+        let failing = key_count_with_memo(&memo, ttl, true, || Err::<u64, ()>(()));
+        assert!(failing.is_err(), "the scan failure is propagated");
+        assert!(memo.lock().unwrap().is_none(), "a failed scan must not populate the memo with a fabricated count");
+
+        let ok = key_count_with_memo(&memo, ttl, true, || Ok::<u64, ()>(5)).unwrap();
+        assert_eq!(ok, 5, "the next scan still runs and succeeds (the failure was not cached as truth)");
+    }
+
+    #[test]
+    fn the_local_lane_never_caches() {
+        // On the local lane (cache_enabled = false) every call scans (a local
+        // scan is cheap and exactness beats staleness).
+        let memo: Mutex<Option<(Instant, u64)>> = Mutex::new(None);
+        let ttl = Duration::from_secs(60);
+        let scans = Cell::new(0u32);
+        let scan = || {
+            scans.set(scans.get() + 1);
+            Ok::<u64, ()>(1)
+        };
+        key_count_with_memo(&memo, ttl, false, &scan).unwrap();
+        key_count_with_memo(&memo, ttl, false, &scan).unwrap();
+        assert_eq!(scans.get(), 2, "the local lane bypasses the memo");
+        assert!(memo.lock().unwrap().is_none(), "the local lane never writes the memo");
+    }
+
+    #[test]
+    fn remote_key_count_freshness_boundary() {
+        let now = Instant::now();
+        let ttl = Duration::from_secs(60);
+        // fresh: computed 10s ago
+        assert_eq!(
+            remote_key_count_is_fresh(Some((now.checked_sub(Duration::from_secs(10)).unwrap(), 4)), ttl, now),
+            Some(4)
+        );
+        // stale: computed 120s ago
+        assert_eq!(
+            remote_key_count_is_fresh(Some((now.checked_sub(Duration::from_secs(120)).unwrap(), 4)), ttl, now),
+            None
+        );
+        // no memo
+        assert_eq!(remote_key_count_is_fresh(None, ttl, now), None);
+    }
+
+    #[test]
+    fn invalid_cache_config_is_a_typed_refusal_not_a_silent_disable() {
+        // O-01: unset and explicit-0 disable the cache; a garbage value is a
+        // TYPED refusal. The old behaviour silently returned None for garbage,
+        // disabling the protection the operator believed was on — the mutant
+        // that reverts to None makes this assertion fail.
+        assert_eq!(validate_cache_config(None), Ok(None), "unset disables the cache");
+        assert_eq!(validate_cache_config(Some("0")), Ok(None), "explicit 0 disables the cache");
+        assert_eq!(validate_cache_config(Some("  0 ")), Ok(None), "whitespace-padded 0 disables the cache");
+        assert_eq!(validate_cache_config(Some("1048576")), Ok(Some(1048576)), "a valid budget is honoured");
+        assert_eq!(
+            validate_cache_config(Some("not-a-number")),
+            Err(CacheConfigError::Invalid { value: "not-a-number".to_owned() }),
+            "an invalid budget is a typed refusal, never a silent None"
+        );
     }
 }

@@ -4,8 +4,10 @@
   "description": "Cloudflare control plane: DatabaseControllerDO / DatabaseContainerDO separation (CF-P1) and real-account probe harness (CF-P0, P-R2-*/P-DO-*)",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "probes:platform": "node --experimental-strip-types probes/run-platform-probes.ts",
+    "probes:selftest": "bash probes/self-test.sh",
     "probes:r2": "node --experimental-strip-types probes/run-r2-probes.ts",
-    "test:core": "node --experimental-strip-types --test src/controller/core/*.test.ts",
+    "test:core": "node --experimental-strip-types --test src/controller/core/*.test.ts src/controller/surface.test.ts",
     "test:controller:mutant": "CONTROLLER_MUTANT=drop-outbox-event node --experimental-strip-types --test src/controller/core/controller-core.test.ts",
     "test:workerd": "vitest run",
     "stack:local": "wrangler dev --local --port 8787",

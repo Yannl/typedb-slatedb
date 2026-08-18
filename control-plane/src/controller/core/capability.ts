@@ -119,8 +119,8 @@ export function mintCapability(capabilityKey: Uint8Array, payload: CapabilityPay
  * Verify a token against what the REQUEST actually is. MAC first (nothing
  * inside an unauthenticated token is trusted, including its expiry), then
  * expiry, incarnation, method, audience, key, digest, budget. The nonce is
- * NOT burned here - burning is transactional state and belongs to the
- * authority (ControllerCore.burnCapabilityNonce), called after this check
+ * NOT claimed here - the use claim is transactional state and belongs to
+ * the authority (ControllerCore.claimCapability), called after this check
  * passes.
  */
 export function checkCapability(

@@ -39,27 +39,34 @@ export function makeSql(): { sql: SyncSql; db: TestDb } {
 }
 
 /** FinalizeRequest factory: ids are `${prefix}-N`, suite-wide defaults are
- *  fixed at creation, per-call overrides win. */
+ *  fixed at creation, per-call overrides win. The payload key is
+ *  CONTENT-ADDRESSED from the resolved digest (`p/<db>/<digest>`, the
+ *  canonical scheme the worker enforces - audit C-P0-07), so an
+ *  identical-content retry carries the identical key, exactly as the real
+ *  protocol produces it. */
 export function reqFactory(prefix: string, defaults: Partial<FinalizeRequest> = {}) {
   let opCounter = 0;
   return (overrides: Partial<FinalizeRequest> = {}): FinalizeRequest => {
     opCounter += 1;
     const id = `${prefix}-${opCounter}`;
-    return {
+    const merged = {
       databaseId: "db1",
       generation: 1,
       startupSessionId: "sess-1",
       operationId: id,
       requestDigest: `digest-${id}`,
-      sequencingKind: "SEQUENCED",
+      sequencingKind: "SEQUENCED" as const,
       recordType: 2, // CommitRecord's durability record type
       logicalKey: null,
-      payloadKey: `payload/${id}`,
       payloadDigest: `pd-${id}`,
       payloadLength: 10,
       ...defaults,
       ...overrides,
     };
+    return {
+      payloadKey: `p/${merged.databaseId}/${merged.payloadDigest}`,
+      ...merged,
+    } as FinalizeRequest;
   };
 }
 

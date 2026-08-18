@@ -273,14 +273,19 @@ export class DatabaseControllerDO extends DurableObject {
   }
 
   /**
-   * Verify-and-burn a capability for one request (F9). MAC, expiry,
-   * incarnation, method, audience, key, digest and budget are checked
-   * synchronously; the nonce burn is the transactional single-use rule -
-   * a second use of a valid token is CAPABILITY_REPLAYED.
+   * Verify-and-claim a capability for one request (F9, audit C-P0-08). MAC,
+   * expiry, incarnation, method, audience, key, digest and budget are
+   * checked synchronously; the claim is the transactional single-REQUEST
+   * rule - the nonce is durably bound to `useDigest` (the canonical digest
+   * of the one request being authorized), so an IDENTICAL retry after a
+   * lost response is admitted again (every authorized procedure is
+   * idempotent by operation identity and reproduces its original outcome),
+   * while a DIFFERENT request under a used token is CAPABILITY_REPLAYED.
    */
   useCapability(
     token: string,
     expect: { method: string; databaseId: string; session?: string; key?: string; bodyDigest?: string; bodyLength?: number },
+    useDigest: string,
   ): CapabilityCheck | { ok: false; error: "CAPABILITY_REPLAYED" } {
     const nowMs = Date.now();
     const checked = checkCapability(this.capabilityKey, token, {
@@ -289,10 +294,17 @@ export class DatabaseControllerDO extends DurableObject {
       nowMs,
     });
     if (!checked.ok) return checked;
-    if (!this.controllerCore.burnCapabilityNonce(checked.payload.nonce, checked.payload.expiresAtMs, nowMs)) {
-      return { ok: false, error: "CAPABILITY_REPLAYED" };
-    }
+    const claimed = this.controllerCore.claimCapability(
+      checked.payload.nonce, useDigest, checked.payload.expiresAtMs, nowMs);
+    if (!claimed.ok) return claimed;
     return checked;
+  }
+
+  /** Record the durable outcome of a claimed capability use (C-P0-08). */
+  resolveCapabilityUse(
+    nonce: string, state: "RESOLVED_SUCCESS" | "RESOLVED_REJECTED" | "AMBIGUOUS", outcome?: string,
+  ): void {
+    this.controllerCore.resolveCapabilityUse(nonce, state, outcome);
   }
 
   bumpIncarnation(): number {

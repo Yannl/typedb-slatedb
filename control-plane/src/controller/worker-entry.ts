@@ -48,7 +48,8 @@
 import { DatabaseControllerDO } from "./database-controller.ts";
 export { DatabaseControllerDO };
 
-import { u64FromWire, type FinalizeRequest } from "./core/procedures.ts";
+import { MAX_BATCH_BYTES, MAX_BATCH_MEMBERS, u64FromWire, type FinalizeRequest } from "./core/procedures.ts";
+import { devOnlyRoute } from "./surface.ts";
 import { canonicalJson } from "./core/journal-crypto.ts";
 import { resolveKeyConfig } from "./core/key-config.ts";
 
@@ -60,6 +61,11 @@ interface Env {
   CONTROLLER_JOURNAL_KEY?: string;
   CONTROLLER_CAPABILITY_KEY?: string;
   CONTROLLER_ISSUER_SECRET?: string;
+  /** Surface posture (audit C-P0-01/03/09, PR0 containment). ONLY the exact
+   *  value "local-dev" opens the dev-only routes; anything else - including
+   *  unset, which is what a production deployment that lost the variable
+   *  looks like - is the production surface. See surface.ts. */
+  CONTROLLER_SURFACE?: string;
 }
 
 function json(body: unknown, status = 200): Response {
@@ -184,6 +190,42 @@ function refuseOversizedBody(request: Request, limit = MAX_REQUEST_BODY_BYTES): 
  *  headroom for the base64 expansion and JSON envelope. */
 const SCAN_PAGE_BYTE_BUDGET = 8 * 1024 * 1024;
 
+/** C-P1-01: structural JSON bodies (session admin, finalize metadata, acks)
+ *  are small by construction; 256 KiB is generous headroom, and anything
+ *  larger is a malformed client or an attack, refused before parsing. */
+const MAX_STRUCTURAL_BODY_BYTES = 256 * 1024;
+
+/** Bounded, fail-closed JSON body read (C-P1-01): declared-length admission
+ *  first, then a parse whose failure is a typed 400 - never an unhandled
+ *  exception after a capability was already burned. */
+async function readJson(request: Request, limit = MAX_STRUCTURAL_BODY_BYTES):
+  Promise<{ body: Record<string, unknown> } | { errorResponse: Response }> {
+  const oversized = refuseOversizedBody(request, limit);
+  if (oversized) return { errorResponse: oversized };
+  try {
+    const body = await request.json();
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      return { errorResponse: json({ ok: false, error: "MALFORMED_JSON", hint: "object body required" }, 400) };
+    }
+    return { body: body as Record<string, unknown> };
+  } catch {
+    return { errorResponse: json({ ok: false, error: "MALFORMED_JSON" }, 400) };
+  }
+}
+
+/** Canonical digest of the ONE request a capability use authorizes
+ *  (C-P0-08): the token's nonce is durably bound to this at the authority,
+ *  so an identical retry is admitted (idempotent re-execution) and any
+ *  different request under the same token is a replay refusal. */
+async function useDigestOf(subject: unknown): Promise<string> {
+  return sha256hex(new TextEncoder().encode(canonicalJson(subject)).buffer as ArrayBuffer);
+}
+
+/** 64 lowercase hex chars - the only accepted payload digest syntax. */
+function invalidSha256Hex(value: unknown): boolean {
+  return typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value);
+}
+
 /** Constant-shape credential comparison: XOR-fold over equal-length byte
  *  views so a mismatch position does not shape the timing. (The length check
  *  leaks length, which the issuer secret does not need to hide.) */
@@ -266,33 +308,49 @@ export default {
       return json({ ok: true, runtime: "workerd", stack: "L1-local" });
     }
 
+    // PR0 containment: on the production surface the dev-only routes do not
+    // exist - refused before any parsing, capability work or DO/R2 call.
+    if (env.CONTROLLER_SURFACE !== "local-dev" && devOnlyRoute(path)) {
+      return json({ ok: false, error: "NOT_FOUND" }, 404);
+    }
+
     // controller routing: one DO per database. The stub is typed straight
     // off the DO class (workers-types RPC), so there is exactly ONE method
     // surface - the class itself - and nothing hand-maintained to drift.
     const stubFor = (databaseId: string) => env.CONTROLLER.get(env.CONTROLLER.idFromName(databaseId));
 
-    /** The ONE F9 verification core: verify-and-burn the request's
+    /** The ONE F9 verification core: verify-and-claim the request's
      *  capability at the database's authority. Both route-facing shapes
-     *  below delegate here so the check can never fork. */
+     *  below delegate here so the check can never fork. `useDigest` is the
+     *  canonical digest of the ONE request being authorized (C-P0-08) -
+     *  the claim binds the token's nonce to it durably. */
     const verifyCapability = async (
       databaseId: string,
       expect: { method: string; session?: string; key?: string; bodyDigest?: string; bodyLength?: number },
+      useDigest: string,
     ) => {
       const token = request.headers.get("x-capability");
       if (token === null) {
         return { authorized: false as const, denied: json({ ok: false, error: "CAPABILITY_REQUIRED" }, 401) };
       }
-      const verdict = await stubFor(databaseId).useCapability(token, { databaseId, ...expect });
+      const verdict = await stubFor(databaseId).useCapability(token, { databaseId, ...expect }, useDigest);
       if (!verdict.ok) return { authorized: false as const, denied: json(verdict, 403) };
       return { authorized: true as const, verdict };
     };
+
+    /** Read routes bind the use to the request line (method + path + query);
+     *  they resolve no outcome - reads are side-effect-free, so the recorded
+     *  IN_FLIGHT row simply ages out with the token. */
+    const routeUseDigest = () =>
+      useDigestOf({ method: request.method, path, search: url.search });
 
     /** null = authorized; otherwise the typed 401/403. */
     const requireCapability = async (
       databaseId: string,
       expect: { method: string; session?: string; key?: string; bodyDigest?: string; bodyLength?: number },
+      useDigest: string,
     ): Promise<Response | null> => {
-      const auth = await verifyCapability(databaseId, expect);
+      const auth = await verifyCapability(databaseId, expect, useDigest);
       return auth.authorized ? null : auth.denied;
     };
 
@@ -306,8 +364,9 @@ export default {
     const requireCapabilityWithSession = async (
       databaseId: string,
       expect: { method: string; key?: string; bodyDigest?: string; bodyLength?: number },
+      useDigest: string,
     ): Promise<{ denied: Response } | { session: string }> => {
-      const auth = await verifyCapability(databaseId, expect);
+      const auth = await verifyCapability(databaseId, expect, useDigest);
       if (!auth.authorized) return { denied: auth.denied };
       const session = auth.verdict.payload?.session;
       if (typeof session !== "string" || session.length === 0) {
@@ -349,7 +408,9 @@ export default {
       if (presented === null || !credentialsEqual(presented, issuerSecret)) {
         return json({ ok: false, error: "ISSUER_UNAUTHORIZED" }, 401);
       }
-      const spec = (await request.json()) as {
+      const parsed = await readJson(request);
+      if ("errorResponse" in parsed) return parsed.errorResponse;
+      const spec = parsed.body as unknown as {
         principal: string; databaseId: string; method: string; digest?: string; maxBytes?: number; ttlMs?: number;
       };
       return json({ ok: true, ...(await stubFor(spec.databaseId).issueCapability(spec)) });
@@ -357,7 +418,7 @@ export default {
 
     const adminBump = path.match(/^\/admin\/([^/]+)\/incarnation\/bump$/);
     if (request.method === "POST" && adminBump) {
-      const denied = await requireCapability(adminBump[1], { method: "SESSION_ADMIN" });
+      const denied = await requireCapability(adminBump[1], { method: "SESSION_ADMIN" }, await routeUseDigest());
       if (denied) return denied;
       return json({ ok: true, incarnation: await stubFor(adminBump[1]).bumpIncarnation() });
     }
@@ -385,39 +446,56 @@ export default {
                       observed: bytes.byteLength, limit: MAX_REQUEST_BODY_BYTES }, 413);
       }
       const digest = await sha256hex(bytes);
-      const denied = await requireCapability(parts[1], {
+      const auth = await verifyCapability(parts[1], {
         method: "PUT_PAYLOAD", key, bodyDigest: digest, bodyLength: bytes.byteLength,
-      });
-      if (denied) return denied;
+      }, await useDigestOf({ method: "PUT_PAYLOAD", key, digest, length: bytes.byteLength }));
+      if (!auth.authorized) return auth.denied;
+      const nonce = auth.verdict.payload.nonce;
+      const resolve = (state: "RESOLVED_SUCCESS" | "RESOLVED_REJECTED" | "AMBIGUOUS", outcome?: string) =>
+        stubFor(parts[1]).resolveCapabilityUse(nonce, state, outcome);
       // payload immutability: puts are create-or-identical, never overwrite.
       // The create is a CONDITIONAL put (If-None-Match: *), not get-then-put:
       // two concurrent puts of different bytes must never both succeed, and a
       // read-then-write window would allow exactly that. Under the capability
       // boundary a different-bytes put at this key cannot even reach here
       // (digest binding); the conditional create remains as defense in depth.
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const created = await env.PAYLOADS.put(key, bytes, {
-          onlyIf: new Headers({ "if-none-match": "*" }),
-        });
-        if (created !== null) {
-          return json({ key, sha256hex: digest, length: bytes.byteLength });
+      try {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const created = await env.PAYLOADS.put(key, bytes, {
+            onlyIf: new Headers({ "if-none-match": "*" }),
+          });
+          if (created !== null) {
+            await resolve("RESOLVED_SUCCESS", digest);
+            return json({ key, sha256hex: digest, length: bytes.byteLength });
+          }
+          const existing = await env.PAYLOADS.get(key);
+          if (existing === null) continue; // lost a delete/create race; retry the conditional create
+          const existingDigest = await sha256hex(await existing.arrayBuffer());
+          if (existingDigest !== digest) {
+            await resolve("RESOLVED_REJECTED", "PAYLOAD_IMMUTABILITY_VIOLATION");
+            return json({ ok: false, error: "PAYLOAD_IMMUTABILITY_VIOLATION", key, existing: existingDigest }, 409);
+          }
+          await resolve("RESOLVED_SUCCESS", digest);
+          return json({ key, sha256hex: digest, length: bytes.byteLength, deduplicated: true });
         }
-        const existing = await env.PAYLOADS.get(key);
-        if (existing === null) continue; // lost a delete/create race; retry the conditional create
-        const existingDigest = await sha256hex(await existing.arrayBuffer());
-        if (existingDigest !== digest) {
-          return json({ ok: false, error: "PAYLOAD_IMMUTABILITY_VIOLATION", key, existing: existingDigest }, 409);
-        }
-        return json({ key, sha256hex: digest, length: bytes.byteLength, deduplicated: true });
+        await resolve("AMBIGUOUS", "PAYLOAD_RACE_UNRESOLVED");
+        return json({ ok: false, error: "PAYLOAD_RACE_UNRESOLVED", key }, 503);
+      } catch (error) {
+        // C-P0-08: provider/transport uncertainty is recorded, then
+        // surfaced - never silently converted into a burned token
+        await resolve("AMBIGUOUS", error instanceof Error ? error.message : String(error));
+        throw error;
       }
-      return json({ ok: false, error: "PAYLOAD_RACE_UNRESOLVED", key }, 503);
     }
 
     if (request.method === "POST" && path === "/session/register") {
-      const b = (await request.json()) as { databaseId: string; generation: number; startupSessionId: string };
+      const parsed = await readJson(request);
+      if ("errorResponse" in parsed) return parsed.errorResponse;
+      const b = parsed.body as unknown as { databaseId: string; generation: number; startupSessionId: string };
       const gen = generationOr(b.generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsed.body }));
       if (denied) return denied;
       await stubFor(b.databaseId).registerSession(b.databaseId, gen, b.startupSessionId);
       return json({ ok: true });
@@ -427,12 +505,15 @@ export default {
     // Registration is the legacy macro over these; the real flow is
     // reserve -> attest -> activate, and ONLY activation fences.
     if (request.method === "POST" && path === "/session/reserve") {
-      const b = (await request.json()) as {
+      const parsed = await readJson(request);
+      if ("errorResponse" in parsed) return parsed.errorResponse;
+      const b = parsed.body as unknown as {
         databaseId: string; generation: number; startupSessionId: string; holder: string;
       };
       const gen = generationOr(b.generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsed.body }));
       if (denied) return denied;
       const result = await stubFor(b.databaseId)
         .reserveSession(b.databaseId, gen, b.startupSessionId, b.holder);
@@ -440,8 +521,11 @@ export default {
     }
 
     if (request.method === "POST" && path === "/session/attest") {
-      const b = (await request.json()) as { databaseId: string; startupSessionId: string; processNonce: string };
-      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      const parsed = await readJson(request);
+      if ("errorResponse" in parsed) return parsed.errorResponse;
+      const b = parsed.body as unknown as { databaseId: string; startupSessionId: string; processNonce: string };
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsed.body }));
       if (denied) return denied;
       const result = await stubFor(b.databaseId)
         .attestSession(b.databaseId, b.startupSessionId, b.processNonce);
@@ -449,12 +533,15 @@ export default {
     }
 
     if (request.method === "POST" && path === "/session/activate") {
-      const b = (await request.json()) as {
+      const parsed = await readJson(request);
+      if ("errorResponse" in parsed) return parsed.errorResponse;
+      const b = parsed.body as unknown as {
         databaseId: string; startupSessionId: string; processNonce: string; generation: number; leaseMs: number;
       };
       const gen = generationOr(b.generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsed.body }));
       if (denied) return denied;
       const result = await stubFor(b.databaseId).activateSession(b.databaseId, b.startupSessionId, {
         processNonce: b.processNonce, generation: gen, leaseMs: b.leaseMs,
@@ -463,46 +550,61 @@ export default {
     }
 
     if (request.method === "POST" && path === "/session/renew") {
-      const b = (await request.json()) as { databaseId: string; startupSessionId: string; leaseMs: number };
-      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      const parsed = await readJson(request);
+      if ("errorResponse" in parsed) return parsed.errorResponse;
+      const b = parsed.body as unknown as { databaseId: string; startupSessionId: string; leaseMs: number };
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsed.body }));
       if (denied) return denied;
       const result = await stubFor(b.databaseId).renewLease(b.databaseId, b.startupSessionId, b.leaseMs);
       return json(result, result.ok ? 200 : 409);
     }
 
     if (request.method === "POST" && path === "/session/drain") {
-      const b = (await request.json()) as { databaseId: string; startupSessionId: string };
-      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      const parsed = await readJson(request);
+      if ("errorResponse" in parsed) return parsed.errorResponse;
+      const b = parsed.body as unknown as { databaseId: string; startupSessionId: string };
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsed.body }));
       if (denied) return denied;
       const result = await stubFor(b.databaseId).beginDrain(b.databaseId, b.startupSessionId);
       return json(result, result.ok ? 200 : 409);
     }
 
     if (request.method === "POST" && path === "/session/revoke") {
-      const b = (await request.json()) as { databaseId: string; startupSessionId: string };
-      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      const parsed = await readJson(request);
+      if ("errorResponse" in parsed) return parsed.errorResponse;
+      const b = parsed.body as unknown as { databaseId: string; startupSessionId: string };
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsed.body }));
       if (denied) return denied;
       const result = await stubFor(b.databaseId).revokeSession(b.databaseId, b.startupSessionId);
       return json(result, result.ok ? 200 : 409);
     }
 
     if (request.method === "POST" && path === "/session/fence") {
-      const b = (await request.json()) as { databaseId: string; generation: number; startupSessionId: string };
+      const parsed = await readJson(request);
+      if ("errorResponse" in parsed) return parsed.errorResponse;
+      const b = parsed.body as unknown as { databaseId: string; generation: number; startupSessionId: string };
       const gen = generationOr(b.generation);
       if (gen instanceof Response) return gen;
       // the fence is actor-wide: any `generation` in the body is accepted for
       // wire compatibility but does not scope the revocation
-      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsed.body }));
       if (denied) return denied;
       await stubFor(b.databaseId).fenceSession(b.databaseId, b.startupSessionId);
       return json({ ok: true });
     }
 
     if (request.method === "POST" && path === "/budgets") {
-      const b = (await request.json()) as {
+      const parsed = await readJson(request);
+      if ("errorResponse" in parsed) return parsed.errorResponse;
+      const b = parsed.body as unknown as {
         databaseId: string; maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number;
       };
-      const auth = await requireCapabilityWithSession(b.databaseId, { method: "SESSION_ADMIN" });
+      const auth = await requireCapabilityWithSession(b.databaseId, { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsed.body }));
       if ("denied" in auth) return auth.denied;
       const result = await stubFor(b.databaseId).setBudgets(b.databaseId, {
         maxUnpublishedOutbox: b.maxUnpublishedOutbox,
@@ -525,8 +627,37 @@ export default {
       );
     };
 
+    /** C-P0-07: the R2 payload key is SERVER-derived and content-addressed;
+     *  a finalize (or batch member) naming any other key - notably another
+     *  database's `p/<db>/<digest>` object - refuses BEFORE any R2 GET or
+     *  DO call. This closes the cross-tenant reference path: a database-A
+     *  actor cannot catalogue a global object it did not itself upload
+     *  under A's capability boundary. Returns null when canonical. */
+    const nonCanonicalPayloadRef = (req: {
+      databaseId: string; payloadKey: unknown; payloadDigest: unknown; payloadLength: unknown;
+    }): Response | null => {
+      if (invalidSha256Hex(req.payloadDigest)) {
+        return json({ ok: false, error: "INVALID_PAYLOAD_DIGEST", observed: req.payloadDigest ?? null }, 400);
+      }
+      if (typeof req.payloadLength !== "number" || !Number.isSafeInteger(req.payloadLength)
+          || req.payloadLength < 0) {
+        return json({ ok: false, error: "INVALID_PAYLOAD_LENGTH", observed: req.payloadLength ?? null }, 400);
+      }
+      const canonical = `p/${req.databaseId}/${req.payloadDigest}`;
+      if (req.payloadKey !== canonical) {
+        return json({ ok: false, error: "NON_CANONICAL_PAYLOAD_KEY", expected: canonical }, 400);
+      }
+      return null;
+    };
+
+    /** Encode a finalize outcome for the durable capability-use record. */
+    const outcomeOf = (result: unknown): string =>
+      JSON.stringify(result, (_k, v) => (typeof v === "bigint" ? v.toString() : v));
+
     if (request.method === "POST" && path === "/wal/finalize") {
-      const req = (await request.json()) as {
+      const parsedFinalize = await readJson(request);
+      if ("errorResponse" in parsedFinalize) return parsedFinalize.errorResponse;
+      const req = parsedFinalize.body as unknown as {
         databaseId: string; payloadKey: string; payloadDigest: string; payloadLength: number;
       } & Record<string, unknown>;
       if (invalidRecordType(req.recordType)) {
@@ -534,37 +665,60 @@ export default {
       }
       const gen = generationOr(req.generation);
       if (gen instanceof Response) return gen;
-      // the finalize capability MUST be bound to the request's session
-      // (donor A3): a session id in the body is not by itself write authority
-      const denied = await requireCapability(req.databaseId, {
-        method: "WAL_FINALIZE", session: String((req as { startupSessionId?: unknown }).startupSessionId ?? ""),
-      });
-      if (denied) return denied;
-      const receiptError = await verifyReceipt(req);
-      if (receiptError !== null) return receiptError;
-      // Q-18: the dedupe key is derived here, not asserted by the caller
+      const badRef = nonCanonicalPayloadRef(req);
+      if (badRef !== null) return badRef;
+      // Q-18: the dedupe key is derived here, not asserted by the caller -
+      // and computed BEFORE the capability claim, because it is also the
+      // use digest the token's nonce gets bound to (C-P0-08)
       const computedDigest = await canonicalRequestDigest(req);
       if (typeof req.requestDigest === "string" && req.requestDigest !== computedDigest) {
         return json({ ok: false, error: "REQUEST_DIGEST_MISMATCH",
                       computed: computedDigest, supplied: req.requestDigest }, 400);
       }
-      // the wire body is validated field-by-field above and again in the
-      // core; the cast is the JSON boundary, not a trust statement
-      const result = await stubFor(req.databaseId)
-        .finalizeWalRecord({ ...req, requestDigest: computedDigest } as unknown as FinalizeRequest);
-      return json(result, result.ok ? 200 : 409);
+      // the finalize capability MUST be bound to the request's session
+      // (donor A3): a session id in the body is not by itself write authority
+      const auth = await verifyCapability(req.databaseId, {
+        method: "WAL_FINALIZE", session: String((req as { startupSessionId?: unknown }).startupSessionId ?? ""),
+      }, computedDigest);
+      if (!auth.authorized) return auth.denied;
+      const nonce = auth.verdict.payload.nonce;
+      try {
+        const receiptError = await verifyReceipt(req);
+        if (receiptError !== null) {
+          await stubFor(req.databaseId).resolveCapabilityUse(nonce, "RESOLVED_REJECTED", "RECEIPT_INVALID");
+          return receiptError;
+        }
+        // the wire body is validated field-by-field above and again in the
+        // core; the cast is the JSON boundary, not a trust statement
+        const result = await stubFor(req.databaseId)
+          .finalizeWalRecord({ ...req, requestDigest: computedDigest } as unknown as FinalizeRequest);
+        await stubFor(req.databaseId).resolveCapabilityUse(
+          nonce, result.ok ? "RESOLVED_SUCCESS" : "RESOLVED_REJECTED", outcomeOf(result));
+        return json(result, result.ok ? 200 : 409);
+      } catch (error) {
+        // C-P0-08: infrastructure uncertainty stays AMBIGUOUS and retryable
+        await stubFor(req.databaseId).resolveCapabilityUse(
+          nonce, "AMBIGUOUS", error instanceof Error ? error.message : String(error));
+        throw error;
+      }
     }
 
     if (request.method === "POST" && path === "/wal/finalize-batch") {
-      const tooLargeBatch = refuseOversizedBody(request);
-      if (tooLargeBatch) return tooLargeBatch;
-      const body = (await request.json()) as {
+      const parsedBatch = await readJson(request);
+      if ("errorResponse" in parsedBatch) return parsedBatch.errorResponse;
+      const body = parsedBatch.body as unknown as {
         batchOperationId?: unknown; batchDigest?: unknown;
         requests: ({ databaseId: string; payloadKey: string; payloadDigest: string; payloadLength: number }
           & Record<string, unknown>)[];
       };
       if (!Array.isArray(body.requests) || body.requests.length === 0) {
         return json({ ok: false, error: "EMPTY_BATCH" }, 400);
+      }
+      // C-P0-09: the K/aggregate-byte bounds are enforced HERE, before the
+      // capability claim and before any receipt GET - a 65-member or
+      // over-budget batch makes zero R2/DO calls and burns nothing.
+      if (body.requests.length > MAX_BATCH_MEMBERS) {
+        return json({ ok: false, error: "BATCH_TOO_MANY_MEMBERS", limit: MAX_BATCH_MEMBERS }, 400);
       }
       // directive 12.6: a batch is ONE authority envelope with an identity.
       // Without it the batch cannot be replayed, conflicted or audited, and
@@ -581,6 +735,7 @@ export default {
       }
       const databaseId = body.requests[0].databaseId;
       const batchSession = String((body.requests[0] as { startupSessionId?: unknown }).startupSessionId ?? "");
+      let declaredBytes = 0;
       for (const req of body.requests) {
         if (req.databaseId !== databaseId) {
           // one DO per database: a batch is one transaction on ONE authority
@@ -596,14 +751,18 @@ export default {
         }
         const memberGen = generationOr(req.generation);
         if (memberGen instanceof Response) return memberGen;
+        const badRef = nonCanonicalPayloadRef(req);
+        if (badRef !== null) return badRef;
+        declaredBytes += req.payloadLength;
       }
-      const denied = await requireCapability(databaseId, { method: "WAL_FINALIZE", session: batchSession });
-      if (denied) return denied;
-      const receiptErrors = await mapBounded(body.requests, PAYLOAD_FETCH_CONCURRENCY, verifyReceipt);
-      const firstReceiptError = receiptErrors.find((error) => error !== null);
-      if (firstReceiptError) return firstReceiptError;
-      // Q-18: same rule for every batch member - the digest is derived here
+      if (declaredBytes > MAX_BATCH_BYTES) {
+        // still pre-I/O: nothing has been fetched or burned (C-P0-09)
+        return json({ ok: false, error: "BATCH_TOO_MANY_BYTES", limit: MAX_BATCH_BYTES, declared: declaredBytes }, 400);
+      }
+      // Q-18: same rule for every batch member - the digest is derived here,
+      // BEFORE the capability claim (they form the batch's use digest)
       const digested: Record<string, unknown>[] = [];
+      const memberDigests: string[] = [];
       for (const req of body.requests) {
         const computed = await canonicalRequestDigest(req);
         if (typeof req.requestDigest === "string" && req.requestDigest !== computed) {
@@ -611,15 +770,36 @@ export default {
                         computed, supplied: req.requestDigest }, 400);
         }
         digested.push({ ...req, requestDigest: computed });
+        memberDigests.push(computed);
       }
-      const result = await stubFor(databaseId).finalizeBatch(digested as unknown as FinalizeRequest[], {
-        batchOperationId: body.batchOperationId,
-        ...(body.batchDigest !== undefined ? { batchDigest: body.batchDigest } : {}),
-      });
-      // all-or-nothing: an array is N successes; a single typed error aborted
-      // (and rolled back) the whole batch
-      if (Array.isArray(result)) return json({ ok: true, results: result });
-      return json(result, 409);
+      // the capability use binds the batch identity: same batch retries,
+      // any other batch under the same token replays (C-P0-08/09)
+      const auth = await verifyCapability(databaseId, { method: "WAL_FINALIZE", session: batchSession },
+        await useDigestOf({ batchOperationId: body.batchOperationId, members: memberDigests }));
+      if (!auth.authorized) return auth.denied;
+      const nonce = auth.verdict.payload.nonce;
+      try {
+        const receiptErrors = await mapBounded(body.requests, PAYLOAD_FETCH_CONCURRENCY, verifyReceipt);
+        const firstReceiptError = receiptErrors.find((error) => error !== null);
+        if (firstReceiptError) {
+          await stubFor(databaseId).resolveCapabilityUse(nonce, "RESOLVED_REJECTED", "RECEIPT_INVALID");
+          return firstReceiptError;
+        }
+        const result = await stubFor(databaseId).finalizeBatch(digested as unknown as FinalizeRequest[], {
+          batchOperationId: body.batchOperationId,
+          ...(body.batchDigest !== undefined ? { batchDigest: body.batchDigest } : {}),
+        });
+        // all-or-nothing: an array is N successes; a single typed error
+        // aborted (and rolled back) the whole batch
+        await stubFor(databaseId).resolveCapabilityUse(
+          nonce, Array.isArray(result) ? "RESOLVED_SUCCESS" : "RESOLVED_REJECTED", outcomeOf(result));
+        if (Array.isArray(result)) return json({ ok: true, results: result });
+        return json(result, 409);
+      } catch (error) {
+        await stubFor(databaseId).resolveCapabilityUse(
+          nonce, "AMBIGUOUS", error instanceof Error ? error.message : String(error));
+        throw error;
+      }
     }
 
     const walRead = path.match(/^\/wal\/([^/]+)\/(\d+)\/(\d+)$/);
@@ -632,7 +812,7 @@ export default {
       // after the caller's single-use capability was already burned
       const lsnValue = nonNegativeU64(lsn, 0n);
       if (lsnValue === null) return json({ ok: false, error: "INVALID_PARAMETER", field: "lsn" }, 400);
-      const denied = await requireCapability(db, { method: "WAL_READ" });
+      const denied = await requireCapability(db, { method: "WAL_READ" }, await routeUseDigest());
       if (denied) return denied;
       const record = await stubFor(db).exactLookup(db, gen, lsnValue);
       if (!record.ok) return json(record, 404);
@@ -650,7 +830,7 @@ export default {
       const [, db, generation] = walHead;
       const gen = generationOr(generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(db, { method: "WAL_READ" });
+      const denied = await requireCapability(db, { method: "WAL_READ" }, await routeUseDigest());
       if (denied) return denied;
       return json({ ok: true, ...(await stubFor(db).head(db, gen)) });
     }
@@ -660,7 +840,7 @@ export default {
       const [, db, generation] = walIterator;
       const gen = generationOr(generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(db, { method: "WAL_READ" });
+      const denied = await requireCapability(db, { method: "WAL_READ" }, await routeUseDigest());
       if (denied) return denied;
       return json({ ok: true, ...(await stubFor(db).openIterator(db, gen)) });
     }
@@ -670,7 +850,7 @@ export default {
       const [, db, generation] = walScan;
       const gen = generationOr(generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(db, { method: "WAL_READ" });
+      const denied = await requireCapability(db, { method: "WAL_READ" }, await routeUseDigest());
       if (denied) return denied;
       const recordTypeParam = url.searchParams.get("recordType");
       const recordType = recordTypeParam === null ? null : Number(recordTypeParam);
@@ -768,7 +948,7 @@ export default {
       const [, db, generation, operationId] = walOperation;
       const gen = generationOr(generation);
       if (gen instanceof Response) return gen;
-      const auth = await requireCapabilityWithSession(db, { method: "WAL_READ" });
+      const auth = await requireCapabilityWithSession(db, { method: "WAL_READ" }, await routeUseDigest());
       if ("denied" in auth) return auth.denied;
       // Read surface: immutable durable history stays queryable by operation
       // identity across a fence of some OTHER actor (V16; the finalize-RETRY
@@ -790,7 +970,7 @@ export default {
       const [, db, generation] = walLast;
       const gen = generationOr(generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(db, { method: "WAL_READ" });
+      const denied = await requireCapability(db, { method: "WAL_READ" }, await routeUseDigest());
       if (denied) return denied;
       const recordType = Number(url.searchParams.get("recordType") ?? "NaN");
       if (invalidRecordType(recordType)) {
@@ -806,7 +986,7 @@ export default {
 
     const outboxPeek = path.match(/^\/outbox\/([^/]+)$/);
     if (request.method === "GET" && outboxPeek) {
-      const denied = await requireCapability(outboxPeek[1], { method: "OUTBOX" });
+      const denied = await requireCapability(outboxPeek[1], { method: "OUTBOX" }, await routeUseDigest());
       if (denied) return denied;
       // validated and clamped like scan's: a negative LIMIT is documented by
       // SQLite as "no upper bound", so an unchecked value here was the one
@@ -819,9 +999,12 @@ export default {
 
     const outboxAck = path.match(/^\/outbox\/([^/]+)\/ack$/);
     if (request.method === "POST" && outboxAck) {
-      const auth = await requireCapabilityWithSession(outboxAck[1], { method: "OUTBOX" });
+      const parsedAck = await readJson(request);
+      if ("errorResponse" in parsedAck) return parsedAck.errorResponse;
+      const auth = await requireCapabilityWithSession(outboxAck[1], { method: "OUTBOX" },
+        await useDigestOf({ path, body: parsedAck.body }));
       if ("denied" in auth) return auth.denied;
-      const b = (await request.json()) as { upToControlSeq: number | string };
+      const b = parsedAck.body as unknown as { upToControlSeq: number | string };
       let upTo: bigint;
       try {
         upTo = u64FromWire(b.upToControlSeq, "upToControlSeq");
@@ -839,18 +1022,24 @@ export default {
       // route family: a 400 must not burn the caller's single-use token
       const cutGen = generationOr(cutOpen[2]);
       if (cutGen instanceof Response) return cutGen;
-      const denied = await requireCapability(cutOpen[1], { method: "SESSION_ADMIN" });
+      const parsedCut = await readJson(request);
+      if ("errorResponse" in parsedCut) return parsedCut.errorResponse;
+      const denied = await requireCapability(cutOpen[1], { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsedCut.body }));
       if (denied) return denied;
-      const b = (await request.json()) as { cutId: string };
+      const b = parsedCut.body as unknown as { cutId: string };
       const result = await stubFor(cutOpen[1]).openCheckpointCut(cutOpen[1], cutGen, b.cutId);
       return json(result, result.ok ? 200 : 409);
     }
 
     const cutActivate = path.match(/^\/checkpoint\/([^/]+)\/cut\/([^/]+)\/activate$/);
     if (request.method === "POST" && cutActivate) {
-      const denied = await requireCapability(cutActivate[1], { method: "SESSION_ADMIN" });
+      const parsedEvidence = await readJson(request);
+      if ("errorResponse" in parsedEvidence) return parsedEvidence.errorResponse;
+      const denied = await requireCapability(cutActivate[1], { method: "SESSION_ADMIN" },
+        await useDigestOf({ path, body: parsedEvidence.body }));
       if (denied) return denied;
-      const b = (await request.json()) as { materializations: string[]; logicalDigest: string };
+      const b = parsedEvidence.body as unknown as { materializations: string[]; logicalDigest: string };
       const result = await stubFor(cutActivate[1])
         .activateCheckpointCut(cutActivate[1], decodeURIComponent(cutActivate[2]), b);
       return json(result, result.ok ? 200 : 409);
@@ -860,7 +1049,7 @@ export default {
     if (request.method === "GET" && cutActive) {
       const activeGen = generationOr(cutActive[2]);
       if (activeGen instanceof Response) return activeGen;
-      const denied = await requireCapability(cutActive[1], { method: "WAL_READ" });
+      const denied = await requireCapability(cutActive[1], { method: "WAL_READ" }, await routeUseDigest());
       if (denied) return denied;
       const result = await stubFor(cutActive[1]).activeCheckpointCut(cutActive[1], activeGen);
       return json(result, result.ok ? 200 : 404);
@@ -868,7 +1057,7 @@ export default {
 
     const journalVerifyAnchored = path.match(/^\/journal\/([^/]+)\/verify-anchored$/);
     if (request.method === "GET" && journalVerifyAnchored) {
-      const denied = await requireCapability(journalVerifyAnchored[1], { method: "JOURNAL_VERIFY" });
+      const denied = await requireCapability(journalVerifyAnchored[1], { method: "JOURNAL_VERIFY" }, await routeUseDigest());
       if (denied) return denied;
       const verdict = await stubFor(journalVerifyAnchored[1]).verifyJournalAnchored();
       return json(verdict, verdict.ok ? 200 : 409);
@@ -879,7 +1068,7 @@ export default {
       // F8 read surface: recompute the whole chain + MACs server-side.
       // Routed by databaseId like every DO method (the journal is the DO's
       // global outbox; the id names the authority instance to audit).
-      const denied = await requireCapability(journalVerify[1], { method: "JOURNAL_VERIFY" });
+      const denied = await requireCapability(journalVerify[1], { method: "JOURNAL_VERIFY" }, await routeUseDigest());
       if (denied) return denied;
       const verdict = await stubFor(journalVerify[1]).verifyJournal();
       return json(verdict, verdict.ok ? 200 : 409);
@@ -890,7 +1079,7 @@ export default {
       const [, db, generation] = walAudit;
       const gen = generationOr(generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(db, { method: "WAL_READ" });
+      const denied = await requireCapability(db, { method: "WAL_READ" }, await routeUseDigest());
       if (denied) return denied;
       return json({ ok: true, ...(await stubFor(db).auditContiguity(db, gen)) });
     }

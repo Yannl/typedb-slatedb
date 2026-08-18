@@ -84,6 +84,27 @@ export function hmacSha256(key: Uint8Array, ...message: Uint8Array[]): Uint8Arra
   return sha256(outer, sha256(inner, ...message));
 }
 
+/**
+ * Domain-separated, length-framed hash (audit C-P1-04): every field is
+ * preceded by its 8-byte big-endian length, and the domain string is the
+ * first framed field. Two different partitions of the same concatenated
+ * bytes therefore hash differently - `sha256(prev || seq || kind || body)`
+ * had no boundary between `kind` and `body`, so ("AB","C") and ("A","BC")
+ * were the same preimage. The domain makes preimages from different
+ * protocols non-exchangeable even when their field lists collide.
+ */
+export function framedHash(domain: string, ...fields: Uint8Array[]): Uint8Array {
+  const chunks: Uint8Array[] = [];
+  const frame = (field: Uint8Array) => {
+    const length = new Uint8Array(8);
+    new DataView(length.buffer).setBigUint64(0, BigInt(field.length));
+    chunks.push(length, field);
+  };
+  frame(utf8(domain));
+  for (const field of fields) frame(field);
+  return sha256(...chunks);
+}
+
 export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;

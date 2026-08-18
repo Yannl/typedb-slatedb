@@ -22,6 +22,12 @@ bucket_name = "typedb-payloads-local"
 # that lost its secrets refuses every request; it never runs on dev keys.
 [vars]
 CONTROLLER_KEY_PROFILE = "local-dev"
+# PR0 containment (audit C-P0-01/03/09): ONLY this exact value opens the
+# dev-only routes (local issuance, register/fence, budgets, batch, admin,
+# raw outbox/audit). [env.production] deliberately does not set it - unset
+# means the production surface, so losing the variable closes routes,
+# never opens them (worker-entry.ts devOnlyRoute).
+CONTROLLER_SURFACE = "local-dev"
 
 [env.production]
 [env.production.vars]

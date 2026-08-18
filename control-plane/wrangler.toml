@@ -6,9 +6,22 @@ compatibility_date = "2025-11-01"
 name = "CONTROLLER"
 class_name = "DatabaseControllerDO"
 
+# C-08: the container control-protocol authority (durable observation store +
+# typed RPC). A binding, not a stub — it exists in every mode even though the
+# container process itself is a real-platform residual (matrix CF-02).
+[[durable_objects.bindings]]
+name = "CONTAINER"
+class_name = "DatabaseContainerDO"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["DatabaseControllerDO"]
+
+# C-08: SEPARATE migration tag so the v1 DatabaseControllerDO migration is
+# untouched — v2 only introduces the new SQLite-backed container authority.
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["DatabaseContainerDO"]
 
 [[r2_buckets]]
 binding = "PAYLOADS"
@@ -36,6 +49,20 @@ CONTROLLER_KEY_PROFILE = "managed"
 [[env.production.durable_objects.bindings]]
 name = "CONTROLLER"
 class_name = "DatabaseControllerDO"
+
+[[env.production.durable_objects.bindings]]
+name = "CONTAINER"
+class_name = "DatabaseContainerDO"
+
+# Migrations are shared across environments by tag; the production surface
+# binds the same v1+v2 SQLite classes.
+[[env.production.migrations]]
+tag = "v1"
+new_sqlite_classes = ["DatabaseControllerDO"]
+
+[[env.production.migrations]]
+tag = "v2"
+new_sqlite_classes = ["DatabaseContainerDO"]
 
 [[env.production.r2_buckets]]
 binding = "PAYLOADS"

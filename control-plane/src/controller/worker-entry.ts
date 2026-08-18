@@ -48,6 +48,13 @@
 import { DatabaseControllerDO } from "./database-controller.ts";
 export { DatabaseControllerDO };
 
+// C-08: the container's durable control-protocol authority. Exported and
+// bound (wrangler.toml, migration v2) so the intended container lifecycle
+// authority exists as a real binding in every mode; the container PROCESS
+// itself is a real-platform residual (matrix CF-02).
+import { DatabaseContainerDO } from "../container/database-container.ts";
+export { DatabaseContainerDO };
+
 import { MAX_BATCH_BYTES, MAX_BATCH_MEMBERS, u64FromWire, type FinalizeRequest } from "./core/procedures.ts";
 import { devOnlyRoute } from "./surface.ts";
 import { canonicalJson } from "./core/journal-crypto.ts";
@@ -56,6 +63,11 @@ import { resolveKeyConfig } from "./core/key-config.ts";
 
 interface Env {
   CONTROLLER: DurableObjectNamespace<DatabaseControllerDO>;
+  /** C-08: the container control-protocol authority binding. Present in every
+   *  mode (the control protocol must exist even where the container process is
+   *  a native substitute); no HTTP route addresses it yet — it is exercised
+   *  through the typed RPC surface (recordObservation/getObservations). */
+  CONTAINER: DurableObjectNamespace<DatabaseContainerDO>;
   PAYLOADS: R2Bucket;
   /** Q-24/Q-02: key posture + issuance credential; see core/key-config.ts. */
   CONTROLLER_KEY_PROFILE?: string;
@@ -76,9 +88,82 @@ function json(body: unknown, status = 200): Response {
   return new Response(encoded, { status, headers: { "content-type": "application/json" } });
 }
 
+/** Lowercase hex of a digest buffer - the one place bytes become the wire
+ *  digest syntax, shared by the buffered and streaming digest paths. */
+function hexOf(buffer: ArrayBuffer): string {
+  return [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 async function sha256hex(bytes: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return hexOf(await crypto.subtle.digest("SHA-256", bytes));
+}
+
+/** Concatenate stream chunks into one contiguous view. The single-chunk case
+ *  (every small payload) returns the chunk itself - no copy. */
+function concatChunks(chunks: Uint8Array[], total: number): Uint8Array {
+  if (chunks.length === 1 && chunks[0].byteLength === total) return chunks[0];
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
+/**
+ * Bounded, streaming read of an UNTRUSTED request body (C-06). The body is
+ * consumed chunk-by-chunk: each chunk is folded into an incremental SHA-256
+ * `crypto.DigestStream` and appended to a bounded buffer, and the byte cap is
+ * enforced PER CHUNK — never trusting the client's `content-length`. A stream
+ * that under-declares its length (or omits it, on chunked transfer) is aborted
+ * the instant it crosses the cap, not after a full oversized buffer has been
+ * materialised in the isolate.
+ *
+ * One contiguous copy of the body still remains, by necessity, not oversight:
+ * the object must be stored in R2, AND the F9 capability binds the CONTENT
+ * digest, so the whole body has to be read (to know the digest) before the
+ * write can be authorized. A store-while-streaming path — upload to R2 and
+ * authorize concurrently — would have to authorize before the digest is known,
+ * which breaks the content-addressed authority model. That is a genuine
+ * protocol change (digest-declared-then-verified upload), recorded as a
+ * P-WORKER remainder; here the digest is at least computed incrementally with
+ * no second full pass over the bytes.
+ */
+async function readBodyStreamingDigest(request: Request, limit: number):
+  Promise<{ bytes: Uint8Array; digest: string } | { errorResponse: Response }> {
+  const body = request.body;
+  if (body === null) {
+    // no readable body: an unbounded/absent stream cannot be admitted against
+    // a byte budget (mirrors refuseOversizedBody's missing-length refusal)
+    return { errorResponse: json({ ok: false, error: "CONTENT_LENGTH_REQUIRED", limit }, 411) };
+  }
+  const digestStream = new crypto.DigestStream("SHA-256");
+  const writer = digestStream.getWriter();
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > limit) {
+        await writer.abort().catch(() => {});
+        await reader.cancel().catch(() => {});
+        return { errorResponse: json({ ok: false, error: "REQUEST_BODY_TOO_LARGE",
+                                       observed: total, limit }, 413) };
+      }
+      // fold into the digest first (DigestStream copies into the hash context,
+      // it does not detach the view), then retain for the R2 write
+      await writer.write(value);
+      chunks.push(value);
+    }
+    await writer.close();
+  } finally {
+    reader.releaseLock();
+  }
+  return { bytes: concatChunks(chunks, total), digest: hexOf(await digestStream.digest) };
 }
 
 /**
@@ -87,8 +172,8 @@ async function sha256hex(bytes: ArrayBuffer): Promise<string> {
  * payloads — real CommitRecords (schema loads, imports) would hit it long
  * before any platform limit.
  */
-function base64Of(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
+function base64Of(buffer: ArrayBuffer | Uint8Array): string {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
   const CHUNK = 8192;
   const parts: string[] = [];
   for (let i = 0; i < bytes.length; i += CHUNK) {
@@ -108,26 +193,73 @@ async function fetchVerified(
   key: string,
   expectedDigest: string,
   expectedLength?: number,
-): Promise<{ buffer: ArrayBuffer } | { error: "MISSING" } | { error: "MISMATCH"; observed: string; length: number }> {
+): Promise<
+  { bytes: Uint8Array }
+  | { error: "MISSING" }
+  | { error: "OVER_CAP"; size: number; cap: number }
+  | { error: "MISMATCH"; observed: string; length: number }
+> {
   const object = await env.PAYLOADS.get(key);
   if (object === null) return { error: "MISSING" };
-  const buffer = await object.arrayBuffer();
-  const observed = await sha256hex(buffer);
-  if (observed !== expectedDigest || (expectedLength !== undefined && buffer.byteLength !== expectedLength)) {
-    return { error: "MISMATCH", observed, length: buffer.byteLength };
+  // Hard per-object cap enforced BEFORE the body is read (C-06): R2 reports
+  // the stored size, so an object the 8 MiB write cap should have refused (a
+  // tampered or legacy bucket entry) is rejected without ever being
+  // materialised in the isolate.
+  if (object.size > MAX_PAYLOAD_OBJECT_BYTES) {
+    // release the unread body stream cleanly rather than leaving it for the
+    // runtime to cancel (avoids a noisy pump-canceled log)
+    await object.body.cancel().catch(() => {});
+    return { error: "OVER_CAP", size: object.size, cap: MAX_PAYLOAD_OBJECT_BYTES };
   }
-  return { buffer };
+  // Streaming digest verification: the body is read chunk-by-chunk into an
+  // incremental DigestStream (no separate arrayBuffer()+hash pass), and the
+  // cap is re-checked per chunk in case the reported size lied. The bytes are
+  // still buffered because the wire contract returns them base64 inline; the
+  // day that contract is dropped, the digest already flows without a copy.
+  const digestStream = new crypto.DigestStream("SHA-256");
+  const writer = digestStream.getWriter();
+  const reader = object.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_PAYLOAD_OBJECT_BYTES) {
+        await writer.abort().catch(() => {});
+        await reader.cancel().catch(() => {});
+        return { error: "OVER_CAP", size: total, cap: MAX_PAYLOAD_OBJECT_BYTES };
+      }
+      await writer.write(value);
+      chunks.push(value);
+    }
+    await writer.close();
+  } finally {
+    reader.releaseLock();
+  }
+  const observed = hexOf(await digestStream.digest);
+  if (observed !== expectedDigest || (expectedLength !== undefined && total !== expectedLength)) {
+    return { error: "MISMATCH", observed, length: total };
+  }
+  return { bytes: concatChunks(chunks, total) };
 }
 
-/** Read-path wrapper: base64 payload or a typed 500 error Response. */
+/** Read-path wrapper: base64 payload or a typed error Response. A catalogued
+ *  record whose payload is missing/corrupt is a hard integrity error (500,
+ *  never EOF); an object over the per-object byte ceiling is a typed 413. */
 async function verifiedPayloadBase64(
   env: Env,
   record: { payloadKey: string; payloadDigest: string },
 ): Promise<{ payloadBase64: string } | { errorResponse: Response }> {
   const result = await fetchVerified(env, String(record.payloadKey), String(record.payloadDigest));
-  if ("buffer" in result) return { payloadBase64: base64Of(result.buffer) };
+  if ("bytes" in result) return { payloadBase64: base64Of(result.bytes) };
   if (result.error === "MISSING") {
     return { errorResponse: json({ ok: false, error: "PAYLOAD_MISSING_FOR_CATALOGUED_RECORD", record }, 500) };
+  }
+  if (result.error === "OVER_CAP") {
+    return { errorResponse: json({ ok: false, error: "PAYLOAD_EXCEEDS_OBJECT_CAP",
+                                   record, size: result.size, cap: result.cap }, 413) };
   }
   return {
     errorResponse: json({ ok: false, error: "PAYLOAD_INTEGRITY_VIOLATION", record, observed: result.observed }, 500),
@@ -169,6 +301,25 @@ const PAYLOAD_FETCH_CONCURRENCY = R2_SUBREQUEST_CEILING;
  *  the first oversized object was always admitted, fully materialised, and
  *  base64-expanded in a 128 MiB isolate before anything refused it. */
 const MAX_REQUEST_BODY_BYTES = 8 * 1024 * 1024;
+
+/** Hard per-object byte ceiling on the READ path (C-06): the same F9 data-path
+ *  object limit as the write side. Enforced against R2's reported object size
+ *  before any body is read, so a catalogued object that exceeds the ceiling is
+ *  refused rather than materialised. */
+const MAX_PAYLOAD_OBJECT_BYTES = MAX_REQUEST_BODY_BYTES;
+
+/** decodeURIComponent that returns a typed 400 instead of throwing an
+ *  unhandled URIError (a 500) on malformed percent-encoding (C-06): a `%zz`
+ *  or a dangling `%` in a path segment is a client error, surfaced as
+ *  BAD_PERCENT_ENCODING, never an isolate crash after a capability may already
+ *  have been touched. Returns the decoded value or the typed refusal. */
+function safeDecodeComponent(raw: string): { value: string } | { errorResponse: Response } {
+  try {
+    return { value: decodeURIComponent(raw) };
+  } catch {
+    return { errorResponse: json({ ok: false, error: "BAD_PERCENT_ENCODING", segment: raw }, 400) };
+  }
+}
 
 /** Declared-length admission: refuse before reading. A request with no
  *  content-length is refused too - an unbounded stream cannot be admitted
@@ -512,28 +663,34 @@ export default {
     }
 
     if (request.method === "PUT" && path.startsWith("/payload/")) {
-      const key = decodeURIComponent(path.slice("/payload/".length));
-      // content-addressed, issuer-derived key scheme: p/<databaseId>/<sha256hex>
+      // safe percent-decoding: a malformed `%zz` key is a typed 400, never a
+      // 500 from an unhandled URIError (C-06)
+      const decodedKey = safeDecodeComponent(path.slice("/payload/".length));
+      if ("errorResponse" in decodedKey) return decodedKey.errorResponse;
+      const key = decodedKey.value;
+      // content-addressed, issuer-derived key scheme: p/<databaseId>/<sha256hex>.
+      // Runtime-validate the FULL structure the byte path depends on (C-06):
+      // three segments, literal "p" prefix, a non-empty databaseId, and a
+      // syntactically valid 64-hex content digest - not just a length check.
       const parts = key.split("/");
-      if (parts.length !== 3 || parts[0] !== "p") {
+      if (parts.length !== 3 || parts[0] !== "p" || parts[1].length === 0 || invalidSha256Hex(parts[2])) {
         return json({ ok: false, error: "INVALID_PAYLOAD_KEY", key }, 400);
       }
       const tooLarge = refuseOversizedBody(request);
       if (tooLarge) return tooLarge;
       // the digest binding genuinely needs the body hashed before the
       // capability verdict; the null-token refusal does not - answer it
-      // before buffering anything
+      // before reading anything
       if (request.headers.get("x-capability") === null) {
         return json({ ok: false, error: "CAPABILITY_REQUIRED" }, 401);
       }
-      const bytes = await request.arrayBuffer();
-      if (bytes.byteLength > MAX_REQUEST_BODY_BYTES) {
-        // declared length lied; the read is bounded by the platform anyway,
-        // but the refusal must not depend on the client's honesty
-        return json({ ok: false, error: "REQUEST_BODY_TOO_LARGE",
-                      observed: bytes.byteLength, limit: MAX_REQUEST_BODY_BYTES }, 413);
-      }
-      const digest = await sha256hex(bytes);
+      // Bounded streaming read (C-06): the body is consumed chunk-by-chunk into
+      // an incremental digest with a per-chunk byte cap that does NOT trust the
+      // declared content-length. The content-length pre-check above is kept as
+      // the fast, pre-read refusal; this is the authoritative bound.
+      const streamed = await readBodyStreamingDigest(request, MAX_REQUEST_BODY_BYTES);
+      if ("errorResponse" in streamed) return streamed.errorResponse;
+      const { bytes, digest } = streamed;
       // payload immutability: puts are create-or-identical, never overwrite.
       // The create is a CONDITIONAL put (If-None-Match: *), not get-then-put:
       // two concurrent puts of different bytes must never both succeed, and a
@@ -550,13 +707,20 @@ export default {
             onlyIf: new Headers({ "if-none-match": "*" }),
           });
           if (created !== null) return { status: 200, body: { key, sha256hex: digest, length: bytes.byteLength } };
-          const existing = await env.PAYLOADS.get(key);
-          if (existing === null) continue; // lost a delete/create race; retry the conditional create
-          const existingDigest = await sha256hex(await existing.arrayBuffer());
-          if (existingDigest !== digest) {
-            return { status: 409, body: { ok: false, error: "PAYLOAD_IMMUTABILITY_VIOLATION", key, existing: existingDigest } };
+          // lost the conditional create: verify the existing object streaming
+          // against our digest (no arrayBuffer()+hash pass, per-object cap
+          // enforced) to decide dedup vs immutability violation.
+          const existing = await fetchVerified(env, key, digest);
+          if ("bytes" in existing) {
+            return { status: 200, body: { key, sha256hex: digest, length: bytes.byteLength, deduplicated: true } };
           }
-          return { status: 200, body: { key, sha256hex: digest, length: bytes.byteLength, deduplicated: true } };
+          if (existing.error === "MISSING") continue; // lost a delete/create race; retry the conditional create
+          if (existing.error === "OVER_CAP") {
+            return { status: 413, body: { ok: false, error: "PAYLOAD_EXCEEDS_OBJECT_CAP",
+                                          key, size: existing.size, cap: existing.cap } };
+          }
+          return { status: 409, body: { ok: false, error: "PAYLOAD_IMMUTABILITY_VIOLATION",
+                                        key, existing: existing.observed } };
         }
         // exhausted the race retries: surface as retryable, not a burned
         // success - withMutation marks a thrown error AMBIGUOUS
@@ -702,8 +866,12 @@ export default {
     const verifyReceipt = async (req: { payloadKey: string; payloadDigest: string; payloadLength: number }):
       Promise<{ status: number; body: unknown } | null> => {
       const result = await fetchVerified(env, req.payloadKey, req.payloadDigest, req.payloadLength);
-      if ("buffer" in result) return null;
+      if ("bytes" in result) return null;
       if (result.error === "MISSING") return { status: 422, body: { ok: false, error: "PAYLOAD_MISSING", key: req.payloadKey } };
+      if (result.error === "OVER_CAP") {
+        return { status: 413, body: { ok: false, error: "PAYLOAD_EXCEEDS_OBJECT_CAP",
+                                      key: req.payloadKey, size: result.size, cap: result.cap } };
+      }
       return { status: 422, body: { ok: false, error: "PAYLOAD_DIGEST_MISMATCH", observed: result.observed, length: result.length } };
     };
 
@@ -1008,6 +1176,10 @@ export default {
       const [, db, generation, operationId] = walOperation;
       const gen = generationOr(generation);
       if (gen instanceof Response) return gen;
+      // safe percent-decoding of the operation id: a malformed `%zz` is a
+      // typed 400, never a 500 from an unhandled URIError (C-06)
+      const decodedOp = safeDecodeComponent(operationId);
+      if ("errorResponse" in decodedOp) return decodedOp.errorResponse;
       const auth = await requireCapabilityWithSession(db, { method: "WAL_READ" }, await routeUseDigest());
       if ("denied" in auth) return auth.denied;
       // Read surface: immutable durable history stays queryable by operation
@@ -1017,7 +1189,7 @@ export default {
       // session (donor A4): a fenced actor holding an unexpired WAL_READ
       // capability reads nothing.
       const result = await stubFor(db).queryOperation(
-        db, gen, decodeURIComponent(operationId), auth.session);
+        db, gen, decodedOp.value, auth.session);
       if (!result.ok) {
         const refusal = sessionRefusal(result as { ok: false; error: string });
         return refusal ?? json(result, 404);
@@ -1102,13 +1274,17 @@ export default {
 
     const cutActivate = path.match(/^\/checkpoint\/([^/]+)\/cut\/([^/]+)\/activate$/);
     if (request.method === "POST" && cutActivate) {
+      // safe percent-decoding of the cut id BEFORE the capability claim: a
+      // malformed `%zz` is a typed 400 that burns no token, never a 500 (C-06)
+      const decodedCut = safeDecodeComponent(cutActivate[2]);
+      if ("errorResponse" in decodedCut) return decodedCut.errorResponse;
       const parsedEvidence = await readJson(request);
       if ("errorResponse" in parsedEvidence) return parsedEvidence.errorResponse;
       const b = parsedEvidence.body as unknown as { materializations: string[]; logicalDigest: string };
       return withMutation(cutActivate[1], { method: "SESSION_ADMIN" },
         await useDigestOf({ path, body: parsedEvidence.body }), async () => {
           const result = await stubFor(cutActivate[1])
-            .activateCheckpointCut(cutActivate[1], decodeURIComponent(cutActivate[2]), b);
+            .activateCheckpointCut(cutActivate[1], decodedCut.value, b);
           return { status: result.ok ? 200 : 409, body: result };
         });
     }

@@ -112,14 +112,17 @@ impl CheckpointReader {
     }
 
     pub fn read_sequence_number(&self) -> Result<SequenceNumber, CheckpointLoadError> {
-        use CheckpointLoadError::MetadataRead;
+        use CheckpointLoadError::{MetadataCorrupt, MetadataRead};
 
         let metadata_file_path = self.directory.join(STORAGE_METADATA_FILE_NAME);
         let metadata = fs::read_to_string(metadata_file_path)
             .map_err(|error| MetadataRead { dir: self.directory.clone(), source: Arc::new(error) })?;
-        Ok(SequenceNumber::new(
-            metadata.parse().expect("Could not read METADATA file (could try to restore from previous checkpoint)"),
-        ))
+        // an unparseable watermark is a typed error, never a panic: the
+        // caller can fall back to an older checkpoint or full WAL replay,
+        // while a panic here takes down recovery with no recourse
+        let number =
+            metadata.parse().map_err(|_| MetadataCorrupt { dir: self.directory.clone(), content: metadata.clone() })?;
+        Ok(SequenceNumber::new(number))
     }
 
     fn is_complete<KS: KeyspaceSet>(&self) -> io::Result<bool> {
@@ -407,5 +410,37 @@ typedb_error! {
         AdditionalDataNotFound(8, "Checkpoint additional data with identifier '{name}' not found.", name: String),
         AdditionalDataIO(9, "Error accessing checkpoint additional data with identifier '{name}'.", name: String, source: Arc<io::Error>),
         AdditionalDataDeserialise(10, "Error deserialising checkpoint additional data with identifier '{name}'.", name: String, source: Arc<bincode::Error>),
+        MetadataCorrupt(11, "Checkpoint metadata file in directory '{dir:?}' does not hold a parseable watermark (found '{content}'). The checkpoint is corrupt; an older checkpoint or a full WAL replay may still recover the database.", dir: PathBuf, content: String),
+    }
+}
+
+#[cfg(test)]
+mod metadata_tests {
+    //! S-P0-04 control (metadata half): a checkpoint whose STORAGE_METADATA
+    //! file cannot be parsed is a typed load error — never an `expect` panic
+    //! that kills recovery with no recourse to an older checkpoint.
+
+    use test_utils::create_tmp_dir;
+
+    use super::{CheckpointLoadError, CheckpointReader, STORAGE_METADATA_FILE_NAME};
+
+    #[test]
+    fn a_parseable_watermark_round_trips() {
+        let dir = create_tmp_dir("checkpoint-metadata");
+        std::fs::write(dir.join(STORAGE_METADATA_FILE_NAME), b"42").unwrap();
+        let reader = CheckpointReader { directory: dir.to_path_buf() };
+        assert_eq!(reader.read_sequence_number().unwrap().number(), 42);
+    }
+
+    #[test]
+    fn an_unparseable_watermark_is_a_typed_error_not_a_panic() {
+        let dir = create_tmp_dir("checkpoint-metadata-corrupt");
+        std::fs::write(dir.join(STORAGE_METADATA_FILE_NAME), b"not-a-number").unwrap();
+        let reader = CheckpointReader { directory: dir.to_path_buf() };
+        let error = reader.read_sequence_number().expect_err("corrupt metadata must be a typed error");
+        assert!(
+            matches!(error, CheckpointLoadError::MetadataCorrupt { .. }),
+            "expected MetadataCorrupt, got: {error:?}"
+        );
     }
 }

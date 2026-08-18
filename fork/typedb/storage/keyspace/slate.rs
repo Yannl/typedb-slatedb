@@ -317,22 +317,24 @@ fn build_s3_store(config: &S3Config) -> Result<Arc<dyn ObjectStore>, slatedb::Er
 
 /// Map the absolute local keyspace directory to its object-store prefix:
 /// `<root>/<encoded absolute path>`. The encoding is injective (`=` is the
-/// only escape: `=s` for `/`, `==` for `=`, `=xHH` for anything outside
+/// only escape: `=s` for `/`, `==` for `=`, `=xHH` for any byte outside
 /// `[A-Za-z0-9._-]`), so two distinct keyspace directories can never share a
-/// prefix, and the prefix of a reopened directory is stable.
+/// prefix, and the prefix of a reopened directory is stable. It operates on
+/// the path's RAW BYTES (`OsStr::as_encoded_bytes`), never on a lossy
+/// UTF-8 rendering: `to_string_lossy` collapses every ill-formed sequence to
+/// U+FFFD, so two byte-distinct non-UTF-8 directories would silently share a
+/// prefix — the exact aliasing the injectivity claim exists to rule out.
+/// Byte-wise `=xHH` escaping of non-ASCII produces the identical encoding to
+/// the previous per-UTF-8-char escaping for all valid-UTF-8 paths, so every
+/// existing prefix keeps resolving.
 fn object_prefix(config: &S3Config, keyspace_path: &Path) -> ObjectPath {
     let mut encoded = String::new();
-    for ch in keyspace_path.to_string_lossy().chars() {
-        match ch {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '.' | '-' | '_' => encoded.push(ch),
-            '/' => encoded.push_str("=s"),
-            '=' => encoded.push_str("=="),
-            other => {
-                let mut buffer = [0u8; 4];
-                for byte in other.encode_utf8(&mut buffer).bytes() {
-                    encoded.push_str(&format!("=x{byte:02x}"));
-                }
-            }
+    for &byte in keyspace_path.as_os_str().as_encoded_bytes() {
+        match byte {
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'.' | b'-' | b'_' => encoded.push(byte as char),
+            b'/' => encoded.push_str("=s"),
+            b'=' => encoded.push_str("=="),
+            other => encoded.push_str(&format!("=x{other:02x}")),
         }
     }
     ObjectPath::from(config.root_prefix.as_str()).join(encoded)
@@ -715,10 +717,13 @@ impl SlateKeyspace {
     /// server on the first such blip turns routine S3 weather into an
     /// outage, so Unavailable is retried a bounded number of times with
     /// backoff. Everything else — and Unavailable beyond the budget — still
-    /// FAILS CLOSED with a panic: the Option-only signature cannot carry an
-    /// error, and the caller (vertex ID allocator seeding) would treat a
-    /// silent None as "nothing allocated" and re-issue existing IDs — data
-    /// corruption. A crash is recoverable; ID reuse is not.
+    /// FAILS CLOSED, with logger::error + process abort: the Option-only
+    /// signature cannot carry an error, and the caller (vertex ID allocator
+    /// seeding) would treat a silent None as "nothing allocated" and
+    /// re-issue existing IDs — data corruption. An unwind is not enough
+    /// (it can be caught, or kill only one worker thread while the rest of
+    /// the server keeps serving on the unseeded allocator); a crash is
+    /// recoverable, ID reuse is not.
     pub(super) fn get_prev<M, T>(&self, key: &[u8], mut mapper: M) -> Option<T>
     where
         M: FnMut(&[u8], &[u8]) -> T,
@@ -740,11 +745,16 @@ impl SlateKeyspace {
                     std::thread::sleep(std::time::Duration::from_millis(50 << attempt));
                 }
                 Err(error) => {
-                    panic!(
-                        "SlateDB floor scan (get_prev) failed ({} transient retries); \
-                         refusing to report absence: {error}",
-                        attempt
-                    )
+                    // fail-stop, not panic: an unwind can be caught (or kill
+                    // only one worker thread) and the server would keep
+                    // serving with an allocator that was never seeded —
+                    // exactly the silent ID reuse this branch exists to
+                    // prevent. Abort so recovery restarts from the WAL.
+                    logger::error!(
+                        "FATAL: SlateDB floor scan (get_prev) failed ({attempt} transient retries); \
+                         refusing to report absence and aborting: {error}"
+                    );
+                    std::process::abort()
                 }
             }
         }
@@ -808,11 +818,7 @@ impl SlateKeyspace {
         let manifest_dir = find_manifest_dir(&self.path).map_err(|error| Arc::new(io_error(error)))?;
         // lexicographic max = newest manifest, same pin as checkpoint_remote
         let pinned_manifest = match &manifest_dir {
-            Some(dir) => fs::read_dir(dir)
-                .map_err(|error| Arc::new(io_error(error)))?
-                .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-                .filter(|path| path.is_file())
-                .max(),
+            Some(dir) => pin_newest_manifest(dir).map_err(|error| Arc::new(io_error(error)))?,
             None => None,
         };
 
@@ -823,9 +829,17 @@ impl SlateKeyspace {
             let relative = dir.strip_prefix(&self.path).expect("manifest dir is under the keyspace path");
             let target_dir = checkpoint_keyspace_dir.join(relative);
             fs::create_dir_all(&target_dir).map_err(|error| Arc::new(io_error(error)))?;
-            fs::copy(pinned, target_dir.join(pinned.file_name().expect("manifest file name")))
-                .map_err(|error| Arc::new(io_error(error)))?;
+            let target = target_dir.join(pinned.file_name().expect("manifest file name"));
+            fs::copy(pinned, &target).map_err(|error| Arc::new(io_error(error)))?;
+            // the pinned manifest is what restore opens: its bytes and its
+            // directory entry must be durable, not just in the page cache
+            fsync_file(&target).map_err(|error| Arc::new(io_error(error)))?;
+            fsync_dir(&target_dir).map_err(|error| Arc::new(io_error(error)))?;
         }
+        // completion boundary: the checkpoint tree's root entry itself — a
+        // checkpoint the caller goes on to declare finished must not lose
+        // files to a crash that empties the page cache
+        fsync_dir(checkpoint_keyspace_dir).map_err(|error| Arc::new(io_error(error)))?;
         Ok(())
     }
 
@@ -1039,20 +1053,43 @@ impl SlateCursor {
                     }
                 });
                 self.iterator = Some(iterator);
-                match outcome {
-                    Ok(item) => {
-                        self.record(Ok(item));
-                        return;
-                    }
-                    Err(_) => {
-                        // e.g. seek at/behind the last yielded key on a scan
-                        // whose current item was already consumed: fall back
-                        // to a fresh scan below
-                    }
+                if !self.absorb_forward_seek_outcome(outcome) {
+                    return; // positioned — or poisoned, surfaced via status()
                 }
+                // recoverable: fall through to a fresh scan below
             }
         }
         self.fresh_scan(key);
+    }
+
+    /// Fold the outcome of an in-scan forward seek into the cursor. Returns
+    /// `true` when the error is recoverable by starting a fresh scan.
+    ///
+    /// Only two error classes may be masked by a silent fresh scan:
+    /// `Invalid` — the seek positioning contract (`SeekKeyOutOfRange`,
+    /// `SeekKeyLessThanLastReturnedKey`: e.g. a seek at/behind the last
+    /// yielded key on a scan whose current item was already consumed), where
+    /// a fresh scan re-establishes a valid range — and `Unavailable`,
+    /// SlateDB's contractual transient class, where the fresh scan is the
+    /// retry (its own failure is recorded, so this cannot loop). Every other
+    /// kind (Data, Internal, Closed, Transaction) is real corruption or a
+    /// bug — including a sticky invalidation error replayed from an earlier
+    /// failed read — and retrying the scan would silently mask it as an
+    /// empty/short result; the cursor is poisoned instead and the error
+    /// surfaces through [`Self::status`].
+    fn absorb_forward_seek_outcome(&mut self, outcome: Result<Option<slatedb::KeyValue>, slatedb::Error>) -> bool {
+        match outcome {
+            Ok(item) => {
+                self.record(Ok(item));
+                false
+            }
+            Err(error) if matches!(error.kind(), slatedb::ErrorKind::Invalid | slatedb::ErrorKind::Unavailable) => true,
+            Err(error) => {
+                self.iterator = None;
+                self.record(Err(error));
+                false
+            }
+        }
     }
 
     fn fresh_scan(&mut self, key: &[u8]) {
@@ -1140,6 +1177,49 @@ fn retry_transient(error: &slatedb::Error, attempt: u32) -> bool {
     error.kind() == slatedb::ErrorKind::Unavailable && attempt < TRANSIENT_RETRIES
 }
 
+/// Pin the newest manifest file in `manifest_dir` (lexicographic max = newest,
+/// the same ordering `checkpoint_remote` applies to manifest object names).
+///
+/// Every directory-entry error is PROPAGATED: the erroring entry could be the
+/// newest manifest, and dropping it would silently pin an older manifest while
+/// the checkpoint metadata claims the current watermark — restore then replays
+/// from watermark+1 and silently skips the commits in between. For the same
+/// reason a nonempty manifest directory in which no manifest file can be
+/// pinned is an error, never a silent no-manifest checkpoint.
+fn pin_newest_manifest(manifest_dir: &Path) -> io::Result<Option<PathBuf>> {
+    let mut newest: Option<PathBuf> = None;
+    let mut nonempty = false;
+    for entry in fs::read_dir(manifest_dir)? {
+        let entry = entry?;
+        nonempty = true;
+        let path = entry.path();
+        // follows symlinks, so a dangling link or otherwise unreadable entry
+        // is an error here rather than a silently skipped candidate
+        let metadata = fs::metadata(&path)?;
+        if metadata.is_file() && newest.as_ref().is_none_or(|max| &path > max) {
+            newest = Some(path);
+        }
+    }
+    if nonempty && newest.is_none() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("manifest directory {manifest_dir:?} is nonempty but holds no manifest file to pin"),
+        ));
+    }
+    Ok(newest)
+}
+
+/// fsync a directory: `File::open` on the directory + `sync_all`, making the
+/// directory's entries (file names created/copied into it) durable. `sync_all`
+/// on the copied files alone does not persist their names.
+fn fsync_dir(dir: &Path) -> io::Result<()> {
+    fs::File::open(dir)?.sync_all()
+}
+
+fn fsync_file(file: &Path) -> io::Result<()> {
+    fs::File::open(file)?.sync_all()
+}
+
 fn copy_dir_recursive_excluding(from: &Path, to: &Path, exclude_dir: Option<&Path>) -> io::Result<()> {
     fs::create_dir_all(to)?;
     for entry in fs::read_dir(from)? {
@@ -1153,8 +1233,13 @@ fn copy_dir_recursive_excluding(from: &Path, to: &Path, exclude_dir: Option<&Pat
             copy_dir_recursive_excluding(&path, &target, exclude_dir)?;
         } else {
             fs::copy(&path, &target)?;
+            // checkpoint durability boundary: the copy must be on disk, not
+            // just in the page cache, before the checkpoint is declared done
+            fsync_file(&target)?;
         }
     }
+    // and the copied names themselves must be durable in this directory
+    fsync_dir(to)?;
     Ok(())
 }
 
@@ -1165,6 +1250,185 @@ fn copy_dir_recursive_excluding(from: &Path, to: &Path, exclude_dir: Option<&Pat
 fn find_manifest_dir(keyspace_path: &Path) -> io::Result<Option<PathBuf>> {
     let candidate = keyspace_path.join(DB_SUBDIR).join(MANIFEST_SUBDIR);
     if candidate.is_dir() { Ok(Some(candidate)) } else { Ok(None) }
+}
+
+#[cfg(test)]
+mod checkpoint_pin_tests {
+    //! S-P0-04 controls: manifest pinning must never silently drop an
+    //! erroring directory entry (the dropped entry could be the newest
+    //! manifest — the checkpoint would then claim the current watermark
+    //! while pinning an older manifest, and restore would skip commits).
+    //! The mutant "swallow entry errors with `.ok()` / `is_file()`" fails
+    //! the dangling-symlink tests below.
+
+    use std::fs;
+
+    use test_utils::create_tmp_dir;
+
+    use super::{SlateKeyspace, pin_newest_manifest};
+
+    #[test]
+    fn pin_newest_manifest_orders_and_tolerates_the_empty_dir() {
+        let dir = create_tmp_dir("slate-pin");
+        assert_eq!(pin_newest_manifest(&dir).unwrap(), None, "an empty manifest dir pins nothing");
+        fs::write(dir.join("00000000000000000001.manifest"), b"old").unwrap();
+        fs::write(dir.join("00000000000000000002.manifest"), b"new").unwrap();
+        let pinned = pin_newest_manifest(&dir).unwrap().expect("a manifest file must be pinned");
+        assert_eq!(pinned.file_name().unwrap(), "00000000000000000002.manifest", "lexicographic max = newest");
+    }
+
+    #[test]
+    fn an_erroring_manifest_entry_fails_the_pin_instead_of_pinning_an_older_manifest() {
+        let dir = create_tmp_dir("slate-pin-err");
+        fs::write(dir.join("00000000000000000001.manifest"), b"old").unwrap();
+        // the dangling symlink sorts AFTER the readable manifest: swallowing
+        // its metadata error would silently pin the older manifest
+        std::os::unix::fs::symlink(dir.join("nonexistent-target"), dir.join("00000000000000000002.manifest")).unwrap();
+        let refused = pin_newest_manifest(&dir);
+        assert!(refused.is_err(), "an unreadable candidate entry must fail the pin, not be dropped: {refused:?}");
+    }
+
+    #[test]
+    fn a_nonempty_manifest_dir_with_no_pinnable_manifest_is_an_error_not_a_silent_none() {
+        let dir = create_tmp_dir("slate-pin-none");
+        fs::create_dir(dir.join("unexpected-subdirectory")).unwrap();
+        let refused = pin_newest_manifest(&dir);
+        assert!(
+            refused.is_err(),
+            "a nonempty manifest dir in which nothing can be pinned would checkpoint a store \
+             restore cannot open — it must be an error: {refused:?}"
+        );
+    }
+
+    #[test]
+    fn a_broken_manifest_entry_fails_the_whole_checkpoint() {
+        // end-to-end: the same control through SlateKeyspace::checkpoint_local
+        let keyspace_dir = create_tmp_dir("slate-ckpt-broken");
+        let keyspace = SlateKeyspace::open(&keyspace_dir).unwrap();
+        keyspace.put(b"k", b"v").unwrap();
+
+        let good_checkpoint = create_tmp_dir("slate-ckpt-out-good");
+        keyspace.checkpoint(&good_checkpoint).unwrap();
+
+        let manifest_dir = super::find_manifest_dir(&keyspace_dir).unwrap().expect("open keyspace has a manifest dir");
+        std::os::unix::fs::symlink(manifest_dir.join("nonexistent-target"), manifest_dir.join("zzzz-dangling"))
+            .unwrap();
+        let broken_checkpoint = create_tmp_dir("slate-ckpt-out-broken");
+        let refused = keyspace.checkpoint_local(&broken_checkpoint);
+        assert!(refused.is_err(), "an erroring manifest entry must fail the checkpoint: {refused:?}");
+        fs::remove_file(manifest_dir.join("zzzz-dangling")).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod cursor_seek_error_tests {
+    //! S-P1-01 control: a forward-seek failure may be masked by a fresh scan
+    //! ONLY for the transient (Unavailable) and seek-positioning (Invalid)
+    //! classes; Data/Internal/Closed poison the cursor and surface through
+    //! `status()`. The mutant "fresh-scan on every error" (the previous
+    //! `Err(_) =>` arm) fails `a_data_error_poisons_the_cursor…`.
+
+    use test_utils::create_tmp_dir;
+
+    use super::{SlateCursor, SlateKeyspace};
+
+    fn positioned_cursor() -> (test_utils::TempDir, SlateKeyspace, SlateCursor) {
+        let dir = create_tmp_dir("slate-cursor-poison");
+        let keyspace = SlateKeyspace::open(&dir).unwrap();
+        keyspace.put(b"a", b"1").unwrap();
+        keyspace.put(b"b", b"2").unwrap();
+        let mut cursor = SlateCursor::new(keyspace.shared_db());
+        cursor.seek(b"a");
+        assert_eq!(cursor.key(), Some(b"a".as_slice()), "fixture: cursor is positioned mid-scan");
+        (dir, keyspace, cursor)
+    }
+
+    #[test]
+    fn a_data_error_poisons_the_cursor_and_surfaces_through_status() {
+        let (_dir, _keyspace, mut cursor) = positioned_cursor();
+        let needs_fresh_scan = cursor.absorb_forward_seek_outcome(Err(slatedb::Error::data("corrupt sst".to_string())));
+        assert!(!needs_fresh_scan, "a Data error must never be masked by a silent fresh scan");
+        assert!(cursor.status().is_err(), "the corruption must surface through status()");
+        assert_eq!(cursor.item(), None, "a poisoned cursor exposes no item");
+
+        let (_dir2, _keyspace2, mut cursor2) = positioned_cursor();
+        assert!(
+            !cursor2.absorb_forward_seek_outcome(Err(slatedb::Error::internal("bug".to_string()))),
+            "Internal errors poison too"
+        );
+        assert!(cursor2.status().is_err());
+    }
+
+    #[test]
+    fn positioning_and_transient_errors_are_recovered_by_a_fresh_scan() {
+        let (_dir, _keyspace, mut cursor) = positioned_cursor();
+        assert!(
+            cursor.absorb_forward_seek_outcome(Err(slatedb::Error::invalid(
+                "seek key comes before the current iterator position".to_string()
+            ))),
+            "the seek positioning contract is recovered by a fresh scan"
+        );
+        assert!(cursor.status().is_ok(), "a recoverable outcome must not poison the cursor");
+        assert!(
+            cursor.absorb_forward_seek_outcome(Err(slatedb::Error::unavailable("s3 blip".to_string()))),
+            "the contractual transient class is retried via the fresh scan"
+        );
+
+        // and a real end-to-end forward seek still works
+        cursor.seek(b"b");
+        assert_eq!(cursor.key(), Some(b"b".as_slice()));
+        assert!(cursor.status().is_ok());
+    }
+}
+
+#[cfg(test)]
+mod object_prefix_tests {
+    //! S-P1-04 control: the keyspace-path → object-prefix encoding is
+    //! injective over raw path BYTES. `to_string_lossy` folded every
+    //! ill-formed sequence to U+FFFD, so byte-distinct non-UTF-8 paths
+    //! aliased one prefix — two keyspaces sharing a store namespace.
+
+    use std::{ffi::OsStr, os::unix::ffi::OsStrExt, path::Path};
+
+    use super::{S3Config, object_prefix};
+
+    fn config() -> S3Config {
+        S3Config {
+            endpoint: "http://127.0.0.1:9000".to_owned(),
+            bucket: "bucket".to_owned(),
+            region: "auto".to_owned(),
+            access_key_id: "key".to_owned(),
+            secret_access_key: "secret".to_owned(),
+            root_prefix: "typedb".to_owned(),
+        }
+    }
+
+    #[test]
+    fn ascii_paths_keep_their_established_encoding() {
+        // pure-ASCII paths (every existing deployment) must resolve to the
+        // exact prefix the previous encoder produced
+        let prefix = object_prefix(&config(), Path::new("/tmp/data-1.db/ks_A"));
+        assert_eq!(prefix.as_ref(), "typedb/=stmp=sdata-1.db=sks_A");
+        let escaped = object_prefix(&config(), Path::new("/tmp/a=b c"));
+        assert_eq!(escaped.as_ref(), "typedb/=stmp=sa==b=x20c");
+    }
+
+    #[test]
+    fn byte_distinct_non_utf8_paths_never_share_a_prefix() {
+        let path_a = Path::new(OsStr::from_bytes(b"/tmp/ks-\xff\xfe"));
+        let path_b = Path::new(OsStr::from_bytes(b"/tmp/ks-\xfe\xff"));
+        assert_ne!(path_a, path_b, "fixture: the paths are byte-distinct");
+        assert_eq!(
+            path_a.to_string_lossy(),
+            path_b.to_string_lossy(),
+            "fixture: a lossy rendering aliases them — exactly what the encoding must not do"
+        );
+        let prefix_a = object_prefix(&config(), path_a);
+        let prefix_b = object_prefix(&config(), path_b);
+        assert_ne!(prefix_a, prefix_b, "distinct keyspace directories must never share an object prefix");
+        assert_eq!(prefix_a.as_ref(), "typedb/=stmp=sks-=xff=xfe");
+        assert_eq!(prefix_b.as_ref(), "typedb/=stmp=sks-=xfe=xff");
+    }
 }
 
 #[cfg(test)]

@@ -83,7 +83,7 @@
   {
    "id": "U2S3",
    "state": "HISTORICAL_EXPERIMENTAL_NON_QUALIFYING",
-   "why": "Archived run used a dirty 23-file staged tree (digest cc0d283a...); the current staged tree has 24 files and a different digest, and critical storage (cursor.rs, slate.rs, post_wal_guard.rs, storage.rs) changed after the run. Raw observation: 106 unique executable rows, 105 exited 0, 1 exited 101, 0 timeouts, 462 parsed passed, 2 parsed failed, 1 parsed ignored, 34 zero-case rows. That observation is preserved; it is NOT current-tree conformance and is never to be summarised as '105 green'.",
+   "why": "Classification: historical-dirty-tree-aggregate-smoke (label sidecar: docs/evidence/G3/u2s3-full-3/CLASSIFICATION.json). Archived run used a dirty 23-file staged tree (digest cc0d283a...); the current staged tree has 24 files and a different digest, and critical storage (cursor.rs, slate.rs, post_wal_guard.rs, storage.rs) changed after the run. Raw observation: 106 unique executable rows, 105 exited 0, 1 exited 101, 0 timeouts, 462 parsed passed, 2 parsed failed, 1 parsed ignored, 34 zero-case rows. That observation is preserved; it is NOT current-tree conformance and is never to be summarised as '105 green'.",
    "raw_observation": {
     "rows": 106,
     "exit_zero": 105,

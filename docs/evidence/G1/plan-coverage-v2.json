@@ -1,0 +1,144 @@
+{
+ "schema": "plan-coverage-v2",
+ "plan_root": "d0ef2c0be9f925f0c774c46f7bd55a186770d703664ed4498c8a981ce6c7d1b8",
+ "plan_rows": 23132,
+ "driver_rows": 6,
+ "exclusion_rows": 43,
+ "total_denominator_rows": 23138,
+ "covered_rows": 0,
+ "partial_rows": 107,
+ "uncovered_rows": 23031,
+ "by_family": {
+  "cargo-failpoint": {
+   "PARTIAL": 44,
+   "UNCOVERED": 176
+  },
+  "cargo-libtest": {
+   "PARTIAL": 63,
+   "UNCOVERED": 2212
+  },
+  "cucumber": {
+   "UNCOVERED": 20495
+  },
+  "driver": {
+   "NOT_IMPLEMENTED": 6
+  },
+  "script": {
+   "UNCOVERED": 1
+  },
+  "static": {
+   "UNCOVERED": 141
+  }
+ },
+ "uncovered_reasons": [
+  {
+   "family": "cargo-failpoint",
+   "reason": "target evidence exists ONLY under a lane the plan does not require (historical U2S3 dirty-tree archive) - other-lane evidence covers no plan row",
+   "rows": 176
+  },
+  {
+   "family": "cargo-libtest",
+   "reason": "target evidence exists ONLY under a lane the plan does not require (historical U2S3 dirty-tree archive) - other-lane evidence covers no plan row",
+   "rows": 2212
+  },
+  {
+   "family": "cucumber",
+   "reason": "no leaf-level runner lane has produced archived evidence",
+   "rows": 20495
+  },
+  {
+   "family": "script",
+   "reason": "no leaf-level runner lane has produced archived evidence",
+   "rows": 1
+  },
+  {
+   "family": "static",
+   "reason": "no leaf-level runner lane has produced archived evidence",
+   "rows": 141
+  }
+ ],
+ "partial_examples": [
+  {
+   "row": [
+    "cargo:typedb-admin:unit:typedb_admin::transport::unix::tests::accepts_socket_mode_0o600",
+    "U0"
+   ],
+   "evidence": [
+    {
+     "bundle": "docs/evidence/G1/u0-results-pass1",
+     "profile": "U0",
+     "cases": 8,
+     "exit_code": 101,
+     "dirty_tree": null
+    }
+   ]
+  },
+  {
+   "row": [
+    "cargo:typedb-admin:unit:typedb_admin::transport::unix::tests::rejects_directory",
+    "U0"
+   ],
+   "evidence": [
+    {
+     "bundle": "docs/evidence/G1/u0-results-pass1",
+     "profile": "U0",
+     "cases": 8,
+     "exit_code": 101,
+     "dirty_tree": null
+    }
+   ]
+  },
+  {
+   "row": [
+    "cargo:typedb-admin:unit:typedb_admin::transport::unix::tests::rejects_missing_path",
+    "U0"
+   ],
+   "evidence": [
+    {
+     "bundle": "docs/evidence/G1/u0-results-pass1",
+     "profile": "U0",
+     "cases": 8,
+     "exit_code": 101,
+     "dirty_tree": null
+    }
+   ]
+  }
+ ],
+ "evidence_bundles": [
+  {
+   "bundle": "docs/evidence/G1/u0-results-pass1",
+   "profile": "U0",
+   "rows": 104,
+   "profile_in_plan": true,
+   "tree_provenance": "UNRECORDED",
+   "dirty_tree": null,
+   "unjoinable_rows": 78,
+   "provenance_note": "this bundle records no executed-tree identity at all; 'dirty_tree: null' means UNKNOWN, never clean",
+   "unjoinable_reason": "target ids in the broken pre-fix '0.0.0:<target>' id space cannot be joined to catalogue targets without guessing; they contribute NOTHING to coverage"
+  },
+  {
+   "bundle": "docs/evidence/G1/u0-results-pass2-fixedenv",
+   "profile": "U0",
+   "rows": 10,
+   "profile_in_plan": true,
+   "tree_provenance": "UNRECORDED",
+   "dirty_tree": null,
+   "unjoinable_rows": 2,
+   "provenance_note": "this bundle records no executed-tree identity at all; 'dirty_tree: null' means UNKNOWN, never clean",
+   "unjoinable_reason": "target ids in the broken pre-fix '0.0.0:<target>' id space cannot be joined to catalogue targets without guessing; they contribute NOTHING to coverage"
+  },
+  {
+   "bundle": "docs/evidence/G3/u2s3-full-3",
+   "profile": "U2S3",
+   "rows": 106,
+   "profile_in_plan": false,
+   "tree_provenance": "recorded",
+   "dirty_tree": true,
+   "unjoinable_rows": 0,
+   "lane_note": "profile 'U2S3' is not a plan profile; this bundle's rows are other-lane evidence and cover no plan row"
+  }
+ ],
+ "partial_meaning": "PARTIAL = the leaf's cargo target produced an aggregate libtest row in the required lane; the individual leaf outcome was never recorded. PARTIAL rows are NOT covered.",
+ "plan_satisfied": false,
+ "statement": "THE PLAN IS NOT SATISFIED. 0 of 23138 denominator rows are covered at leaf granularity; 107 are PARTIAL (target-granularity aggregate evidence only); 23031 are uncovered (including 6 NOT_IMPLEMENTED official-driver rows required by v17-A17.5). The plan is the denominator of qualification, not a pass, and no claim of qualification may cite this report as green."
+}

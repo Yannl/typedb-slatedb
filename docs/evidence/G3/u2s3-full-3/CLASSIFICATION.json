@@ -1,0 +1,38 @@
+{
+ "schema": "evidence-classification-v1",
+ "classification": "historical-dirty-tree-aggregate-smoke",
+ "subject": "docs/evidence/G3/u2s3-full-3",
+ "added": "2026-08-18",
+ "added_by": "round-3 audit E-03 relabel (label sidecar addition only; no archived row, log, verdict or COMPLETE byte was modified)",
+ "tree": {
+  "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+  "repo_commit_at_run": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+  "dirty": true,
+  "staged_delta_files": 23,
+  "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+ },
+ "dirty": true,
+ "not_current_source": true,
+ "raw_observation": {
+  "rows": 106,
+  "exit_zero_rows": 105,
+  "nonzero_exit_rows": 1,
+  "timed_out_rows": 0,
+  "cases_passed": 462,
+  "cases_failed": 2,
+  "cases_ignored": 1,
+  "zero_case_rows": 34,
+  "source": "docs/evidence/G3/u2s3-full-3/verdict.json observation + docs/ledger/gates.json U2S3 lane raw_observation; reparse-bound by the sidecar log-manifest.json bundle root 8463cb2e700558a694c021d1b0ab3b54bb3843eee3a4e62b1cac85e244601d88"
+ },
+ "meaning": [
+  "HISTORICAL: the run predates later changes to critical storage files (cursor.rs, slate.rs, post_wal_guard.rs, storage.rs); it says nothing about the current staged tree.",
+  "DIRTY-TREE: the executed tree was a dirty 23-file staged delta, not a committed revision; the bytes are identified only by staged_delta_sha256 above.",
+  "AGGREGATE: the 106 rows are cargo-target libtest summary counts; no individual leaf case outcome was recorded, and the v2 plan (docs/evidence/G1/qualification-plan-v2.json) is not satisfied by it.",
+  "SMOKE: the observation includes 1 nonzero exit, 2 parsed failed cases, 1 parsed ignored case and 34 zero-case rows; the archived GREEN policy verdict is a flake-ledger-tolerated classification of that raw red/ignored observation, not a clean pass."
+ ],
+ "forbidden_uses": [
+  "do not summarise as '105 green' or as green at all",
+  "do not cite as current-source conformance or qualification evidence",
+  "do not let CI rewrite the archived verdict in place"
+ ]
+}

@@ -44,6 +44,7 @@ import common  # noqa: E402
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 LEDGER = REPO / "docs" / "evidence" / "flake-ledger.json"
+PLAN = REPO / "docs" / "evidence" / "G1" / "qualification-plan-v2.json"
 # the post-hoc hash binding for archives sealed before rows recorded log
 # hashes and before COMPLETE carried a bundle root (see verify_bundle)
 LOG_MANIFEST_NAME = "log-manifest.json"
@@ -106,6 +107,30 @@ def load_ledger(path=None):
             continue
         entries[tid] = e
     return entries, problems
+
+
+def compute_policy_roots(ledger_path=None, plan_path=None):
+    """E-04: hash-pin the POLICY inputs a verdict rests on.
+
+    A verdict is observation x policy. The E-P0-07 audit showed a policy
+    change (a relaxed flake ledger) turning the same observation from red to
+    green without a re-run and without a trace. Pinning the exact ledger
+    bytes and the plan's content-addressed root INTO the verdict makes any
+    later policy edit a detectable mismatch (tools/evidence/verify_all.py
+    recomputes both and refuses a bundle whose policy moved under it).
+    A missing file pins None - honest absence, never a fabricated hash.
+    """
+    ledger_path = pathlib.Path(ledger_path) if ledger_path else LEDGER
+    plan_path = pathlib.Path(plan_path) if plan_path else PLAN
+    roots = {"flake_ledger_sha256": None, "plan_root": None}
+    if ledger_path.is_file():
+        roots["flake_ledger_sha256"] = common.sha256_file(ledger_path)
+    if plan_path.is_file():
+        try:
+            roots["plan_root"] = json.loads(plan_path.read_text()).get("plan_root")
+        except (json.JSONDecodeError, OSError):
+            pass  # unreadable plan pins None; the verifier reports the gap
+    return roots
 
 
 def _cases(row):

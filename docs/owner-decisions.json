@@ -61,6 +61,16 @@
       "why_safe": "The previous behaviour was an unbounded recv() over an unbounded retry loop: a persistent R2/S3 fault presented as a silent forever-hang holding storage locks. Fail-stop with a named operation is the same doctrine as Q-01's guard, and 600 s / 8 retries are far beyond any healthy operation, so the bounds fire only on genuine faults. Neither value is tuned for availability.",
       "owner_decision_changes": "Both values, the report cadence, and whether the terminal action stays a process abort or becomes a typed storage-unavailable error surfaced through fallible read/write signatures.",
       "referenced_by": ["fork/typedb/storage/keyspace/slate.rs", "docs/evidence/G3/controls/storage-containment-controls.txt"]
+    },
+    {
+      "id": "OD-007",
+      "status": "OPEN",
+      "title": "No-compactor lane L0 admission envelope",
+      "question": "With compaction and GC deliberately disabled (the pre-G13 containment posture), what is the maximum L0 SST count the remote/experimental lane may accumulate before it must refuse NEW writes with a typed error rather than degrade without bound?",
+      "default_in_force": "EXPERIMENTAL_NO_COMPACTOR_MAX_L0_SSTS = 50_000 (fork/typedb/storage/keyspace/slate.rs). At or above this observed L0 SST count (read from the in-memory manifest), put/write refuse with a typed ErrorKind::Invalid admission error; below it they succeed. SlateDB's own backpressure ceiling (settings.l0_max_ssts) is kept far higher so the TypeDB admission bound, not an opaque memtable stall, is what fires first.",
+      "why_safe": "A no-compactor lane whose L0 only ever grows will otherwise accumulate SSTs, read amplification, LIST/GET cost, memory and recovery time without any ceiling (S-05). The bound converts that unbounded degradation into an explicit, typed, non-transient refusal a caller/controller can observe and act on. 50_000 is a containment default chosen far above any healthy short-lived workload while still bounding the envelope; it is NOT a ratified capacity SLO.",
+      "owner_decision_changes": "The exact ceiling, whether the envelope is expressed as L0 SST count and/or total object count and/or total bytes, and whether reaching it triggers a controller-authorized fenced compaction instead of a hard write refusal.",
+      "referenced_by": ["fork/typedb/storage/keyspace/slate.rs"]
     }
   ]
 }

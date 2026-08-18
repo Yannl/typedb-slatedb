@@ -48,7 +48,10 @@ use resource::constants::database::{CHECKPOINT_INTERVAL, STATISTICS_UPDATE_INTER
 use storage::{
     MVCCStorage, StorageDeleteError, StorageOpenError, StorageResetError,
     durability_client::{DurabilityClient, DurabilityClientError, WALClient},
-    factory::{StorageFactory, StorageFactoryError},
+    factory::{
+        BackendSpec, StorageFactory, StorageFactoryError, read_backend_marker, verify_backend_marker,
+        write_backend_marker,
+    },
     keyspace::rocks_resources::RocksResources,
     recovery::checkpoint::{CheckpointCreateError, CheckpointLoadError, CheckpointReader, CheckpointWriter},
     sequence_number::SequenceNumber,
@@ -286,10 +289,16 @@ impl Database<WALClient> {
 
         let name = name.as_ref();
 
-        fs::create_dir(path).map_err(|source| DirectoryCreate { name: name.to_string(), source: Arc::new(source) })?;
-
+        // S-01: resolve the typed backend identity BEFORE any filesystem, WAL,
+        // or object-namespace touch. A not-yet-available lane (U3/U4) or an
+        // unknown profile refuses HERE, leaving the database tree non-existent
+        // — no directory is created before the refusal. `factory` is still
+        // needed below for the WAL, so it is resolved separately (side-effect
+        // free) and the identity mapping is fed into the ordered prelude.
         let factory =
             StorageFactory::resolve_from_env().map_err(|source| DatabaseOpenError::StorageFactory { source })?;
+        let _backend_spec = create_backend_bound_directory(path, name, BackendSpec::from_profile(factory.profile()))?;
+
         let wal = factory.create_wal(path, wal_metrics).map_err(|error| match error {
             StorageFactoryError::WalOpen { source } => WALOpen { source },
             other => DatabaseOpenError::StorageFactory { source: other },
@@ -368,9 +377,38 @@ impl Database<WALClient> {
             std::path::absolute(path)
         );
 
-        event!(Level::TRACE, "Loading database '{}' WAL.", &name);
+        // S-01: resolve the backend identity and VERIFY it against the
+        // database's persisted marker BEFORE touching the WAL or storage tree.
+        // A missing marker (ambiguous/unmarked database) demands an explicit
+        // migration; a mismatch (this open's backend differs from the one the
+        // database was created with) is a typed refusal that leaves the tree,
+        // WAL, and object namespace byte-identical — never a silent
+        // cross-engine open that constructs a fresh engine beside the other
+        // backend's files.
         let factory =
             StorageFactory::resolve_from_env().map_err(|source| DatabaseOpenError::StorageFactory { source })?;
+        let backend_spec = BackendSpec::from_profile(factory.profile())
+            .map_err(|source| DatabaseOpenError::StorageFactory { source })?;
+        let persisted_marker =
+            read_backend_marker(path).map_err(|source| DatabaseOpenError::StorageFactory { source })?;
+        match persisted_marker {
+            // a marked database: verify the backend matches BEFORE any touch.
+            Some(_) => verify_backend_marker(&backend_spec, persisted_marker)
+                .map_err(|source| DatabaseOpenError::StorageFactory { source })?,
+            // no marker: distinguish a real-but-unmarked database (a migration
+            // case — refuse) from a stray non-database directory (NotADatabase,
+            // so the manager's scan skips it as before). The WAL directory's
+            // presence is the database indicator, checked without opening it.
+            None => {
+                if path.join(WAL::WAL_DIR_NAME).exists() {
+                    return Err(DatabaseOpenError::StorageFactory {
+                        source: StorageFactoryError::BackendMarkerMissing,
+                    });
+                }
+            }
+        }
+
+        event!(Level::TRACE, "Loading database '{}' WAL.", &name);
         let wal = match factory.load_wal(path, wal_metrics) {
             Ok(wal) => wal,
             Err(StorageFactoryError::WalOpen {
@@ -602,6 +640,32 @@ fn make_checkpoint_fn(
 /// The FATAL message for a periodic-checkpoint failure. Extracted so the
 /// error branch is unit-testable: the branch itself ends in `process::abort`,
 /// which no test can cross.
+/// S-01 create ordering: resolve the backend identity, and ONLY on success
+/// create the database directory and persist the marker atomically. The
+/// ORDERING is the invariant — a backend refusal (unknown profile /
+/// not-yet-available lane) must leave `path` non-existent, so no directory,
+/// WAL, or object namespace is ever created beside another backend's files
+/// before the refusal. Extracted as a pure function (the resolution result is
+/// an argument, not read from the process-global env) so the "no touch before
+/// refusal" ordering is hermetically unit-testable and its mutant — creating
+/// the directory before the refusal — fails a named test.
+fn create_backend_bound_directory(
+    path: &Path,
+    name: &str,
+    resolved: Result<BackendSpec, StorageFactoryError>,
+) -> Result<BackendSpec, DatabaseOpenError> {
+    use DatabaseOpenError::DirectoryCreate;
+    // resolve FIRST — refuse before any filesystem touch.
+    let spec = resolved.map_err(|source| DatabaseOpenError::StorageFactory { source })?;
+    // only now touch the filesystem...
+    fs::create_dir(path).map_err(|source| DirectoryCreate { name: name.to_string(), source: Arc::new(source) })?;
+    // ...and bind the database to its backend before any keyspace/WAL data
+    // lands, so a later open can detect a cross-engine mismatch.
+    write_backend_marker(path, &spec)
+        .map_err(|source| DirectoryCreate { name: name.to_string(), source: Arc::new(source) })?;
+    Ok(spec)
+}
+
 fn checkpoint_failure_fatal_message(database_name: &str, error: &impl fmt::Debug) -> String {
     format!(
         "FATAL: periodic checkpoint for database '{database_name}' failed: {error:?}. A silently dead \
@@ -687,6 +751,56 @@ mod interval_task_failure_tests {
         assert!(!message.contains("FATAL"), "statistics are not a correctness task: {message}");
         assert!(message.contains("orders-db"), "the message must name the database: {message}");
         assert!(message.contains("retried"), "the message must state that the updater keeps running: {message}");
+    }
+}
+
+#[cfg(test)]
+mod backend_seam_ordering_tests {
+    //! S-01: the backend identity is resolved BEFORE any filesystem touch on
+    //! the create path, and persisted atomically. The ordering is the
+    //! invariant a cross-engine open depends on — its mutant (create the
+    //! directory before the refusal) fails `no_directory_is_created_before_a_backend_refusal`.
+
+    use storage::factory::{BackendMarker, BackendSpec, StorageFactoryError, read_backend_marker};
+    use test_utils::create_tmp_dir;
+
+    use super::create_backend_bound_directory;
+
+    #[test]
+    fn no_directory_is_created_before_a_backend_refusal() {
+        // the mutant catcher: a refusing resolution (as a not-yet-available
+        // lane would produce) must leave the database path non-existent — no
+        // directory, marker, WAL, or object namespace created before the
+        // refusal.
+        let base = create_tmp_dir("dbo-s01-refusal");
+        let path = base.join("must-not-exist");
+        let refused = create_backend_bound_directory(
+            &path,
+            "must-not-exist",
+            Err(StorageFactoryError::BackendNotYetAvailable { profile: "U4" }),
+        );
+        assert!(refused.is_err(), "a not-yet-available backend must refuse");
+        assert!(
+            !path.exists(),
+            "S-01: no database directory may be created before the backend refusal (mutant: resolve moved after mkdir)",
+        );
+    }
+
+    #[test]
+    fn a_resolved_backend_creates_the_directory_and_persists_the_marker_atomically() {
+        // positive: a resolved backend creates the directory and binds it with
+        // a durable, readable marker.
+        let base = create_tmp_dir("dbo-s01-create");
+        let path = base.join("orders-db");
+        let spec = create_backend_bound_directory(&path, "orders-db", Ok(BackendSpec::Classic))
+            .expect("a resolved backend must create the directory");
+        assert_eq!(spec, BackendSpec::Classic);
+        assert!(path.exists(), "the database directory must be created");
+        assert_eq!(
+            read_backend_marker(&path).unwrap(),
+            Some(BackendMarker::Classic),
+            "the backend marker must be persisted and readable",
+        );
     }
 }
 

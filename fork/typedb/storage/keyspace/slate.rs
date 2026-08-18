@@ -31,11 +31,12 @@
 //! including Tokio worker threads, where `Handle::block_on` would panic.
 
 use std::{
+    collections::HashMap,
     fs, io,
     path::{Path, PathBuf},
     sync::{
-        Arc, OnceLock,
-        atomic::{AtomicU64, Ordering},
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
@@ -47,8 +48,8 @@ use slatedb::{
     config::{ReadOptions, ScanOptions, Settings, WriteOptions},
     object_store::{
         CopyMode, CopyOptions, GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, ObjectStore,
-        ObjectStoreExt, PutMultipartOptions, PutOptions, PutPayload, PutResult, RenameOptions, aws::AmazonS3Builder,
-        local::LocalFileSystem, path::Path as ObjectPath, prefix::PrefixStore,
+        ObjectStoreExt, PutMode, PutMultipartOptions, PutOptions, PutPayload, PutResult, RenameOptions, UploadPart,
+        aws::AmazonS3Builder, local::LocalFileSystem, path::Path as ObjectPath, prefix::PrefixStore,
     },
 };
 
@@ -173,6 +174,64 @@ fn assert_pre_g13_posture(settings: &Settings) -> Result<(), slatedb::Error> {
     }
 }
 
+/// **EXPERIMENTAL, admission-bounded — no-compactor / giant-L0 posture (S-05).**
+///
+/// The remote lane deliberately disables compaction and GC (`assert_pre_g13_posture`)
+/// and lets L0 grow far past SlateDB's default backpressure ceiling. That is a useful
+/// *containment* posture before a fenced, controller-authorized compactor exists — but
+/// it is NOT a bounded production design: a long-running write workload would otherwise
+/// accumulate SSTs, read amplification, LIST/GET cost, memory pressure and recovery time
+/// with no controller-approved ceiling.
+///
+/// This constant is that ceiling. A no-compactor lane MUST reject NEW writes with a
+/// typed error *before* it violates its declared capacity envelope rather than degrade
+/// without bound (S-05, directive §10). The envelope here is the observed L0 SST count
+/// read from the in-memory manifest (cheap: no directory walk, no remote LIST — the same
+/// source [`SlateKeyspace::estimate_size_in_bytes`] reads). At or above this count,
+/// [`SlateKeyspace::put`]/[`write`](SlateKeyspace::write) refuse with a typed
+/// [`ErrorKind::Invalid`](slatedb::ErrorKind) admission error; below it they
+/// succeed.
+///
+/// The value is a **containment default, not a ratified SLO** — it needs owner
+/// ratification (docs/owner-decisions.json OD-007). It is set far above any healthy
+/// short-lived workload while still bounding the envelope, and far below
+/// [`SlateDB's own l0_max_ssts`](Settings::l0_max_ssts) backpressure ceiling so that
+/// THIS typed refusal — not an opaque memtable-flush stall — is what a caller observes
+/// first.
+const EXPERIMENTAL_NO_COMPACTOR_MAX_L0_SSTS: usize = 50_000;
+
+/// The pure admission decision for the no-compactor lane (S-05): a NEW write is admitted
+/// only while the observed L0 SST count is strictly below the declared envelope. Pulled
+/// out as a total function so the boundary is unit-testable without driving tens of
+/// thousands of real flushes, and so the mutant (drop the `>=` guard) fails a named test.
+fn admit_write_under_l0_bound(observed_l0_ssts: usize, max_l0_ssts: usize) -> Result<(), AdmissionRefused> {
+    if observed_l0_ssts >= max_l0_ssts { Err(AdmissionRefused { observed_l0_ssts, max_l0_ssts }) } else { Ok(()) }
+}
+
+/// Typed refusal produced when the no-compactor lane is at its declared capacity
+/// envelope (S-05). Non-transient by construction: it surfaces to the keyspace layer as
+/// [`ErrorKind::Invalid`](slatedb::ErrorKind), the class the descending-scan retry
+/// policy ([`retry_transient`]) does NOT retry — a full lane must refuse, not spin.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AdmissionRefused {
+    observed_l0_ssts: usize,
+    max_l0_ssts: usize,
+}
+
+impl AdmissionRefused {
+    /// Render as the typed SlateDB error the write path returns. `Invalid` (not
+    /// `Unavailable`) because a saturated no-compactor lane is a persistent, caller-
+    /// visible refusal to correct, never a transient blip to retry through.
+    fn into_slate_error(self) -> slatedb::Error {
+        slatedb::Error::invalid(format!(
+            "no-compactor lane admission bound reached: {} L0 SSTs at or above the declared \
+             capacity envelope of {} (S-05, EXPERIMENTAL; docs/owner-decisions.json OD-007); \
+             refusing the write rather than degrading without bound",
+            self.observed_l0_ssts, self.max_l0_ssts
+        ))
+    }
+}
+
 fn settings() -> Settings {
     let mut settings = Settings::default();
     settings.wal_enabled = false;
@@ -184,7 +243,10 @@ fn settings() -> Settings {
     // l0_max_ssts=8 backpressure would permanently stall memtable flush
     // dispatch (and eventually every put) once reached. Trade read
     // amplification for liveness — the same posture SlateDB's own
-    // compactor-less tests take (settings.l0_max_ssts = 10_000).
+    // compactor-less tests take (settings.l0_max_ssts = 10_000). The TypeDB
+    // admission bound (EXPERIMENTAL_NO_COMPACTOR_MAX_L0_SSTS, S-05) sits far
+    // below this, so a typed write refusal — not this opaque backpressure
+    // stall — is what a saturated lane surfaces first.
     settings.l0_max_ssts = 1_000_000;
     settings.l0_max_ssts_per_key = 1_000_000;
     // Q-13: SlateDB's wrapper-level object-store retries default to None,
@@ -372,14 +434,76 @@ fn build_s3_store(config: &S3Config) -> Result<Arc<dyn ObjectStore>, slatedb::Er
 fn object_prefix(config: &S3Config, keyspace_path: &Path) -> ObjectPath {
     let mut encoded = String::new();
     for &byte in keyspace_path.as_os_str().as_encoded_bytes() {
-        match byte {
-            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'.' | b'-' | b'_' => encoded.push(byte as char),
-            b'/' => encoded.push_str("=s"),
-            b'=' => encoded.push_str("=="),
-            other => encoded.push_str(&format!("=x{other:02x}")),
-        }
+        encode_segment_byte(byte, &mut encoded);
     }
     ObjectPath::from(config.root_prefix.as_str()).join(encoded)
+}
+
+/// The injective byte escaping both [`object_prefix`] and
+/// [`MaterialisationNamespace`] use: `=` is the only escape (`=s` for `/`,
+/// `==` for `=`, `=xHH` for any byte outside `[A-Za-z0-9._-]`), so distinct
+/// byte strings never share an encoding.
+fn encode_segment_byte(byte: u8, out: &mut String) {
+    match byte {
+        b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'.' | b'-' | b'_' => out.push(byte as char),
+        b'/' => out.push_str("=s"),
+        b'=' => out.push_str("=="),
+        other => out.push_str(&format!("=x{other:02x}")),
+    }
+}
+
+fn encode_segment(value: &str) -> String {
+    let mut out = String::new();
+    for &byte in value.as_bytes() {
+        encode_segment_byte(byte, &mut out);
+    }
+    out
+}
+
+/// A controller-provisioned materialisation namespace (S-01): the STABLE
+/// tenant/database identity a remote object namespace derives from, made of
+/// opaque identifiers the controller owns — NOT a host-local absolute path.
+///
+/// **Honest scope note.** The authoritative source of every field below is the
+/// CONTROLLER (environment, tenant, `DatabaseId`, generation, materialisation,
+/// keyspace). TypeDB does not yet carry those controller-issued identifiers
+/// down to this adapter — that wiring is control-plane work not present in this
+/// tree. This struct is the TYPED SEAM for it: the moment the controller
+/// provides the identifiers, they flow through here and the object namespace
+/// derives from THEM. Until then the local lanes fall back to
+/// [`object_prefix`]'s host-path derivation (the S-01 defect this seam
+/// replaces), whose instability across checkout roots / hosts is exactly why
+/// the namespace must eventually derive from these opaque IDs instead.
+///
+/// The derivation is path-independent by construction: two handles for the same
+/// `(environment, tenant, database_id, generation, materialisation, keyspace)`
+/// resolve to the SAME object prefix on any machine or checkout, and changing
+/// any one identifier changes the prefix (injective encoding).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MaterialisationNamespace {
+    pub environment: String,
+    pub tenant: String,
+    pub database_id: String,
+    pub generation: String,
+    pub materialisation: String,
+    pub keyspace: String,
+}
+
+impl MaterialisationNamespace {
+    /// Derive the object-store prefix from the controller identifiers ALONE —
+    /// never from a host-local path. Each opaque segment is injectively
+    /// encoded, so distinct identities can never alias and the same identity is
+    /// stable across hosts and checkout roots (S-01 acceptance: "changing the
+    /// local path cannot change the remote namespace").
+    pub fn to_object_prefix(&self, root: &str) -> ObjectPath {
+        ObjectPath::from(root)
+            .join(encode_segment(&self.environment))
+            .join(encode_segment(&self.tenant))
+            .join(encode_segment(&self.database_id))
+            .join(encode_segment(&self.generation))
+            .join(encode_segment(&self.materialisation))
+            .join(encode_segment(&self.keyspace))
+    }
 }
 
 fn store_error(error: slatedb::object_store::Error) -> slatedb::Error {
@@ -399,25 +523,187 @@ async fn list_remote_prefix(store: &dyn ObjectStore, prefix: &ObjectPath) -> Res
     Ok(objects)
 }
 
-/// The runtime storage principal, with delete authority structurally removed
-/// (V16 inv. 84: before G13 no reachable code path may delete remote
-/// objects, and "mere symbol absence is not proof" — this wrapper turns the
-/// requirement into a runtime boundary that a probe can exercise). Every
-/// remote store the engine touches is wrapped before first use, so a future
-/// code path — or SlateDB itself, should a background component ever be
-/// misconfigured back on — gets a typed `NotImplemented` error instead of a
-/// deletion. `delete_stream` is the trait's ONLY delete primitive in
-/// object_store 0.14 (`ObjectStoreExt::delete` and `rename`'s
-/// copy-then-delete default both funnel into it), so denying it denies
-/// every deletion path transitively.
+/// The immutable-data segment SlateDB writes its manifest under
+/// (`<materialisation>/keyspace/manifest/…`). The manifest is the SOLE typed
+/// conditional-CAS publication path (S-04) and is exempt from the create-only
+/// immutability guard below — its own `PutMode` carries the CAS precondition
+/// that publishes a new store version. Every other object under the keyspace
+/// (SSTs, blobs) is immutable once written.
+fn is_manifest_key(location: &ObjectPath) -> bool {
+    location.parts().any(|part| part.as_ref() == MANIFEST_SUBDIR)
+}
+
+/// Compare an outgoing [`PutPayload`] against bytes already stored at an
+/// immutable key: an idempotent replay must match in length AND content
+/// (S-04: "exact same-key/same-length/same-digest replay"). Byte-exact
+/// comparison is strictly stronger than a digest match — no collision window.
+fn payload_matches_existing(payload: &PutPayload, existing: &[u8]) -> bool {
+    if payload.content_length() != existing.len() {
+        return false;
+    }
+    let mut offset = 0usize;
+    for chunk in payload {
+        let end = offset + chunk.len();
+        if &existing[offset..end] != chunk.as_ref() {
+            return false;
+        }
+        offset = end;
+    }
+    true
+}
+
+/// A dependency-free content checksum (std SipHash) for the immutability
+/// LEDGER — the instrumentation that proves a referenced object's bytes never
+/// change over its lifetime (S-04). Not a security digest; the accept/reject
+/// decision uses byte-exact comparison, and this is only the recorded witness.
+fn content_checksum(bytes: &[u8]) -> u64 {
+    use std::hash::Hasher;
+    // DefaultHasher::new() uses FIXED keys (unlike RandomState), so the same
+    // bytes always produce the same checksum across calls — the property the
+    // immutability ledger needs to compare a key's checksum over its lifetime.
+    let mut hasher = std::hash::DefaultHasher::new();
+    hasher.write(bytes);
+    hasher.finish()
+}
+
+/// One journaled multipart upload attempt (S-04): completion is gated to the
+/// still-active, uncommitted attempt for a location; a stale attempt (one a
+/// newer attempt for the same location superseded) can neither complete nor
+/// commit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AttemptState {
+    /// Recorded, parts may still be uploaded, completion still permitted.
+    Uncommitted,
+    /// Completed exactly once; no further completion may replace it.
+    Committed,
+    /// Aborted; terminal.
+    Aborted,
+}
+
+/// The runtime storage principal and immutability boundary (V16 inv. 81–84,
+/// S-04). Delete authority is structurally removed AND ordinary conditional
+/// puts / multipart completions can no longer replace bytes at an existing
+/// immutable key:
+///
+/// - **create-only or exact same-digest replay** for immutable SST/blob keys:
+///   a `put_opts` is forced to `PutMode::Create`; an `AlreadyExists` is
+///   accepted only when the incoming bytes are byte-identical to what is
+///   stored (idempotent retry), and a DIFFERENT-bytes put at an existing
+///   immutable key is a typed [`Error::Precondition`] refusal that also raises
+///   the materialisation's quarantine flag;
+/// - the **manifest** path is exempt and passes through unchanged — it is the
+///   sole typed conditional-CAS publication path;
+/// - every **multipart** upload carries a journaled `UploadAttemptId` with
+///   gated completion (completion only for the recorded uncommitted attempt;
+///   abort only for that attempt; a stale attempt's completion is refused);
+/// - `delete_stream` (the trait's only delete primitive: `delete`, and
+///   `rename`'s copy-then-delete both funnel through it), overwrite-mode
+///   `copy`, and `rename` are all typed refusals.
+///
+/// "Mere symbol absence is not proof": every clause is a runtime boundary a
+/// probe exercises, not a compile-time convention.
 #[derive(Debug)]
 struct NoDeleteStore {
     inner: Arc<dyn ObjectStore>,
+    /// Raised the first time a different-bytes overwrite of an immutable key
+    /// is refused: the materialisation is no longer trustworthy and a
+    /// supervisor should quarantine it (S-04). Shared so wrappers derived from
+    /// this store observe the same flag.
+    quarantined: Arc<AtomicBool>,
+    /// Per-location multipart attempt journal: the active attempt id and its
+    /// state. A completion is gated to the still-active, uncommitted attempt.
+    multipart_journal: Arc<Mutex<HashMap<String, (u64, AttemptState)>>>,
+    next_attempt_id: Arc<AtomicU64>,
+    /// Immutability ledger (S-04 instrumentation): the recorded checksum of
+    /// every immutable key this principal has admitted. Re-admitting a key
+    /// whose checksum differs is the very overwrite the boundary refuses; the
+    /// ledger lets a test prove bytes+checksum never change over a lifetime.
+    immutable_ledger: Arc<Mutex<HashMap<String, u64>>>,
 }
 
 impl NoDeleteStore {
     fn new(inner: Arc<dyn ObjectStore>) -> Self {
-        Self { inner }
+        Self {
+            inner,
+            quarantined: Arc::new(AtomicBool::new(false)),
+            multipart_journal: Arc::new(Mutex::new(HashMap::new())),
+            next_attempt_id: Arc::new(AtomicU64::new(1)),
+            immutable_ledger: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// Whether a different-bytes overwrite of an immutable key was ever
+    /// refused on this principal (S-04 quarantine signal).
+    fn is_quarantined(&self) -> bool {
+        self.quarantined.load(Ordering::SeqCst)
+    }
+
+    /// Record (or verify) an immutable key's checksum in the ledger. Returns
+    /// `Err` if the key is already recorded with a DIFFERENT checksum — the
+    /// witnessed proof that a referenced object's bytes changed.
+    fn ledger_admit(&self, location: &ObjectPath, checksum: u64) -> Result<(), ()> {
+        let mut ledger = self.immutable_ledger.lock().unwrap();
+        match ledger.get(location.as_ref()) {
+            Some(previous) if *previous != checksum => Err(()),
+            _ => {
+                ledger.insert(location.to_string(), checksum);
+                Ok(())
+            }
+        }
+    }
+
+    /// The immutable-key branch of [`ObjectStore::put_opts`]: create-only, with
+    /// an `AlreadyExists` accepted only for a byte-identical idempotent replay,
+    /// and a different-bytes overwrite refused + quarantined.
+    async fn put_immutable(
+        &self,
+        location: &ObjectPath,
+        payload: PutPayload,
+        opts: PutOptions,
+    ) -> slatedb::object_store::Result<PutResult> {
+        let checksum = {
+            // materialise once for the ledger witness + comparison fallback
+            let mut bytes = Vec::with_capacity(payload.content_length());
+            for chunk in &payload {
+                bytes.extend_from_slice(chunk.as_ref());
+            }
+            content_checksum(&bytes)
+        };
+        // Force create semantics regardless of the caller's requested mode: an
+        // immutable key may only be written once (SlateDB names SSTs by unique
+        // ULID, so a legitimate first write always creates).
+        let create = PutOptions { mode: PutMode::Create, ..opts };
+        match self.inner.put_opts(location, payload.clone(), create).await {
+            Ok(result) => {
+                // ledger records the admitted checksum; a create cannot
+                // collide with a differing prior (the key was absent).
+                let _ = self.ledger_admit(location, checksum);
+                Ok(result)
+            }
+            Err(slatedb::object_store::Error::AlreadyExists { .. }) => {
+                // an object is already here: allowed ONLY if byte-identical.
+                let existing = self.inner.get(location).await?;
+                let meta = existing.meta.clone();
+                let existing_bytes = existing.bytes().await?;
+                if payload_matches_existing(&payload, &existing_bytes) {
+                    // idempotent replay of identical bytes: success, no rewrite
+                    let _ = self.ledger_admit(location, checksum);
+                    Ok(PutResult { e_tag: meta.e_tag, version: meta.version, extensions: Default::default() })
+                } else {
+                    self.quarantined.store(true, Ordering::SeqCst);
+                    Err(slatedb::object_store::Error::Precondition {
+                        path: location.to_string(),
+                        source: format!(
+                            "immutable key overwrite refused (S-04, V16 inv. 81-83): a put with \
+                             different bytes at already-written immutable key {location} would replace \
+                             authoritative data; the materialisation is quarantined"
+                        )
+                        .into(),
+                    })
+                }
+            }
+            Err(other) => Err(other),
+        }
     }
 }
 
@@ -435,7 +721,24 @@ impl ObjectStore for NoDeleteStore {
         payload: PutPayload,
         opts: PutOptions,
     ) -> slatedb::object_store::Result<PutResult> {
-        self.inner.put_opts(location, payload, opts).await
+        // Fail-closed once quarantined (S-04): a materialisation that has
+        // already refused a different-bytes overwrite is no longer trustworthy,
+        // so every subsequent put — the manifest CAS path included — is refused
+        // rather than layered on top of a detected immutability violation.
+        if self.is_quarantined() {
+            return Err(slatedb::object_store::Error::Precondition {
+                path: location.to_string(),
+                source: "materialisation is quarantined (S-04): a prior immutable-key overwrite was refused; \
+                         refusing all further writes"
+                    .into(),
+            });
+        }
+        if is_manifest_key(location) {
+            // the sole typed conditional-CAS publication path (S-04): its own
+            // PutMode carries the CAS precondition; pass through unchanged.
+            return self.inner.put_opts(location, payload, opts).await;
+        }
+        self.put_immutable(location, payload, opts).await
     }
 
     async fn put_multipart_opts(
@@ -443,7 +746,19 @@ impl ObjectStore for NoDeleteStore {
         location: &ObjectPath,
         opts: PutMultipartOptions,
     ) -> slatedb::object_store::Result<Box<dyn MultipartUpload>> {
-        self.inner.put_multipart_opts(location, opts).await
+        let inner = self.inner.put_multipart_opts(location, opts).await?;
+        // Journal a fresh attempt id and record it as the active attempt for
+        // this location; any earlier attempt for the same location is thereby
+        // superseded and can no longer complete (S-04 stale-completion guard).
+        let attempt_id = self.next_attempt_id.fetch_add(1, Ordering::SeqCst);
+        self.multipart_journal.lock().unwrap().insert(location.to_string(), (attempt_id, AttemptState::Uncommitted));
+        Ok(Box::new(JournaledMultipart {
+            inner,
+            location: location.clone(),
+            attempt_id,
+            journal: self.multipart_journal.clone(),
+            manifest_key: is_manifest_key(location),
+        }))
     }
 
     async fn get_opts(&self, location: &ObjectPath, options: GetOptions) -> slatedb::object_store::Result<GetResult> {
@@ -527,6 +842,96 @@ impl ObjectStore for NoDeleteStore {
                 })
             })
             .boxed()
+    }
+}
+
+/// A multipart upload gated by the [`NoDeleteStore`] journal (S-04). Parts
+/// stream straight through, but completion is admitted only for the still-
+/// active, uncommitted attempt recorded for this location: a stale attempt
+/// (one superseded by a newer `put_multipart_opts` on the same location) and
+/// an already-committed attempt are both typed refusals, so a delayed or
+/// duplicate actor can never complete a multipart that would replace bytes a
+/// newer attempt already published. Abort is likewise allowed only for the
+/// still-active, uncommitted attempt.
+#[derive(Debug)]
+struct JournaledMultipart {
+    inner: Box<dyn MultipartUpload>,
+    location: ObjectPath,
+    attempt_id: u64,
+    journal: Arc<Mutex<HashMap<String, (u64, AttemptState)>>>,
+    /// Manifest multipart (should not occur — manifests are small single
+    /// puts — but if one ever did, it is the CAS path and is not gated).
+    manifest_key: bool,
+}
+
+impl JournaledMultipart {
+    /// Is this attempt still the active, uncommitted one for its location?
+    /// Returns the reason it is not, for a precise typed refusal.
+    fn active_uncommitted(&self) -> Result<(), String> {
+        if self.manifest_key {
+            return Ok(());
+        }
+        let journal = self.journal.lock().unwrap();
+        match journal.get(self.location.as_ref()) {
+            Some((active_id, state)) if *active_id == self.attempt_id => match state {
+                AttemptState::Uncommitted => Ok(()),
+                AttemptState::Committed => Err("this attempt is already committed".to_owned()),
+                AttemptState::Aborted => Err("this attempt was aborted".to_owned()),
+            },
+            Some((active_id, _)) => {
+                Err(format!("attempt {} is stale; attempt {active_id} superseded it", self.attempt_id))
+            }
+            None => Err("no journal entry for this location".to_owned()),
+        }
+    }
+
+    fn mark(&self, state: AttemptState) {
+        if let Some(entry) = self.journal.lock().unwrap().get_mut(self.location.as_ref()) {
+            if entry.0 == self.attempt_id {
+                entry.1 = state;
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl MultipartUpload for JournaledMultipart {
+    fn put_part(&mut self, data: PutPayload) -> UploadPart {
+        self.inner.put_part(data)
+    }
+
+    async fn complete(&mut self) -> slatedb::object_store::Result<PutResult> {
+        if let Err(reason) = self.active_uncommitted() {
+            return Err(slatedb::object_store::Error::Precondition {
+                path: self.location.to_string(),
+                source: format!(
+                    "multipart completion refused for {} (S-04): {reason}; completion is gated to the \
+                     recorded uncommitted upload attempt so a stale actor cannot replace published bytes",
+                    self.location
+                )
+                .into(),
+            });
+        }
+        let result = self.inner.complete().await?;
+        self.mark(AttemptState::Committed);
+        Ok(result)
+    }
+
+    async fn abort(&mut self) -> slatedb::object_store::Result<()> {
+        if let Err(reason) = self.active_uncommitted() {
+            return Err(slatedb::object_store::Error::Precondition {
+                path: self.location.to_string(),
+                source: format!(
+                    "multipart abort refused for {} (S-04): {reason}; abort is allowed only for the \
+                     still-uncommitted active attempt",
+                    self.location
+                )
+                .into(),
+            });
+        }
+        let result = self.inner.abort().await;
+        self.mark(AttemptState::Aborted);
+        result
     }
 }
 
@@ -635,6 +1040,11 @@ pub(super) struct SlateKeyspace {
     /// lane: (computed_at, count). Never locked across a scan — see the
     /// method for why that would be the worse defect.
     key_count_memo: std::sync::Mutex<Option<(std::time::Instant, u64)>>,
+    /// No-compactor lane admission envelope (S-05): the maximum observed L0
+    /// SST count this keyspace admits NEW writes below. Defaults to
+    /// [`EXPERIMENTAL_NO_COMPACTOR_MAX_L0_SSTS`]; tests lower it so the bound
+    /// is reachable without driving 50k real flushes.
+    admission_max_l0_ssts: usize,
 }
 
 impl SlateKeyspace {
@@ -650,7 +1060,13 @@ impl SlateKeyspace {
             Db::builder(DB_SUBDIR, store).with_settings(settings).with_external_writer_epoch(epoch).build().await
         })
         .map_err(Arc::new)?;
-        Ok(Self { db: Arc::new(db), path: path.to_owned(), remote: None, key_count_memo: Default::default() })
+        Ok(Self {
+            db: Arc::new(db),
+            path: path.to_owned(),
+            remote: None,
+            key_count_memo: Default::default(),
+            admission_max_l0_ssts: EXPERIMENTAL_NO_COMPACTOR_MAX_L0_SSTS,
+        })
     }
 
     /// Open over the configured S3-compatible store (TB-P8, profile U2S3).
@@ -728,6 +1144,7 @@ impl SlateKeyspace {
             path: path.to_owned(),
             remote: Some(RemoteStore { store, prefix }),
             key_count_memo: Default::default(),
+            admission_max_l0_ssts: EXPERIMENTAL_NO_COMPACTOR_MAX_L0_SSTS,
         })
     }
 
@@ -735,7 +1152,40 @@ impl SlateKeyspace {
         self.db.clone()
     }
 
+    /// Observed L0 SST count from the in-memory manifest — the cheap capacity
+    /// signal the S-05 admission bound reads (same source, no directory walk
+    /// or remote LIST, as [`Self::estimate_size_in_bytes`]).
+    fn observed_l0_ssts(&self) -> usize {
+        self.db.manifest().l0().iter().count()
+    }
+
+    /// S-05 admission gate: refuse a NEW write once the no-compactor lane sits
+    /// at or above its declared L0 envelope, with the typed non-transient
+    /// error, rather than let L0 grow without bound. Checked BEFORE the write
+    /// touches the memtable so a refused write is a true no-op.
+    fn check_admission(&self) -> Result<(), Arc<slatedb::Error>> {
+        admit_write_under_l0_bound(self.observed_l0_ssts(), self.admission_max_l0_ssts)
+            .map_err(|refused| Arc::new(refused.into_slate_error()))
+    }
+
+    /// Lower the S-05 admission envelope so an integration test can reach it
+    /// without driving tens of thousands of real flushes. Test-only: the
+    /// production ceiling is fixed at [`EXPERIMENTAL_NO_COMPACTOR_MAX_L0_SSTS`].
+    #[cfg(test)]
+    fn set_admission_max_l0_ssts_for_test(&mut self, max: usize) {
+        self.admission_max_l0_ssts = max;
+    }
+
+    /// Force a memtable flush so the write just made becomes a countable L0
+    /// SST (the admission signal). Test-only helper for the S-05 lane bound.
+    #[cfg(test)]
+    fn flush_for_test(&self) {
+        let db = self.db.clone();
+        bridge(async move { db.flush().await }).unwrap();
+    }
+
     pub(super) fn put(&self, key: &[u8], value: &[u8]) -> Result<(), Arc<slatedb::Error>> {
+        self.check_admission()?;
         let db = self.db.clone();
         let key = key.to_vec();
         let value = value.to_vec();
@@ -818,6 +1268,7 @@ impl SlateKeyspace {
         if puts.is_empty() {
             return Ok(());
         }
+        self.check_admission()?;
         let db = self.db.clone();
         let mut batch = SlateWriteBatch::new();
         for (key, value) in puts {
@@ -1480,6 +1931,72 @@ mod object_prefix_tests {
 }
 
 #[cfg(test)]
+mod materialisation_namespace_tests {
+    //! S-01: the controller-provisioned namespace seam. The remote object
+    //! namespace derives from opaque controller identifiers, NOT a host-local
+    //! path — so changing the local path (or moving between checkout roots /
+    //! hosts) cannot change the remote namespace, and distinct identities never
+    //! alias.
+
+    use super::MaterialisationNamespace;
+
+    fn namespace() -> MaterialisationNamespace {
+        MaterialisationNamespace {
+            environment: "prod".to_owned(),
+            tenant: "acme".to_owned(),
+            database_id: "db-0197f".to_owned(),
+            generation: "g7".to_owned(),
+            materialisation: "m0001".to_owned(),
+            keyspace: "data".to_owned(),
+        }
+    }
+
+    #[test]
+    fn the_namespace_derives_from_controller_ids_and_is_independent_of_any_local_path() {
+        // the derivation takes NO path argument: the same controller identity
+        // yields the same prefix on any machine or checkout root.
+        let ns = namespace();
+        let prefix_here = ns.to_object_prefix("typedb");
+        let prefix_elsewhere = ns.clone().to_object_prefix("typedb");
+        assert_eq!(prefix_here, prefix_elsewhere, "the same controller identity must resolve to the same namespace");
+        assert_eq!(prefix_here.as_ref(), "typedb/prod/acme/db-0197f/g7/m0001/data");
+    }
+
+    #[test]
+    fn a_different_controller_identity_changes_the_namespace() {
+        // injectivity: changing any one opaque identifier changes the prefix.
+        let base = namespace().to_object_prefix("typedb");
+        for mutate in [
+            |n: &mut MaterialisationNamespace| n.environment = "staging".to_owned(),
+            |n: &mut MaterialisationNamespace| n.tenant = "globex".to_owned(),
+            |n: &mut MaterialisationNamespace| n.database_id = "db-other".to_owned(),
+            |n: &mut MaterialisationNamespace| n.generation = "g8".to_owned(),
+            |n: &mut MaterialisationNamespace| n.materialisation = "m0002".to_owned(),
+            |n: &mut MaterialisationNamespace| n.keyspace = "schema".to_owned(),
+        ] {
+            let mut ns = namespace();
+            mutate(&mut ns);
+            assert_ne!(ns.to_object_prefix("typedb"), base, "a changed controller id must change the namespace");
+        }
+    }
+
+    #[test]
+    fn opaque_identifiers_are_injectively_encoded() {
+        // segment boundaries cannot be forged by embedding separators in an id.
+        let sneaky = MaterialisationNamespace {
+            environment: "a/b".to_owned(),
+            tenant: "t".to_owned(),
+            database_id: "d".to_owned(),
+            generation: "g".to_owned(),
+            materialisation: "m".to_owned(),
+            keyspace: "k".to_owned(),
+        };
+        // the '/' is escaped, not treated as a path separator
+        assert_eq!(sneaky.to_object_prefix("typedb").as_ref(), "typedb/a=sb/t/d/g/m/k");
+    }
+}
+
+#[cfg(test)]
 mod retry_channel_tests {
     //! Donor A10 control: the get_prev retry decision. Reintroducing
     //! panic-on-any (never retrying) fails `unavailable_is_retried…`;
@@ -2054,5 +2571,355 @@ mod materialization_tests {
             matches!(runtime_denial, Err(slatedb::object_store::Error::NotImplemented { .. })),
             "the store handle installed by open_remote must deny delete (inv. 84), got: {runtime_denial:?}",
         );
+    }
+}
+
+#[cfg(test)]
+mod admission_bound_tests {
+    //! S-05: the no-compactor lane is EXPERIMENTAL and admission-bounded. It
+    //! must refuse NEW writes with a typed, non-transient error once the
+    //! observed L0 SST count reaches the declared capacity envelope, rather
+    //! than let L0 grow without bound. The pure decision is pinned directly
+    //! (so the mutant — relaxing `>=` to `>` — fails a named test without
+    //! driving 50k real flushes), and one integration test drives a lowered
+    //! envelope to a real refusal at the write boundary and proves the refused
+    //! write is a no-op.
+
+    use test_utils::create_tmp_dir;
+
+    use super::{AdmissionRefused, EXPERIMENTAL_NO_COMPACTOR_MAX_L0_SSTS, SlateKeyspace, admit_write_under_l0_bound};
+
+    #[test]
+    fn the_experimental_envelope_is_a_named_bounded_default() {
+        // S-05 requires the posture stay EXPLICITLY experimental and bounded:
+        // a finite, non-zero ceiling that leaves headroom below SlateDB's own
+        // l0_max_ssts backpressure so the typed refusal — not an opaque stall
+        // — is what a saturated lane surfaces first.
+        assert!(EXPERIMENTAL_NO_COMPACTOR_MAX_L0_SSTS > 0, "the envelope must be a positive bound");
+        assert!(
+            EXPERIMENTAL_NO_COMPACTOR_MAX_L0_SSTS < super::settings().l0_max_ssts,
+            "the admission bound must fire before SlateDB's own l0_max_ssts backpressure stall",
+        );
+    }
+
+    #[test]
+    fn below_the_envelope_a_write_is_admitted() {
+        // positive: strictly below the declared L0 count admits.
+        assert_eq!(admit_write_under_l0_bound(0, 3), Ok(()));
+        assert_eq!(admit_write_under_l0_bound(2, 3), Ok(()));
+    }
+
+    #[test]
+    fn at_or_above_the_envelope_a_write_is_refused_with_the_typed_error() {
+        // negative: AT the bound (==) and ABOVE it (>) both refuse — this is
+        // the exact case the mutant (`>=` -> `>`) would wrongly admit at the
+        // boundary, so this test is the mutant's named catcher.
+        assert_eq!(admit_write_under_l0_bound(3, 3), Err(AdmissionRefused { observed_l0_ssts: 3, max_l0_ssts: 3 }));
+        assert_eq!(admit_write_under_l0_bound(9, 3), Err(AdmissionRefused { observed_l0_ssts: 9, max_l0_ssts: 3 }));
+
+        // the rendered SlateDB error is the non-transient Invalid class (not
+        // Unavailable, which the descending-scan retry policy would spin on)
+        // and names the S-05 envelope.
+        let error = AdmissionRefused { observed_l0_ssts: 3, max_l0_ssts: 3 }.into_slate_error();
+        assert_eq!(error.kind(), slatedb::ErrorKind::Invalid, "a full lane is a persistent refusal, not transient");
+        let message = error.to_string();
+        assert!(message.contains("admission bound"), "the error must name the admission bound: {message}");
+        assert!(message.contains("OD-007"), "the error must cite the owner decision: {message}");
+    }
+
+    #[test]
+    fn at_the_real_write_boundary_the_lane_refuses_over_its_envelope_and_the_refusal_is_a_no_op() {
+        // integration: a local SlateDB keyspace with the envelope lowered to 2
+        // L0 SSTs. Each write+flush mints one L0 SST; the third write, with
+        // L0 already at the bound, must refuse with the typed error, and the
+        // refused key must be absent (the check runs BEFORE the memtable put).
+        let keyspace_dir = create_tmp_dir("slate-s05-admission");
+        let mut keyspace = SlateKeyspace::open(&keyspace_dir).expect("open local keyspace");
+        keyspace.set_admission_max_l0_ssts_for_test(2);
+
+        // below the bound: two writes succeed, each flushed into its own L0 SST
+        keyspace.put(b"k1", b"v1").expect("write below the envelope is admitted");
+        keyspace.flush_for_test();
+        keyspace.put(b"k2", b"v2").expect("write below the envelope is admitted");
+        keyspace.flush_for_test();
+        assert_eq!(keyspace.observed_l0_ssts(), 2, "two flushed writes must have produced two L0 SSTs");
+
+        // at the bound: the next write is refused with the typed admission error
+        let refused = keyspace.put(b"k3", b"v3");
+        let error = refused.expect_err("a write at the declared L0 envelope must be refused");
+        assert_eq!(error.kind(), slatedb::ErrorKind::Invalid, "the refusal is the non-transient Invalid class");
+        assert!(error.to_string().contains("admission bound"), "typed S-05 refusal: {error}");
+
+        // the refused write is a true no-op: k3 never reached the memtable
+        assert!(
+            keyspace.get(b"k3", |v| v.to_vec()).expect("read must still work").is_none(),
+            "a refused write must not have touched the store",
+        );
+        // and the batch write path is gated by the same bound
+        let batch_refused = keyspace.write(&[(b"k4".to_vec(), b"v4".to_vec())]);
+        assert!(
+            batch_refused.is_err_and(|e| e.kind() == slatedb::ErrorKind::Invalid),
+            "the batch write path must be admission-gated too",
+        );
+    }
+}
+
+#[cfg(test)]
+mod immutability_boundary_tests {
+    //! S-04: `NoDeleteStore` is a real immutability boundary, not merely a
+    //! delete-blocker. Ordinary conditional puts and multipart completions can
+    //! no longer replace bytes at an existing immutable key. Every clause is an
+    //! exercised runtime boundary; the mutants (make put_opts unconditional,
+    //! accept a changed-byte replay, let a stale multipart complete) each fail
+    //! a named test.
+
+    use std::sync::Arc;
+
+    use slatedb::object_store::{
+        MultipartUpload, ObjectStore, ObjectStoreExt, PutMode, PutOptions, PutPayload, local::LocalFileSystem,
+        path::Path as ObjectPath,
+    };
+    use test_utils::create_tmp_dir;
+
+    use super::{
+        AttemptState, MANIFEST_SUBDIR, NoDeleteStore, bridge, content_checksum, is_manifest_key,
+        payload_matches_existing,
+    };
+
+    fn wrapped_store() -> (test_utils::TempDir, Arc<NoDeleteStore>) {
+        let dir = create_tmp_dir("slate-s04-store");
+        let inner: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
+        (dir, Arc::new(NoDeleteStore::new(inner)))
+    }
+
+    #[test]
+    fn manifest_keys_are_classified_apart_from_immutable_data_keys() {
+        // the manifest is the sole CAS publication path (exempt); everything
+        // else under the keyspace is immutable.
+        assert!(is_manifest_key(&ObjectPath::from(format!("base/fv1/m1/keyspace/{MANIFEST_SUBDIR}/0001.manifest"))));
+        assert!(!is_manifest_key(&ObjectPath::from("base/fv1/m1/keyspace/01ABC.sst")));
+        assert!(!is_manifest_key(&ObjectPath::from("base/fv1/m1/keyspace/compacted/01ABC.sst")));
+    }
+
+    #[test]
+    fn the_payload_match_is_length_and_byte_exact() {
+        let payload = PutPayload::from_static(b"authoritative bytes");
+        assert!(payload_matches_existing(&payload, b"authoritative bytes"), "identical bytes match");
+        assert!(!payload_matches_existing(&payload, b"authoritative byteS"), "one flipped byte must not match");
+        assert!(!payload_matches_existing(&payload, b"authoritative"), "a length mismatch must not match");
+        // and the ledger checksum is stable and content-addressed
+        assert_eq!(content_checksum(b"authoritative bytes"), content_checksum(b"authoritative bytes"));
+        assert_ne!(content_checksum(b"authoritative bytes"), content_checksum(b"authoritative byteS"));
+    }
+
+    #[test]
+    fn a_first_write_to_an_immutable_key_is_admitted_and_an_identical_replay_is_idempotent() {
+        // positive: create then an exact-bytes replay both succeed, the store
+        // is never quarantined, and the bytes are unchanged.
+        let (_dir, store) = wrapped_store();
+        let key = ObjectPath::from("base/fv1/m1/keyspace/01ABC.sst");
+        bridge({
+            let (store, key) = (store.clone(), key.clone());
+            async move {
+                store.put(&key, PutPayload::from_static(b"sst bytes")).await.expect("first write creates");
+                // idempotent replay of identical bytes: admitted, no rewrite
+                store.put(&key, PutPayload::from_static(b"sst bytes")).await.expect("identical replay is idempotent");
+            }
+        });
+        assert!(!store.is_quarantined(), "an identical replay must not quarantine the materialisation");
+        let bytes = bridge({
+            let (store, key) = (store.clone(), key.clone());
+            async move { store.get(&key).await.unwrap().bytes().await.unwrap() }
+        });
+        assert_eq!(&bytes[..], b"sst bytes", "the immutable object's bytes are unchanged");
+    }
+
+    #[test]
+    fn a_different_bytes_overwrite_of_an_immutable_key_is_refused_and_quarantines() {
+        // negative + mutant catcher: an ordinary (default Overwrite) put with
+        // DIFFERENT bytes at an already-written immutable key must be a typed
+        // Precondition refusal, must NOT change the stored bytes, and must set
+        // the quarantine flag. This is exactly what an unconditional
+        // `put_opts` (the removed defect) would silently allow.
+        let (_dir, store) = wrapped_store();
+        let key = ObjectPath::from("base/fv1/m1/keyspace/01ABC.sst");
+        bridge({
+            let (store, key) = (store.clone(), key.clone());
+            async move { store.put(&key, PutPayload::from_static(b"authoritative")).await }
+        })
+        .expect("first write creates");
+
+        let refused = bridge({
+            let (store, key) = (store.clone(), key.clone());
+            // default put mode is Overwrite — the ordinary conditional put the
+            // wrapper used to forward unconditionally
+            async move { store.put(&key, PutPayload::from_static(b"tampered!!!!!")).await }
+        });
+        assert!(
+            matches!(refused, Err(slatedb::object_store::Error::Precondition { .. })),
+            "a different-bytes overwrite of an immutable key must be a typed Precondition refusal, got: {refused:?}",
+        );
+        assert!(store.is_quarantined(), "a refused overwrite must quarantine the materialisation");
+        // the authoritative bytes are untouched — the boundary held
+        let bytes = bridge({
+            let (store, key) = (store.clone(), key.clone());
+            async move { store.get(&key).await.unwrap().bytes().await.unwrap() }
+        });
+        assert_eq!(&bytes[..], b"authoritative", "the referenced object's bytes must never change over its lifetime");
+    }
+
+    #[test]
+    fn once_quarantined_every_further_write_fails_closed() {
+        // S-04: after a different-bytes overwrite quarantines the
+        // materialisation, even a write to a fresh, never-written key is
+        // refused — the principal is no longer trustworthy.
+        let (_dir, store) = wrapped_store();
+        let key = ObjectPath::from("base/fv1/m1/keyspace/01ABC.sst");
+        let fresh = ObjectPath::from("base/fv1/m1/keyspace/09XYZ.sst");
+        let refused_after = bridge({
+            let (store, key, fresh) = (store.clone(), key.clone(), fresh.clone());
+            async move {
+                store.put(&key, PutPayload::from_static(b"authoritative")).await?;
+                // trigger quarantine
+                let _ = store.put(&key, PutPayload::from_static(b"tampered!!!!!")).await;
+                // a brand-new key must now also be refused
+                Ok::<_, slatedb::object_store::Error>(store.put(&fresh, PutPayload::from_static(b"new")).await)
+            }
+        })
+        .unwrap();
+        assert!(store.is_quarantined());
+        assert!(
+            matches!(refused_after, Err(slatedb::object_store::Error::Precondition { .. })),
+            "a quarantined materialisation must refuse all further writes, got: {refused_after:?}",
+        );
+    }
+
+    #[test]
+    fn an_explicit_create_mode_overwrite_attempt_is_also_refused() {
+        // even a caller that asks for Create at an occupied immutable key is
+        // refused (AlreadyExists reconciles to a differing-bytes refusal),
+        // proving the guard is not merely rewriting the default mode.
+        let (_dir, store) = wrapped_store();
+        let key = ObjectPath::from("base/fv1/m1/keyspace/01ABC.sst");
+        let occupied = bridge({
+            let (store, key) = (store.clone(), key.clone());
+            async move {
+                store.put(&key, PutPayload::from_static(b"authoritative")).await?;
+                store
+                    .put_opts(
+                        &key,
+                        PutPayload::from_static(b"different bytes"),
+                        PutOptions { mode: PutMode::Create, ..Default::default() },
+                    )
+                    .await
+            }
+        });
+        assert!(
+            matches!(occupied, Err(slatedb::object_store::Error::Precondition { .. })),
+            "a create at an occupied immutable key with different bytes must refuse, got: {occupied:?}",
+        );
+    }
+
+    #[test]
+    fn a_manifest_key_is_exempt_and_may_be_republished() {
+        // the manifest is the sole CAS publication path: an overwrite-mode put
+        // at a manifest key passes through (SlateDB's manifest CAS depends on
+        // this), and the wrapper does NOT quarantine on it.
+        let (_dir, store) = wrapped_store();
+        let manifest = ObjectPath::from(format!("base/fv1/m1/keyspace/{MANIFEST_SUBDIR}/0001.manifest"));
+        let republished = bridge({
+            let (store, manifest) = (store.clone(), manifest.clone());
+            async move {
+                store.put(&manifest, PutPayload::from_static(b"manifest v1")).await?;
+                // an ordinary overwrite of the manifest key succeeds (CAS path)
+                store.put(&manifest, PutPayload::from_static(b"manifest v2 republished")).await
+            }
+        });
+        assert!(republished.is_ok(), "the manifest CAS path must not be blocked, got: {republished:?}");
+        assert!(!store.is_quarantined(), "republishing the manifest is not a quarantine event");
+    }
+
+    #[test]
+    fn a_stale_multipart_completion_is_refused_but_the_active_attempt_completes() {
+        // S-04 multipart gating + mutant catcher: two attempts opened on one
+        // location. The first is superseded (stale) by the second; completing
+        // the stale attempt is a typed refusal, while the active attempt
+        // completes. A wrapper that forwarded completion unconditionally (the
+        // removed defect) would let the stale actor publish.
+        let (_dir, store) = wrapped_store();
+        let location = ObjectPath::from("base/fv1/m1/keyspace/02DEF.sst");
+
+        let outcome = bridge({
+            let (store, location) = (store.clone(), location.clone());
+            async move {
+                let mut stale = store.put_multipart(&location).await?;
+                let mut active = store.put_multipart(&location).await?;
+                stale.put_part(PutPayload::from_static(b"stale part")).await?;
+                active.put_part(PutPayload::from_static(b"active part")).await?;
+                // completing the stale (superseded) attempt is refused
+                let stale_completion = stale.complete().await;
+                // the active attempt completes
+                let active_completion = active.complete().await;
+                Ok::<_, slatedb::object_store::Error>((stale_completion, active_completion))
+            }
+        })
+        .unwrap();
+
+        assert!(
+            matches!(outcome.0, Err(slatedb::object_store::Error::Precondition { .. })),
+            "a stale multipart completion must be a typed refusal, got: {:?}",
+            outcome.0,
+        );
+        assert!(outcome.1.is_ok(), "the active, uncommitted attempt must complete, got: {:?}", outcome.1);
+
+        // and the published bytes are the active attempt's
+        let bytes = bridge({
+            let (store, location) = (store.clone(), location.clone());
+            async move { store.get(&location).await.unwrap().bytes().await.unwrap() }
+        });
+        assert_eq!(&bytes[..], b"active part", "the active attempt's bytes must be what is published");
+    }
+
+    #[test]
+    fn a_committed_multipart_cannot_be_completed_a_second_time() {
+        // completion can never replace a committed object: a second complete()
+        // on the same attempt is refused.
+        let (_dir, store) = wrapped_store();
+        let location = ObjectPath::from("base/fv1/m1/keyspace/03GHI.sst");
+        let second = bridge({
+            let (store, location) = (store.clone(), location.clone());
+            async move {
+                let mut upload = store.put_multipart(&location).await?;
+                upload.put_part(PutPayload::from_static(b"the bytes")).await?;
+                upload.complete().await?;
+                // a second completion of an already-committed attempt
+                Ok::<_, slatedb::object_store::Error>(upload.complete().await)
+            }
+        })
+        .unwrap();
+        assert!(
+            matches!(second, Err(slatedb::object_store::Error::Precondition { .. })),
+            "a committed multipart must not complete again, got: {second:?}",
+        );
+    }
+
+    #[test]
+    fn the_attempt_journal_supersedes_the_earlier_attempt() {
+        // white-box: opening a second multipart on a location records it as
+        // the active attempt and marks the first stale (the mechanism the
+        // stale-completion refusal rests on).
+        let (_dir, store) = wrapped_store();
+        let location = ObjectPath::from("base/fv1/m1/keyspace/04JKL.sst");
+        bridge({
+            let (store, location) = (store.clone(), location.clone());
+            async move {
+                let _first = store.put_multipart(&location).await.unwrap();
+                let _second = store.put_multipart(&location).await.unwrap();
+            }
+        });
+        let journal = store.multipart_journal.lock().unwrap();
+        let (active_id, state) = journal.get(location.as_ref()).copied().expect("a journal entry exists");
+        assert_eq!(active_id, 2, "the second attempt is the active one");
+        assert_eq!(state, AttemptState::Uncommitted);
     }
 }

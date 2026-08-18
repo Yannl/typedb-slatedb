@@ -128,13 +128,17 @@ impl<Durability> MVCCStorage<Durability> {
         if storage_dir.exists() {
             return Err(StorageOpenError::StorageDirectoryExists { name: name.as_ref().to_owned(), path: storage_dir });
         }
+        // S-01: resolve the backend BEFORE creating the storage directory, so a
+        // refusal (unknown profile / not-yet-available lane) leaves the storage
+        // tree byte-identical — no directory created before the refusal.
+        let backend = Self::resolve_storage_backend(name.as_ref())?;
         fs::create_dir_all(&storage_dir).map_err(|error| StorageOpenError::StorageDirectoryCreate {
             name: name.as_ref().to_owned(),
             source: Arc::new(error),
         })?;
         fail_point!(STORAGE_EMPTY_STORAGE_DIR);
         Self::register_durability_record_types(&mut durability_client);
-        let keyspaces = Self::create_keyspaces::<KS>(name.as_ref(), &storage_dir, rocks_resources)?;
+        let keyspaces = Self::open_keyspaces::<KS>(name.as_ref(), &storage_dir, rocks_resources, backend)?;
 
         let next_sequence_number = durability_client.current();
         let isolation_manager = IsolationManager::new(next_sequence_number);
@@ -163,12 +167,15 @@ impl<Durability> MVCCStorage<Durability> {
             .map_err(|source| StorageOpenError::BackendResolution { name: name.to_owned(), source })
     }
 
-    fn create_keyspaces<KS: KeyspaceSet>(
+    /// Open the keyspaces with an already-resolved backend (S-01): the backend
+    /// is resolved by the caller BEFORE any directory is created, then passed
+    /// in here as an explicit argument.
+    fn open_keyspaces<KS: KeyspaceSet>(
         name: impl AsRef<str>,
         storage_dir: &Path,
         rocks_resources: &RocksResources,
+        backend: StorageBackend,
     ) -> Result<Keyspaces, StorageOpenError> {
-        let backend = Self::resolve_storage_backend(name.as_ref())?;
         let keyspaces = Keyspaces::open::<KS>(&storage_dir, rocks_resources, backend)
             .map_err(|err| StorageOpenError::KeyspaceOpen { name: name.as_ref().to_owned(), source: err })?;
         Ok(keyspaces)
@@ -196,6 +203,10 @@ impl<Durability> MVCCStorage<Durability> {
                 .recover_storage::<KS, _>(name, &storage_dir, &durability_client, rocks_resources, backend)
                 .map_err(|error| RecoverFromCheckpoint { name: name.to_owned(), typedb_source: error })?
         } else {
+            // S-01: resolve the backend BEFORE removing/recreating the storage
+            // directory, so a refusal leaves the existing tree byte-identical
+            // rather than wiping it and then failing.
+            let backend = Self::resolve_storage_backend(name)?;
             match fs::remove_dir_all(&storage_dir) {
                 Err(err) if err.kind() != io::ErrorKind::NotFound => {
                     return Err(StorageDirectoryRecreate { name: name.to_owned(), source: Arc::new(err) });
@@ -206,7 +217,7 @@ impl<Durability> MVCCStorage<Durability> {
             fs::create_dir_all(&storage_dir)
                 .map_err(|err| StorageDirectoryRecreate { name: name.to_owned(), source: Arc::new(err) })?;
             fail_point!(STORAGE_EMPTY_STORAGE_DIR);
-            let keyspaces = Self::create_keyspaces::<KS>(name, &storage_dir, rocks_resources)?;
+            let keyspaces = Self::open_keyspaces::<KS>(name, &storage_dir, rocks_resources, backend)?;
             trace!("No checkpoint found, loading from WAL");
             let commits = load_commit_data_from(SequenceNumber::MIN.next(), &durability_client)
                 .map_err(|err| RecoverFromDurability { name: name.to_owned(), typedb_source: err })?;

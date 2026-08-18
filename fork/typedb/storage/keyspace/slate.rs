@@ -236,6 +236,48 @@ fn mint_materialization_id() -> String {
     format!("m{nanos:024x}-{:08x}-{seed:016x}-{count:04x}", std::process::id())
 }
 
+/// External writer epoch for a SlateDB open (ADR-0012 fencing seam).
+///
+/// SlateDB's writer role is claimed against a monotone epoch: a build with the
+/// `external_epoch_required` feature refuses any open that does not present one
+/// (fail-closed — an unset epoch is a `SlateDBError::ExternalEpochRequired` at
+/// open, never a silent fallback to internal observe-and-bind allocation), and
+/// the manifest fences any open whose epoch is `<=` the stored writer epoch.
+///
+/// **This is the L1/local seam, and it is deliberately honest about its
+/// limits.** The AUTHORITATIVE external-epoch source is the CONTROLLER: it
+/// alone can hand two contending incarnations (a duplicate container, a stale
+/// actor that lost its lease) epochs that totally order across processes and
+/// machines, which is the property real fencing needs. TypeDB does not yet
+/// carry that controller-issued number down to this adapter, so on the local
+/// lane we mint a *process-anchored* monotone epoch instead: strictly
+/// increasing for every open in this process, and seeded from the wall clock
+/// so opens after a restart still exceed those before it (modulo a clock that
+/// runs backwards). That fences a re-open by THIS server against the epoch its
+/// own previous open persisted — it does NOT fence a concurrent foreign
+/// incarnation, which only the controller's number can. When the controller
+/// seam lands, this function is the single site that changes: it takes the
+/// controller-provided writer epoch and this local fallback becomes the
+/// no-controller degenerate case.
+fn local_writer_epoch() -> u64 {
+    static LAST: AtomicU64 = AtomicU64::new(0);
+    let wall = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_micros().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or(0);
+    // max(wall, last+1): wall-clock advance across opens/restarts, with a
+    // strict +1 tie-break so rapid same-process opens never repeat an epoch
+    // (a repeated epoch would be Fenced by the manifest, refusing a legitimate
+    // re-open).
+    loop {
+        let prev = LAST.load(Ordering::Acquire);
+        let next = wall.max(prev.saturating_add(1));
+        if LAST.compare_exchange_weak(prev, next, Ordering::AcqRel, Ordering::Acquire).is_ok() {
+            return next;
+        }
+    }
+}
+
 /// U2S3 profile configuration (TB-P8): every variable is required except
 /// region (default `auto`, the R2 convention) and the root prefix (default
 /// `typedb`). Missing values are a typed open error — fail closed, never a
@@ -603,8 +645,11 @@ impl SlateKeyspace {
         })?);
         let settings = settings();
         assert_pre_g13_posture(&settings).map_err(Arc::new)?;
-        let db = bridge(async move { Db::builder(DB_SUBDIR, store).with_settings(settings).build().await })
-            .map_err(Arc::new)?;
+        let epoch = local_writer_epoch();
+        let db = bridge(async move {
+            Db::builder(DB_SUBDIR, store).with_settings(settings).with_external_writer_epoch(epoch).build().await
+        })
+        .map_err(Arc::new)?;
         Ok(Self { db: Arc::new(db), path: path.to_owned(), remote: None, key_count_memo: Default::default() })
     }
 
@@ -673,8 +718,11 @@ impl SlateKeyspace {
             settings.object_store_cache_options.cache_on_flush = true;
         }
         assert_pre_g13_posture(&settings).map_err(Arc::new)?;
-        let db = bridge(async move { Db::builder(DB_SUBDIR, prefixed).with_settings(settings).build().await })
-            .map_err(Arc::new)?;
+        let epoch = local_writer_epoch();
+        let db = bridge(async move {
+            Db::builder(DB_SUBDIR, prefixed).with_settings(settings).with_external_writer_epoch(epoch).build().await
+        })
+        .map_err(Arc::new)?;
         Ok(Self {
             db: Arc::new(db),
             path: path.to_owned(),
@@ -1499,7 +1547,7 @@ mod read_contract_tests {
     };
     use test_utils::create_tmp_dir;
 
-    use super::{bridge, read_options, scan_options, settings, write_options};
+    use super::{bridge, local_writer_epoch, read_options, scan_options, settings, write_options};
 
     #[test]
     fn paused_precommit_write_is_invisible_to_committed_frontier_reads() {
@@ -1513,6 +1561,7 @@ mod read_contract_tests {
                     Db::builder("read-contract", store)
                         .with_settings(settings())
                         .with_fp_registry(registry)
+                        .with_external_writer_epoch(local_writer_epoch())
                         .build()
                         .await
                 }

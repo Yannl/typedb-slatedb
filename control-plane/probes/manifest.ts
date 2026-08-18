@@ -19,7 +19,7 @@
 export type ProbeVerdict = "PASS" | "FAIL" | "NOT_RUN" | "PREREQUISITE_MISSING";
 
 /** Provider capabilities a probe needs before it can genuinely execute. */
-export type ProbeRequirement = "r2" | "cfapi" | "harness";
+export type ProbeRequirement = "r2" | "cfapi" | "cfapi_runtime" | "harness";
 
 export interface ManifestEntry {
   /** Normative probe ID, exactly as written in the contract. */
@@ -69,7 +69,9 @@ export const PROBE_MANIFEST: ReadonlyArray<ManifestEntry> = [
     id: "P-R2-03",
     title: "Bucket Locks",
     specSection: "## P-R2-03 — Bucket Locks",
-    requires: ["r2", "cfapi"],
+    // cfapi_runtime: the "runtime principal cannot alter policy" check
+    // needs a genuinely separate, less-privileged token in real mode.
+    requires: ["r2", "cfapi", "cfapi_runtime"],
     mockFault: "lock-not-enforced",
   },
   {

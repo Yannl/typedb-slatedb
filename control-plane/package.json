@@ -6,6 +6,8 @@
     "typecheck": "tsc --noEmit",
     "probes:platform": "node --experimental-strip-types probes/run-platform-probes.ts",
     "probes:selftest": "bash probes/self-test.sh",
+    "probes:preflight": "node --experimental-strip-types probes/preflight.ts",
+    "probes:recording-tests": "node --experimental-strip-types --test probes/recording.test.ts",
     "probes:r2": "node --experimental-strip-types probes/run-r2-probes.ts",
     "test:core": "node --experimental-strip-types --test src/controller/core/*.test.ts src/controller/surface.test.ts",
     "test:controller:mutant": "CONTROLLER_MUTANT=drop-outbox-event node --experimental-strip-types --test src/controller/core/controller-core.test.ts",

@@ -7,11 +7,18 @@ name: gates
 #
 # What is enforced on every push/PR:
 #   - document/gate authority: the machine ledger, its rendered status, and
-#     the forbidden-claims linter over the live status docs;
+#     the forbidden-claims linter over the live status docs (round-3 E-07:
+#     plus unique ids, status enums, commit-ancestry and evidence-path
+#     verification - which is why the truth-plane checkout fetches FULL
+#     history);
 #   - source/tool/workspace locks against a real materialisation, plus the
 #     lock checker's own behavioral mutants;
-#   - Mode-Q consistency: no Mode-Q evidence may coexist with a ledger that
-#     claims G0 closed (and vice versa - see the inline check);
+#   - Mode-Q: the SEMANTIC bundle validator (round-3 E-01) - absence keeps
+#     G0 open, presence must validate (schema, raw-byte hashes, source pin,
+#     crosswalk, content root), and the validator's own six mutants (junk
+#     file, truncated raw output, wrong pin, omitted/duplicate target,
+#     nonzero exit) are executed on every push; two-directional ledger
+#     consistency is enforced by the same validator;
 #   - evidence producers kill their own mutants; the ARCHIVED corpus bundle
 #     re-verifies from raw logs (reparse + hash binding + bundle root);
 #   - catalogue schema validation and negative controls;
@@ -22,8 +29,11 @@ name: gates
 #
 # What is deliberately NOT here, and why (recorded, not hidden):
 #   - the full U2S3 corpus (needs a ~9 GB build, MinIO, ~2 h): its archived
-#     evidence is re-verified from raw logs above; a FRESH corpus run is the
-#     dispatch-only `qualification` job below;
+#     evidence is re-verified from raw logs above; the dispatch-only
+#     `compile-and-catalogue-drift` job below runs the compile/catalogue/
+#     storage-integration lanes, and a true fresh-execution U0 job is a
+#     recorded E-06 remainder (it does not exist yet, and this job's name
+#     no longer pretends it does);
 #   - official driver gates (E-P0-08): no driver harness exists yet - the
 #     ledger's OFFICIAL_DRIVERS lane records NOT_IMPLEMENTED, and this
 #     comment is the CI-side acknowledgement;
@@ -60,29 +70,26 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # full history: the ledger linter (E-07) verifies that every
+          # commit the ledger cites exists and is an ancestor of HEAD -
+          # a shallow clone cannot answer that and the check fails closed
+          fetch-depth: 0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11.9"
       - name: gate ledger is well-formed, rendered status matches, no forbidden claims
         run: python3 tools/ledger/lint_ledger.py
-      - name: Mode-Q consistency (fail-closed both directions)
-        # G0 may only be closed by real Mode-Q evidence; conversely, while
-        # the evidence is absent the ledger MUST say G0 is open. A ledger
-        # that closes G0 without artifacts - or artifacts appearing without
-        # a ledger update - fails here.
-        run: |
-          python3 - <<'EOF'
-          import json, pathlib, sys
-          ledger = json.loads(pathlib.Path("docs/ledger/gates.json").read_text())
-          g0 = next(g for g in ledger["gates"] if g["id"] == "G0")
-          modeq = pathlib.Path("docs/evidence/G0/mode-q")
-          has_evidence = modeq.is_dir() and any(modeq.iterdir())
-          if g0["state"] in ("OPEN_RED", "OPEN") and has_evidence:
-              sys.exit("Mode-Q evidence exists but the ledger still holds G0 open - reconcile the ledger")
-          if g0["state"] not in ("OPEN_RED", "OPEN") and not has_evidence:
-              sys.exit("the ledger closes G0 without Mode-Q evidence at docs/evidence/G0/mode-q - refused")
-          print(f"G0={g0['state']}, mode-q evidence present={has_evidence}: consistent")
-          EOF
+      - name: Mode-Q semantic validation + ledger consistency (round-3 E-01)
+        # Replaces the pre-fix any-file check (a junk file used to pass).
+        # ABSENT -> the ledger must hold G0 open; VALID -> the ledger must
+        # have closed G0; anything else in the directory -> fail. Only
+        # validator success may ever accompany a closed G0.
+        run: python3 tools/modeq/validate_modeq.py --ledger docs/ledger/gates.json
+      - name: the Mode-Q validator kills its own mutants
+        # junk file, truncated raw output, wrong source pin, omitted
+        # target, duplicate target, nonzero recorded exit - all executed
+        run: python3 tools/modeq/modeq_mutants.py
       - name: evidence producers kill their own mutants
         run: python3 tools/catalog/evidence_mutants.py
       - name: completeness negative controls
@@ -154,8 +161,18 @@ jobs:
           fi
       - name: workerd lane
         run: npx vitest run
-      - name: probe harness self-test (18 fail-closed controls, no credentials)
-        run: bash probes/self-test.sh
+      - name: probe harness self-test (21 fail-closed controls, no credentials)
+        # PROBE_SELFTEST_EVIDENCE_DIR keeps every evidence bundle the
+        # controls produced so the canary scanner below can sweep it
+        run: PROBE_SELFTEST_EVIDENCE_DIR="$RUNNER_TEMP/probe-selftest-evidence" bash probes/self-test.sh
+      - name: secret canary scan over the self-test evidence (round-3 P-01)
+        # The mock provider mints canary-shaped credentials
+        # (AKIACANARY…, MOCKSECRETCANARY…, eyJCANARY…); a single hit in any
+        # evidence bundle or control log means the redaction pipeline
+        # regressed. Fail-closed: a missing/empty directory is an error.
+        # python3 comes from the pinned ubuntu-24.04 runner image.
+        working-directory: .
+        run: python3 tools/ci/scan_secret_canaries.py "$RUNNER_TEMP/probe-selftest-evidence"
       - name: protocol E2E on real workerd
         # the full 85-check protocol matrix against wrangler dev - the same
         # workerd runtime production uses, local-dev surface
@@ -177,8 +194,14 @@ jobs:
     # The Rust lanes that fit in a CI budget: the pure protocol models and the
     # storage library's own unit tests (which include the SlateDB adapter's
     # read-contract, recovery, checkpoint, materialisation, posture, memo and
-    # retry controls). The full corpus is not here - see the header; a fresh
-    # qualification run is the dispatch-only job below.
+    # retry controls). The full corpus is not here - see the header.
+    #
+    # Round-3 E-06 choice, stated not hidden: the always-on push job keeps
+    # `--lib` (the storage build alone is the bulk of this job's budget);
+    # the INTEGRATION tests - `cargo test -p storage --all-targets`, which
+    # picks up tests/ (including test_recovery as it becomes real) - run in
+    # the dispatch-only compile-and-catalogue-drift job below, so they are
+    # part of the same recorded qualification commands rather than skipped.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -202,11 +225,17 @@ jobs:
         working-directory: sources/typedb
         run: cargo +1.93.0 test -p storage --lib --locked
 
-  qualification:
-    # Fresh U0 qualification: pristine-tree build, catalogue regeneration and
-    # drift check. Dispatch-only - it needs a cold ~40 min build - but it is
-    # the SAME commands a release qualification must run, recorded here so
-    # "fresh evidence" has one definition.
+  compile-and-catalogue-drift:
+    # Renamed from `qualification` (round-3 E-06): this job does NOT run
+    # U0 - it compiles the workspace (--no-run), regenerates the catalogue,
+    # and checks drift, plus the storage integration lane below. A true
+    # fresh-execution U0 job (immutable plan, static/script/failpoint/
+    # Cucumber/driver lanes, evidence upload) remains an open E-06
+    # remainder recorded in the ledger; naming this job "qualification"
+    # was claiming that work before it existed.
+    # Dispatch-only - it needs a cold ~40 min build - but these are the
+    # SAME commands a release qualification must start from, recorded here
+    # so "fresh evidence" has one definition.
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
@@ -235,3 +264,12 @@ jobs:
             echo "catalogue drifted from the committed one - regenerate and review" >&2
             exit 1
           }
+      - name: stage the fork (after the pristine drift check, which must see the unstaged tree)
+        run: python3 tools/fork/stage.py
+      - name: storage integration tests (E-06 - includes tests/, e.g. test_recovery)
+        # --all-targets compiles and runs unit + integration + doc-test
+        # binaries for the storage crate over the staged fork; kept here
+        # (dispatch) rather than on push because of the build cost - see
+        # the storage job comment.
+        working-directory: sources/typedb
+        run: cargo +1.93.0 test -p storage --all-targets --locked

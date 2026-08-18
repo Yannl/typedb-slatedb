@@ -3,11 +3,12 @@
  * (contract/typedb-r2-v16-platform-probes.md).
  *
  * Same endpoint contract in real mode (deployed probe-harness Worker) and
- * mock mode (deterministic fake): /ctr/* and /worker/*.
+ * mock mode (deterministic fake): /ctr/* and /worker/*. Every assertion
+ * is declared with its required modes (round-3 P-05).
  */
 
 import type { ProbeContext, ProbeImpl } from "./probe.ts";
-import { asJson, harnessGet, harnessPost } from "./probe.ts";
+import { asJson, BOTH, harnessGet, harnessPost } from "./probe.ts";
 
 // ---------------------------------------------------------------------------
 // P-CTR-01 — Lifecycle state machine.
@@ -19,38 +20,51 @@ const pCTR_01: ProbeImpl = {
     "lifecycle converges to platform truth: concurrent start idempotent, " +
     "stop-while-starting converges, duplicate stop is a no-op, stale " +
     "callbacks are rejected and never corrupt state",
+  assertions: [
+    { id: "reset-ok", title: "lifecycle reset", required_in: BOTH },
+    { id: "cold-start", title: "cold start enters starting@gen1", required_in: BOTH },
+    { id: "concurrent-start-idempotent", title: "concurrent start is idempotent, no second instance", required_in: BOTH },
+    { id: "stop-while-starting-converges", title: "stop while starting converges", required_in: BOTH },
+    { id: "duplicate-stop-noop", title: "duplicate stop is an explicit no-op", required_in: BOTH },
+    { id: "restart-advances-generation", title: "restart advances the generation", required_in: BOTH },
+    { id: "current-callback-completes", title: "current-generation callback completes startup", required_in: BOTH },
+    { id: "stale-callback-rejected", title: "stale lifecycle callback rejected", required_in: BOTH },
+    { id: "truth-intact", title: "platform truth intact after stale callback", required_in: BOTH },
+  ],
   async run(ctx: ProbeContext): Promise<void> {
     const reset = await harnessPost(ctx, "/ctr/lifecycle/reset");
-    ctx.check(reset.status === 200, `lifecycle reset (got ${reset.status})`);
+    ctx.check("reset-ok", reset.status === 200, `got ${reset.status}`);
 
     // Cold start, then a concurrent duplicate start: one instance only.
     const start1 = asJson(await harnessPost(ctx, "/ctr/lifecycle/start"));
-    ctx.check(start1.state === "starting" && Number(start1.generation) === 1, `cold start enters starting@gen1 (got ${JSON.stringify(start1)})`);
+    ctx.check("cold-start", start1.state === "starting" && Number(start1.generation) === 1, `got ${JSON.stringify(start1)}`);
     const start2 = asJson(await harnessPost(ctx, "/ctr/lifecycle/start"));
     ctx.check(
+      "concurrent-start-idempotent",
       start2.idempotent === true && Number(start2.generation) === 1,
-      `concurrent start is idempotent, no second instance (got ${JSON.stringify(start2)})`,
+      `got ${JSON.stringify(start2)}`,
     );
 
     // Stop while starting must converge to stopped, not wedge.
     const stop1 = asJson(await harnessPost(ctx, "/ctr/lifecycle/stop"));
-    ctx.check(stop1.state === "stopped", `stop while starting converges (got ${JSON.stringify(stop1)})`);
+    ctx.check("stop-while-starting-converges", stop1.state === "stopped", `got ${JSON.stringify(stop1)}`);
     const stop2 = asJson(await harnessPost(ctx, "/ctr/lifecycle/stop"));
-    ctx.check(stop2.noop === true, `duplicate stop is an explicit no-op (got ${JSON.stringify(stop2)})`);
+    ctx.check("duplicate-stop-noop", stop2.noop === true, `got ${JSON.stringify(stop2)}`);
 
     // Restart and complete startup via the port-ready callback.
     const start3 = asJson(await harnessPost(ctx, "/ctr/lifecycle/start"));
-    ctx.check(Number(start3.generation) === 2, `restart advances the generation (got ${JSON.stringify(start3)})`);
+    ctx.check("restart-advances-generation", Number(start3.generation) === 2, `got ${JSON.stringify(start3)}`);
     const ready = asJson(await harnessPost(ctx, "/ctr/lifecycle/port-ready", { generation: 2 }));
-    ctx.check(ready.state === "running", `current-generation callback completes startup (got ${JSON.stringify(ready)})`);
+    ctx.check("current-callback-completes", ready.state === "running", `got ${JSON.stringify(ready)}`);
 
     // A stale callback from the previous generation must be ignored.
     const stale = await harnessPost(ctx, "/ctr/lifecycle/port-ready", { generation: 1 });
-    ctx.check(stale.status === 409, `stale lifecycle callback rejected (got ${stale.status})`);
+    ctx.check("stale-callback-rejected", stale.status === 409, `got ${stale.status}`);
     const status = asJson(await harnessGet(ctx, "/ctr/lifecycle/status"));
     ctx.check(
+      "truth-intact",
       status.state === "running" && Number(status.generation) === 2,
-      `platform truth intact after stale callback (got ${JSON.stringify(status)})`,
+      `got ${JSON.stringify(status)}`,
     );
   },
 };
@@ -65,36 +79,44 @@ const pCTR_02: ProbeImpl = {
     "only declared (worker, image) tuples are admitted; an unsupported " +
     "image never becomes database-ready; completion requires observed " +
     "convergence",
+  assertions: [
+    { id: "reset-ok", title: "rollout reset", required_in: BOTH },
+    { id: "declared-tuple-admitted", title: "declared tuple (worker 2, image 1) admitted", required_in: BOTH },
+    { id: "not-ready-before-convergence", title: "deployment is not complete before observed convergence", required_in: BOTH },
+    { id: "convergence-observed", title: "convergence observed", required_in: BOTH },
+    { id: "ready-after-convergence", title: "declared tuple becomes ready only after convergence", required_in: BOTH },
+    { id: "undeclared-tuple-refused", title: "undeclared tuple (worker 2, image 0) refused", required_in: BOTH },
+    { id: "unsupported-never-ready", title: "unsupported image never database-ready", required_in: BOTH },
+  ],
   async run(ctx: ProbeContext): Promise<void> {
     // Worker N=2 declares compatibility with images N-1=1 and N=2.
     const reset = await harnessPost(ctx, "/ctr/rollout/reset", { workerVersion: 2, supportedImages: [1, 2] });
-    ctx.check(reset.status === 200, `rollout reset (got ${reset.status})`);
+    ctx.check("reset-ok", reset.status === 200, `got ${reset.status}`);
 
     // Deploy worker N with image N-1 running: admitted, but NOT ready
     // until convergence is actually observed.
     const dep1 = await harnessPost(ctx, "/ctr/rollout/deploy", { image: 1 });
-    ctx.check(dep1.status === 200, `declared tuple (worker 2, image 1) admitted (got ${dep1.status})`);
+    ctx.check("declared-tuple-admitted", dep1.status === 200, `got ${dep1.status}`);
     const preConverge = asJson(await harnessGet(ctx, "/ctr/rollout/status"));
-    ctx.check(
-      preConverge.ready === false,
-      `deployment is not complete before observed convergence (got ${JSON.stringify(preConverge)})`,
-    );
+    ctx.check("not-ready-before-convergence", preConverge.ready === false, `got ${JSON.stringify(preConverge)}`);
     const obs = await harnessPost(ctx, "/ctr/rollout/observe-convergence");
-    ctx.check(obs.status === 200, `convergence observed (got ${obs.status})`);
+    ctx.check("convergence-observed", obs.status === 200, `got ${obs.status}`);
     const postConverge = asJson(await harnessGet(ctx, "/ctr/rollout/status"));
     ctx.check(
+      "ready-after-convergence",
       postConverge.ready === true && Number(postConverge.image) === 1,
-      `declared tuple becomes ready only after convergence (got ${JSON.stringify(postConverge)})`,
+      `got ${JSON.stringify(postConverge)}`,
     );
 
     // An undeclared image (old-image restart after rollback) must be
     // refused by the envelope and must never become database-ready.
     const dep0 = await harnessPost(ctx, "/ctr/rollout/deploy", { image: 0 });
-    ctx.check(dep0.status === 409, `undeclared tuple (worker 2, image 0) refused (got ${dep0.status})`);
+    ctx.check("undeclared-tuple-refused", dep0.status === 409, `got ${dep0.status}`);
     const after = asJson(await harnessGet(ctx, "/ctr/rollout/status"));
     ctx.check(
+      "unsupported-never-ready",
       !(after.ready === true && Number(after.image) === 0),
-      `unsupported image never database-ready (got ${JSON.stringify(after)})`,
+      `got ${JSON.stringify(after)}`,
     );
   },
 };
@@ -109,41 +131,49 @@ const pCTR_03: ProbeImpl = {
     "no inactivity stop while a transaction is open (controller-denied " +
     "hibernation); safe inactivity stop otherwise; acknowledged state " +
     "survives SIGKILL",
+  assertions: [
+    { id: "reset-ok", title: "sleep state reset", required_in: BOTH },
+    { id: "w1-acked", title: "write w1 acknowledged", required_in: BOTH },
+    { id: "no-stop-with-open-txn", title: "no inactivity stop while a transaction is open", required_in: BOTH },
+    { id: "hibernation-denied", title: "hibernation was actively denied", required_in: BOTH },
+    { id: "safe-stop-when-idle", title: "safe inactivity stop occurs once no work is open", required_in: BOTH },
+    { id: "w2-acked", title: "write w2 acknowledged", required_in: BOTH },
+    { id: "kill-applied", title: "SIGKILL applied", required_in: BOTH },
+    { id: "acked-survives-kill", title: "acknowledged state recovered intact after kill", required_in: BOTH },
+  ],
   async run(ctx: ProbeContext): Promise<void> {
     const reset = await harnessPost(ctx, "/ctr/sleep/reset", { sleepAfter: 3 });
-    ctx.check(reset.status === 200, `sleep state reset (got ${reset.status})`);
+    ctx.check("reset-ok", reset.status === 200, `got ${reset.status}`);
 
     const w1 = await harnessPost(ctx, "/ctr/sleep/write", { data: "w1" });
-    ctx.check(asJson(w1).acked === true, "write w1 acknowledged");
+    ctx.check("w1-acked", asJson(w1).acked === true, "acked flag compared");
 
     // Idle past sleepAfter WITH an open transaction: stopping would be
     // unsafe, so the controller must deny hibernation.
     await harnessPost(ctx, "/ctr/sleep/txn-open");
     for (let i = 0; i < 4; i++) await harnessPost(ctx, "/ctr/sleep/tick");
     const busy = asJson(await harnessGet(ctx, "/ctr/sleep/state"));
-    ctx.check(
-      busy.state === "running",
-      `no inactivity stop while a transaction is open (got state=${busy.state})`,
-    );
-    ctx.check(Number(busy.deniedStops) >= 1, `hibernation was actively denied (got ${busy.deniedStops})`);
+    ctx.check("no-stop-with-open-txn", busy.state === "running", `got state=${busy.state}`);
+    ctx.check("hibernation-denied", Number(busy.deniedStops) >= 1, `got ${busy.deniedStops}`);
 
     // Close the transaction: the default inactivity stop is now safe.
     await harnessPost(ctx, "/ctr/sleep/txn-close");
     await harnessPost(ctx, "/ctr/sleep/tick");
     const idle = asJson(await harnessGet(ctx, "/ctr/sleep/state"));
-    ctx.check(idle.state === "stopped", `safe inactivity stop occurs once no work is open (got ${idle.state})`);
+    ctx.check("safe-stop-when-idle", idle.state === "stopped", `got ${idle.state}`);
 
     // Arbitrary kill: acknowledged state must survive recovery.
     await harnessPost(ctx, "/ctr/sleep/recover");
     const w2 = await harnessPost(ctx, "/ctr/sleep/write", { data: "w2" });
-    ctx.check(asJson(w2).acked === true, "write w2 acknowledged");
+    ctx.check("w2-acked", asJson(w2).acked === true, "acked flag compared");
     const kill = asJson(await harnessPost(ctx, "/ctr/sleep/kill"));
-    ctx.check(kill.state === "killed", `SIGKILL applied (got ${kill.state})`);
+    ctx.check("kill-applied", kill.state === "killed", `got ${kill.state}`);
     await harnessPost(ctx, "/ctr/sleep/recover");
     const recovered = asJson(await harnessGet(ctx, "/ctr/sleep/state"));
     ctx.check(
+      "acked-survives-kill",
       recovered.state === "running" && JSON.stringify(recovered.acked) === JSON.stringify(["w1", "w2"]),
-      `acknowledged state recovered intact after kill (got ${JSON.stringify(recovered.acked)})`,
+      `got ${JSON.stringify(recovered.acked)}`,
     );
   },
 };
@@ -158,31 +188,38 @@ const pCTR_04: ProbeImpl = {
     "no colocation assumption; unauthorized egress denied; " +
     "enableInternet=false denies all egress; possibly-committed operations " +
     "remain queryable after client disconnect",
+  assertions: [
+    { id: "reset-ok", title: "network state reset", required_in: BOTH },
+    { id: "not-colocated", title: "DO and container are NOT colocated", required_in: BOTH },
+    { id: "internal-http-ok", title: "internal HTTP works across locations", required_in: BOTH },
+    { id: "allowlisted-egress-ok", title: "allowlisted egress permitted", required_in: BOTH },
+    { id: "unauthorized-egress-denied", title: "unauthorized egress denied", required_in: BOTH },
+    { id: "internet-off-denies-all", title: "enableInternet=false denies all egress", required_in: BOTH },
+    { id: "disconnect-observed", title: "client observes the disconnect", required_in: BOTH },
+    { id: "committed-still-queryable", title: "possibly-committed operation remains queryable", required_in: BOTH },
+  ],
   async run(ctx: ProbeContext): Promise<void> {
     const reset = await harnessPost(ctx, "/ctr/net/reset", {
       allowlist: ["registry.internal"],
       enableInternet: true,
     });
-    ctx.check(reset.status === 200, `network state reset (got ${reset.status})`);
+    ctx.check("reset-ok", reset.status === 200, `got ${reset.status}`);
 
     // Lifecycle DO and container in separate locations; internal HTTP works.
     const placement = asJson(await harnessGet(ctx, "/ctr/net/placement"));
-    ctx.check(
-      placement.doLocation !== placement.containerLocation,
-      `DO and container are NOT colocated (got ${JSON.stringify(placement)})`,
-    );
-    ctx.check(placement.internalHttp === "ok", "internal HTTP works across locations");
+    ctx.check("not-colocated", placement.doLocation !== placement.containerLocation, `got ${JSON.stringify(placement)}`);
+    ctx.check("internal-http-ok", placement.internalHttp === "ok", `got ${placement.internalHttp}`);
 
     // Egress allowlist enforcement.
     const allowed = await harnessPost(ctx, "/ctr/net/egress", { host: "registry.internal" });
-    ctx.check(allowed.status === 200, `allowlisted egress permitted (got ${allowed.status})`);
+    ctx.check("allowlisted-egress-ok", allowed.status === 200, `got ${allowed.status}`);
     const denied = await harnessPost(ctx, "/ctr/net/egress", { host: "exfil.example.com" });
-    ctx.check(denied.status === 403, `unauthorized egress denied (got ${denied.status})`);
+    ctx.check("unauthorized-egress-denied", denied.status === 403, `got ${denied.status}`);
 
     // enableInternet=false: even allowlisted egress is dead.
     await harnessPost(ctx, "/ctr/net/config", { enableInternet: false });
     const offline = await harnessPost(ctx, "/ctr/net/egress", { host: "registry.internal" });
-    ctx.check(offline.status === 403, `enableInternet=false denies all egress (got ${offline.status})`);
+    ctx.check("internet-off-denies-all", offline.status === 403, `got ${offline.status}`);
     await harnessPost(ctx, "/ctr/net/config", { enableInternet: true });
 
     // Client disconnect during a mutating call: the operation may have
@@ -190,9 +227,9 @@ const pCTR_04: ProbeImpl = {
     const prep = asJson(await harnessPost(ctx, "/ctr/net/op-prepare"));
     const opId = String(prep.opId);
     const disc = await harnessPost(ctx, "/ctr/net/commit-with-disconnect", { opId });
-    ctx.check(disc.status === 599, `client observes the disconnect (got ${disc.status})`);
+    ctx.check("disconnect-observed", disc.status === 599, `got ${disc.status}`);
     const op = asJson(await harnessGet(ctx, `/ctr/net/op/${opId}`));
-    ctx.check(op.state === "committed", `possibly-committed operation remains queryable (got ${JSON.stringify(op)})`);
+    ctx.check("committed-still-queryable", op.state === "committed", `got ${JSON.stringify(op)}`);
   },
 };
 
@@ -206,40 +243,54 @@ const pWORKER_01: ProbeImpl = {
     "streaming stays within the buffer bound (no full buffering); no " +
     "success receipt before exact remote resolution; six-connection " +
     "saturation queues instead of failing incorrectly",
+  assertions: [
+    { id: "reset-ok", title: "gateway reset", required_in: BOTH },
+    { id: "stream-complete", title: "streamed object is complete", required_in: BOTH },
+    { id: "stream-pattern-exact", title: "streamed bytes match the deterministic pattern", required_in: BOTH },
+    { id: "buffer-bounded", title: "gateway held at most the buffer bound in memory (no full buffering)", required_in: BOTH },
+    { id: "upstream-5xx-surfaces", title: "upstream 5xx surfaces as gateway failure", required_in: BOTH },
+    { id: "no-premature-receipt", title: "no success receipt issued for an unresolved remote operation", required_in: BOTH },
+    { id: "permits-capped-at-six", title: "connection permits capped at six", required_in: BOTH },
+    { id: "excess-queued", title: "excess connection queued, not dropped", required_in: BOTH },
+    { id: "no-incorrect-success", title: "saturation produced no incorrect success", required_in: BOTH },
+  ],
   async run(ctx: ProbeContext): Promise<void> {
     const BOUND = 65536;
     const SIZE = 1048576; // 16x the bound: full buffering is unmistakable
     const reset = await harnessPost(ctx, "/worker/gateway/reset", { bufferBound: BOUND });
-    ctx.check(reset.status === 200, `gateway reset (got ${reset.status})`);
+    ctx.check("reset-ok", reset.status === 200, `got ${reset.status}`);
 
     // Stream an object well above the bound.
     const stream = await harnessGet(ctx, `/worker/gateway/stream?bytes=${SIZE}`);
-    ctx.check(stream.status === 200 && stream.body.length === SIZE, `streamed object is complete (got ${stream.body.length} bytes)`);
+    ctx.check("stream-complete", stream.status === 200 && stream.body.length === SIZE, `got ${stream.body.length} bytes`);
     ctx.check(
+      "stream-pattern-exact",
       stream.body[0] === 0 && stream.body[SIZE - 1] === (SIZE - 1) % 251,
-      "streamed bytes match the deterministic pattern",
+      "first/last pattern bytes compared",
     );
     const maxBuffered = Number(stream.headers["x-max-buffered-bytes"]);
     ctx.check(
+      "buffer-bounded",
       Number.isFinite(maxBuffered) && maxBuffered <= BOUND,
-      `gateway held at most ${maxBuffered} bytes in memory (bound ${BOUND}) — no full buffering`,
+      `held ${maxBuffered} bytes, bound ${BOUND}`,
     );
 
     // Upstream R2 5xx: failure surfaces; no success receipt is minted
     // before exact remote resolution.
     const upstreamFail = await harnessGet(ctx, "/worker/gateway/object?fail=r2-500");
-    ctx.check(upstreamFail.status === 502, `upstream 5xx surfaces as gateway failure (got ${upstreamFail.status})`);
+    ctx.check("upstream-5xx-surfaces", upstreamFail.status === 502, `got ${upstreamFail.status}`);
     ctx.check(
+      "no-premature-receipt",
       upstreamFail.headers["x-success-receipt"] === "none",
-      "no success receipt issued for an unresolved remote operation",
+      `got ${upstreamFail.headers["x-success-receipt"]}`,
     );
 
     // Six-connection saturation: excess demand queues; nothing is
     // reported successful that did not run.
     const sat = asJson(await harnessPost(ctx, "/worker/gateway/saturate", { connections: 7 }));
-    ctx.check(Number(sat.peakConcurrent) === 6, `connection permits capped at six (got ${sat.peakConcurrent})`);
-    ctx.check(Number(sat.queued) === 1, `excess connection queued, not dropped (got ${sat.queued})`);
-    ctx.check(sat.incorrectSuccess === false, "saturation produced no incorrect success");
+    ctx.check("permits-capped-at-six", Number(sat.peakConcurrent) === 6, `got ${sat.peakConcurrent}`);
+    ctx.check("excess-queued", Number(sat.queued) === 1, `got ${sat.queued}`);
+    ctx.check("no-incorrect-success", sat.incorrectSuccess === false, `got ${sat.incorrectSuccess}`);
   },
 };
 

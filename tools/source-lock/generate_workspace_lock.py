@@ -13,19 +13,27 @@ Bound facts:
   - pinned artifact digests (console/loader fixtures, assembly archive);
   - the sha256 of source-lock.json itself (so the two locks co-rotate).
 
+Deliberately NOT bound here: the containing repo commit. A committed file
+cannot truthfully name the commit that contains it — the hash of the
+commit depends on the file's content, so any recorded value is either the
+PREVIOUS commit or a lie, and the checker had to ignore it (round-3 audit
+E-07 caught exactly that: a claimed repo_commit excluded from
+comparison). The commit<->lock binding therefore lives OUTSIDE the tree:
+a post-checkout/release attestation records (actual HEAD commit, sha256
+of this file, release-input Merkle root) at verification time, when both
+are observable facts rather than self-references.
+
 Modes:
   generate (default) — write the file;
   --check           — regenerate in memory and diff against the committed
-                      file, ignoring volatile fields (repo_commit,
-                      generated_at is not recorded at all); non-zero on
-                      drift. Wired into lint_source_lock.py.
+                      file; non-zero on drift (generated_at is not
+                      recorded at all). Wired into lint_source_lock.py.
 """
 import argparse
 import hashlib
 import json
 import pathlib
 import re
-import subprocess
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
@@ -128,9 +136,10 @@ def build() -> dict:
     doc = {
         "document": "workspace release binding (brief v16 §0.2.1; generated, never hand-edited)",
         "generated_by": "tools/source-lock/generate_workspace_lock.py",
-        "repo_commit": subprocess.run(
-            ["git", "-C", str(REPO), "rev-parse", "HEAD"], capture_output=True, text=True
-        ).stdout.strip(),
+        # no repo_commit: a committed file cannot bind its own containing
+        # commit — that binding lives in a post-checkout attestation (see
+        # the module docstring)
+        "commit_binding": "external: post-checkout attestation of (HEAD, sha256 of this file)",
         "source_lock_sha256": sha256(REPO / "source-lock" / "source-lock.json"),
         "workspaces": {},
         "fork_staging": fork_staging(),
@@ -151,9 +160,6 @@ def build() -> dict:
     return doc
 
 
-VOLATILE = {"repo_commit"}
-
-
 def main() -> int:
     # argparse, deliberately: with bare sys.argv sniffing a mistyped
     # `--chek` silently fell through to GENERATE mode and overwrote the
@@ -168,8 +174,8 @@ def main() -> int:
             print("workspace-lock: MISSING (run the generator)")
             return 1
         committed = json.loads(OUT.read_text())
-        a = {k: v for k, v in doc.items() if k not in VOLATILE}
-        b = {k: v for k, v in committed.items() if k not in VOLATILE}
+        a = doc
+        b = committed
         if a != b:
             for key in sorted(set(a) | set(b)):
                 if a.get(key) != b.get(key):

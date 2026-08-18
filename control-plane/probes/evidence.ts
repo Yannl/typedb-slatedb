@@ -1,61 +1,102 @@
 /*
- * Evidence bundle writer for the platform probe harness.
+ * Evidence bundle writer for the platform probe harness —
+ * PlatformRunBundle v2 (round-3 audit findings P-01, P-04, P-05).
  *
  * Every run gets a UNIQUE content-addressed directory under
  * docs/evidence/G1-platform/runs/<timestamp>-<random>/ — never reused,
- * never merged, so no later run can silently overwrite the record of an
- * earlier one. The bundle is sealed fail-closed:
+ * never merged. Bundle layout (v2):
  *
- *   <run>/<probe-id>.json   one PlatformProbeEvidence record per probe,
- *                           embedding every raw request/response exchange
- *                           with its sha256;
- *   <run>/run.json          source identity (git HEAD), config, argv,
- *                           timestamps, verdict table, exit code;
- *   <run>/COMPLETE          written LAST, containing the bundle root:
- *                           sha256 over the sorted (path, sha256) list of
- *                           every other artifact in the bundle.
+ *   <run>/run.json          run id, mode, source identity (git HEAD +
+ *                           dirty state), lock digests, toolchain, argv,
+ *                           fault schedule (the deterministic "seed"),
+ *                           observed verdicts and the policy verdict;
+ *   <run>/plan.json         EVERY assertion id of every manifest probe
+ *                           with its required_in modes — the plan exists
+ *                           before results, so a missing assertion is
+ *                           visible, and a probe 'note' can never satisfy
+ *                           a required assertion (it is not in the plan's
+ *                           satisfiable vocabulary at all);
+ *   <run>/probes/<id>.json  one evidence record per probe: typed
+ *                           assertion results plus REDACTED exchanges;
+ *   <run>/cleanup.json      cleanup obligations and the actions actually
+ *                           taken (written from the runner's finally);
+ *   <run>/artifacts.json    path/digest/bytes/media type/producer/
+ *                           redaction class for every artifact;
+ *   <run>/VERDICT.json      deterministic coverage + policy result;
+ *   <run>/COMPLETE          written LAST: sha256 root over the sorted
+ *                           (path, sha256) list of every other artifact.
  *
  * A bundle without COMPLETE is an aborted run and must never be treated
  * as evidence; a bundle whose root does not recompute is tampered.
+ *
+ * P-01: nothing reaches this file unredacted — headers pass the strict
+ * allowlist, bodies pass the recursive semantic redactor, and
+ * credential-route bodies get no preview at all (see redact.ts).
+ *
+ * P-04: the RecordingProvider records the sanitized INTENT of every
+ * exchange BEFORE dispatch and always finalizes a typed outcome
+ * (success/error/abort) with end time and duration in a finally — a
+ * thrown timeout after a possible server commit leaves a complete
+ * intent+outcome pair, never a silent hole.
  */
 
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import type { ProbeVerdict } from "./manifest.ts";
 import type { PlatformProvider, SeamRequest, SeamResponse } from "./provider.ts";
-import { randomHex, sha256hex, text } from "./provider.ts";
+import { randomHex, sha256hex } from "./provider.ts";
+import type { RedactionClass } from "./redact.ts";
+import { classifyRoute, redactedBodyPreview, redactHeaders, redactText } from "./redact.ts";
 
-/** One raw request/response pair, hash-addressed for the evidence record. */
+// ---------------------------------------------------------------------------
+// Exchange records (P-01 + P-04).
+// ---------------------------------------------------------------------------
+
+export type ExchangeOutcome =
+  | { type: "pending" }
+  | { type: "success"; status: number }
+  | { type: "error"; message: string }
+  | { type: "abort"; message: string };
+
+/** One request/response pair; every string in it has passed redaction. */
 export interface ExchangeRecord {
   seq: number;
-  at: string;
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number | null;
+  redaction_class: RedactionClass;
   request: {
     service: string;
     method: string;
     path: string;
     headers: Record<string, string>;
-    // Credentials never land in evidence in signing form; only the key id.
-    credential_key_id?: string;
+    redacted_header_names: string[];
+    // Credentials never land in evidence — not even the key id (AWS-style
+    // key ids are canary-shaped); only its sha256 for correlation.
+    credential_key_id_sha256?: string;
     body_length: number;
     body_sha256: string;
     body_preview: string;
   };
   request_sha256: string;
+  outcome: ExchangeOutcome;
   response: {
     status: number;
     headers: Record<string, string>;
+    redacted_header_names: string[];
     body_length: number;
     body_sha256: string;
     body_preview: string;
-  };
-  response_sha256: string;
+  } | null;
+  response_sha256: string | null;
 }
 
-/** Assertion outcome; every probe check lands here, pass or fail. */
+/** One assertion result; the id must be declared in the probe's plan. */
 export interface CheckRecord {
-  label: string;
+  assertion_id: string;
   ok: boolean;
+  detail: string;
 }
 
 export interface ProbeEvidence {
@@ -70,28 +111,34 @@ export interface ProbeEvidence {
   expected_outcome: string;
   actual_outcome: string;
   checks: CheckRecord[];
+  /** Declared-but-unexercised required assertion ids (any => FAIL). */
+  unsatisfied_required_assertions: string[];
   exchanges: ExchangeRecord[];
   notes: string[];
 }
 
-function preview(body: Uint8Array): string {
-  const s = text(body.subarray(0, 256));
-  // Keep evidence JSON printable; raw bytes are represented by the sha256.
-  return s.replace(/[^\x20-\x7e\n\t]/g, "?");
+/** Error thrown when a recorded exchange exceeds its deadline (P-04). */
+export class ExchangeDeadlineError extends Error {
+  constructor(msg: string) {
+    super(msg);
+    this.name = "ExchangeDeadlineError";
+  }
 }
 
 /**
  * Wraps a provider so every exchange a probe makes is recorded, with
- * sha256 hashes over the canonical JSON serialization of request and
- * response. Probes cannot opt out: this wrapper is the only fetch they see.
+ * sanitized intent BEFORE dispatch and a typed outcome finalized in a
+ * finally. Probes cannot opt out: this wrapper is the only fetch they see.
  */
 export class RecordingProvider {
   private seq = 0;
   readonly exchanges: ExchangeRecord[] = [];
   private readonly inner: PlatformProvider;
+  private readonly requestDeadlineMs: number;
 
-  constructor(inner: PlatformProvider) {
+  constructor(inner: PlatformProvider, requestDeadlineMs = 30_000) {
     this.inner = inner;
+    this.requestDeadlineMs = requestDeadlineMs;
   }
 
   get mode(): "real" | "mock" {
@@ -99,35 +146,81 @@ export class RecordingProvider {
   }
 
   async fetch(req: SeamRequest): Promise<SeamResponse> {
-    const res = await this.inner.fetch(req);
+    const cls = classifyRoute(req.service, req.path);
+    const reqBody = req.body ?? new Uint8Array(0);
+    const reqHeaders = redactHeaders(req.headers ?? {});
     const reqRecord: ExchangeRecord["request"] = {
       service: req.service,
       method: req.method,
-      path: req.path,
-      headers: req.headers ?? {},
-      body_length: req.body?.length ?? 0,
-      body_sha256: sha256hex(req.body ?? new Uint8Array(0)),
-      body_preview: preview(req.body ?? new Uint8Array(0)),
+      path: redactText(req.path),
+      headers: reqHeaders.headers,
+      redacted_header_names: reqHeaders.redacted_header_names,
+      body_length: reqBody.length,
+      body_sha256: sha256hex(reqBody),
+      body_preview: redactedBodyPreview(reqBody, cls),
     };
-    if (req.credentials) reqRecord.credential_key_id = req.credentials.keyId;
-    const resRecord: ExchangeRecord["response"] = {
-      status: res.status,
-      headers: res.headers,
-      body_length: res.body.length,
-      body_sha256: sha256hex(res.body),
-      body_preview: preview(res.body),
-    };
-    this.exchanges.push({
+    if (req.credentials) reqRecord.credential_key_id_sha256 = sha256hex(req.credentials.keyId);
+    const startedMs = Date.now();
+    // --- P-04: intent is recorded BEFORE dispatch ---
+    const record: ExchangeRecord = {
       seq: ++this.seq,
-      at: new Date().toISOString(),
+      started_at: new Date(startedMs).toISOString(),
+      finished_at: null,
+      duration_ms: null,
+      redaction_class: cls,
       request: reqRecord,
       request_sha256: sha256hex(JSON.stringify(reqRecord)),
-      response: resRecord,
-      response_sha256: sha256hex(JSON.stringify(resRecord)),
-    });
-    return res;
+      outcome: { type: "pending" },
+      response: null,
+      response_sha256: null,
+    };
+    this.exchanges.push(record);
+
+    const effectiveDeadline = req.deadlineMs ?? this.requestDeadlineMs;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      // The deadline is enforced HERE as well as inside the real provider's
+      // AbortSignal: even a never-resolving inner fetch (or a mock bug)
+      // yields a typed abort outcome instead of a hung run.
+      const deadline = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new ExchangeDeadlineError(`exchange deadline ${effectiveDeadline}ms exceeded`)),
+          effectiveDeadline,
+        );
+      });
+      const res = await Promise.race([this.inner.fetch({ ...req, deadlineMs: effectiveDeadline }), deadline]);
+      const resHeaders = redactHeaders(res.headers);
+      const resRecord: NonNullable<ExchangeRecord["response"]> = {
+        status: res.status,
+        headers: resHeaders.headers,
+        redacted_header_names: resHeaders.redacted_header_names,
+        body_length: res.body.length,
+        body_sha256: sha256hex(res.body),
+        body_preview: redactedBodyPreview(res.body, cls),
+      };
+      record.response = resRecord;
+      record.response_sha256 = sha256hex(JSON.stringify(resRecord));
+      record.outcome = { type: "success", status: res.status };
+      return res;
+    } catch (err) {
+      const message = redactText(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
+      const aborted =
+        err instanceof ExchangeDeadlineError ||
+        (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError"));
+      record.outcome = aborted ? { type: "abort", message } : { type: "error", message };
+      throw err;
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      // Always: end time and duration, whatever happened above.
+      record.finished_at = new Date().toISOString();
+      record.duration_ms = Date.now() - startedMs;
+    }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Source identity.
+// ---------------------------------------------------------------------------
 
 /** Source identity: git HEAD of the working tree the probes ran from. */
 export function gitHead(repoRoot: string): string {
@@ -137,6 +230,43 @@ export function gitHead(repoRoot: string): string {
     // Recorded, not hidden: evidence without provenance says so explicitly.
     return "UNKNOWN (git rev-parse HEAD failed)";
   }
+}
+
+/** Number of dirty paths in the working tree ("0" is a claim, so record it). */
+export function gitDirtyCount(repoRoot: string): number | null {
+  try {
+    const out = execFileSync("git", ["status", "--porcelain"], { cwd: repoRoot, encoding: "utf8" });
+    return out.split("\n").filter((l) => l.trim().length > 0).length;
+  } catch {
+    return null;
+  }
+}
+
+/** sha256 of a repo file, or null when absent (recorded, not hidden). */
+export function fileSha256(path: string): string | null {
+  try {
+    return sha256hex(new Uint8Array(readFileSync(path)));
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PlatformRunBundle v2.
+// ---------------------------------------------------------------------------
+
+export interface ArtifactEntry {
+  path: string;
+  sha256: string;
+  bytes: number;
+  media_type: string;
+  producer: string;
+  redaction_class: "redacted-exchanges" | "none";
+}
+
+function mediaTypeFor(name: string): string {
+  if (name.endsWith(".json")) return "application/json";
+  return "text/plain";
 }
 
 export class EvidenceBundle {
@@ -153,30 +283,73 @@ export class EvidenceBundle {
     // recursive:false on the run directory itself: if the unique name ever
     // collides, fail loudly instead of merging into an existing bundle.
     mkdirSync(this.runDir, { recursive: false });
+    mkdirSync(join(this.runDir, "probes"));
+  }
+
+  private write(rel: string, value: unknown): void {
+    if (this.sealed) throw new Error("evidence bundle already sealed");
+    writeFileSync(join(this.runDir, rel), JSON.stringify(value, null, 2) + "\n");
   }
 
   writeProbeEvidence(ev: ProbeEvidence): void {
-    if (this.sealed) throw new Error("evidence bundle already sealed");
-    writeFileSync(join(this.runDir, `${ev.probe_id}.json`), JSON.stringify(ev, null, 2) + "\n");
+    this.write(join("probes", `${ev.probe_id}.json`), ev);
+  }
+
+  writePlan(plan: Record<string, unknown>): void {
+    this.write("plan.json", plan);
   }
 
   writeRunRecord(record: Record<string, unknown>): void {
-    if (this.sealed) throw new Error("evidence bundle already sealed");
-    writeFileSync(join(this.runDir, "run.json"), JSON.stringify(record, null, 2) + "\n");
+    this.write("run.json", record);
+  }
+
+  writeCleanupRecord(record: Record<string, unknown>): void {
+    this.write("cleanup.json", record);
+  }
+
+  writeVerdict(record: Record<string, unknown>): void {
+    this.write("VERDICT.json", record);
+  }
+
+  /** Every file currently in the bundle, as run-relative sorted paths. */
+  private files(): string[] {
+    const out: string[] = [];
+    const walk = (dir: string): void => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (e.isFile()) out.push(relative(this.runDir, p));
+      }
+    };
+    walk(this.runDir);
+    return out.sort();
   }
 
   /**
-   * Seal the bundle: compute the root hash over the sorted
-   * (path, sha256) list of every artifact, then write COMPLETE last.
-   * Returns the bundle root.
+   * Seal the bundle: write artifacts.json (manifest of every artifact,
+   * excluding itself and COMPLETE), then compute the root hash over the
+   * sorted (path, sha256) list of EVERY file — artifacts.json included —
+   * and write COMPLETE last. Returns the bundle root.
    */
   seal(): string {
     if (this.sealed) throw new Error("evidence bundle already sealed");
-    const entries = readdirSync(this.runDir, { withFileTypes: true })
-      .filter((e) => e.isFile() && e.name !== "COMPLETE")
-      .map((e) => e.name)
-      .sort()
-      .map((name) => `${name}\n${sha256hex(new Uint8Array(readFileSync(join(this.runDir, name))))}\n`);
+    const manifest: ArtifactEntry[] = this.files()
+      .filter((rel) => rel !== "COMPLETE" && rel !== "artifacts.json")
+      .map((rel) => {
+        const bytes = new Uint8Array(readFileSync(join(this.runDir, rel)));
+        return {
+          path: rel,
+          sha256: sha256hex(bytes),
+          bytes: bytes.length,
+          media_type: mediaTypeFor(rel),
+          producer: "control-plane/probes/run-platform-probes.ts",
+          redaction_class: rel.startsWith("probes/") ? ("redacted-exchanges" as const) : ("none" as const),
+        };
+      });
+    this.write("artifacts.json", { artifacts: manifest });
+    const entries = this.files()
+      .filter((rel) => rel !== "COMPLETE")
+      .map((rel) => `${rel}\n${sha256hex(new Uint8Array(readFileSync(join(this.runDir, rel))))}\n`);
     const root = sha256hex(entries.join(""));
     writeFileSync(join(this.runDir, "COMPLETE"), root + "\n");
     this.sealed = true;

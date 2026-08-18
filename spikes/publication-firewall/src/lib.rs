@@ -868,6 +868,31 @@ impl<'v> Validator<'v> {
         }
     }
 
+    /// The immutable-key overwrite refusal, shared by the publication and
+    /// authoritative-data write paths: record the target for quarantine (a
+    /// conflicting overwrite is suspicious residue), then refuse.
+    fn quarantine_overwrite(&mut self, path: &ObjectPath) -> Refused {
+        self.control.quarantine.lock().unwrap().push(path.to_string());
+        let refusal = FirewallRefusal::ImmutableKeyOverwrite {
+            operation: self.operation,
+            path: path.to_string(),
+        };
+        self.refuse(path, true, refusal)
+    }
+
+    /// A manifest path/transition that failed to decode or validate: refuse
+    /// (not quarantined - a malformed successor never took effect) with the
+    /// typed transition-rejected refusal. Shared by the write, delete and
+    /// upload-init publication paths.
+    fn manifest_rejected(&mut self, path: &ObjectPath, error: TransitionError) -> Refused {
+        let refusal = FirewallRefusal::ManifestTransitionRejected {
+            operation: self.operation,
+            path: path.to_string(),
+            error,
+        };
+        self.refuse(path, false, refusal)
+    }
+
     /// Read the current bytes at `path` from the underlying store, `None`
     /// when absent. Runs under the (single) authority guard; touches no
     /// lock in this crate.
@@ -922,16 +947,7 @@ impl<'v> Validator<'v> {
                         self.entries.push(self.entry(path, true, false));
                         return Ok(());
                     }
-                    self.control
-                        .quarantine
-                        .lock()
-                        .unwrap()
-                        .push(path.to_string());
-                    let refusal = FirewallRefusal::ImmutableKeyOverwrite {
-                        operation: self.operation,
-                        path: path.to_string(),
-                    };
-                    return Err(self.refuse(path, true, refusal));
+                    return Err(self.quarantine_overwrite(path));
                 }
                 if self.policy == TransitionPolicy::RequireAttested {
                     let outcome = manifest_path_id(path).and_then(|path_id| {
@@ -951,14 +967,7 @@ impl<'v> Validator<'v> {
                     });
                     match outcome {
                         Ok(rollback) => self.rollbacks.push(rollback),
-                        Err(error) => {
-                            let refusal = FirewallRefusal::ManifestTransitionRejected {
-                                operation: self.operation,
-                                path: path.to_string(),
-                                error,
-                            };
-                            return Err(self.refuse(path, false, refusal));
-                        }
+                        Err(error) => return Err(self.manifest_rejected(path, error)),
                     }
                 }
                 self.entries.push(self.entry(path, true, false));
@@ -976,16 +985,7 @@ impl<'v> Validator<'v> {
                             self.entries.push(self.entry(path, true, false));
                             Ok(())
                         } else {
-                            self.control
-                                .quarantine
-                                .lock()
-                                .unwrap()
-                                .push(path.to_string());
-                            let refusal = FirewallRefusal::ImmutableKeyOverwrite {
-                                operation: self.operation,
-                                path: path.to_string(),
-                            };
-                            Err(self.refuse(path, true, refusal))
+                            Err(self.quarantine_overwrite(path))
                         }
                     }
                     None => {
@@ -1020,14 +1020,7 @@ impl<'v> Validator<'v> {
                                 return Err(self.refuse(path, false, refusal));
                             }
                         }
-                        Err(error) => {
-                            let refusal = FirewallRefusal::ManifestTransitionRejected {
-                                operation: self.operation,
-                                path: path.to_string(),
-                                error,
-                            };
-                            return Err(self.refuse(path, false, refusal));
-                        }
+                        Err(error) => return Err(self.manifest_rejected(path, error)),
                     }
                 }
                 self.entries.push(self.entry(path, true, false));
@@ -1097,12 +1090,7 @@ impl<'v> Validator<'v> {
             && classify(path) == KeyClass::Publication
         {
             if let Err(error) = manifest_path_id(path) {
-                let refusal = FirewallRefusal::ManifestTransitionRejected {
-                    operation: self.operation,
-                    path: path.to_string(),
-                    error,
-                };
-                return Err(self.refuse(path, false, refusal));
+                return Err(self.manifest_rejected(path, error));
             }
         }
         {

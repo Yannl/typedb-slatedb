@@ -1,4 +1,15 @@
 {
+  "env": {
+    "GIT_AUTHOR_NAME": "Yannl",
+    "GIT_AUTHOR_EMAIL": "yann.lischetti@gmail.com",
+    "GIT_COMMITTER_NAME": "Yannl",
+    "GIT_COMMITTER_EMAIL": "yann.lischetti@gmail.com"
+  },
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
   "permissions": {
     "defaultMode": "bypassPermissions",
     "allow": [

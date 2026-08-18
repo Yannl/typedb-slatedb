@@ -1,5 +1,5 @@
 {
-  "description": "First-class flake/exclusion ledger (V16 F10). The ONLY place a failing or ignored case may be tolerated: tools/catalog/completeness.py --results <dir> fails the line on any anomaly not covered here, on any count mismatch, on any expired entry, and on any entry that no longer fires (stale exclusions are debt to retire, not carry).",
+  "description": "First-class flake/exclusion ledger (V16 F10). The ONLY place a failing or ignored case may be tolerated: tools/catalog/completeness.py --results <dir> fails the line on any anomaly not covered here, on any count mismatch, on any expired entry, and on any entry that no longer fires (stale exclusions are debt to retire, not carry). E-P0-07: every entry must also bind (a) the storage profile(s) the tolerance was observed on and (b) a fingerprint naming the exact failed/ignored cases it covers; tools/catalog/verdict.py verify_bundle() re-parses the tolerated target's RAW LOG and rejects any entry whose named failing cases the log does not actually print (ghost cases), whose profile does not match the run, or whose target_id appears twice. Ignored-case names cannot be re-parsed from terse libtest logs (only the count is bound there); g0_dirty_writes is additionally corroborated by the upstream #[ignore] at storage/tests/test_isolation.rs:117 at the pin.",
   "entries": [
     {
       "target_id": "storage:test_recovery",
@@ -8,6 +8,20 @@
       "cases": [
         "wal_missing_records_entire_replay_fails",
         "wal_missing_records_for_checkpoint_replay_fails"
+      ],
+      "fingerprint": {
+        "failed": [
+          "wal_missing_records_entire_replay_fails",
+          "wal_missing_records_for_checkpoint_replay_fails"
+        ],
+        "ignored": []
+      },
+      "profile": [
+        "U0",
+        "U0/U1 (unset: RocksDB oracle)",
+        "U1",
+        "U2",
+        "U2S3"
       ],
       "reason": "Upstream todo!() stubs (unimplemented WAL-hole recovery paths) - they fail identically on the U1/RocksDB oracle and on every SlateDB lane; baseline-equal red, not a port defect. See u2s3-vs-oracle-comparison.json. The executable therefore exits 101; that exit code is part of the expectation, not an unexplained crash.",
       "owner": "storage-parity",
@@ -20,6 +34,19 @@
       "expected_ignored": 1,
       "cases": [
         "g0_dirty_writes"
+      ],
+      "fingerprint": {
+        "failed": [],
+        "ignored": [
+          "g0_dirty_writes"
+        ]
+      },
+      "profile": [
+        "U0",
+        "U0/U1 (unset: RocksDB oracle)",
+        "U1",
+        "U2",
+        "U2S3"
       ],
       "reason": "Declared #[ignore] upstream (G0 dirty-write isolation level not implemented by TypeDB); identically ignored on the U1 oracle.",
       "owner": "storage-parity",

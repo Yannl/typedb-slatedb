@@ -1,8 +1,22 @@
 {
  "green": true,
+ "policy_verdict": "GREEN",
  "complete_selection": true,
  "anomaly_count": 0,
  "anomalies": [],
+ "warnings": [
+  "storage:test_isolation: log is terse-format and names no ignored cases; 1 ignored tolerance(s) verified by count only, not by name",
+  "COMPLETE carries no bundle root (legacy marker, predates root binding) - archive integrity rests on the sidecar manifest and this verdict's recorded bundle_root 8463cb2e700558a694c021d1b0ab3b54bb3843eee3a4e62b1cac85e244601d88; future runs seal 'COMPLETE <root>'"
+ ],
+ "observation": {
+  "rows": 106,
+  "nonzero_exit_rows": 1,
+  "timed_out_rows": 0,
+  "cases_passed": 462,
+  "cases_failed": 2,
+  "cases_ignored": 1
+ },
+ "bundle_root": "8463cb2e700558a694c021d1b0ab3b54bb3843eee3a4e62b1cac85e244601d88",
  "producer": "tools/catalog/run_u0.py --verdict-only",
  "re_derived_from": "docs/evidence/G3/u2s3-full-3/u0-results.json",
  "denominator_checked": true,

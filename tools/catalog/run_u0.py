@@ -18,7 +18,6 @@ import os
 import hashlib
 import pathlib
 import shutil
-import re
 import signal
 import subprocess
 import sys
@@ -214,22 +213,13 @@ def run_one(e, out_dir, timeout, reap=False):
     dur = time.time() - start
     text = raw.read_text(errors="replace")
     tail = text[-2000:]
-    # parse libtest summary lines: "test result: ok. X passed; Y failed; Z ignored; ..."
-    passed = failed = ignored = measured = filtered = 0
-    for line in text.splitlines():
-        if line.startswith("test result:"):
-            for n, key in re.findall(r"(\d+) (passed|failed|ignored|measured|filtered out)", line):
-                n = int(n)
-                if key == "passed":
-                    passed += n
-                elif key == "failed":
-                    failed += n
-                elif key == "ignored":
-                    ignored += n
-                elif key == "measured":
-                    measured += n
-                else:
-                    filtered += n
+    # parse libtest summary lines with the SHARED parser (common.py): the
+    # bundle verifier re-derives these counts from the archived log with the
+    # same implementation, so a later edit of either side is a contradiction
+    counts = common.parse_libtest_counts(text)
+    # bind the log bytes to this row NOW, before anything downstream can
+    # touch them - a row whose hash no longer matches its log is red
+    log_sha = sha256_file(raw)
     if e["target"] in ASSEMBLY_TARGETS:
         reap_strays()
     if reap:
@@ -247,12 +237,13 @@ def run_one(e, out_dir, timeout, reap=False):
         "exit_code": code,
         "timed_out": timed_out,
         "duration_seconds": round(dur, 2),
-        "passed": passed,
-        "failed": failed,
-        "ignored": ignored,
-        "measured": measured,
-        "filtered_out": filtered,
+        "passed": counts["passed"],
+        "failed": counts["failed"],
+        "ignored": counts["ignored"],
+        "measured": counts["measured"],
+        "filtered_out": counts["filtered_out"],
         "raw_log": str(raw.relative_to(REPO)) if raw.is_relative_to(REPO) else str(raw),
+        "log_sha256": log_sha,
         "tail": tail if (code != 0 or timed_out) else None,
     }
 
@@ -324,14 +315,21 @@ def needs_behaviour_fixture(execs):
             or str(e.get("package_root", "")).startswith(behaviour_prefix)]
 
 
-def reverdict(out_dir):
+def reverdict(out_dir, fresh=False):
     """Recompute a run's verdict from its immutable results.
 
     A verdict is a function of (results, policy, denominator). When the policy
     or the catalogue is repaired, the honest move is to re-derive the verdict
     over the SAME archived rows - not to re-run a two-hour corpus, and not to
     leave a verdict standing that was computed against a denominator now known
-    to be wrong. The results file is never touched.
+    to be wrong. The results file, the logs, and the COMPLETE marker are never
+    touched: a re-reader verifies a sealed archive, it does not reseal it.
+    E-P0-06/10: the rows are no longer trusted - verify_bundle reopens,
+    re-hashes, and REPARSES every log, and recomputes the bundle root against
+    the sidecar manifest and any root the COMPLETE marker binds.
+
+    `fresh` (--re-evaluate): write a NEW verdict-<timestamp>.json instead of
+    rewriting verdict.json, so nothing that already exists changes at all.
     """
     results_file = out_dir / "u0-results.json"
     if not results_file.exists():
@@ -344,8 +342,17 @@ def reverdict(out_dir):
                                               expected_case_bearing=case_bearing)
     if required is not None:
         anomalies += verdict_policy.denominator_anomalies(results, required, excluded)
+    bundle_anoms, warnings, bundle_root = verdict_policy.verify_bundle(
+        out_dir, results, ledger, file_profile=data.get("profile"))
+    anomalies += bundle_anoms
+    observation = verdict_policy.compute_observation(results)
+    ledgered = sum(1 for r in results if r.get("target_id") in ledger)
+    fname = ("verdict.json" if not fresh else
+             f"verdict-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json")
     rc = verdict_policy.verdict_exit_code(
         anomalies, True, out_dir,
+        observation=observation, warnings=warnings, bundle_root=bundle_root,
+        verdict_filename=fname, write_complete=False,
         extra={"producer": "tools/catalog/run_u0.py --verdict-only",
                "re_derived_from": (str(results_file.relative_to(REPO))
                                    if results_file.is_relative_to(REPO) else str(results_file)),
@@ -353,8 +360,12 @@ def reverdict(out_dir):
                "executables": len(results)})
     for a in anomalies:
         print(f"ANOMALY: {a}", file=sys.stderr)
-    print(f"VERDICT: {'GREEN' if rc == 0 else 'RED'} ({len(anomalies)} anomaly/anomalies), "
-          f"re-derived over {len(results)} archived row(s)", file=sys.stderr)
+    for w in warnings:
+        print(f"WARNING: {w}", file=sys.stderr)
+    print(f"BUNDLE ROOT: {bundle_root}", file=sys.stderr)
+    print(verdict_policy.human_line(observation, rc == 0, ledgered)
+          + f"; {len(anomalies)} anomaly/anomalies, re-derived over "
+          f"{len(results)} archived row(s)", file=sys.stderr)
     return rc
 
 
@@ -371,10 +382,27 @@ def main():
     ap.add_argument("--verdict-only", action="store_true",
                     help="re-derive the verdict from an existing results file without "
                          "re-running anything (use after a catalogue or policy repair)")
+    ap.add_argument("--re-evaluate", action="store_true",
+                    help="like --verdict-only, but write a NEW verdict-<timestamp>.json "
+                         "and touch NOTHING that already exists (the only way to derive "
+                         "a fresh verdict over a sealed archive without altering it)")
     args = ap.parse_args()
 
-    if args.verdict_only:
-        return reverdict(pathlib.Path(args.out).resolve())
+    if args.verdict_only or args.re_evaluate:
+        return reverdict(pathlib.Path(args.out).resolve(), fresh=args.re_evaluate)
+
+    out_dir = pathlib.Path(args.out).resolve()
+    # A dir carrying COMPLETE is a SEALED archive: its marker binds a bundle
+    # root over exact bytes. Writing new rows or logs into it would silently
+    # retire the evidence the seal vouches for, so the live path refuses -
+    # there is no override flag, and the refusal comes BEFORE any toolchain
+    # or tree probing so nothing else can mask it. Re-derive with
+    # --verdict-only/--re-evaluate, or run into a fresh --out.
+    if (out_dir / "COMPLETE").exists():
+        sys.exit(f"{out_dir} already contains a COMPLETE marker - it is a sealed "
+                 f"evidence bundle and the live runner will not write into it. "
+                 f"Use a fresh --out for a new run, or --verdict-only / "
+                 f"--re-evaluate to re-derive its verdict without touching it.")
 
     # What this run actually exercised. The output directory name used to be
     # the only record of the profile, which makes a misfiled run
@@ -401,7 +429,6 @@ def main():
         "executed_tree": tree,
     }
 
-    out_dir = pathlib.Path(args.out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     execs = discover_executables(args.package)
     if args.filter:
@@ -473,8 +500,20 @@ def main():
     if selection_complete and required is not None:
         anomalies += verdict_policy.denominator_anomalies(results, required, excluded)
         denominator_checked = True
+    # E-P0-06/10: verify the ARCHIVED bundle (the merged rows the results file
+    # carries - that file is what any future reader consumes), reopening and
+    # reparsing every log, then bind everything under one root.
+    archived = json.loads((out_dir / "u0-results.json").read_text())["results"] \
+        if (out_dir / "u0-results.json").exists() else results
+    bundle_anoms, warnings, bundle_root = verdict_policy.verify_bundle(
+        out_dir, archived, ledger, file_profile=profile, unsealed_ok=True)
+    anomalies += bundle_anoms
+    observation = verdict_policy.compute_observation(results)
+    ledgered = sum(1 for r in results if r.get("target_id") in ledger)
+    # write order matters: verdict.json first, COMPLETE (sealing the root) LAST
     rc = verdict_policy.verdict_exit_code(
         anomalies, selection_complete, out_dir,
+        observation=observation, warnings=warnings, bundle_root=bundle_root,
         extra={"producer": "tools/catalog/run_u0.py",
                "run": run_manifest,
                "denominator_checked": denominator_checked,
@@ -483,11 +522,14 @@ def main():
                              "package": args.package}})
     for a in anomalies:
         print(f"ANOMALY: {a}", file=sys.stderr)
+    for w in warnings:
+        print(f"WARNING: {w}", file=sys.stderr)
     if not selection_complete:
         print("VERDICT: PARTIAL (a filtered/skipped/package-scoped run can never "
               "be a corpus verdict)", file=sys.stderr)
-    print(f"VERDICT: {'GREEN' if rc == 0 else 'RED'} "
-          f"({len(anomalies)} anomaly/anomalies)", file=sys.stderr)
+    print(f"BUNDLE ROOT: {bundle_root}", file=sys.stderr)
+    print(verdict_policy.human_line(observation, rc == 0, ledgered)
+          + f"; {len(anomalies)} anomaly/anomalies", file=sys.stderr)
     return rc
 
 

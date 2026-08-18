@@ -1,5 +1,7 @@
 # ADR-0002 — The storage-engine seam lives at the keyspace layer, as an enum with process-wide profile selection
 
+> **Status: INCOMPATIBLE with higher authority (2026-08-18).** v17 A17.4 requires per-database backend selection (classic | slatedb-r2) in one release binary; the process-wide profile this ADR selects is INCOMPATIBLE with that requirement. Recorded as CD-005; the typed per-database seam (S-P0-06) supersedes the process-wide choice.
+
 **Status:** accepted (implemented as TB-P7)
 **Related:** ADR-0001 (consume-only SlateDB), ADR-0003 (durability authority), brief §12 (storage refactor)
 

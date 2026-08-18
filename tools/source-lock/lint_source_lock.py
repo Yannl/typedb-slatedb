@@ -1,24 +1,42 @@
 #!/usr/bin/env python3
 """G0 source-lock linter (BT-P0 scope).
 
-Validates that every node in source-lock/source-lock.json is resolved and,
-for git nodes, that the corresponding checkout under sources/ exists, is
-clean, and sits at exactly the locked revision. Exits non-zero on any
-unresolved node, missing checkout, revision mismatch, or dirty tree.
+Validates that EVERY node in source-lock/source-lock.json is resolved,
+schema-valid for its declared kind, and consistent with the materialized
+world: git checkouts under sources/ (revision AND tree), consumer
+Cargo.locks for registry/cargo nodes, control-plane/package-lock.json for
+npm nodes, and on-disk digests for artifacts.
 
-Negative control: hide or corrupt any checkout (e.g. rename sources/typedb)
-and this linter MUST fail. The archived run of that control lives in
+The invariant: a value in the lock is either checked against the thing it
+claims to pin, or checked for well-formedness where the pinned thing is not
+present in this environment. No node kind is exempt — audit finding E-P0-02
+showed that validating only a selected subset (the SlateDB registry node)
+let forged versions, forged npm integrities, forged git trees, and missing
+tree fields all pass with RC 0. A node whose kind this linter does not
+recognize is a FAILURE, not a skip: fail closed on unknown.
+
+Negative controls: tools/source-lock/lock_mutants.py applies the E-P0-02
+forgeries (and more) to a temp copy of the lock and requires this linter to
+reject every one. Hide or corrupt any checkout (e.g. rename sources/typedb)
+and this linter MUST also fail; the archived run of that control lives in
 docs/evidence/G0/negative-control-missing-node.txt.
+
+CLI: --lock-file and --repo-root exist so the negative controls can run the
+real linter against mutated temp copies without touching the real files.
+The staged-fork and workspace-lock subprocess checks always run against
+this repo (their scripts are bound to it); everything else resolves against
+--repo-root.
 """
+import argparse
 import hashlib
 import json
 import pathlib
+import re
 import subprocess
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 LOCK = REPO / "source-lock" / "source-lock.json"
-SOURCES = REPO / "sources"
 
 # lock node id -> sources/ directory name
 GIT_DIRS = {
@@ -39,10 +57,35 @@ ARTIFACTS = {
 }
 
 # lock node id -> Cargo.lock files (relative to repo root) that must pin the
-# crates — every workspace that consumes the crate is checked
+# crates — every workspace that consumes the crate is checked. A listed
+# consumer that does not contain the crate is a failure: the lock claimed a
+# consumption relationship that does not exist.
 REGISTRY_NODES = {
     "SL": ["tools/Cargo.lock", "fork/typedb/Cargo.lock"],
 }
+
+# cargo_dependency nodes (crates pinned transitively, e.g. via SlateDB) and
+# the consumer Cargo.locks whose resolution they must match. E-P0-02 mutant
+# 1 (OBJECT_STORE 0.14.0 -> 99.0.0) survived because nothing compared this
+# node to the locks that actually resolve the crate.
+CARGO_DEP_NODES = {
+    "OBJECT_STORE": ["tools/Cargo.lock", "fork/typedb/Cargo.lock"],
+}
+
+# the single npm lockfile in this repo; npm nodes are cross-checked against
+# it wherever the package appears there
+NPM_LOCKFILE = "control-plane/package-lock.json"
+
+HEX40 = re.compile(r"^[0-9a-f]{40}$")
+HEX64 = re.compile(r"^[0-9a-f]{64}$")
+OCI_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+# npm SRI for sha512: exactly 86 base64 chars + '==' padding (64 raw bytes).
+# Length is enforced, not just charset: "sha512-FORGED" is all base64
+# characters and sailed through a charset-only check (E-P0-02 mutant 2).
+NPM_INTEGRITY = re.compile(r"^sha512-[A-Za-z0-9+/]{86}==$")
+# version strings: digits-led dotted release, optional leading '=' pin,
+# optional -pre/+build suffix (covers 0.15.0, 1.20260811.1, 5.x-alpha)
+VERSION = re.compile(r"^=?\d+(\.\d+)*([.+-][0-9A-Za-z.]+)*$")
 
 
 def cargo_lock_packages(path: pathlib.Path) -> dict:
@@ -71,22 +114,23 @@ def cargo_lock_packages(path: pathlib.Path) -> dict:
     return pkgs
 
 
-def check_registry_node(nid: str, node: dict, lock_rel: str, failures: list) -> None:
-    lock_path = REPO / lock_rel
+def check_crates_in_lock(nid: str, want: dict, lock_rel: str,
+                         repo_root: pathlib.Path, failures: list) -> None:
+    """Every crate in `want` (name -> (version, checksum)) must be pinned in
+    the consumer lockfile with exactly that version and checksum."""
+    lock_path = repo_root / lock_rel
     if not lock_path.exists():
         failures.append(f"{nid}: consumer lockfile missing at {lock_rel}")
         return
     pkgs = cargo_lock_packages(lock_path)
-    want = {node["crate"]: (node["version"].lstrip("="), node["checksum_sha256"])}
-    for cname, cinfo in node.get("companion_crates", {}).items():
-        want[cname] = (cinfo["version"].lstrip("="), cinfo["checksum_sha256"])
     for cname, (wver, wsum) in want.items():
         got = pkgs.get(cname)
         if got is None:
             failures.append(f"{nid}: crate {cname} not pinned in {lock_rel}")
         elif got != (wver, wsum):
             failures.append(
-                f"{nid}: crate {cname} mismatch want {(wver, wsum)} got {got}")
+                f"{nid}: crate {cname} mismatch in {lock_rel} "
+                f"want {(wver, wsum)} got {got}")
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -95,6 +139,172 @@ def sha256(path: pathlib.Path) -> str:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# per-kind schema validation — every node passes through exactly one of
+# these; a kind with no validator is a failure (fail closed on unknown)
+# ---------------------------------------------------------------------------
+
+def validate_git(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
+    """git / git_tag: commit and tree must both be locked as 40-hex ids.
+
+    A commit hash alone is not enough once anything downstream is allowed to
+    talk about "the tree": E-P0-02 mutants 3 and 4 forged a tree to forty
+    zeros and dropped a tree field entirely, and both passed. Presence and
+    shape are checked here for every git node; agreement with the actual
+    checkout is checked in the sources/ loop where a checkout exists.
+    """
+    rev = node.get("revision") or node.get("resolved_revision")
+    if not (isinstance(rev, str) and HEX40.match(rev)):
+        failures.append(f"{nid}: git revision not a 40-hex commit id: {rev!r}")
+    tree = node.get("tree")
+    if not (isinstance(tree, str) and HEX40.match(tree)):
+        failures.append(f"{nid}: git tree missing or not a 40-hex tree id: {tree!r}")
+    repo_url = node.get("repository")
+    if not (isinstance(repo_url, str) and repo_url.startswith("https://")):
+        failures.append(f"{nid}: git repository URL missing or not https: {repo_url!r}")
+    if node.get("kind") == "git_tag" and not node.get("tag"):
+        failures.append(f"{nid}: git_tag node without a tag")
+
+
+def validate_registry(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
+    """crates.io registry node: pinned version + sha256 for the crate and
+    every companion crate, each cross-checked against every listed consumer
+    Cargo.lock (the consumer check happens in the REGISTRY_NODES loop)."""
+    crates = {node.get("crate"): node}
+    crates.update(node.get("companion_crates", {}))
+    for cname, cinfo in crates.items():
+        if not cname:
+            failures.append(f"{nid}: registry node without a crate name")
+            continue
+        ver = cinfo.get("version")
+        if not (isinstance(ver, str) and VERSION.match(ver)):
+            failures.append(f"{nid}: crate {cname} malformed version {ver!r}")
+        cs = cinfo.get("checksum_sha256")
+        if not (isinstance(cs, str) and HEX64.match(cs)):
+            failures.append(
+                f"{nid}: crate {cname} checksum_sha256 missing or not 64-hex: {cs!r}")
+
+
+def validate_cargo_dependency(nid: str, node: dict, repo_root: pathlib.Path,
+                              failures: list):
+    """Transitively-pinned crate: same shape rules as a registry node; the
+    consumer Cargo.lock agreement is checked in the CARGO_DEP_NODES loop."""
+    if not node.get("name"):
+        failures.append(f"{nid}: cargo_dependency without a crate name")
+    ver = node.get("version")
+    if not (isinstance(ver, str) and VERSION.match(ver)):
+        failures.append(f"{nid}: malformed version {ver!r}")
+    cs = node.get("checksum_sha256")
+    if not (isinstance(cs, str) and HEX64.match(cs)):
+        failures.append(f"{nid}: checksum_sha256 missing or not 64-hex: {cs!r}")
+
+
+def validate_npm(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
+    """npm node: SRI-shaped sha512 integrity, registry tarball URL, and
+    agreement with control-plane/package-lock.json where the package appears
+    there (per policy npm_requires_tarball_integrity_and_source_mapping)."""
+    name = node.get("name")
+    if not name:
+        failures.append(f"{nid}: npm node without a package name")
+        return
+    ver = node.get("version")
+    if not (isinstance(ver, str) and VERSION.match(ver)):
+        failures.append(f"{nid}: malformed version {ver!r}")
+    integrity = node.get("integrity")
+    if not (isinstance(integrity, str) and NPM_INTEGRITY.match(integrity)):
+        failures.append(
+            f"{nid}: integrity missing or not sha512-<86 base64 chars>==: "
+            f"{integrity!r}")
+    tarball = node.get("tarball")
+    if not (isinstance(tarball, str) and tarball.startswith("https://registry.npmjs.org/")):
+        failures.append(f"{nid}: tarball missing or not registry.npmjs.org: {tarball!r}")
+    # cross-check the consumer lockfile: absence there is not a failure (some
+    # npm nodes pin provenance for tools installed outside the workspace),
+    # but where npm resolved the package, the two locks must agree exactly
+    pkg_lock = repo_root / NPM_LOCKFILE
+    if not pkg_lock.exists():
+        failures.append(f"{nid}: npm consumer lockfile missing at {NPM_LOCKFILE}")
+        return
+    packages = json.loads(pkg_lock.read_text()).get("packages", {})
+    entry = packages.get(f"node_modules/{name}")
+    if entry is not None:
+        if entry.get("version") != ver:
+            failures.append(
+                f"{nid}: version mismatch vs {NPM_LOCKFILE} "
+                f"want {ver!r} got {entry.get('version')!r}")
+        if entry.get("integrity") != integrity:
+            failures.append(
+                f"{nid}: integrity mismatch vs {NPM_LOCKFILE} "
+                f"want {integrity!r} got {entry.get('integrity')!r}")
+
+
+def validate_artifact(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
+    """artifact node: policy artifacts_require_url_sha256_license, plus a
+    well-formed digest (the on-disk digest check is the ARTIFACTS loop)."""
+    cs = node.get("sha256")
+    if not (isinstance(cs, str) and HEX64.match(cs)):
+        failures.append(f"{nid}: artifact sha256 missing or not 64-hex: {cs!r}")
+    url = node.get("url")
+    if not (isinstance(url, str) and url.startswith("https://")):
+        failures.append(f"{nid}: artifact url missing or not https: {url!r}")
+    if not node.get("license"):
+        failures.append(f"{nid}: artifact without a license")
+    ver = node.get("version")
+    if not (isinstance(ver, str) and VERSION.match(ver)):
+        failures.append(f"{nid}: malformed version {ver!r}")
+
+
+def validate_oci_image(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
+    """oci_image node: policy oci_requires_digest. One documented exception:
+    a node whose status records an open architecture decision
+    (architecture_choice_required) has nothing to pin yet — anything else
+    with a null or malformed digest is a floating reference."""
+    if str(node.get("status", "")).startswith("architecture_choice_required"):
+        return
+    ref = node.get("reference")
+    if not (isinstance(ref, str) and ref):
+        failures.append(f"{nid}: oci_image without a reference: {ref!r}")
+    digest = node.get("digest")
+    if not (isinstance(digest, str) and OCI_DIGEST.match(digest)):
+        failures.append(
+            f"{nid}: oci digest missing or not sha256:<64-hex>: {digest!r}")
+
+
+def validate_toolchain(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
+    """toolchain node: a named tool with a well-formed version string."""
+    if not node.get("name"):
+        failures.append(f"{nid}: toolchain without a name")
+    ver = node.get("version")
+    if not (isinstance(ver, str) and VERSION.match(ver)):
+        failures.append(f"{nid}: malformed toolchain version {ver!r}")
+
+
+def validate_toolchain_set(nid: str, node: dict, repo_root: pathlib.Path,
+                           failures: list):
+    """toolchain_set node: a non-empty member map, every member recorded as a
+    non-empty identity string (path or version banner)."""
+    members = node.get("members")
+    if not isinstance(members, dict) or not members:
+        failures.append(f"{nid}: toolchain_set without members")
+        return
+    for mname, mval in members.items():
+        if not (isinstance(mval, str) and mval.strip()):
+            failures.append(f"{nid}: toolchain_set member {mname!r} has no identity")
+
+
+KIND_VALIDATORS = {
+    "git": validate_git,
+    "git_tag": validate_git,
+    "registry": validate_registry,
+    "cargo_dependency": validate_cargo_dependency,
+    "npm": validate_npm,
+    "artifact": validate_artifact,
+    "oci_image": validate_oci_image,
+    "toolchain": validate_toolchain,
+    "toolchain_set": validate_toolchain_set,
+}
 
 
 def check_staged_fork(workspace_lock_stale):
@@ -132,13 +342,25 @@ def check_staged_fork(workspace_lock_stale):
 
 
 def main() -> int:
+    # overrides exist for the negative controls (lock_mutants.py): they run
+    # this real linter against mutated temp copies, never the real files
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--lock-file", type=pathlib.Path, default=LOCK,
+                        help="source-lock.json to lint (default: the committed one)")
+    parser.add_argument("--repo-root", type=pathlib.Path, default=REPO,
+                        help="root for resolving sources/ and consumer lockfiles")
+    args = parser.parse_args()
+    repo_root = args.repo_root.resolve()
+    sources = repo_root / "sources"
+
     failures = []
-    lock = json.loads(LOCK.read_text())
+    lock = json.loads(args.lock_file.read_text())
     nodes = {n["id"]: n for n in lock["nodes"]}
 
     # ONE workspace-lock verification per lint (it rehashes the whole fork
     # tree); both the TB staged-fork check and the workspace binding check
-    # below consume this result
+    # below consume this result. Always runs against THIS repo: the script
+    # is bound to it, and the mutant lane mutates node data, not the binding.
     ws_check = subprocess.run(
         [sys.executable, str(REPO / "tools" / "source-lock" / "generate_workspace_lock.py"), "--check"],
         capture_output=True, text=True)
@@ -151,13 +373,26 @@ def main() -> int:
         else:
             failures.append(f"{nid}: unresolved status {status!r}")
 
+    # every node gets exactly one per-kind schema validation; an unknown or
+    # missing kind is a failure, never a skip (E-P0-02: skipped kinds are
+    # where the forgeries lived)
+    for nid, node in nodes.items():
+        kind = node.get("kind")
+        validator = KIND_VALIDATORS.get(kind)
+        if validator is None:
+            failures.append(
+                f"{nid}: unknown or missing kind {kind!r} - no validator; "
+                f"fail closed (add one to KIND_VALIDATORS or fix the node)")
+        else:
+            validator(nid, node, repo_root, failures)
+
     for nid, dirname in GIT_DIRS.items():
         node = nodes.get(nid)
         if node is None:
             failures.append(f"{nid}: missing from lock")
             continue
         want = node.get("revision") or node.get("resolved_revision")
-        d = SOURCES / dirname
+        d = sources / dirname
         if not (d / ".git").exists():
             failures.append(f"{nid}: checkout missing at sources/{dirname}")
             continue
@@ -165,6 +400,17 @@ def main() -> int:
                              capture_output=True, text=True).stdout.strip()
         if got != want:
             failures.append(f"{nid}: revision mismatch want {want} got {got}")
+        # the locked tree must be the commit's real tree. rev-parse reads the
+        # commit object, so this holds even while the fork is staged (a dirty
+        # working tree does not change HEAD^{tree}); a forged tree in the
+        # lock (E-P0-02 mutant 3) fails here against every present checkout.
+        want_tree = node.get("tree")
+        got_tree = subprocess.run(["git", "-C", str(d), "rev-parse", "HEAD^{tree}"],
+                                  capture_output=True, text=True).stdout.strip()
+        if want_tree != got_tree:
+            failures.append(
+                f"{nid}: tree mismatch want {want_tree} got {got_tree} "
+                f"(sources/{dirname})")
         dirty = subprocess.run(["git", "-C", str(d), "status", "--porcelain"],
                                capture_output=True, text=True).stdout.strip()
         if dirty:
@@ -188,8 +434,26 @@ def main() -> int:
         if node.get("kind") != "registry":
             failures.append(f"{nid}: expected kind 'registry', got {node.get('kind')!r}")
             continue
+        want = {node["crate"]: (node["version"].lstrip("="),
+                                node.get("checksum_sha256"))}
+        for cname, cinfo in node.get("companion_crates", {}).items():
+            want[cname] = (cinfo["version"].lstrip("="), cinfo.get("checksum_sha256"))
         for lock_rel in lock_rels:
-            check_registry_node(nid, node, lock_rel, failures)
+            check_crates_in_lock(nid, want, lock_rel, repo_root, failures)
+
+    for nid, lock_rels in CARGO_DEP_NODES.items():
+        node = nodes.get(nid)
+        if node is None:
+            failures.append(f"{nid}: missing from lock")
+            continue
+        if node.get("kind") != "cargo_dependency":
+            failures.append(
+                f"{nid}: expected kind 'cargo_dependency', got {node.get('kind')!r}")
+            continue
+        want = {node["name"]: (node["version"].lstrip("="),
+                               node.get("checksum_sha256"))}
+        for lock_rel in lock_rels:
+            check_crates_in_lock(nid, want, lock_rel, repo_root, failures)
 
     if ws_check.returncode != 0:
         failures.append(f"workspace-lock: {ws_check.stdout.strip() or ws_check.stderr.strip()}")
@@ -199,7 +463,7 @@ def main() -> int:
         if node is None:
             failures.append(f"{nid}: missing from lock")
             continue
-        p = SOURCES / rel
+        p = sources / rel
         if not p.exists():
             failures.append(f"{nid}: artifact missing at sources/{rel}")
             continue
@@ -213,7 +477,8 @@ def main() -> int:
             print("  -", f)
         return 1
     print(f"SOURCE-LOCK LINT: PASS ({len(GIT_DIRS)} git nodes, "
-          f"{len(ARTIFACTS)} artifacts, {len(nodes)} lock nodes)")
+          f"{len(ARTIFACTS)} artifacts, {len(nodes)} lock nodes, "
+          f"all kinds schema-validated)")
     return 0
 
 

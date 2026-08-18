@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "document": "typedb-r2-implementation-brief-v16 + v17 addendum",
-  "status": "g0_resolved",
+  "status": "g0_open",
   "supersedes": "typedb-r2-v16-source-lock-candidate.json",
   "generated_by": "tools/source-lock/lint_source_lock.py (see docs/evidence/G0/)",
   "bazel_evidence_mode": "Q",
@@ -124,6 +124,7 @@
       "repository": "https://github.com/typedb/typedb-driver",
       "tag": "3.12.3",
       "resolved_revision": "f487d961884010ff305d4395c41e80fa620251c6",
+      "tree": "d7b1736dd719468fe92a387c320ccdb9e1e84a0d",
       "license": "Apache-2.0",
       "role": [
         "driver_compatibility_gate"
@@ -199,7 +200,8 @@
       "id": "OBJECT_STORE",
       "kind": "cargo_dependency",
       "name": "object_store",
-      "version": "0.14.0",
+      "version": "0.14.1",
+      "checksum_sha256": "d354792e39fa5f0009e47623cf8b15b099bf9a652fa55c6f817fe28ac84fea50",
       "source_lock": "SL/Cargo.lock",
       "role": [
         "r2_s3_client"
@@ -211,7 +213,7 @@
       "kind": "git",
       "repository": "https://github.com/cloudflare/containers",
       "revision": "298169f4aaba82e7b712458b7c6b14fc3e40ad78",
-      "tree": "resolved in sources/resolved-sources.json",
+      "tree": "05c4a2435c6ae628dc1c21e513b98e3810a00583",
       "package_mapping": "npm gitHead of @cloudflare/containers@0.3.7; package.json version at this commit = 0.3.7 (verified)",
       "license": "Apache-2.0",
       "role": [
@@ -236,6 +238,7 @@
       "kind": "git",
       "repository": "https://github.com/cloudflare/workers-sdk",
       "revision": "c576a8271503cc51babc1a8d0f2ef7d384f78742",
+      "tree": "18d9efd648c2295a1eb1eb35335d74992fa3c333",
       "full_revision_provenance": "candidate short id c576a82 resolves to this commit ('Version Packages (#15154)'); annotated tag wrangler@4.123.0 (object 203b9f72b4d7f235879fc2938385f808ab71bfd7) targets the same commit; packages/wrangler/package.json at this commit = 4.123.0 (verified)",
       "license": "Apache-2.0",
       "role": [
@@ -337,5 +340,6 @@
     "oci_requires_digest": true,
     "release_build_offline": true,
     "tags_must_resolve_to_commit_and_tree": true
-  }
+  },
+  "status_note": "2026-08-18 deep audit E-P0-01: G0 is OPEN_RED while Mode-Q cquery evidence is absent (SI-G0-1 reopened). Node identities below are validated per kind by lint_source_lock.py; that validation is necessary for G0, not sufficient."
 }

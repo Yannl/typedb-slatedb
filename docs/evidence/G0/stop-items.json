@@ -6,8 +6,9 @@
       "detail": "A17.3 requires one isolated sacrificial-environment bazel cquery snapshot per source pin, archived under third_party/bazel-evidence/. Bazel is not installed in this environment by design. Until produced, the catalogue parity auditor uses Mode-S-style static BUILD parsing as reconnaissance; the G0 gate remains open on this item.",
       "blocks": "G0 final",
       "owner": "build-evidence",
-      "status": "CLOSED",
-      "resolution": "Replaced by a machine-executed static-completeness proof: all 76 BUILD files contain only literal, statically-enumerable target invocations (no comprehensions, no computed names); the single macro-expanded target (release_validate_deps) is upstream-tagged manual and excluded from bazel test //... by upstream itself. See docs/evidence/G0/bazel-avoidance-completeness-proof.md. Bazel is not required for any conformance activity at this pin."
+      "status": "OPEN",
+      "reopened": "2026-08-18 deep audit E-P0-01: v17 selects Mode Q exactly; the static avoidance proof is a lower-authority substitution and cannot amend the contract. The prior CLOSED resolution is preserved below as history, not as authority.",
+      "prior_resolution_superseded": "Replaced by a machine-executed static-completeness proof: all 76 BUILD files contain only literal, statically-enumerable target invocations (no comprehensions, no computed names); the single macro-expanded target (release_validate_deps) is upstream-tagged manual and excluded from bazel test //... by upstream itself. See docs/evidence/G0/bazel-avoidance-completeness-proof.md. Bazel is not required for any conformance activity at this pin."
     },
     {
       "id": "SI-G0-2",

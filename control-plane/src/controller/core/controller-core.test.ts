@@ -620,3 +620,66 @@ test("Q-11: a dedupe answer is durable under the operation id the client actuall
   assert.deepEqual(core.queryOperation("db1", 3, "op-never-used", "sess-1"),
     { ok: false, error: "NOT_FOUND" });
 });
+
+test("Q-17: maintained usage counters agree with the history they replace, on every path", () => {
+  // The counters exist so admission stops answering "how deep is the outbox?"
+  // and "how long is the tail?" with a COUNT(*) over the whole table on every
+  // finalisation. A maintained counter is only safe if EVERY path that moves
+  // a row also moves it - the failure this checks for is silent drift, which
+  // wedges admission at a depth that no longer exists.
+  const sql = makeSql();
+  const core = new ControllerCore(sql);
+  core.registerSession("db1", 3, "sess-1");
+  core.registerSession("db2", 1, "sess-b");
+
+  const counter = (db: string, generation: number, scope: string) => {
+    const rows = sql.exec(
+      `SELECT value FROM usage_counters WHERE database_id=? AND generation=? AND scope=?`,
+      db, generation, scope);
+    return rows.length ? Number(rows[0].value) : 0;
+  };
+  const truth = {
+    tail: (db: string, generation: number) => Number(sql.exec(
+      `SELECT COUNT(*) AS n FROM wal_tail WHERE database_id=? AND generation=?`, db, generation)[0].n),
+    outbox: (db: string) => Number(sql.exec(
+      `SELECT COUNT(*) AS n FROM control_outbox WHERE database_id=? AND published=0`, db)[0].n),
+  };
+  const agree = (where: string) => {
+    for (const [db, gen] of [["db1", 3], ["db2", 1]] as [string, number][]) {
+      assert.equal(counter(db, gen, "tail"), truth.tail(db, gen), `tail counter after ${where} (${db})`);
+      assert.equal(counter(db, -1, "outbox_unpublished"), truth.outbox(db),
+        `outbox counter after ${where} (${db})`);
+    }
+  };
+
+  agree("registration");
+
+  for (let i = 0; i < 5; i++) assert.ok(core.finalizeWalRecord(req()).ok);
+  agree("finalisations");
+
+  const batched = core.finalizeBatch([req(), req()]);
+  assert.ok(Array.isArray(batched) && batched.length === 2);
+  agree("a batch");
+
+  // a REJECTED finalisation must move nothing
+  core.setBudgets("db1", { maxUnpublishedOutbox: 100, maxPayloadLength: 10, maxTailRecords: 100 }, "sess-1");
+  const rejected = core.finalizeWalRecord(req({ payloadLength: 1000 }));
+  assert.ok(!rejected.ok);
+  agree("a rejected finalisation");
+
+  // partial ack, then a full drain
+  const acked = core.outboxAck("db1", 3n, "sess-1");
+  assert.ok(acked.ok);
+  agree("a partial ack");
+  core.drainOutbox(() => {});
+  agree("a full drain");
+  assert.equal(counter("db1", -1, "outbox_unpublished"), 0);
+
+  // a re-ack of already-published rows must not drive the counter negative
+  assert.ok(core.outboxAck("db1", 99n, "sess-1").ok);
+  agree("a redundant ack");
+  assert.ok(counter("db1", -1, "outbox_unpublished") >= 0);
+
+  // and the second database's counters were never touched by the first's work
+  assert.equal(counter("db2", 1, "tail"), 0);
+});

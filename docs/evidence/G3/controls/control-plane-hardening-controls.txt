@@ -91,3 +91,27 @@ The outbox section moved ahead of the fencing section: donor A4 makes the
 outbox drainable only by a LIVE actor, and the previous order acked it after
 fencing the only registered session. Event counts moved 4 -> 3 accordingly
 (the SESSION_FENCED command now lands after the ack rather than before it).
+
+## Q-17 - append cost bounded by the request, not by history
+Admission answered "how deep is the outbox?" and "how long is the tail?" with
+COUNT(*) over the whole table on every finalisation (and the outbox count had
+no index at all). Both are transactionally maintained singleton counters now,
+backfilled by migration v5 so an existing database is correct at first open,
+with a partial index over unpublished rows for the ordered drain.
+
+$ node --test ... controller-core.test.ts
+# pass 27 / # fail 0     (new: "Q-17: maintained usage counters agree with the
+                          history they replace, on every path")
+
+MUTANT: drainOutbox marks a row published but forgets the counter
+  not ok 7  - bounded admission fail-closed: payload, outbox depth, tail budget
+  not ok 27 - Q-17: maintained usage counters agree with the history they replace
+  # pass 25 / # fail 2    -> restored: # pass 27 / # fail 0
+
+Found while writing that control: outboxAck's UPDATE was not scoped by
+database_id, so one database's consumer could mark another's control events
+published. One DO per database hides it in production; it is wrong wherever a
+core holds more than one, and the counter made it visible. Now scoped.
+
+$ npx wrangler dev + node scripts/local-stack-e2e.mjs (re-run after Q-17)
+L1 LOCAL STACK E2E: ALL PASS   (65 checks)

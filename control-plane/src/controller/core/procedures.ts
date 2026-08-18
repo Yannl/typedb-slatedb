@@ -118,6 +118,11 @@ export const SCHEMA = `
 
 export const U64_MAX = (1n << 64n) - 1n;
 
+/** The control outbox is per DATABASE, not per generation: control events
+ *  outlive the generation that produced them. Its usage counter therefore
+ *  needs a generation slot that no real generation can occupy. */
+const OUTBOX_GENERATION = -1;
+
 /** Encode an exact u64 as its 8-byte big-endian SQL blob. */
 export function u64Blob(value: bigint, context: string): Uint8Array {
   if (value < 0n || value > U64_MAX) {
@@ -312,6 +317,41 @@ export class ControllerCore {
           request_digest TEXT NOT NULL,
           PRIMARY KEY(database_id, generation, operation_id)
         )`);
+      },
+    },
+    {
+      version: 5,
+      up: (sql) => {
+        // Q-17: append cost must be bounded by the REQUEST, not by history.
+        // Admission used to answer "how deep is the outbox?" and "how long is
+        // the tail?" with COUNT(*) over the whole table on every single
+        // finalisation, so append latency grew with the database's history -
+        // and the outbox count had no index to lean on at all. These are
+        // transactionally maintained singletons instead, backfilled here so
+        // an existing database is correct from the first open.
+        sql.exec(`CREATE TABLE IF NOT EXISTS usage_counters(
+          database_id TEXT NOT NULL,
+          generation INTEGER NOT NULL,
+          scope TEXT NOT NULL,
+          value INTEGER NOT NULL,
+          PRIMARY KEY(database_id, generation, scope)
+        )`);
+        // ordered unpublished drain: partial index so peek/ack walk an index
+        // rather than filtering the whole journal
+        sql.exec(`CREATE INDEX IF NOT EXISTS outbox_unpublished
+                  ON control_outbox(control_seq) WHERE published=0`);
+        for (const row of sql.exec(
+          `SELECT database_id, generation, COUNT(*) AS n FROM wal_tail
+           GROUP BY database_id, generation`)) {
+          sql.exec(`INSERT OR REPLACE INTO usage_counters(database_id, generation, scope, value)
+                    VALUES (?,?,'tail',?)`, row.database_id, row.generation, row.n);
+        }
+        for (const row of sql.exec(
+          `SELECT database_id, COUNT(*) AS n FROM control_outbox WHERE published=0
+           GROUP BY database_id`)) {
+          sql.exec(`INSERT OR REPLACE INTO usage_counters(database_id, generation, scope, value)
+                    VALUES (?,${OUTBOX_GENERATION},'outbox_unpublished',?)`, row.database_id, row.n);
+        }
       },
     },
   ];
@@ -553,21 +593,11 @@ export class ControllerCore {
       if (req.payloadLength > Number(budget.max_payload_length)) {
         return { ok: false as const, error: "ADMISSION_REJECTED_PAYLOAD_LENGTH" as const, limit: Number(budget.max_payload_length) };
       }
-      const unpublished = Number(
-        this.sql.exec(
-          `SELECT COUNT(*) AS n FROM control_outbox WHERE database_id=? AND published=0`,
-          req.databaseId,
-        )[0].n,
-      );
+      const unpublished = this.usage(req.databaseId, OUTBOX_GENERATION, "outbox_unpublished");
       if (unpublished >= Number(budget.max_unpublished_outbox)) {
         return { ok: false as const, error: "ADMISSION_REJECTED_OUTBOX_DEPTH" as const, limit: Number(budget.max_unpublished_outbox) };
       }
-      const tail = Number(
-        this.sql.exec(
-          `SELECT COUNT(*) AS n FROM wal_tail WHERE database_id=? AND generation=?`,
-          req.databaseId, req.generation,
-        )[0].n,
-      );
+      const tail = this.usage(req.databaseId, req.generation, "tail");
       if (tail >= Number(budget.max_tail_records)) {
         return { ok: false as const, error: "ADMISSION_REJECTED_TAIL_BUDGET" as const, limit: Number(budget.max_tail_records) };
       }
@@ -599,6 +629,7 @@ export class ControllerCore {
       req.payloadKey, req.payloadDigest, req.payloadLength, req.operationId, req.requestDigest,
       req.logicalKey, req.startupSessionId, u64Blob(controlSeq, "control_seq"), req.recordType,
     );
+    this.bumpUsage(req.databaseId, req.generation, "tail", 1);
     // outbox row in the SAME transaction as the projection mutation (section
     // 7.4). Sequence values are canonically DECIMAL STRINGS in the body:
     // JSON numbers stop being exact at 2^53. The row is a hash-chained,
@@ -820,6 +851,32 @@ export class ControllerCore {
     return hex(asHash(rows[rows.length - 1].entry_hash, "entry_hash"));
   }
 
+  /**
+   * Read a transactionally maintained usage counter (Q-17).
+   *
+   * Missing means zero: a database that has never appended has no row, and
+   * inventing one at open would be a write on a read path.
+   */
+  private usage(databaseId: string, generation: number, scope: string): number {
+    const rows = this.sql.exec(
+      `SELECT value FROM usage_counters WHERE database_id=? AND generation=? AND scope=?`,
+      databaseId, generation, scope,
+    );
+    return rows.length ? Number(rows[0].value) : 0;
+  }
+
+  /** Move a usage counter by `delta` inside the caller's transaction. The
+   *  upsert and the row it accounts for are always in the SAME transaction,
+   *  so a rollback cannot leave the counter describing a row that is not
+   *  there (or vice versa). */
+  private bumpUsage(databaseId: string, generation: number, scope: string, delta: number): void {
+    this.sql.exec(
+      `INSERT INTO usage_counters(database_id, generation, scope, value) VALUES (?,?,?,?)
+       ON CONFLICT(database_id, generation, scope) DO UPDATE SET value = value + ?`,
+      databaseId, generation, scope, delta, delta,
+    );
+  }
+
   /** Chain-append one journal/outbox row. Caller holds the transaction. */
   private appendJournalEntry(controlSeq: bigint, databaseId: string, kind: string, canonicalBody: string): void {
     const tail = this.sql.exec(`SELECT entry_hash FROM control_outbox ORDER BY control_seq DESC LIMIT 1`);
@@ -831,6 +888,7 @@ export class ControllerCore {
        VALUES (?,?,?,?,?,?,?)`,
       u64Blob(controlSeq, "control_seq"), databaseId, kind, canonicalBody, prevHash, entryHash, mac,
     );
+    this.bumpUsage(databaseId, OUTBOX_GENERATION, "outbox_unpublished", 1);
   }
 
   /**
@@ -876,12 +934,16 @@ export class ControllerCore {
     // crash between publish and mark yields at-least-once delivery to the
     // bus, deduplicated downstream by control_seq (the exactly-once identity).
     const rows = this.sql.exec(
-      `SELECT control_seq, kind, canonical_body FROM control_outbox WHERE published=0 ORDER BY control_seq`,
+      `SELECT control_seq, database_id, kind, canonical_body FROM control_outbox
+       WHERE published=0 ORDER BY control_seq`,
     );
     let published = 0;
     for (const row of rows) {
       publish({ controlSeq: u64FromSql(row.control_seq, "control_seq"), kind: String(row.kind), body: String(row.canonical_body) });
       this.sql.exec(`UPDATE control_outbox SET published=1 WHERE control_seq=?`, row.control_seq);
+      // the counter moves with the row, in the same step (Q-17): a marking
+      // path that forgets it silently wedges admission at the old depth
+      this.bumpUsage(String(row.database_id), OUTBOX_GENERATION, "outbox_unpublished", -1);
       published += 1;
     }
     return published;
@@ -909,9 +971,20 @@ export class ControllerCore {
     if (!authority.ok) return authority;
     const bound = u64Blob(upToControlSeq, "up_to_control_seq");
     return this.sql.transaction(() => {
+      // bounded by the ack window, not by history: the partial index over
+      // unpublished rows makes this a range walk, and the counter it
+      // maintains is what admission reads
+      // scoped to the acking database: the ack is per-database authority, and
+      // an unscoped UPDATE would let one database's consumer mark another's
+      // control events published. One DO per database hides this in
+      // production; it is wrong wherever a core holds more than one.
       const before = Number(this.sql.exec(
-        `SELECT COUNT(*) AS n FROM control_outbox WHERE published=0 AND control_seq <= ?`, bound)[0].n);
-      this.sql.exec(`UPDATE control_outbox SET published=1 WHERE published=0 AND control_seq <= ?`, bound);
+        `SELECT COUNT(*) AS n FROM control_outbox
+         WHERE database_id=? AND published=0 AND control_seq <= ?`, databaseId, bound)[0].n);
+      this.sql.exec(
+        `UPDATE control_outbox SET published=1
+         WHERE database_id=? AND published=0 AND control_seq <= ?`, databaseId, bound);
+      if (before > 0) this.bumpUsage(databaseId, OUTBOX_GENERATION, "outbox_unpublished", -before);
       return { ok: true as const, acked: before };
     });
   }

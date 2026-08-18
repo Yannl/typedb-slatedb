@@ -34,12 +34,11 @@ import common  # noqa: E402
 import verdict as verdict_policy  # noqa: E402
 from common import package_name_from_id, sha256_file  # noqa: E402
 
-ENV_BASE = {
-    **os.environ,
-    "CARGO_INCREMENTAL": "0",
-    "CARGO_PROFILE_DEV_DEBUG": "false",
-    "CARGO_PROFILE_TEST_DEBUG": "false",
-}
+# the one hermetic deterministic cargo environment (common.CARGO_ENV), aliased
+# rather than re-declared so the corpus runner and the catalogue generator
+# cannot drift on the build determinism flags. Only ever read or dict()-copied
+# per run below, never mutated in place.
+ENV_BASE = common.CARGO_ENV
 
 # targets that need the assembly archive staged in cwd
 ASSEMBLY_TARGETS = {"test_assembly", "test_fail_points", "test_admin_assembly"}
@@ -353,7 +352,11 @@ def reverdict(out_dir, fresh=False):
         anomalies, True, out_dir,
         observation=observation, warnings=warnings, bundle_root=bundle_root,
         verdict_filename=fname, write_complete=False,
-        extra={"producer": "tools/catalog/run_u0.py --verdict-only",
+        extra={"producer": ("tools/catalog/run_u0.py --re-evaluate" if fresh
+                            else "tools/catalog/run_u0.py --verdict-only"),
+               # E-04: pin the policy inputs so a later ledger/plan edit is a
+               # detectable mismatch, never a silent reclassification
+               "policy_roots": verdict_policy.compute_policy_roots(),
                "re_derived_from": (str(results_file.relative_to(REPO))
                                    if results_file.is_relative_to(REPO) else str(results_file)),
                "denominator_checked": required is not None,
@@ -515,6 +518,9 @@ def main():
         anomalies, selection_complete, out_dir,
         observation=observation, warnings=warnings, bundle_root=bundle_root,
         extra={"producer": "tools/catalog/run_u0.py",
+               # E-04: pin the policy inputs so a later ledger/plan edit is a
+               # detectable mismatch, never a silent reclassification
+               "policy_roots": verdict_policy.compute_policy_roots(),
                "run": run_manifest,
                "denominator_checked": denominator_checked,
                "executables": len(results),

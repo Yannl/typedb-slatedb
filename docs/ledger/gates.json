@@ -83,7 +83,7 @@
   {
    "id": "U2S3",
    "state": "HISTORICAL_EXPERIMENTAL_NON_QUALIFYING",
-   "why": "Archived run used a dirty 23-file staged tree (digest cc0d283a...); the current staged tree has 24 files and a different digest, and critical storage (cursor.rs, slate.rs, post_wal_guard.rs, storage.rs) changed after the run. Raw observation: 106 unique executable rows, 105 exited 0, 1 exited 101, 0 timeouts, 462 parsed passed, 2 parsed failed, 1 parsed ignored, 34 zero-case rows. That observation is preserved; it is NOT current-tree conformance and is never to be summarised as '105 green'.",
+   "why": "Classification: historical-dirty-tree-aggregate-smoke (label sidecar: docs/evidence/G3/u2s3-full-3/CLASSIFICATION.json). Archived run used a dirty 23-file staged tree (digest cc0d283a...); the current staged tree has 24 files and a different digest, and critical storage (cursor.rs, slate.rs, post_wal_guard.rs, storage.rs) changed after the run. Raw observation: 106 unique executable rows, 105 exited 0, 1 exited 101, 0 timeouts, 462 parsed passed, 2 parsed failed, 1 parsed ignored, 34 zero-case rows. That observation is preserved; it is NOT current-tree conformance and is never to be summarised as '105 green'.",
    "raw_observation": {
     "rows": 106,
     "exit_zero": 105,
@@ -269,6 +269,158 @@
    "commits": [
     "36f3f9f"
    ]
+  },
+  {
+   "id": "R3-A",
+   "title": "Control-plane authority core (C-01,C-02,C-03,C-05,C-07)",
+   "status": "DONE_WITH_RECORDED_REMAINDER",
+   "items": [
+    "C-01 authenticated journal migration + durable quarantine (re-sign hole closed)",
+    "C-02 immutable capability outcomes, terminal replay, transition-quarantine",
+    "C-03 auth framing before any DO contact",
+    "C-05 controller-clock issuance + generation-bound finalize tokens",
+    "C-07 stateless reads (no durable use row)",
+    "REMAINDER: C-04 full tenant registry/private issuer (platform); C-02 cross-restart result store; C-05 remaining schema fields"
+   ],
+   "commits": [
+    "048d46b"
+   ]
+  },
+  {
+   "id": "R3-B",
+   "title": "WAL/recovery strictness (R-01,R-01b,R-02,R-07,R-09)",
+   "status": "DONE_WITH_RECORDED_REMAINDER",
+   "items": [
+    "R-01 strict fixed-head contiguous recovery; two todo!() tests made real; flake exception removed",
+    "R-01b authenticated CRC frames + torn-tail-only repair with forensic sidecar",
+    "R-02 one status resolver for live and recovery",
+    "R-07 checked sequence arithmetic (debug+release boundary matrix)",
+    "R-09 bounded predecessor waits",
+    "REMAINDER: R-08 crash-convergence assertions (subprocess-gated assembly lane); R-09 full hierarchical cancellation token"
+   ],
+   "commits": [
+    "fbcb942"
+   ]
+  },
+  {
+   "id": "R3-C",
+   "title": "Storage backend seam, shipping SlateDB, checkpoint safety (S-01..S-05,R-03..R-06,O-01)",
+   "status": "DONE_WITH_RECORDED_REMAINDER",
+   "items": [
+    "S-02/S-03 patched SlateDB linked via [patch.crates-io] + external epochs + bounded uploader (storage lib 70)",
+    "S-01 typed BackendSpec + persisted marker resolved before any touch; MaterialisationNamespace seam",
+    "S-04 real immutability boundary (create-only/same-digest, journaled multipart, quarantine flag)",
+    "S-05 no-compactor admission bound (OD-007)",
+    "R-03 checkpoint off the automatic path (BackgroundTaskPolicy + task-inventory attestation)",
+    "R-04 unique attempt id + safe sibling deletion + post-catchup scheduling",
+    "R-05 scratch-first validate-before-activate restore + no-follow guard",
+    "R-06 digest-bound COMPLETE + bottom-up fsync",
+    "O-01 total/typed/budgeted metrics (TTL memo, single-flight, no fabricated counts)",
+    "source-lock updated for the patched fork consumption (CD-007)",
+    "storage lib 110, database 11, test_recovery 7, test_snapshot 10; every finding a killed mutant",
+    "REMAINDER: R-08 crash-convergence assertions (subprocess-gated assembly lane); controller-provisioned namespaces need control-plane wiring; fsync crash-domain + MinIO LIST-fault not exercised here"
+   ],
+   "commits": [
+    "8393d8f",
+    "0530dc3",
+    "cf1eb50",
+    "3d75d38"
+   ]
+  },
+  {
+   "id": "R3-D",
+   "title": "Publication firewall repair (F-01,F-02,F-03)",
+   "status": "DONE",
+   "items": [
+    "F-01 single-guard gate (deadlock removed)",
+    "F-02 authority on every mutating path",
+    "F-03 typed manifest transitions",
+    "ADR-0012 updated, no winner declared"
+   ],
+   "commits": [
+    "0454115"
+   ]
+  },
+  {
+   "id": "R3-E",
+   "title": "Probe safety, Mode-Q validator, CI and ledger truth (P-01..P-06,E-01,E-06,E-07)",
+   "status": "DONE_WITH_RECORDED_REMAINDER",
+   "items": [
+    "P-01..P-06 secret separation/redaction, correct CF DTOs, record-before-dispatch, bundle v2, preflight",
+    "E-01 Mode-Q semantic validator + 6 mutants",
+    "E-06 CI job renamed honest + storage integration step",
+    "E-07 ledger semantic checks + workspace-lock repo_commit removed",
+    "REMAINDER: real fresh-execution U0 CI job; live probe execution (credential-gated)"
+   ],
+   "commits": [
+    "1844c96"
+   ]
+  },
+  {
+   "id": "R3-F",
+   "title": "Streaming data path + production-shaped ContainerDO (C-06,C-08)",
+   "status": "DONE_WITH_RECORDED_REMAINDER",
+   "items": [
+    "C-06 DigestStream bounded PUT + streaming read verification + safe percent-decode",
+    "C-08 advisory-only ContainerDO with identity fence, bounded ring, durable alarm GC (v2 migration)",
+    "REMAINDER: true whole-response streaming vs inline base64 (P-WORKER); container process lifecycle (CF-02)"
+   ],
+   "commits": [
+    "cc5c727"
+   ]
+  },
+  {
+   "id": "R3-G",
+   "title": "Alchemy canonical stack + native MinIO supervisor (A-01)",
+   "status": "DONE_WITH_RECORDED_REMAINDER",
+   "items": [
+    "A-01 pinned Alchemy graph + no-cloud guard + source-locked MinIO supervisor + graph/wrangler differential",
+    "REMAINDER: Docker container lane (no daemon here)"
+   ],
+   "commits": [
+    "767b387"
+   ]
+  },
+  {
+   "id": "R3-H",
+   "title": "Catalogue v2 leaf plan + evidence bundle separation (E-02,E-03,E-04,E-05)",
+   "status": "DONE",
+   "items": [
+    "E-02 immutable 23,132-row plan as the denominator; coverage reports PLAN NOT SATISFIED honestly",
+    "E-03 U2S3 relabelled historical-dirty-tree-aggregate-smoke",
+    "E-04 independent read-only verifier + policy_roots pinning + 9 mutants",
+    "E-05 driver rows recorded NOT_IMPLEMENTED"
+   ],
+   "commits": [
+    "7f2ba55"
+   ]
+  },
+  {
+   "id": "R3-I",
+   "title": "Docs/ledger truth pass, final review, sweep, ship",
+   "status": "DONE",
+   "items": [
+    "round-3 response document",
+    "ADR-0009/spec-delivery/handoff \u00a718 corrections",
+    "ledger round-3 adoption",
+    "source-lock truth for the shipped fork (CD-007)",
+    "evidence reconciliation after R3-B flake-ledger change (bundle root re-sealed, all 5 evidence checks green)",
+    "factorization/simplification pass: behavior-preserving dedup across control-plane, tooling/stack, storage/recovery/WAL, and the firewall spike; one graph-diff rigor gap closed with a new mutant; deliberate producer/verifier independence left intact; each lane re-verified",
+    "full-suite sweep green: source-lock lint, ledger lint, modeq-consistent, evidence chain (bundle root 28ae4b7e, 0 anomalies), control-plane (82/19/E2E-85), stack 31, storage 110 + integration, durability + database"
+   ],
+   "commits": [
+    "273d0d5",
+    "11401b2",
+    "af83476",
+    "765c4e9",
+    "3d75d38",
+    "0fcde86",
+    "e3b3632",
+    "b1f574a",
+    "e054e45",
+    "4397747",
+    "92573cb"
+   ]
   }
  ],
  "q_dispositions": {
@@ -312,5 +464,11 @@
    "pattern": "105 green",
    "reason": "the U2S3 archive is a historical observation: 105 exited 0, with 2 parsed failed cases; never summarise as green"
   }
- ]
+ ],
+ "adopted_audit_round3": {
+  "directive": "TypeDB on SlateDB/R2 round-3 deep audit and total-quality implementation directive, 2026-08-18",
+  "audited_commit": "05886cf1dde17b5e07c80684a691e83fb0401a64",
+  "decision": "NO-GO for a live Cloudflare run today; continue local implementation",
+  "response": "docs/reviews/deep-audit-2026-08-18-round3-response.md"
+ }
 }

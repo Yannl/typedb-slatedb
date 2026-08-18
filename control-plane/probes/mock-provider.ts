@@ -23,6 +23,8 @@
 
 import type { PlatformProvider, ProviderCapabilities, SeamRequest, SeamResponse } from "./provider.ts";
 import { EMPTY_BODY, sha256hex, text, utf8 } from "./provider.ts";
+import type { BucketLockRule, TempCredentialPermission } from "./cfapi-dto.ts";
+import { validateBucketLockRulesBody, validateTempCredentialsCreateRequest } from "./cfapi-dto.ts";
 
 // ---------------------------------------------------------------------------
 // Small response helpers.
@@ -77,20 +79,16 @@ interface MultipartUpload {
 interface TempCredScope {
   bucket: string;
   prefixes: string[];
-  permissions: string[]; // "put" | "get" | "head"
-  revoked: boolean;
-}
-
-interface LockRule {
-  prefix: string;
-  allowOverwrite: boolean;
-  allowDelete: boolean;
+  /** SINGULAR official permission enum (round-3 P-02). */
+  permission: TempCredentialPermission;
+  ttlSeconds: number;
+  parentAccessKeyId: string;
 }
 
 export class MockPlatformProvider implements PlatformProvider {
   readonly mode = "mock" as const;
   // The fake implements every surface, so all capabilities are present.
-  readonly capabilities: ProviderCapabilities = { r2: true, cfapi: true, harness: true };
+  readonly capabilities: ProviderCapabilities = { r2: true, cfapi: true, cfapi_runtime: true, harness: true };
 
   /** Probe-id -> injected fault name (validated against the manifest by the CLI). */
   private readonly faults: ReadonlyMap<string, string>;
@@ -118,8 +116,7 @@ export class MockPlatformProvider implements PlatformProvider {
   // --- cfapi state ---
   private tempCreds = new Map<string, TempCredScope>();
   private tempCredSeq = 0;
-  private parentRevoked = false;
-  private lockRules = new Map<string, LockRule[]>(); // bucket -> rules
+  private lockRules = new Map<string, BucketLockRule[]>(); // bucket -> rules
 
   // --- DO state ---
   private interleave = {
@@ -392,18 +389,28 @@ export class MockPlatformProvider implements PlatformProvider {
   /** Returns a denial response, or null when the request is in scope. */
   private checkTempCredentials(req: SeamRequest, bucket: string, key: string): SeamResponse | null {
     const keyId = req.credentials?.keyId;
-    if (keyId === undefined || !keyId.startsWith("mocktmp-")) return null; // parent credentials
+    if (keyId === undefined) return null; // parent credentials
     if (this.hasFault("P-R2-02", "scope-not-enforced")) return null;
     const scope = this.tempCreds.get(keyId);
-    if (!scope || scope.revoked || this.parentRevoked) {
-      return jsonResponse(403, { error: "credential revoked or unknown" });
+    if (!scope) {
+      return jsonResponse(403, { error: "credential unknown or expired" });
     }
+    // The official SINGULAR permission enum maps to S3 operations. Note
+    // there is deliberately NO put+get-without-delete member: an
+    // object-read-write credential can delete inside its scope
+    // (P-R2-02 asserts exactly that platform reality).
     const opByMethod: Record<string, string> = { PUT: "put", GET: "get", HEAD: "head", DELETE: "delete", POST: "put" };
     const op = opByMethod[req.method] ?? "admin";
-    if (!scope.permissions.includes(op)) {
-      return jsonResponse(403, { error: `action ${op} not in credential scope` });
+    const allowed: Record<TempCredentialPermission, ReadonlySet<string>> = {
+      "admin-read-write": new Set(["put", "get", "head", "delete", "admin"]),
+      "admin-read-only": new Set(["get", "head", "admin"]),
+      "object-read-write": new Set(["put", "get", "head", "delete"]),
+      "object-read-only": new Set(["get", "head"]),
+    };
+    if (!allowed[scope.permission].has(op)) {
+      return jsonResponse(403, { error: `action ${op} not permitted by ${scope.permission}` });
     }
-    if (scope.bucket !== bucket || !scope.prefixes.some((p) => key.startsWith(p))) {
+    if (scope.bucket !== bucket || (scope.prefixes.length > 0 && !scope.prefixes.some((p) => key.startsWith(p)))) {
       return jsonResponse(403, { error: "key outside credential prefix scope" });
     }
     return null;
@@ -413,13 +420,13 @@ export class MockPlatformProvider implements PlatformProvider {
   private checkLock(bucket: string, key: string, kind: "overwrite" | "delete"): SeamResponse | null {
     if (this.hasFault("P-R2-03", "lock-not-enforced")) return null;
     for (const rule of this.lockRules.get(bucket) ?? []) {
-      if (!key.startsWith(rule.prefix)) continue;
-      if (kind === "overwrite" && !rule.allowOverwrite) {
-        return jsonResponse(403, { error: `lock rule ${rule.prefix} forbids overwrite` });
-      }
-      if (kind === "delete" && !rule.allowDelete) {
-        return jsonResponse(403, { error: `lock rule ${rule.prefix} forbids delete` });
-      }
+      if (!rule.enabled) continue;
+      if (rule.prefix !== undefined && !key.startsWith(rule.prefix)) continue;
+      // Retention active: Indefinite always; Age/Date are treated as
+      // active for stored objects (the mock's virtual clock never
+      // advances past a retention window during a probe run). A locked
+      // object can be neither overwritten nor deleted.
+      return jsonResponse(403, { error: `bucket lock rule ${rule.id} forbids ${kind}` });
     }
     return null;
   }
@@ -429,52 +436,74 @@ export class MockPlatformProvider implements PlatformProvider {
   // -------------------------------------------------------------------------
 
   private cfapi(req: SeamRequest): SeamResponse {
-    const headers = Object.fromEntries(
-      Object.entries(req.headers ?? {}).map(([k, v]) => [k.toLowerCase(), v]),
-    );
+    // Envelope helper: the mock serves the OFFICIAL response envelope
+    // ({errors, messages, result, success}) so the mock lane exercises
+    // the real wire format (round-3 P-02).
+    const envelope = (status: number, result: unknown, errors: Array<{ code: number; message: string }> = []) =>
+      jsonResponse(status, { errors, messages: [], result, success: errors.length === 0 });
 
     if (req.method === "POST" && req.path === "/r2/temp-access-credentials") {
-      const body = bodyJson(req);
-      const keyId = `mocktmp-${++this.tempCredSeq}`;
-      this.tempCreds.set(keyId, {
-        bucket: String(body.bucket),
-        prefixes: (body.prefixes as string[] | undefined) ?? [],
-        permissions: (body.permissions as string[] | undefined) ?? [],
-        revoked: false,
+      // Validate the incoming request against the official DTO — the old
+      // {bucket,prefixes,permissions:[...]} shape must be REFUSED, exactly
+      // as the real API refuses it.
+      let parsed;
+      try {
+        parsed = validateTempCredentialsCreateRequest(bodyJson(req));
+      } catch (err) {
+        return envelope(400, null, [
+          { code: 10001, message: err instanceof Error ? err.message : String(err) },
+        ]);
+      }
+      const seq = ++this.tempCredSeq;
+      // Canary-shaped credentials (AWS-style key id, CANARY markers): the
+      // self-test greps the whole evidence tree for these; a single hit
+      // means the P-01 redaction pipeline regressed.
+      const accessKeyId = `AKIACANARYMOCK${String(seq).padStart(6, "0")}`;
+      this.tempCreds.set(accessKeyId, {
+        bucket: parsed.bucket,
+        prefixes: parsed.prefixes ?? [],
+        permission: parsed.permission,
+        ttlSeconds: parsed.ttlSeconds,
+        parentAccessKeyId: parsed.parentAccessKeyId,
       });
-      return jsonResponse(200, {
-        keyId,
-        secret: `mock-secret-${this.tempCredSeq}`,
-        sessionToken: `mock-session-${this.tempCredSeq}`,
+      return envelope(200, {
+        accessKeyId,
+        secretAccessKey: `MOCKSECRETCANARY${String(seq).padStart(6, "0")}${"x".repeat(24)}`,
+        sessionToken: `eyJCANARYMOCKSESSION${seq}.payloadCANARY${seq}.sigCANARY${seq}`,
       });
-    }
-
-    if (req.method === "POST" && req.path === "/r2/temp-access-credentials/revoke-parent") {
-      // Parent revocation kills every minted temporary credential.
-      this.parentRevoked = true;
-      return jsonResponse(200, { revoked: true });
     }
 
     const lockMatch = /^\/r2\/buckets\/([^/]+)\/lock$/.exec(req.path);
     if (lockMatch) {
       const bucket = lockMatch[1];
       if (req.method === "GET") {
-        // Policy must be continuously machine-verifiable.
-        return jsonResponse(200, { rules: this.lockRules.get(bucket) ?? [] });
+        // Policy must be continuously machine-verifiable (result envelope).
+        return envelope(200, { rules: this.lockRules.get(bucket) ?? [] });
       }
       if (req.method === "PUT") {
-        // Only the admin plane may configure locks; runtime principals are
+        // Only the ADMIN principal may configure locks; the runtime
+        // principal (a genuinely different credential in real mode) is
         // refused (P-R2-03 "unauthorized policy mutation").
-        if (headers["x-cf-authz"] !== "admin" && !this.hasFault("P-R2-03", "lock-not-enforced")) {
-          return jsonResponse(403, { error: "runtime principal cannot alter lock policy" });
+        if ((req.principal ?? "admin") !== "admin" && !this.hasFault("P-R2-03", "lock-not-enforced")) {
+          return envelope(403, null, [{ code: 10000, message: "runtime principal cannot alter lock policy" }]);
         }
-        const body = bodyJson(req);
-        this.lockRules.set(bucket, (body.rules as LockRule[] | undefined) ?? []);
-        return jsonResponse(200, { ok: true });
+        let parsed;
+        try {
+          parsed = validateBucketLockRulesBody(bodyJson(req));
+        } catch (err) {
+          return envelope(400, null, [
+            { code: 10001, message: err instanceof Error ? err.message : String(err) },
+          ]);
+        }
+        this.lockRules.set(bucket, parsed.rules);
+        return envelope(200, { rules: parsed.rules });
       }
     }
 
-    return jsonResponse(404, { error: `unhandled cfapi ${req.method} ${req.path}` });
+    // NOTE: there is no /r2/temp-access-credentials/revoke-parent route in
+    // the official API — the pre-fix probe called one that only this mock
+    // implemented. It is gone; anything unhandled is 404, like the real API.
+    return envelope(404, null, [{ code: 7000, message: `no route for ${req.method} ${req.path}` }]);
   }
 
   // -------------------------------------------------------------------------

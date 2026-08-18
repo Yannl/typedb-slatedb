@@ -2,6 +2,16 @@
 
 **Status:** accepted (operative; details in [local-dev-parity-plan.md](../../local-dev-parity-plan.md))
 
+> **Round-3 correction (2026-08-18).** L1 runs the production Worker/DO
+> RUNTIME (workerd) under a LOCAL TOPOLOGY — it is not "the production
+> topology." Edge routing, service bindings, DO scheduling/eviction/alarms,
+> Containers, and real R2 service behavior differ and are enumerated as
+> platform residuals in the round-3 response
+> ([reviews/deep-audit-2026-08-18-round3-response.md](../../reviews/deep-audit-2026-08-18-round3-response.md)).
+> The canonical local topology is now the Alchemy + native-MinIO parity
+> stack (`stack/`, ADR/A-01); the tables below describe the ladder's
+> intent, not a claim that any local rung reproduces a Cloudflare fact.
+
 ## Context
 
 The production target is Cloudflare (Workers, Durable Objects, R2,

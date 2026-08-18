@@ -87,27 +87,40 @@ impl DurabilitySequenceNumber {
     /// top of the sequence space is a hard fault in every build profile:
     /// the unchecked `+ 1` panicked in debug but WRAPPED to zero in release,
     /// silently re-issuing the identity of the first commit ever made.
-    /// Callers that can surface a typed error use [`Self::checked_next`];
-    /// the panicking form exists for positional uses where an overflow is
+    /// Callers that can surface a typed error use [`Self::try_next`]; the
+    /// panicking form exists for positional uses where an overflow is
     /// unreachable by construction.
     pub fn next(&self) -> Self {
-        self.checked_next().expect("DurabilitySequenceNumber overflow: the u64 sequence space is exhausted")
+        self.try_next().expect("DurabilitySequenceNumber overflow: the u64 sequence space is exhausted")
     }
 
-    /// Successor, or `None` at the top of the sequence space. The checked
-    /// boundary for allocation paths (S-P0-09): exhaustion must become a
-    /// typed error with no state mutated, never a wrap or a panic.
-    pub fn checked_next(&self) -> Option<Self> {
+    /// Canonical checked successor (R-07 / S-P0-09), the ONE checked-successor
+    /// name every recovery path calls. `None` at [`Self::MAX`]: the caller maps
+    /// exhaustion to its own typed refusal and mutates nothing (never a wrap or
+    /// a panic).
+    pub fn try_next(&self) -> Option<Self> {
         self.number.checked_add(1).map(|number| Self { number })
     }
 
+    /// Canonical checked predecessor (R-07). `None` at [`Self::MIN`]: no
+    /// sequence number precedes the origin, and walking off the bottom must
+    /// be a typed refusal at the caller, never a debug-panic/release-wrap.
+    pub fn try_previous(&self) -> Option<Self> {
+        self.number.checked_sub(1).map(|number| Self { number })
+    }
+
+    /// Canonical checked exclusive end of a window of `window_size` slots
+    /// starting at `self` (R-07). `None` when the end would pass `u64::MAX`,
+    /// i.e. when the window reaches the top of the sequence space; the
+    /// caller decides the sound handling (allocation refuses long before
+    /// `MAX` is ever handed out, so an exclusive end capped at `MAX`
+    /// excludes no allocatable sequence number).
+    pub fn checked_window_end(&self, window_size: usize) -> Option<Self> {
+        self.number.checked_add(window_size as u64).map(|number| Self { number })
+    }
+
     pub fn previous(&self) -> Self {
-        Self {
-            number: self
-                .number
-                .checked_sub(1)
-                .expect("DurabilitySequenceNumber underflow: no sequence number precedes MIN"),
-        }
+        self.try_previous().expect("DurabilitySequenceNumber underflow: no sequence number precedes MIN")
     }
 
     pub fn number(&self) -> u64 {
@@ -260,12 +273,12 @@ mod sequence_boundary_tests {
     fn next_is_exact_up_to_the_last_representable_sequence_number() {
         let penultimate = DurabilitySequenceNumber::new(u64::MAX - 1);
         assert_eq!(penultimate.next(), DurabilitySequenceNumber::MAX);
-        assert_eq!(penultimate.checked_next(), Some(DurabilitySequenceNumber::MAX));
+        assert_eq!(penultimate.try_next(), Some(DurabilitySequenceNumber::MAX));
     }
 
     #[test]
-    fn checked_next_reports_exhaustion_at_max_instead_of_wrapping() {
-        assert_eq!(DurabilitySequenceNumber::MAX.checked_next(), None);
+    fn try_next_reports_exhaustion_at_max_instead_of_wrapping() {
+        assert_eq!(DurabilitySequenceNumber::MAX.try_next(), None);
     }
 
     #[test]
@@ -290,6 +303,55 @@ mod sequence_boundary_tests {
     #[should_panic(expected = "underflow")]
     fn subtracting_a_later_sequence_number_is_a_hard_fault_not_a_wrap() {
         let _ = DurabilitySequenceNumber::new(1) - DurabilitySequenceNumber::new(2);
+    }
+
+    /// R-07 boundary matrix for the canonical checked helpers, exercised at
+    /// MIN, MIN+1, MAX-1 and MAX. This module runs in debug AND release
+    /// (`cargo test --release -p durability`): the helpers are Option-based,
+    /// so the boundary behaviour is identical in both profiles by
+    /// construction — no debug-panic/release-wrap split to hide behind.
+    #[test]
+    fn try_next_matrix_at_the_four_boundary_points() {
+        let points = [
+            (DurabilitySequenceNumber::MIN, Some(DurabilitySequenceNumber::new(1))),
+            (DurabilitySequenceNumber::new(1), Some(DurabilitySequenceNumber::new(2))),
+            (DurabilitySequenceNumber::new(u64::MAX - 1), Some(DurabilitySequenceNumber::MAX)),
+            (DurabilitySequenceNumber::MAX, None),
+        ];
+        for (input, expected) in points {
+            assert_eq!(input.try_next(), expected, "try_next({input})");
+        }
+    }
+
+    #[test]
+    fn try_previous_matrix_at_the_four_boundary_points() {
+        let points = [
+            (DurabilitySequenceNumber::MIN, None),
+            (DurabilitySequenceNumber::new(1), Some(DurabilitySequenceNumber::MIN)),
+            (DurabilitySequenceNumber::new(u64::MAX - 1), Some(DurabilitySequenceNumber::new(u64::MAX - 2))),
+            (DurabilitySequenceNumber::MAX, Some(DurabilitySequenceNumber::new(u64::MAX - 1))),
+        ];
+        for (input, expected) in points {
+            assert_eq!(input.try_previous(), expected, "try_previous({input})");
+        }
+    }
+
+    #[test]
+    fn checked_window_end_matrix_at_the_four_boundary_points() {
+        const WINDOW: usize = 100;
+        let points = [
+            (DurabilitySequenceNumber::MIN, Some(DurabilitySequenceNumber::new(WINDOW as u64))),
+            (DurabilitySequenceNumber::new(1), Some(DurabilitySequenceNumber::new(WINDOW as u64 + 1))),
+            // the exact last start whose window still fits:
+            (DurabilitySequenceNumber::new(u64::MAX - WINDOW as u64), Some(DurabilitySequenceNumber::MAX)),
+            // one past it overflows, as do MAX-1 and MAX themselves:
+            (DurabilitySequenceNumber::new(u64::MAX - WINDOW as u64 + 1), None),
+            (DurabilitySequenceNumber::new(u64::MAX - 1), None),
+            (DurabilitySequenceNumber::MAX, None),
+        ];
+        for (input, expected) in points {
+            assert_eq!(input.checked_window_end(WINDOW), expected, "checked_window_end({input}, {WINDOW})");
+        }
     }
 
     #[test]

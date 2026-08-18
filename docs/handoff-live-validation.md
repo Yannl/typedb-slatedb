@@ -10,6 +10,16 @@
 > (SI-G0-3) are ONE blocker among several. The setup instructions below
 > remain useful for the eventual disposable `G2_PLATFORM_PROBE` run — which
 > is a platform-fact probe, never product qualification.
+>
+> **Round-3 update (2026-08-18).** The old "copy `wrangler.toml`, change only
+> the bucket, `wrangler deploy`" flow is superseded: the canonical staging
+> path is the Alchemy graph in `stack/` (one `alchemy.run.ts` owning Worker /
+> ControllerDO / ContainerDO / R2, generated from — or checked against — the
+> committed `wrangler.toml`), and no live run may start until
+> `probes:preflight` is machine-green (disposable target + owner numeric
+> envelope `docs/probe-run-envelope.json`). The probe adapter now separates
+> admin/runtime principals and redacts secrets; see the round-3 response for
+> the full P-01..P-06 changes.
 
 Written so that a **fresh session with empty context** can take the
 program from its current state toward a disposable platform-probe run on

@@ -17,11 +17,31 @@ use crate::{
     isolation_manager::{IsolationManager, ValidatedCommit},
     keyspace::{KeyspaceError, Keyspaces},
     record::{CommitRecord, LegacyCommitRecordV1, StatusRecord},
+    recovery::status_resolver::{StatusConflict, fold_status},
     sequence_number::SequenceNumber,
     write_batches::WriteBatches,
 };
 
-/// Load commit data from the start onwards. Ignores any statuses that are not paired with commit data.
+/// Load commit data from the start onwards, proving a strict fixed-head
+/// contiguous WAL prefix (R-01).
+///
+/// Grammar the raw record stream must satisfy, against ONE durability head
+/// captured from the WAL's own recovered end BEFORE folding:
+/// - exactly one valid sequenced commit record (legacy V1 or current) for
+///   every sequence number in `load_start..=head`, in order;
+/// - unsequenced records (status records, and non-storage record types such
+///   as statistics) are permitted only where the WAL's append discipline
+///   puts them: carrying the sequence number of the commit record folded
+///   immediately before them;
+/// - a status record's payload may only reference an already-folded commit
+///   (or one below the window, which is skipped as documented);
+/// - EMPTY iteration is legal only when `load_start > head`.
+///
+/// Gap, regression/duplicate, unknown type claiming a fresh sequence,
+/// malformed record, conflicting duplicate status, record beyond the head
+/// and early end-of-stream are all typed refusals with nothing mutated.
+/// Callers must derive the recovery frontier from the durability head, never
+/// from `max()` over the returned map.
 pub fn load_commit_data_from(
     start: SequenceNumber,
     durability_client: &impl DurabilityClient,
@@ -35,7 +55,15 @@ pub fn load_commit_data_from_with_context(
     durability_client: &impl DurabilityClient,
     context_memory_limit: usize,
 ) -> Result<BTreeMap<SequenceNumber, RecoveryCommitStatus>, StorageRecoveryError> {
-    use StorageRecoveryError::{DurabilityClientRead, DurabilityRecordDeserialize, DurabilityRecordsMissing};
+    use StorageRecoveryError::{
+        CommitRecordGap, CommitRecordRegression, DurabilityClientRead, DurabilityRecordDeserialize,
+        DurabilityRecordsMissing, IncompleteCommitStream, RecordBeyondDurabilityHead, StatusForUnwrittenCommit,
+        UnsequencedRecordWithoutCommit,
+    };
+
+    // R-01: ONE fixed durability head, captured from the WAL's own recovered
+    // end BEFORE any folding. Every proof below is against this value.
+    let head = durability_client.previous();
 
     let load_start = start.saturating_sub(context_size);
     let records =
@@ -46,41 +74,51 @@ pub fn load_commit_data_from_with_context(
 
     let mut bytes_read = 0;
 
-    let mut first_record = true;
+    // the next sequence number a commit record must carry, and the last one
+    // a commit record did carry (unsequenced records repeat the latter)
+    let mut expected_next = load_start;
+    let mut last_commit_sequence_number: Option<SequenceNumber> = None;
+
     for record in records {
         let RawRecord { sequence_number, record_type, bytes } =
             record.map_err(|error| DurabilityClientRead { typedb_source: error })?;
-        if first_record {
-            if sequence_number != load_start {
-                return Err(DurabilityRecordsMissing {
-                    expected_sequence_number: start,
-                    first_record_sequence_number: sequence_number,
-                });
-            }
-            first_record = false;
+
+        if sequence_number > head {
+            // no record above the recovered head can exist in a well-formed log
+            return Err(RecordBeyondDurabilityHead { sequence_number, head });
         }
 
         match record_type {
-            LegacyCommitRecordV1::RECORD_TYPE => {
-                let legacy = LegacyCommitRecordV1::deserialise_from(&mut &*bytes)
-                    .map_err(|error| DurabilityRecordDeserialize { source: Arc::new(error) })?;
-                let commit_record = CommitRecord::from(legacy);
+            LegacyCommitRecordV1::RECORD_TYPE | CommitRecord::RECORD_TYPE => {
+                if sequence_number != expected_next {
+                    if last_commit_sequence_number.is_none() {
+                        return Err(DurabilityRecordsMissing {
+                            expected_sequence_number: expected_next,
+                            first_record_sequence_number: sequence_number,
+                        });
+                    } else if sequence_number > expected_next {
+                        return Err(CommitRecordGap { expected: expected_next, found: sequence_number });
+                    } else {
+                        // duplicate or regressed commit record: "exactly one
+                        // valid commit per sequence" refuses both, whether
+                        // the duplicate's payload is identical or not
+                        return Err(CommitRecordRegression { expected: expected_next, found: sequence_number });
+                    }
+                }
+                let commit_record = if record_type == LegacyCommitRecordV1::RECORD_TYPE {
+                    let legacy = LegacyCommitRecordV1::deserialise_from(&mut &*bytes)
+                        .map_err(|error| DurabilityRecordDeserialize { source: Arc::new(error) })?;
+                    CommitRecord::from(legacy)
+                } else {
+                    CommitRecord::deserialise_from(&mut &*bytes)
+                        .map_err(|error| DurabilityRecordDeserialize { source: Arc::new(error) })?
+                };
                 recovered_commits.insert(sequence_number, RecoveryCommitStatus::Pending(commit_record));
                 recovered_commit_sizes.insert(sequence_number, bytes.len());
                 bytes_read += bytes.len();
-                trace!(
-                    "Read legacy commit V1 @ {} with size {}; {} total",
-                    sequence_number,
-                    format_size(bytes.len()),
-                    format_size(bytes_read),
-                );
-            }
-            CommitRecord::RECORD_TYPE => {
-                let commit_record = CommitRecord::deserialise_from(&mut &*bytes)
-                    .map_err(|error| DurabilityRecordDeserialize { source: Arc::new(error) })?;
-                recovered_commits.insert(sequence_number, RecoveryCommitStatus::Pending(commit_record));
-                recovered_commit_sizes.insert(sequence_number, bytes.len());
-                bytes_read += bytes.len();
+                last_commit_sequence_number = Some(sequence_number);
+                expected_next =
+                    sequence_number.try_next().ok_or(RecordBeyondDurabilityHead { sequence_number, head })?;
                 trace!(
                     "Read commit @ {} with size {}; {} total",
                     sequence_number,
@@ -89,9 +127,21 @@ pub fn load_commit_data_from_with_context(
                 );
             }
             StatusRecord::RECORD_TYPE => {
+                if last_commit_sequence_number != Some(sequence_number) {
+                    // an unsequenced record always repeats the sequence
+                    // number of the commit it was appended after
+                    return Err(UnsequencedRecordWithoutCommit { sequence_number, record_type });
+                }
                 let StatusRecord { commit_record_sequence_number, was_committed } =
                     StatusRecord::deserialise_from(&mut &*bytes)
                         .map_err(|error| DurabilityRecordDeserialize { source: Arc::new(error) })?;
+                if commit_record_sequence_number > sequence_number {
+                    // a status can only certify a commit the WAL already holds
+                    return Err(StatusForUnwrittenCommit {
+                        status_sequence_number: commit_record_sequence_number,
+                        last_commit_sequence_number: sequence_number,
+                    });
+                }
                 apply_status_record(
                     &mut recovered_commits,
                     &mut recovered_commit_sizes,
@@ -100,7 +150,15 @@ pub fn load_commit_data_from_with_context(
                     was_committed,
                 )?;
             }
-            _not_storage_record => (), // skip, not storage record
+            _not_storage_record => {
+                // non-storage record types (e.g. statistics) are permitted
+                // ONLY as unsequenced records under the same grammar; an
+                // unknown type claiming a fresh sequence number would leave
+                // that sequence unproved and is refused
+                if last_commit_sequence_number != Some(sequence_number) {
+                    return Err(UnsequencedRecordWithoutCommit { sequence_number, record_type });
+                }
+            }
         }
 
         while bytes_read > context_memory_limit
@@ -112,64 +170,76 @@ pub fn load_commit_data_from_with_context(
             trace!("Discarded commit @ {} with size {}; {} total", seq, format_size(size), format_size(bytes_read));
         }
     }
+
+    // R-01: the stream must have proven every sequence in load_start..=head;
+    // empty is legal only when load_start > head
+    if load_start <= head && last_commit_sequence_number != Some(head) {
+        return Err(IncompleteCommitStream {
+            head,
+            last_recovered: last_commit_sequence_number.map_or_else(|| "none".to_owned(), |seq| seq.to_string()),
+        });
+    }
+
     Ok(recovered_commits)
 }
 
 /// Fold one status record into the recovery state.
 ///
-/// The WAL can legitimately carry more than one status record for one commit
-/// sequence number: recovery itself re-persists a status for every commit it
-/// re-validates (see [`apply_recovered`]), so a crash mid-recovery replays
-/// those statuses on the next attempt. The invariant is therefore
-/// IDEMPOTENCE, not uniqueness — a repeated IDENTICAL status converges to
-/// the same single outcome with no double accounting. OPPOSITE statuses for
-/// one commit can never both have been decided, so that pairing is WAL
-/// corruption: it quarantines the recovery with a typed error, identically
-/// in either order. It must never panic, silently let the last record win,
-/// or subtract a commit's size from the running total twice.
-fn apply_status_record(
+/// The verdict semantics — identical duplicate converges, opposite verdicts
+/// are an order-independent typed quarantine — live in the shared
+/// [`status_resolver`](crate::recovery::status_resolver) (R-02), the SAME
+/// resolver the live disk-validation path uses, so one raw history can
+/// never produce two different outcomes. This function only applies the
+/// resolved verdict to the recovery map and its size accounting: a
+/// rejection subtracts a commit's bytes exactly once, and nothing panics.
+pub(crate) fn apply_status_record(
     recovered_commits: &mut BTreeMap<SequenceNumber, RecoveryCommitStatus>,
     recovered_commit_sizes: &mut BTreeMap<SequenceNumber, usize>,
     bytes_read: &mut usize,
     commit_record_sequence_number: SequenceNumber,
     was_committed: bool,
 ) -> Result<(), StorageRecoveryError> {
-    match (recovered_commits.get(&commit_record_sequence_number), was_committed) {
+    let existing_verdict = match recovered_commits.get(&commit_record_sequence_number) {
         // a status whose commit data is outside the loaded window: skip, as documented on the loader
-        (None, _) => (),
-        (Some(RecoveryCommitStatus::Pending(_)), true) => {
-            let Some(RecoveryCommitStatus::Pending(record)) = recovered_commits.remove(&commit_record_sequence_number)
-            else {
-                unreachable!("status entry disappeared between lookup and removal")
-            };
-            recovered_commits.insert(commit_record_sequence_number, RecoveryCommitStatus::Validated(record));
-            trace!("Marked as committed commit @ {}", commit_record_sequence_number);
-        }
-        (Some(RecoveryCommitStatus::Pending(_)), false) => {
-            recovered_commits.insert(commit_record_sequence_number, RecoveryCommitStatus::Rejected);
-            // the rejected commit's bytes leave the accounted total exactly once; the size slot is
-            // zeroed (not removed — the eviction loop pops commits and sizes in lockstep) so neither
-            // a replayed rejection nor a later eviction of this commit can subtract it again
-            let commit_record_size = match recovered_commit_sizes.get_mut(&commit_record_sequence_number) {
-                Some(size) => std::mem::take(size),
-                None => 0,
-            };
-            *bytes_read -= commit_record_size;
-            trace!(
-                "Discarded commit @ {} with size {}; {} total",
-                commit_record_sequence_number,
-                format_size(commit_record_size),
-                format_size(*bytes_read),
-            );
-        }
+        None => return Ok(()),
+        Some(RecoveryCommitStatus::Pending(_)) => None,
+        Some(RecoveryCommitStatus::Validated(_)) => Some(true),
+        Some(RecoveryCommitStatus::Rejected) => Some(false),
+    };
+    let verdict = fold_status(existing_verdict, was_committed, commit_record_sequence_number).map_err(
+        |StatusConflict { sequence_number }| StorageRecoveryError::ConflictingRecoveryStatus { sequence_number },
+    )?;
+    if existing_verdict == Some(verdict) {
         // an identical replayed status: recovery already converged on this outcome
-        (Some(RecoveryCommitStatus::Validated(_)), true) | (Some(RecoveryCommitStatus::Rejected), false) => (),
-        // opposite statuses for one commit: corruption, quarantined order-independently
-        (Some(RecoveryCommitStatus::Validated(_)), false) | (Some(RecoveryCommitStatus::Rejected), true) => {
-            return Err(StorageRecoveryError::ConflictingRecoveryStatus {
-                sequence_number: commit_record_sequence_number,
+        return Ok(());
+    }
+    if verdict {
+        let Some(RecoveryCommitStatus::Pending(record)) = recovered_commits.remove(&commit_record_sequence_number)
+        else {
+            // the match above proved this slot holds Pending when existing_verdict is None
+            return Err(StorageRecoveryError::Internal {
+                name: Arc::<str>::from("recovery"),
+                source: Arc::new(std::io::Error::other("status entry disappeared between lookup and removal")),
             });
-        }
+        };
+        recovered_commits.insert(commit_record_sequence_number, RecoveryCommitStatus::Validated(record));
+        trace!("Marked as committed commit @ {}", commit_record_sequence_number);
+    } else {
+        recovered_commits.insert(commit_record_sequence_number, RecoveryCommitStatus::Rejected);
+        // the rejected commit's bytes leave the accounted total exactly once; the size slot is
+        // zeroed (not removed — the eviction loop pops commits and sizes in lockstep) so neither
+        // a replayed rejection nor a later eviction of this commit can subtract it again
+        let commit_record_size = match recovered_commit_sizes.get_mut(&commit_record_sequence_number) {
+            Some(size) => std::mem::take(size),
+            None => 0,
+        };
+        *bytes_read -= commit_record_size;
+        trace!(
+            "Discarded commit @ {} with size {}; {} total",
+            commit_record_sequence_number,
+            format_size(commit_record_size),
+            format_size(*bytes_read),
+        );
     }
     Ok(())
 }
@@ -242,10 +312,307 @@ pub(crate) fn apply_recovered(
     Ok(())
 }
 
+#[derive(Debug)]
 pub enum RecoveryCommitStatus {
     Pending(CommitRecord),
     Validated(CommitRecord),
     Rejected,
+}
+
+#[cfg(test)]
+mod strict_parser_tests {
+    //! R-01 controls for the fixed-head contiguous parser: one durability
+    //! head captured before folding; exactly one valid commit per sequence
+    //! in `start..=head`; typed refusals for gap, regression/duplicate,
+    //! record-beyond-head, malformed record, unknown type claiming a fresh
+    //! sequence, status-before-intent, and early end of stream; empty legal
+    //! only when `start > head`. The mutant "drop the final completeness
+    //! check" fails the trailing-gap/empty tests; "drop the per-record
+    //! contiguity check" fails the gap/regression tests.
+
+    use std::{borrow::Cow, collections::BTreeMap, sync::mpsc};
+
+    use durability::{DurabilityServiceError, RawRecord};
+
+    use super::{RecoveryCommitStatus, StorageRecoveryError, load_commit_data_from};
+    use crate::{
+        durability_client::{
+            DurabilityClient, DurabilityClientError, DurabilityRecord, SequencedDurabilityRecord,
+            UnsequencedDurabilityRecord,
+        },
+        record::{CommitRecord, CommitType, StatusRecord},
+        sequence_number::SequenceNumber,
+        snapshot::{buffer::OperationsBuffer, snapshot_id::SnapshotId},
+    };
+
+    /// A deterministic in-memory durability client: `head` plays the WAL's
+    /// recovered end (`previous()`), `records` the raw stream.
+    struct MockDurability {
+        records: Vec<(u64, u8, Vec<u8>)>,
+        head: u64,
+    }
+
+    impl MockDurability {
+        fn new(head: u64, records: Vec<(u64, u8, Vec<u8>)>) -> Self {
+            Self { records, head }
+        }
+    }
+
+    impl DurabilityClient for MockDurability {
+        fn register_record_type<Record: DurabilityRecord>(&mut self) {}
+
+        fn current(&self) -> SequenceNumber {
+            SequenceNumber::new(self.head + 1)
+        }
+
+        fn previous(&self) -> SequenceNumber {
+            SequenceNumber::new(self.head)
+        }
+
+        fn sequenced_write<Record: SequencedDurabilityRecord>(
+            &self,
+            _record: &Record,
+        ) -> Result<SequenceNumber, DurabilityClientError> {
+            unimplemented!("not needed by the parser under test")
+        }
+
+        fn unsequenced_write<Record: UnsequencedDurabilityRecord>(
+            &self,
+            _record: &Record,
+        ) -> Result<(), DurabilityClientError> {
+            unimplemented!("not needed by the parser under test")
+        }
+
+        fn request_sync(&self) -> mpsc::Receiver<Result<(), DurabilityServiceError>> {
+            unimplemented!("not needed by the parser under test")
+        }
+
+        fn iter_from(
+            &self,
+            sequence_number: SequenceNumber,
+        ) -> Result<impl Iterator<Item = Result<RawRecord<'static>, DurabilityClientError>>, DurabilityClientError>
+        {
+            let start = sequence_number.number();
+            Ok(self
+                .records
+                .iter()
+                .filter(move |(seq, _, _)| *seq >= start)
+                .cloned()
+                .map(|(seq, record_type, bytes)| {
+                    Ok(RawRecord { sequence_number: SequenceNumber::new(seq), record_type, bytes: Cow::Owned(bytes) })
+                })
+                .collect::<Vec<_>>()
+                .into_iter())
+        }
+
+        fn iter_type_from<Record: DurabilityRecord>(
+            &self,
+            sequence_number: SequenceNumber,
+        ) -> Result<impl Iterator<Item = Result<(SequenceNumber, Record), DurabilityClientError>>, DurabilityClientError>
+        {
+            let start = sequence_number.number();
+            Ok(self
+                .records
+                .iter()
+                .filter(move |(seq, record_type, _)| *seq >= start && *record_type == Record::RECORD_TYPE)
+                .map(|(seq, _, bytes)| {
+                    Record::deserialise_from(&mut &**bytes)
+                        .map(|record| (SequenceNumber::new(*seq), record))
+                        .map_err(DurabilityClientError::from)
+                })
+                .collect::<Vec<_>>()
+                .into_iter())
+        }
+
+        fn find_last_unsequenced_type<Record: UnsequencedDurabilityRecord>(
+            &self,
+        ) -> Result<Option<Record>, DurabilityClientError> {
+            unimplemented!("not needed by the parser under test")
+        }
+
+        fn truncate_from(&self, _sequence_number: SequenceNumber) -> Result<(), DurabilityClientError> {
+            unimplemented!("not needed by the parser under test")
+        }
+
+        fn delete_durability(self) -> Result<(), DurabilityClientError> {
+            unimplemented!("not needed by the parser under test")
+        }
+
+        fn reset(&mut self) -> Result<(), DurabilityClientError> {
+            unimplemented!("not needed by the parser under test")
+        }
+    }
+
+    fn commit_bytes() -> Vec<u8> {
+        let record =
+            CommitRecord::new(OperationsBuffer::new(), SequenceNumber::MIN, CommitType::Data, SnapshotId::new());
+        let mut bytes = Vec::new();
+        record.serialise_into(&mut bytes).unwrap();
+        bytes
+    }
+
+    fn commit(seq: u64) -> (u64, u8, Vec<u8>) {
+        (seq, CommitRecord::RECORD_TYPE, commit_bytes())
+    }
+
+    fn status(own_seq: u64, certifies: u64, was_committed: bool) -> (u64, u8, Vec<u8>) {
+        let record = StatusRecord::new(SequenceNumber::new(certifies), was_committed);
+        let mut bytes = Vec::new();
+        record.serialise_into(&mut bytes).unwrap();
+        (own_seq, StatusRecord::RECORD_TYPE, bytes)
+    }
+
+    fn load(client: &MockDurability) -> Result<BTreeMap<SequenceNumber, RecoveryCommitStatus>, StorageRecoveryError> {
+        load_commit_data_from(SequenceNumber::new(1), client)
+    }
+
+    fn shape(map: &BTreeMap<SequenceNumber, RecoveryCommitStatus>) -> Vec<(u64, &'static str)> {
+        map.iter()
+            .map(|(seq, state)| {
+                let tag = match state {
+                    RecoveryCommitStatus::Pending(_) => "pending",
+                    RecoveryCommitStatus::Validated(_) => "validated",
+                    RecoveryCommitStatus::Rejected => "rejected",
+                };
+                (seq.number(), tag)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_contiguous_prefix_with_statuses_parses_completely() {
+        let client = MockDurability::new(
+            3,
+            vec![commit(1), status(1, 1, true), commit(2), commit(3), status(3, 2, false), status(3, 3, true)],
+        );
+        let map = load(&client).expect("a contiguous proven prefix must parse");
+        assert_eq!(shape(&map), &[(1, "validated"), (2, "rejected"), (3, "validated")]);
+    }
+
+    #[test]
+    fn empty_is_legal_exactly_when_start_exceeds_the_head() {
+        // fresh WAL: head 0 < start 1 -> empty is the proven answer
+        let empty = MockDurability::new(0, vec![]);
+        assert!(load(&empty).expect("empty stream with start > head is legal").is_empty());
+
+        // head 2 promises records but the stream is empty -> typed refusal
+        let hollow = MockDurability::new(2, vec![]);
+        let error = load(&hollow).expect_err("empty stream while records are expected must refuse");
+        assert!(
+            matches!(error, StorageRecoveryError::IncompleteCommitStream { .. }),
+            "expected IncompleteCommitStream, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn an_internal_gap_is_a_typed_refusal() {
+        let client = MockDurability::new(3, vec![commit(1), commit(3)]);
+        let error = load(&client).expect_err("an internal gap must refuse");
+        assert!(
+            matches!(
+                error,
+                StorageRecoveryError::CommitRecordGap { expected, found }
+                    if expected == SequenceNumber::new(2) && found == SequenceNumber::new(3)
+            ),
+            "expected CommitRecordGap, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_trailing_gap_is_a_typed_refusal() {
+        let client = MockDurability::new(4, vec![commit(1), commit(2)]);
+        let error = load(&client).expect_err("a stream ending before the head must refuse");
+        assert!(
+            matches!(error, StorageRecoveryError::IncompleteCommitStream { head, .. } if head == SequenceNumber::new(4)),
+            "expected IncompleteCommitStream, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_missing_first_record_is_a_typed_refusal() {
+        let client = MockDurability::new(2, vec![commit(2)]);
+        let error = load(&client).expect_err("a stream starting past the load start must refuse");
+        assert!(
+            matches!(error, StorageRecoveryError::DurabilityRecordsMissing { .. }),
+            "expected DurabilityRecordsMissing, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_duplicate_commit_record_is_a_typed_refusal_not_a_silent_overwrite() {
+        // identical or conflicting payload makes no difference: exactly one
+        // commit record may establish a sequence number
+        let client = MockDurability::new(2, vec![commit(1), commit(2), commit(2)]);
+        let error = load(&client).expect_err("a duplicate commit record must refuse");
+        assert!(
+            matches!(error, StorageRecoveryError::CommitRecordRegression { .. }),
+            "expected CommitRecordRegression, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_record_beyond_the_captured_head_is_a_typed_refusal() {
+        let client = MockDurability::new(2, vec![commit(1), commit(2), commit(3)]);
+        let error = load(&client).expect_err("a record beyond the fixed head must refuse");
+        assert!(
+            matches!(
+                error,
+                StorageRecoveryError::RecordBeyondDurabilityHead { sequence_number, head }
+                    if sequence_number == SequenceNumber::new(3) && head == SequenceNumber::new(2)
+            ),
+            "expected RecordBeyondDurabilityHead, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_malformed_commit_record_is_a_typed_refusal() {
+        let client = MockDurability::new(1, vec![(1, CommitRecord::RECORD_TYPE, vec![0xFF, 0x00, 0xFF])]);
+        let error = load(&client).expect_err("a malformed commit record must refuse");
+        assert!(
+            matches!(error, StorageRecoveryError::DurabilityRecordDeserialize { .. }),
+            "expected DurabilityRecordDeserialize, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn an_unknown_type_claiming_a_fresh_sequence_is_refused_but_a_proper_unsequenced_one_passes() {
+        const STATISTICS_LIKE: u8 = 10;
+        // permitted: the unknown record repeats the last commit's sequence
+        let ok = MockDurability::new(2, vec![commit(1), (1, STATISTICS_LIKE, vec![1, 2, 3]), commit(2)]);
+        assert_eq!(shape(&load(&ok).expect("a proper unsequenced non-storage record is permitted")).len(), 2);
+
+        // refused: the unknown record claims the NEXT (unproved) sequence
+        let bad = MockDurability::new(2, vec![commit(1), (2, STATISTICS_LIKE, vec![1, 2, 3])]);
+        let error = load(&bad).expect_err("an unknown type claiming a fresh sequence must refuse");
+        assert!(
+            matches!(
+                error,
+                StorageRecoveryError::UnsequencedRecordWithoutCommit { sequence_number, record_type }
+                    if sequence_number == SequenceNumber::new(2) && record_type == STATISTICS_LIKE
+            ),
+            "expected UnsequencedRecordWithoutCommit, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_status_certifying_an_unwritten_commit_is_a_typed_refusal() {
+        let client = MockDurability::new(1, vec![commit(1), status(1, 2, true)]);
+        let error = load(&client).expect_err("a verdict cannot precede its commit");
+        assert!(
+            matches!(error, StorageRecoveryError::StatusForUnwrittenCommit { .. }),
+            "expected StatusForUnwrittenCommit, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn conflicting_duplicate_statuses_quarantine_through_the_shared_resolver() {
+        let client = MockDurability::new(1, vec![commit(1), status(1, 1, true), status(1, 1, false)]);
+        let error = load(&client).expect_err("opposite verdicts must quarantine");
+        assert!(
+            matches!(error, StorageRecoveryError::ConflictingRecoveryStatus { sequence_number } if sequence_number == SequenceNumber::new(1)),
+            "expected ConflictingRecoveryStatus, got {error:?}"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -409,6 +776,36 @@ typedb_error! {
             7,
             "Quarantined WAL: commit '{sequence_number}' carries both a committed and a rejected status record. The durability log is corrupt; refusing to pick either outcome.",
             sequence_number: SequenceNumber
+        ),
+        CommitRecordGap(
+            8,
+            "Quarantined WAL: expected a commit record for sequence number '{expected}' but found '{found}'. The durability log has an internal gap; refusing to recover an unproved prefix.",
+            expected: SequenceNumber, found: SequenceNumber
+        ),
+        CommitRecordRegression(
+            9,
+            "Quarantined WAL: expected a commit record for sequence number '{expected}' but found a duplicate or regressed record at '{found}'. Exactly one commit record may exist per sequence number; refusing.",
+            expected: SequenceNumber, found: SequenceNumber
+        ),
+        IncompleteCommitStream(
+            10,
+            "Quarantined WAL: the durability head is '{head}' but the record stream ended at '{last_recovered}'. Records the WAL proved durable are missing; refusing to recover a truncated prefix.",
+            head: SequenceNumber, last_recovered: String
+        ),
+        UnsequencedRecordWithoutCommit(
+            11,
+            "Quarantined WAL: a record of type '{record_type}' claims sequence number '{sequence_number}' which no commit record has established. Refusing to skip an unproved sequence.",
+            sequence_number: SequenceNumber, record_type: u8
+        ),
+        StatusForUnwrittenCommit(
+            12,
+            "Quarantined WAL: a status record certifies commit '{status_sequence_number}' but the log has only reached '{last_commit_sequence_number}'. A verdict cannot precede its commit; refusing.",
+            status_sequence_number: SequenceNumber, last_commit_sequence_number: SequenceNumber
+        ),
+        RecordBeyondDurabilityHead(
+            13,
+            "Quarantined WAL: a record carries sequence number '{sequence_number}' beyond the recovered durability head '{head}'. The log and its recovered end disagree; refusing.",
+            sequence_number: SequenceNumber, head: SequenceNumber
         ),
     }
 }

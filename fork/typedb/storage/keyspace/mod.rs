@@ -10,6 +10,12 @@ pub(crate) use keyspace::{KEYSPACE_MAXIMUM_COUNT, Keyspace, KeyspaceCheckpointEr
 pub use keyspace::{
     KeyspaceDeleteError, KeyspaceId, KeyspaceOpenError, KeyspaceSet, KeyspaceValidationError, StorageBackend,
 };
+/// S-01: the controller-provisioned remote-namespace seam (see
+/// [`slate::MaterialisationNamespace`]). Exposed as a public seam so the
+/// control-plane wiring, when it lands, and a checkpoint recording the backend
+/// identity can both derive the object namespace from opaque controller
+/// identifiers rather than a host-local path.
+pub use slate::MaterialisationNamespace;
 
 use crate::{
     keyspace::cursor::RawCursor,

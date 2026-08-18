@@ -687,3 +687,38 @@ features = {}
 			features = []
 			default-features = false
 
+# S-02 (round-3): link the PATCHED SlateDB, not the registry crate.
+#
+# The workspace dependency above still declares `slatedb = "=0.15.0"` so that
+# the manifest reads as an ordinary crates.io pin (feature set, provenance,
+# ADR-0001 lineage all unchanged). What this patch does is redirect that exact
+# version to the locally materialised fork tree, so Cargo resolves `slatedb`
+# to our patch series (0001 external epochs, 0002 bounded uploader, 0003
+# epoch-enforced tests) instead of the unmodified registry bytes. Proof:
+# `cargo tree -p slatedb` / Cargo.lock show `source = ".../sources/slatedb-fork"`
+# rather than `registry+https://github.com/rust-lang/crates.io-index`.
+#
+# Path resolution note: this manifest is authored in `fork/typedb/` and staged
+# (copied, by tools/fork/stage.py) to `sources/typedb/` where the build runs.
+# Both directories sit at repo depth 2, so `../../sources/slatedb-fork`
+# resolves to the same materialised tree from either location — the patch is
+# correct in the authored copy AND the staged copy without rewriting.
+#
+# `sources/slatedb-fork/` is produced deterministically by
+# `tools/fork/materialize_slatedb.py` (upstream crate pinned by digest in
+# source-lock, then patches applied and the post-patch tree digest verified).
+# It is git-ignored like every other materialised source; the fork's IDENTITY
+# lives in fork/slatedb/patches + UPSTREAM-PROVENANCE, not in a vendored copy.
+#
+# [patch.crates-io] is workspace-global: it redirects `slatedb` for EVERY
+# crate in this workspace. That is exactly what we want — there is one SlateDB
+# and every keyspace open must go through the fenced/bounded fork. No classic
+# lane consumes a different SlateDB (RocksDB keyspaces don't depend on slatedb
+# at all), so there is no lane this global redirect conflicts with. The
+# `external_epoch_required` fence remains a *feature* (off by default: the U2
+# local conformance lane builds green without it; the R2/remote lane turns it
+# on), so redirecting to the fork does not by itself change open semantics —
+# it only makes the fenced/bounded code the code that actually ships.
+[patch.crates-io]
+	slatedb = { path = "../../sources/slatedb-fork" }
+

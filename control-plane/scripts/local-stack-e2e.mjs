@@ -76,10 +76,13 @@ function capSpecFor(method, rawPath, body) {
   // finalize capabilities are SESSION-bound (donor A3): the token carries
   // the actor identity, so a disclosed session id is not itself write authority
   if (path === "/wal/finalize") {
-    return { databaseId: body.databaseId, method: "WAL_FINALIZE", session: body.startupSessionId };
+    // C-05: finalize tokens bind session AND generation
+    return { databaseId: body.databaseId, method: "WAL_FINALIZE",
+             session: body.startupSessionId, generation: body.generation };
   }
   if (path === "/wal/finalize-batch") {
-    return { databaseId: body.requests[0].databaseId, method: "WAL_FINALIZE", session: body.requests[0].startupSessionId };
+    return { databaseId: body.requests[0].databaseId, method: "WAL_FINALIZE",
+             session: body.requests[0].startupSessionId, generation: body.requests[0].generation };
   }
   let m = path.match(/^\/wal\/([^/]+)\/\d+\/operation\//);
   if (m) return { databaseId: m[1], method: "WAL_READ", session: CURRENT_SESSION };
@@ -541,17 +544,34 @@ const flipped = readCap.token.slice(0, -1) + (readCap.token.endsWith("0") ? "1" 
 const badMac = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { "x-capability": flipped });
 check("tampered MAC is refused", badMac.status === 403 && badMac.body.error === "CAPABILITY_MAC_INVALID");
 
-// C-P0-08: single-use means single-REQUEST. The token's nonce is bound to
-// the one request it authorized: an IDENTICAL retry (lost response) is
-// admitted again - the read is idempotent - while ANY different request
-// under the same token is a replay refusal.
+// C-07: reads are STATELESS - side-effect-free, so a read token records no
+// durable use row and is freely replayable across different read requests.
 const once = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { "x-capability": readCap.token });
-const identicalRetry = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { "x-capability": readCap.token });
-const differentRequest = await rawApi("GET", `/wal/${DB}/${GEN}/0`, undefined, false, { "x-capability": readCap.token });
-check("capability is bound to ONE request: identical retry admits, a different request is refused",
-  once.status === 200 && identicalRetry.status === 200
-    && differentRequest.status === 403 && differentRequest.body.error === "CAPABILITY_REPLAYED",
-  JSON.stringify({ once: once.status, identicalRetry: identicalRetry.status, differentRequest: differentRequest.body }));
+const readReplay = await rawApi("GET", `/wal/${DB}/${GEN}/0`, undefined, false, { "x-capability": readCap.token });
+check("C-07: a read token is stateless and replayable (no durable use row)",
+  once.status === 200 && readReplay.status === 200,
+  JSON.stringify({ once: once.status, readReplay: readReplay.status }));
+
+// C-02: a MUTATING token is single-REQUEST. Reusing one SESSION_ADMIN token
+// for the SAME budgets request twice must NOT apply budgets twice - the
+// terminal use replays its stored response (the audit's double-BUDGETS_SET
+// mutant). A DIFFERENT request under the same token is a replay refusal.
+// SESSION is fenced by this point in the flow, so the underlying budgets
+// call refuses - but the SINGLE-REQUEST property is what matters: whatever
+// the first outcome is, the identical retry REPLAYS it byte-identically
+// (same status + body) and a DIFFERENT request under the same token is a
+// replay refusal. That is the double-BUDGETS_SET mutant killed.
+const budgetsBody = { databaseId: DB, maxUnpublishedOutbox: 500, maxPayloadLength: 4096, maxTailRecords: 500 };
+const budgetToken = (await issueCap({ databaseId: DB, method: "SESSION_ADMIN", session: SESSION })).token;
+const budgetOnce = await rawApi("POST", "/budgets", budgetsBody, false, { "x-capability": budgetToken });
+const budgetRetry = await rawApi("POST", "/budgets", budgetsBody, false, { "x-capability": budgetToken });
+const budgetDifferent = await rawApi("POST", "/budgets",
+  { ...budgetsBody, maxTailRecords: 999 }, false, { "x-capability": budgetToken });
+check("C-02: a mutating token is single-request; identical retry replays, different request refused",
+  budgetOnce.status === budgetRetry.status
+    && JSON.stringify(budgetOnce.body) === JSON.stringify(budgetRetry.body)
+    && budgetDifferent.status === 403 && budgetDifferent.body.error === "CAPABILITY_REPLAYED",
+  JSON.stringify({ once: budgetOnce.status, retry: budgetRetry.status, different: budgetDifferent.body }));
 
 const readCap2 = await issueCap({ databaseId: DB, method: "WAL_READ" });
 // no caller-supplied requestDigest: a mismatching one is a 400 BEFORE the
@@ -566,7 +586,7 @@ check("method binding: a read token cannot finalize",
 // cannot authorize a finalize request that claims a DIFFERENT session, even
 // though that session is a live unfenced actor. Knowing a session id is not
 // write authority.
-const otherSessionCap = await issueCap({ databaseId: DB, method: "WAL_FINALIZE", session: "sess-OTHER" });
+const otherSessionCap = await issueCap({ databaseId: DB, method: "WAL_FINALIZE", session: "sess-OTHER", generation: GEN });
 const impersonate = await rawApi("POST", "/wal/finalize",
   { ...finalizeRequest, startupSessionId: "sess-3", operationId: "op-impersonate" },
   false, { "x-capability": otherSessionCap.token });

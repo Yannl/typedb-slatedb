@@ -48,7 +48,10 @@ use resource::constants::database::{CHECKPOINT_INTERVAL, STATISTICS_UPDATE_INTER
 use storage::{
     MVCCStorage, StorageDeleteError, StorageOpenError, StorageResetError,
     durability_client::{DurabilityClient, DurabilityClientError, WALClient},
-    factory::{StorageFactory, StorageFactoryError},
+    factory::{
+        BackendSpec, StorageFactory, StorageFactoryError, read_backend_marker, verify_backend_marker,
+        write_backend_marker,
+    },
     keyspace::rocks_resources::RocksResources,
     recovery::checkpoint::{CheckpointCreateError, CheckpointLoadError, CheckpointReader, CheckpointWriter},
     sequence_number::SequenceNumber,
@@ -92,7 +95,17 @@ pub struct Database<D> {
     pub(super) query_cache: Arc<QueryCache>,
     schema_write_transaction_exclusivity: Mutex<SchemaWriteTransactionState>,
     _statistics_updater: IntervalRunner,
-    _checkpointer: IntervalRunner,
+    /// R-03: the interval checkpointer is scheduled ONLY on a backend whose
+    /// policy permits it (the classic RocksDB lane). On the remote/SlateDB lane
+    /// it is `None` — that lane takes controller-frozen global cuts only, and
+    /// TypeDB's fixture exporter must never be reachable through the automatic
+    /// interval path. The startup attestation proves this field matches the
+    /// backend policy.
+    _checkpointer: Option<IntervalRunner>,
+    /// O-01: last successfully-sampled (storage_in_bytes, storage_key_count).
+    /// A metrics scrape that fails (object-store outage) serves this typed stale
+    /// value rather than panicking or fabricating a fresh count.
+    metrics_last_good: Mutex<Option<(u64, u64)>>,
 }
 
 impl<D> fmt::Debug for Database<D> {
@@ -286,10 +299,16 @@ impl Database<WALClient> {
 
         let name = name.as_ref();
 
-        fs::create_dir(path).map_err(|source| DirectoryCreate { name: name.to_string(), source: Arc::new(source) })?;
-
+        // S-01: resolve the typed backend identity BEFORE any filesystem, WAL,
+        // or object-namespace touch. A not-yet-available lane (U3/U4) or an
+        // unknown profile refuses HERE, leaving the database tree non-existent
+        // — no directory is created before the refusal. `factory` is still
+        // needed below for the WAL, so it is resolved separately (side-effect
+        // free) and the identity mapping is fed into the ordered prelude.
         let factory =
             StorageFactory::resolve_from_env().map_err(|source| DatabaseOpenError::StorageFactory { source })?;
+        let backend_spec = create_backend_bound_directory(path, name, BackendSpec::from_profile(factory.profile()))?;
+
         let wal = factory.create_wal(path, wal_metrics).map_err(|error| match error {
             StorageFactoryError::WalOpen { source } => WALOpen { source },
             other => DatabaseOpenError::StorageFactory { source: other },
@@ -334,6 +353,15 @@ impl Database<WALClient> {
         );
         let checkpoint_fn = make_checkpoint_fn(name.to_owned(), path.to_owned(), SequenceNumber::MIN, storage.clone());
 
+        // R-03: schedule the interval checkpointer ONLY if the backend policy
+        // permits it (the classic lane). On the remote lane it is not scheduled
+        // — controller-frozen cuts only — and the startup attestation proves it.
+        let policy = BackgroundTaskPolicy::for_backend(&backend_spec);
+        let checkpointer =
+            policy.interval_checkpointer.then(|| IntervalRunner::new(checkpoint_fn, CHECKPOINT_INTERVAL));
+        attest_task_inventory(policy, TaskInventory { interval_checkpointer_scheduled: checkpointer.is_some() })
+            .map_err(|source| DatabaseOpenError::ForbiddenBackgroundWorker { name: name.to_owned(), source })?;
+
         Ok(Database::<WALClient> {
             name: Arc::<str>::from(name),
             path: path.to_owned(),
@@ -345,7 +373,8 @@ impl Database<WALClient> {
             query_cache,
             schema_write_transaction_exclusivity: Mutex::new((false, 0, VecDeque::with_capacity(100))),
             _statistics_updater: IntervalRunner::new(update_statistics, STATISTICS_UPDATE_INTERVAL),
-            _checkpointer: IntervalRunner::new(checkpoint_fn, CHECKPOINT_INTERVAL),
+            _checkpointer: checkpointer,
+            metrics_last_good: Mutex::new(None),
         })
     }
 
@@ -368,9 +397,38 @@ impl Database<WALClient> {
             std::path::absolute(path)
         );
 
-        event!(Level::TRACE, "Loading database '{}' WAL.", &name);
+        // S-01: resolve the backend identity and VERIFY it against the
+        // database's persisted marker BEFORE touching the WAL or storage tree.
+        // A missing marker (ambiguous/unmarked database) demands an explicit
+        // migration; a mismatch (this open's backend differs from the one the
+        // database was created with) is a typed refusal that leaves the tree,
+        // WAL, and object namespace byte-identical — never a silent
+        // cross-engine open that constructs a fresh engine beside the other
+        // backend's files.
         let factory =
             StorageFactory::resolve_from_env().map_err(|source| DatabaseOpenError::StorageFactory { source })?;
+        let backend_spec = BackendSpec::from_profile(factory.profile())
+            .map_err(|source| DatabaseOpenError::StorageFactory { source })?;
+        let persisted_marker =
+            read_backend_marker(path).map_err(|source| DatabaseOpenError::StorageFactory { source })?;
+        match persisted_marker {
+            // a marked database: verify the backend matches BEFORE any touch.
+            Some(_) => verify_backend_marker(&backend_spec, persisted_marker)
+                .map_err(|source| DatabaseOpenError::StorageFactory { source })?,
+            // no marker: distinguish a real-but-unmarked database (a migration
+            // case — refuse) from a stray non-database directory (NotADatabase,
+            // so the manager's scan skips it as before). The WAL directory's
+            // presence is the database indicator, checked without opening it.
+            None => {
+                if path.join(WAL::WAL_DIR_NAME).exists() {
+                    return Err(DatabaseOpenError::StorageFactory {
+                        source: StorageFactoryError::BackendMarkerMissing,
+                    });
+                }
+            }
+        }
+
+        event!(Level::TRACE, "Loading database '{}' WAL.", &name);
         let wal = match factory.load_wal(path, wal_metrics) {
             Ok(wal) => wal,
             Err(StorageFactoryError::WalOpen {
@@ -455,7 +513,11 @@ impl Database<WALClient> {
         let checkpoint_fn =
             make_checkpoint_fn(name.to_owned(), path.to_owned(), checkpoint_sequence_number, storage.clone());
 
-        let database = Database::<WALClient> {
+        // R-03/R-04: construct with NO periodic checkpointer yet, so the
+        // synchronous startup catch-up below runs BEFORE any periodic task —
+        // periodic tasks are started only after startup catch-up, and never at
+        // all on the controller-frozen lane.
+        let mut database = Database::<WALClient> {
             name: Arc::<str>::from(name),
             path: path.to_owned(),
             storage,
@@ -466,16 +528,27 @@ impl Database<WALClient> {
             query_cache,
             schema_write_transaction_exclusivity: Mutex::new((false, 0, VecDeque::with_capacity(100))),
             _statistics_updater: IntervalRunner::new(update_statistics, STATISTICS_UPDATE_INTERVAL),
-            _checkpointer: IntervalRunner::new_with_initial_delay(
-                checkpoint_fn,
-                CHECKPOINT_INTERVAL,
-                CHECKPOINT_INTERVAL,
-            ),
+            _checkpointer: None,
+            metrics_last_good: Mutex::new(None),
         };
 
+        // startup catch-up checkpoint (an explicit, one-shot cut — not the
+        // automatic interval path) runs while no periodic task is scheduled.
         if checkpoint_sequence_number < wal_last_sequence_number {
             database.checkpoint().map_err(|err| CheckpointCreate { name: name.to_string(), source: err })?;
         }
+
+        // NOW, after catch-up, start the interval checkpointer if — and only if
+        // — the backend policy permits it, and attest the result.
+        let policy = BackgroundTaskPolicy::for_backend(&backend_spec);
+        database._checkpointer = policy
+            .interval_checkpointer
+            .then(|| IntervalRunner::new_with_initial_delay(checkpoint_fn, CHECKPOINT_INTERVAL, CHECKPOINT_INTERVAL));
+        attest_task_inventory(
+            policy,
+            TaskInventory { interval_checkpointer_scheduled: database._checkpointer.is_some() },
+        )
+        .map_err(|source| DatabaseOpenError::ForbiddenBackgroundWorker { name: name.to_owned(), source })?;
 
         database.prepare_for_writes().map_err(|typedb_source| DatabaseOpenError::Encoding { source: typedb_source })?;
         event!(Level::TRACE, "Finished loading database '{}'", &name);
@@ -557,8 +630,16 @@ impl Database<WALClient> {
         // `self.storage`, never on `self.schema`, so hoisting them out is
         // free. (The remote key-count scan is itself bounded by the storage
         // engine's staleness memo.)
-        let storage_in_bytes = self.storage.estimate_size_in_bytes().expect("Expected storage size in bytes");
-        let storage_key_count = self.storage.estimate_key_count().expect("Expected storage key count");
+        // O-01: a diagnostics scrape must NEVER panic the process. A failed
+        // storage sample (e.g. a brief object-store outage on the remote lane)
+        // serves the last-good pair as typed stale state instead of the old
+        // `.expect` that aborted the whole scrape; a cold failure serves the
+        // honest zero default, never a fabricated post-failure count.
+        let (storage_in_bytes, storage_key_count) = resolve_storage_metrics(
+            self.storage.estimate_size_in_bytes().ok(),
+            self.storage.estimate_key_count().ok(),
+            &self.metrics_last_good,
+        );
         let schema = self.schema.read().expect("Expected database schema lock acquisition");
         DatabaseMetricsSnapshot {
             schema: SchemaLoadMetrics { type_count: schema.type_cache.get_types_count() },
@@ -572,6 +653,93 @@ impl Database<WALClient> {
                 storage_key_count,
             },
         }
+    }
+}
+
+/// R-03: which background workers a backend's policy permits. Derived from the
+/// typed [`BackendSpec`] (NOT the conformance profile), so background scheduling
+/// is part of the backend contract rather than an unconditional default. On the
+/// remote/SlateDB lane TypeDB's INTERVAL checkpointer is forbidden — that lane
+/// takes controller-frozen global cuts only; the classic RocksDB lane runs it
+/// exactly as before.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BackgroundTaskPolicy {
+    pub interval_checkpointer: bool,
+}
+
+impl BackgroundTaskPolicy {
+    pub(crate) fn for_backend(spec: &BackendSpec) -> Self {
+        match spec {
+            BackendSpec::Classic => Self { interval_checkpointer: true },
+            // the remote lane's fixture exporter must never be automatically
+            // reachable — controller-frozen cuts only.
+            BackendSpec::SlateDbR2(_) => Self { interval_checkpointer: false },
+        }
+    }
+}
+
+/// R-03: the background workers actually scheduled for a database instance. The
+/// startup attestation compares this against the backend policy and proves the
+/// forbidden workers are absent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TaskInventory {
+    pub interval_checkpointer_scheduled: bool,
+}
+
+/// R-03: prove no background worker the policy forbids is actually scheduled. On
+/// the controller-frozen (remote) lane a scheduled interval checkpointer is a
+/// typed refusal — the "forbidden interval-checkpoint worker is absent"
+/// attestation. Re-enabling the automatic remote checkpoint (scheduling it in
+/// defiance of the policy) fails this attestation: the R-03 mutant a named test
+/// kills.
+pub(crate) fn attest_task_inventory(
+    policy: BackgroundTaskPolicy,
+    inventory: TaskInventory,
+) -> Result<(), ForbiddenWorkerError> {
+    if !policy.interval_checkpointer && inventory.interval_checkpointer_scheduled {
+        return Err(ForbiddenWorkerError::IntervalCheckpointerOnControllerFrozenLane);
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ForbiddenWorkerError {
+    IntervalCheckpointerOnControllerFrozenLane,
+}
+
+impl fmt::Display for ForbiddenWorkerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::IntervalCheckpointerOnControllerFrozenLane => {
+                write!(f, "the interval checkpointer is forbidden on the controller-frozen lane")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ForbiddenWorkerError {}
+
+/// O-01: resolve the two storage metrics totally — never panicking, never
+/// fabricating a fresh count after a failure. On success both values update the
+/// last-good memo and are returned fresh. On ANY sampling failure the last-good
+/// pair is served as typed stale state (or `(0, 0)` if nothing was ever sampled
+/// — the genuine no-measurement default, not a fabricated post-failure count).
+/// The old `get_metrics` called `.expect` on each sample and panicked the whole
+/// scrape when the object store was briefly unavailable.
+fn resolve_storage_metrics(
+    sampled_bytes: Option<u64>,
+    sampled_keys: Option<u64>,
+    last_good: &Mutex<Option<(u64, u64)>>,
+) -> (u64, u64) {
+    let mut guard = last_good.lock().unwrap();
+    match (sampled_bytes, sampled_keys) {
+        (Some(bytes), Some(keys)) => {
+            *guard = Some((bytes, keys));
+            (bytes, keys)
+        }
+        // a failed (partial or total) sample serves the last consistent pair,
+        // or the honest zero default if none has ever succeeded.
+        _ => guard.unwrap_or((0, 0)),
     }
 }
 
@@ -602,6 +770,32 @@ fn make_checkpoint_fn(
 /// The FATAL message for a periodic-checkpoint failure. Extracted so the
 /// error branch is unit-testable: the branch itself ends in `process::abort`,
 /// which no test can cross.
+/// S-01 create ordering: resolve the backend identity, and ONLY on success
+/// create the database directory and persist the marker atomically. The
+/// ORDERING is the invariant — a backend refusal (unknown profile /
+/// not-yet-available lane) must leave `path` non-existent, so no directory,
+/// WAL, or object namespace is ever created beside another backend's files
+/// before the refusal. Extracted as a pure function (the resolution result is
+/// an argument, not read from the process-global env) so the "no touch before
+/// refusal" ordering is hermetically unit-testable and its mutant — creating
+/// the directory before the refusal — fails a named test.
+fn create_backend_bound_directory(
+    path: &Path,
+    name: &str,
+    resolved: Result<BackendSpec, StorageFactoryError>,
+) -> Result<BackendSpec, DatabaseOpenError> {
+    use DatabaseOpenError::DirectoryCreate;
+    // resolve FIRST — refuse before any filesystem touch.
+    let spec = resolved.map_err(|source| DatabaseOpenError::StorageFactory { source })?;
+    // only now touch the filesystem...
+    fs::create_dir(path).map_err(|source| DirectoryCreate { name: name.to_string(), source: Arc::new(source) })?;
+    // ...and bind the database to its backend before any keyspace/WAL data
+    // lands, so a later open can detect a cross-engine mismatch.
+    write_backend_marker(path, &spec)
+        .map_err(|source| DirectoryCreate { name: name.to_string(), source: Arc::new(source) })?;
+    Ok(spec)
+}
+
 fn checkpoint_failure_fatal_message(database_name: &str, error: &impl fmt::Debug) -> String {
     format!(
         "FATAL: periodic checkpoint for database '{database_name}' failed: {error:?}. A silently dead \
@@ -690,6 +884,160 @@ mod interval_task_failure_tests {
     }
 }
 
+#[cfg(test)]
+mod background_task_policy_tests {
+    //! R-03: background tasks are part of the backend policy. The interval
+    //! checkpointer runs on the classic lane and is FORBIDDEN on the remote
+    //! (controller-frozen) lane, and a startup attestation proves the forbidden
+    //! worker is absent.
+
+    use storage::factory::{BackendSpec, SlateDbR2Spec};
+
+    use super::{BackgroundTaskPolicy, ForbiddenWorkerError, TaskInventory, attest_task_inventory};
+
+    fn remote_spec() -> BackendSpec {
+        BackendSpec::SlateDbR2(SlateDbR2Spec {
+            object_store_profile: "local-fs",
+            materialisation_policy: "fresh-per-open-no-inplace",
+            cache_policy: "none",
+            protocol_versions: "fv1",
+        })
+    }
+
+    #[test]
+    fn the_classic_lane_runs_the_interval_checkpointer() {
+        let policy = BackgroundTaskPolicy::for_backend(&BackendSpec::Classic);
+        assert!(policy.interval_checkpointer, "the classic lane runs the interval checkpointer");
+        // a classic database that scheduled it attests cleanly
+        assert!(
+            attest_task_inventory(policy, TaskInventory { interval_checkpointer_scheduled: true }).is_ok(),
+            "the classic lane may schedule the interval checkpointer"
+        );
+    }
+
+    #[test]
+    fn the_slatedb_lane_forbids_the_interval_checkpointer_and_attests_when_absent() {
+        let policy = BackgroundTaskPolicy::for_backend(&remote_spec());
+        assert!(!policy.interval_checkpointer, "the remote lane takes controller-frozen cuts only");
+        // the real remote-lane inventory (worker absent) passes the attestation
+        assert!(
+            attest_task_inventory(policy, TaskInventory { interval_checkpointer_scheduled: false }).is_ok(),
+            "the remote lane with no interval checkpointer scheduled attests cleanly"
+        );
+    }
+
+    #[test]
+    fn re_enabling_the_automatic_remote_checkpoint_fails_attestation() {
+        // R-03 mutant catcher: scheduling the interval checkpointer on the
+        // controller-frozen lane (re-enabling the automatic remote checkpoint)
+        // is a typed attestation failure. The mutant that schedules it in
+        // defiance of the policy is caught HERE.
+        let policy = BackgroundTaskPolicy::for_backend(&remote_spec());
+        let result = attest_task_inventory(policy, TaskInventory { interval_checkpointer_scheduled: true });
+        assert_eq!(
+            result,
+            Err(ForbiddenWorkerError::IntervalCheckpointerOnControllerFrozenLane),
+            "an interval checkpointer on the remote lane must fail the startup attestation"
+        );
+    }
+}
+
+#[cfg(test)]
+mod metrics_totality_tests {
+    //! O-01: metrics are total and typed — a failed storage sample never panics
+    //! and never fabricates a fresh count.
+
+    use std::sync::Mutex;
+
+    use super::resolve_storage_metrics;
+
+    #[test]
+    fn a_cold_failure_is_the_zero_default_not_a_panic() {
+        // "metrics before registration / during outage" — no successful sample
+        // has ever run. The result is the honest zero default, and crucially NO
+        // panic (the old `.expect` aborted the scrape here).
+        let last_good = Mutex::new(None);
+        let (bytes, keys) = resolve_storage_metrics(None, None, &last_good);
+        assert_eq!((bytes, keys), (0, 0), "a cold failure serves the zero default");
+    }
+
+    #[test]
+    fn a_successful_sample_updates_last_good() {
+        let last_good = Mutex::new(None);
+        let resolved = resolve_storage_metrics(Some(4096), Some(12), &last_good);
+        assert_eq!(resolved, (4096, 12));
+        assert_eq!(*last_good.lock().unwrap(), Some((4096, 12)), "a successful sample is memoised as last-good");
+    }
+
+    #[test]
+    fn a_failure_after_a_success_serves_the_stale_last_good() {
+        // "during an object-store outage: typed stale, no fabricated count".
+        let last_good = Mutex::new(None);
+        resolve_storage_metrics(Some(4096), Some(12), &last_good);
+        let during_outage = resolve_storage_metrics(None, None, &last_good);
+        assert_eq!(during_outage, (4096, 12), "an outage serves the last consistent pair, not a fabricated count");
+    }
+
+    #[test]
+    fn a_partial_failure_does_not_fabricate() {
+        // one sample succeeds, the other fails: serve the last consistent pair
+        // (or zero), never a mix that pairs a fresh value with a fabricated one.
+        let last_good = Mutex::new(None);
+        let (bytes, keys) = resolve_storage_metrics(Some(9999), None, &last_good);
+        assert_eq!((bytes, keys), (0, 0), "a partial failure with no history serves the zero default, not (9999, ?)");
+    }
+}
+
+#[cfg(test)]
+mod backend_seam_ordering_tests {
+    //! S-01: the backend identity is resolved BEFORE any filesystem touch on
+    //! the create path, and persisted atomically. The ordering is the
+    //! invariant a cross-engine open depends on — its mutant (create the
+    //! directory before the refusal) fails `no_directory_is_created_before_a_backend_refusal`.
+
+    use storage::factory::{BackendMarker, BackendSpec, StorageFactoryError, read_backend_marker};
+    use test_utils::create_tmp_dir;
+
+    use super::create_backend_bound_directory;
+
+    #[test]
+    fn no_directory_is_created_before_a_backend_refusal() {
+        // the mutant catcher: a refusing resolution (as a not-yet-available
+        // lane would produce) must leave the database path non-existent — no
+        // directory, marker, WAL, or object namespace created before the
+        // refusal.
+        let base = create_tmp_dir("dbo-s01-refusal");
+        let path = base.join("must-not-exist");
+        let refused = create_backend_bound_directory(
+            &path,
+            "must-not-exist",
+            Err(StorageFactoryError::BackendNotYetAvailable { profile: "U4" }),
+        );
+        assert!(refused.is_err(), "a not-yet-available backend must refuse");
+        assert!(
+            !path.exists(),
+            "S-01: no database directory may be created before the backend refusal (mutant: resolve moved after mkdir)",
+        );
+    }
+
+    #[test]
+    fn a_resolved_backend_creates_the_directory_and_persists_the_marker_atomically() {
+        // positive: a resolved backend creates the directory and binds it with
+        // a durable, readable marker.
+        let base = create_tmp_dir("dbo-s01-create");
+        let path = base.join("orders-db");
+        let spec = create_backend_bound_directory(&path, "orders-db", Ok(BackendSpec::Classic))
+            .expect("a resolved backend must create the directory");
+        assert_eq!(spec, BackendSpec::Classic);
+        assert!(path.exists(), "the database directory must be created");
+        assert_eq!(
+            read_backend_marker(&path).unwrap(),
+            Some(BackendMarker::Classic),
+            "the backend marker must be persisted and readable",
+        );
+    }
+}
+
 typedb_error! {
     pub DatabaseOpenError(component = "Database open", prefix = "DBO") {
         InvalidUnicodeName(1, "Could not open database: invalid unicode name '{name:?}'.", name: OsString),
@@ -710,6 +1058,7 @@ typedb_error! {
         NotADatabase(16, "Directory '{name}' already exists and does not contain a database.", name: String),
         PrepareForWrites(17, "Failed to prepare database '{name}' for writes. In-memory allocators may collide with storage on the next allocation.", name: String, source: EncodingError),
         StorageFactory(18, "Error resolving storage backend profile.", source: StorageFactoryError),
+        ForbiddenBackgroundWorker(19, "Database '{name}' scheduled a background worker its backend policy forbids: {source:?}. The controller-frozen (remote) lane takes global cuts only and must not run TypeDB's interval checkpointer.", name: String, source: ForbiddenWorkerError),
     }
 }
 

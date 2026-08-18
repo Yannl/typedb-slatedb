@@ -109,6 +109,20 @@ def is_non_libtest_harness_error(head):
             or "error: Found argument" in head)
 
 
+def runner_row_id(target):
+    """The canonical join key from a CARGO catalogue target to its runner
+    result row: `<cargo_package>:<cargo_target>`. Returns None for a non-CARGO
+    target or one missing either half. Single-sourced (E-P0-03): the executable
+    denominator's collision guard and any coverage reporter must derive the
+    join the same way, or the denominator can silently skew."""
+    if not target or target.get("origin") != "CARGO":
+        return None
+    pkg, tgt = target.get("cargo_package"), target.get("cargo_target")
+    if not pkg or not tgt:
+        return None
+    return f"{pkg}:{tgt}"
+
+
 def required_executable_targets(catalog):
     """The executable denominator, joined to the runner's row ids.
 
@@ -133,12 +147,9 @@ def required_executable_targets(catalog):
     required, case_bearing, excluded = set(), set(), {}
     rid_sources = {}
     for t in catalog["targets"]:
-        if t.get("origin") != "CARGO":
+        rid = runner_row_id(t)
+        if rid is None:
             continue
-        pkg, tgt = t.get("cargo_package"), t.get("cargo_target")
-        if not pkg or not tgt:
-            continue
-        rid = f"{pkg}:{tgt}"
         # E-P0-03: two catalogue targets that collapse onto one runner row id
         # would let ONE executed row silently satisfy BOTH - half the
         # denominator vanishes with no anomaly. That join defect is never

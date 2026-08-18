@@ -5,11 +5,12 @@
  * harness Worker in real mode (CF_PROBE_HARNESS_URL), the deterministic
  * in-process fake in mock mode. The endpoint contract is identical in
  * both, so the assertions below are the normative semantics, not mock
- * conveniences.
+ * conveniences. Every assertion is declared with its required modes
+ * (round-3 P-05).
  */
 
 import type { ProbeContext, ProbeImpl } from "./probe.ts";
-import { asJson, harnessGet, harnessPost } from "./probe.ts";
+import { asJson, BOTH, harnessGet, harnessPost } from "./probe.ts";
 
 // ---------------------------------------------------------------------------
 // P-DO-01 — Request interleaving.
@@ -20,9 +21,18 @@ const pDO_01: ProbeImpl = {
   expected:
     "a controller procedure paused at a non-storage await never commits " +
     "stale post-await validation; exactly one legal reducer trace",
+  assertions: [
+    { id: "reset-ok", title: "interleave state reset", required_in: BOTH },
+    { id: "conflict-lands", title: "conflicting commit lands while first op is parked", required_in: BOTH },
+    { id: "gate-released", title: "gate released", required_in: BOTH },
+    { id: "stale-commit-rejected", title: "resumed operation must NOT commit its stale validation", required_in: BOTH },
+    { id: "single-commit", title: "exactly one commit in the reducer trace", required_in: BOTH },
+    { id: "winner-value", title: "committed value is the winner's", required_in: BOTH },
+    { id: "legal-trace", title: "trace is the one legal interleaving", required_in: BOTH },
+  ],
   async run(ctx: ProbeContext): Promise<void> {
     const reset = await harnessPost(ctx, "/do/interleave/reset");
-    ctx.check(reset.status === 200, `interleave state reset (got ${reset.status})`);
+    ctx.check("reset-ok", reset.status === 200, `got ${reset.status}`);
 
     // Start the slow operation and deliberately do NOT await it: it parks
     // at its instrumented non-storage await point (the gate).
@@ -30,25 +40,23 @@ const pDO_01: ProbeImpl = {
 
     // Land a conflicting commit while the first invocation is paused.
     const conflict = await harnessPost(ctx, "/do/interleave/conflict", { value: "conflict-B" });
-    ctx.check(conflict.status === 200, `conflicting commit lands while first op is parked (got ${conflict.status})`);
+    ctx.check("conflict-lands", conflict.status === 200, `got ${conflict.status}`);
 
     // Release the gate; the parked operation resumes with stale validation.
     const release = await harnessPost(ctx, "/do/interleave/release");
-    ctx.check(release.status === 200, `gate released (got ${release.status})`);
+    ctx.check("gate-released", release.status === 200, `got ${release.status}`);
 
     const slow = await slowPromise;
-    ctx.check(
-      slow.status === 409,
-      `resumed operation must NOT commit its stale validation (got ${slow.status})`,
-    );
+    ctx.check("stale-commit-rejected", slow.status === 409, `got ${slow.status}`);
 
     const trace = asJson(await harnessGet(ctx, "/do/interleave/trace"));
-    ctx.check(Number(trace.commits) === 1, `exactly one commit in the reducer trace (got ${trace.commits})`);
-    ctx.check(String(trace.value) === "conflict-B", `committed value is the winner's (got ${trace.value})`);
+    ctx.check("single-commit", Number(trace.commits) === 1, `got ${trace.commits}`);
+    ctx.check("winner-value", String(trace.value) === "conflict-B", `got ${trace.value}`);
     const t = trace.trace as string[];
     ctx.check(
+      "legal-trace",
       Array.isArray(t) && t.includes("slow:read@v1") && t.includes("conflict:commit") && t.includes("slow:rejected-stale"),
-      `trace is the one legal interleaving (got ${JSON.stringify(trace.trace)})`,
+      `got ${JSON.stringify(trace.trace)}`,
     );
   },
 };
@@ -63,45 +71,55 @@ const pDO_02: ProbeImpl = {
     "duplicate delivery is idempotent; handler throw retries; after DO " +
     "reset the required work is reconstructed from durable intent and " +
     "eventually rescheduled — no transition relies on retry counts",
+  assertions: [
+    { id: "reset-ok", title: "alarm state reset", required_in: BOTH },
+    { id: "not-delivered-early", title: "alarm not delivered early", required_in: BOTH },
+    { id: "throw-retries", title: "first delivery throws, platform retries", required_in: BOTH },
+    { id: "duplicate-idempotent", title: "duplicate delivery is idempotent", required_in: BOTH },
+    { id: "work-once", title: "work-1 applied exactly once", required_in: BOTH },
+    { id: "do-reset-accepted", title: "DO reset accepted", required_in: BOTH },
+    { id: "rescheduled-from-intent", title: "outstanding work rescheduled from durable intent after reset", required_in: BOTH },
+    { id: "reschedule-respects-time", title: "rescheduled alarm respects its time", required_in: BOTH },
+    { id: "rescheduled-completes", title: "rescheduled work completes", required_in: BOTH },
+    { id: "all-work-done", title: "both required work items eventually done", required_in: BOTH },
+  ],
   async run(ctx: ProbeContext): Promise<void> {
     const reset = await harnessPost(ctx, "/do/alarm/reset-all");
-    ctx.check(reset.status === 200, `alarm state reset (got ${reset.status})`);
+    ctx.check("reset-ok", reset.status === 200, `got ${reset.status}`);
 
     // Work scheduled at virtual t=2, handler throws on first delivery.
     await harnessPost(ctx, "/do/alarm/schedule", { workId: "work-1", at: 2 });
     await harnessPost(ctx, "/do/alarm/config", { throwFirst: true });
 
     const t1 = asJson(await harnessPost(ctx, "/do/alarm/tick"));
-    ctx.check(JSON.stringify(t1.results) === '["not-due"]', `alarm not delivered early (got ${JSON.stringify(t1.results)})`);
+    ctx.check("not-delivered-early", JSON.stringify(t1.results) === '["not-due"]', `got ${JSON.stringify(t1.results)}`);
     const t2 = asJson(await harnessPost(ctx, "/do/alarm/tick"));
-    ctx.check(JSON.stringify(t2.results) === '["threw"]', `first delivery throws, platform retries (got ${JSON.stringify(t2.results)})`);
+    ctx.check("throw-retries", JSON.stringify(t2.results) === '["threw"]', `got ${JSON.stringify(t2.results)}`);
 
     // Duplicate delivery on the retry tick: work applies exactly once.
     const t3 = asJson(await harnessPost(ctx, "/do/alarm/tick", undefined, { "x-mock-duplicate": "1" }));
     ctx.check(
+      "duplicate-idempotent",
       JSON.stringify(t3.results) === '["done","duplicate-ignored"]',
-      `duplicate delivery is idempotent (got ${JSON.stringify(t3.results)})`,
+      `got ${JSON.stringify(t3.results)}`,
     );
     const s1 = asJson(await harnessGet(ctx, "/do/alarm/state"));
-    ctx.check(Number(s1.workCount) === 1, `work-1 applied exactly once (got ${s1.workCount})`);
+    ctx.check("work-once", Number(s1.workCount) === 1, `got ${s1.workCount}`);
 
     // DO reset / code update: the in-memory alarm evaporates. The durable
     // intent must reconstruct and reschedule the outstanding work.
     await harnessPost(ctx, "/do/alarm/schedule", { workId: "work-2", at: 5 });
     const doReset = await harnessPost(ctx, "/do/alarm/do-reset");
-    ctx.check(doReset.status === 200, `DO reset accepted (got ${doReset.status})`);
+    ctx.check("do-reset-accepted", doReset.status === 200, `got ${doReset.status}`);
     const s2 = asJson(await harnessGet(ctx, "/do/alarm/state"));
-    ctx.check(
-      s2.alarmScheduled === true,
-      `outstanding work rescheduled from durable intent after reset (got alarmScheduled=${s2.alarmScheduled})`,
-    );
+    ctx.check("rescheduled-from-intent", s2.alarmScheduled === true, `got alarmScheduled=${s2.alarmScheduled}`);
 
     const t4 = asJson(await harnessPost(ctx, "/do/alarm/tick")); // t=4: not due
-    ctx.check(JSON.stringify(t4.results) === '["not-due"]', `rescheduled alarm respects its time (got ${JSON.stringify(t4.results)})`);
+    ctx.check("reschedule-respects-time", JSON.stringify(t4.results) === '["not-due"]', `got ${JSON.stringify(t4.results)}`);
     const t5 = asJson(await harnessPost(ctx, "/do/alarm/tick")); // t=5: due
-    ctx.check(JSON.stringify(t5.results) === '["done"]', `rescheduled work completes (got ${JSON.stringify(t5.results)})`);
+    ctx.check("rescheduled-completes", JSON.stringify(t5.results) === '["done"]', `got ${JSON.stringify(t5.results)}`);
     const s3 = asJson(await harnessGet(ctx, "/do/alarm/state"));
-    ctx.check(Number(s3.workCount) === 2, `both required work items eventually done (got ${s3.workCount})`);
+    ctx.check("all-work-done", Number(s3.workCount) === 2, `got ${s3.workCount}`);
   },
 };
 
@@ -115,34 +133,42 @@ const pDO_03: ProbeImpl = {
     "mutations shed at the soft budget, before unsafe growth toward the " +
     "hard limit; shedding is explicit (reason header, metrics, alert), " +
     "never a blind acceptance",
+  assertions: [
+    { id: "reset-ok", title: "overload state reset", required_in: BOTH },
+    { id: "accepted-or-shed", title: "every mutation is either accepted or explicitly shed", required_in: BOTH },
+    { id: "soft-budget-exact", title: "acceptance stops exactly at the soft budget", required_in: BOTH },
+    { id: "shed-reason-explicit", title: "every shed response carries an explicit shed reason", required_in: BOTH },
+    { id: "rows-held-at-soft", title: "stored rows held at the soft budget, far from the hard limit", required_in: BOTH },
+    { id: "shed-count-metrics", title: "metrics count every shed mutation", required_in: BOTH },
+    { id: "alert-fired", title: "overload alert fired", required_in: BOTH },
+  ],
   async run(ctx: ProbeContext): Promise<void> {
     const SOFT = 8;
     const HARD = 12;
     const reset = await harnessPost(ctx, "/do/overload/reset", { softBudgetRows: SOFT, hardLimitRows: HARD });
-    ctx.check(reset.status === 200, `overload state reset (got ${reset.status})`);
+    ctx.check("reset-ok", reset.status === 200, `got ${reset.status}`);
 
     // Drive well past both budgets.
     const results = [];
     for (let i = 0; i < 20; i++) results.push(await harnessPost(ctx, "/do/overload/mutate"));
     const accepted = results.filter((r) => r.status === 200);
     const shed = results.filter((r) => r.status === 429);
+    ctx.check("accepted-or-shed", accepted.length + shed.length === results.length, `${accepted.length}+${shed.length}/${results.length}`);
+    ctx.check("soft-budget-exact", accepted.length === SOFT, `got ${accepted.length}`);
     ctx.check(
-      accepted.length + shed.length === results.length,
-      "every mutation is either accepted or explicitly shed",
-    );
-    ctx.check(accepted.length === SOFT, `acceptance stops exactly at the soft budget (got ${accepted.length})`);
-    ctx.check(
+      "shed-reason-explicit",
       shed.every((r) => r.headers["x-shed-reason"] === "row-budget"),
-      "every shed response carries an explicit shed reason",
+      "x-shed-reason compared on every shed response",
     );
 
     const metrics = asJson(await harnessGet(ctx, "/do/overload/metrics"));
     ctx.check(
+      "rows-held-at-soft",
       Number(metrics.rows) <= SOFT && Number(metrics.rows) < HARD,
-      `stored rows (${metrics.rows}) held at the soft budget, far from the hard limit`,
+      `rows ${metrics.rows}, soft ${SOFT}, hard ${HARD}`,
     );
-    ctx.check(Number(metrics.shedCount) === 20 - SOFT, `metrics count every shed mutation (got ${metrics.shedCount})`);
-    ctx.check(metrics.alertFired === true, "overload alert fired");
+    ctx.check("shed-count-metrics", Number(metrics.shedCount) === 20 - SOFT, `got ${metrics.shedCount}`);
+    ctx.check("alert-fired", metrics.alertFired === true, `got ${metrics.alertFired}`);
   },
 };
 
@@ -155,36 +181,45 @@ const pDO_04: ProbeImpl = {
   expected:
     "every privileged action attempted with a superseded incarnation's " +
     "authority is rejected; current incarnation is unaffected",
+  assertions: [
+    { id: "reset-ok", title: "authority state reset", required_in: BOTH },
+    { id: "current-authority-works", title: "current-incarnation authority works before rotation", required_in: BOTH },
+    { id: "rotation-applied", title: "incarnation rotated", required_in: BOTH },
+    { id: "old-authority-rejected", title: "every old-authority privileged action rejected", required_in: BOTH },
+    { id: "new-authority-unaffected", title: "new-incarnation authority unaffected", required_in: BOTH },
+    { id: "no-old-authority-effect", title: "no old-authority action produced an effect", required_in: BOTH },
+  ],
   async run(ctx: ProbeContext): Promise<void> {
     const reset = await harnessPost(ctx, "/do/authority/reset");
-    ctx.check(reset.status === 200, `authority state reset (got ${reset.status})`);
+    ctx.check("reset-ok", reset.status === 200, `got ${reset.status}`);
 
     const mint1 = asJson(await harnessPost(ctx, "/do/authority/mint"));
     const oldToken = String(mint1.token);
     const before = await harnessPost(ctx, "/do/authority/act", { action: "pre-rotation-op" }, { "x-authority-token": oldToken });
-    ctx.check(before.status === 200, `current-incarnation authority works before rotation (got ${before.status})`);
+    ctx.check("current-authority-works", before.status === 200, `got ${before.status}`);
 
     // Rotate while the old DO/containers (holding oldToken) remain alive.
     const rotate = asJson(await harnessPost(ctx, "/do/authority/rotate"));
-    ctx.check(Number(rotate.incarnation) === 2, `incarnation rotated (got ${rotate.incarnation})`);
+    ctx.check("rotation-applied", Number(rotate.incarnation) === 2, `got ${rotate.incarnation}`);
 
     // Every old-authority attempt from the contract's list must die.
     const actions = ["mint-capability", "publish-event", "finalize-wal", "publish-manifest", "lifecycle-report"];
     for (const action of actions) {
       const res = await harnessPost(ctx, "/do/authority/act", { action }, { "x-authority-token": oldToken });
-      ctx.check(res.status === 401, `old-authority ${action} rejected (got ${res.status})`);
+      ctx.check("old-authority-rejected", res.status === 401, `${action}: got ${res.status}`);
     }
 
     // A token minted under the new incarnation still works.
     const mint2 = asJson(await harnessPost(ctx, "/do/authority/mint"));
     const fresh = await harnessPost(ctx, "/do/authority/act", { action: "post-rotation-op" }, { "x-authority-token": String(mint2.token) });
-    ctx.check(fresh.status === 200, `new-incarnation authority unaffected (got ${fresh.status})`);
+    ctx.check("new-authority-unaffected", fresh.status === 200, `got ${fresh.status}`);
 
     // The action log must show no effect from any rejected attempt.
     const log = asJson(await harnessGet(ctx, "/do/authority/actions"));
     ctx.check(
+      "no-old-authority-effect",
       JSON.stringify(log.actions) === JSON.stringify(["pre-rotation-op", "post-rotation-op"]),
-      `no old-authority action produced an effect (got ${JSON.stringify(log.actions)})`,
+      `got ${JSON.stringify(log.actions)}`,
     );
   },
 };

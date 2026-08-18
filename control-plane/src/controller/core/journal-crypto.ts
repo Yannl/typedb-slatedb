@@ -161,3 +161,9 @@ export function canonicalJson(value: unknown): string {
       throw new Error(`canonicalJson: unsupported ${typeof value}`);
   }
 }
+
+/** Canonical decimal u64 wire syntax: `0`, or a nonzero digit followed by
+ *  digits (no leading-zero aliases like "00"). The single definition shared by
+ *  the token layer (capability generation) and the controller core wire
+ *  decoder (`u64FromWire`) so the authority boundary cannot skew. */
+export const CANONICAL_U64 = /^(0|[1-9]\d*)$/;

@@ -6,7 +6,7 @@
  "anomalies": [],
  "warnings": [
   "storage:test_isolation: log is terse-format and names no ignored cases; 1 ignored tolerance(s) verified by count only, not by name",
-  "COMPLETE carries no bundle root (legacy marker, predates root binding) - archive integrity rests on the sidecar manifest and this verdict's recorded bundle_root 8463cb2e700558a694c021d1b0ab3b54bb3843eee3a4e62b1cac85e244601d88; future runs seal 'COMPLETE <root>'"
+  "COMPLETE carries no bundle root (legacy marker, predates root binding) - archive integrity rests on the sidecar manifest and this verdict's recorded bundle_root 28ae4b7e9ac0f124ab96ba80b834485df066e41cf67563441b694e295f36c20c; future runs seal 'COMPLETE <root>'"
  ],
  "observation": {
   "rows": 106,
@@ -16,8 +16,12 @@
   "cases_failed": 2,
   "cases_ignored": 1
  },
- "bundle_root": "8463cb2e700558a694c021d1b0ab3b54bb3843eee3a4e62b1cac85e244601d88",
+ "bundle_root": "28ae4b7e9ac0f124ab96ba80b834485df066e41cf67563441b694e295f36c20c",
  "producer": "tools/catalog/run_u0.py --verdict-only",
+ "policy_roots": {
+  "flake_ledger_sha256": "831e51676f85e3ba0d15c61a15cad762d15c6a72ffdb634cbbb9d2517f7f5513",
+  "plan_root": "d0ef2c0be9f925f0c774c46f7bd55a186770d703664ed4498c8a981ce6c7d1b8"
+ },
  "re_derived_from": "docs/evidence/G3/u2s3-full-3/u0-results.json",
  "denominator_checked": true,
  "executables": 106

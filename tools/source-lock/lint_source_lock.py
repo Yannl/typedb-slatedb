@@ -37,6 +37,10 @@ import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 LOCK = REPO / "source-lock" / "source-lock.json"
+# the materialization root: every GIT_DIRS checkout and ARTIFACTS file lands
+# under here (main() re-resolves it from an optional --root, but this is the
+# default and the one materialize_sources.py imports and writes into).
+SOURCES = REPO / "sources"
 
 # lock node id -> sources/ directory name
 GIT_DIRS = {
@@ -60,8 +64,12 @@ ARTIFACTS = {
 # crates — every workspace that consumes the crate is checked. A listed
 # consumer that does not contain the crate is a failure: the lock claimed a
 # consumption relationship that does not exist.
+# round-3 S-02: fork/typedb no longer consumes the REGISTRY slatedb - it
+# consumes the PATCHED fork via [patch.crates-io] (see the SL node's
+# `patched_consumers`, validated separately below). tools/Cargo.lock still
+# resolves the registry crate, so SL keeps its registry checksum there.
 REGISTRY_NODES = {
-    "SL": ["tools/Cargo.lock", "fork/typedb/Cargo.lock"],
+    "SL": ["tools/Cargo.lock"],
 }
 
 # cargo_dependency nodes (crates pinned transitively, e.g. via SlateDB) and
@@ -75,6 +83,31 @@ CARGO_DEP_NODES = {
 # the single npm lockfile in this repo; npm nodes are cross-checked against
 # it wherever the package appears there
 NPM_LOCKFILE = "control-plane/package-lock.json"
+
+# R3 A-01 (Alchemy adoption): pins resolved by the stack/ workspace, not
+# control-plane. Each lock node here must agree EXACTLY (version AND
+# integrity) with stack/package-lock.json, and its direct dependency spec in
+# stack/package.json - when it is a direct dependency - must be the exact
+# version, never a range: version identity is release identity for the
+# fast-moving alchemy beta. A missing lockfile or missing resolution is a
+# failure, not a skip: these nodes exist to pin what stack/ actually runs
+# (WORKERD_ALCHEMY is the EFFECTIVE workerd `alchemy dev` executes, which
+# is deliberately a different line than the WRANGLER-resolved WORKERD node).
+STACK_NPM_LOCKFILE = "stack/package-lock.json"
+STACK_PACKAGE_JSON = "stack/package.json"
+STACK_LOCK_PINS = {
+    "ALCHEMY": "alchemy",
+    "WORKERD_ALCHEMY": "workerd",
+}
+
+# artifacts materialized into an uncommitted cache under sources/ (which is
+# gitignored) instead of committed fixtures: verified against the locked
+# sha256 whenever the file is present. Absence is NOT a failure - they are
+# fetched on demand by their consumers (stack/minio.mjs), which re-verify
+# the digest on every use and refuse mismatches.
+CACHED_ARTIFACTS = {
+    "MINIO": "minio/minio-RELEASE.2025-09-07T16-13-09Z",
+}
 
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -112,6 +145,40 @@ def cargo_lock_packages(path: pathlib.Path) -> dict:
         elif in_package and line.startswith("checksum = "):
             checksum = quoted(line)
     return pkgs
+
+
+def check_patched_consumers(nid: str, node: dict, repo_root: pathlib.Path, failures: list) -> None:
+    """round-3 S-02: a consumer that consumes the crate through a
+    [patch.crates-io] path override (not the registry) is verified as a
+    PATCH, not a checksum: the manifest must carry the patch line pointing at
+    the recorded fork path, and the consumer Cargo.lock must resolve the
+    crate WITHOUT a registry source (proving the patch actually took). The
+    fork's byte identity is bound by tools/fork/materialize_slatedb.py
+    --check (a separate gate step), not re-hashed here."""
+    crate = node.get("crate")
+    for pc in node.get("patched_consumers", []):
+        manifest_rel = pc.get("manifest")
+        lock_rel = pc.get("consumer_lock")
+        patch_path = pc.get("patch_path")
+        manifest = repo_root / manifest_rel if manifest_rel else None
+        if manifest is None or not manifest.exists():
+            failures.append(f"{nid}: patched consumer manifest missing at {manifest_rel}")
+            continue
+        text = manifest.read_text()
+        # the [patch.crates-io] override for this crate must point at the
+        # recorded fork path (a different path is a different, unlocked fork)
+        if "[patch.crates-io]" not in text or crate not in text or (patch_path and patch_path not in text):
+            failures.append(f"{nid}: {manifest_rel} lacks the [patch.crates-io] {crate} = path override "
+                            f"pointing at {patch_path!r}")
+        # the consumer lock must NOT resolve the crate from the registry
+        # (if it does, the patch did not take and we are silently on crates.io)
+        lock_path = repo_root / lock_rel if lock_rel else None
+        if lock_path is None or not lock_path.exists():
+            failures.append(f"{nid}: patched consumer lock missing at {lock_rel}")
+            continue
+        if crate in cargo_lock_packages(lock_path):
+            failures.append(f"{nid}: {lock_rel} still resolves {crate} from the REGISTRY - "
+                            f"the [patch.crates-io] override did not take (S-02 regression)")
 
 
 def check_crates_in_lock(nid: str, want: dict, lock_rel: str,
@@ -440,6 +507,8 @@ def main() -> int:
             want[cname] = (cinfo["version"].lstrip("="), cinfo.get("checksum_sha256"))
         for lock_rel in lock_rels:
             check_crates_in_lock(nid, want, lock_rel, repo_root, failures)
+        # round-3 S-02: also verify any patched (fork) consumers of this node
+        check_patched_consumers(nid, node, repo_root, failures)
 
     for nid, lock_rels in CARGO_DEP_NODES.items():
         node = nodes.get(nid)
@@ -457,6 +526,62 @@ def main() -> int:
 
     if ws_check.returncode != 0:
         failures.append(f"workspace-lock: {ws_check.stdout.strip() or ws_check.stderr.strip()}")
+
+    # stack/ workspace pins (R3 A-01): exact agreement with the stack
+    # lockfile, SRI-shaped integrity, and exact (rangeless) direct specs
+    stack_lock_path = repo_root / STACK_NPM_LOCKFILE
+    stack_pkg_path = repo_root / STACK_PACKAGE_JSON
+    for nid, pkg in STACK_LOCK_PINS.items():
+        node = nodes.get(nid)
+        if node is None:
+            failures.append(f"{nid}: missing from lock")
+            continue
+        integrity = node.get("integrity")
+        if not (isinstance(integrity, str) and NPM_INTEGRITY.match(integrity)):
+            failures.append(
+                f"{nid}: integrity missing or not sha512-<86 base64 chars>==: {integrity!r}")
+        if not stack_lock_path.exists():
+            failures.append(f"{nid}: consumer lockfile missing at {STACK_NPM_LOCKFILE}")
+            continue
+        packages = json.loads(stack_lock_path.read_text()).get("packages", {})
+        entry = packages.get(f"node_modules/{pkg}")
+        if entry is None:
+            failures.append(f"{nid}: {pkg} not resolved in {STACK_NPM_LOCKFILE}")
+            continue
+        if entry.get("version") != node.get("version"):
+            failures.append(
+                f"{nid}: version mismatch vs {STACK_NPM_LOCKFILE} "
+                f"want {node.get('version')!r} got {entry.get('version')!r}")
+        if entry.get("integrity") != integrity:
+            failures.append(
+                f"{nid}: integrity mismatch vs {STACK_NPM_LOCKFILE} "
+                f"want {integrity!r} got {entry.get('integrity')!r}")
+        if stack_pkg_path.exists():
+            spec = (json.loads(stack_pkg_path.read_text())
+                    .get("dependencies", {}).get(pkg))
+            if spec is not None and spec != node.get("version"):
+                failures.append(
+                    f"{nid}: {STACK_PACKAGE_JSON} pins {pkg} as {spec!r} - "
+                    f"must be the exact locked version {node.get('version')!r}, never a range")
+        else:
+            failures.append(f"{nid}: {STACK_PACKAGE_JSON} missing")
+
+    # cached (uncommitted) artifacts: digest-verified whenever materialized
+    for nid, rel in CACHED_ARTIFACTS.items():
+        node = nodes.get(nid)
+        if node is None:
+            failures.append(f"{nid}: missing from lock")
+            continue
+        if node.get("kind") != "artifact":
+            failures.append(f"{nid}: expected kind 'artifact', got {node.get('kind')!r}")
+            continue
+        p = sources / rel
+        if p.exists():
+            got = sha256(p)
+            if got != node.get("sha256"):
+                failures.append(
+                    f"{nid}: cached artifact sha256 mismatch at sources/{rel} "
+                    f"want {node.get('sha256')} got {got}")
 
     for nid, rel in ARTIFACTS.items():
         node = nodes.get(nid)

@@ -11,5 +11,6 @@ docs/evidence/G3/failpoints-remeasure.log
 sources/vendor-typedb/
 sources/assembly-artifacts/
 control-plane/.wrangler/
+**/.alchemy/
 __pycache__/
 *.pyc

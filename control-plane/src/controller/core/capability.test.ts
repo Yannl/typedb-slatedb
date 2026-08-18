@@ -100,22 +100,25 @@ test("Q-26: a request that needs a restriction cannot be satisfied by a token th
   }).ok);
 });
 
-test("Q-26: WAL_FINALIZE stays session-bound (donor A3) and the binding is mandatory", () => {
+test("Q-26/C-05: WAL_FINALIZE binds session AND generation, both mandatory", () => {
   const unbound = mintCapability(KEY, {
     principal: "p", databaseId: "db1", method: "WAL_FINALIZE",
     incarnation: 1, nonce: "n-3", expiresAtMs: NOW + 60_000,
   } as CapabilityPayload);
   const expect = { method: "WAL_FINALIZE", databaseId: "db1", currentIncarnation: 1, nowMs: NOW };
-  // no session demanded by the route: still refused, because the METHOD
-  // requires the binding - otherwise a route that forgot to pass `session`
-  // would silently accept an unbound finalize token
+  // no session/generation demanded by the route: still refused, because the
+  // METHOD requires both bindings - a route that forgot to pass one would
+  // otherwise silently accept an under-bound finalize token
   assert.deepEqual(checkCapability(KEY, unbound, expect),
     { ok: false, error: "CAPABILITY_RESTRICTION_MISSING" });
   const bound = mintCapability(KEY, {
-    principal: "p", databaseId: "db1", method: "WAL_FINALIZE", session: "sess-1",
+    principal: "p", databaseId: "db1", method: "WAL_FINALIZE", session: "sess-1", generation: "3",
     incarnation: 1, nonce: "n-4", expiresAtMs: NOW + 60_000,
   } as CapabilityPayload);
-  assert.ok(checkCapability(KEY, bound, { ...expect, session: "sess-1" }).ok);
-  assert.deepEqual(checkCapability(KEY, bound, { ...expect, session: "sess-OTHER" }),
+  assert.ok(checkCapability(KEY, bound, { ...expect, session: "sess-1", generation: "3" }).ok);
+  assert.deepEqual(checkCapability(KEY, bound, { ...expect, session: "sess-OTHER", generation: "3" }),
     { ok: false, error: "CAPABILITY_SESSION_MISMATCH" });
+  // C-05: a token minted for generation 3 cannot finalize generation 4
+  assert.deepEqual(checkCapability(KEY, bound, { ...expect, session: "sess-1", generation: "4" }),
+    { ok: false, error: "CAPABILITY_GENERATION_MISMATCH" });
 });

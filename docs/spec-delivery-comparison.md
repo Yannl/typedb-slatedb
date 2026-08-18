@@ -1,5 +1,15 @@
 # Spec vs. delivery — final comparison
 
+> **Round-3 correction (2026-08-18).** Two claims below are superseded by the
+> authoritative ledger (`docs/ledger/gates.json`) and the round-3 response:
+> (1) Mode S is NOT an accepted substitute for Mode Q — v17 SELECTS Mode Q,
+> so the static proof is lower-authority evidence and G0 stays OPEN_RED until
+> a validated cquery bundle exists (round-3 E-01). (2) "Delivered" verdicts
+> here describe PROTOCOL and MODEL progress and local runtime behavior, never
+> product wiring or a Cloudflare platform fact; the product link (TypeDB →
+> remote-WAL → R2) and U3/U4 remain unavailable by design. Where this
+> document and the ledger disagree, the ledger wins.
+
 A work-package-level reconciliation of the inception contract
 ([docs/inception/](inception/ARCHIVE-NOTE.md): brief v16 + playbook +
 sidecars) against what this branch actually delivers. Verdict legend:

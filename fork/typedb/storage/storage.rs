@@ -78,6 +78,16 @@ pub mod sequence_number;
 pub mod snapshot;
 mod write_batches;
 
+/// Make a path (a regular file or a directory) durable by opening it and
+/// `sync_all()`. The one durability primitive shared by the checkpoint writer
+/// (`recovery::checkpoint`) and the SlateDB keyspace checkpoint copy
+/// (`keyspace::slate`): a copied file's BYTES and a directory's ENTRY LIST are
+/// only on stable storage after this returns — `sync_all` on the files alone
+/// does not persist their names in the parent directory.
+pub(crate) fn fsync_path(path: &std::path::Path) -> std::io::Result<()> {
+    std::fs::File::open(path)?.sync_all()
+}
+
 /// Shared containment policy for every post-WAL storage-path wait (S-P0-02):
 /// the SAME 600 s deadline / 30 s report cadence as OD-002's watermark wait
 /// and OD-006's async bridge — one policy, deliberately not a new value.
@@ -87,6 +97,19 @@ mod write_batches;
 pub(crate) const STORAGE_WAIT_DEADLINE: Duration = Duration::from_secs(600);
 /// How often a still-pending bounded wait reports progress.
 pub(crate) const STORAGE_WAIT_REPORT_INTERVAL: Duration = Duration::from_secs(30);
+/// R-09: bound for the commit path's PREDECESSOR waits (the `Empty` slot
+/// race and the `Pending` validation chain in the isolation manager). These
+/// waits sit on the normal request path, so wedging for the full 600 s
+/// containment deadline would let one stuck predecessor pin every dependent
+/// commit for minutes; instead the wait returns the typed
+/// `PredecessorWaitTimeout` (verdict UNKNOWN — an unresolved obligation,
+/// never an abort) promptly. The value deliberately REUSES the existing
+/// OD-002/OD-006 30 s report cadence rather than inventing a new
+/// owner-policy number: healthy predecessor transitions are microseconds to
+/// milliseconds, so 30 s only ever fires on a genuine wedge. Like the other
+/// bounds here it is a containment default, not an approved SLO (OD-002 /
+/// OD-006 govern any change).
+pub(crate) const PREDECESSOR_WAIT_DEADLINE: Duration = STORAGE_WAIT_REPORT_INTERVAL;
 
 #[derive(Debug)]
 pub struct MVCCStorage<Durability> {
@@ -115,13 +138,17 @@ impl<Durability> MVCCStorage<Durability> {
         if storage_dir.exists() {
             return Err(StorageOpenError::StorageDirectoryExists { name: name.as_ref().to_owned(), path: storage_dir });
         }
+        // S-01: resolve the backend BEFORE creating the storage directory, so a
+        // refusal (unknown profile / not-yet-available lane) leaves the storage
+        // tree byte-identical — no directory created before the refusal.
+        let backend = Self::resolve_storage_backend(name.as_ref())?;
         fs::create_dir_all(&storage_dir).map_err(|error| StorageOpenError::StorageDirectoryCreate {
             name: name.as_ref().to_owned(),
             source: Arc::new(error),
         })?;
         fail_point!(STORAGE_EMPTY_STORAGE_DIR);
         Self::register_durability_record_types(&mut durability_client);
-        let keyspaces = Self::create_keyspaces::<KS>(name.as_ref(), &storage_dir, rocks_resources)?;
+        let keyspaces = Self::open_keyspaces::<KS>(name.as_ref(), &storage_dir, rocks_resources, backend)?;
 
         let next_sequence_number = durability_client.current();
         let isolation_manager = IsolationManager::new(next_sequence_number);
@@ -131,7 +158,10 @@ impl<Durability> MVCCStorage<Durability> {
             durability_client,
             keyspaces,
             isolation_manager,
-            highest_committed_snapshot: AtomicU64::new(next_sequence_number.number() - 1),
+            // R-07: checked, not raw `- 1`. The first allocatable sequence
+            // number is MIN.next(), so MIN itself never names a commit and a
+            // saturated origin is exact, never a release-mode wrap.
+            highest_committed_snapshot: AtomicU64::new(next_sequence_number.number().saturating_sub(1)),
         })
     }
 
@@ -147,12 +177,15 @@ impl<Durability> MVCCStorage<Durability> {
             .map_err(|source| StorageOpenError::BackendResolution { name: name.to_owned(), source })
     }
 
-    fn create_keyspaces<KS: KeyspaceSet>(
+    /// Open the keyspaces with an already-resolved backend (S-01): the backend
+    /// is resolved by the caller BEFORE any directory is created, then passed
+    /// in here as an explicit argument.
+    fn open_keyspaces<KS: KeyspaceSet>(
         name: impl AsRef<str>,
         storage_dir: &Path,
         rocks_resources: &RocksResources,
+        backend: StorageBackend,
     ) -> Result<Keyspaces, StorageOpenError> {
-        let backend = Self::resolve_storage_backend(name.as_ref())?;
         let keyspaces = Keyspaces::open::<KS>(&storage_dir, rocks_resources, backend)
             .map_err(|err| StorageOpenError::KeyspaceOpen { name: name.as_ref().to_owned(), source: err })?;
         Ok(keyspaces)
@@ -180,6 +213,10 @@ impl<Durability> MVCCStorage<Durability> {
                 .recover_storage::<KS, _>(name, &storage_dir, &durability_client, rocks_resources, backend)
                 .map_err(|error| RecoverFromCheckpoint { name: name.to_owned(), typedb_source: error })?
         } else {
+            // S-01: resolve the backend BEFORE removing/recreating the storage
+            // directory, so a refusal leaves the existing tree byte-identical
+            // rather than wiping it and then failing.
+            let backend = Self::resolve_storage_backend(name)?;
             match fs::remove_dir_all(&storage_dir) {
                 Err(err) if err.kind() != io::ErrorKind::NotFound => {
                     return Err(StorageDirectoryRecreate { name: name.to_owned(), source: Arc::new(err) });
@@ -190,11 +227,14 @@ impl<Durability> MVCCStorage<Durability> {
             fs::create_dir_all(&storage_dir)
                 .map_err(|err| StorageDirectoryRecreate { name: name.to_owned(), source: Arc::new(err) })?;
             fail_point!(STORAGE_EMPTY_STORAGE_DIR);
-            let keyspaces = Self::create_keyspaces::<KS>(name, &storage_dir, rocks_resources)?;
+            let keyspaces = Self::open_keyspaces::<KS>(name, &storage_dir, rocks_resources, backend)?;
             trace!("No checkpoint found, loading from WAL");
             let commits = load_commit_data_from(SequenceNumber::MIN.next(), &durability_client)
                 .map_err(|err| RecoverFromDurability { name: name.to_owned(), typedb_source: err })?;
-            let next_sequence_number = commits.keys().max().cloned().unwrap_or(SequenceNumber::MIN).next();
+            // R-01: the frontier is the WAL's own recovered end. The strict
+            // loader above has PROVEN exactly one commit for every sequence
+            // in start..=head, so this is never a max() over an unproved set.
+            let next_sequence_number = durability_client.current();
             apply_recovered(name, commits, &durability_client, &keyspaces)
                 .map_err(|err| RecoverFromDurability { name: name.to_owned(), typedb_source: err })?;
             trace!("Finished applying commits from WAL.");
@@ -208,7 +248,10 @@ impl<Durability> MVCCStorage<Durability> {
             durability_client,
             keyspaces,
             isolation_manager,
-            highest_committed_snapshot: AtomicU64::new(next_sequence_number.number() - 1),
+            // R-07: checked, not raw `- 1`. The first allocatable sequence
+            // number is MIN.next(), so MIN itself never names a commit and a
+            // saturated origin is exact, never a release-mode wrap.
+            highest_committed_snapshot: AtomicU64::new(next_sequence_number.number().saturating_sub(1)),
         })
     }
 

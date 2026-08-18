@@ -282,28 +282,41 @@ export class DatabaseControllerDO extends DurableObject {
     databaseId: string;
     method: string;
     session?: string;
+    generation?: number;
     digest?: string;
     maxBytes?: number;
     ttlMs?: number;
   }): { token: string; key?: string; expiresAtMs: number; incarnation: number } {
     this.bind(spec.databaseId);
     const incarnation = this.controllerCore.currentIncarnation();
-    const expiresAtMs = Date.now() + Math.min(Math.max(spec.ttlMs ?? 60_000, 1), 3_600_000);
+    // audit C-05: expiry is measured on the persisted nondecreasing
+    // controller clock, not Date.now() - a backward wall-clock jump cannot
+    // mint a token that outlives its intended window, and verification reads
+    // the same floor, so issuance and checking never disagree about "now".
+    const expiresAtMs = this.controllerCore.controllerNow()
+      + Math.min(Math.max(spec.ttlMs ?? 60_000, 1), 3_600_000);
     const key = spec.method === "PUT_PAYLOAD" && spec.digest !== undefined
       ? `p/${spec.databaseId}/${spec.digest}`
       : undefined;
+    // audit C-05: finalize tokens bind the generation as a canonical decimal
+    // string so a rollover invalidates them (checked in checkCapability)
+    const generation = spec.generation !== undefined ? String(spec.generation) : undefined;
     // Issuance is fail-closed on the same restriction table verification
     // enforces. Minting a PUT_PAYLOAD token with no digest/budget used to
     // produce a token that authorized ANY key, ANY body and ANY length; it
     // now produces nothing at all, so the two ends cannot disagree about
     // what a capability is allowed to leave unbound.
     const derived: Record<string, unknown> = {
-      session: spec.session, key, digest: spec.digest, maxBytes: spec.maxBytes,
+      session: spec.session, generation, key, digest: spec.digest, maxBytes: spec.maxBytes,
     };
     for (const required of REQUIRED_RESTRICTIONS[spec.method] ?? []) {
       if (derived[required] === undefined) {
         throw new Error(`CAPABILITY_RESTRICTION_MISSING: ${spec.method} requires ${required}`);
       }
+    }
+    if (spec.generation !== undefined
+        && (!Number.isSafeInteger(spec.generation) || spec.generation < 0)) {
+      throw new Error(`CAPABILITY_GENERATION_INVALID: ${spec.generation}`);
     }
     if (spec.maxBytes !== undefined
         && (!Number.isSafeInteger(spec.maxBytes) || spec.maxBytes < 0 || spec.maxBytes > MAX_CAPABILITY_BYTES)) {
@@ -315,6 +328,7 @@ export class DatabaseControllerDO extends DurableObject {
       databaseId: spec.databaseId,
       method: spec.method,
       ...(spec.session !== undefined ? { session: spec.session } : {}),
+      ...(generation !== undefined ? { generation } : {}),
       ...(key !== undefined ? { key } : {}),
       ...(spec.digest !== undefined ? { digest: spec.digest } : {}),
       ...(spec.maxBytes !== undefined ? { maxBytes: spec.maxBytes } : {}),
@@ -337,11 +351,14 @@ export class DatabaseControllerDO extends DurableObject {
    */
   useCapability(
     token: string,
-    expect: { method: string; databaseId: string; session?: string; key?: string; bodyDigest?: string; bodyLength?: number },
+    expect: { method: string; databaseId: string; session?: string; generation?: string;
+              key?: string; bodyDigest?: string; bodyLength?: number },
     useDigest: string,
-  ): CapabilityCheck | { ok: false; error: "CAPABILITY_REPLAYED" } {
+  ): (CapabilityCheck & { claim?: { fresh: boolean; terminal: boolean; response: string | null } })
+    | { ok: false; error: "CAPABILITY_REPLAYED" } {
     this.bind(expect.databaseId);
-    const nowMs = Date.now();
+    // audit C-05: verification reads the same controller clock issuance used
+    const nowMs = this.controllerCore.controllerNow();
     const checked = checkCapability(this.capabilityKey, token, {
       ...expect,
       currentIncarnation: this.controllerCore.currentIncarnation(),
@@ -351,14 +368,38 @@ export class DatabaseControllerDO extends DurableObject {
     const claimed = this.controllerCore.claimCapability(
       checked.payload.nonce, useDigest, checked.payload.expiresAtMs, nowMs);
     if (!claimed.ok) return claimed;
-    return checked;
+    // audit C-02: hand the claim outcome back so the worker replays a
+    // terminal use's stored response instead of re-executing the effect
+    return { ...checked, claim: { fresh: claimed.fresh, terminal: claimed.terminal, response: claimed.response } };
   }
 
-  /** Record the durable outcome of a claimed capability use (C-P0-08). */
+  /**
+   * Verify a capability WITHOUT claiming a durable use row (audit C-07).
+   * Read routes are side-effect-free, so recording a durable IN_FLIGHT row
+   * per read made reads write to SQLite and grow the control tables. This
+   * still enforces MAC, expiry, incarnation, method, audience and session -
+   * a stale-incarnation or fenced-session read is refused - it simply does
+   * not consume the single-request replay slot that only mutations need.
+   */
+  checkCapabilityOnly(
+    token: string,
+    expect: { method: string; databaseId: string; session?: string; generation?: string;
+              key?: string; bodyDigest?: string; bodyLength?: number },
+  ): CapabilityCheck {
+    this.bind(expect.databaseId);
+    return checkCapability(this.capabilityKey, token, {
+      ...expect,
+      currentIncarnation: this.controllerCore.currentIncarnation(),
+      nowMs: this.controllerCore.controllerNow(),
+    });
+  }
+
+  /** Record the terminal outcome + stored response of a claimed use
+   *  (audit C-02). Transition-checked and quarantining in the core. */
   resolveCapabilityUse(
-    nonce: string, state: "RESOLVED_SUCCESS" | "RESOLVED_REJECTED" | "AMBIGUOUS", outcome?: string,
+    nonce: string, state: "RESOLVED_SUCCESS" | "RESOLVED_REJECTED" | "AMBIGUOUS", response?: string,
   ): void {
-    this.controllerCore.resolveCapabilityUse(nonce, state, outcome);
+    this.controllerCore.resolveCapabilityUse(nonce, state, response);
   }
 
   bumpIncarnation(): number {

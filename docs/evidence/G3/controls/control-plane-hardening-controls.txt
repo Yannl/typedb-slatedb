@@ -164,3 +164,35 @@ $ node scripts/local-stack-e2e.mjs             L1 LOCAL STACK E2E: ALL PASS
         {"error":"BATCH_ENVELOPE_REQUIRED"}
   PASS  the same batch id with different members is a permanent conflict
         {"error":"BATCH_DIGEST_CONFLICT"}
+
+## Q-24 / Q-02 - fail-closed keys, credentialed issuance
+core/key-config.ts: two named postures. "managed" (the default when the
+profile variable is LOST - refusal, never downgrade) requires provisioned
+hex keys >= 32 bytes, pairwise distinct, and refuses the development
+constants EVEN WHEN CONFIGURED EXPLICITLY; "local-dev" is the L1 posture and
+names itself in wrangler.toml. resolveKeyConfig throws -> DO construction
+fails -> every route refuses. /capability now requires x-issuer-authorization
+in EVERY posture, so no configuration state exists with anonymous issuance.
+
+$ node --test ... key-config.test.ts        # pass 7 / # fail 0
+  (managed refuses: absent, empty, non-hex, odd-length, short, dev-constant,
+   shared journal/capability key, unknown profile; unset profile == managed)
+
+## Q-12 / Q-10 - mandatory budgets, exact authority-sized values
+finalizeStep: a database with NO budget row denies writes
+(ADMISSION_REJECTED_NO_BUDGET) - "no budget means unlimited" inverted the
+fail direction. The check sits after replay/dedupe so a lost-response retry
+still gets its receipt. setBudgets validates each field as an exact integer
+in [1, ceiling] below the immutable platform maxima (8 MiB payload, 100k
+outbox, 10M tail); payloadLength on the finalize wire is exact or refused.
+
+$ node --test ... controller-core.test.ts   # pass 31 / # fail 0
+  new: "Q-12: a database with no validated budget row denies writes"
+       "Q-10: budgets and payload lengths are exact at the boundary"
+$ npx vitest run                            Test Files 2 passed / Tests 8 passed
+$ node scripts/local-stack-e2e.mjs          L1 LOCAL STACK E2E: ALL PASS (76 checks, was 71)
+  PASS  anonymous capability issuance is refused      {"error":"ISSUER_UNAUTHORIZED"}
+  PASS  a wrong issuer credential is refused          {"error":"ISSUER_UNAUTHORIZED"}
+  PASS  a database with no budget row denies writes   {"error":"ADMISSION_REJECTED_NO_BUDGET"}
+  PASS  a validated budget opens admission
+  PASS  a fractional budget is a typed refusal        {"error":"INVALID_BUDGET","field":"maxUnpublishedOutbox"}

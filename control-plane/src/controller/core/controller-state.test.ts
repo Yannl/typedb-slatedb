@@ -56,6 +56,8 @@ function boot(): { core: ControllerCore; db: InstanceType<typeof Database> } {
   const { sql, db } = makeSql();
   const core = new ControllerCore(sql, { journalKey: utf8("state-test-key") });
   core.registerSession("db1", 1, "sess-1");
+  // Q-12: writes are denied without a validated budget row
+  core.setBudgets("db1", { maxUnpublishedOutbox: 10_000, maxPayloadLength: 1_000_000, maxTailRecords: 1_000_000 }, "sess-1");
   return { core, db };
 }
 
@@ -67,16 +69,17 @@ function kinds(db: InstanceType<typeof Database>): string[] {
 test("authority mutations are journaled commands, exactly once", () => {
   const { core, db } = boot();
   core.registerSession("db1", 1, "sess-1"); // idempotent: no new command
-  assert.deepEqual(kinds(db), ["SESSION_REGISTERED"]);
+  assert.deepEqual(kinds(db), ["SESSION_REGISTERED", "BUDGETS_SET"]); // register + the fixture budget (Q-12)
   core.setBudgets("db1", { maxUnpublishedOutbox: 100, maxPayloadLength: 1000, maxTailRecords: 100 }, "sess-1");
   core.fenceSession("db1", "sess-1");
   core.fenceSession("db1", "sess-1"); // already fenced: no new command
   core.fenceSession("db1", "sess-ghost"); // unknown actor: no state change, no command
   core.registerSession("db1", 1, "sess-2"); // takeover: journaled
-  assert.deepEqual(kinds(db), ["SESSION_REGISTERED", "BUDGETS_SET", "SESSION_FENCED", "SESSION_REGISTERED"]);
+  assert.deepEqual(kinds(db),
+    ["SESSION_REGISTERED", "BUDGETS_SET", "BUDGETS_SET", "SESSION_FENCED", "SESSION_REGISTERED"]);
   // and the ledger is an authenticated journal: every command verifies
   const verdict = core.verifyJournal();
-  assert.ok(verdict.ok && verdict.length === 4, JSON.stringify(verdict));
+  assert.ok(verdict.ok && verdict.length === 5, JSON.stringify(verdict));
 });
 
 test("cut lifecycle: open captures head + anchor; activation needs evidence and supersedes", () => {
@@ -88,7 +91,7 @@ test("cut lifecycle: open captures head + anchor; activation needs evidence and 
   assert.ok(opened.ok, String(opened.ok ? "" : (opened as { error: string }).error));
   assert.equal(opened.headLsn, 1n);
   // the anchor includes the cut event itself
-  assert.equal(opened.journalLength, 4); // register + 2 finalisations + cut-opened
+  assert.equal(opened.journalLength, 5); // register + fixture budget + 2 finalisations + cut-opened
 
   assert.deepEqual(core.openCheckpointCut("db1", 1, "cut-1"), { ok: false, error: "CUT_EXISTS" });
 
@@ -140,12 +143,12 @@ test("anchored verification: truncation at or below the newest cut is a typed de
   // truncating the un-anchored tail: chain-consistent, still verifies
   // (the residual window every new cut shrinks; immutable publication is
   // the staged full answer)
-  db.prepare(`DELETE FROM control_outbox WHERE control_seq = ?`).run(u64Blob(5n, "t"));
+  db.prepare(`DELETE FROM control_outbox WHERE control_seq = ?`).run(u64Blob(6n, "t"));
   const tailCut = core.verifyJournalAnchored();
   assert.ok(tailCut.ok, "truncation strictly above the anchor stays undetectable by design");
 
   // truncating INTO the anchored prefix: DETECTED
-  db.prepare(`DELETE FROM control_outbox WHERE control_seq = ?`).run(u64Blob(4n, "t"));
+  db.prepare(`DELETE FROM control_outbox WHERE control_seq = ?`).run(u64Blob(5n, "t"));
   const belowAnchor = core.verifyJournalAnchored();
   assert.deepEqual(belowAnchor, { ok: false, error: "JOURNAL_TRUNCATED_BELOW_ANCHOR" });
 });
@@ -160,6 +163,7 @@ test("anchored verification: a rewritten-then-rechained prefix mismatches the an
   // and MACs verify, but the running hash at the anchor position cannot
   // match the recorded anchor
   db.prepare(`DELETE FROM control_outbox`).run();
+  core.finalizeWalRecord(req());
   core.finalizeWalRecord(req());
   core.finalizeWalRecord(req());
   core.finalizeWalRecord(req());

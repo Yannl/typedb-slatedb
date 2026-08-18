@@ -9,8 +9,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import {
-  ControllerCore, MAX_BATCH_BYTES, MAX_BATCH_MEMBERS, u64Blob,
-  type FinalizeRequest, type SyncSql,
+  ControllerCore, MAX_BATCH_BYTES, MAX_BATCH_MEMBERS,
+  MAX_OUTBOX_DEPTH_CEILING, MAX_PAYLOAD_LENGTH_CEILING, MAX_TAIL_RECORDS_CEILING,
+  u64Blob, type FinalizeRequest, type SyncSql,
 } from "./procedures.ts";
 import { replay, type WalRecordEvent } from "./reducer.ts";
 
@@ -58,6 +59,11 @@ function req(overrides: Partial<FinalizeRequest> = {}): FinalizeRequest {
 function boot(): ControllerCore {
   const core = new ControllerCore(makeSql());
   core.registerSession("db1", 3, "sess-1");
+  // Q-12: a database with NO budget row denies writes (missing budget =
+  // deny, never unlimited), so every booted fixture carries a generous one
+  const budgeted = core.setBudgets("db1",
+    { maxUnpublishedOutbox: 10_000, maxPayloadLength: 1_000_000, maxTailRecords: 1_000_000 }, "sess-1");
+  if (!budgeted.ok) throw new Error(`fixture budget refused: ${JSON.stringify(budgeted)}`);
   return core;
 }
 
@@ -143,7 +149,9 @@ test("fenced replay: a fenced session retrying a durable finalize gets SESSION_F
 
 test("bounded admission fail-closed: payload, outbox depth, tail budget", () => {
   const core = boot();
-  core.setBudgets("db1", { maxUnpublishedOutbox: 4, maxPayloadLength: 1000, maxTailRecords: 5 }, "sess-1");
+  // boot() leaves 2 unpublished command rows (register + fixture budget);
+  // this set adds a third, so a depth of 5 admits exactly two finalisations
+  core.setBudgets("db1", { maxUnpublishedOutbox: 5, maxPayloadLength: 1000, maxTailRecords: 5 }, "sess-1");
 
   const tooBig = core.finalizeWalRecord(req({ payloadLength: 1001 }));
   assert.ok(!tooBig.ok && tooBig.error === "ADMISSION_REJECTED_PAYLOAD_LENGTH");
@@ -178,9 +186,10 @@ test("outbox drain is exactly-once per control_seq across repeated alarms", () =
   core.drainOutbox((r) => seen.push(r.controlSeq)); // repeated alarm: nothing new
   core.finalizeWalRecord(req());
   core.drainOutbox((r) => seen.push(r.controlSeq));
-  // register command (1) + two finalisations, then the third finalisation:
-  // exactly once each, in order, across repeated drains
-  assert.deepEqual(seen, [1n, 2n, 3n, 4n]);
+  // register command (1) + fixture budgets-set (2) + two finalisations,
+  // then the third finalisation: exactly once each, in order, across
+  // repeated drains
+  assert.deepEqual(seen, [1n, 2n, 3n, 4n, 5n]);
 });
 
 test("batch candidate: all-or-nothing equivalence with per-record finalisation", () => {
@@ -441,6 +450,7 @@ test("u64 exactness beyond 2^53: allocation, replay, scan and wire encoding stay
   const sql = makeSql();
   const core = new ControllerCore(sql);
   core.registerSession("db1", 3, "sess-1");
+  core.setBudgets("db1", { maxUnpublishedOutbox: 10_000, maxPayloadLength: 1_000_000, maxTailRecords: 1_000_000 }, "sess-1");
   const beyond = 2n ** 53n; // 9007199254740992: the first non-exact double integer
   // seed a durable head directly at the boundary (the representation under
   // test is the storage contract, not the allocator's path to get there)
@@ -570,6 +580,7 @@ test("Q-09: a database created before record_type existed can still be opened an
 
   // the migrated database is fully usable
   core.registerSession("db1", 3, "sess-1");
+  core.setBudgets("db1", { maxUnpublishedOutbox: 100, maxPayloadLength: 1000, maxTailRecords: 100 }, "sess-1");
   assert.ok(core.finalizeWalRecord(req()).ok);
 
   // and re-opening is idempotent: the same versions are not re-applied
@@ -634,6 +645,7 @@ test("Q-17: maintained usage counters agree with the history they replace, on ev
   const core = new ControllerCore(sql);
   core.registerSession("db1", 3, "sess-1");
   core.registerSession("db2", 1, "sess-b");
+  core.setBudgets("db1", { maxUnpublishedOutbox: 10_000, maxPayloadLength: 1_000_000, maxTailRecords: 1_000_000 }, "sess-1");
 
   const counter = (db: string, generation: number, scope: string) => {
     const rows = sql.exec(
@@ -769,4 +781,52 @@ test("12.6: a batch is one authority envelope with an identity, a digest and lim
   // member ORDER is part of the identity
   const reversed = core.finalizeBatch([members[1], members[0]], { batchOperationId: "b-1" });
   assert.ok(!Array.isArray(reversed) && reversed.error === "BATCH_DIGEST_CONFLICT");
+});
+
+test("Q-12: a database with no validated budget row denies writes - missing budget is deny, never unlimited", () => {
+  const core = new ControllerCore(makeSql());
+  core.registerSession("db1", 3, "sess-1");
+  // no setBudgets: the exact state a database nobody configured is in
+  const denied = core.finalizeWalRecord(req());
+  assert.deepEqual(denied, { ok: false, error: "ADMISSION_REJECTED_NO_BUDGET" });
+  // nothing was allocated by the refusal
+  assert.equal(core.auditContiguity("db1", 3).count, 0);
+
+  // configuring a budget opens admission
+  assert.ok(core.setBudgets("db1",
+    { maxUnpublishedOutbox: 100, maxPayloadLength: 1000, maxTailRecords: 100 }, "sess-1").ok);
+  const first = core.finalizeWalRecord(req());
+  assert.ok(first.ok);
+
+  // and a lost-response retry still replays WITHOUT a budget consult
+  // blocking it: replay allocates nothing (the check sits after replay)
+  const retryReq = req();
+  assert.ok(core.finalizeWalRecord(retryReq).ok);
+  const replay = core.finalizeWalRecord(retryReq);
+  assert.ok(replay.ok && replay.replayed === true);
+});
+
+test("Q-10: budgets and payload lengths are exact at the boundary - floats, negatives and overflow refuse", () => {
+  const core = boot();
+  const okBudget = { maxUnpublishedOutbox: 10, maxPayloadLength: 1000, maxTailRecords: 10 };
+
+  // each field individually: float, zero, negative, non-number, above ceiling
+  for (const [field, bad] of [
+    ["maxUnpublishedOutbox", 1.5], ["maxUnpublishedOutbox", 0], ["maxUnpublishedOutbox", -1],
+    ["maxUnpublishedOutbox", MAX_OUTBOX_DEPTH_CEILING + 1],
+    ["maxPayloadLength", Number.NaN], ["maxPayloadLength", MAX_PAYLOAD_LENGTH_CEILING + 1],
+    ["maxPayloadLength", "1000"],
+    ["maxTailRecords", 2 ** 53], ["maxTailRecords", MAX_TAIL_RECORDS_CEILING + 1],
+  ] as [string, unknown][]) {
+    const refused = core.setBudgets("db1", { ...okBudget, [field]: bad } as never, "sess-1");
+    assert.deepEqual(refused, { ok: false, error: "INVALID_BUDGET", field }, `${field}=${String(bad)}`);
+  }
+  // a refused budget writes nothing: the previous (fixture) budget still admits
+  assert.ok(core.finalizeWalRecord(req()).ok);
+
+  // payloadLength on the finalize wire: exact or refused, never coerced
+  for (const bad of [1.5, -1, Number.NaN, 2 ** 53, "10", null, undefined]) {
+    const refused = core.finalizeWalRecord(req({ payloadLength: bad as never }));
+    assert.ok(!refused.ok && refused.error === "INVALID_PAYLOAD_LENGTH", `payloadLength=${String(bad)}`);
+  }
 });

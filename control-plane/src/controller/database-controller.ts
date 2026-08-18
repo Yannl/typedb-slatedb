@@ -26,7 +26,7 @@ import {
   type SqlRow,
   type SyncSql,
 } from "./core/procedures.ts";
-import { fromHex, utf8 } from "./core/journal-crypto.ts";
+import { resolveKeyConfig } from "./core/key-config.ts";
 import {
   checkCapability, mintCapability, MAX_CAPABILITY_BYTES, REQUIRED_RESTRICTIONS,
   type CapabilityCheck, type CapabilityPayload,
@@ -34,11 +34,14 @@ import {
 
 export interface Env {
   CONTAINER_LIFECYCLE: DurableObjectNamespace;
-  /** Hex journal MAC key (F8). Unset = the core's loud dev default; a
-   *  managed secret is a G2 provisioning item. */
+  /** Q-24: key posture. "managed" (the default when unset - a lost variable
+   *  refuses, it never downgrades) requires provisioned hex keys via the
+   *  variables below; "local-dev" is the L1 scaffolding posture with loud
+   *  dev constants. Resolution and policy: core/key-config.ts. */
+  CONTROLLER_KEY_PROFILE?: string;
   CONTROLLER_JOURNAL_KEY?: string;
-  /** Hex capability MAC key (F9) - distinct from the journal key. */
   CONTROLLER_CAPABILITY_KEY?: string;
+  CONTROLLER_ISSUER_SECRET?: string;
 }
 
 export class DatabaseControllerDO extends DurableObject {
@@ -71,12 +74,14 @@ export class DatabaseControllerDO extends DurableObject {
           .toArray() as SqlRow[],
       transaction: <T,>(fn: () => T): T => storage.transactionSync(fn),
     };
-    this.controllerCore = new ControllerCore(adapter, {
-      journalKey: env.CONTROLLER_JOURNAL_KEY ? fromHex(env.CONTROLLER_JOURNAL_KEY) : undefined,
-    });
-    this.capabilityKey = env.CONTROLLER_CAPABILITY_KEY
-      ? fromHex(env.CONTROLLER_CAPABILITY_KEY)
-      : utf8("dev-insecure-capability-key");
+    // Q-24: fail closed on key configuration. resolveKeyConfig THROWS on a
+    // managed deployment with absent/empty/malformed/dev-constant keys,
+    // which fails DO construction, which makes every route on this
+    // authority refuse - there is no downgrade path from inside the
+    // process, and no route that serves before the check runs.
+    const keys = resolveKeyConfig(env);
+    this.controllerCore = new ControllerCore(adapter, { journalKey: keys.journalKey });
+    this.capabilityKey = keys.capabilityKey;
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS databases(
         database_id TEXT PRIMARY KEY,

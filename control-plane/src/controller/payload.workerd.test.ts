@@ -27,7 +27,9 @@ async function sha256hex(text: string): Promise<string> {
 async function issueCap(spec: Record<string, unknown>): Promise<{ token: string; key?: string }> {
   const response = await SELF.fetch("https://facade.local/capability", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    // Q-02: issuance is credentialed in every posture; this is the L1 dev
+    // credential from wrangler.toml's local-dev profile (core/key-config.ts)
+    headers: { "content-type": "application/json", "x-issuer-authorization": "dev-insecure-issuer-secret" },
     body: JSON.stringify({ principal: "workerd-test", databaseId: DB, ...spec }),
   });
   return (await response.json()) as { token: string; key?: string };

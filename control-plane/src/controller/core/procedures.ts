@@ -131,6 +131,24 @@ export interface BatchEnvelope {
 export const MAX_BATCH_MEMBERS = 64;
 export const MAX_BATCH_BYTES = 8 * 1024 * 1024;
 
+/** Q-10/Q-12: immutable platform-safe maxima that configured budgets must
+ *  sit BELOW. A budget is a narrowing of these, never a widening: a budget
+ *  row carrying 2^60 tail records is a typo or an attack, and either way it
+ *  must not become the admission policy. Containment defaults, not SLOs. */
+export const MAX_PAYLOAD_LENGTH_CEILING = 8 * 1024 * 1024;
+export const MAX_OUTBOX_DEPTH_CEILING = 100_000;
+export const MAX_TAIL_RECORDS_CEILING = 10_000_000;
+
+/** Exact non-negative safe integer in [1, ceiling], or the field name that
+ *  failed. Floats, negatives, zero, NaN, strings and overflow all refuse -
+ *  a coerced budget is an unreviewed policy. */
+function validateBudgetField(name: string, value: unknown, ceiling: number): string | null {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1 || value > ceiling) {
+    return name;
+  }
+  return null;
+}
+
 /** The control outbox is per DATABASE, not per generation: control events
  *  outlive the generation that produced them. Its usage counter therefore
  *  needs a generation slot that no real generation can occupy. */
@@ -204,7 +222,12 @@ export type TypedErr =
   | { ok: false; error: "BATCH_TOO_MANY_MEMBERS"; limit: number }
   | { ok: false; error: "BATCH_TOO_MANY_BYTES"; limit: number }
   | { ok: false; error: "BATCH_DIGEST_MISMATCH" }
-  | { ok: false; error: "BATCH_DIGEST_CONFLICT" };
+  | { ok: false; error: "BATCH_DIGEST_CONFLICT" }
+  // Q-12: a database with no validated budget row denies writes
+  | { ok: false; error: "ADMISSION_REJECTED_NO_BUDGET" }
+  // Q-10: authority-sized wire values are exact or refused, never coerced
+  | { ok: false; error: "INVALID_BUDGET"; field: string }
+  | { ok: false; error: "INVALID_PAYLOAD_LENGTH"; observed: unknown };
 
 export interface FinalizeRequest {
   databaseId: string;
@@ -500,9 +523,17 @@ export class ControllerCore {
     databaseId: string,
     b: { maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number },
     startupSessionId: string,
-  ): { ok: true } | { ok: false; error: "SESSION_UNKNOWN" | "SESSION_FENCED" } {
+  ): { ok: true } | { ok: false; error: "SESSION_UNKNOWN" | "SESSION_FENCED" }
+    | { ok: false; error: "INVALID_BUDGET"; field: string } {
     const authority = this.requireLiveSession(databaseId, startupSessionId);
     if (!authority.ok) return authority;
+    // Q-10: budgets are authority-sized values; exact or refused. Validated
+    // BELOW the immutable platform ceilings - a budget widens nothing.
+    const bad =
+      validateBudgetField("maxUnpublishedOutbox", b.maxUnpublishedOutbox, MAX_OUTBOX_DEPTH_CEILING)
+      ?? validateBudgetField("maxPayloadLength", b.maxPayloadLength, MAX_PAYLOAD_LENGTH_CEILING)
+      ?? validateBudgetField("maxTailRecords", b.maxTailRecords, MAX_TAIL_RECORDS_CEILING);
+    if (bad !== null) return { ok: false as const, error: "INVALID_BUDGET" as const, field: bad };
     this.sql.transaction(() => {
       this.sql.exec(
         `INSERT OR REPLACE INTO budgets(database_id, max_unpublished_outbox, max_payload_length, max_tail_records)
@@ -689,20 +720,33 @@ export class ControllerCore {
       }
     }
 
-    // bounded admission, fail-closed, BEFORE any allocation
+    // Q-10: payloadLength is authority-sized (it is compared against the
+    // budget and stored); a float, negative, NaN or non-number must refuse
+    // here, never coerce or compare as garbage
+    if (typeof req.payloadLength !== "number" || !Number.isSafeInteger(req.payloadLength)
+        || req.payloadLength < 0) {
+      return { ok: false as const, error: "INVALID_PAYLOAD_LENGTH" as const, observed: req.payloadLength };
+    }
+
+    // bounded admission, fail-closed, BEFORE any allocation. Q-12: a missing
+    // budget row DENIES writes - "no budget means unlimited" inverted the
+    // fail direction, and a database nobody configured admitted everything.
+    // The check sits after replay/dedupe deliberately: a lost-response retry
+    // allocates nothing and must still get its receipt.
     const budget = this.sql.exec(`SELECT * FROM budgets WHERE database_id=?`, req.databaseId)[0];
-    if (budget) {
-      if (req.payloadLength > Number(budget.max_payload_length)) {
-        return { ok: false as const, error: "ADMISSION_REJECTED_PAYLOAD_LENGTH" as const, limit: Number(budget.max_payload_length) };
-      }
-      const unpublished = this.usage(req.databaseId, OUTBOX_GENERATION, "outbox_unpublished");
-      if (unpublished >= Number(budget.max_unpublished_outbox)) {
-        return { ok: false as const, error: "ADMISSION_REJECTED_OUTBOX_DEPTH" as const, limit: Number(budget.max_unpublished_outbox) };
-      }
-      const tail = this.usage(req.databaseId, req.generation, "tail");
-      if (tail >= Number(budget.max_tail_records)) {
-        return { ok: false as const, error: "ADMISSION_REJECTED_TAIL_BUDGET" as const, limit: Number(budget.max_tail_records) };
-      }
+    if (!budget) {
+      return { ok: false as const, error: "ADMISSION_REJECTED_NO_BUDGET" as const };
+    }
+    if (req.payloadLength > Number(budget.max_payload_length)) {
+      return { ok: false as const, error: "ADMISSION_REJECTED_PAYLOAD_LENGTH" as const, limit: Number(budget.max_payload_length) };
+    }
+    const unpublished = this.usage(req.databaseId, OUTBOX_GENERATION, "outbox_unpublished");
+    if (unpublished >= Number(budget.max_unpublished_outbox)) {
+      return { ok: false as const, error: "ADMISSION_REJECTED_OUTBOX_DEPTH" as const, limit: Number(budget.max_unpublished_outbox) };
+    }
+    const tail = this.usage(req.databaseId, req.generation, "tail");
+    if (tail >= Number(budget.max_tail_records)) {
+      return { ok: false as const, error: "ADMISSION_REJECTED_TAIL_BUDGET" as const, limit: Number(budget.max_tail_records) };
     }
 
     // late atomic allocation: contiguous AppendLsn, monotone TypeSequence

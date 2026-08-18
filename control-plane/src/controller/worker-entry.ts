@@ -49,10 +49,16 @@ export { DatabaseControllerDO } from "./database-controller.ts";
 
 import { u64FromWire } from "./core/procedures.ts";
 import { canonicalJson } from "./core/journal-crypto.ts";
+import { resolveKeyConfig } from "./core/key-config.ts";
 
 interface Env {
   CONTROLLER: DurableObjectNamespace;
   PAYLOADS: R2Bucket;
+  /** Q-24/Q-02: key posture + issuance credential; see core/key-config.ts. */
+  CONTROLLER_KEY_PROFILE?: string;
+  CONTROLLER_JOURNAL_KEY?: string;
+  CONTROLLER_CAPABILITY_KEY?: string;
+  CONTROLLER_ISSUER_SECRET?: string;
 }
 
 function json(body: unknown, status = 200): Response {
@@ -174,6 +180,18 @@ function refuseOversizedBody(request: Request, limit = MAX_REQUEST_BODY_BYTES): 
  *  a full page must fit working memory in the 128 MiB worker isolate with
  *  headroom for the base64 expansion and JSON envelope. */
 const SCAN_PAGE_BYTE_BUDGET = 8 * 1024 * 1024;
+
+/** Constant-shape credential comparison: XOR-fold over equal-length byte
+ *  views so a mismatch position does not shape the timing. (The length check
+ *  leaks length, which the issuer secret does not need to hide.) */
+function credentialsEqual(presented: string, expected: string): boolean {
+  const a = new TextEncoder().encode(presented);
+  const b = new TextEncoder().encode(expected);
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
 
 /** Record types are u8 in TypeDB durability; anything else is a client bug
  *  surfaced as a typed 400, never coerced. */
@@ -314,6 +332,23 @@ export default {
         : null;
 
     if (request.method === "POST" && path === "/capability") {
+      // Q-02: issuance is CREDENTIALED in every posture. The audit's finding
+      // was that a self-issued capability does not create authentication;
+      // requiring the issuer secret here means no configuration state exists
+      // in which an anonymous caller can mint authority. Resolution is
+      // fail-closed: a worker whose key config cannot resolve refuses
+      // issuance outright rather than falling back to open issuance.
+      let issuerSecret: string;
+      try {
+        issuerSecret = resolveKeyConfig(env).issuerSecret;
+      } catch (error) {
+        return json({ ok: false, error: "KEY_CONFIG_INVALID",
+                      detail: error instanceof Error ? error.message : String(error) }, 500);
+      }
+      const presented = request.headers.get("x-issuer-authorization");
+      if (presented === null || !credentialsEqual(presented, issuerSecret)) {
+        return json({ ok: false, error: "ISSUER_UNAUTHORIZED" }, 401);
+      }
       const spec = (await request.json()) as {
         principal: string; databaseId: string; method: string; digest?: string; maxBytes?: number; ttlMs?: number;
       };

@@ -48,9 +48,14 @@ async function rawApi(method, path, body, raw = false, headers = {}) {
   return { status: response.status, body: await response.json() };
 }
 
-/** Issue a capability from the controller (open local issuance). */
+/** The L1 dev issuer credential (Q-02: issuance is credentialed in every
+ *  posture; core/key-config.ts). */
+const ISSUER_SECRET = "dev-insecure-issuer-secret";
+
+/** Issue a capability from the controller (credentialed issuance). */
 async function issueCap(spec) {
-  const issued = await rawApi("POST", "/capability", { principal: PRINCIPAL, ttlMs: 60_000, ...spec });
+  const issued = await rawApi("POST", "/capability", { principal: PRINCIPAL, ttlMs: 60_000, ...spec },
+    false, { "x-issuer-authorization": ISSUER_SECRET });
   if (!issued.body.ok) throw new Error(`capability issuance failed: ${JSON.stringify(issued.body)}`);
   return issued.body; // {token, key?, expiresAtMs, incarnation}
 }
@@ -120,7 +125,47 @@ async function uploadPayload(bytes, opts = {}) {
 const health = await rawApi("GET", "/health");
 check("health", health.body.ok === true, JSON.stringify(health.body));
 
+// Q-02: capability issuance is credentialed - anonymous issuance was the
+// audit's Q-02 finding, and the refusal must hold in every posture,
+// including this local one.
+const anonIssue = await rawApi("POST", "/capability",
+  { principal: PRINCIPAL, databaseId: DB, method: "WAL_READ" });
+check("anonymous capability issuance is refused",
+  anonIssue.status === 401 && anonIssue.body.error === "ISSUER_UNAUTHORIZED",
+  JSON.stringify(anonIssue.body));
+const wrongIssuer = await rawApi("POST", "/capability",
+  { principal: PRINCIPAL, databaseId: DB, method: "WAL_READ" },
+  false, { "x-issuer-authorization": "not-the-issuer-secret-at-all" });
+check("a wrong issuer credential is refused",
+  wrongIssuer.status === 401 && wrongIssuer.body.error === "ISSUER_UNAUTHORIZED",
+  JSON.stringify(wrongIssuer.body));
+
 await api("POST", "/session/register", { databaseId: DB, generation: GEN, startupSessionId: SESSION });
+
+// Q-12: a database with no validated budget row denies writes. The refusal
+// is exercised first (missing budget = deny, never unlimited), then a real
+// budget is installed for the rest of the run.
+const preBudgetPayload = Buffer.from("pre-budget-refused");
+const preBudgetUp = await uploadPayload(preBudgetPayload);
+const preBudget = await api("POST", "/wal/finalize", {
+  databaseId: DB, generation: GEN, startupSessionId: SESSION,
+  operationId: "op-pre-budget", sequencingKind: "SEQUENCED", recordType: 2, logicalKey: null,
+  payloadKey: preBudgetUp.key, payloadDigest: preBudgetUp.digest, payloadLength: preBudgetPayload.length,
+});
+check("a database with no budget row denies writes",
+  preBudget.status === 409 && preBudget.body.error === "ADMISSION_REJECTED_NO_BUDGET",
+  JSON.stringify(preBudget.body));
+const budgetInstalled = await api("POST", "/budgets", {
+  databaseId: DB, maxUnpublishedOutbox: 10_000, maxPayloadLength: 1_000_000, maxTailRecords: 1_000_000,
+});
+check("a validated budget opens admission", budgetInstalled.body.ok === true,
+  JSON.stringify(budgetInstalled.body));
+const badBudget = await api("POST", "/budgets", {
+  databaseId: DB, maxUnpublishedOutbox: 1.5, maxPayloadLength: 1_000_000, maxTailRecords: 1_000_000,
+});
+check("a fractional budget is a typed refusal, never a coercion",
+  badBudget.status === 409 && badBudget.body.error === "INVALID_BUDGET"
+  && badBudget.body.field === "maxUnpublishedOutbox", JSON.stringify(badBudget.body));
 
 // 1. payload through the data path, then finalisation
 const payload1 = Buffer.from("commit-record-1");
@@ -215,7 +260,7 @@ const peek1 = await api("GET", `/outbox/${DB}?limit=10`);
 // actor, donor A4)
 const walEvents = peek1.body.events.filter((e) => e.kind === "WAL_RECORD_FINALIZED");
 check("outbox peek returns finalized + command events",
-  peek1.body.ok && walEvents.length === 2 && peek1.body.events.length === 3,
+  peek1.body.ok && walEvents.length === 2 && peek1.body.events.length === 4,
   `events=${peek1.body.events?.length} wal=${walEvents.length}`);
 const peek2 = await api("GET", `/outbox/${DB}?limit=10`);
 check("unacked events are redelivered", peek2.body.events.length === peek1.body.events.length);
@@ -225,7 +270,7 @@ check("events carry canonical bodies", kinds.has("WAL_RECORD_FINALIZED") && kind
 // controlSeq is a decimal-string u64 on the wire (F7): compare as bigint
 const maxSeq = peek1.body.events.map((e) => BigInt(e.controlSeq)).reduce((a, b) => (a > b ? a : b)).toString();
 const ack = await api("POST", `/outbox/${DB}/ack`, { upToControlSeq: maxSeq });
-check("ack marks events", ack.body.ok && ack.body.acked === 3, JSON.stringify(ack.body));
+check("ack marks events", ack.body.ok && ack.body.acked === 4, JSON.stringify(ack.body));
 const peek3 = await api("GET", `/outbox/${DB}?limit=10`);
 check("acked events are not redelivered", peek3.body.events.length === 0);
 const ackAgain = await api("POST", `/outbox/${DB}/ack`, { upToControlSeq: maxSeq });
@@ -513,7 +558,7 @@ check("active cut is readable", activeCut.body.ok === true && activeCut.body.cut
 // incarnation bump, and the cut events, against the newest cut anchor
 const journal = await api("GET", `/journal/${DB}/verify`);
 check("authenticated journal verifies (chain + MACs)",
-  journal.body.ok === true && journal.body.length === 13 && /^[0-9a-f]{64}$/.test(journal.body.headHash),
+  journal.body.ok === true && journal.body.length === 14 && /^[0-9a-f]{64}$/.test(journal.body.headHash),
   JSON.stringify(journal.body));
 const anchored = await api("GET", `/journal/${DB}/verify-anchored`);
 check("journal verifies against the cut anchor",

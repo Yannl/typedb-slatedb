@@ -115,3 +115,31 @@ core holds more than one, and the counter made it visible. Now scoped.
 
 $ npx wrangler dev + node scripts/local-stack-e2e.mjs (re-run after Q-17)
 L1 LOCAL STACK E2E: ALL PASS   (65 checks)
+
+## Q-12 / 12.6 - the iteration cut is SERVER-owned
+Opening an iterator returned only a head, and every subsequent scan page
+accepted a caller-supplied `throughLsn`. That is not a pinned view: the
+client held the cut, so it could widen it between pages (observing appends
+made after iteration started, inv. 41-42) or narrow it (silently skipping
+records a consumer believes it replayed). The iterator now returns an opaque
+snapshot id MACed over (database, generation, head, incarnation), the scan
+route refuses a caller-supplied bound outright, and a continuation outside
+its own snapshot is typed rather than an empty page.
+
+$ node --test ... controller-core.test.ts       # pass 28 / # fail 0
+MUTANT: resolveSnapshot accepts the cut unauthenticated (the pre-fix posture)
+  not ok 28 - Q-12: the iteration cut is server-owned - a snapshot id cannot be
+              forged, widened or reused
+  # pass 27 / # fail 1   -> restored: # pass 28 / # fail 0
+
+$ npx vitest run                                 Test Files 2 passed / Tests 8 passed
+$ node scripts/local-stack-e2e.mjs               L1 LOCAL STACK E2E: ALL PASS
+  PASS  iterator pins the head and returns an opaque server-owned snapshot id
+        {"headLsn":"3","snapshotId":"3.b7f8921bff6e26bb..."}
+  PASS  unbounded scan is refused          {"error":"MISSING_SNAPSHOT_ID"}
+  PASS  a caller-supplied scan bound is refused
+        {"error":"CALLER_SUPPLIED_SNAPSHOT_BOUND"}
+  PASS  a snapshot id whose head was rewritten is refused   {"error":"INVALID_SNAPSHOT_ID"}
+  PASS  a snapshot id from another generation is refused    {"error":"INVALID_SNAPSHOT_ID"}
+  PASS  a continuation outside its own snapshot is a typed refusal, not an empty page
+        {"error":"CONTINUATION_OUTSIDE_SNAPSHOT","fromLsn":"9","throughLsn":"3"}

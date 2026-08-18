@@ -254,6 +254,8 @@ export default {
         auditContiguity(db: string, generation: number): Promise<Record<string, unknown>>;
         head(db: string, generation: number): Promise<Record<string, unknown>>;
         openIterator(db: string, generation: number): Promise<Record<string, unknown>>;
+        resolveSnapshot(db: string, generation: number, snapshotId: string):
+          Promise<{ ok: true; headLsn: bigint } | { ok: false; error: string }>;
         scan(db: string, generation: number, opts: object): Promise<{
           records: Record<string, unknown>[]; nextFromLsn: bigint | null;
         }>;
@@ -552,20 +554,38 @@ export default {
       if (recordType !== null && invalidRecordType(recordType)) {
         return json({ ok: false, error: "INVALID_RECORD_TYPE", observed: recordTypeParam }, 400);
       }
-      const throughLsnParam = url.searchParams.get("throughLsn");
-      if (throughLsnParam === null) {
-        // an unbounded scan would observe appends made after the iteration
-        // started (inv. 41-42): the pinned snapshot bound is mandatory
-        return json({ ok: false, error: "MISSING_THROUGH_LSN" }, 400);
+      // Q-12 / directive 12.6: the cut is SERVER-owned. The caller presents
+      // the opaque snapshot id it was given at `POST .../iterator`; it may
+      // not name a `throughLsn` itself, because a caller that holds the cut
+      // can widen it between pages (observing appends made after iteration
+      // started, inv. 41-42) or narrow it (silently skipping records a
+      // consumer believes it replayed).
+      const snapshotIdParam = url.searchParams.get("snapshotId");
+      if (snapshotIdParam === null) {
+        return json({ ok: false, error: "MISSING_SNAPSHOT_ID",
+                      hint: "POST /wal/{db}/{generation}/iterator returns snapshotId" }, 400);
       }
+      if (url.searchParams.get("throughLsn") !== null) {
+        return json({ ok: false, error: "CALLER_SUPPLIED_SNAPSHOT_BOUND",
+                      hint: "the cut is carried by snapshotId; throughLsn is not accepted" }, 400);
+      }
+      const resolved = await stubFor(db).resolveSnapshot(db, gen, snapshotIdParam);
+      if (!resolved.ok) return json(resolved, 400);
+      const throughLsn = resolved.headLsn;
       const fromTypeSequence = nonNegativeU64(url.searchParams.get("fromTs"), 0n);
       const fromLsn = nonNegativeU64(url.searchParams.get("fromLsn"), 0n);
-      const throughLsn = nonNegativeU64(throughLsnParam, 0n);
       const rawLimit = nonNegativeInt(url.searchParams.get("limit"), 100);
       const rawMaxBytes = nonNegativeInt(url.searchParams.get("maxBytes"), SCAN_PAGE_BYTE_BUDGET);
-      if (fromTypeSequence === null || fromLsn === null || throughLsn === null || rawLimit === null
+      if (fromTypeSequence === null || fromLsn === null || rawLimit === null
           || rawMaxBytes === null) {
         return json({ ok: false, error: "INVALID_PARAMETER" }, 400);
+      }
+      if (fromLsn > throughLsn) {
+        // a continuation outside its own snapshot is a client defect, not an
+        // empty page: answering "no records" would look like a completed
+        // replay
+        return json({ ok: false, error: "CONTINUATION_OUTSIDE_SNAPSHOT",
+                      fromLsn, throughLsn }, 400);
       }
       const limit = Math.min(Math.max(rawLimit, 1), 1000);
       const maxBytes = Math.min(Math.max(rawMaxBytes, 1), SCAN_PAGE_BYTE_BUDGET);

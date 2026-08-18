@@ -683,3 +683,45 @@ test("Q-17: maintained usage counters agree with the history they replace, on ev
   // and the second database's counters were never touched by the first's work
   assert.equal(counter("db2", 1, "tail"), 0);
 });
+
+test("Q-12: the iteration cut is server-owned - a snapshot id cannot be forged, widened or reused", () => {
+  const core = boot();
+  for (let i = 0; i < 3; i++) assert.ok(core.finalizeWalRecord(req()).ok);
+  const opened = core.openIterator("db1", 3);
+  assert.equal(opened.headLsn, 2n);
+  assert.match(opened.snapshotId, /^2\.[0-9a-f]{64}$/);
+
+  const resolved = core.resolveSnapshot("db1", 3, opened.snapshotId);
+  assert.ok(resolved.ok && resolved.headLsn === 2n);
+
+  // rewriting the head keeps the MAC but changes what it covers: refused.
+  // Without this the caller holds the cut, and a widened cut observes
+  // appends made after iteration started (inv. 41-42).
+  const [, mac] = opened.snapshotId.split(".");
+  assert.deepEqual(core.resolveSnapshot("db1", 3, `99.${mac}`),
+    { ok: false, error: "INVALID_SNAPSHOT_ID" });
+  assert.deepEqual(core.resolveSnapshot("db1", 3, `1.${mac}`),
+    { ok: false, error: "INVALID_SNAPSHOT_ID" });
+
+  // the binding covers database and generation, not just the number
+  assert.deepEqual(core.resolveSnapshot("db1", 4, opened.snapshotId),
+    { ok: false, error: "INVALID_SNAPSHOT_ID" });
+  assert.deepEqual(core.resolveSnapshot("other-db", 3, opened.snapshotId),
+    { ok: false, error: "INVALID_SNAPSHOT_ID" });
+
+  // and malformed ids are typed, never a crash or a silent zero cut
+  for (const bad of ["", ".", "2.", "2.zz", "abc.".padEnd(68, "0"), mac]) {
+    assert.deepEqual(core.resolveSnapshot("db1", 3, bad),
+      { ok: false, error: "INVALID_SNAPSHOT_ID" }, `malformed id ${JSON.stringify(bad)}`);
+  }
+
+  // a controller incarnation bump invalidates outstanding snapshots: a new
+  // incarnation may have recovered to a different frontier, so a cut pinned
+  // under the old one is not a cut this controller ever promised
+  core.bumpIncarnation();
+  assert.deepEqual(core.resolveSnapshot("db1", 3, opened.snapshotId),
+    { ok: false, error: "INVALID_SNAPSHOT_ID" });
+  const reopened = core.openIterator("db1", 3);
+  assert.ok(core.resolveSnapshot("db1", 3, reopened.snapshotId).ok);
+  assert.notEqual(reopened.snapshotId, opened.snapshotId);
+});

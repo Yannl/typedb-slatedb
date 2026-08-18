@@ -286,8 +286,11 @@ check("head reports lsn and type sequence",
 
 // 12. pinned iterator + ordered scan with verified inline payloads
 const iter = await api("POST", `/wal/${DB}/${GEN}/iterator`);
-check("iterator pins the head", iter.body.ok === true && iter.body.headLsn === "3");
-const scan = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=1&throughLsn=${iter.body.headLsn}&limit=100`);
+check("iterator pins the head and returns an opaque server-owned snapshot id",
+  iter.body.ok === true && iter.body.headLsn === "3"
+  && /^3\.[0-9a-f]{64}$/.test(iter.body.snapshotId ?? ""), JSON.stringify(iter.body));
+const SNAP = `snapshotId=${encodeURIComponent(iter.body.snapshotId)}`;
+const scan = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=1&${SNAP}&limit=100`);
 check("scan replays in physical order",
   scan.body.ok === true &&
   JSON.stringify(scan.body.records.map((r) => [r.appendLsn, r.typeSequence, r.recordType])) ===
@@ -296,30 +299,51 @@ check("scan replays in physical order",
 check("scan payloads round-trip",
   Buffer.from(scan.body.records[0].payloadBase64, "base64").equals(payload1) &&
   Buffer.from(scan.body.records[3].payloadBase64, "base64").equals(payload3));
-const scanTyped = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&throughLsn=${iter.body.headLsn}&recordType=1&limit=100`);
+const scanTyped = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&${SNAP}&recordType=1&limit=100`);
 check("scan filters by record type", scanTyped.body.records.length === 1 && scanTyped.body.records[0].appendLsn === "1");
 const scanUnbounded = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&limit=100`);
 check("unbounded scan is refused (pinned snapshot is mandatory)",
-  scanUnbounded.status === 400 && scanUnbounded.body.error === "MISSING_THROUGH_LSN");
-const scanZeroLimit = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&throughLsn=${iter.body.headLsn}&limit=0`);
+  scanUnbounded.status === 400 && scanUnbounded.body.error === "MISSING_SNAPSHOT_ID",
+  JSON.stringify(scanUnbounded.body));
+// Q-12 / 12.6: the CUT is server-owned. A caller may not name it...
+const scanCallerBound = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&${SNAP}&throughLsn=99`);
+check("a caller-supplied scan bound is refused",
+  scanCallerBound.status === 400 && scanCallerBound.body.error === "CALLER_SUPPLIED_SNAPSHOT_BOUND",
+  JSON.stringify(scanCallerBound.body));
+// ...and may not forge or widen one
+const forgedHead = `99.${iter.body.snapshotId.split(".")[1]}`;
+const scanForged = await api("GET",
+  `/wal/${DB}/${GEN}/scan?fromTs=0&snapshotId=${encodeURIComponent(forgedHead)}`);
+check("a snapshot id whose head was rewritten is refused",
+  scanForged.status === 400 && scanForged.body.error === "INVALID_SNAPSHOT_ID",
+  JSON.stringify(scanForged.body));
+const scanOtherDb = await api("GET", `/wal/${DB}/${GEN + 1}/scan?fromTs=0&${SNAP}`);
+check("a snapshot id from another generation is refused",
+  scanOtherDb.status === 400 && scanOtherDb.body.error === "INVALID_SNAPSHOT_ID",
+  JSON.stringify(scanOtherDb.body));
+const scanPastEnd = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&fromLsn=9&${SNAP}`);
+check("a continuation outside its own snapshot is a typed refusal, not an empty page",
+  scanPastEnd.status === 400 && scanPastEnd.body.error === "CONTINUATION_OUTSIDE_SNAPSHOT",
+  JSON.stringify(scanPastEnd.body));
+const scanZeroLimit = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&${SNAP}&limit=0`);
 check("limit=0 is clamped to one record, never a crash",
   scanZeroLimit.body.ok === true && scanZeroLimit.body.records.length === 1 && scanZeroLimit.body.nextFromLsn === "1");
-const scanBadParam = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=abc&throughLsn=${iter.body.headLsn}`);
+const scanBadParam = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=abc&${SNAP}`);
 check("non-numeric scan parameter is a typed 400",
   scanBadParam.status === 400 && scanBadParam.body.error === "INVALID_PARAMETER");
 // byte budget: maxBytes=1 forces a one-record page (progress guaranteed),
 // resumable exactly like a limit cut
 const oneRecordBudget = payload1.length; // exactly the first record, nothing more
-const scanByteCut = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&throughLsn=${iter.body.headLsn}&maxBytes=${oneRecordBudget}`);
+const scanByteCut = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&${SNAP}&maxBytes=${oneRecordBudget}`);
 check("scan byte budget cuts the page with progress",
   scanByteCut.body.ok === true && scanByteCut.body.records.length === 1 && scanByteCut.body.nextFromLsn === "1",
   JSON.stringify({ n: scanByteCut.body.records?.length, next: scanByteCut.body.nextFromLsn }));
-const scanResume = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&fromLsn=${scanByteCut.body.nextFromLsn}&throughLsn=${iter.body.headLsn}&maxBytes=${statusPayload.length}`);
+const scanResume = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&fromLsn=${scanByteCut.body.nextFromLsn}&${SNAP}&maxBytes=${statusPayload.length}`);
 check("byte-cut pages resume without overlap",
   scanResume.body.records.length === 1 && scanResume.body.records[0].appendLsn === "1");
 // a descriptor larger than the WHOLE page budget is refused before any
 // fetch - "record zero" is not an exception (directive 12.6)
-const scanTooSmall = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&throughLsn=${iter.body.headLsn}&maxBytes=1`);
+const scanTooSmall = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&${SNAP}&maxBytes=1`);
 check("a first record larger than the page budget is refused, not admitted",
   scanTooSmall.status === 413 && scanTooSmall.body.error === "RECORD_EXCEEDS_PAGE_BUDGET",
   JSON.stringify(scanTooSmall.body));

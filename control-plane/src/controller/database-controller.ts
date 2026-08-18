@@ -161,6 +161,11 @@ export class DatabaseControllerDO extends DurableObject {
     return this.core().queryOperation(databaseId, generation, operationId, startupSessionId);
   }
 
+  resolveSnapshot(databaseId: string, generation: number, snapshotId: string):
+    ReturnType<ControllerCore["resolveSnapshot"]> {
+    return this.core().resolveSnapshot(databaseId, generation, snapshotId);
+  }
+
   outboxPeek(limit: number): ReturnType<ControllerCore["outboxPeek"]> {
     return this.core().outboxPeek(limit);
   }

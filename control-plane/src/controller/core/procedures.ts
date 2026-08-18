@@ -1010,12 +1010,71 @@ export class ControllerCore {
   /** Fixed iterator snapshot (CT-P3): head is pinned at open; reads are
    *  exact. `-1n` is the empty-head sentinel (a JS value only - it never
    *  touches the u64 blob encoding). */
-  openIterator(databaseId: string, generation: number): { headLsn: bigint } {
+  /**
+   * Pin an iteration snapshot and hand back an OPAQUE, server-owned id
+   * (Q-12 / directive 12.6).
+   *
+   * Returning only `headLsn` and then accepting a caller-supplied
+   * `throughLsn` on every page is not a pinned view: the client holds the
+   * cut, so it can widen it between pages and observe appends made after
+   * iteration started (inv. 41-42) - or narrow it, and silently skip
+   * records a consumer believes it replayed. The snapshot id is MACed over
+   * (database, generation, head, incarnation), so the bound travels back
+   * unforgeably and the server, not the caller, decides what the cut was.
+   *
+   * The id is stateless by design: it carries the cut rather than naming a
+   * row, so pinning costs no storage and a controller restart invalidates
+   * every outstanding snapshot through the incarnation binding - which is
+   * the correct behaviour, since a new incarnation may have recovered to a
+   * different frontier.
+   */
+  openIterator(databaseId: string, generation: number):
+    { headLsn: bigint; snapshotId: string } {
     const head = this.sql.exec(
       `SELECT MAX(append_lsn) AS lsn FROM wal_tail WHERE database_id=? AND generation=?`,
       databaseId, generation,
     )[0];
-    return { headLsn: head.lsn === null ? -1n : u64FromSql(head.lsn, "max_append_lsn") };
+    const headLsn = head.lsn === null ? -1n : u64FromSql(head.lsn, "max_append_lsn");
+    return { headLsn, snapshotId: this.mintSnapshotId(databaseId, generation, headLsn) };
+  }
+
+  private snapshotPreimage(databaseId: string, generation: number, headLsn: bigint): Uint8Array {
+    return utf8(canonicalJson({
+      domain: "wal-iteration-snapshot/v1",
+      databaseId,
+      generation,
+      headLsn: headLsn.toString(),
+      incarnation: this.currentIncarnation(),
+    }));
+  }
+
+  private mintSnapshotId(databaseId: string, generation: number, headLsn: bigint): string {
+    const mac = hmacSha256(this.journalKey, this.snapshotPreimage(databaseId, generation, headLsn));
+    return `${headLsn.toString()}.${hex(mac)}`;
+  }
+
+  /**
+   * Resolve a snapshot id back to its pinned head, or refuse.
+   *
+   * A caller may not supply a raw `throughLsn`; it must present the id it
+   * was given. Anything else - a forged MAC, a rewritten head, an id minted
+   * under a superseded incarnation - is a typed refusal, never a scan over
+   * a cut nobody pinned.
+   */
+  resolveSnapshot(databaseId: string, generation: number, snapshotId: string):
+    Typed<{ headLsn: bigint }> | { ok: false; error: "INVALID_SNAPSHOT_ID" } {
+    if (typeof snapshotId !== "string") return { ok: false, error: "INVALID_SNAPSHOT_ID" };
+    const dot = snapshotId.lastIndexOf(".");
+    if (dot <= 0) return { ok: false, error: "INVALID_SNAPSHOT_ID" };
+    const headText = snapshotId.slice(0, dot);
+    const macHex = snapshotId.slice(dot + 1);
+    if (!/^-?\d+$/.test(headText) || !/^[0-9a-f]{64}$/.test(macHex)) {
+      return { ok: false, error: "INVALID_SNAPSHOT_ID" };
+    }
+    const headLsn = BigInt(headText);
+    const expected = hmacSha256(this.journalKey, this.snapshotPreimage(databaseId, generation, headLsn));
+    if (!bytesEqual(expected, fromHexInternal(macHex))) return { ok: false, error: "INVALID_SNAPSHOT_ID" };
+    return { ok: true, headLsn };
   }
 
   /**

@@ -45,6 +45,9 @@ import json
 import pathlib
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import common  # noqa: E402
+
 REPO = pathlib.Path(__file__).resolve().parents[2]
 PLAN = REPO / "docs" / "evidence" / "G1" / "qualification-plan-v2.json"
 CATALOG = REPO / "docs" / "evidence" / "G1" / "upstream-test-catalog.json"
@@ -141,12 +144,9 @@ def main():
         args.evidence or DEFAULT_EVIDENCE, plan_profiles)
 
     def runner_rid(target_id):
-        t = targets.get(target_id)
-        if not t or t.get("origin") != "CARGO":
-            return None
-        if not t.get("cargo_package") or not t.get("cargo_target"):
-            return None
-        return f"{t['cargo_package']}:{t['cargo_target']}"
+        # the one shared join (common.runner_row_id) so this reporter's
+        # denominator cannot skew from the collision-guarded producer's
+        return common.runner_row_id(targets.get(target_id))
 
     leaves = plan["leaves"]
     counts = {}   # (family, status) -> n

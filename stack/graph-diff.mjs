@@ -72,7 +72,13 @@ export function diffGraphs(a, b) {
   const violations = [];
   const allowedDiffs = [];
 
-  const bindingKey = (x) => `${x.name}:${x.type}:${x.className ?? ""}`;
+  // The set-level binding identity MUST cover every field the positional walk
+  // below skips (line ~97), or a difference in it is caught by neither path.
+  // sqlite/container are backend-shape flags (they drive new_sqlite_classes /
+  // the container lane): a silent sqlite:true->false is exactly the shape drift
+  // this differential exists to catch, so it belongs in the key.
+  const bindingKey = (x) =>
+    `${x.name}:${x.type}:${x.className ?? ""}:${x.sqlite ?? ""}:${x.container ?? ""}`;
   const aB = new Map((a.worker?.bindings ?? []).map((x) => [x.name, x]));
   const bB = new Map((b.worker?.bindings ?? []).map((x) => [x.name, x]));
   for (const name of new Set([...aB.keys(), ...bB.keys()])) {

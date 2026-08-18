@@ -41,6 +41,21 @@ test("MUTANT b: renamed binding fails the differential", () => {
   );
 });
 
+test("MUTANT: flipped sqlite backing on a binding fails the differential", () => {
+  // sqlite/container are covered by bindingKey, not just the positional skip:
+  // a silent sqlite:true->false (which would change new_sqlite_classes and the
+  // required DO migration) must surface as a by-name violation, never vanish.
+  const a = toGraph("local-native");
+  const b = clone(a);
+  b.worker.bindings.find((x) => x.name === "CONTROLLER").sqlite = false;
+  const r = diffGraphs(a, b);
+  assert.equal(r.equal, false, "flipped sqlite backing must be a violation");
+  assert.ok(
+    r.violations.some((v) => String(v.path).includes("CONTROLLER")),
+    JSON.stringify(r.violations),
+  );
+});
+
 test("changed DO class name fails the differential", () => {
   const a = toGraph("local-native");
   const b = clone(a);

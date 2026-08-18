@@ -44,7 +44,7 @@ import {
   staticScan,
 } from "./no-cloud-guard.mjs";
 import { checkWrangler, WRANGLER_TOML } from "./wrangler-check.mjs";
-import { minioLockNode, portInUse, runRoot, startMinio, stopMinio } from "./minio.mjs";
+import { minioLockNode, portInUse, processAlive, runRoot, startMinio, stopMinio } from "./minio.mjs";
 
 const GRAPH_FILE = path.join(STACK_DIR, "alchemy.run.ts");
 // resource state rows only (.alchemy also holds logs/local blob data)
@@ -240,15 +240,6 @@ async function startAlchemyDev(runDir) {
 // ---------------------------------------------------------------------------
 // down
 // ---------------------------------------------------------------------------
-
-function processAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 async function stopStack(manifest) {
   const problems = [];

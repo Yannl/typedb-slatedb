@@ -244,7 +244,7 @@ export async function startMinio({ runDir, lockFile = LOCK_FILE, cacheDir = CACH
   return { manifest, runDir };
 }
 
-function processAlive(pid) {
+export function processAlive(pid) {
   try {
     process.kill(pid, 0);
     return true;

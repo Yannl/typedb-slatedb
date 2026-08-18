@@ -1,16 +1,40 @@
 name: gates
 
-# Q-21: nothing enforced the gates this repository asserts. Every check below
-# was executed by hand before it was written down here, and every one of them
-# fails closed - that is the precondition that made a root workflow worth
-# having at all. A producer that archives red rows and exits zero cannot be
-# wired into CI, because CI would record it green.
+# PR7 (audit E-P0-09): CI is the fail-closed truth plane. Every job below
+# fails closed, and every action is pinned by commit SHA with exact runner
+# images and exact tool versions - a floating tag cannot silently change
+# what "green" meant.
 #
-# What is deliberately NOT here: the full U2S3 corpus. It needs a ~9 GB Rust
-# build, a running MinIO and roughly two hours, and its evidence is committed
-# under docs/evidence/G3/ with a machine-checkable verdict.json. CI verifies
-# the TRUTH PLANE - the tools, the locks, the catalogue and the control plane -
-# and the corpus is verified by its own archived verdict.
+# What is enforced on every push/PR:
+#   - document/gate authority: the machine ledger, its rendered status, and
+#     the forbidden-claims linter over the live status docs;
+#   - source/tool/workspace locks against a real materialisation, plus the
+#     lock checker's own behavioral mutants;
+#   - Mode-Q consistency: no Mode-Q evidence may coexist with a ledger that
+#     claims G0 closed (and vice versa - see the inline check);
+#   - evidence producers kill their own mutants; the ARCHIVED corpus bundle
+#     re-verifies from raw logs (reparse + hash binding + bundle root);
+#   - catalogue schema validation and negative controls;
+#   - control plane: typecheck, node suites (incl. the era-A migration
+#     fixtures and crash matrix), standing mutant, workerd lane, the full
+#     protocol E2E on real workerd, and the 14-probe harness self-test;
+#   - storage: protocol models + storage library over the staged fork.
+#
+# What is deliberately NOT here, and why (recorded, not hidden):
+#   - the full U2S3 corpus (needs a ~9 GB build, MinIO, ~2 h): its archived
+#     evidence is re-verified from raw logs above; a FRESH corpus run is the
+#     dispatch-only `qualification` job below;
+#   - official driver gates (E-P0-08): no driver harness exists yet - the
+#     ledger's OFFICIAL_DRIVERS lane records NOT_IMPLEMENTED, and this
+#     comment is the CI-side acknowledgement;
+#   - SBOM / signed provenance / tested-equals-shipped digests: there is no
+#     release pipeline in this repository yet; these become required jobs of
+#     the release workflow when one exists (ledger action PR7 records this
+#     as its open remainder).
+#
+# OS packages come from the pinned runner image (ubuntu-24.04); apt installs
+# below are bounded by that image, which is the strongest pin GitHub offers
+# for distro packages.
 
 on:
   push:
@@ -22,17 +46,43 @@ concurrency:
   group: gates-${{ github.ref }}
   cancel-in-progress: true
 
+# pinned action SHAs (resolved 2026-08-18):
+#   actions/checkout v4.4.0       11d5960a326750d5838078e36cf38b85af677262
+#   actions/setup-python v5.6.0   a26af69be951a213d495a4c3e4e4022e16d87065
+#   actions/setup-node v4.4.0     49933ea5288caeca8642d1e84afbd3f7d6820020
+#   dtolnay/rust-toolchain        6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+
 jobs:
   truth-plane:
-    # The checkers' own negative controls, and the catalogue against the
-    # normative contract schema. No checkout of the pinned sources is needed:
-    # these validate committed artefacts and the tools themselves.
-    runs-on: ubuntu-latest
+    # Document authority, the checkers' own negative controls, and the
+    # committed evidence - validated from a clean checkout with no source
+    # materialisation.
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.11"
+          python-version: "3.11.9"
+      - name: gate ledger is well-formed, rendered status matches, no forbidden claims
+        run: python3 tools/ledger/lint_ledger.py
+      - name: Mode-Q consistency (fail-closed both directions)
+        # G0 may only be closed by real Mode-Q evidence; conversely, while
+        # the evidence is absent the ledger MUST say G0 is open. A ledger
+        # that closes G0 without artifacts - or artifacts appearing without
+        # a ledger update - fails here.
+        run: |
+          python3 - <<'EOF'
+          import json, pathlib, sys
+          ledger = json.loads(pathlib.Path("docs/ledger/gates.json").read_text())
+          g0 = next(g for g in ledger["gates"] if g["id"] == "G0")
+          modeq = pathlib.Path("docs/evidence/G0/mode-q")
+          has_evidence = modeq.is_dir() and any(modeq.iterdir())
+          if g0["state"] in ("OPEN_RED", "OPEN") and has_evidence:
+              sys.exit("Mode-Q evidence exists but the ledger still holds G0 open - reconcile the ledger")
+          if g0["state"] not in ("OPEN_RED", "OPEN") and not has_evidence:
+              sys.exit("the ledger closes G0 without Mode-Q evidence at docs/evidence/G0/mode-q - refused")
+          print(f"G0={g0['state']}, mode-q evidence present={has_evidence}: consistent")
+          EOF
       - name: evidence producers kill their own mutants
         run: python3 tools/catalog/evidence_mutants.py
       - name: completeness negative controls
@@ -41,6 +91,14 @@ jobs:
         run: python3 tools/catalog/validate_catalog.py --self-test
       - name: catalogue conforms to the normative v14 contract schema
         run: python3 tools/catalog/validate_catalog.py
+      - name: archived corpus bundle re-verifies from raw logs
+        # reparse every archived log, re-bind hashes, recompute the bundle
+        # root against the COMPLETE seal, re-check the flake ledger's
+        # fingerprints - the archived observation must still be derivable
+        # from its own raw material on every commit
+        run: |
+          python3 tools/catalog/run_u0.py --verdict-only --out docs/evidence/G3/u2s3-full-3
+          python3 tools/catalog/completeness.py --results docs/evidence/G3/u2s3-full-3
       - name: no delete authority before G13
         # the refusal is the assertion: this MUST exit nonzero
         run: |
@@ -50,36 +108,41 @@ jobs:
           fi
 
   source-identity:
-    # The locks, against a real materialisation of the pinned source graph.
-    runs-on: ubuntu-latest
+    # The locks, against a real materialisation of the pinned source graph,
+    # plus the lock checker's own behavioral forgery controls.
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.11"
+          python-version: "3.11.9"
       - name: materialise the pinned source graph
         run: python3 tools/source-lock/materialize_sources.py
       - name: source lock
         run: python3 tools/source-lock/lint_source_lock.py
+      - name: the lock checker kills its own forgery mutants
+        run: python3 tools/source-lock/lock_mutants.py
       - name: workspace lock has not drifted
         run: python3 tools/source-lock/generate_workspace_lock.py --check
       - name: the SlateDB fork reconstructs to its recorded digest
         run: python3 tools/fork/materialize_slatedb.py --check
 
   control-plane:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: control-plane
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: "22"
+          node-version: "22.12.0"
       - run: npm ci
       - name: typecheck
         run: npx tsc --noEmit
       - name: the controller core suites (one list, owned by package.json)
+        # includes the era-A migration fixtures, the crash-after-every-
+        # statement matrix, and the production-surface refusal matrix
         run: npm run test:core
       - name: the standing outbox mutant is still killed
         # an expected-red run: if this passes, the mutant stopped being caught
@@ -91,20 +154,41 @@ jobs:
           fi
       - name: workerd lane
         run: npx vitest run
+      - name: probe harness self-test (18 fail-closed controls, no credentials)
+        run: bash probes/self-test.sh
+      - name: protocol E2E on real workerd
+        # the full 85-check protocol matrix against wrangler dev - the same
+        # workerd runtime production uses, local-dev surface
+        run: |
+          npx wrangler dev --port 8787 > /tmp/wrangler-dev.log 2>&1 &
+          WRANGLER_PID=$!
+          for i in $(seq 1 90); do
+            curl -s -m 2 http://127.0.0.1:8787/health > /dev/null 2>&1 && break
+            sleep 1
+          done
+          if ! curl -s -m 2 http://127.0.0.1:8787/health > /dev/null 2>&1; then
+            echo "wrangler dev did not come up" >&2; cat /tmp/wrangler-dev.log >&2; exit 1
+          fi
+          node scripts/local-stack-e2e.mjs && STATUS=0 || STATUS=$?
+          kill "$WRANGLER_PID" 2>/dev/null || true
+          exit $STATUS
 
   storage:
     # The Rust lanes that fit in a CI budget: the pure protocol models and the
     # storage library's own unit tests (which include the SlateDB adapter's
-    # read-contract, materialisation, posture, memo and retry controls). The
-    # full corpus is not here - see the header.
-    runs-on: ubuntu-latest
+    # read-contract, recovery, checkpoint, materialisation, posture, memo and
+    # retry controls). The full corpus is not here - see the header; a fresh
+    # qualification run is the dispatch-only job below.
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.11"
-      - uses: dtolnay/rust-toolchain@1.93.0
-      - name: native prerequisites
+          python-version: "3.11.9"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: "1.93.0"
+      - name: native prerequisites (bounded by the pinned runner image)
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler cmake pkg-config libclang-dev
@@ -117,3 +201,37 @@ jobs:
       - name: storage library
         working-directory: sources/typedb
         run: cargo +1.93.0 test -p storage --lib --locked
+
+  qualification:
+    # Fresh U0 qualification: pristine-tree build, catalogue regeneration and
+    # drift check. Dispatch-only - it needs a cold ~40 min build - but it is
+    # the SAME commands a release qualification must run, recorded here so
+    # "fresh evidence" has one definition.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11.9"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: "1.93.0"
+      - name: native prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler cmake pkg-config libclang-dev
+      - name: materialise sources
+        run: python3 tools/source-lock/materialize_sources.py
+      - name: pristine catalogue build + regeneration + drift check
+        run: |
+          PROTOC=$(command -v protoc) CARGO_TARGET_DIR="$PWD/pristine-target" \
+            cargo +1.93.0 test --manifest-path sources/typedb/Cargo.toml --workspace --locked --no-run
+          CARGO_TARGET_DIR="$PWD/pristine-target" \
+            python3 tools/catalog/generate_catalog.py --tree sources/typedb
+          python3 tools/catalog/validate_catalog.py
+          git diff --exit-code -- docs/evidence/G1/upstream-test-catalog.json || {
+            echo "catalogue drifted from the committed one - regenerate and review" >&2
+            exit 1
+          }

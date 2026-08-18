@@ -1,6 +1,19 @@
 # ADR-0001 — SlateDB is consume-only: pinned crates.io dependency, no fork
 
-**Status:** accepted (owner decision, 2026-08-16)
+> **Round-3 correction (2026-08-18) — SUPERSEDED FOR THE R2 LANE (CD-007).**
+> The round-3 audit finding S-02 requires the crate Cargo actually links to
+> be the TESTED fork (external writer epochs + bounded uploader), not
+> registry 0.15.0 — consuming the registry crate while claiming the storage-
+> engine fixes are done is a false closure. The `fork/typedb` workspace now
+> links the fork via `[patch.crates-io] slatedb = { path =
+> "../../sources/slatedb-fork" }`, whose byte identity is bound by
+> `tools/fork/materialize_slatedb.py`. This ADR's "no fork" stance therefore
+> no longer holds for the R2/slatedb-r2 lane; the registry crate remains the
+> identity only for the non-patched `tools` lane. Recorded as contradiction
+> CD-007 (safe side = ship the tested fork); an owner ADR amendment to
+> ratify fork-consumption for the R2 lane is the recorded follow-up.
+
+**Status:** accepted (owner decision, 2026-08-16) — SUPERSEDED for the R2 lane, see the round-3 banner above
 **Amends:** brief v16 §0.2.1 (federated workspaces), §8.3–8.4 / §12.7 (SL-P1–SL-P4 as source patches), §21.1 (fork/slatedb materialization)
 
 ## Decision

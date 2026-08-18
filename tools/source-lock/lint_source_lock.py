@@ -60,8 +60,12 @@ ARTIFACTS = {
 # crates — every workspace that consumes the crate is checked. A listed
 # consumer that does not contain the crate is a failure: the lock claimed a
 # consumption relationship that does not exist.
+# round-3 S-02: fork/typedb no longer consumes the REGISTRY slatedb - it
+# consumes the PATCHED fork via [patch.crates-io] (see the SL node's
+# `patched_consumers`, validated separately below). tools/Cargo.lock still
+# resolves the registry crate, so SL keeps its registry checksum there.
 REGISTRY_NODES = {
-    "SL": ["tools/Cargo.lock", "fork/typedb/Cargo.lock"],
+    "SL": ["tools/Cargo.lock"],
 }
 
 # cargo_dependency nodes (crates pinned transitively, e.g. via SlateDB) and
@@ -137,6 +141,40 @@ def cargo_lock_packages(path: pathlib.Path) -> dict:
         elif in_package and line.startswith("checksum = "):
             checksum = quoted(line)
     return pkgs
+
+
+def check_patched_consumers(nid: str, node: dict, repo_root: pathlib.Path, failures: list) -> None:
+    """round-3 S-02: a consumer that consumes the crate through a
+    [patch.crates-io] path override (not the registry) is verified as a
+    PATCH, not a checksum: the manifest must carry the patch line pointing at
+    the recorded fork path, and the consumer Cargo.lock must resolve the
+    crate WITHOUT a registry source (proving the patch actually took). The
+    fork's byte identity is bound by tools/fork/materialize_slatedb.py
+    --check (a separate gate step), not re-hashed here."""
+    crate = node.get("crate")
+    for pc in node.get("patched_consumers", []):
+        manifest_rel = pc.get("manifest")
+        lock_rel = pc.get("consumer_lock")
+        patch_path = pc.get("patch_path")
+        manifest = repo_root / manifest_rel if manifest_rel else None
+        if manifest is None or not manifest.exists():
+            failures.append(f"{nid}: patched consumer manifest missing at {manifest_rel}")
+            continue
+        text = manifest.read_text()
+        # the [patch.crates-io] override for this crate must point at the
+        # recorded fork path (a different path is a different, unlocked fork)
+        if "[patch.crates-io]" not in text or crate not in text or (patch_path and patch_path not in text):
+            failures.append(f"{nid}: {manifest_rel} lacks the [patch.crates-io] {crate} = path override "
+                            f"pointing at {patch_path!r}")
+        # the consumer lock must NOT resolve the crate from the registry
+        # (if it does, the patch did not take and we are silently on crates.io)
+        lock_path = repo_root / lock_rel if lock_rel else None
+        if lock_path is None or not lock_path.exists():
+            failures.append(f"{nid}: patched consumer lock missing at {lock_rel}")
+            continue
+        if crate in cargo_lock_packages(lock_path):
+            failures.append(f"{nid}: {lock_rel} still resolves {crate} from the REGISTRY - "
+                            f"the [patch.crates-io] override did not take (S-02 regression)")
 
 
 def check_crates_in_lock(nid: str, want: dict, lock_rel: str,
@@ -465,6 +503,8 @@ def main() -> int:
             want[cname] = (cinfo["version"].lstrip("="), cinfo.get("checksum_sha256"))
         for lock_rel in lock_rels:
             check_crates_in_lock(nid, want, lock_rel, repo_root, failures)
+        # round-3 S-02: also verify any patched (fork) consumers of this node
+        check_patched_consumers(nid, node, repo_root, failures)
 
     for nid, lock_rels in CARGO_DEP_NODES.items():
         node = nodes.get(nid)

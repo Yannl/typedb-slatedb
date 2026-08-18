@@ -39,3 +39,46 @@ exit=0
 $ python3 tools/catalog/validate_catalog.py --self-test
 validate_catalog self-test: PASS (7 negative controls + baseline)
 exit=0
+
+# ---------------------------------------------------------------------------
+# Catalogue regenerated from a PRISTINE worktree, and the denominator closed
+# ---------------------------------------------------------------------------
+$ git -C sources/typedb worktree add ../typedb-pristine 2256711abd532742dae8e822a9ad5cce63e69b1a
+$ CARGO_TARGET_DIR=sources/pristine-target cargo +1.93.0 test --workspace --locked --no-run
+$ python3 tools/catalog/generate_catalog.py --tree sources/typedb-pristine
+  enumerated_tree_revision 2256711abd532742dae8e822a9ad5cce63e69b1a, dirty=false
+  303 targets, 4740 leaf cases, 141 static checks, 44 failpoint leaves
+
+$ python3 tools/catalog/validate_catalog.py
+  targets 303, leaf_cases 4740, unique_leaf_cases 4740, required_pairs 23132
+  required_pair_profiles [U0,U1,U2,U3,U4], exclusions 43, errors 0     (was 116)
+
+$ python3 tools/catalog/run_u0.py --verdict-only --out docs/evidence/G3/u2s3-full-3
+  VERDICT: GREEN (0 anomalies), re-derived over 106 archived rows
+$ python3 tools/catalog/completeness.py --results docs/evidence/G3/u2s3-full-3
+  required_executable_targets 106 == results_targets 106, case_bearing 72,
+  declared_zero_case 8, exit 0
+$ python3 tools/catalog/compare_u2s3.py u2s3-full-3
+  divergent 4, unexplained 0, exit 0
+
+## The green is load-bearing: three mutants over the SAME archived rows
+MUTANT one row deleted (cache:cache)
+  ANOMALY: denominator: required target cache:cache produced NO result row
+  VERDICT: RED (1)                                                     rc=1
+MUTANT a case-bearing target reports zero cases
+  ANOMALY: cache:cache: ran to completion with ZERO cases although the
+           catalogue records leaf cases for it - the corpus silently shrank here
+  VERDICT: RED (1)                                                     rc=1
+MUTANT an unknown crash rc appears
+  ANOMALY: cache:cache: exit code 127 but policy expects 0 (no ledger entry)
+  VERDICT: RED (1)                                                     rc=1
+restored -> VERDICT: GREEN (0)
+
+## A semantics bug the first regeneration exposed
+The generator initially declared every zero-leaf target as an exclusion, which
+made 35 targets that DO execute (crates with no #[test], reporting zero cases)
+look like "declared excluded but ran anyway" - 76 anomalies. Two different
+things wear the same "zero leaves" label: a [[bench]] target is compiled and
+never executed as a test, so it produces no row; a crate with no #[test] is
+executed and reports zero cases, so it stays required and is simply not
+case-bearing. Only the first kind is exempt from the denominator now.

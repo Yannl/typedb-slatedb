@@ -174,8 +174,17 @@ def required_executable_targets():
             continue
         rid = f"{pkg}:{tgt}"
         n = leaves.get(t["target_id"], 0)
-        if n == 0 and t["target_id"] in declared_by_catalog_id:
-            excluded[rid] = declared_by_catalog_id[t["target_id"]]
+        # Two different things wear the same "zero leaves" label and must not
+        # be confused. A [[bench]] target is COMPILED by the cargo test lane
+        # and never executed as a test, so it produces no row and is exempt
+        # from the denominator. A crate with no #[test] functions DOES get
+        # executed and reports zero cases - it stays required, it is simply
+        # not case-bearing. Excluding the second kind made every one of them
+        # look like "declared excluded but ran anyway".
+        is_bench = t["target_id"].split(":")[2:3] == ["bench"]
+        if is_bench:
+            excluded[rid] = declared_by_catalog_id.get(
+                t["target_id"], "cargo target kind == bench: compiled, never executed as a test")
             continue
         required.add(rid)
         if n > 0:
@@ -400,7 +409,8 @@ def reverdict(out_dir):
     rc = verdict_policy.verdict_exit_code(
         anomalies, True, out_dir,
         extra={"producer": "tools/catalog/run_u0.py --verdict-only",
-               "re_derived_from": str(results_file.relative_to(REPO)),
+               "re_derived_from": (str(results_file.relative_to(REPO))
+                                   if results_file.is_relative_to(REPO) else str(results_file)),
                "denominator_checked": required is not None,
                "executables": len(results)})
     for a in anomalies:

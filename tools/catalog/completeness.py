@@ -293,8 +293,13 @@ def required_targets_from_catalog(catalog):
             continue
         rid = f"{pkg}:{tgt}"
         n = leaves.get(t["target_id"], 0)
-        if n == 0 and t["target_id"] in declared:
-            excluded[rid] = declared[t["target_id"]]
+        # see run_u0.required_executable_targets: only [[bench]] targets are
+        # exempt from producing a row; a crate with no #[test] still runs and
+        # reports zero cases
+        is_bench = t["target_id"].split(":")[2:3] == ["bench"]
+        if is_bench:
+            excluded[rid] = declared.get(
+                t["target_id"], "cargo target kind == bench: compiled, never executed as a test")
             continue
         required.add(rid)
         if n > 0:

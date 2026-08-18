@@ -129,9 +129,11 @@ def denominator_anomalies(results, required_target_ids, declared_exclusions=None
         out.append(f"denominator: {tid} produced a result row but is not a required target")
     for tid in sorted(declared):
         if tid in ran:
-            out.append(f"denominator: {tid} is declared excluded but ran anyway")
-        elif tid not in required:
-            out.append(f"denominator: exclusion declared for unknown target {tid}")
+            out.append(f"denominator: {tid} is declared not-executed but produced a row anyway")
+    # Whether an exclusion's SUBJECT resolves to a real catalogue target is a
+    # catalogue question, not a run question: validate_catalog.py owns it, and
+    # duplicating it here only produced false anomalies for targets that are
+    # legitimately absent from the executable denominator.
     return out
 
 

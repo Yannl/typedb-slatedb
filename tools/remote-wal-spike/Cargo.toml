@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 description = "G2 spike: standalone remote append/sync/status/iterator client against a deterministic controller and a pluggable object store (brief §9, §J.4)"
 
+[[bin]]
+name = "l1-e2e"
+path = "src/bin/l1_e2e.rs"
+
 [dependencies]
 sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }

@@ -76,6 +76,34 @@ executed mutant.
 | P-01..P-06 probe safety | **CLOSED** (local preflight) | Secret separation + recursive redaction + CI canary scan; corrected Cloudflare DTOs verified against the live docs; record-before-dispatch with deadlines and finally cleanup; PlatformRunBundle v2; disposable-target + owner-envelope preflight (absent → exit 3). Live execution stays credential-gated (`1844c96`). |
 | A-01 no canonical Alchemy/native-S3 integration | **CLOSED** (local) | Alchemy 2.0.0-beta.72 pinned exactly as the canonical IaC with a no-cloud guard; source-locked native MinIO supervisor with SigV4 readiness and process-group teardown; graph differential + wrangler consistency check. The Docker container lane is a recorded platform residual (`767b387`). |
 
+## Final factorization / simplification pass (R3-I)
+
+After every audit finding above was addressed, a dedicated review pass swept
+all round-3 code (control-plane TS, Rust storage/recovery, the Python/stack
+validators, and the firewall spike) for factorable duplication, drift, and
+dead code — the "verify nothing can be factored or simplified, no drift, no
+debt" close-out. Every applied change is behavior-preserving and was
+re-verified by the owning lane's tests before commit.
+
+| Area | Applied | Verified |
+|---|---|---|
+| control-plane (`e3b3632`) | dropped a dead `_useDigest` param + ~11 wasted per-read SHA-256s (reads never claim a use, C-07); extracted one `streamCappedDigest` for the body/object streaming loops; single-sourced the canonical-u64 regex (`journal-crypto.CANONICAL_U64`) that capability.ts and procedures.ts had defined twice | tsc; node 82; workerd 19; drop-outbox mutant still caught; L1 E2E 85 ALL PASS |
+| tooling + stack (`b1f574a`) | aliased `run_u0.ENV_BASE` to `common.CARGO_ENV`; single-sourced the runner-row-id join as `common.runner_row_id`; **closed a graph-diff rigor gap** — `sqlite`/`container` binding fields were skipped by both the set-level and positional checks, so a silent backend-shape flip went uncaught — plus a new executed mutant; deduped `processAlive` | stack 31/31 (+1 mutant); completeness self-test; evidence_mutants 32/32; plan_coverage join unchanged (72) |
+| storage / recovery / WAL (`4397747`) | one no-follow (R-05) enforcement point (`assert_safe_checkpoint_entry`) instead of three; deduped the restore remove-entry block; one crate `fsync_path`; unified `checked_next`→`try_next`; `previous()` delegates to `try_previous()`; extracted WAL `seek_to` / `payload_available` / `check_payload_budget`; documented the informational-only checkpoint watermark | storage --lib 110; test_recovery 7; test_snapshot 10; test_isolation 14; test_mvcc 4; test_storage 6; durability + database green |
+| firewall spike (`e054e45`) | folded two repeated refusal builders (`quarantine_overwrite`, `manifest_rejected`) into helpers | spike 15/15; clippy clean |
+
+Deliberately **left duplicated**, because collapsing them would weaken a
+property rather than remove debt: the producer/independent-verifier/forger
+independence across the evidence and Mode-Q validators (they must share no
+code); the four bounded-wait sites (the abort-vs-typed-return distinction is
+load-bearing); `PREDECESSOR_WAIT_DEADLINE`'s intentional aliasing of the report
+interval; `write_record`'s defence-in-depth budget copy; and `verifyJournal`'s
+granular error taxonomy.
+
+The workspace-lock was regenerated for the fork's new tree digest (`92573cb`);
+source-lock lint, ledger lint, and the full evidence chain (bundle root
+`28ae4b7e`, 0 anomalies) stayed green throughout.
+
 ## What this response deliberately does not do
 
 - It does not close G0/G1/G2 — the ledger holds them open (Mode-Q evidence,
@@ -84,3 +112,5 @@ executed mutant.
   blockers in the ledger.
 - It does not treat any local simulator (Alchemy, MinIO, mock probes) result
   as a Cloudflare platform fact.
+- The factorization pass changed no behavior and closed no gate; it removed
+  duplication and one rigor gap, nothing more.

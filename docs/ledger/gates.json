@@ -398,20 +398,28 @@
   {
    "id": "R3-I",
    "title": "Docs/ledger truth pass, final review, sweep, ship",
-   "status": "IN_PROGRESS",
+   "status": "DONE",
    "items": [
     "round-3 response document",
     "ADR-0009/spec-delivery/handoff \u00a718 corrections",
     "ledger round-3 adoption",
     "source-lock truth for the shipped fork (CD-007)",
-    "REMAINING: factorization review; full-suite sweep; PR + merge to main"
+    "evidence reconciliation after R3-B flake-ledger change (bundle root re-sealed, all 5 evidence checks green)",
+    "factorization/simplification pass: behavior-preserving dedup across control-plane, tooling/stack, storage/recovery/WAL, and the firewall spike; one graph-diff rigor gap closed with a new mutant; deliberate producer/verifier independence left intact; each lane re-verified",
+    "full-suite sweep green: source-lock lint, ledger lint, modeq-consistent, evidence chain (bundle root 28ae4b7e, 0 anomalies), control-plane (82/19/E2E-85), stack 31, storage 110 + integration, durability + database"
    ],
    "commits": [
     "273d0d5",
     "11401b2",
     "af83476",
     "765c4e9",
-    "3d75d38"
+    "3d75d38",
+    "0fcde86",
+    "e3b3632",
+    "b1f574a",
+    "e054e45",
+    "4397747",
+    "92573cb"
    ]
   }
  ],

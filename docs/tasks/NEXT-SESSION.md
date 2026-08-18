@@ -1,27 +1,27 @@
 # Handoff: state at merge to main, and what a fresh session does next
 
-**Written at:** end of the V16-convergence + donor-response session
-(branch `claude/review-continue-previous-zv4wmi`, tip `f8c1bae` + this doc,
-merged to `main`). Start a new session FROM `main`.
+**Written at:** end of the V16-convergence + donor-response session; updated
+after the follow-up round (PR #2). Start a new session FROM `main`.
 
 ## One-paragraph state
 
 Every P0 the V16 convergence audit accepted is closed with code, executed
 negative controls, and executed mutant runs; the independent donor's
 adversarial audit (branch `claude/typedb-donor-verification-sfxfbz`) filed
-4 P0s — all four are closed (two were already covered by this session's
-work, two got dedicated fixes). All lanes are green: storage lib 15/15 on
-U2S3 (incl. the A6 memo control, mutant-verified), control-plane core
-23/23 / journal 7/7 / state 5/5 / workerd 8/8 / L1 E2E 59/59. The full
-single-commit corpus evidence exists at `docs/evidence/G3/u2s3-full-2/`
-(105/106, 0 unexplained) but predates this session's storage changes — a
-re-run is the top follow-up.
+4 P0s — all four are closed, and of its 7 P1s, A5 and A10 are now also
+closed (A4/A8 substantially addressed, A7 documented interim, A9/A11
+staged for U3.2). All lanes are green: storage lib 18/18 on U2S3 (memo,
+posture, materialisation and retry-channel controls, mutant-verified),
+control-plane core 23/23 / journal 7/7 / state 5/5 / workerd 8/8 / L1 E2E
+61/61, catalogue completeness green (exit 0). The full single-commit
+corpus evidence exists at `docs/evidence/G3/u2s3-full-2/` (105/106,
+0 unexplained) but predates this session's storage changes — a re-run is
+the top follow-up.
 
 ## Read these first (10 minutes)
 
 1. `docs/reviews/v16-convergence-audit.md` — the finding-by-finding truth
-   table (statuses predate this session's closures; see the commit map
-   below for what moved).
+   table (headings + status table are current).
 2. `docs/reviews/donor-a-branch-response.md` — all 14 donor findings with
    dispositions and SHAs.
 3. `docs/design/slatedb-external-epochs.md` — the staged F4/F5 fork design
@@ -42,34 +42,37 @@ re-run is the top follow-up.
 | `c71b8e1` | Donor A3: session-bound WAL_FINALIZE capabilities |
 | `f8c1bae` | Donor A6: key-count memo actually written; schema lock off the remote scan |
 
+## Follow-ups already done (second round, PR #2)
+
+- Catalogue regenerated from the pristine tree (4740 leaves; dead outlines
+  correctly excluded) and `completeness.py` runs GREEN against
+  `u2s3-full-2` (`3fde3be`) — the one fail-closed catch (Bazel
+  `test_crate_client`) resolved by directory identity, no allowlist entry.
+- V16 audit statuses folded into the headings + a status table (`d16a912`).
+- Donor A5 CLOSED (`0953ec0`): `generation` exact at every wire entry
+  point, E2E 61/61 with two new refusal controls.
+- Donor A10 CLOSED (`5d05d5c`): `get_prev` retries `ErrorKind::Unavailable`
+  (bounded, backoff) before the fail-closed panic; retry-everything mutant
+  executed; storage lib 18/18 on U2S3.
+
 ## Top follow-ups, in order
 
 1. **Re-run the single-commit corpus on the merged tree.** The
-   `u2s3-full-2` evidence is from `c75a1af`; F3 changed `open_s3` and the
-   estimate path since. Run:
+   `u2s3-full-2` evidence is from `c75a1af`; F3/A6/A10 changed `open_s3`,
+   the estimate path and `get_prev` since. Run:
    `python3 tools/fork/stage.py && cd sources/typedb && cargo +1.93.0 test --workspace --no-run`
    then `python3 tools/catalog/package_assembly.py` and
    `python3 tools/catalog/run_u0.py --reap --timeout 7200 --out docs/evidence/G3/u2s3-full-3`
    (U2S3 env vars in `docs/operations.md`; MinIO must be up), then
-   `python3 tools/catalog/compare_u2s3.py u2s3-full-3`. Expect the same
-   105/106 with the storage:storage delta growing by the new controls
-   (memo, posture, materialisation, F3 count = +5 lib tests vs u2s3-full-2).
-2. **Regenerate the catalogue + green completeness.** `generate_catalog.py`
-   was fixed (dead outlines no longer count phantom leaves) but
-   `docs/evidence/G1/upstream-test-catalog.json` is not yet regenerated, so
-   `python3 tools/catalog/completeness.py --results docs/evidence/G3/u2s3-full-2`
-   still reports the 4-leaf cucumber mismatch. Regenerate (needs the cargo
-   build warm: `python3 tools/catalog/generate_catalog.py`), re-run
-   completeness, commit both.
-3. **Update the audit statuses.** `v16-convergence-audit.md` still shows
-   F3/F8/F9/F10 with pre-session statuses; fold in the commit map above
-   (F3 storage-side closed, F8 closed except R2 RecoveryAnchor publication,
-   F9 closed except streaming, F10 closed except Mode-Q Bazel oracle).
-4. **Donor P1 remainders** (`donor-a-branch-response.md` has the full
-   dispositions): A5 guard `generation` at the wire boundary; A10 give
-   `get_prev` a transient-vs-fatal retry channel instead of panic-on-any;
-   A9/A11 are U3.2 integration items.
-5. **The remaining OPEN-P0s are the big builds**: F4/F5 external-epoch
+   `python3 tools/catalog/compare_u2s3.py u2s3-full-3` and
+   `python3 tools/catalog/completeness.py --results docs/evidence/G3/u2s3-full-3`.
+   Expect the same 105/106 with the storage:storage delta growing by the
+   new controls (+8 lib tests vs u2s3-full-2: memo, posture,
+   materialisation, retry-channel).
+2. **Donor P1 remainders**: A4 core-level per-procedure session
+   revalidation beneath the capability layer; A9/A11 are U3.2 integration
+   items (native checkpoint clone, container epoch token).
+3. **The remaining OPEN-P0s are the big builds**: F4/F5 external-epoch
    SlateDB fork (design staged at file/symbol level), F6r controller-owned
    global CheckpointCut integration with TypeDB (U3.2), F8r immutable R2
    RecoveryAnchor publication. G2/L3 remain blocked on credentials
@@ -101,9 +104,8 @@ re-run is the top follow-up.
 ## Suggested opening message for the new session
 
 > Continue the TypeDB-on-SlateDB/R2 work from main (see
-> docs/tasks/NEXT-SESSION.md). Start with follow-ups 1–3: re-run the
-> single-commit corpus on the merged tree into u2s3-full-3 with the oracle
-> comparison, regenerate the test catalogue and get completeness.py green
-> against it, and update the V16 audit statuses to reflect the commit map.
-> Then continue with the donor P1 remainders (A5 generation guard, A10
-> get_prev retry channel) and the staged OPEN-P0 builds per the audit.
+> docs/tasks/NEXT-SESSION.md). Start with follow-up 1: re-run the
+> single-commit corpus on the merged tree into u2s3-full-3, with the
+> oracle comparison and a completeness run against the new results. Then
+> the donor P1 remainders (A4 core-level session revalidation) and the
+> staged OPEN-P0 builds per the audit (F4/F5 external-epoch fork first).

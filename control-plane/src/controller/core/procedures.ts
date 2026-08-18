@@ -25,7 +25,7 @@
  *    exact — a missing row is a typed NOT_FOUND, never treated as EOF.
  */
 
-import { bytesEqual, canonicalJson, framedHash, fromHex as fromHexInternal, hex, hmacSha256, sha256, utf8 } from "./journal-crypto.ts";
+import { bytesEqual, canonicalJson, CANONICAL_U64, framedHash, fromHex as fromHexInternal, hex, hmacSha256, sha256, utf8 } from "./journal-crypto.ts";
 
 export interface SqlRow {
   [column: string]: unknown;
@@ -215,7 +215,7 @@ export function u64FromWire(value: unknown, context: string): bigint {
   let parsed: bigint;
   if (typeof value === "bigint") parsed = value;
   else if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) parsed = BigInt(value);
-  else if (typeof value === "string" && /^(0|[1-9]\d*)$/.test(value)) parsed = BigInt(value);
+  else if (typeof value === "string" && CANONICAL_U64.test(value)) parsed = BigInt(value);
   else throw new Error(`INTEGER_RANGE_VIOLATION: ${context}=${String(value)} is not a canonical exact u64`);
   if (parsed > U64_MAX) {
     throw new Error(`INTEGER_RANGE_VIOLATION: ${context}=${parsed} outside u64`);

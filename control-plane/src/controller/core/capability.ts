@@ -21,7 +21,7 @@
  * Everything is synchronous and runtime-agnostic, like the journal crypto.
  */
 
-import { bytesEqual, canonicalJson, fromHex, hmacSha256, hex, utf8 } from "./journal-crypto.ts";
+import { bytesEqual, canonicalJson, CANONICAL_U64, fromHex, hmacSha256, hex, utf8 } from "./journal-crypto.ts";
 
 const UTF8_DECODER = new TextDecoder();
 
@@ -89,10 +89,6 @@ export const REQUIRED_RESTRICTIONS: Record<string, ReadonlyArray<"session" | "ge
   // rollover invalidates it.
   WAL_FINALIZE: ["session", "generation"],
 };
-
-/** Canonical decimal u64 syntax for capability-bound sequence values: `0`
- *  or a nonzero digit followed by digits (no aliases like "00"). */
-const CANONICAL_U64 = /^(0|[1-9]\d*)$/;
 
 /**
  * Hard ceiling on any byte budget a capability may carry (contract F9: the

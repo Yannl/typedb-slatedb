@@ -138,9 +138,32 @@ async function readBodyStreamingDigest(request: Request, limit: number):
     // a byte budget (mirrors refuseOversizedBody's missing-length refusal)
     return { errorResponse: json({ ok: false, error: "CONTENT_LENGTH_REQUIRED", limit }, 411) };
   }
+  const result = await streamCappedDigest(body, limit);
+  if ("overCap" in result) {
+    return { errorResponse: json({ ok: false, error: "REQUEST_BODY_TOO_LARGE",
+                                   observed: result.total, limit }, 413) };
+  }
+  return { bytes: result.bytes, digest: result.digest };
+}
+
+/**
+ * Stream a `ReadableStream<Uint8Array>` through an incremental SHA-256,
+ * retaining the chunks, and enforce a cumulative byte cap PER CHUNK (never
+ * trusting a declared length). On success returns the buffered bytes, the
+ * exact total, and the hex digest; on cap breach returns the observed total
+ * so each caller can shape its own typed refusal (a 413 for the inbound
+ * request body, an OVER_CAP for a stored object). The digest is computed
+ * incrementally — folded first (DigestStream copies into the hash context, it
+ * does not detach the view), then the chunk is retained — so there is no
+ * second full pass over the bytes.
+ */
+async function streamCappedDigest(
+  stream: ReadableStream<Uint8Array>,
+  cap: number,
+): Promise<{ bytes: Uint8Array; total: number; digest: string } | { overCap: true; total: number }> {
   const digestStream = new crypto.DigestStream("SHA-256");
   const writer = digestStream.getWriter();
-  const reader = body.getReader();
+  const reader = stream.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
   try {
@@ -148,14 +171,11 @@ async function readBodyStreamingDigest(request: Request, limit: number):
       const { done, value } = await reader.read();
       if (done) break;
       total += value.byteLength;
-      if (total > limit) {
+      if (total > cap) {
         await writer.abort().catch(() => {});
         await reader.cancel().catch(() => {});
-        return { errorResponse: json({ ok: false, error: "REQUEST_BODY_TOO_LARGE",
-                                       observed: total, limit }, 413) };
+        return { overCap: true, total };
       }
-      // fold into the digest first (DigestStream copies into the hash context,
-      // it does not detach the view), then retain for the R2 write
       await writer.write(value);
       chunks.push(value);
     }
@@ -163,7 +183,7 @@ async function readBodyStreamingDigest(request: Request, limit: number):
   } finally {
     reader.releaseLock();
   }
-  return { bytes: concatChunks(chunks, total), digest: hexOf(await digestStream.digest) };
+  return { bytes: concatChunks(chunks, total), total, digest: hexOf(await digestStream.digest) };
 }
 
 /**
@@ -216,33 +236,15 @@ async function fetchVerified(
   // cap is re-checked per chunk in case the reported size lied. The bytes are
   // still buffered because the wire contract returns them base64 inline; the
   // day that contract is dropped, the digest already flows without a copy.
-  const digestStream = new crypto.DigestStream("SHA-256");
-  const writer = digestStream.getWriter();
-  const reader = object.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > MAX_PAYLOAD_OBJECT_BYTES) {
-        await writer.abort().catch(() => {});
-        await reader.cancel().catch(() => {});
-        return { error: "OVER_CAP", size: total, cap: MAX_PAYLOAD_OBJECT_BYTES };
-      }
-      await writer.write(value);
-      chunks.push(value);
-    }
-    await writer.close();
-  } finally {
-    reader.releaseLock();
+  const result = await streamCappedDigest(object.body, MAX_PAYLOAD_OBJECT_BYTES);
+  if ("overCap" in result) {
+    return { error: "OVER_CAP", size: result.total, cap: MAX_PAYLOAD_OBJECT_BYTES };
   }
-  const observed = hexOf(await digestStream.digest);
-  if (observed !== expectedDigest || (expectedLength !== undefined && total !== expectedLength)) {
-    return { error: "MISMATCH", observed, length: total };
+  const observed = result.digest;
+  if (observed !== expectedDigest || (expectedLength !== undefined && result.total !== expectedLength)) {
+    return { error: "MISMATCH", observed, length: result.total };
   }
-  return { bytes: concatChunks(chunks, total) };
+  return { bytes: result.bytes };
 }
 
 /** Read-path wrapper: base64 payload or a typed error Response. A catalogued
@@ -586,13 +588,16 @@ export default {
       }
     };
 
-    /** Read routes bind the use to the request line (method + path + query). */
+    /** Bind a mutating use to the request line (method + path + query) when the
+     *  route carries no body of its own (e.g. SESSION_ADMIN). Read routes claim
+     *  no use (C-07) and do not call this. */
     const routeUseDigest = () =>
       useDigestOf({ method: request.method, path, search: url.search });
 
-    /** null = authorized; otherwise the typed 401/403. Read helper (no claim). */
+    /** null = authorized; otherwise the typed 401/403. Read helper (no claim):
+     *  reads never claim a use (C-07), so no request-line digest is bound. */
     const requireCapability = async (
-      databaseId: string, expect: CapExpect, _useDigest: string,
+      databaseId: string, expect: CapExpect,
     ): Promise<Response | null> => {
       const auth = await verifyRead(databaseId, expect);
       return auth.authorized ? null : auth.denied;
@@ -601,7 +606,7 @@ export default {
     /** Read helper that also hands back the session (WAL_READ operation
      *  query). No durable claim (C-07). */
     const requireCapabilityWithSession = async (
-      databaseId: string, expect: CapExpect, _useDigest: string,
+      databaseId: string, expect: CapExpect,
     ): Promise<{ denied: Response } | { session: string }> => {
       const auth = await verifyRead(databaseId, expect);
       if (!auth.authorized) return { denied: auth.denied };
@@ -1040,7 +1045,7 @@ export default {
       // after the caller's single-use capability was already burned
       const lsnValue = nonNegativeU64(lsn, 0n);
       if (lsnValue === null) return json({ ok: false, error: "INVALID_PARAMETER", field: "lsn" }, 400);
-      const denied = await requireCapability(db, { method: "WAL_READ" }, await routeUseDigest());
+      const denied = await requireCapability(db, { method: "WAL_READ" });
       if (denied) return denied;
       const record = await stubFor(db).exactLookup(db, gen, lsnValue);
       if (!record.ok) return json(record, 404);
@@ -1058,7 +1063,7 @@ export default {
       const [, db, generation] = walHead;
       const gen = generationOr(generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(db, { method: "WAL_READ" }, await routeUseDigest());
+      const denied = await requireCapability(db, { method: "WAL_READ" });
       if (denied) return denied;
       return json({ ok: true, ...(await stubFor(db).head(db, gen)) });
     }
@@ -1068,7 +1073,7 @@ export default {
       const [, db, generation] = walIterator;
       const gen = generationOr(generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(db, { method: "WAL_READ" }, await routeUseDigest());
+      const denied = await requireCapability(db, { method: "WAL_READ" });
       if (denied) return denied;
       return json({ ok: true, ...(await stubFor(db).openIterator(db, gen)) });
     }
@@ -1078,7 +1083,7 @@ export default {
       const [, db, generation] = walScan;
       const gen = generationOr(generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(db, { method: "WAL_READ" }, await routeUseDigest());
+      const denied = await requireCapability(db, { method: "WAL_READ" });
       if (denied) return denied;
       const recordTypeParam = url.searchParams.get("recordType");
       const recordType = recordTypeParam === null ? null : Number(recordTypeParam);
@@ -1180,7 +1185,7 @@ export default {
       // typed 400, never a 500 from an unhandled URIError (C-06)
       const decodedOp = safeDecodeComponent(operationId);
       if ("errorResponse" in decodedOp) return decodedOp.errorResponse;
-      const auth = await requireCapabilityWithSession(db, { method: "WAL_READ" }, await routeUseDigest());
+      const auth = await requireCapabilityWithSession(db, { method: "WAL_READ" });
       if ("denied" in auth) return auth.denied;
       // Read surface: immutable durable history stays queryable by operation
       // identity across a fence of some OTHER actor (V16; the finalize-RETRY
@@ -1202,7 +1207,7 @@ export default {
       const [, db, generation] = walLast;
       const gen = generationOr(generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(db, { method: "WAL_READ" }, await routeUseDigest());
+      const denied = await requireCapability(db, { method: "WAL_READ" });
       if (denied) return denied;
       const recordType = Number(url.searchParams.get("recordType") ?? "NaN");
       if (invalidRecordType(recordType)) {
@@ -1218,7 +1223,7 @@ export default {
 
     const outboxPeek = path.match(/^\/outbox\/([^/]+)$/);
     if (request.method === "GET" && outboxPeek) {
-      const denied = await requireCapability(outboxPeek[1], { method: "OUTBOX" }, await routeUseDigest());
+      const denied = await requireCapability(outboxPeek[1], { method: "OUTBOX" });
       if (denied) return denied;
       // validated and clamped like scan's: a negative LIMIT is documented by
       // SQLite as "no upper bound", so an unchecked value here was the one
@@ -1293,7 +1298,7 @@ export default {
     if (request.method === "GET" && cutActive) {
       const activeGen = generationOr(cutActive[2]);
       if (activeGen instanceof Response) return activeGen;
-      const denied = await requireCapability(cutActive[1], { method: "WAL_READ" }, await routeUseDigest());
+      const denied = await requireCapability(cutActive[1], { method: "WAL_READ" });
       if (denied) return denied;
       const result = await stubFor(cutActive[1]).activeCheckpointCut(cutActive[1], activeGen);
       return json(result, result.ok ? 200 : 404);
@@ -1301,7 +1306,7 @@ export default {
 
     const journalVerifyAnchored = path.match(/^\/journal\/([^/]+)\/verify-anchored$/);
     if (request.method === "GET" && journalVerifyAnchored) {
-      const denied = await requireCapability(journalVerifyAnchored[1], { method: "JOURNAL_VERIFY" }, await routeUseDigest());
+      const denied = await requireCapability(journalVerifyAnchored[1], { method: "JOURNAL_VERIFY" });
       if (denied) return denied;
       const verdict = await stubFor(journalVerifyAnchored[1]).verifyJournalAnchored();
       return json(verdict, verdict.ok ? 200 : 409);
@@ -1312,7 +1317,7 @@ export default {
       // F8 read surface: recompute the whole chain + MACs server-side.
       // Routed by databaseId like every DO method (the journal is the DO's
       // global outbox; the id names the authority instance to audit).
-      const denied = await requireCapability(journalVerify[1], { method: "JOURNAL_VERIFY" }, await routeUseDigest());
+      const denied = await requireCapability(journalVerify[1], { method: "JOURNAL_VERIFY" });
       if (denied) return denied;
       const verdict = await stubFor(journalVerify[1]).verifyJournal();
       return json(verdict, verdict.ok ? 200 : 409);
@@ -1323,7 +1328,7 @@ export default {
       const [, db, generation] = walAudit;
       const gen = generationOr(generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(db, { method: "WAL_READ" }, await routeUseDigest());
+      const denied = await requireCapability(db, { method: "WAL_READ" });
       if (denied) return denied;
       return json({ ok: true, ...(await stubFor(db).auditContiguity(db, gen)) });
     }

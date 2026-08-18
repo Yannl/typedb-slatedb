@@ -87,22 +87,17 @@ impl DurabilitySequenceNumber {
     /// top of the sequence space is a hard fault in every build profile:
     /// the unchecked `+ 1` panicked in debug but WRAPPED to zero in release,
     /// silently re-issuing the identity of the first commit ever made.
-    /// Callers that can surface a typed error use [`Self::checked_next`];
-    /// the panicking form exists for positional uses where an overflow is
+    /// Callers that can surface a typed error use [`Self::try_next`]; the
+    /// panicking form exists for positional uses where an overflow is
     /// unreachable by construction.
     pub fn next(&self) -> Self {
-        self.checked_next().expect("DurabilitySequenceNumber overflow: the u64 sequence space is exhausted")
+        self.try_next().expect("DurabilitySequenceNumber overflow: the u64 sequence space is exhausted")
     }
 
-    /// Successor, or `None` at the top of the sequence space. The checked
-    /// boundary for allocation paths (S-P0-09): exhaustion must become a
-    /// typed error with no state mutated, never a wrap or a panic.
-    pub fn checked_next(&self) -> Option<Self> {
-        self.try_next()
-    }
-
-    /// Canonical checked successor (R-07). `None` at [`Self::MAX`]: the
-    /// caller maps exhaustion to its own typed refusal and mutates nothing.
+    /// Canonical checked successor (R-07 / S-P0-09), the ONE checked-successor
+    /// name every recovery path calls. `None` at [`Self::MAX`]: the caller maps
+    /// exhaustion to its own typed refusal and mutates nothing (never a wrap or
+    /// a panic).
     pub fn try_next(&self) -> Option<Self> {
         self.number.checked_add(1).map(|number| Self { number })
     }
@@ -125,12 +120,7 @@ impl DurabilitySequenceNumber {
     }
 
     pub fn previous(&self) -> Self {
-        Self {
-            number: self
-                .number
-                .checked_sub(1)
-                .expect("DurabilitySequenceNumber underflow: no sequence number precedes MIN"),
-        }
+        self.try_previous().expect("DurabilitySequenceNumber underflow: no sequence number precedes MIN")
     }
 
     pub fn number(&self) -> u64 {
@@ -283,12 +273,12 @@ mod sequence_boundary_tests {
     fn next_is_exact_up_to_the_last_representable_sequence_number() {
         let penultimate = DurabilitySequenceNumber::new(u64::MAX - 1);
         assert_eq!(penultimate.next(), DurabilitySequenceNumber::MAX);
-        assert_eq!(penultimate.checked_next(), Some(DurabilitySequenceNumber::MAX));
+        assert_eq!(penultimate.try_next(), Some(DurabilitySequenceNumber::MAX));
     }
 
     #[test]
-    fn checked_next_reports_exhaustion_at_max_instead_of_wrapping() {
-        assert_eq!(DurabilitySequenceNumber::MAX.checked_next(), None);
+    fn try_next_reports_exhaustion_at_max_instead_of_wrapping() {
+        assert_eq!(DurabilitySequenceNumber::MAX.try_next(), None);
     }
 
     #[test]
@@ -330,7 +320,6 @@ mod sequence_boundary_tests {
         ];
         for (input, expected) in points {
             assert_eq!(input.try_next(), expected, "try_next({input})");
-            assert_eq!(input.checked_next(), expected, "checked_next must stay the same helper");
         }
     }
 

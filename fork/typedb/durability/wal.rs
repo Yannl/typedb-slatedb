@@ -116,6 +116,17 @@ const MAX_FRAME_PAYLOAD_LEN: u64 = 256 * 1024 * 1024;
 /// payload passing the decoded budget can never be refused for its encoding.
 const MAX_FRAME_ENCODED_LEN: u64 = MAX_FRAME_PAYLOAD_LEN + MAX_FRAME_PAYLOAD_LEN / 255 + 64;
 
+/// R-01b decoded-payload budget refusal, shared by the sequenced and
+/// unsequenced write entry points: a refused write allocates no sequence
+/// number and mutates nothing. (`write_record` keeps its own defence-in-depth
+/// copy at the frame boundary — a distinct, deliberate second gate.)
+fn check_payload_budget(len: usize) -> Result<(), WALError> {
+    if len as u64 > MAX_FRAME_PAYLOAD_LEN {
+        return Err(WALError::RecordTooLarge { len: len as u64, budget: MAX_FRAME_PAYLOAD_LEN });
+    }
+    Ok(())
+}
+
 /// CRC-32 (IEEE 802.3, reflected, poly 0xEDB88320) — implemented locally so
 /// the frame checksum adds no new dependency to the locked workspace.
 static CRC32_TABLE: [u32; 256] = {
@@ -276,9 +287,7 @@ impl DurabilityService for WAL {
         debug_assert!(self.registered_types.contains_key(&record_type));
         // R-01b: the payload budget is refused BEFORE a sequence number is
         // allocated — a refused write mutates nothing at all
-        if bytes.len() as u64 > MAX_FRAME_PAYLOAD_LEN {
-            return Err(WALError::RecordTooLarge { len: bytes.len() as u64, budget: MAX_FRAME_PAYLOAD_LEN }.into());
-        }
+        check_payload_budget(bytes.len())?;
         let mut files = self.files.write().unwrap();
         // exhaustion is refused BEFORE any bytes are written: no record, no
         // counter movement, no partial state (S-P0-09)
@@ -293,9 +302,7 @@ impl DurabilityService for WAL {
     fn unsequenced_write(&self, record_type: DurabilityRecordType, bytes: &[u8]) -> Result<(), DurabilityServiceError> {
         debug_assert!(self.registered_types.contains_key(&record_type));
         // R-01b: same budget refusal as the sequenced path, before any state
-        if bytes.len() as u64 > MAX_FRAME_PAYLOAD_LEN {
-            return Err(WALError::RecordTooLarge { len: bytes.len() as u64, budget: MAX_FRAME_PAYLOAD_LEN }.into());
-        }
+        check_payload_budget(bytes.len())?;
         let mut files = self.files.write().unwrap();
         let sequence_number = self.previous();
         debug!("Writing unsequenced record with {sequence_number}");
@@ -878,6 +885,21 @@ impl FileReader {
         WALError::CorruptFrame { path: self.file.path.clone(), offset, defect }.into()
     }
 
+    /// Bytes available for the frame's payload after its header at `offset`,
+    /// or the typed `TruncatedPayload` defect when the declared encoded length
+    /// runs past the end of file. The shared availability check for both the
+    /// skip and the read record paths.
+    fn payload_available(&self, offset: u64, header: &ParsedHeader) -> Result<u64, DurabilityServiceError> {
+        let available = self.file.len - offset - header.header_len;
+        if header.encoded_len > available {
+            return Err(self.defect(
+                offset,
+                FrameDefect::TruncatedPayload { declared: header.encoded_len, available },
+            ));
+        }
+        Ok(available)
+    }
+
     fn peek_sequence_number(&mut self) -> Result<Option<DurabilitySequenceNumber>, DurabilityServiceError> {
         let offset = self.reader.stream_position()?;
         if offset == self.file.len {
@@ -895,14 +917,31 @@ impl FileReader {
         }
         let header = self.read_header(offset)?;
         self.check_sequence_progression(offset, &header)?;
-        let payload_available = self.file.len - offset - header.header_len;
-        if header.encoded_len > payload_available {
-            return Err(self.defect(
-                offset,
-                FrameDefect::TruncatedPayload { declared: header.encoded_len, available: payload_available },
-            ));
-        }
+        self.payload_available(offset, &header)?;
         self.reader.seek_relative(header.encoded_len as i64)?;
+        Ok(())
+    }
+
+    /// Advance the reader to the first record whose sequence number is `start`,
+    /// skipping records from `from` (this file's first sequence number). Stops
+    /// early at end of file or once a peeked number reaches `start`. The shared
+    /// seek used by both the multi-file and single-file record iterators.
+    fn seek_to(
+        &mut self,
+        start: DurabilitySequenceNumber,
+        from: DurabilitySequenceNumber,
+    ) -> Result<(), DurabilityServiceError> {
+        let mut current = from;
+        while current < start {
+            match self.peek_sequence_number()? {
+                None => break, // sequence number is past the end of this file.
+                Some(sequence_number) if sequence_number == start => break,
+                Some(sequence_number) => {
+                    current = sequence_number;
+                    self.skip_one_record()?;
+                }
+            }
+        }
         Ok(())
     }
 
@@ -926,14 +965,7 @@ impl FileReader {
         }
         let header = self.read_header(offset)?;
         self.check_sequence_progression(offset, &header)?;
-
-        let payload_available = self.file.len - offset - header.header_len;
-        if header.encoded_len > payload_available {
-            return Err(self.defect(
-                offset,
-                FrameDefect::TruncatedPayload { declared: header.encoded_len, available: payload_available },
-            ));
-        }
+        self.payload_available(offset, &header)?;
         let mut compressed = vec![0u8; header.encoded_len as usize];
         self.reader.read_exact(&mut compressed)?;
 
@@ -1066,24 +1098,14 @@ impl<'a> RecordIterator<'a> {
             return Ok(Self { files, current: 0, reader: None });
         }
 
-        let (current, mut current_start) = files
+        let (current, current_start) = files
             .iter()
             .map_while(|file| (file.start < start).then_some(file.start))
             .enumerate()
             .last()
             .unwrap_or((0, files.files[0].start));
         let mut reader = FileReader::new(files.files[current].clone())?;
-
-        while current_start < start {
-            match reader.peek_sequence_number()? {
-                None => break, // sequence number is past the end of this file.
-                Some(sequence_number) if sequence_number == start => break,
-                Some(sequence_number) => {
-                    current_start = sequence_number;
-                    reader.skip_one_record()?;
-                }
-            }
-        }
+        reader.seek_to(start, current_start)?;
         Ok(Self { files, current, reader: Some(reader) })
     }
 
@@ -1126,18 +1148,7 @@ struct FileRecordIterator<'a> {
 impl<'a> FileRecordIterator<'a> {
     fn new(file: &'a File, start: DurabilitySequenceNumber) -> Result<Self, DurabilityServiceError> {
         let mut reader = FileReader::new(file.clone())?;
-
-        let mut current_start = file.start;
-        while current_start < start {
-            match reader.peek_sequence_number()? {
-                None => break, // sequence number is past the end of this file.
-                Some(sequence_number) if sequence_number == start => break,
-                Some(sequence_number) => {
-                    current_start = sequence_number;
-                    reader.skip_one_record()?;
-                }
-            }
-        }
+        reader.seek_to(start, file.start)?;
         Ok(Self { reader: Some(reader), file_ref: PhantomData })
     }
 }

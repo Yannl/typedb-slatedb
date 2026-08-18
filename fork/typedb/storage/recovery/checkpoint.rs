@@ -184,7 +184,7 @@ impl CheckpointReader {
 /// replaying from sequence number zero.
 fn replay_successor(directory: &Path, sequence_number: SequenceNumber) -> Result<SequenceNumber, CheckpointLoadError> {
     sequence_number
-        .checked_next()
+        .try_next()
         .ok_or_else(|| CheckpointLoadError::SequenceExhausted { dir: directory.to_owned(), watermark: sequence_number })
 }
 
@@ -282,17 +282,13 @@ fn restore_storage_from_checkpoint(keyspace_dir: PathBuf, keyspace_checkpoint_di
     for entry in fs::read_dir(&keyspace_dir)? {
         let entry = entry?;
         let storage_file = entry.path();
+        let is_dir = entry.file_type()?.is_dir();
         let checkpoint_file = keyspace_checkpoint_dir.join(storage_file.file_name().unwrap());
-        if !checkpoint_file.exists() {
-            if entry.file_type()?.is_dir() {
-                fs::remove_dir_all(storage_file)?;
-            } else {
-                fs::remove_file(storage_file)?;
-            }
-        } else if entry.file_type()?.is_dir() != checkpoint_file.is_dir() {
-            // a file replaced by a directory (or vice versa) between
-            // checkpoint and live state: remove, the copy pass recreates it
-            if entry.file_type()?.is_dir() {
+        // remove any live entry the checkpoint no longer contains, or whose
+        // kind (file <-> dir) changed between checkpoint and live state — the
+        // copy pass below recreates the latter.
+        if !checkpoint_file.exists() || is_dir != checkpoint_file.is_dir() {
+            if is_dir {
                 fs::remove_dir_all(storage_file)?;
             } else {
                 fs::remove_file(storage_file)?;
@@ -434,7 +430,7 @@ impl CheckpointWriter {
         let complete_path = self.temporary_directory.join(CHECKPOINT_COMPLETE_FILE_NAME);
         write_file(&complete_path, manifest.serialise().as_bytes())
             .map_err(|error| CompleteMarkerWrite { dir: self.temporary_directory.clone(), source: Arc::new(error) })?;
-        fsync_dir(&self.temporary_directory)
+        crate::fsync_path(&self.temporary_directory)
             .map_err(|error| CompleteMarkerWrite { dir: self.temporary_directory.clone(), source: Arc::new(error) })?;
 
         fail_point!(CHECKPOINT_DIR_CREATE_FAIL);
@@ -446,7 +442,7 @@ impl CheckpointWriter {
         // R-06: the rename itself must be durable, or a crash can leave the
         // parent directory pointing at the pre-rename tmp name.
         if let Some(parent) = self.checkpoint_directory.parent() {
-            fsync_dir(parent)
+            crate::fsync_path(parent)
                 .map_err(|error| CheckpointDirCreate { dir: parent.to_owned(), source: Arc::new(error) })?;
         }
 
@@ -524,31 +520,16 @@ fn fsync_tree_bottom_up(root: &Path) -> io::Result<()> {
         let entry = entry?;
         let path = entry.path();
         // no-follow: never traverse or fsync through a symlink/special file the
-        // checkpoint tree should not contain (shares the R-05 invariant).
-        let file_type = fs::symlink_metadata(&path)?.file_type();
-        if file_type.is_symlink() {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("checkpoint entry is a symlink: {path:?}")));
-        }
+        // checkpoint tree should not contain — the one shared R-05 enforcement
+        // point, which also yields the file-or-dir type to branch on.
+        let file_type = assert_safe_checkpoint_entry(&path)?;
         if file_type.is_dir() {
             fsync_tree_bottom_up(&path)?;
-        } else if file_type.is_file() {
-            fsync_file(&path)?;
         } else {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("checkpoint entry is not a regular file or directory: {path:?}"),
-            ));
+            crate::fsync_path(&path)?;
         }
     }
-    fsync_dir(root)
-}
-
-fn fsync_file(path: &Path) -> io::Result<()> {
-    File::open(path)?.sync_all()
-}
-
-fn fsync_dir(path: &Path) -> io::Result<()> {
-    File::open(path)?.sync_all()
+    crate::fsync_path(root)
 }
 
 /// R-06: the machine manifest a COMPLETE marker carries. It binds, for every
@@ -567,6 +548,10 @@ struct CheckpointManifest {
     /// relative path (`/`-joined) -> (length, content digest)
     entries: BTreeMap<String, (u64, u64)>,
     root_digest: u64,
+    /// Informational only (human-readable marker content). NOT a bound
+    /// integrity input: `verify` compares `entries` + `root_digest`, and the
+    /// STORAGE_METADATA file this is read from is itself a regular file under
+    /// the root, so its bytes are already hashed into `entries`.
     watermark: Option<u64>,
 }
 
@@ -589,16 +574,11 @@ impl CheckpointManifest {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
-            let file_type = fs::symlink_metadata(&path)?.file_type();
-            if file_type.is_symlink() {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("checkpoint entry is a symlink: {path:?}"),
-                ));
-            }
+            // same no-follow R-05 enforcement point as restore/fsync
+            let file_type = assert_safe_checkpoint_entry(&path)?;
             if file_type.is_dir() {
                 Self::walk(root, &path, entries)?;
-            } else if file_type.is_file() {
+            } else {
                 let relative = path.strip_prefix(root).expect("walked path is under root");
                 let key = relative.to_string_lossy().replace('\\', "/");
                 if key == CHECKPOINT_COMPLETE_FILE_NAME {
@@ -606,11 +586,6 @@ impl CheckpointManifest {
                 }
                 let (len, digest) = hash_file(&path)?;
                 entries.insert(key, (len, digest));
-            } else {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("checkpoint entry is not a regular file or directory: {path:?}"),
-                ));
             }
         }
         Ok(())

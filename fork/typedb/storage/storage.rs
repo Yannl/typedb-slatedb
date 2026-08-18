@@ -78,6 +78,16 @@ pub mod sequence_number;
 pub mod snapshot;
 mod write_batches;
 
+/// Make a path (a regular file or a directory) durable by opening it and
+/// `sync_all()`. The one durability primitive shared by the checkpoint writer
+/// (`recovery::checkpoint`) and the SlateDB keyspace checkpoint copy
+/// (`keyspace::slate`): a copied file's BYTES and a directory's ENTRY LIST are
+/// only on stable storage after this returns — `sync_all` on the files alone
+/// does not persist their names in the parent directory.
+pub(crate) fn fsync_path(path: &std::path::Path) -> std::io::Result<()> {
+    std::fs::File::open(path)?.sync_all()
+}
+
 /// Shared containment policy for every post-WAL storage-path wait (S-P0-02):
 /// the SAME 600 s deadline / 30 s report cadence as OD-002's watermark wait
 /// and OD-006's async bridge — one policy, deliberately not a new value.

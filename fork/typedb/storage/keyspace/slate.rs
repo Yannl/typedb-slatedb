@@ -1432,13 +1432,13 @@ impl SlateKeyspace {
             fs::copy(pinned, &target).map_err(|error| Arc::new(io_error(error)))?;
             // the pinned manifest is what restore opens: its bytes and its
             // directory entry must be durable, not just in the page cache
-            fsync_file(&target).map_err(|error| Arc::new(io_error(error)))?;
-            fsync_dir(&target_dir).map_err(|error| Arc::new(io_error(error)))?;
+            crate::fsync_path(&target).map_err(|error| Arc::new(io_error(error)))?;
+            crate::fsync_path(&target_dir).map_err(|error| Arc::new(io_error(error)))?;
         }
         // completion boundary: the checkpoint tree's root entry itself — a
         // checkpoint the caller goes on to declare finished must not lose
         // files to a crash that empties the page cache
-        fsync_dir(checkpoint_keyspace_dir).map_err(|error| Arc::new(io_error(error)))?;
+        crate::fsync_path(checkpoint_keyspace_dir).map_err(|error| Arc::new(io_error(error)))?;
         Ok(())
     }
 
@@ -1804,17 +1804,6 @@ fn pin_newest_manifest(manifest_dir: &Path) -> io::Result<Option<PathBuf>> {
     Ok(newest)
 }
 
-/// fsync a directory: `File::open` on the directory + `sync_all`, making the
-/// directory's entries (file names created/copied into it) durable. `sync_all`
-/// on the copied files alone does not persist their names.
-fn fsync_dir(dir: &Path) -> io::Result<()> {
-    fs::File::open(dir)?.sync_all()
-}
-
-fn fsync_file(file: &Path) -> io::Result<()> {
-    fs::File::open(file)?.sync_all()
-}
-
 fn copy_dir_recursive_excluding(from: &Path, to: &Path, exclude_dir: Option<&Path>) -> io::Result<()> {
     fs::create_dir_all(to)?;
     for entry in fs::read_dir(from)? {
@@ -1830,11 +1819,11 @@ fn copy_dir_recursive_excluding(from: &Path, to: &Path, exclude_dir: Option<&Pat
             fs::copy(&path, &target)?;
             // checkpoint durability boundary: the copy must be on disk, not
             // just in the page cache, before the checkpoint is declared done
-            fsync_file(&target)?;
+            crate::fsync_path(&target)?;
         }
     }
     // and the copied names themselves must be durable in this directory
-    fsync_dir(to)?;
+    crate::fsync_path(to)?;
     Ok(())
 }
 

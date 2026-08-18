@@ -42,12 +42,13 @@ use tracing::trace;
 use crate::{
     durability_client::{DurabilityClient, DurabilityClientError},
     error::{MVCCStorageError, MVCCStorageErrorKind},
+    factory::{StorageFactoryError, resolved_backend_profile},
     isolation_manager::{IsolationManager, ValidatedCommit},
     iterator::MVCCRangeIterator,
     key_range::KeyRange,
     key_value::{StorageKey, StorageKeyReference},
     keyspace::{
-        IteratorPool, Keyspace, KeyspaceError, KeyspaceId, KeyspaceOpenError, KeyspaceSet, Keyspaces,
+        IteratorPool, Keyspace, KeyspaceError, KeyspaceId, KeyspaceOpenError, KeyspaceSet, Keyspaces, StorageBackend,
         iterator::KeyspaceRangeIterator, rocks_resources::RocksResources,
     },
     post_wal_guard::{PostWalCommitGuard, UnresolvedReason},
@@ -76,6 +77,16 @@ pub mod recovery;
 pub mod sequence_number;
 pub mod snapshot;
 mod write_batches;
+
+/// Shared containment policy for every post-WAL storage-path wait (S-P0-02):
+/// the SAME 600 s deadline / 30 s report cadence as OD-002's watermark wait
+/// and OD-006's async bridge — one policy, deliberately not a new value.
+/// A wait this long means a peer (sync worker, predecessor commit) is
+/// wedged, not busy; the bound exists so a wedge becomes a loud typed error
+/// instead of a silent forever-block holding storage locks.
+pub(crate) const STORAGE_WAIT_DEADLINE: Duration = Duration::from_secs(600);
+/// How often a still-pending bounded wait reports progress.
+pub(crate) const STORAGE_WAIT_REPORT_INTERVAL: Duration = Duration::from_secs(30);
 
 #[derive(Debug)]
 pub struct MVCCStorage<Durability> {
@@ -124,12 +135,25 @@ impl<Durability> MVCCStorage<Durability> {
         })
     }
 
+    /// Resolve this database's storage backend at open (S-P0-06): the
+    /// process profile becomes a typed [`StorageBackend`] exactly once, here,
+    /// and is passed down as an explicit constructor argument. Resolution
+    /// failure — unknown profile value, or a profile whose backend is not
+    /// yet available — is a typed open refusal before any engine or
+    /// namespace is touched; there is no fallback.
+    fn resolve_storage_backend(name: &str) -> Result<StorageBackend, StorageOpenError> {
+        resolved_backend_profile()
+            .and_then(|profile| profile.storage_backend())
+            .map_err(|source| StorageOpenError::BackendResolution { name: name.to_owned(), source })
+    }
+
     fn create_keyspaces<KS: KeyspaceSet>(
         name: impl AsRef<str>,
         storage_dir: &Path,
         rocks_resources: &RocksResources,
     ) -> Result<Keyspaces, StorageOpenError> {
-        let keyspaces = Keyspaces::open::<KS>(&storage_dir, rocks_resources)
+        let backend = Self::resolve_storage_backend(name.as_ref())?;
+        let keyspaces = Keyspaces::open::<KS>(&storage_dir, rocks_resources, backend)
             .map_err(|err| StorageOpenError::KeyspaceOpen { name: name.as_ref().to_owned(), source: err })?;
         Ok(keyspaces)
     }
@@ -151,8 +175,9 @@ impl<Durability> MVCCStorage<Durability> {
 
         Self::register_durability_record_types(&mut durability_client);
         let (keyspaces, next_sequence_number) = if let Some(checkpoint) = checkpoint {
+            let backend = Self::resolve_storage_backend(name)?;
             checkpoint
-                .recover_storage::<KS, _>(name, &storage_dir, &durability_client, rocks_resources)
+                .recover_storage::<KS, _>(name, &storage_dir, &durability_client, rocks_resources, backend)
                 .map_err(|error| RecoverFromCheckpoint { name: name.to_owned(), typedb_source: error })?
         } else {
             match fs::remove_dir_all(&storage_dir) {
@@ -263,9 +288,9 @@ impl<Durability> MVCCStorage<Durability> {
     /// bound is an owner decision (see docs/owner-decisions.json OD-002);
     /// until one exists the safe behaviour is a loud, bounded fail-stop
     /// rather than an indefinite hang.
-    const WATERMARK_WAIT_DEADLINE: Duration = Duration::from_secs(600);
+    const WATERMARK_WAIT_DEADLINE: Duration = STORAGE_WAIT_DEADLINE;
     /// How often the wait reports that it is still waiting.
-    const WATERMARK_WAIT_REPORT_INTERVAL: Duration = Duration::from_secs(30);
+    const WATERMARK_WAIT_REPORT_INTERVAL: Duration = STORAGE_WAIT_REPORT_INTERVAL;
 
     fn wait_for_watermark(&self, target: SequenceNumber) -> SequenceNumber {
         // We can alternatively also block commits from returning until the watermark rises
@@ -432,8 +457,12 @@ impl<Durability> MVCCStorage<Durability> {
             }
             Err(error) => {
                 // best-effort wait so the WAL settles; the validation error below is
-                // the one the caller must see even if the sync also failed
-                let _ = sync_notifier.recv();
+                // the one the caller must see even if the sync also failed.
+                // S-P0-02: bounded — a wedged sync worker must not hold this
+                // commit (and the armed guard) forever; on expiry the
+                // obligation below is still marked unresolved, which is the
+                // correct containment either way.
+                let _ = Self::confirm_sync(&sync_notifier);
                 commit_profile.snapshot_durable_write_data_confirmed();
                 // Q-01: a validation INFRASTRUCTURE error is not an abort
                 // verdict (directive rule 6). The record is durable and
@@ -531,13 +560,51 @@ impl<Durability> MVCCStorage<Durability> {
     /// Wait for a requested durability sync and surface its outcome as a typed
     /// error. A disconnected channel means the durability service shut down (or
     /// died) without acknowledging - never a success.
+    ///
+    /// S-P0-02: the wait is BOUNDED. This used to be a raw `recv()`; a sync
+    /// worker that wedges (rather than dies) then blocked the commit path
+    /// forever with the post-WAL guard armed and never firing — an
+    /// availability hang with no diagnostic. The deadline/report cadence is
+    /// the shared OD-002/OD-006 containment policy, and expiry is typed
+    /// ambiguity (`SyncAcknowledgementTimeout`), which the commit path
+    /// already treats exactly as a sync failure.
     fn confirm_sync(
         sync_notifier: &mpsc::Receiver<Result<(), DurabilityServiceError>>,
     ) -> Result<(), DurabilityClientError> {
-        sync_notifier
-            .recv()
-            .unwrap_or_else(|_disconnected| Err(WALError::SyncAcknowledgementLost.into()))
-            .map_err(|error| DurabilityClientError::ServiceError { source: error })
+        Self::confirm_sync_within(sync_notifier, STORAGE_WAIT_DEADLINE, STORAGE_WAIT_REPORT_INTERVAL)
+    }
+
+    fn confirm_sync_within(
+        sync_notifier: &mpsc::Receiver<Result<(), DurabilityServiceError>>,
+        deadline: Duration,
+        report_interval: Duration,
+    ) -> Result<(), DurabilityClientError> {
+        let started = std::time::Instant::now();
+        loop {
+            match sync_notifier.recv_timeout(report_interval.min(deadline)) {
+                Ok(outcome) => {
+                    return outcome.map_err(|error| DurabilityClientError::ServiceError { source: error });
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(DurabilityClientError::ServiceError {
+                        source: WALError::SyncAcknowledgementLost.into(),
+                    });
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    let waited = started.elapsed();
+                    if waited >= deadline {
+                        return Err(DurabilityClientError::ServiceError {
+                            source: WALError::SyncAcknowledgementTimeout { waited_secs: waited.as_secs() }.into(),
+                        });
+                    }
+                    error!(
+                        "a WAL sync acknowledgement is still pending after {}s (deadline {}s)",
+                        waited.as_secs(),
+                        deadline.as_secs(),
+                    );
+                }
+            }
+        }
     }
 
     fn persist_commit_status(
@@ -744,6 +811,8 @@ typedb_error! {
         KeyspaceOpen(7, "Failed to open keyspace '{name}'.", name: String, source: KeyspaceOpenError),
         Keyspace(8, "Failed to operate with keyspaces.", source: KeyspaceError),
 
+        BackendResolution(12, "Refusing to open database '{name}': its storage backend could not be resolved (fail-closed; no default engine is substituted).", name: String, source: StorageFactoryError),
+
         CheckpointCreate(9, "Failed to create checkpoint for database '{name}'.", name: String, source: CheckpointCreateError),
 
         RecoverFromCheckpoint(10, "Failed to recover from checkpoint for database '{name}'.", name: String, typedb_source: CheckpointLoadError),
@@ -876,6 +945,86 @@ impl StorageOperation {
 }
 
 #[cfg(test)]
+mod sync_confirmation_tests {
+    //! S-P0-02: the commit path's sync-acknowledgement wait is BOUNDED and
+    //! typed. A worker that answers or dies keeps its previous semantics; a
+    //! worker that WEDGES (alive, never answering) now surfaces a typed
+    //! timeout within the deadline instead of blocking the commit thread —
+    //! and the armed post-WAL guard — forever.
+
+    use std::{sync::mpsc, time::Duration};
+
+    use durability::{DurabilityServiceError, wal::WALError};
+
+    use crate::{
+        MVCCStorage,
+        durability_client::{DurabilityClientError, WALClient},
+    };
+
+    type Storage = MVCCStorage<WALClient>;
+
+    #[test]
+    fn an_acknowledged_sync_returns_its_outcome() {
+        let (sender, receiver) = mpsc::channel();
+        sender.send(Ok(())).unwrap();
+        Storage::confirm_sync_within(&receiver, Duration::from_secs(5), Duration::from_millis(10))
+            .expect("an acknowledged successful sync is a success");
+
+        let (sender, receiver) = mpsc::channel();
+        sender.send(Err(DurabilityServiceError::WAL { source: WALError::SyncAcknowledgementLost })).unwrap();
+        let outcome = Storage::confirm_sync_within(&receiver, Duration::from_secs(5), Duration::from_millis(10));
+        assert!(
+            matches!(outcome, Err(DurabilityClientError::ServiceError { .. })),
+            "an acknowledged failed sync surfaces the worker's error"
+        );
+    }
+
+    #[test]
+    fn a_dead_sync_worker_is_typed_acknowledgement_loss_never_success() {
+        let (sender, receiver) = mpsc::channel::<Result<(), DurabilityServiceError>>();
+        drop(sender);
+        let outcome = Storage::confirm_sync_within(&receiver, Duration::from_secs(5), Duration::from_millis(10));
+        assert!(
+            matches!(
+                outcome,
+                Err(DurabilityClientError::ServiceError {
+                    source: DurabilityServiceError::WAL { source: WALError::SyncAcknowledgementLost }
+                })
+            ),
+            "a disconnected acknowledgement channel is typed loss, got: {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn a_wedged_sync_worker_times_out_with_a_typed_error_within_the_deadline() {
+        // The sender stays ALIVE and never sends — the exact wedge a raw
+        // `recv()` blocks on forever. The wait runs on a worker thread and
+        // its RESULT must arrive within a bound, so a mutant restoring the
+        // unbounded receive fails this test instead of hanging it.
+        let (sender, receiver) = mpsc::channel::<Result<(), DurabilityServiceError>>();
+        let (result_sender, result_receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let outcome =
+                Storage::confirm_sync_within(&receiver, Duration::from_millis(200), Duration::from_millis(50));
+            let _ = result_sender.send(outcome);
+        });
+        let outcome = result_receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the bounded sync wait must terminate by its deadline; an unbounded recv() hangs here");
+        assert!(
+            matches!(
+                outcome,
+                Err(DurabilityClientError::ServiceError {
+                    source: DurabilityServiceError::WAL { source: WALError::SyncAcknowledgementTimeout { .. } }
+                })
+            ),
+            "deadline expiry must be the typed sync-acknowledgement timeout, got: {outcome:?}"
+        );
+        drop(sender);
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use bytes::byte_array::ByteArray;
     use diagnostics::metrics::FsyncMetrics;
@@ -959,6 +1108,7 @@ mod tests {
             let keyspaces = Keyspaces::open::<TestKeyspaceSet>(
                 storage_path.join(MVCCStorage::<WALClient>::STORAGE_DIR_NAME),
                 &resources,
+                crate::keyspace::StorageBackend::Rocks,
             )
             .unwrap();
             keyspaces.write(partial_commit).unwrap();

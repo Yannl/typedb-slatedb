@@ -105,3 +105,83 @@ authority the controller chose**. The tests distinguish the two.
   `init_compactor`; only the manifest-level twin exists here. Wiring
   `with_external_compactor_epoch` through `CompactorBuilder` is the same
   shape and is deliberately left for the decision.
+
+## Patch 0002 — bounded L0 SST upload retry (S-P0-01)
+
+Two files. Upstream `upload_segment_sst` retried EVERY upload error forever,
+and its only escape — shutdown — was conditioned on `wal_enabled`. Our
+adapter disables the SlateDB WAL (TypeDB's WAL owns recovery), so a
+prolonged object-store outage pinned the uploader, flush and close in a
+silent infinite loop (the Q-13 hazard observed live in the Candidate B
+spike run).
+
+| File | Change |
+|---|---|
+| `src/memtable_flusher/uploader.rs` | The retry loop terminates on every path: shutdown gives up immediately **regardless of `wal_enabled`** (with the WAL off, recovery is the external WAL's job); non-`Unavailable` errors (fenced/data/internal/invalid/closed) are terminal on first sight (`upload_error_is_terminal`); `Unavailable` errors retry up to `UPLOAD_ATTEMPT_BUDGET` (8) attempts and then FAIL the flush with the typed exhaustion error, which propagates through the handler into the executor's closed result — the database fail-stops instead of hanging. Plus tests (below). |
+| `src/error.rs` | `SlateDBError::L0SstUploadRetriesExhausted { attempts, last_error }`, surfaced as `ErrorKind::Unavailable` at the public boundary. |
+
+Executed evidence (`cargo test --lib --no-default-features --features
+test-util,wal_disable memtable_flusher::uploader`):
+
+```
+test result: ok. 13 passed; 0 failed        (10 upstream + 3 new)
+  upload_fails_loudly_within_the_attempt_budget_when_the_store_keeps_failing  ok
+  should_stop_retrying_on_shutdown_when_wal_disabled                          ok
+  only_unavailable_upload_errors_are_retryable                                ok
+```
+
+The budget test asserts the CLOSED RESULT carries
+`L0SstUploadRetriesExhausted { attempts: 8 }` within a 30 s ceiling against
+a permanently failing store with the WAL off — the exact configuration that
+upstream spins on forever. **Mutant executed** — the upstream loop restored
+verbatim (no budget, escape re-conditioned on `wal_enabled`):
+
+```
+test result: FAILED. 0 passed; 2 failed
+  should_stop_retrying_on_shutdown_when_wal_disabled                        FAILED
+  upload_fails_loudly_within_the_attempt_budget_when_the_store_keeps_failing FAILED
+```
+
+restored → green. (The 8 pre-existing `db_cache_manager` failures under
+`--no-default-features --features test-util,wal_disable` fail identically
+on the unpatched tree — baseline-equal, unrelated to this patch.)
+
+## Patch 0003 — external epochs proven through the ENFORCED path (S-P0-07)
+
+Test-only (`src/db/builder.rs`). Patch 0001's qualifying matrix invoked the
+private `FenceableManifest::init_*_with_epoch` helpers directly, so a
+mutant that ignores the `DbBuilder` field — leaving production opens on
+internal observe-and-bind allocation — could survive. These tests open real
+databases through the PUBLIC `Db::builder`:
+
+- `dbbuilder_stores_the_exact_external_writer_epoch` — epoch 7 (then
+  successor 8) stored exactly where internal allocation would produce 1;
+- `a_stale_external_epoch_is_refused_by_the_real_builder_before_any_write`
+  — replaying 7/6/0 is typed `Closed(Fenced)` with the stored epoch
+  untouched;
+- `the_top_of_the_epoch_space_still_fences_exactly` — MAX-1 and MAX claimed
+  exactly; every replay after MAX (MAX, MAX-1, 0) fenced: the fence cannot
+  be climbed by wrapping;
+- `a_missing_external_epoch_is_refused_not_defaulted`
+  (`external_epoch_required`) — an epoch-less open is a typed `Invalid`
+  refusal and the stored epoch does not advance. This EXECUTES the refusal
+  branch that patch 0001 had only cargo-checked.
+
+**Mutant executed** — `with_external_writer_epoch` ignores its argument
+(the exact builder-field-ignored mutant the audit named as surviving
+helper-only proof):
+
+```
+test result: FAILED. 0 passed; 3 failed
+  dbbuilder_stores_the_exact_external_writer_epoch                            FAILED
+  a_stale_external_epoch_is_refused_by_the_real_builder_before_any_write      FAILED
+  the_top_of_the_epoch_space_still_fences_exactly                             FAILED
+```
+
+restored → green (34/34 `manifest::store`, 11/11 `db::builder::tests`
+default posture; the 4 epoch tests also pass under
+`external_epoch_required`).
+
+Still not done here (unchanged from 0001's honest list): compactor
+orchestrator wiring, fenced Admin/clone/checkpoint operations, controller
+epoch issuance, production-lane activation.

@@ -1,0 +1,305 @@
+{
+  "probe_id": "P-CTR-04",
+  "title": "Networking and placement",
+  "spec_section": "## P-CTR-04 — Networking and placement",
+  "mode": "mock",
+  "injected_fault": null,
+  "started_at": "2026-08-18T12:18:36.400Z",
+  "finished_at": "2026-08-18T12:18:36.400Z",
+  "verdict": "PASS",
+  "expected_outcome": "no colocation assumption; unauthorized egress denied; enableInternet=false denies all egress; possibly-committed operations remain queryable after client disconnect",
+  "actual_outcome": "all 8 checks passed",
+  "checks": [
+    {
+      "label": "network state reset (got 200)",
+      "ok": true
+    },
+    {
+      "label": "DO and container are NOT colocated (got {\"doLocation\":\"ewr\",\"containerLocation\":\"fra\",\"internalHttp\":\"ok\"})",
+      "ok": true
+    },
+    {
+      "label": "internal HTTP works across locations",
+      "ok": true
+    },
+    {
+      "label": "allowlisted egress permitted (got 200)",
+      "ok": true
+    },
+    {
+      "label": "unauthorized egress denied (got 403)",
+      "ok": true
+    },
+    {
+      "label": "enableInternet=false denies all egress (got 403)",
+      "ok": true
+    },
+    {
+      "label": "client observes the disconnect (got 599)",
+      "ok": true
+    },
+    {
+      "label": "possibly-committed operation remains queryable (got {\"state\":\"committed\"})",
+      "ok": true
+    }
+  ],
+  "exchanges": [
+    {
+      "seq": 1,
+      "at": "2026-08-18T12:18:36.400Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/net/reset",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 57,
+        "body_sha256": "0e43d7c39ebcad9a8e0e860800a8d6a0a32f2d9552c40b545ce786aa13e73594",
+        "body_preview": "{\"allowlist\":[\"registry.internal\"],\"enableInternet\":true}"
+      },
+      "request_sha256": "8d2df148c8eebe68dfa59fdcea0b54a9f2305a3185efdf17cbf3eb9f87fbc786",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 11,
+        "body_sha256": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93",
+        "body_preview": "{\"ok\":true}"
+      },
+      "response_sha256": "d4a677d42a9d4d999ac650db5cb5b9f01bfbaa57f1d4256a5a347c22799e81f9"
+    },
+    {
+      "seq": 2,
+      "at": "2026-08-18T12:18:36.400Z",
+      "request": {
+        "service": "harness",
+        "method": "GET",
+        "path": "/ctr/net/placement",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "f61fcde7f4485908086a85388523d700ac38395c3e905adec609550b9b0bd768",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 66,
+        "body_sha256": "21f8fbd1c6525c91754024f8a78a13bf5aa1b1962b659a56d5e1596ef6f3279e",
+        "body_preview": "{\"doLocation\":\"ewr\",\"containerLocation\":\"fra\",\"internalHttp\":\"ok\"}"
+      },
+      "response_sha256": "1d4e9afadd3b73bf98889ebe356053857064193b56be50db4f5eeff62f25a24c"
+    },
+    {
+      "seq": 3,
+      "at": "2026-08-18T12:18:36.400Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/net/egress",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 28,
+        "body_sha256": "7e022466746f8231674ec59458851541de02491a69ab35b4bc9738298c1204f3",
+        "body_preview": "{\"host\":\"registry.internal\"}"
+      },
+      "request_sha256": "a17a480251be30b9d4989da81da1487fd8d22770abe6eaa3160dfb64be80187c",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 30,
+        "body_sha256": "247a30dfcb0d581eb5ed1f5de3930d399138e589fa0b77f5dfe9a23efbe27a3e",
+        "body_preview": "{\"egress\":\"registry.internal\"}"
+      },
+      "response_sha256": "6830e9b9bf62a07e6871b3db71b4f882b096950a6a7348a811ac4bb7a5e99ff8"
+    },
+    {
+      "seq": 4,
+      "at": "2026-08-18T12:18:36.400Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/net/egress",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 28,
+        "body_sha256": "336add54b2ac6caca0d03e09e0b558d83353f62afe13da2911419dbecaed85cb",
+        "body_preview": "{\"host\":\"exfil.example.com\"}"
+      },
+      "request_sha256": "2ed27e3ff604bf81bf92f2a636da31bc40c60c349dbb34cdb1395ef2099b7b49",
+      "response": {
+        "status": 403,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 55,
+        "body_sha256": "96d334ab2e88abfea9f610b7a05e657b0df5d19a23bb9a517fd2d0ebedd588cb",
+        "body_preview": "{\"error\":\"egress to exfil.example.com not allowlisted\"}"
+      },
+      "response_sha256": "360dd48b13a91b9a89ff7399ac04c50274ff92888668298c239c4bf0adac0565"
+    },
+    {
+      "seq": 5,
+      "at": "2026-08-18T12:18:36.400Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/net/config",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 24,
+        "body_sha256": "14fe2483280be9e3c9d6f3235143e525ec0c27cebd3524596c5f1a9ec87ae781",
+        "body_preview": "{\"enableInternet\":false}"
+      },
+      "request_sha256": "2530295d06cfacadf1baef9cce2ec14272d97cd43f3ad6c025cbea24e4455fd4",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 24,
+        "body_sha256": "14fe2483280be9e3c9d6f3235143e525ec0c27cebd3524596c5f1a9ec87ae781",
+        "body_preview": "{\"enableInternet\":false}"
+      },
+      "response_sha256": "d9ee98f595c2209865e2e792245d22837f2c98a9fadbce3922aaad04b714624a"
+    },
+    {
+      "seq": 6,
+      "at": "2026-08-18T12:18:36.400Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/net/egress",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 28,
+        "body_sha256": "7e022466746f8231674ec59458851541de02491a69ab35b4bc9738298c1204f3",
+        "body_preview": "{\"host\":\"registry.internal\"}"
+      },
+      "request_sha256": "a17a480251be30b9d4989da81da1487fd8d22770abe6eaa3160dfb64be80187c",
+      "response": {
+        "status": 403,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 32,
+        "body_sha256": "c4d5fcda436bb8cf4bbb1bb98f6821162695beea6d0ea4df556b7419d31958b1",
+        "body_preview": "{\"error\":\"enableInternet=false\"}"
+      },
+      "response_sha256": "2176ece0142f7f2cd06634f982922789aeecf7f64ca45a01b6021127a142e3f5"
+    },
+    {
+      "seq": 7,
+      "at": "2026-08-18T12:18:36.400Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/net/config",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 23,
+        "body_sha256": "559ba976d75ce6e198b6e9e5102e45f5815b6d27905ecc7cc2970a5545402d7d",
+        "body_preview": "{\"enableInternet\":true}"
+      },
+      "request_sha256": "2ed0dfb0341e8233d3d6885060c473bcaaaed76c01d8dc3952517d3847c0764f",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 23,
+        "body_sha256": "559ba976d75ce6e198b6e9e5102e45f5815b6d27905ecc7cc2970a5545402d7d",
+        "body_preview": "{\"enableInternet\":true}"
+      },
+      "response_sha256": "466d6cfc1f17e5ff1cf32e62668507d41c17df28427de61411ac11a9e8f48e6a"
+    },
+    {
+      "seq": 8,
+      "at": "2026-08-18T12:18:36.400Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/net/op-prepare",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "03ca47a3d82c6bb170af31fdb71776484c5e758d20e7b4f50536eef95f8f71fe",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 15,
+        "body_sha256": "6696f06b41aaf9dc1320aa02f229d52e6fd848f092cb0112be87dbe0c94ef865",
+        "body_preview": "{\"opId\":\"op-1\"}"
+      },
+      "response_sha256": "35668ad18519ea9b1b32062b954b033990aacb0cfd2c791bf61132137ff19888"
+    },
+    {
+      "seq": 9,
+      "at": "2026-08-18T12:18:36.400Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/net/commit-with-disconnect",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 15,
+        "body_sha256": "6696f06b41aaf9dc1320aa02f229d52e6fd848f092cb0112be87dbe0c94ef865",
+        "body_preview": "{\"opId\":\"op-1\"}"
+      },
+      "request_sha256": "bb128f972eeeb0d9785be57f67a363a9b237add0f8409715ec640e9d34176e6c",
+      "response": {
+        "status": 599,
+        "headers": {
+          "x-mock-simulated": "client-disconnect"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "abe30da19fca0f7d6cc3b5ad46af512ce1ba96cf2c3a27090308a51dd7715bba"
+    },
+    {
+      "seq": 10,
+      "at": "2026-08-18T12:18:36.400Z",
+      "request": {
+        "service": "harness",
+        "method": "GET",
+        "path": "/ctr/net/op/op-1",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "4afa95de156d76b1142153d3ae0c12f3fa35a4e4b372e7b249f66a69cfa3f6e2",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 21,
+        "body_sha256": "6d1d110fe4a34a0af6fb29ad05f4cc6d0cf82d7b7e5ea73d47c5aaffe563490e",
+        "body_preview": "{\"state\":\"committed\"}"
+      },
+      "response_sha256": "c4585431928c28f7cdf1186934ff75c099ac37d6a58ce98a9ae77f7199645a9d"
+    }
+  ],
+  "notes": []
+}

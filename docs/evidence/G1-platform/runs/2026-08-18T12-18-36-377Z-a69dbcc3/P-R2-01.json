@@ -1,0 +1,348 @@
+{
+  "probe_id": "P-R2-01",
+  "title": "Conditions and ambiguity",
+  "spec_section": "## P-R2-01 — Conditions and ambiguity",
+  "mode": "mock",
+  "injected_fault": null,
+  "started_at": "2026-08-18T12:18:36.379Z",
+  "finished_at": "2026-08-18T12:18:36.382Z",
+  "verdict": "PASS",
+  "expected_outcome": "exact success/conflict/ambiguous classification; concurrent conditional PUTs produce exactly one winner; no unconditional downgrade; byte/hash-exact readback",
+  "actual_outcome": "all 11 checks passed",
+  "checks": [
+    {
+      "label": "initial PUT if-none-match:* succeeds (got 200)",
+      "ok": true
+    },
+    {
+      "label": "duplicate conditional create is 412, not a downgrade (got 412)",
+      "ok": true
+    },
+    {
+      "label": "PUT if-match with current etag succeeds (got 200)",
+      "ok": true
+    },
+    {
+      "label": "PUT if-match with wrong expected version is 412 (got 412)",
+      "ok": true
+    },
+    {
+      "label": "readback GET succeeds (got 200)",
+      "ok": true
+    },
+    {
+      "label": "readback is byte- and sha256-exact",
+      "ok": true
+    },
+    {
+      "label": "exactly one concurrent conditional writer wins (statuses 200,412)",
+      "ok": true
+    },
+    {
+      "label": "stored bytes are exactly the single winner's bytes",
+      "ok": true
+    },
+    {
+      "label": "client observes network failure after server commit (got 599)",
+      "ok": true
+    },
+    {
+      "label": "conditional retry classifies ambiguity as already-committed (got 412)",
+      "ok": true
+    },
+    {
+      "label": "readback proves the ambiguous operation committed exactly once",
+      "ok": true
+    }
+  ],
+  "exchanges": [
+    {
+      "seq": 1,
+      "at": "2026-08-18T12:18:36.381Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-01/cond",
+        "headers": {
+          "if-none-match": "*"
+        },
+        "body_length": 24,
+        "body_sha256": "263b8dacf438172c5433a4c7a3f5acce1595321451ad5c565bcd71f40553953e",
+        "body_preview": "p-r2-01 conditional body"
+      },
+      "request_sha256": "a87e7e5da42865f6b22a9395ca14df42c04a4f2d02ceff7051fd80b85b3aa8fe",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"263b8dacf438172c\"",
+          "x-mock-commit-seq": "1"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "6d68667f56a24333d1d8cf30268380a699fac54be98c8adb05f3963bf2315f51"
+    },
+    {
+      "seq": 2,
+      "at": "2026-08-18T12:18:36.381Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-01/cond",
+        "headers": {
+          "if-none-match": "*"
+        },
+        "body_length": 9,
+        "body_sha256": "9d6f965ac832e40a5df6c06afe983e3b449c07b843ff51ce76204de05c690d11",
+        "body_preview": "different"
+      },
+      "request_sha256": "3dd233737c1d1280bac03c02d5acd957175add3f2d7d7998bae40e66a8e15d54",
+      "response": {
+        "status": 412,
+        "headers": {
+          "x-mock-precondition": "if-none-match"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "d33a8977084ea8729fef0cd1935db39872e7a0cb565f6121e611462ec6a938e8"
+    },
+    {
+      "seq": 3,
+      "at": "2026-08-18T12:18:36.381Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-01/cond",
+        "headers": {
+          "if-match": "\"263b8dacf438172c\""
+        },
+        "body_length": 20,
+        "body_sha256": "bb20ef1f85568e833f809661466d494213b9b0383c580d41c28b4bd5610813d0",
+        "body_preview": "updated-via-if-match"
+      },
+      "request_sha256": "3cd357c0b6ac32e43e5085c09cd5c568d3af0fb02584e88c16b27ced6632cb78",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"bb20ef1f85568e83\"",
+          "x-mock-commit-seq": "2"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "3b1ceda881da7a0fdb7daa247aaa9f07d7b0ada116f153cb1141b21957fcbbb7"
+    },
+    {
+      "seq": 4,
+      "at": "2026-08-18T12:18:36.381Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-01/cond",
+        "headers": {
+          "if-match": "\"bogus-version\""
+        },
+        "body_length": 13,
+        "body_sha256": "11a1cb6360ce3845b06ffa36b0cff269dc8b16d02cd9360f2d07bf8405717fc4",
+        "body_preview": "must-not-land"
+      },
+      "request_sha256": "6136a26bc32c6e939cf1df7d0ee3ef590b20664233c06d6d021f77c8af381bb9",
+      "response": {
+        "status": 412,
+        "headers": {
+          "x-mock-precondition": "if-match"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "f159542690e5b9503876dfacb8d2eed31768100444d993ccdaee12ae26d99e22"
+    },
+    {
+      "seq": 5,
+      "at": "2026-08-18T12:18:36.382Z",
+      "request": {
+        "service": "r2",
+        "method": "GET",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-01/cond",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "efdb539eea9d7cc7ed0953af4025b70342dcdf330cedef4018cf1a7656eb7d6a",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"bb20ef1f85568e83\"",
+          "x-mock-commit-seq": "2"
+        },
+        "body_length": 20,
+        "body_sha256": "bb20ef1f85568e833f809661466d494213b9b0383c580d41c28b4bd5610813d0",
+        "body_preview": "updated-via-if-match"
+      },
+      "response_sha256": "14a914d7481a1d504e4fd013d636257d6c8f07bf92af8ade52ab8bf7453b929c"
+    },
+    {
+      "seq": 6,
+      "at": "2026-08-18T12:18:36.382Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-01/race",
+        "headers": {
+          "if-none-match": "*"
+        },
+        "body_length": 19,
+        "body_sha256": "48255dd0cda20ad53e2edcd59d29440f51ab544b3cfb077b04d774b098e303b6",
+        "body_preview": "concurrent-writer-A"
+      },
+      "request_sha256": "3943ea1229393e8052f02ff0386101c29cd06c8cfcf69e7af6ecae3dfe1d5218",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"48255dd0cda20ad5\"",
+          "x-mock-commit-seq": "3"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "39b73c76ed9728d9fdbc5c80c4125fd966f7b6d69ff4a08850c7a21106d20838"
+    },
+    {
+      "seq": 7,
+      "at": "2026-08-18T12:18:36.382Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-01/race",
+        "headers": {
+          "if-none-match": "*"
+        },
+        "body_length": 19,
+        "body_sha256": "5d21fcb4861936791074bdc9b7cd269065d9c2e737026f4a87a183814c60d7ea",
+        "body_preview": "concurrent-writer-B"
+      },
+      "request_sha256": "164d9fe0273e946ee4193740e973061fe54fadfc69fc9f352f66843346182752",
+      "response": {
+        "status": 412,
+        "headers": {
+          "x-mock-precondition": "if-none-match"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "d33a8977084ea8729fef0cd1935db39872e7a0cb565f6121e611462ec6a938e8"
+    },
+    {
+      "seq": 8,
+      "at": "2026-08-18T12:18:36.382Z",
+      "request": {
+        "service": "r2",
+        "method": "GET",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-01/race",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "380ff6019543e4a26c03f492b8ce3a5271099e1e7d20232abfb7b3ea05765706",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"48255dd0cda20ad5\"",
+          "x-mock-commit-seq": "3"
+        },
+        "body_length": 19,
+        "body_sha256": "48255dd0cda20ad53e2edcd59d29440f51ab544b3cfb077b04d774b098e303b6",
+        "body_preview": "concurrent-writer-A"
+      },
+      "response_sha256": "5a11f1005c64561f3222a51fcd510648036dd61c1e5ecdb48f3ece66cf5fadb4"
+    },
+    {
+      "seq": 9,
+      "at": "2026-08-18T12:18:36.382Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-01/ambiguous",
+        "headers": {
+          "if-none-match": "*",
+          "x-mock-simulate": "commit-then-timeout"
+        },
+        "body_length": 21,
+        "body_sha256": "3d985e098946776b7381fafd71f8beeb7afb84a9041ad24299216c7a953500d7",
+        "body_preview": "ambiguous-commit-body"
+      },
+      "request_sha256": "d681f7190f8fd91bcbb5255c21c37c7a54a9788f30674b9d54c7d42f971d5daf",
+      "response": {
+        "status": 599,
+        "headers": {
+          "x-mock-simulated": "timeout-after-commit"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "eeee91403138dccedcc40f84bf2984a7dfba8e69ba37d82ec747f084d1250341"
+    },
+    {
+      "seq": 10,
+      "at": "2026-08-18T12:18:36.382Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-01/ambiguous",
+        "headers": {
+          "if-none-match": "*"
+        },
+        "body_length": 21,
+        "body_sha256": "3d985e098946776b7381fafd71f8beeb7afb84a9041ad24299216c7a953500d7",
+        "body_preview": "ambiguous-commit-body"
+      },
+      "request_sha256": "fd6f5a61c1a38247db3a4e636ddc84b4fd0d36af34f9c98f0bc66cc1826075d1",
+      "response": {
+        "status": 412,
+        "headers": {
+          "x-mock-precondition": "if-none-match"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "d33a8977084ea8729fef0cd1935db39872e7a0cb565f6121e611462ec6a938e8"
+    },
+    {
+      "seq": 11,
+      "at": "2026-08-18T12:18:36.382Z",
+      "request": {
+        "service": "r2",
+        "method": "GET",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-01/ambiguous",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "738103c9247d1d24b1552cc1800f93f439df7a2ffd425e33f1d3a8014407da4e",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"3d985e098946776b\"",
+          "x-mock-commit-seq": "4"
+        },
+        "body_length": 21,
+        "body_sha256": "3d985e098946776b7381fafd71f8beeb7afb84a9041ad24299216c7a953500d7",
+        "body_preview": "ambiguous-commit-body"
+      },
+      "response_sha256": "226d0c311159846b15adb266adee814c24c66bee9f47a5fd84aebeb5c6fbef4e"
+    }
+  ],
+  "notes": []
+}

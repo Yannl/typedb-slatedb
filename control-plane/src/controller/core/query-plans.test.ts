@@ -116,7 +116,8 @@ test("every statement the hot paths execute is index-backed (EXPLAIN QUERY PLAN)
   core.outboxPeek(10);
   const acked = core.outboxAck("db1", 1n, "sess-1");
   assert.ok(acked.ok);
-  assert.ok(core.burnCapabilityNonce("qp-nonce-1", Date.now() + 60_000, Date.now()));
+  assert.ok(core.claimCapability("qp-nonce-1", "qp-use-1", Date.now() + 60_000, Date.now()).ok);
+  core.resolveCapabilityUse("qp-nonce-1", "RESOLVED_SUCCESS");
 
   recording.on = false;
   // the recorder must actually be wired through the paths above

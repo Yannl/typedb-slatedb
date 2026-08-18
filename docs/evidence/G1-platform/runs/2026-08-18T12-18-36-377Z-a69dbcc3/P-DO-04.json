@@ -1,0 +1,374 @@
+{
+  "probe_id": "P-DO-04",
+  "title": "Incarnation and old-authority rejection",
+  "spec_section": "## P-DO-04 — Incarnation and old-authority rejection",
+  "mode": "mock",
+  "injected_fault": null,
+  "started_at": "2026-08-18T12:18:36.395Z",
+  "finished_at": "2026-08-18T12:18:36.396Z",
+  "verdict": "PASS",
+  "expected_outcome": "every privileged action attempted with a superseded incarnation's authority is rejected; current incarnation is unaffected",
+  "actual_outcome": "all 10 checks passed",
+  "checks": [
+    {
+      "label": "authority state reset (got 200)",
+      "ok": true
+    },
+    {
+      "label": "current-incarnation authority works before rotation (got 200)",
+      "ok": true
+    },
+    {
+      "label": "incarnation rotated (got 2)",
+      "ok": true
+    },
+    {
+      "label": "old-authority mint-capability rejected (got 401)",
+      "ok": true
+    },
+    {
+      "label": "old-authority publish-event rejected (got 401)",
+      "ok": true
+    },
+    {
+      "label": "old-authority finalize-wal rejected (got 401)",
+      "ok": true
+    },
+    {
+      "label": "old-authority publish-manifest rejected (got 401)",
+      "ok": true
+    },
+    {
+      "label": "old-authority lifecycle-report rejected (got 401)",
+      "ok": true
+    },
+    {
+      "label": "new-incarnation authority unaffected (got 200)",
+      "ok": true
+    },
+    {
+      "label": "no old-authority action produced an effect (got [\"pre-rotation-op\",\"post-rotation-op\"])",
+      "ok": true
+    }
+  ],
+  "exchanges": [
+    {
+      "seq": 1,
+      "at": "2026-08-18T12:18:36.395Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/authority/reset",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "c648af072e57c5e68b4ee3b34f2bcfea417a2408e19769779200c6a131985b03",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 11,
+        "body_sha256": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93",
+        "body_preview": "{\"ok\":true}"
+      },
+      "response_sha256": "d4a677d42a9d4d999ac650db5cb5b9f01bfbaa57f1d4256a5a347c22799e81f9"
+    },
+    {
+      "seq": 2,
+      "at": "2026-08-18T12:18:36.396Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/authority/mint",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "074a155f623b174bcdb23857c52d6063ba1a4fa586c8a3b4ff1af0b3737a8009",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 45,
+        "body_sha256": "b84519b56e7d88b77586d2dd83a61c148b9bfe9c0033f686f625144b873ef630",
+        "body_preview": "{\"token\":\"authority-token-1\",\"incarnation\":1}"
+      },
+      "response_sha256": "ed497bf8e986893df07dd59def399ce95c39e6bab0df1b877fbcf9b7197b16a5"
+    },
+    {
+      "seq": 3,
+      "at": "2026-08-18T12:18:36.396Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/authority/act",
+        "headers": {
+          "content-type": "application/json",
+          "x-authority-token": "authority-token-1"
+        },
+        "body_length": 28,
+        "body_sha256": "9ed3608765c6227c1b1980beb6b3f36d1e23bd826b30f652c285a7a2591c8653",
+        "body_preview": "{\"action\":\"pre-rotation-op\"}"
+      },
+      "request_sha256": "21bc89e9a532f5f5c0cb3cebc9496c318f303c31220b5fbb1bdf6613b91d5856",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 31,
+        "body_sha256": "c2141846c360c6c58c9bf0e18f88f1aafb7524c6defa5b6ff6bd4b82c6a912a9",
+        "body_preview": "{\"performed\":\"pre-rotation-op\"}"
+      },
+      "response_sha256": "908a5f4ef71e0310ee3e57d85d0dba240d230fac904854dc39779d688e4c142e"
+    },
+    {
+      "seq": 4,
+      "at": "2026-08-18T12:18:36.396Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/authority/rotate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "c9974be8c83b183a391ce8a95b3c9ccfc7a9f6c9b9a7893cb2e648a0c3203d50",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 17,
+        "body_sha256": "2d1d6a35e68b53020f4055daded20c185d2e425a5dd3625417bb3edd7e675cdf",
+        "body_preview": "{\"incarnation\":2}"
+      },
+      "response_sha256": "67c04d9e5f87f0a5d6294832bf36fd9f1c994a86116936c6832904680f8999d0"
+    },
+    {
+      "seq": 5,
+      "at": "2026-08-18T12:18:36.396Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/authority/act",
+        "headers": {
+          "content-type": "application/json",
+          "x-authority-token": "authority-token-1"
+        },
+        "body_length": 28,
+        "body_sha256": "cfbdf33d52cb84dad779302caefd782d5f04d1910004380d35c0c1045bc33503",
+        "body_preview": "{\"action\":\"mint-capability\"}"
+      },
+      "request_sha256": "8dad3203ac9a49e70e0708bc34c889762497e45dd00775fabf008e6d2fbeaf19",
+      "response": {
+        "status": 401,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 34,
+        "body_sha256": "b93975427a082fa6f385e03c7815552ec8a557609c7e55777259304b98ba5d51",
+        "body_preview": "{\"error\":\"superseded incarnation\"}"
+      },
+      "response_sha256": "c7028904be75364faecd11afc3e271ba9989e8647344c9a9da3c80a6eb232edc"
+    },
+    {
+      "seq": 6,
+      "at": "2026-08-18T12:18:36.396Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/authority/act",
+        "headers": {
+          "content-type": "application/json",
+          "x-authority-token": "authority-token-1"
+        },
+        "body_length": 26,
+        "body_sha256": "35680102eb83cfd6b6d0372e310a49542c2b43cefbd6a8efe1c32112b9f7127b",
+        "body_preview": "{\"action\":\"publish-event\"}"
+      },
+      "request_sha256": "df436e472b5d25b4d6666a731b9def8e60e5a2bb6d9521206a9a1ab74e2887cc",
+      "response": {
+        "status": 401,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 34,
+        "body_sha256": "b93975427a082fa6f385e03c7815552ec8a557609c7e55777259304b98ba5d51",
+        "body_preview": "{\"error\":\"superseded incarnation\"}"
+      },
+      "response_sha256": "c7028904be75364faecd11afc3e271ba9989e8647344c9a9da3c80a6eb232edc"
+    },
+    {
+      "seq": 7,
+      "at": "2026-08-18T12:18:36.396Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/authority/act",
+        "headers": {
+          "content-type": "application/json",
+          "x-authority-token": "authority-token-1"
+        },
+        "body_length": 25,
+        "body_sha256": "dce00164f1a39050b983af605e98c97be7096f52961e3802232057e83e3f83dd",
+        "body_preview": "{\"action\":\"finalize-wal\"}"
+      },
+      "request_sha256": "eae114e892745e8f44689aec494438e0e4704fc67357abc02c641bc8c4e08798",
+      "response": {
+        "status": 401,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 34,
+        "body_sha256": "b93975427a082fa6f385e03c7815552ec8a557609c7e55777259304b98ba5d51",
+        "body_preview": "{\"error\":\"superseded incarnation\"}"
+      },
+      "response_sha256": "c7028904be75364faecd11afc3e271ba9989e8647344c9a9da3c80a6eb232edc"
+    },
+    {
+      "seq": 8,
+      "at": "2026-08-18T12:18:36.396Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/authority/act",
+        "headers": {
+          "content-type": "application/json",
+          "x-authority-token": "authority-token-1"
+        },
+        "body_length": 29,
+        "body_sha256": "42f81b2419b64441234e8b7ba37ee9c45c7954bf1760b36d0a2559e1839846f3",
+        "body_preview": "{\"action\":\"publish-manifest\"}"
+      },
+      "request_sha256": "35569dabfa9057f3f2ef98cca9dfc8dc5898b788b30d657da49d4675482cc022",
+      "response": {
+        "status": 401,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 34,
+        "body_sha256": "b93975427a082fa6f385e03c7815552ec8a557609c7e55777259304b98ba5d51",
+        "body_preview": "{\"error\":\"superseded incarnation\"}"
+      },
+      "response_sha256": "c7028904be75364faecd11afc3e271ba9989e8647344c9a9da3c80a6eb232edc"
+    },
+    {
+      "seq": 9,
+      "at": "2026-08-18T12:18:36.396Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/authority/act",
+        "headers": {
+          "content-type": "application/json",
+          "x-authority-token": "authority-token-1"
+        },
+        "body_length": 29,
+        "body_sha256": "56724caf47ac346500352aa7694295a296e30e6b8eb57c2bc41ff3f86c026e62",
+        "body_preview": "{\"action\":\"lifecycle-report\"}"
+      },
+      "request_sha256": "bfaf19e1f030e478bc427d7fafef1cf3d2096a511ea0f806cd6d9b92d3136d53",
+      "response": {
+        "status": 401,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 34,
+        "body_sha256": "b93975427a082fa6f385e03c7815552ec8a557609c7e55777259304b98ba5d51",
+        "body_preview": "{\"error\":\"superseded incarnation\"}"
+      },
+      "response_sha256": "c7028904be75364faecd11afc3e271ba9989e8647344c9a9da3c80a6eb232edc"
+    },
+    {
+      "seq": 10,
+      "at": "2026-08-18T12:18:36.396Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/authority/mint",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "074a155f623b174bcdb23857c52d6063ba1a4fa586c8a3b4ff1af0b3737a8009",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 45,
+        "body_sha256": "f98d67f8cc145966bb4e9f665b199152fa79ef76ec05f0de6e9205e7560f2318",
+        "body_preview": "{\"token\":\"authority-token-2\",\"incarnation\":2}"
+      },
+      "response_sha256": "cbbbe181192533c126deba7ed1ccdeed1490d8355dc1648077bfdc0698820ab5"
+    },
+    {
+      "seq": 11,
+      "at": "2026-08-18T12:18:36.396Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/authority/act",
+        "headers": {
+          "content-type": "application/json",
+          "x-authority-token": "authority-token-2"
+        },
+        "body_length": 29,
+        "body_sha256": "898f06d0197a49bc7a8a2c12a85bb17892b554ab554a81861644606c59e04276",
+        "body_preview": "{\"action\":\"post-rotation-op\"}"
+      },
+      "request_sha256": "f915410453cad417f29f64d3aaa80d103f045586e721e075d664a1ec5f341868",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 32,
+        "body_sha256": "a3a263d03b90880e241c6161ca33ed8253c261167f160cca24e7051fdee3cab0",
+        "body_preview": "{\"performed\":\"post-rotation-op\"}"
+      },
+      "response_sha256": "2d03692620f4a1d9c56f150f2932d2103bd0f5941794f78e88e3acbaf7d14656"
+    },
+    {
+      "seq": 12,
+      "at": "2026-08-18T12:18:36.396Z",
+      "request": {
+        "service": "harness",
+        "method": "GET",
+        "path": "/do/authority/actions",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "b79fdb22c20f41080556261d9d087e0b295adfed7c396c50723ef4d688a606a8",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 50,
+        "body_sha256": "3603df34409e8aca585f7b2c1798f8c42291a1a139c7a5da40251013db61a845",
+        "body_preview": "{\"actions\":[\"pre-rotation-op\",\"post-rotation-op\"]}"
+      },
+      "response_sha256": "743be7138438d4c5558789ad5ad562d848bedc760571f46731aaf02bb98c05b6"
+    }
+  ],
+  "notes": []
+}

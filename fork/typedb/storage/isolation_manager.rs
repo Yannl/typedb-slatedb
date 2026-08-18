@@ -16,9 +16,10 @@ use std::{
         Arc, OnceLock, RwLock,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
+    time::{Duration, Instant},
 };
 
-use logger::result::ResultExt;
+use logger::{error, result::ResultExt};
 use primitive::maybe_owns::MaybeOwns;
 use resource::constants::storage::TIMELINE_WINDOW_SIZE;
 
@@ -132,12 +133,12 @@ impl IsolationManager {
             }
         }
 
-        Ok(self.validate_concurrent_from_windows(
+        self.validate_concurrent_from_windows(
             commit_record,
             commit_sequence_number,
             &windows,
             first_sequence_number_in_memory,
-        ))
+        )
     }
 
     fn validate_concurrent_from_disk(
@@ -176,7 +177,7 @@ impl IsolationManager {
         commit_sequence_number: SequenceNumber,
         windows: &[Arc<TimelineWindow<TIMELINE_WINDOW_SIZE>>],
         first_window_sequence_number: SequenceNumber,
-    ) -> Option<IsolationConflict> {
+    ) -> Result<Option<IsolationConflict>, DurabilityClientError> {
         let start_validation_index = max(commit_record.open_sequence_number().next(), first_window_sequence_number);
         debug_assert!(start_validation_index <= first_window_sequence_number + TIMELINE_WINDOW_SIZE);
         let mut window_index = 0;
@@ -184,14 +185,14 @@ impl IsolationManager {
             let validate_against = SequenceNumber::from(validate_against);
             let window = &windows[window_index];
             debug_assert!(window_index < windows.len());
-            if let Some(conflict) = resolve_concurrent(commit_record, validate_against, window) {
-                return Some(conflict);
+            if let Some(conflict) = resolve_concurrent(commit_record, validate_against, window)? {
+                return Ok(Some(conflict));
             }
             if validate_against + 1 >= window.end() {
                 window_index += 1;
             }
         }
-        None
+        Ok(None)
     }
 
     pub(crate) fn iterate_commit_status_from_disk(
@@ -246,17 +247,18 @@ fn resolve_concurrent(
     commit_record: &CommitRecord,
     predecessor_sequence_number: SequenceNumber,
     predecessor_window: &TimelineWindow<TIMELINE_WINDOW_SIZE>,
-) -> Option<IsolationConflict> {
-    while matches!(predecessor_window.get_status(predecessor_sequence_number), CommitStatus::Empty) {
-        // Race condition
-        std::hint::spin_loop();
-    }
+) -> Result<Option<IsolationConflict>, DurabilityClientError> {
+    // S-P0-02: the Empty wait covers only the narrow race between a slot's
+    // sequence number being allocated and `insert_pending` landing; it is
+    // BOUNDED because a predecessor thread that dies inside that window
+    // would otherwise pin this commit in a silent spin forever.
+    predecessor_window.await_slot_occupied(predecessor_sequence_number)?;
     let commit_dependency = match predecessor_window.get_status(predecessor_sequence_number) {
         CommitStatus::Empty => unreachable!("A concurrent status should never be empty at commit time"),
         CommitStatus::Pending(predecessor_record) => match commit_record.compute_dependency(&predecessor_record) {
             CommitDependency::Independent => CommitDependency::Independent,
             result => {
-                if predecessor_window.await_pending_status_commits(predecessor_sequence_number) {
+                if predecessor_window.await_pending_status_commits(predecessor_sequence_number)? {
                     result
                 } else {
                     CommitDependency::Independent
@@ -268,7 +270,7 @@ fn resolve_concurrent(
         }
         CommitStatus::Aborted => CommitDependency::Independent,
     };
-    handle_dependency(commit_dependency)
+    Ok(handle_dependency(commit_dependency))
 }
 
 fn handle_dependency(commit_dependency: CommitDependency) -> Option<IsolationConflict> {
@@ -498,6 +500,55 @@ impl Timeline {
     }
 }
 
+/// A spin wait carrying the shared containment bound (S-P0-02). It still
+/// spins — the expected waits are the sub-microsecond insert race and short
+/// overlapping validation chains — but every iteration checks the shared
+/// OD-002/OD-006 deadline and report cadence, so a predecessor that never
+/// transitions becomes a typed error instead of a silent forever-spin.
+struct BoundedSpin {
+    state: &'static str,
+    sequence_number: SequenceNumber,
+    deadline: Duration,
+    report_interval: Duration,
+    started: Instant,
+    last_report: Instant,
+}
+
+impl BoundedSpin {
+    fn new(
+        state: &'static str,
+        sequence_number: SequenceNumber,
+        deadline: Duration,
+        report_interval: Duration,
+    ) -> Self {
+        let now = Instant::now();
+        Self { state, sequence_number, deadline, report_interval, started: now, last_report: now }
+    }
+
+    fn tick(&mut self) -> Result<(), DurabilityClientError> {
+        std::hint::spin_loop();
+        let waited = self.started.elapsed();
+        if waited >= self.deadline {
+            return Err(DurabilityClientError::PredecessorWaitTimeout {
+                predecessor: self.sequence_number.number(),
+                state: self.state,
+                waited_secs: waited.as_secs(),
+            });
+        }
+        if self.last_report.elapsed() >= self.report_interval {
+            self.last_report = Instant::now();
+            error!(
+                "commit validation has waited {}s for predecessor commit {} to leave state '{}' (deadline {}s)",
+                waited.as_secs(),
+                self.sequence_number.number(),
+                self.state,
+                self.deadline.as_secs(),
+            );
+        }
+        Ok(())
+    }
+}
+
 pub struct ReaderDropGuard {
     window: Option<Arc<TimelineWindow<TIMELINE_WINDOW_SIZE>>>,
 }
@@ -569,19 +620,61 @@ impl<const SIZE: usize> TimelineWindow<SIZE> {
         }
     }
 
-    fn await_pending_status_commits(&self, sequence_number: SequenceNumber) -> bool {
+    /// Bounded wait for the narrow allocation race in which a predecessor's
+    /// slot is still `Empty` (sequence number allocated, `insert_pending`
+    /// not yet landed). S-P0-02: previously an unbounded spin — a
+    /// predecessor thread dying inside that window pinned every waiter
+    /// forever with no diagnostic.
+    fn await_slot_occupied(&self, sequence_number: SequenceNumber) -> Result<(), DurabilityClientError> {
+        self.await_slot_occupied_within(
+            sequence_number,
+            crate::STORAGE_WAIT_DEADLINE,
+            crate::STORAGE_WAIT_REPORT_INTERVAL,
+        )
+    }
+
+    fn await_slot_occupied_within(
+        &self,
+        sequence_number: SequenceNumber,
+        deadline: Duration,
+        report_interval: Duration,
+    ) -> Result<(), DurabilityClientError> {
+        let mut wait = BoundedSpin::new("Empty", sequence_number, deadline, report_interval);
+        while matches!(self.get_status(sequence_number), CommitStatus::Empty) {
+            wait.tick()?;
+        }
+        Ok(())
+    }
+
+    /// Bounded wait for a `Pending` predecessor to reach a terminal
+    /// validation state: `Ok(true)` for validated/applied, `Ok(false)` for
+    /// aborted. S-P0-02: previously an unbounded spin — a predecessor
+    /// wedged in validation blocked every dependent commit forever. Expiry
+    /// is a typed validation-infrastructure error (the predecessor's
+    /// verdict is UNKNOWN), which the commit path records as an unresolved
+    /// obligation, never as an abort verdict.
+    fn await_pending_status_commits(&self, sequence_number: SequenceNumber) -> Result<bool, DurabilityClientError> {
+        self.await_pending_status_commits_within(
+            sequence_number,
+            crate::STORAGE_WAIT_DEADLINE,
+            crate::STORAGE_WAIT_REPORT_INTERVAL,
+        )
+    }
+
+    fn await_pending_status_commits_within(
+        &self,
+        sequence_number: SequenceNumber,
+        deadline: Duration,
+        report_interval: Duration,
+    ) -> Result<bool, DurabilityClientError> {
         debug_assert!(!matches!(self.get_status(sequence_number), CommitStatus::Empty));
+        let mut wait = BoundedSpin::new("Pending", sequence_number, deadline, report_interval);
         loop {
             match self.get_status(sequence_number) {
                 CommitStatus::Empty => unreachable!("Illegal state - commit status cannot move from pending to empty"),
-                CommitStatus::Pending(_) => {
-                    // TODO: we can improve the spin lock with async/await
-                    // Note we only expect to have long waits in long chains of overlapping transactions that would conflict
-                    // could also do a little sleep in the spin lock, for example if the validating is still far away
-                    std::hint::spin_loop();
-                }
-                CommitStatus::Validated(_) | CommitStatus::Applied(_) => return true,
-                CommitStatus::Aborted => return false,
+                CommitStatus::Pending(_) => wait.tick()?,
+                CommitStatus::Validated(_) | CommitStatus::Applied(_) => return Ok(true),
+                CommitStatus::Aborted => return Ok(false),
             }
         }
     }
@@ -854,5 +947,141 @@ mod tests {
         }
 
         assert_eq!(timeline.window_count(), 1);
+    }
+}
+
+#[cfg(test)]
+mod predecessor_wait_tests {
+    //! S-P0-02: the two predecessor waits on the commit-validation path are
+    //! bounded and typed. Positive cases prove a predecessor that DOES
+    //! transition is still observed exactly (Empty -> occupied, Pending ->
+    //! validated/aborted); negative cases prove a predecessor that never
+    //! transitions surfaces the typed `PredecessorWaitTimeout` within the
+    //! injected deadline instead of spinning forever. Each bounded wait runs
+    //! on a worker thread and its RESULT must arrive within a bound, so a
+    //! mutant restoring the unbounded spin fails these tests rather than
+    //! hanging them.
+
+    use std::{
+        sync::{Arc, mpsc},
+        thread,
+        time::Duration,
+    };
+
+    use resource::constants::storage::TIMELINE_WINDOW_SIZE;
+
+    use super::TimelineWindow;
+    use crate::{
+        durability_client::DurabilityClientError,
+        record::{CommitRecord, CommitType},
+        sequence_number::SequenceNumber,
+        snapshot::{buffer::OperationsBuffer, snapshot_id::SnapshotId},
+    };
+
+    fn window() -> Arc<TimelineWindow<TIMELINE_WINDOW_SIZE>> {
+        Arc::new(TimelineWindow::new(SequenceNumber::new(1)))
+    }
+
+    fn record() -> CommitRecord {
+        CommitRecord::new(OperationsBuffer::new(), SequenceNumber::new(0), CommitType::Data, SnapshotId::new())
+    }
+
+    const SHORT_DEADLINE: Duration = Duration::from_millis(200);
+    const REPORT: Duration = Duration::from_millis(50);
+    /// The wait's own deadline is 200ms; the test allows 10s for the result
+    /// so only a genuinely unbounded wait can fail the arrival assertion.
+    const RESULT_BOUND: Duration = Duration::from_secs(10);
+
+    fn expect_timeout(outcome: Result<(), DurabilityClientError>, expected_state: &str) {
+        match outcome {
+            Err(DurabilityClientError::PredecessorWaitTimeout { state, .. }) => {
+                assert_eq!(state, expected_state)
+            }
+            other => panic!("expected the typed PredecessorWaitTimeout for state '{expected_state}', got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_empty_slot_that_never_fills_is_a_typed_timeout_within_the_deadline() {
+        let window = window();
+        let (result_sender, result_receiver) = mpsc::channel();
+        thread::spawn({
+            let window = Arc::clone(&window);
+            move || {
+                let outcome = window.await_slot_occupied_within(SequenceNumber::new(1), SHORT_DEADLINE, REPORT);
+                let _ = result_sender.send(outcome);
+            }
+        });
+        let outcome = result_receiver
+            .recv_timeout(RESULT_BOUND)
+            .expect("the bounded Empty wait must terminate by its deadline; an unbounded spin hangs here");
+        expect_timeout(outcome, "Empty");
+    }
+
+    #[test]
+    fn a_pending_predecessor_that_never_resolves_is_a_typed_timeout_within_the_deadline() {
+        let window = window();
+        window.insert_pending(SequenceNumber::new(1), record());
+        let (result_sender, result_receiver) = mpsc::channel();
+        thread::spawn({
+            let window = Arc::clone(&window);
+            move || {
+                let outcome = window
+                    .await_pending_status_commits_within(SequenceNumber::new(1), SHORT_DEADLINE, REPORT)
+                    .map(|_| ());
+                let _ = result_sender.send(outcome);
+            }
+        });
+        let outcome = result_receiver
+            .recv_timeout(RESULT_BOUND)
+            .expect("the bounded Pending wait must terminate by its deadline; an unbounded spin hangs here");
+        expect_timeout(outcome, "Pending");
+    }
+
+    #[test]
+    fn a_predecessor_that_resolves_is_observed_exactly() {
+        // Empty -> occupied: the waiter unblocks with Ok(()).
+        let window = window();
+        let filler = thread::spawn({
+            let window = Arc::clone(&window);
+            move || {
+                thread::sleep(Duration::from_millis(20));
+                window.insert_pending(SequenceNumber::new(1), record());
+            }
+        });
+        window
+            .await_slot_occupied_within(SequenceNumber::new(1), Duration::from_secs(30), REPORT)
+            .expect("a slot that fills must be observed as occupied, not timed out");
+        filler.join().unwrap();
+
+        // Pending -> Validated: Ok(true).
+        let validator = thread::spawn({
+            let window = Arc::clone(&window);
+            move || {
+                thread::sleep(Duration::from_millis(20));
+                window.set_validated(SequenceNumber::new(1));
+            }
+        });
+        let validated = window
+            .await_pending_status_commits_within(SequenceNumber::new(1), Duration::from_secs(30), REPORT)
+            .expect("a resolving predecessor must not time out");
+        assert!(validated, "a validated predecessor reports true");
+        validator.join().unwrap();
+
+        // Pending -> Aborted: Ok(false).
+        let window = self::window();
+        window.insert_pending(SequenceNumber::new(1), record());
+        let aborter = thread::spawn({
+            let window = Arc::clone(&window);
+            move || {
+                thread::sleep(Duration::from_millis(20));
+                window.set_aborted(SequenceNumber::new(1));
+            }
+        });
+        let validated = window
+            .await_pending_status_commits_within(SequenceNumber::new(1), Duration::from_secs(30), REPORT)
+            .expect("an aborting predecessor must not time out");
+        assert!(!validated, "an aborted predecessor reports false");
+        aborter.join().unwrap();
     }
 }

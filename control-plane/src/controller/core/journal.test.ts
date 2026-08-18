@@ -16,7 +16,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type Database from "better-sqlite3";
 import { ControllerCore, u64Blob } from "./procedures.ts";
-import { canonicalJson, fromHex, hex, hmacSha256, sha256, utf8 } from "./journal-crypto.ts";
+import { canonicalJson, framedHash, fromHex, hex, hmacSha256, sha256, utf8 } from "./journal-crypto.ts";
 import { boot as bootFixture, makeSql, reqFactory } from "./test-support.ts";
 
 const KEY = utf8("journal-test-key");
@@ -122,19 +122,47 @@ test("tamper matrix: every interior manipulation is a typed detection", () => {
     const v = core.verifyJournal();
     assert.deepEqual(v, { ok: false, error: "JOURNAL_GAP", atControlSeq: "4" });
   }
-  // forged rewrite WITHOUT the key: attacker recomputes hashes for a
-  // modified suffix but cannot mint valid MACs
+  // database substitution: re-attributing an entry to another database is
+  // a hash mismatch, because the v2 framing binds the database identity
+  // (audit C-P1-04 - under v1 the hash did not cover database_id at all)
   {
     const { core, db } = boot();
     for (let i = 0; i < 3; i++) core.finalizeWalRecord(req());
-    const rows = db.prepare(`SELECT control_seq, kind, canonical_body, prev_hash FROM control_outbox ORDER BY control_seq`).all() as Record<string, unknown>[];
+    db.prepare(`UPDATE control_outbox SET database_id = 'db-OTHER' WHERE control_seq = ?`).run(u64Blob(3n, "t"));
+    const v = core.verifyJournal();
+    assert.deepEqual(v, { ok: false, error: "JOURNAL_HASH_MISMATCH", atControlSeq: "3" });
+  }
+  // repartition: moving bytes across the kind/body boundary is a hash
+  // mismatch. Under the v1 unframed concatenation ("AB","C") and ("A","BC")
+  // were ONE preimage; the length framing makes them distinct.
+  {
+    const { core, db } = boot();
+    for (let i = 0; i < 3; i++) core.finalizeWalRecord(req());
+    const row = db.prepare(`SELECT kind, canonical_body FROM control_outbox WHERE control_seq=?`)
+      .get(u64Blob(3n, "t")) as { kind: string; canonical_body: string };
+    // shift the body's first byte onto the end of the kind: same bytes, new partition
+    db.prepare(`UPDATE control_outbox SET kind=?, canonical_body=? WHERE control_seq=?`)
+      .run(row.kind + row.canonical_body[0], row.canonical_body.slice(1), u64Blob(3n, "t"));
+    const v = core.verifyJournal();
+    assert.deepEqual(v, { ok: false, error: "JOURNAL_HASH_MISMATCH", atControlSeq: "3" });
+  }
+  // forged rewrite WITHOUT the key: the attacker knows the (public) v2
+  // framing and recomputes valid hashes for a modified suffix, but cannot
+  // mint valid MACs
+  {
+    const { core, db } = boot();
+    for (let i = 0; i < 3; i++) core.finalizeWalRecord(req());
+    const rows = db.prepare(`SELECT control_seq, database_id, kind, canonical_body, prev_hash FROM control_outbox ORDER BY control_seq`).all() as Record<string, unknown>[];
     // rewrite entry 2's body and recompute its hash + entry 3's linkage,
     // using a WRONG key for the MACs (the real key never leaves the core)
     const forgedBody = String(rows[2].canonical_body).replace('"generation":1', '"generation":9');
     assert.notEqual(forgedBody, String(rows[2].canonical_body), "the forged edit must actually change the body");
-    const forgedHash3 = sha256(rows[2].prev_hash as Uint8Array, u64Blob(3n, "t"), utf8(String(rows[2].kind)), utf8(forgedBody));
+    const entryHash = (row: Record<string, unknown>, prev: Uint8Array, seq: bigint, body: string) =>
+      framedHash("typedb-journal-entry/v2",
+        prev, u64Blob(seq, "t"), utf8(String(row.database_id)), utf8(String(row.kind)), utf8(body));
+    const forgedHash3 = entryHash(rows[2], rows[2].prev_hash as Uint8Array, 3n, forgedBody);
     const forgedMac3 = hmacSha256(utf8("wrong-key"), forgedHash3);
-    const forgedHash4 = sha256(forgedHash3, u64Blob(4n, "t"), utf8(String(rows[3].kind)), utf8(String(rows[3].canonical_body)));
+    const forgedHash4 = entryHash(rows[3], forgedHash3, 4n, String(rows[3].canonical_body));
     const forgedMac4 = hmacSha256(utf8("wrong-key"), forgedHash4);
     const put = db.prepare(`UPDATE control_outbox SET canonical_body=?, prev_hash=?, entry_hash=?, mac=? WHERE control_seq=?`);
     put.run(forgedBody, rows[2].prev_hash, forgedHash3, forgedMac3, u64Blob(3n, "t"));

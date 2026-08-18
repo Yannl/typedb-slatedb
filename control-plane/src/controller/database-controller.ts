@@ -96,7 +96,39 @@ export class DatabaseControllerDO extends DurableObject {
         interval_ms INTEGER NOT NULL DEFAULT 60000,
         attempts INTEGER NOT NULL DEFAULT 0
       );
+      CREATE TABLE IF NOT EXISTS do_binding(
+        key TEXT PRIMARY KEY CHECK(key='database_id'),
+        value TEXT NOT NULL
+      );
     `);
+  }
+
+  /**
+   * Immutable database binding (audit C-P0-02): this DO durably binds the
+   * first database identity it serves and every later call must present
+   * exactly that identity - a mis-routed or forged cross-database call
+   * fails closed here, BEFORE any SQL/R2 authority work, even though the
+   * worker's idFromName routing should make it unreachable. workerd does
+   * not let an object read its own name, so first-authenticated-call
+   * binding is the strongest locally available form of "bound at
+   * initialization"; the full tenant/environment binding registry is a
+   * platform-blocked PR4 remainder recorded in the ledger.
+   */
+  private bind(databaseId: string): void {
+    if (typeof databaseId !== "string" || databaseId.length === 0) {
+      throw new Error("DO_DATABASE_BINDING_VIOLATION: empty database identity");
+    }
+    const bound = this.sql.exec(`SELECT value FROM do_binding WHERE key='database_id'`).toArray();
+    if (!bound.length) {
+      this.sql.exec(`INSERT INTO do_binding(key, value) VALUES ('database_id', ?)`, databaseId);
+      return;
+    }
+    if (String(bound[0].value) !== databaseId) {
+      throw new Error(
+        `DO_DATABASE_BINDING_VIOLATION: this authority is bound to another database; ` +
+          `presented ${JSON.stringify(databaseId)}`,
+      );
+    }
   }
 
   /**
@@ -108,26 +140,31 @@ export class DatabaseControllerDO extends DurableObject {
    * synchronous validate -> allocate -> outbox transaction.
    */
   finalizeWalRecord(req: FinalizeRequest): FinalizeResult {
+    this.bind(req.databaseId);
     return this.controllerCore.finalizeWalRecord(req);
   }
 
   finalizeBatch(
     reqs: FinalizeRequest[], envelope?: Parameters<ControllerCore["finalizeBatch"]>[1],
   ): ReturnType<ControllerCore["finalizeBatch"]> {
+    if (reqs.length) this.bind(reqs[0].databaseId);
     return this.controllerCore.finalizeBatch(reqs, envelope);
   }
 
   registerSession(databaseId: string, generation: number, startupSessionId: string): void {
+    this.bind(databaseId);
     this.controllerCore.registerSession(databaseId, generation, startupSessionId);
   }
 
   reserveSession(databaseId: string, generation: number, startupSessionId: string, holder: string):
     ReturnType<ControllerCore["reserveSession"]> {
+    this.bind(databaseId);
     return this.controllerCore.reserveSession(databaseId, generation, startupSessionId, holder);
   }
 
   attestSession(databaseId: string, startupSessionId: string, processNonce: string):
     ReturnType<ControllerCore["attestSession"]> {
+    this.bind(databaseId);
     return this.controllerCore.attestSession(databaseId, startupSessionId, processNonce);
   }
 
@@ -135,23 +172,28 @@ export class DatabaseControllerDO extends DurableObject {
     databaseId: string, startupSessionId: string,
     proof: Parameters<ControllerCore["activateSession"]>[2],
   ): ReturnType<ControllerCore["activateSession"]> {
+    this.bind(databaseId);
     return this.controllerCore.activateSession(databaseId, startupSessionId, proof);
   }
 
   renewLease(databaseId: string, startupSessionId: string, leaseMs: number):
     ReturnType<ControllerCore["renewLease"]> {
+    this.bind(databaseId);
     return this.controllerCore.renewLease(databaseId, startupSessionId, leaseMs);
   }
 
   beginDrain(databaseId: string, startupSessionId: string): ReturnType<ControllerCore["beginDrain"]> {
+    this.bind(databaseId);
     return this.controllerCore.beginDrain(databaseId, startupSessionId);
   }
 
   revokeSession(databaseId: string, startupSessionId: string): ReturnType<ControllerCore["revokeSession"]> {
+    this.bind(databaseId);
     return this.controllerCore.revokeSession(databaseId, startupSessionId);
   }
 
   fenceSession(databaseId: string, startupSessionId: string): void {
+    this.bind(databaseId);
     this.controllerCore.fenceSession(databaseId, startupSessionId);
   }
 
@@ -160,22 +202,27 @@ export class DatabaseControllerDO extends DurableObject {
     budgets: Parameters<ControllerCore["setBudgets"]>[1],
     startupSessionId: string,
   ): ReturnType<ControllerCore["setBudgets"]> {
+    this.bind(databaseId);
     return this.controllerCore.setBudgets(databaseId, budgets, startupSessionId);
   }
 
   exactLookup(databaseId: string, generation: number, appendLsn: bigint): ReturnType<ControllerCore["exactLookup"]> {
+    this.bind(databaseId);
     return this.controllerCore.exactLookup(databaseId, generation, appendLsn);
   }
 
   auditContiguity(databaseId: string, generation: number): ReturnType<ControllerCore["auditContiguity"]> {
+    this.bind(databaseId);
     return this.controllerCore.auditContiguity(databaseId, generation);
   }
 
   head(databaseId: string, generation: number): ReturnType<ControllerCore["head"]> {
+    this.bind(databaseId);
     return this.controllerCore.head(databaseId, generation);
   }
 
   openIterator(databaseId: string, generation: number): ReturnType<ControllerCore["openIterator"]> {
+    this.bind(databaseId);
     return this.controllerCore.openIterator(databaseId, generation);
   }
 
@@ -184,21 +231,25 @@ export class DatabaseControllerDO extends DurableObject {
     generation: number,
     opts: Parameters<ControllerCore["scan"]>[2],
   ): ReturnType<ControllerCore["scan"]> {
+    this.bind(databaseId);
     return this.controllerCore.scan(databaseId, generation, opts);
   }
 
   lastByType(databaseId: string, generation: number, recordType: number): ReturnType<ControllerCore["lastByType"]> {
+    this.bind(databaseId);
     return this.controllerCore.lastByType(databaseId, generation, recordType);
   }
 
   queryOperation(
     databaseId: string, generation: number, operationId: string, startupSessionId: string,
   ): ReturnType<ControllerCore["queryOperation"]> {
+    this.bind(databaseId);
     return this.controllerCore.queryOperation(databaseId, generation, operationId, startupSessionId);
   }
 
   resolveSnapshot(databaseId: string, generation: number, snapshotId: string):
     ReturnType<ControllerCore["resolveSnapshot"]> {
+    this.bind(databaseId);
     return this.controllerCore.resolveSnapshot(databaseId, generation, snapshotId);
   }
 
@@ -209,6 +260,7 @@ export class DatabaseControllerDO extends DurableObject {
   outboxAck(
     databaseId: string, upToControlSeq: bigint, startupSessionId: string,
   ): ReturnType<ControllerCore["outboxAck"]> {
+    this.bind(databaseId);
     return this.controllerCore.outboxAck(databaseId, upToControlSeq, startupSessionId);
   }
 
@@ -234,6 +286,7 @@ export class DatabaseControllerDO extends DurableObject {
     maxBytes?: number;
     ttlMs?: number;
   }): { token: string; key?: string; expiresAtMs: number; incarnation: number } {
+    this.bind(spec.databaseId);
     const incarnation = this.controllerCore.currentIncarnation();
     const expiresAtMs = Date.now() + Math.min(Math.max(spec.ttlMs ?? 60_000, 1), 3_600_000);
     const key = spec.method === "PUT_PAYLOAD" && spec.digest !== undefined
@@ -273,15 +326,21 @@ export class DatabaseControllerDO extends DurableObject {
   }
 
   /**
-   * Verify-and-burn a capability for one request (F9). MAC, expiry,
-   * incarnation, method, audience, key, digest and budget are checked
-   * synchronously; the nonce burn is the transactional single-use rule -
-   * a second use of a valid token is CAPABILITY_REPLAYED.
+   * Verify-and-claim a capability for one request (F9, audit C-P0-08). MAC,
+   * expiry, incarnation, method, audience, key, digest and budget are
+   * checked synchronously; the claim is the transactional single-REQUEST
+   * rule - the nonce is durably bound to `useDigest` (the canonical digest
+   * of the one request being authorized), so an IDENTICAL retry after a
+   * lost response is admitted again (every authorized procedure is
+   * idempotent by operation identity and reproduces its original outcome),
+   * while a DIFFERENT request under a used token is CAPABILITY_REPLAYED.
    */
   useCapability(
     token: string,
     expect: { method: string; databaseId: string; session?: string; key?: string; bodyDigest?: string; bodyLength?: number },
+    useDigest: string,
   ): CapabilityCheck | { ok: false; error: "CAPABILITY_REPLAYED" } {
+    this.bind(expect.databaseId);
     const nowMs = Date.now();
     const checked = checkCapability(this.capabilityKey, token, {
       ...expect,
@@ -289,10 +348,17 @@ export class DatabaseControllerDO extends DurableObject {
       nowMs,
     });
     if (!checked.ok) return checked;
-    if (!this.controllerCore.burnCapabilityNonce(checked.payload.nonce, checked.payload.expiresAtMs, nowMs)) {
-      return { ok: false, error: "CAPABILITY_REPLAYED" };
-    }
+    const claimed = this.controllerCore.claimCapability(
+      checked.payload.nonce, useDigest, checked.payload.expiresAtMs, nowMs);
+    if (!claimed.ok) return claimed;
     return checked;
+  }
+
+  /** Record the durable outcome of a claimed capability use (C-P0-08). */
+  resolveCapabilityUse(
+    nonce: string, state: "RESOLVED_SUCCESS" | "RESOLVED_REJECTED" | "AMBIGUOUS", outcome?: string,
+  ): void {
+    this.controllerCore.resolveCapabilityUse(nonce, state, outcome);
   }
 
   bumpIncarnation(): number {
@@ -300,6 +366,7 @@ export class DatabaseControllerDO extends DurableObject {
   }
 
   openCheckpointCut(databaseId: string, generation: number, cutId: string): ReturnType<ControllerCore["openCheckpointCut"]> {
+    this.bind(databaseId);
     return this.controllerCore.openCheckpointCut(databaseId, generation, cutId);
   }
 
@@ -308,10 +375,12 @@ export class DatabaseControllerDO extends DurableObject {
     cutId: string,
     evidence: Parameters<ControllerCore["activateCheckpointCut"]>[2],
   ): ReturnType<ControllerCore["activateCheckpointCut"]> {
+    this.bind(databaseId);
     return this.controllerCore.activateCheckpointCut(databaseId, cutId, evidence);
   }
 
   activeCheckpointCut(databaseId: string, generation: number): ReturnType<ControllerCore["activeCheckpointCut"]> {
+    this.bind(databaseId);
     return this.controllerCore.activeCheckpointCut(databaseId, generation);
   }
 

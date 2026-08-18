@@ -32,7 +32,7 @@ impl IntervalRunner {
             match shutdown_receiver.recv_timeout(initial_delay) {
                 Ok(done_sender) => {
                     drop(action);
-                    done_sender.send(()).unwrap();
+                    let _ = done_sender.send(());
                     return;
                 }
                 Err(RecvTimeoutError::Timeout) => (),
@@ -44,7 +44,7 @@ impl IntervalRunner {
                 match shutdown_receiver.recv_timeout(interval) {
                     Ok(done_sender) => {
                         drop(action);
-                        done_sender.send(()).unwrap();
+                        let _ = done_sender.send(());
                         break;
                     }
                     Err(RecvTimeoutError::Timeout) => (),
@@ -58,8 +58,39 @@ impl IntervalRunner {
 
 impl Drop for IntervalRunner {
     fn drop(&mut self) {
+        // Non-panicking teardown: the worker thread may already be gone —
+        // its action panicked, or the process is mid-abort — in which case
+        // `send` sees a disconnected channel. A panic here would be a panic
+        // inside Drop, which during another panic's unwind aborts the
+        // process at the wrong place; a missing worker needs no shutdown, so
+        // both failure modes are a quiet no-op.
         let (done_sender, done_receiver) = sync_channel(1);
-        self.shutdown_sink.send(done_sender).expect("Expected interval runner shutdown signal sending");
-        done_receiver.recv().expect("Expected interval runner shutdown finishing")
+        if self.shutdown_sink.send(done_sender).is_err() {
+            return;
+        }
+        let _ = done_receiver.recv();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::IntervalRunner;
+
+    #[test]
+    fn dropping_a_runner_whose_action_panicked_does_not_panic() {
+        // the action panic kills the worker thread, disconnecting the
+        // shutdown channel; Drop must treat that as "nothing to shut down",
+        // not as a second panic (which, during an unwind, aborts the process)
+        let runner = IntervalRunner::new(|| panic!("worker died"), Duration::from_secs(3600));
+        std::thread::sleep(Duration::from_millis(200));
+        drop(runner); // must return quietly
+    }
+
+    #[test]
+    fn dropping_a_live_runner_still_waits_for_shutdown() {
+        let runner = IntervalRunner::new(|| (), Duration::from_secs(3600));
+        drop(runner);
     }
 }

@@ -1,5 +1,7 @@
 # ADR-0010 — Cargo-only builds, federated workspaces, and a machine-verified source lock
 
+> **Status: INCOMPATIBLE with higher authority (2026-08-18).** v17 selects Mode Q (Bazel cquery evidence per source pin); "Bazel is never executed" is INCOMPATIBLE with that selection. Recorded as CD-006. Cargo remains the build orchestrator for this repo, but Mode-Q discovery evidence must be produced in a Bazel-capable environment (or v17 amended by the owner).
+
 **Status:** accepted (brief §0.2.1/§5.10 restated as implementation decisions; operative since G0)
 
 ## Context

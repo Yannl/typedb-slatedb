@@ -237,13 +237,16 @@ test("fixed iterator head: records finalised after open stay invisible to the pi
 
 test("SQL projection and pure reducer replay are trace-equivalent over a generated schedule", () => {
   const core = boot();
-  core.registerSession("db1", 4, "sess-1");
-  // deterministic pseudo-random schedule (seeded LCG; no Date/Math.random)
+  // deterministic pseudo-random schedule (seeded LCG; no Date/Math.random).
+  // Generations are SEQUENTIAL with a rollover mid-schedule: commit
+  // authority is bound to the session's current generation (C-P0-04), so an
+  // interleaved-generation schedule is unreachable by construction now.
   let seed = 0x5eed;
   const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
   const events: WalRecordEvent[] = [];
   for (let i = 0; i < 200; i++) {
-    const generation = rand() < 0.5 ? 3 : 4;
+    if (i === 100) core.registerSession("db1", 4, "sess-1"); // rollover
+    const generation = i < 100 ? 3 : 4;
     const sequenced = rand() < 0.7;
     const status = !sequenced && rand() < 0.3;
     const r = core.finalizeWalRecord(
@@ -332,8 +335,8 @@ test("a fenced actor cannot re-take authority by re-registering", () => {
 
 test("fencing is actor-wide: revoking a rollover-spanning actor covers every generation it registered", () => {
   const core = boot();
-  core.registerSession("db1", 4, "sess-1"); // same actor, next generation
   assert.ok(core.finalizeWalRecord(req()).ok);
+  core.registerSession("db1", 4, "sess-1"); // same actor, next generation
   assert.ok(core.finalizeWalRecord(req({ generation: 4 })).ok);
   core.fenceSession("db1", "sess-1");
   // both generations are revoked — a per-generation fence would leave the
@@ -342,12 +345,18 @@ test("fencing is actor-wide: revoking a rollover-spanning actor covers every gen
   assert.deepEqual(core.finalizeWalRecord(req({ generation: 4 })), { ok: false, error: "SESSION_FENCED" });
 });
 
-test("one actor spans a generation rollover without fencing itself", () => {
+test("one actor spans a generation rollover; commit authority MOVES with it (audit C-P0-04)", () => {
   const core = boot();
   assert.ok(core.finalizeWalRecord(req()).ok);
   core.registerSession("db1", 4, "sess-1"); // same actor, next generation
-  assert.ok(core.finalizeWalRecord(req()).ok); // generation 3 still writable
+  // the audit's executed violation was "registered in generations 1 and 2,
+  // finalized in both": after rollover the session's lifecycle row binds
+  // generation 4 and ONLY generation 4 accepts its commits
+  const stale = core.finalizeWalRecord(req());
+  assert.deepEqual(stale, { ok: false, error: "SESSION_GENERATION_MISMATCH", sessionGeneration: 4 });
   assert.ok(core.finalizeWalRecord(req({ generation: 4 })).ok);
+  // the actor itself was never fenced by its own rollover
+  assert.equal(core.auditContiguity("db1", 4).count, 1);
 });
 
 test("head reports the TypeSequence, not the physical LSN", () => {

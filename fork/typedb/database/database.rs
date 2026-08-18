@@ -584,10 +584,39 @@ fn make_checkpoint_fn(
     move || {
         let watermark = storage.snapshot_watermark();
         if prev_checkpoint < watermark {
-            checkpoint_storage(&database_name, &path, &storage).unwrap();
+            if let Err(error) = checkpoint_storage(&database_name, &path, &storage) {
+                // Fail-stop, not unwind: this closure runs on a detached
+                // interval thread, where a panic kills only the checkpointer
+                // and the server keeps serving with checkpoints silently
+                // stopped — unbounded WAL growth and unbounded recovery time.
+                // Checkpointing is a correctness task; a loud stop that
+                // recovers from the WAL on restart is the lesser harm.
+                logger::error!("{}", checkpoint_failure_fatal_message(&database_name, &error));
+                std::process::abort();
+            }
             prev_checkpoint = watermark;
         }
     }
+}
+
+/// The FATAL message for a periodic-checkpoint failure. Extracted so the
+/// error branch is unit-testable: the branch itself ends in `process::abort`,
+/// which no test can cross.
+fn checkpoint_failure_fatal_message(database_name: &str, error: &impl fmt::Debug) -> String {
+    format!(
+        "FATAL: periodic checkpoint for database '{database_name}' failed: {error:?}. A silently dead \
+         checkpointer is worse than a stopped server; aborting so the database recovers from the WAL on restart."
+    )
+}
+
+/// The (non-fatal) message for a periodic statistics-update failure.
+/// Statistics are an observational optimisation, not a correctness task:
+/// the updater logs, skips this round, and retries on the next interval.
+fn statistics_failure_message(database_name: &str, error: &impl fmt::Debug) -> String {
+    format!(
+        "Periodic statistics update for database '{database_name}' failed: {error:?}. Keeping the \
+         previous statistics; the update will be retried on the next interval."
+    )
 }
 
 fn checkpoint_storage(
@@ -616,12 +645,48 @@ fn make_update_statistics_fn(
             let _schema_txn_guard = schema_txn_lock.read().unwrap(); // prevent Schema txns from opening during statistics update
             let mut new_statistics = (*schema.read().unwrap().thing_statistics).clone();
             debug!("Starting updating statistics for database {database_name}");
-            new_statistics.may_synchronise(&storage).expect("Statistics sync failed");
+            if let Err(error) = new_statistics.may_synchronise(&storage) {
+                // non-correctness task: a failed sync must not kill the
+                // updater thread (an `expect` here silently ended every
+                // future update) — log, keep the previous statistics, retry
+                // on the next interval
+                logger::error!("{}", statistics_failure_message(&database_name, &error));
+                return;
+            }
             let new_statistics = Arc::new(new_statistics);
             query_cache.set_statistics_and_invalidate_outdated(new_statistics.clone());
             schema.write().unwrap().thing_statistics = new_statistics;
             debug!("Finished updating statistics for database {}", database_name.as_str());
         }
+    }
+}
+
+#[cfg(test)]
+mod interval_task_failure_tests {
+    //! S-P0-05 controls: the interval-thread failure branches. The branches
+    //! themselves end in `process::abort` (checkpoint) or an early return
+    //! (statistics), so the testable surface is the extracted policy: the
+    //! checkpoint message is FATAL and names the database (matching the
+    //! fail-stop doctrine for correctness-task failure); the statistics
+    //! message is explicitly a keep-going retry.
+
+    use super::{checkpoint_failure_fatal_message, statistics_failure_message};
+
+    #[test]
+    fn checkpoint_failure_is_fatal_and_names_the_database() {
+        let message = checkpoint_failure_fatal_message("orders-db", &"disk unplugged");
+        assert!(message.starts_with("FATAL:"), "correctness-task failure must be marked FATAL: {message}");
+        assert!(message.contains("orders-db"), "the message must name the database: {message}");
+        assert!(message.contains("disk unplugged"), "the message must carry the cause: {message}");
+        assert!(message.contains("abort"), "the message must state the fail-stop consequence: {message}");
+    }
+
+    #[test]
+    fn statistics_failure_is_a_logged_retry_not_a_stop() {
+        let message = statistics_failure_message("orders-db", &"sync raced a reset");
+        assert!(!message.contains("FATAL"), "statistics are not a correctness task: {message}");
+        assert!(message.contains("orders-db"), "the message must name the database: {message}");
+        assert!(message.contains("retried"), "the message must state that the updater keeps running: {message}");
     }
 }
 

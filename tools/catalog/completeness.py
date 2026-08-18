@@ -286,11 +286,19 @@ def check_ledger(results_dir, catalog=None, ledger_path=None):
         `failed`/`ignored`/`timed_out` were inspected, never the exit code);
       - a case-bearing target reporting zero cases (a binary that silently
         ran nothing looked identical to one with no tests).
+
+    E-P0-06/07/10: the rows themselves are no longer trusted either. The
+    shared bundle layer (verdict_policy.verify_bundle) reopens every raw log,
+    checks its hash binding (row hash or sidecar manifest), REPARSES its
+    libtest counts against the row, verifies ledger fingerprints against the
+    log's actual failing case names, and recomputes the bundle root against
+    the sidecar manifest and any root the COMPLETE marker binds.
     """
     ledger, problems = verdict_policy.load_ledger(ledger_path or LEDGER)
     for p in problems:
         error(p)
-    results = json.loads((results_dir / "u0-results.json").read_text())["results"]
+    data = json.loads((results_dir / "u0-results.json").read_text())
+    results = data["results"]
     required = case_bearing = None
     if catalog is not None:
         required, case_bearing, excluded = required_targets_from_catalog(catalog)
@@ -299,7 +307,14 @@ def check_ledger(results_dir, catalog=None, ledger_path=None):
     for a in verdict_policy.classify_rows(results, ledger,
                                           expected_case_bearing=case_bearing):
         error(a)
-    return len(results), len(ledger)
+    bundle_anoms, warnings, bundle_root = verdict_policy.verify_bundle(
+        results_dir, results, ledger, file_profile=data.get("profile"),
+        ledger_path=ledger_path or LEDGER)
+    for a in bundle_anoms:
+        error(a)
+    for w in warnings:
+        print(f"WARNING: {w}", file=sys.stderr)
+    return len(results), len(ledger), bundle_root
 
 
 # ---------------------------------------------------------------- self-test
@@ -361,8 +376,20 @@ def self_test():
     def with_results(rows, cat=None, ledger=None):
         """A results dir plus an EMPTY ledger by default: these controls test
         the results policy, not the committed project ledger (whose entries
-        would otherwise fire as stale against every synthetic run)."""
+        would otherwise fire as stale against every synthetic run). Each row
+        gets a real raw log whose libtest summary matches its counts, hashed
+        into the row - the bundle layer now verifies bytes, so a synthetic
+        run must carry real bytes for the CLEAN control to mean anything."""
         tmpdir = pathlib.Path(tempfile.mkdtemp())
+        for r in rows:
+            log = tmpdir / (r["target_id"].replace(":", "__") + ".log")
+            log.write_text(
+                f"\nrunning {r['passed'] + r['failed'] + r['ignored']} tests\n"
+                f"test result: ok. {r['passed']} passed; {r['failed']} failed; "
+                f"{r['ignored']} ignored; 0 measured; 0 filtered out; "
+                f"finished in 0.00s\n")
+            r["raw_log"] = str(log)
+            r["log_sha256"] = common.sha256_file(log)
         (tmpdir / "u0-results.json").write_text(json.dumps({"results": rows}))
         lp = tmpdir / "ledger.json"
         lp.write_text(json.dumps({"entries": ledger or []}))
@@ -431,15 +458,26 @@ def main():
         "failpoint_leaves": fp_actual,
     }
     if args.results:
-        results_count, ledger_count = check_ledger(args.results, catalog)
+        results_count, ledger_count, bundle_root = check_ledger(args.results, catalog)
         report["results_targets"] = results_count
         report["ledger_entries"] = ledger_count
+        report["bundle_root"] = bundle_root
         required, case_bearing, excluded = required_targets_from_catalog(catalog)
         report["required_executable_targets"] = len(required)
         report["case_bearing_targets"] = len(case_bearing)
         report["declared_zero_case_targets"] = len(excluded)
+        # E-P0-04 scope honesty: the execution-reconciliation denominator
+        # above is ONLY the cargo-target projection of the catalogue. Saying
+        # anything broader would be exactly the false-coverage claim this
+        # tool exists to prevent.
+        report["denominator_scope"] = "cargo-targets-only"
 
     print(json.dumps(report, indent=2))
+    if args.results:
+        print("SCOPE: execution reconciliation above covers the CARGO-target "
+              "projection of the catalogue ONLY; CUCUMBER/STATIC/FAILPOINT/SCRIPT "
+              "leaves are recounted against the catalogue (checks 1-3) but are "
+              "NOT execution-reconciled by this tool.")
     for e in errors:
         print(f"ERROR: {e}", file=sys.stderr)
     sys.exit(1 if errors else 0)

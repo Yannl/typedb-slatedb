@@ -1,5 +1,5 @@
 {
-  "document": "structured contradiction register (consolidated directive §1: when code, prose, evidence and contract disagree, stop the affected phase and record the contradiction rather than choosing the convenient reading)",
+  "document": "structured contradiction register (consolidated directive \u00a71: when code, prose, evidence and contract disagree, stop the affected phase and record the contradiction rather than choosing the convenient reading)",
   "authority_order": [
     "contract/AGENTS.md process rules",
     "contract/typedb-r2-v17-final-addendum.md",
@@ -15,19 +15,21 @@
       "opened": "2026-08-18",
       "status": "OPEN",
       "title": "The U2S3 conformance lane has no profile in the normative catalogue schema",
-      "contract": "contract/typedb-r2-v14-upstream-test-catalog.schema.json — profiles[].profile_id is enum [U0,U1,U2,U3,U4]; contract/typedb-r2-v14-cargo-test-conformance-plan.md defines U2 as 'SlateDB LocalFS / file WAL / local'.",
+      "contract": "contract/typedb-r2-v14-upstream-test-catalog.schema.json \u2014 profiles[].profile_id is enum [U0,U1,U2,U3,U4]; contract/typedb-r2-v14-cargo-test-conformance-plan.md defines U2 as 'SlateDB LocalFS / file WAL / local'.",
       "implementation": "The project executes a fourth conformance lane, U2S3 (SlateDB keyspaces over an S3-compatible object store, file WAL, local controller) and files its evidence under docs/evidence/G3/u2s3-full*. TYPEDB_STORAGE_PROFILE=U2S3 is a real, load-bearing runtime value (fork/typedb/storage/factory.rs).",
       "contradiction": "The lane that carries the project's strongest structural-parity claim cannot be expressed as a required (leaf, profile) pair, because the contract's profile enum has no identifier for it. Its runs are therefore evidence about a profile the catalogue does not know exists, and completeness over the U2S3 lane is not derivable from the catalogue.",
-      "safe_side_taken": "required_pairs are emitted for U0..U4 only — the identifiers the contract actually defines. The U2S3 runs remain evidence LABELLED U2S3 (per the audit's instruction) and are compared structurally against the U1 oracle; no catalogue claims completeness for them.",
+      "safe_side_taken": "required_pairs are emitted for U0..U4 only \u2014 the identifiers the contract actually defines. The U2S3 runs remain evidence LABELLED U2S3 (per the audit's instruction) and are compared structurally against the U1 oracle; no catalogue claims completeness for them.",
       "resolution_requires": "An owner decision, then a coordinated change: add the profile id to the v14 schema enum and the conformance plan's profile table, or reclassify U2S3 as a parameterisation of U2 (object_store=s3-compatible) and say so in the plan. Do not add a profile id to the catalogue before the schema changes.",
-      "blocks": ["G1 completeness claim for the U2S3 lane"]
+      "blocks": [
+        "G1 completeness claim for the U2S3 lane"
+      ]
     },
     {
       "id": "CD-002",
       "opened": "2026-08-18",
       "status": "OPEN",
       "title": "The catalogue's zero-case declarations use the exclusion record, which the schema shapes for a different purpose",
-      "contract": "contract/typedb-r2-v14-upstream-test-catalog.schema.json — target objects are additionalProperties:false, so a target cannot carry a leaf_count or a zero-case reason; the exclusion record (subject_id/predicate/reason/owner/expiry) is the only declaration surface.",
+      "contract": "contract/typedb-r2-v14-upstream-test-catalog.schema.json \u2014 target objects are additionalProperties:false, so a target cannot carry a leaf_count or a zero-case reason; the exclusion record (subject_id/predicate/reason/owner/expiry) is the only declaration surface.",
       "implementation": "42 catalogue targets legitimately carry zero leaf cases (8 [[bench]] targets the cargo test lane compiles but never runs as tests, and crates with no #[test] functions). Before this session they were simply absent from every count, which makes an intentional zero indistinguishable from a lost suite.",
       "contradiction": "Declaring them requires the exclusion record, whose fields (expiry, owner, replacement_test_id) are written for temporary carve-outs. A permanent structural fact is now carried in a record shaped for temporary debt, and it therefore acquires an expiry date it does not deserve.",
       "safe_side_taken": "Declared as exclusions with explicit predicates ('cargo target kind == bench', 'libtest enumeration returns zero cases') and a far expiry, so the fact is visible and checkable today; validate_catalog.py cross-checks each declaration against the actual leaf count in both directions.",
@@ -44,7 +46,9 @@
       "contradiction": "The strongest comparison in the project is joined on a weaker key than the catalogue provides, and two 0-case scaffolding targets share a name (handled as multisets). A name-joined comparison cannot distinguish two targets that differ only by package.",
       "safe_side_taken": "The join is documented in the comparator and in every artefact it writes; profiles compare as multisets so a shared name cannot silently drop a row; the comparison now walks the union of both sides so a name present only in the oracle is a divergence.",
       "resolution_requires": "Re-baseline U1 with the current runner (a full pristine-oracle corpus run), then join on cargo package/target identity. Until then the comparison is structurally sound but identity-weak, and it must not be described as identity-joined.",
-      "blocks": ["any claim that the U2S3 comparison is catalogue-identity-joined"]
+      "blocks": [
+        "any claim that the U2S3 comparison is catalogue-identity-joined"
+      ]
     },
     {
       "id": "CD-004",
@@ -57,6 +61,24 @@
       "safe_side_taken": "The catalogue keeps being generated from the PRISTINE tree (upstream denominator preserved); the fork's additive tests appear only in run evidence, where the comparator classifies them per target with exact expected profiles. run_u0.py records the executed tree's own identity (checkout revision + staged-delta digest) so a result row names the bytes that produced it rather than borrowing the outer repo commit.",
       "resolution_requires": "A second pinned checkout dedicated to catalogue generation (cheap in disk terms only where a second target dir fits), or a catalogue generator that enumerates leaves without a build.",
       "blocks": []
+    },
+    {
+      "id": "CD-005",
+      "between": [
+        "contract/typedb-r2-v17-final-addendum.md A17.4 (per-database classic|slatedb-r2 selection)",
+        "docs/architecture/ADR/ADR-0002-engine-seam-at-keyspace-layer.md (process-wide profile; per-database support declared not required)"
+      ],
+      "safe_side_taken": "ADR-0002 marked INCOMPATIBLE; the typed per-database backend seam (StorageBackend/DatabaseStorageSpec, S-P0-06) is being built refusal-first; the process-wide env profile remains only for the experimental U-lanes.",
+      "status": "OPEN until the ADR is superseded by an accepted per-database seam ADR"
+    },
+    {
+      "id": "CD-006",
+      "between": [
+        "contract/typedb-r2-v17-final-addendum.md (Mode Q selection)",
+        "docs/architecture/ADR/ADR-0010-cargo-only-federated-workspaces.md (Bazel is never executed)"
+      ],
+      "safe_side_taken": "ADR-0010 marked INCOMPATIBLE for the discovery-evidence claim; G0 is OPEN_RED until Mode-Q cquery evidence exists or the owner amends v17. Cargo remains the build orchestrator; that part of the ADR stands.",
+      "status": "OPEN; blocked on a Bazel-capable environment or owner amendment"
     }
   ]
 }

@@ -20,10 +20,13 @@ remainder (plan assertions + a 500k-row latency-ratio control, which
 caught and killed a real O(history) double-`MAX` head lookup), the J.3
 pure resolver model, and the ADR-0012 **Candidate B** spike — both
 candidates are now measured and the comparison is recorded in the ADR.
-The corpus evidence stands at `docs/evidence/G3/u2s3-full-3/` (106/106,
-GREEN, oracle comparison 0 unexplained). **The release decision is still
-NO-GO** — what keeps it red is U3/U4 coverage, the Mode-Q Bazel oracle,
-and G2, all named blockers, not unfinished closable work.
+The corpus archive at `docs/evidence/G3/u2s3-full-3/` is a HISTORICAL
+observation over a superseded staged tree (see the ledger's U2S3 entry for
+the raw numbers); it is not current-tree conformance. **The release
+decision is still NO-GO.** The authoritative gate state is
+`docs/ledger/gates.json` (rendered in docs/operations.md) — the 2026-08-18
+deep audit reopened G0 (Mode-Q), reclassified U2/U2S3 as historical
+non-qualifying, and marked U3.0 red (Rust client / Worker protocol drift).
 
 ## Read these first (15 minutes)
 
@@ -73,11 +76,11 @@ minutes in on a missing `protoc`. Doctor reports that in one second.
    dependency — it is post-G2 only where the playbook says so, and the
    response document's F7/F8 rows itemise it.
 
-3. **Q-08 probe harness.** Build the P-R2/P-DO/P-CTR/P-WORKER disposable
-   probe applications and the evidence validator (manifest-driven,
-   harness-omission mutants). Their *execution* is credential-blocked, but
-   the directive is explicit that the harness must exist before requesting
-   SI-G0-3.
+3. **Q-08 probe harness: BUILT (2026-08-18).** All 14 normative IDs exist
+   with fail-closed aggregation, sealed evidence bundles and an 18-control
+   self-test (`control-plane/probes/`, CI-enforced). Their *execution*
+   remains credential-blocked (SI-G0-3); the ledger's G2 entry also needs
+   the owner-approved envelope before any live run.
 
 4. **Q-19 / Q-12 streaming remainder.** Streaming/backpressure framing for
    payload and scan surfaces instead of accumulated base64; whole-object

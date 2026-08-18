@@ -46,6 +46,20 @@ describe("DatabaseControllerDO on workerd", () => {
     });
   });
 
+  it("binds the database identity durably: a cross-database call fails closed (C-P0-02)", async () => {
+    const stub = testEnv.CONTROLLER.get(testEnv.CONTROLLER.idFromName("t-binding"));
+    await runInDurableObject(stub, async (instance: DatabaseControllerDO) => {
+      instance.registerSession("db1", 1, "sess-1"); // first call binds db1
+      expect(() => instance.registerSession("db-OTHER", 1, "sess-x"))
+        .toThrowError(/DO_DATABASE_BINDING_VIOLATION/);
+      expect(() => instance.finalizeWalRecord(finalizeReq("op-x", { databaseId: "db-OTHER" })))
+        .toThrowError(/DO_DATABASE_BINDING_VIOLATION/);
+      expect(() => instance.head("db-OTHER", 1)).toThrowError(/DO_DATABASE_BINDING_VIOLATION/);
+      // the bound identity keeps working
+      instance.registerSession("db1", 1, "sess-2");
+    });
+  });
+
   it("alarm always re-arms into the future and backs off failing tasks", async () => {
     const stub = testEnv.CONTROLLER.get(testEnv.CONTROLLER.idFromName("t-alarm"));
     await runInDurableObject(stub, async (instance: DatabaseControllerDO) => {

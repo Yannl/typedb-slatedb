@@ -3,17 +3,26 @@
 
 A gate is only as strong as the mutant it kills. Each control below breaks
 one invariant on purpose and asserts that the tool REJECTS the result; a
-control that passes silently is itself a failure. These are the exact mutants
-the consolidation audit demonstrated were accepted before this change:
+control that passes silently is itself a failure.
 
-  comparator  - drop a target from the run; time a target out with unchanged
-                counts; rewrite a classified target's profile to 0/999.
-  completeness- keep only the ledgered rows; add an unknown rc=127 crash row
-                with zero parsed failures; report zero cases for a
-                case-bearing target.
-  run_u0      - a red row, a timeout row, and a missing required target must
-                each produce a nonzero verdict.
-  run_static  - a FAIL row must produce a nonzero exit.
+The E-P0-06/07/10 audit proved the earlier controls that merely GREPPED
+source strings ("does run_u0.py contain 'executed_tree'?") were pseudo
+evidence: every behavioral mutation of the archived bundle still re-derived
+GREEN. Those grep controls are gone. In their place, the bundle controls
+below run the REAL CLI (`run_u0.py --verdict-only`) as a subprocess against
+a temp copy of the sealed archive docs/evidence/G3/u2s3-full-3 with exactly
+one mutation applied, and require a nonzero exit naming the defect:
+
+  bundle     - delete a log; truncate a log (reparse mismatch); duplicate a
+               row; reduce a nonzero passed count; forge a log path; forge a
+               provenance digest in the results JSON; ghost ledger cases;
+               wrong-profile ledger; duplicate ledger target; stale COMPLETE
+               root after tampering; a sealed dir refuses live re-runs.
+  comparator - drop a target from the run; time a target out with unchanged
+               counts; rewrite a classified target's profile to 0/999.
+  verdict    - unledgered failure/ignore/timeout/crash, stale ledger entry,
+               zero-case case-bearing target, denominator drift.
+  common     - two catalogue targets collapsing onto one runner row id.
 
 Usage: python3 tools/catalog/evidence_mutants.py
 """
@@ -159,39 +168,229 @@ def _expired_ledger():
     return tmp
 
 
-# ------------------------------------------------------------- run_static
+# ----------------------------------------------------- catalogue join (E-P0-03)
 
-def run_static_controls():
-    print("run_static (tools/catalog/run_static.py)")
-    src = (HERE / "run_static.py").read_text()
-    expect("run_static returns its verdict from main()",
-           "sys.exit(main())" in src and "return 1 if anomalies else 0" in src)
-    expect("run_static treats an empty selection as red",
-           "ZERO static targets" in src)
+def join_controls():
+    print("catalogue join (tools/catalog/common.py)")
+    import common
+    base = {
+        "targets": [
+            {"target_id": "cargo:x:unit:t", "origin": "CARGO",
+             "cargo_package": "x", "cargo_target": "t"},
+            {"target_id": "cargo:x:integration:t", "origin": "CARGO",
+             "cargo_package": "x", "cargo_target": "t"},
+        ],
+        "leaf_cases": [], "exclusions": [],
+    }
+    try:
+        common.required_executable_targets(base)
+        collided = False
+    except SystemExit:
+        collided = True
+    expect("two catalogue targets collapsing onto one runner row id stop the line",
+           collided)
+    ok = dict(base)
+    ok["targets"] = [base["targets"][0]]
+    try:
+        required, _, _ = common.required_executable_targets(ok)
+        expect("a collision-free catalogue still joins", required == {"x:t"})
+    except SystemExit:
+        expect("a collision-free catalogue still joins", False)
 
 
-# --------------------------------------------------------------- run_u0
+# ----------------------------------------------- bundle (E-P0-06/07/10, REAL CLI)
 
-def run_u0_controls():
-    print("run_u0 (tools/catalog/run_u0.py)")
-    src = (HERE / "run_u0.py").read_text()
-    expect("run_u0 returns its verdict from main()", "sys.exit(main())" in src)
-    expect("run_u0 refuses to call a filtered run a corpus verdict",
-           "selection_complete" in src and "PARTIAL" in src)
-    expect("run_u0 measures the toolchain instead of asserting it",
-           "executed_toolchain" in src
-           and '"toolchain": "rust 1.93.0 parity lane"' not in src)
-    expect("run_u0 records the executed tree, not just the outer repo commit",
-           "executed_tree" in src and "staged_delta_sha256" in src)
-    expect("run_u0 checks the denominator against the catalogue",
-           "required_executable_targets" in src and "denominator_anomalies" in src)
+ARCHIVE_REL = pathlib.Path("docs") / "evidence" / "G3" / "u2s3-full-3"
+
+
+def bundle_controls():
+    """Run the REAL `run_u0.py --verdict-only` CLI as a subprocess against a
+    temp copy of the sealed archive, one mutation per control. Every mutation
+    that regenerates a consumed file also regenerates the sidecar manifest
+    (hash + root) the way a diligent forger would - each control then proves
+    the NEXT layer still catches it. Nothing here greps source: a control
+    holds only if the actual process exits nonzero and names the defect."""
+    print("bundle (REAL CLI: run_u0.py --verdict-only over a mutated archive copy)")
+    import verdict as vp
+
+    pristine = pathlib.Path(tempfile.mkdtemp(prefix="mutant-pristine-"))
+    atexit.register(shutil.rmtree, pristine, True)
+    (pristine / "tools" / "catalog").mkdir(parents=True)
+    for f in ("common.py", "verdict.py", "run_u0.py"):
+        shutil.copy2(HERE / f, pristine / "tools" / "catalog" / f)
+    (pristine / "docs" / "evidence" / "G1").mkdir(parents=True)
+    shutil.copy2(REPO / "docs" / "evidence" / "flake-ledger.json",
+                 pristine / "docs" / "evidence" / "flake-ledger.json")
+    shutil.copy2(REPO / "docs" / "evidence" / "G1" / "upstream-test-catalog.json",
+                 pristine / "docs" / "evidence" / "G1" / "upstream-test-catalog.json")
+    src_archive = REPO / ARCHIVE_REL
+    dst_archive = pristine / ARCHIVE_REL
+    dst_archive.mkdir(parents=True)
+    for f in src_archive.iterdir():
+        if f.is_file():  # logs, results, manifest, markers; never iso/
+            shutil.copy2(f, dst_archive / f.name)
+
+    def run_cli(tree, live=False):
+        argv = [sys.executable, str(tree / "tools" / "catalog" / "run_u0.py"),
+                "--out", str(tree / ARCHIVE_REL)]
+        if not live:
+            argv.insert(2, "--verdict-only")
+        p = subprocess.run(argv, capture_output=True, text=True)
+        return p.returncode, p.stdout + p.stderr
+
+    def refresh_manifest(tree, log_names=()):
+        """What a diligent forger does after tampering: recompute the sidecar
+        hashes and root so only DEEPER bindings can still catch the edit."""
+        ad = tree / ARCHIVE_REL
+        m = json.loads((ad / "log-manifest.json").read_text())
+        for name in log_names:
+            m["logs"][name] = vp.common.sha256_file(ad / name)
+        rows = json.loads((ad / "u0-results.json").read_text())["results"]
+        m["bundle_root"], _ = vp.compute_bundle_root(
+            ad, rows, ledger_path=tree / "docs" / "evidence" / "flake-ledger.json",
+            repo=tree)
+        (ad / "log-manifest.json").write_text(json.dumps(m, indent=1) + "\n")
+
+    def control(label, mutate, needle=None, live=False, expect_green=False):
+        tree = pathlib.Path(tempfile.mkdtemp(prefix="mutant-"))
+        try:
+            shutil.copytree(pristine, tree, dirs_exist_ok=True)
+            if mutate:
+                mutate(tree)
+            rc, out = run_cli(tree, live=live)
+            if expect_green:
+                held = rc == 0
+            else:
+                held = rc != 0 and (needle is None or needle in out)
+            expect(label, held)
+            if not held:
+                print(f"    rc={rc} output tail: {out[-600:]}", file=sys.stderr)
+        finally:
+            shutil.rmtree(tree, ignore_errors=True)
+
+    def edit_rows(tree, fn):
+        rf = tree / ARCHIVE_REL / "u0-results.json"
+        data = json.loads(rf.read_text())
+        fn(data["results"])
+        rf.write_text(json.dumps(data, indent=1) + "\n")
+
+    def edit_ledger(tree, fn):
+        lf = tree / "docs" / "evidence" / "flake-ledger.json"
+        data = json.loads(lf.read_text())
+        fn(data["entries"])
+        lf.write_text(json.dumps(data, indent=2) + "\n")
+
+    # control of controls: the unmutated archive must re-derive GREEN, or
+    # every rejection below proves nothing
+    control("intact archive copy re-derives GREEN", None, expect_green=True)
+
+    control("deleted raw log is rejected",
+            lambda t: (t / ARCHIVE_REL / "storage__storage.log").unlink(),
+            needle="does not exist")
+
+    def truncate(tree):
+        log = tree / ARCHIVE_REL / "storage__storage.log"
+        log.write_text("".join(log.read_text(errors="replace").splitlines(True)[:5]))
+        refresh_manifest(tree, ["storage__storage.log"])
+    control("truncated log (manifest regenerated) fails the count reparse",
+            truncate, needle="reparses to")
+
+    def duplicate_row(tree):
+        edit_rows(tree, lambda rows: rows.append(dict(rows[0])))
+        refresh_manifest(tree)
+    control("duplicated result row is rejected", duplicate_row,
+            needle="duplicate result row")
+
+    def reduce_passed(tree):
+        def fn(rows):
+            r = next(r for r in rows if r["passed"] > 1)
+            r["passed"] = 1
+        edit_rows(tree, fn)
+        refresh_manifest(tree)
+    control("reduced nonzero passed count fails the count reparse",
+            reduce_passed, needle="reparses to")
+
+    def forge_log_path(tree):
+        edit_rows(tree, lambda rows: rows[0].__setitem__(
+            "raw_log", str(ARCHIVE_REL / "ghost__ghost.log")))
+        refresh_manifest(tree)
+    control("forged (nonexistent) log path is rejected", forge_log_path,
+            needle="does not exist")
+
+    def forge_provenance(tree):
+        # E-P0-10 class: forged executable digest. The binary is gone (reaped),
+        # so the digest itself cannot be re-measured; what CAN be caught is the
+        # edit of the sealed results file - its hash is inside the bundle root.
+        edit_rows(tree, lambda rows: rows[0].__setitem__(
+            "executable_sha256", "0" * 64))
+        # deliberately NO refresh: the forger who edits only the JSON
+    control("forged executable digest breaks the recorded bundle root",
+            forge_provenance, needle="sidecar manifest root")
+
+    def ghost_cases(tree):
+        def fn(entries):
+            e = next(e for e in entries if e["target_id"] == "storage:test_recovery")
+            e["fingerprint"]["failed"] = ["ghost_case_one", "ghost_case_two"]
+            e["cases"] = ["ghost_case_one", "ghost_case_two"]
+        edit_ledger(tree, fn)
+        refresh_manifest(tree)  # the ledger is part of the root
+    control("ledger naming ghost failing cases is rejected", ghost_cases,
+            needle="ghosts")
+
+    def wrong_profile(tree):
+        edit_ledger(tree, lambda entries: next(
+            e for e in entries if e["target_id"] == "storage:test_recovery"
+        ).__setitem__("profile", ["U9-nonexistent-lane"]))
+        refresh_manifest(tree)
+    control("ledger tolerance bound to the wrong profile is rejected",
+            wrong_profile, needle="this run's profile")
+
+    def dup_ledger(tree):
+        edit_ledger(tree, lambda entries: entries.append(dict(entries[0])))
+        refresh_manifest(tree)
+    control("duplicate ledger target is rejected", dup_ledger,
+            needle="duplicate entry")
+
+    # stale COMPLETE root: seal the copy with its true root, verify the seal
+    # is accepted, then tamper a log AND regenerate the manifest - only the
+    # sealed root still tells the truth
+    sealed = pathlib.Path(tempfile.mkdtemp(prefix="mutant-sealed-"))
+    try:
+        shutil.copytree(pristine, sealed, dirs_exist_ok=True)
+        ad = sealed / ARCHIVE_REL
+        rows = json.loads((ad / "u0-results.json").read_text())["results"]
+        root, _ = vp.compute_bundle_root(
+            ad, rows, ledger_path=sealed / "docs" / "evidence" / "flake-ledger.json",
+            repo=sealed)
+        (ad / "COMPLETE").write_text(f"COMPLETE {root}\n")
+        rc, out = run_cli(sealed)
+        expect("root-bound COMPLETE over intact bytes is accepted", rc == 0)
+        with open(ad / "storage__storage.log", "a") as f:
+            f.write("\n")  # count-neutral tamper
+        # the forger regenerates the manifest but cannot rewrite the sealed root
+        m = json.loads((ad / "log-manifest.json").read_text())
+        m["logs"]["storage__storage.log"] = vp.common.sha256_file(
+            ad / "storage__storage.log")
+        m["bundle_root"], _ = vp.compute_bundle_root(
+            ad, rows, ledger_path=sealed / "docs" / "evidence" / "flake-ledger.json",
+            repo=sealed)
+        (ad / "log-manifest.json").write_text(json.dumps(m, indent=1) + "\n")
+        rc, out = run_cli(sealed)
+        expect("log tampered after sealing is rejected by the COMPLETE root",
+               rc != 0 and "COMPLETE binds root" in out)
+        # and the live runner must refuse to write into the sealed dir at all
+        rc, out = run_cli(sealed, live=True)
+        expect("live run into a sealed (COMPLETE) dir is refused",
+               rc != 0 and "sealed" in out)
+    finally:
+        shutil.rmtree(sealed, ignore_errors=True)
 
 
 def main():
+    bundle_controls()
     comparator_controls()
     verdict_controls()
-    run_static_controls()
-    run_u0_controls()
+    join_controls()
     print(f"\nevidence mutants: {checks - len(failures)}/{checks} controls held")
     for f in failures:
         print(f"MUTANT NOT KILLED: {f}", file=sys.stderr)

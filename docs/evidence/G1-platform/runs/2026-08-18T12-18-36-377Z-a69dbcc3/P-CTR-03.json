@@ -1,0 +1,459 @@
+{
+  "probe_id": "P-CTR-03",
+  "title": "Sleep and shutdown",
+  "spec_section": "## P-CTR-03 — Sleep and shutdown",
+  "mode": "mock",
+  "injected_fault": null,
+  "started_at": "2026-08-18T12:18:36.398Z",
+  "finished_at": "2026-08-18T12:18:36.399Z",
+  "verdict": "PASS",
+  "expected_outcome": "no inactivity stop while a transaction is open (controller-denied hibernation); safe inactivity stop otherwise; acknowledged state survives SIGKILL",
+  "actual_outcome": "all 8 checks passed",
+  "checks": [
+    {
+      "label": "sleep state reset (got 200)",
+      "ok": true
+    },
+    {
+      "label": "write w1 acknowledged",
+      "ok": true
+    },
+    {
+      "label": "no inactivity stop while a transaction is open (got state=running)",
+      "ok": true
+    },
+    {
+      "label": "hibernation was actively denied (got 2)",
+      "ok": true
+    },
+    {
+      "label": "safe inactivity stop occurs once no work is open (got stopped)",
+      "ok": true
+    },
+    {
+      "label": "write w2 acknowledged",
+      "ok": true
+    },
+    {
+      "label": "SIGKILL applied (got killed)",
+      "ok": true
+    },
+    {
+      "label": "acknowledged state recovered intact after kill (got [\"w1\",\"w2\"])",
+      "ok": true
+    }
+  ],
+  "exchanges": [
+    {
+      "seq": 1,
+      "at": "2026-08-18T12:18:36.398Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/sleep/reset",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 16,
+        "body_sha256": "9923eda9b0ed29951a7708278c5dcec417a7d8882e9a9f904fdd672fe3e2529c",
+        "body_preview": "{\"sleepAfter\":3}"
+      },
+      "request_sha256": "f8ee02804bd78cc7dbb8f8bee8fe42ceb4eeb72ef5e5e73ffa764b6546fbbf4e",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 11,
+        "body_sha256": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93",
+        "body_preview": "{\"ok\":true}"
+      },
+      "response_sha256": "d4a677d42a9d4d999ac650db5cb5b9f01bfbaa57f1d4256a5a347c22799e81f9"
+    },
+    {
+      "seq": 2,
+      "at": "2026-08-18T12:18:36.398Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/sleep/write",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 13,
+        "body_sha256": "2f40ba3bdc1960b6af846344a544c6bf86d174d867be3fdc60158f5b08292de7",
+        "body_preview": "{\"data\":\"w1\"}"
+      },
+      "request_sha256": "78706c7f997a6e8896087186ab1f4833e85083d6f05fcc4f51a4f4297d0372db",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 14,
+        "body_sha256": "e4f23d622499ecd91a8b9fd4c4586b9ee16225c80abeb7cb990c9ce68aadad26",
+        "body_preview": "{\"acked\":true}"
+      },
+      "response_sha256": "2add893588e191aa5868265411f681ef42691c98005851a623b9485fe0cdfb05"
+    },
+    {
+      "seq": 3,
+      "at": "2026-08-18T12:18:36.399Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/sleep/txn-open",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "8148420fc3dfe13c5f80e805e6c95c744c4cbb13f7e093dc8dc05d758aa2c6eb",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 14,
+        "body_sha256": "df5c19e79208e23aad9445c408b1661c7b44d9ead07494f68b5d9f0387853e6c",
+        "body_preview": "{\"openTxns\":1}"
+      },
+      "response_sha256": "73394f038c674f3d76a32a0d6c2189f5ddc976a1b2354cac187f5d72c974a068"
+    },
+    {
+      "seq": 4,
+      "at": "2026-08-18T12:18:36.399Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/sleep/tick",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "599bfbd6e30d887f7ae805253dee01898da8f10dead729adcaae0284278f1b36",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 33,
+        "body_sha256": "a0030395db695668901feb0f9a5c4c006c2800b854f687936073b24b6fe69b3a",
+        "body_preview": "{\"state\":\"running\",\"idleTicks\":1}"
+      },
+      "response_sha256": "8c46df42994e659e18c509cf6ab9430ca0b79c03811ffa9df0f19171f58e106e"
+    },
+    {
+      "seq": 5,
+      "at": "2026-08-18T12:18:36.399Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/sleep/tick",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "599bfbd6e30d887f7ae805253dee01898da8f10dead729adcaae0284278f1b36",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 33,
+        "body_sha256": "b9cd110eaf1f28d71b198af7777fb6523467e36cc209fb032eb0a183948bef55",
+        "body_preview": "{\"state\":\"running\",\"idleTicks\":2}"
+      },
+      "response_sha256": "ca8f3296e0ead6b4b51d264454921eef3d1264c573d4538a6815fe26ae7ac330"
+    },
+    {
+      "seq": 6,
+      "at": "2026-08-18T12:18:36.399Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/sleep/tick",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "599bfbd6e30d887f7ae805253dee01898da8f10dead729adcaae0284278f1b36",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 33,
+        "body_sha256": "18c88f162750ba0263d7246f81923da6678a40ed693015cdff71356da9147133",
+        "body_preview": "{\"state\":\"running\",\"idleTicks\":3}"
+      },
+      "response_sha256": "adfa6c4508a350432f8c2da0f7ac439c380927497fb76d5eab8fe34a9a6a08ba"
+    },
+    {
+      "seq": 7,
+      "at": "2026-08-18T12:18:36.399Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/sleep/tick",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "599bfbd6e30d887f7ae805253dee01898da8f10dead729adcaae0284278f1b36",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 33,
+        "body_sha256": "2b910377bdb9a272a79bd8d960b49f4e78a42ca55897b37f7518840fb7a86f2e",
+        "body_preview": "{\"state\":\"running\",\"idleTicks\":4}"
+      },
+      "response_sha256": "8734c78a734080e656ffb6da0b9aa13717643128b5c950147fd6baba7ae15768"
+    },
+    {
+      "seq": 8,
+      "at": "2026-08-18T12:18:36.399Z",
+      "request": {
+        "service": "harness",
+        "method": "GET",
+        "path": "/ctr/sleep/state",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "ada9b03b01142b22210a43a1d71779fd2eedaa3f3f7a2102ecf1319693841207",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 63,
+        "body_sha256": "c7933028314745a9fbf1e701232cf1cbbae700b71e2132091c56256658ffae94",
+        "body_preview": "{\"state\":\"running\",\"openTxns\":1,\"acked\":[\"w1\"],\"deniedStops\":2}"
+      },
+      "response_sha256": "39c2cf73a9a12758d941c42b1368493745432854ea92f9f321ec9461d7d21495"
+    },
+    {
+      "seq": 9,
+      "at": "2026-08-18T12:18:36.399Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/sleep/txn-close",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "f5a6142bef6eb7ecdf86cf7481c3f6c9a09859321c8d2839a0f2950ca46479b8",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 14,
+        "body_sha256": "44d533c0b99108f30888db0db4b2865178a44f8c4de2eb7d6eea0e103b382f2b",
+        "body_preview": "{\"openTxns\":0}"
+      },
+      "response_sha256": "2a463e915acf264761fbd5373d3271a557160734d81599bfb5783685694b374d"
+    },
+    {
+      "seq": 10,
+      "at": "2026-08-18T12:18:36.399Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/sleep/tick",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "599bfbd6e30d887f7ae805253dee01898da8f10dead729adcaae0284278f1b36",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 33,
+        "body_sha256": "112e589c26311d33ed170877f8d185d21700936af2a6c1dee0b7edc6ae35e5d6",
+        "body_preview": "{\"state\":\"stopped\",\"idleTicks\":5}"
+      },
+      "response_sha256": "0d5bbd838fc4fe07c73d717f3cab4b366923e8ff261167d6754721c4f105cc81"
+    },
+    {
+      "seq": 11,
+      "at": "2026-08-18T12:18:36.399Z",
+      "request": {
+        "service": "harness",
+        "method": "GET",
+        "path": "/ctr/sleep/state",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "ada9b03b01142b22210a43a1d71779fd2eedaa3f3f7a2102ecf1319693841207",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 63,
+        "body_sha256": "95a8cf5304e36411865f561c41657968f7d850cf21f9a47bb6b98991365441ac",
+        "body_preview": "{\"state\":\"stopped\",\"openTxns\":0,\"acked\":[\"w1\"],\"deniedStops\":2}"
+      },
+      "response_sha256": "53243c6a7d7dad116dc689be03035106a2b51a67f035cc34dddb0dbf4bad1fc8"
+    },
+    {
+      "seq": 12,
+      "at": "2026-08-18T12:18:36.399Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/sleep/recover",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "c696e286f227dfd40357448ca3f16acbacb3f100067c64642fc276d8f2e0f3ac",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 19,
+        "body_sha256": "6e56df2840ad9e139ac71ca67454a7a2e682ce17fe54edd522a7b29a77a1eba8",
+        "body_preview": "{\"state\":\"running\"}"
+      },
+      "response_sha256": "abd9085d9c1decd80391954b69ad077820cc83603616e442bd8162a48faa3763"
+    },
+    {
+      "seq": 13,
+      "at": "2026-08-18T12:18:36.399Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/sleep/write",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 13,
+        "body_sha256": "a8f449bed2739557b7d3ddced251b36e1c076d87746f52c074602dcbcaf2e7f7",
+        "body_preview": "{\"data\":\"w2\"}"
+      },
+      "request_sha256": "beb518a93b0125dc37c058ff9e42e025ce6958971a51d576b5ef30a100d6779d",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 14,
+        "body_sha256": "e4f23d622499ecd91a8b9fd4c4586b9ee16225c80abeb7cb990c9ce68aadad26",
+        "body_preview": "{\"acked\":true}"
+      },
+      "response_sha256": "2add893588e191aa5868265411f681ef42691c98005851a623b9485fe0cdfb05"
+    },
+    {
+      "seq": 14,
+      "at": "2026-08-18T12:18:36.399Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/sleep/kill",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "6b6a932c7c58f8cc386a963e46c765240a5a3723a04878e82890c31b0b6be3a4",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 18,
+        "body_sha256": "ee6842e7f1d717fc2be318664a4514fb03fb4008f75237b5c6dfb503c9fe69da",
+        "body_preview": "{\"state\":\"killed\"}"
+      },
+      "response_sha256": "472367ba7e816fab36e7a124a540b2ca88e3396a606e01a421f90998e2df7e00"
+    },
+    {
+      "seq": 15,
+      "at": "2026-08-18T12:18:36.399Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/ctr/sleep/recover",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "c696e286f227dfd40357448ca3f16acbacb3f100067c64642fc276d8f2e0f3ac",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 19,
+        "body_sha256": "6e56df2840ad9e139ac71ca67454a7a2e682ce17fe54edd522a7b29a77a1eba8",
+        "body_preview": "{\"state\":\"running\"}"
+      },
+      "response_sha256": "abd9085d9c1decd80391954b69ad077820cc83603616e442bd8162a48faa3763"
+    },
+    {
+      "seq": 16,
+      "at": "2026-08-18T12:18:36.399Z",
+      "request": {
+        "service": "harness",
+        "method": "GET",
+        "path": "/ctr/sleep/state",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "ada9b03b01142b22210a43a1d71779fd2eedaa3f3f7a2102ecf1319693841207",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 68,
+        "body_sha256": "4665e26dd22e8e085086ea1ec61b28024c652dfb446915ea7a54e265a9b1890c",
+        "body_preview": "{\"state\":\"running\",\"openTxns\":0,\"acked\":[\"w1\",\"w2\"],\"deniedStops\":2}"
+      },
+      "response_sha256": "e596307664cda149842f4534def0ac6fe1e5e6da6df147ca97244211f7288a1d"
+    }
+  ],
+  "notes": []
+}

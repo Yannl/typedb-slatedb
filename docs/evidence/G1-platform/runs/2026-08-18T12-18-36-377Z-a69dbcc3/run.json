@@ -1,0 +1,35 @@
+{
+  "run_id": "2026-08-18T12-18-36-377Z-a69dbcc3",
+  "started_at": "2026-08-18T12:18:36.378Z",
+  "finished_at": "2026-08-18T12:18:36.414Z",
+  "git_head": "665fbfc230c9e17c4e914e10fdfa21e0e8443136",
+  "node_version": "v22.22.2",
+  "mode": "mock",
+  "argv": [
+    "--mock"
+  ],
+  "injected_faults": {},
+  "mock_500": false,
+  "normative_probe_count": 14,
+  "capabilities": {
+    "r2": true,
+    "cfapi": true,
+    "harness": true
+  },
+  "verdicts": {
+    "P-R2-01": "PASS",
+    "P-R2-02": "PASS",
+    "P-R2-03": "PASS",
+    "P-R2-04": "PASS",
+    "P-R2-05": "PASS",
+    "P-DO-01": "PASS",
+    "P-DO-02": "PASS",
+    "P-DO-03": "PASS",
+    "P-DO-04": "PASS",
+    "P-CTR-01": "PASS",
+    "P-CTR-02": "PASS",
+    "P-CTR-03": "PASS",
+    "P-CTR-04": "PASS",
+    "P-WORKER-01": "PASS"
+  }
+}

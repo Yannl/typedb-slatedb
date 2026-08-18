@@ -196,13 +196,29 @@ const f1retry = await api("POST", "/wal/finalize", finalizeRequest);
 check("ambiguous retry replays identically",
   f1retry.body.ok === true && f1retry.body.appendLsn === "0" && f1retry.body.replayed === true);
 
-// 3. tampered digest is rejected by the DATA PATH before the controller
+// 3. tampered digest: the key is content-addressed (C-P0-07), so a digest
+// that disagrees with the key is a NON-CANONICAL REFERENCE, refused with
+// ZERO R2 I/O - strictly earlier and stronger than the old data-path 422
+// (the 422 PAYLOAD_DIGEST_MISMATCH branch remains as defense in depth
+// against store corruption, unreachable through the honest API)
 const tampered = { ...finalizeRequest, operationId: "op-tampered", payloadDigest: "0".repeat(64) };
 const ft = await api("POST", "/wal/finalize", tampered);
-check("data path rejects digest mismatch", ft.status === 422 && ft.body.error === "PAYLOAD_DIGEST_MISMATCH");
+check("a digest disagreeing with the content-addressed key is refused pre-I/O",
+  ft.status === 400 && ft.body.error === "NON_CANONICAL_PAYLOAD_KEY", JSON.stringify(ft.body));
 
-// 4. finalize referencing a never-uploaded payload is rejected
-const ghost = { ...finalizeRequest, operationId: "op-ghost", payloadKey: `p/${DB}/${"f".repeat(64)}` };
+// 3b. C-P0-07: a foreign/global object reference (a key outside this
+// database's canonical namespace) is refused before any R2 GET
+const crossRef = { ...finalizeRequest, operationId: "op-cross",
+  payloadKey: `p/other-db/${up1.digest}` };
+const fx = await api("POST", "/wal/finalize", crossRef);
+check("a cross-database payload reference is refused pre-I/O",
+  fx.status === 400 && fx.body.error === "NON_CANONICAL_PAYLOAD_KEY", JSON.stringify(fx.body));
+
+// 4. a CANONICAL reference to a never-uploaded payload reaches the data
+// path and is rejected there
+const ghostDigest = "f".repeat(64);
+const ghost = { ...finalizeRequest, operationId: "op-ghost",
+  payloadKey: `p/${DB}/${ghostDigest}`, payloadDigest: ghostDigest };
 const fg = await api("POST", "/wal/finalize", ghost);
 check("data path rejects missing payload", fg.status === 422 && fg.body.error === "PAYLOAD_MISSING");
 
@@ -525,14 +541,23 @@ const flipped = readCap.token.slice(0, -1) + (readCap.token.endsWith("0") ? "1" 
 const badMac = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { "x-capability": flipped });
 check("tampered MAC is refused", badMac.status === 403 && badMac.body.error === "CAPABILITY_MAC_INVALID");
 
+// C-P0-08: single-use means single-REQUEST. The token's nonce is bound to
+// the one request it authorized: an IDENTICAL retry (lost response) is
+// admitted again - the read is idempotent - while ANY different request
+// under the same token is a replay refusal.
 const once = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { "x-capability": readCap.token });
-const replayed = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { "x-capability": readCap.token });
-check("nonce is single-use: replay is refused",
-  once.status === 200 && replayed.status === 403 && replayed.body.error === "CAPABILITY_REPLAYED",
-  JSON.stringify(replayed.body));
+const identicalRetry = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { "x-capability": readCap.token });
+const differentRequest = await rawApi("GET", `/wal/${DB}/${GEN}/0`, undefined, false, { "x-capability": readCap.token });
+check("capability is bound to ONE request: identical retry admits, a different request is refused",
+  once.status === 200 && identicalRetry.status === 200
+    && differentRequest.status === 403 && differentRequest.body.error === "CAPABILITY_REPLAYED",
+  JSON.stringify({ once: once.status, identicalRetry: identicalRetry.status, differentRequest: differentRequest.body }));
 
 const readCap2 = await issueCap({ databaseId: DB, method: "WAL_READ" });
-const wrongMethod = await rawApi("POST", "/wal/finalize", { ...finalizeRequest, operationId: "op-wm", requestDigest: "rd-wm" },
+// no caller-supplied requestDigest: a mismatching one is a 400 BEFORE the
+// capability is consulted (invalid input must not burn a token), and this
+// check is about the method binding refusal
+const wrongMethod = await rawApi("POST", "/wal/finalize", { ...finalizeRequest, operationId: "op-wm" },
   false, { "x-capability": readCap2.token });
 check("method binding: a read token cannot finalize",
   wrongMethod.status === 403 && wrongMethod.body.error === "CAPABILITY_METHOD_MISMATCH");
@@ -543,7 +568,7 @@ check("method binding: a read token cannot finalize",
 // write authority.
 const otherSessionCap = await issueCap({ databaseId: DB, method: "WAL_FINALIZE", session: "sess-OTHER" });
 const impersonate = await rawApi("POST", "/wal/finalize",
-  { ...finalizeRequest, startupSessionId: "sess-3", operationId: "op-impersonate", requestDigest: "rd-imp" },
+  { ...finalizeRequest, startupSessionId: "sess-3", operationId: "op-impersonate" },
   false, { "x-capability": otherSessionCap.token });
 check("session binding: a token bound to another session cannot finalize as sess-3",
   impersonate.status === 403 && impersonate.body.error === "CAPABILITY_SESSION_MISMATCH",

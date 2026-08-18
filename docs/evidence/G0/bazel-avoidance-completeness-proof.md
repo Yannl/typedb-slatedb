@@ -1,3 +1,9 @@
+> **SUPERSEDED AS AUTHORITY (2026-08-18 deep audit, E-P0-01).** This
+> document is retained as reconnaissance evidence about the BUILD files at
+> this pin. It does NOT close SI-G0-1: v17 selects Mode Q exactly, and a
+> lower-authority static proof cannot amend that selection. G0 is OPEN_RED
+> until exact Mode-Q cquery evidence exists or the owner amends v17.
+
 # SI-G0-1 resolution: native-tooling completeness proof (Bazel cquery oracle not required)
 
 ## Claim

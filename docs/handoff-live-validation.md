@@ -1,9 +1,19 @@
 # Live-validation handoff — Cloudflare setup and pickup guide
 
+> **Status correction (2026-08-18, deep audit).** The claim this document
+> used to open with — that everything local is complete and credentials are
+> the only blocker — is FALSE. The authoritative state lives in
+> `docs/ledger/gates.json` (rendered into docs/operations.md): G0 is
+> OPEN_RED (Mode-Q evidence absent), G1 is OPEN (catalogue is a census,
+> not a qualification denominator), and G2 is NOT_READY_TO_EXECUTE (owner
+> envelope and authority-boundary prerequisites outstanding). Credentials
+> (SI-G0-3) are ONE blocker among several. The setup instructions below
+> remain useful for the eventual disposable `G2_PLATFORM_PROBE` run — which
+> is a platform-fact probe, never product qualification.
+
 Written so that a **fresh session with empty context** can take the
-program from its current state to a validated live test on Cloudflare.
-Everything local is done; the only missing input is a Cloudflare staging
-account (stop item **SI-G0-3**).
+program from its current state toward a disposable platform-probe run on
+Cloudflare, once the ledger's prerequisites are met.
 
 ## 0. Orientation (60 seconds)
 

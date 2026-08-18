@@ -1,0 +1,315 @@
+diff -ruN orig/src/error.rs slatedb-0.15.0/src/error.rs
+--- orig/src/error.rs
++++ slatedb-0.15.0/src/error.rs
+@@ -83,6 +83,16 @@
+     #[error("external writer epoch required: internal allocation is observe-and-bind")]
+     ExternalEpochRequired,
+ 
++    /// The bounded L0 upload retry budget is exhausted (bounded-retry
++    /// patch): the object store stayed unavailable across every allowed
++    /// attempt. Terminal for the flush — the uploader fails loudly instead
++    /// of spinning forever, and the database's closed result carries this
++    /// error so callers observe a typed unavailability rather than a hang.
++    #[error(
++        "l0 sst upload retry budget exhausted after {attempts} attempts; last error: {last_error}"
++    )]
++    L0SstUploadRetriesExhausted { attempts: u32, last_error: String },
++
+     #[error("wal store reconfiguration unsupported")]
+     WalStoreReconfigurationError,
+ 
+@@ -662,6 +672,9 @@
+             SlateDBError::FoyerError(err) => Error::unavailable(msg).with_source(Box::new(err)),
+             SlateDBError::TransactionalObjectTimeout { .. } => Error::unavailable(msg),
+             SlateDBError::WalUnavailable(src) => Error::unavailable(msg).with_source(Box::new(src)),
++            // the store stayed unavailable across the whole retry budget:
++            // still an availability fault, now surfaced instead of retried
++            SlateDBError::L0SstUploadRetriesExhausted { .. } => Error::unavailable(msg),
+ 
+             // Invalid errors
+             SlateDBError::InvalidCachePartSize => Error::invalid(msg),
+diff -ruN orig/src/memtable_flusher/uploader.rs slatedb-0.15.0/src/memtable_flusher/uploader.rs
+--- orig/src/memtable_flusher/uploader.rs
++++ slatedb-0.15.0/src/memtable_flusher/uploader.rs
+@@ -232,16 +232,34 @@
+         })
+     }
+ 
+-    /// Upload a single segment SST with retry, writing it to the id
++    /// Upload a single segment SST with BOUNDED retry, writing it to the id
+     /// pre-allocated for its segment at dispatch. Each retry reuses the
+     /// already-encoded SST so the upload loop never rebuilds from the
+     /// memtable.
++    ///
++    /// The loop terminates on every path (bounded-retry patch):
++    /// - shutdown: give up immediately, regardless of whether the SlateDB
++    ///   WAL is enabled. The upstream escape was conditional on
++    ///   `wal_enabled`, but a deployment that disables the SlateDB WAL
++    ///   because an EXTERNAL WAL owns recovery has the same recovery story —
++    ///   and without the escape, close() could never terminate while the
++    ///   object store was down;
++    /// - terminal errors (anything that is not `Unavailable`: fenced, data
++    ///   corruption, internal, invalid, closed) fail the upload on first
++    ///   sight — retrying a deterministic failure forever cannot succeed;
++    /// - transient (`Unavailable`) errors retry up to
++    ///   [`UPLOAD_ATTEMPT_BUDGET`] attempts, then fail the flush LOUDLY with
++    ///   the typed [`SlateDBError::L0SstUploadRetriesExhausted`]. The error
++    ///   propagates through the handler into the executor's closed result:
++    ///   the database fail-stops instead of pinning the uploader (and every
++    ///   flush/close waiter) in an invisible infinite loop.
+     async fn upload_segment_sst(
+         &self,
+         sst: &EncodedSegmentSst,
+         sst_id: SsTableId,
+     ) -> Result<SegmentedSstHandle, SlateDBError> {
+         let written_bytes = sst.encoded.remaining_len() as u64;
++        let mut attempts: u32 = 0;
+         loop {
+             match self.db.upload_sst(&sst_id, &sst.encoded).await {
+                 Ok(sst_handle) => {
+@@ -252,16 +270,37 @@
+                     });
+                 }
+                 Err(e) => {
+-                    // When the WAL is enabled and the database is shutting
+-                    // down, give up immediately. The data is already durable
+-                    // in the WAL and will be recovered on the next startup.
+-                    if self.db.wal_enabled && self.db.check_closed().is_err() {
++                    // When the database is shutting down, give up
++                    // immediately — with the SlateDB WAL enabled the data is
++                    // recovered from it on the next startup; with it
++                    // disabled, recovery is the external WAL's job and
++                    // spinning here only prevents close from terminating.
++                    if self.db.check_closed().is_err() {
+                         info!(
+                             "skipping l0 upload retry during shutdown [sst_id={:?}, error={:?}]",
+                             sst_id, e
+                         );
+                         return Err(e);
+                     }
++                    if upload_error_is_terminal(&e) {
++                        warn!(
++                            "l0 sst upload failed terminally; not retrying [sst_id={:?}, error={:?}]",
++                            sst_id, e
++                        );
++                        return Err(e);
++                    }
++                    attempts += 1;
++                    if attempts >= UPLOAD_ATTEMPT_BUDGET {
++                        warn!(
++                            "l0 sst upload attempt budget exhausted; failing the flush \
++                             [sst_id={:?}, attempts={}, error={:?}]",
++                            sst_id, attempts, e
++                        );
++                        return Err(SlateDBError::L0SstUploadRetriesExhausted {
++                            attempts,
++                            last_error: e.to_string(),
++                        });
++                    }
+                     self.db.system_clock.sleep(self.retry_backoff).await;
+                 }
+             }
+@@ -269,6 +308,25 @@
+     }
+ }
+ 
++/// Total transient-attempt budget for one segment SST upload. Each attempt
++/// already carries the object-store client's own bounded retries underneath
++/// it, so the budget bounds total request pressure rather than being the
++/// only limit. Exhaustion is a typed, terminal flush failure — the flush
++/// loop must never spin invisibly on a store outage.
++pub(crate) const UPLOAD_ATTEMPT_BUDGET: u32 = 8;
++
++/// An upload error is terminal when it is anything but `Unavailable`:
++/// fenced writers, data corruption, internal invariant violations, invalid
++/// configuration/state, and closed databases fail identically on every
++/// retry, so retrying them is an unbounded loop with extra steps. Only the
++/// transient `Unavailable` class earns the bounded retry above.
++pub(crate) fn upload_error_is_terminal(error: &SlateDBError) -> bool {
++    !matches!(
++        crate::Error::from(error.clone()).kind(),
++        crate::ErrorKind::Unavailable
++    )
++}
++
+ #[async_trait]
+ impl MessageHandler<UploadJob> for UploadHandler {
+     async fn handle(&mut self, job: UploadJob) -> Result<(), SlateDBError> {
+@@ -367,6 +425,23 @@
+         .await
+     }
+ 
++    #[cfg(feature = "wal_disable")]
++    async fn setup_db_with_settings(
++        path: &str,
++        fp_registry: Arc<FailPointRegistry>,
++        settings: Settings,
++    ) -> Arc<DbInner> {
++        setup_db_with_cache_policy_and_settings(
++            path,
++            fp_registry,
++            None,
++            None,
++            BlockCachePolicy::default(),
++            settings,
++        )
++        .await
++    }
++
+     async fn setup_db_with_cache_policy(
+         path: &str,
+         fp_registry: Arc<FailPointRegistry>,
+@@ -374,8 +449,26 @@
+         cache: Option<Arc<dyn DbCache>>,
+         block_cache_policy: BlockCachePolicy,
+     ) -> Arc<DbInner> {
++        setup_db_with_cache_policy_and_settings(
++            path,
++            fp_registry,
++            segment_extractor,
++            cache,
++            block_cache_policy,
++            Settings::default(),
++        )
++        .await
++    }
++
++    async fn setup_db_with_cache_policy_and_settings(
++        path: &str,
++        fp_registry: Arc<FailPointRegistry>,
++        segment_extractor: Option<Arc<dyn crate::prefix_extractor::PrefixExtractor>>,
++        cache: Option<Arc<dyn DbCache>>,
++        block_cache_policy: BlockCachePolicy,
++        settings: Settings,
++    ) -> Arc<DbInner> {
+         let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-        let settings = Settings::default();
+         let system_clock: Arc<dyn SystemClock> = Arc::new(DefaultSystemClock::new());
+         let rand = Arc::new(DbRand::new(42));
+         let db_metrics = MetricsRecorderHelper::noop();
+@@ -938,4 +1031,125 @@
+             .expect("uploader should stop retrying on shutdown");
+         assert!(result.is_err());
+     }
++
++    // ----------------------------------------------------------------
++    // Bounded-retry patch: the upload loop terminates on every path.
++    // ----------------------------------------------------------------
++
++    /// With the SlateDB WAL DISABLED and an object store that fails every
++    /// request, the uploader must FAIL the flush loudly within its attempt
++    /// budget — the upstream loop retried forever, pinning flush/close for
++    /// as long as the outage lasted. The 30 s ceiling only bounds the test;
++    /// the budget itself (8 attempts x 100 ms backoff) resolves in ~1 s.
++    #[cfg(feature = "wal_disable")]
++    #[tokio::test]
++    async fn upload_fails_loudly_within_the_attempt_budget_when_the_store_keeps_failing() {
++        let fp_registry = Arc::new(FailPointRegistry::new());
++        fail_parallel::cfg(
++            Arc::clone(&fp_registry),
++            "write-compacted-sst-io-error",
++            "return",
++        )
++        .unwrap();
++        let mut settings = Settings::default();
++        settings.wal_enabled = false;
++        settings.manifest_poll_interval = Duration::from_millis(100);
++        let db = setup_db_with_settings(
++            "/tmp/test_parallel_l0_flush_uploader_bounded_budget",
++            fp_registry,
++            settings,
++        )
++        .await;
++        assert!(!db.wal_enabled, "this test exercises the WAL-off posture");
++        let job = next_upload_job(&db, b"key", b"value", 1);
++
++        let test = start_test_uploader(&db);
++        test.submit(job).unwrap();
++
++        let result = timeout(Duration::from_secs(30), test.await_closed())
++            .await
++            .expect("bounded retry must terminate: the upstream loop spins here forever");
++        let error = result.expect_err("a permanently failing store must fail the flush");
++        assert!(
++            matches!(
++                error,
++                SlateDBError::L0SstUploadRetriesExhausted {
++                    attempts: super::UPLOAD_ATTEMPT_BUDGET,
++                    ..
++                }
++            ),
++            "expected the typed budget-exhaustion error after exactly the budget, got: {error:?}"
++        );
++    }
++
++    /// The shutdown escape must NOT depend on `wal_enabled`: with the WAL
++    /// disabled an external WAL owns recovery, and a close during a store
++    /// outage must still terminate. Upstream's escape was conditional on
++    /// `wal_enabled`, so this exact scenario hung.
++    #[cfg(feature = "wal_disable")]
++    #[tokio::test]
++    async fn should_stop_retrying_on_shutdown_when_wal_disabled() {
++        let fp_registry = Arc::new(FailPointRegistry::new());
++        fail_parallel::cfg(
++            Arc::clone(&fp_registry),
++            "write-compacted-sst-io-error",
++            "return",
++        )
++        .unwrap();
++        let mut settings = Settings::default();
++        settings.wal_enabled = false;
++        // long backoff: termination must come from the shutdown escape
++        // observed inside the retry loop, not from budget exhaustion
++        settings.manifest_poll_interval = Duration::from_millis(50);
++        let db = setup_db_with_settings(
++            "/tmp/test_parallel_l0_flush_uploader_shutdown_wal_disabled",
++            fp_registry,
++            settings,
++        )
++        .await;
++        assert!(!db.wal_enabled, "this test exercises the WAL-off posture");
++        let job = next_upload_job(&db, b"key", b"value", 1);
++
++        let test = start_test_uploader(&db);
++        test.submit(job).unwrap();
++
++        // Mark the database as closed (simulates Db::close()).
++        db.status_manager.write_result(Ok(()));
++
++        let result = timeout(Duration::from_secs(5), test.await_closed())
++            .await
++            .expect("the uploader must stop retrying on shutdown even with the WAL disabled");
++        assert!(result.is_err());
++    }
++
++    /// Terminal-error classification: only `Unavailable` earns the bounded
++    /// retry; fenced/data/internal/invalid/closed errors fail on first
++    /// sight because they are deterministic.
++    #[test]
++    fn only_unavailable_upload_errors_are_retryable() {
++        use super::upload_error_is_terminal;
++        // transient: an io error maps to ErrorKind::Unavailable
++        assert!(!upload_error_is_terminal(&SlateDBError::IoError(Arc::new(
++            std::io::Error::other("transient store outage")
++        ))));
++        // terminal: fenced (Closed(Fenced)), data, internal, invalid, closed
++        assert!(upload_error_is_terminal(&SlateDBError::Fenced));
++        assert!(upload_error_is_terminal(&SlateDBError::InvalidDBState));
++        assert!(upload_error_is_terminal(
++            &SlateDBError::CompactorExecutorFailed
++        ));
++        assert!(upload_error_is_terminal(&SlateDBError::InvalidCompaction));
++        assert!(upload_error_is_terminal(&SlateDBError::Closed));
++        // the budget-exhaustion error surfaces as Unavailable at the public
++        // boundary (the store WAS unavailable); it never re-enters the
++        // retry loop because it is only constructed on the way out of it
++        assert_eq!(
++            crate::Error::from(SlateDBError::L0SstUploadRetriesExhausted {
++                attempts: super::UPLOAD_ATTEMPT_BUDGET,
++                last_error: "io error".to_owned(),
++            })
++            .kind(),
++            crate::ErrorKind::Unavailable
++        );
++    }
+ }

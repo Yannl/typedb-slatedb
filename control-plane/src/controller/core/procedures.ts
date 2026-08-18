@@ -25,7 +25,7 @@
  *    exact — a missing row is a typed NOT_FOUND, never treated as EOF.
  */
 
-import { bytesEqual, canonicalJson, fromHex as fromHexInternal, hex, hmacSha256, sha256, utf8 } from "./journal-crypto.ts";
+import { bytesEqual, canonicalJson, framedHash, fromHex as fromHexInternal, hex, hmacSha256, sha256, utf8 } from "./journal-crypto.ts";
 
 export interface SqlRow {
   [column: string]: unknown;
@@ -38,8 +38,10 @@ export interface SyncSql {
   transaction<T>(fn: () => T): T;
 }
 
-const SCHEMA = `
-  CREATE TABLE IF NOT EXISTS wal_tail(
+/** Canonical wal_tail / control_outbox column DDL, shared by the
+ *  declarative schema below and the v9 legacy-shape rebuild so the fresh
+ *  and repaired table shapes cannot drift apart. */
+const WAL_TAIL_COLUMNS = `
     database_id TEXT NOT NULL,
     generation INTEGER NOT NULL,
     append_lsn BLOB NOT NULL,
@@ -55,12 +57,9 @@ const SCHEMA = `
     control_seq BLOB NOT NULL,
     record_type INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY(database_id, generation, append_lsn),
-    UNIQUE(database_id, generation, finalization_operation_id)
-  );
-  CREATE UNIQUE INDEX IF NOT EXISTS wal_status_singleton
-    ON wal_tail(database_id, generation, unsequenced_logical_key)
-    WHERE unsequenced_logical_key IS NOT NULL;
-  CREATE TABLE IF NOT EXISTS control_outbox(
+    UNIQUE(database_id, generation, finalization_operation_id)`;
+
+const CONTROL_OUTBOX_COLUMNS = `
     control_seq BLOB PRIMARY KEY,
     database_id TEXT NOT NULL,
     kind TEXT NOT NULL,
@@ -68,7 +67,15 @@ const SCHEMA = `
     published INTEGER NOT NULL DEFAULT 0,
     prev_hash BLOB NOT NULL,
     entry_hash BLOB NOT NULL,
-    mac BLOB NOT NULL
+    mac BLOB NOT NULL`;
+
+const SCHEMA = `
+  CREATE TABLE IF NOT EXISTS wal_tail(${WAL_TAIL_COLUMNS}
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS wal_status_singleton
+    ON wal_tail(database_id, generation, unsequenced_logical_key)
+    WHERE unsequenced_logical_key IS NOT NULL;
+  CREATE TABLE IF NOT EXISTS control_outbox(${CONTROL_OUTBOX_COLUMNS}
   );
   CREATE TABLE IF NOT EXISTS budgets(
     database_id TEXT PRIMARY KEY,
@@ -198,16 +205,18 @@ export function u64FromSql(value: unknown, context: string): bigint {
   return new DataView(bytes.buffer, bytes.byteOffset, 8).getBigUint64(0);
 }
 
-/** Parse a u64 from the wire/API boundary: decimal string (the canonical
- *  JSON encoding), exact-integer number (legacy-client convenience inside
+/** Parse a u64 from the wire/API boundary: CANONICAL decimal string (the
+ *  canonical JSON encoding - `0` or a nonzero digit followed by digits;
+ *  aliases like "00" or "01" are refused so one value has one encoding,
+ *  audit C-P1-02), exact-integer number (legacy-client convenience inside
  *  the exact range), or bigint. Everything else - floats, negatives,
  *  overflow, NaN - is a typed violation, never a coercion. */
 export function u64FromWire(value: unknown, context: string): bigint {
   let parsed: bigint;
   if (typeof value === "bigint") parsed = value;
   else if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) parsed = BigInt(value);
-  else if (typeof value === "string" && /^\d+$/.test(value)) parsed = BigInt(value);
-  else throw new Error(`INTEGER_RANGE_VIOLATION: ${context}=${String(value)} is not an exact u64`);
+  else if (typeof value === "string" && /^(0|[1-9]\d*)$/.test(value)) parsed = BigInt(value);
+  else throw new Error(`INTEGER_RANGE_VIOLATION: ${context}=${String(value)} is not a canonical exact u64`);
   if (parsed > U64_MAX) {
     throw new Error(`INTEGER_RANGE_VIOLATION: ${context}=${parsed} outside u64`);
   }
@@ -246,7 +255,10 @@ export type TypedErr =
   | { ok: false; error: "GENERATION_MISMATCH"; reserved: number }
   | { ok: false; error: "SESSION_NOT_ACTIVE"; state: string }
   | { ok: false; error: "SESSION_LEASE_EXPIRED" }
-  | { ok: false; error: "INVALID_LEASE"; observed: unknown };
+  | { ok: false; error: "INVALID_LEASE"; observed: unknown }
+  // audit C-P0-04/05: the authority tuple is fully bound and never grandfathered
+  | { ok: false; error: "SESSION_UNMIGRATED" }
+  | { ok: false; error: "SESSION_GENERATION_MISMATCH"; sessionGeneration: number };
 
 export interface FinalizeRequest {
   databaseId: string;
@@ -282,6 +294,21 @@ export type FinalizeResult = Typed<{ appendLsn: bigint; typeSequence: bigint; co
 
 /** 32 zero bytes: the hash-chain genesis ancestor. */
 const GENESIS_HASH = new Uint8Array(32);
+
+/**
+ * The v2 journal-entry preimage (audit C-P1-04): domain-separated and
+ * length-framed via framedHash, and it BINDS THE DATABASE IDENTITY. The v1
+ * preimage concatenated `prev || seq || kind || body` raw - so ("AB","C")
+ * and ("A","BC") were one preimage (repartition forgery), and an entry could
+ * be re-attributed across databases without changing its hash. Existing v1
+ * chains are re-framed by migration v11.
+ */
+function journalEntryHash(
+  prevHash: Uint8Array, controlSeqBytes: Uint8Array, databaseId: string, kind: string, body: string,
+): Uint8Array {
+  return framedHash("typedb-journal-entry/v2",
+    prevHash, controlSeqBytes, utf8(databaseId), utf8(kind), utf8(body));
+}
 
 export class ControllerCore {
   private readonly sql: SyncSql;
@@ -350,10 +377,19 @@ export class ControllerCore {
     const applied = new Set(
       this.sql.exec(`SELECT version FROM schema_migrations`).map((r) => Number(r.version)),
     );
+    // audit C-P0-06: refuse unknown FUTURE schemas. A database stamped by a
+    // newer release may hold shapes this code cannot interpret; serving it
+    // anyway would reinterpret, not migrate.
+    const known = Math.max(...ControllerCore.MIGRATIONS.map((step) => step.version));
+    for (const version of applied) {
+      if (version > known) {
+        throw new Error(`SCHEMA_FROM_THE_FUTURE: migration ${version} is newer than this build (max ${known})`);
+      }
+    }
     for (const step of ControllerCore.MIGRATIONS) {
       if (applied.has(step.version)) continue;
       this.sql.transaction(() => {
-        step.up(this.sql);
+        step.up(this.sql, this);
         this.sql.exec(`INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?,?)`,
           step.version, Date.now());
       });
@@ -367,7 +403,9 @@ export class ControllerCore {
     { table: "wal_tail", column: "record_type", ddl: "INTEGER NOT NULL DEFAULT 0" },
   ];
 
-  private static readonly MIGRATIONS: ReadonlyArray<{ version: number; up: (sql: SyncSql) => void }> = [
+  private static readonly MIGRATIONS: ReadonlyArray<{
+    version: number; up: (sql: SyncSql, core: ControllerCore) => void;
+  }> = [
     { version: 1, up: (sql) => { sql.exec(SCHEMA); } },
     {
       version: 2,
@@ -494,7 +532,187 @@ export class ControllerCore {
                   ON capability_nonces(expires_at)`);
       },
     },
+    {
+      version: 9,
+      up: (sql, core) => {
+        // Audit C-P0-06: `CREATE TABLE IF NOT EXISTS` never repaired an
+        // era-A database (pre-hash-chain, INTEGER sequence columns, hash-less
+        // control_outbox) - the old shapes survived every migration and the
+        // first journal append then died on "no such column: entry_hash".
+        // Copy/verify/swap rebuilds, inside this migration's transaction.
+        ControllerCore.rebuildLegacyWalTail(sql);
+        ControllerCore.rebuildLegacyOutbox(sql, core);
+      },
+    },
+    {
+      version: 10,
+      up: (sql, core) => {
+        // Audit C-P0-05: a session row with no lifecycle row used to pass
+        // requireLeasedAuthority - missing authority state meant unlimited
+        // grandfathering. Every historical session is mapped into a bounded
+        // TERMINAL state (REVOKED if it was fenced, EXPIRED otherwise) and
+        // the quarantine is journaled; a legacy actor re-establishes through
+        // the lifecycle protocol under a fresh id, it is never grandfathered.
+        const orphans = sql.exec(
+          `SELECT database_id, startup_session_id, MAX(generation) AS generation,
+                  MAX(fenced) AS fenced
+           FROM sessions s
+           WHERE NOT EXISTS (SELECT 1 FROM startup_sessions l
+                             WHERE l.database_id = s.database_id
+                               AND l.startup_session_id = s.startup_session_id)
+           GROUP BY database_id, startup_session_id`);
+        for (const row of orphans) {
+          const state = Number(row.fenced) ? "REVOKED" : "EXPIRED";
+          sql.exec(
+            `INSERT INTO startup_sessions(database_id, startup_session_id, generation,
+               incarnation, holder, state, reserved_at_ms) VALUES (?,?,?,?,?,?,?)`,
+            row.database_id, row.startup_session_id, Number(row.generation),
+            core.currentIncarnation(), "legacy-backfill", state, core.controllerNow());
+          core.appendCommand(String(row.database_id), "SESSION_QUARANTINED_BY_MIGRATION", {
+            databaseId: row.database_id, startupSessionId: row.startup_session_id, state,
+          });
+        }
+      },
+    },
+    {
+      version: 11,
+      up: (sql, core) => {
+        // Audit C-P1-04: re-frame the journal chain under the v2
+        // domain-separated, length-framed preimage (see journalEntryHash).
+        // Recomputes the whole chain from genesis and rewrites rows whose
+        // stored hashes/MACs differ; a chain already v2-framed (e.g. one the
+        // v9 rebuild produced) rewrites nothing, so the step is idempotent.
+        const rows = sql.exec(
+          `SELECT control_seq, database_id, kind, canonical_body, prev_hash, entry_hash, mac
+           FROM control_outbox ORDER BY control_seq`);
+        let prev: Uint8Array = GENESIS_HASH;
+        let reframed = 0;
+        for (const row of rows) {
+          const seqBytes = u64Blob(u64FromSql(row.control_seq, "control_seq"), "control_seq");
+          const entryHash = journalEntryHash(
+            prev, seqBytes, String(row.database_id), String(row.kind), String(row.canonical_body));
+          const mac = hmacSha256(core.journalKey, entryHash);
+          if (!bytesEqual(asHash(row.prev_hash, "prev_hash"), prev)
+              || !bytesEqual(asHash(row.entry_hash, "entry_hash"), entryHash)
+              || !bytesEqual(asHash(row.mac, "mac"), mac)) {
+            sql.exec(`UPDATE control_outbox SET prev_hash=?, entry_hash=?, mac=? WHERE control_seq=?`,
+              prev, entryHash, mac, seqBytes);
+            reframed += 1;
+          }
+          prev = entryHash;
+        }
+        if (reframed > 0) {
+          core.appendCommand("@controller", "JOURNAL_REFRAMED_V2", { reframed });
+        }
+      },
+    },
+    {
+      version: 12,
+      up: (sql) => {
+        // Audit C-P0-08: capability use is an idempotent outcome machine,
+        // not a bare nonce burn. Each use durably binds the token's nonce to
+        // the canonical digest of the ONE request it authorized, with a
+        // queryable outcome state - so a lost response never converts
+        // authority into a permanent, unexplained loss (see claimCapability).
+        sql.exec(`CREATE TABLE IF NOT EXISTS capability_uses(
+          nonce TEXT PRIMARY KEY,
+          use_digest TEXT NOT NULL,
+          state TEXT NOT NULL CHECK(state IN
+            ('IN_FLIGHT','RESOLVED_SUCCESS','RESOLVED_REJECTED','AMBIGUOUS')),
+          outcome TEXT,
+          expires_at INTEGER NOT NULL,
+          used_at_ms INTEGER NOT NULL
+        )`);
+        sql.exec(`CREATE INDEX IF NOT EXISTS capability_use_expiry ON capability_uses(expires_at)`);
+      },
+    },
   ];
+
+  /** Declared type of a column, uppercased, or null when the column (or the
+   *  table) does not exist. */
+  private static columnType(sql: SyncSql, table: string, column: string): string | null {
+    const row = sql.exec(`PRAGMA table_info(${table})`).find((r) => String(r.name) === column);
+    return row ? String(row.type).toUpperCase() : null;
+  }
+
+  /** v9: rebuild an era-A wal_tail (INTEGER sequence columns) into the
+   *  canonical blob shape. Sequence values are read back as
+   *  `CAST(... AS TEXT)` - the exact i64 decimal rendering - because a JS
+   *  number readback would silently round above 2^53; u64Blob then refuses
+   *  anything outside u64, so a corrupt negative value aborts (and rolls
+   *  back) rather than converting. */
+  private static rebuildLegacyWalTail(sql: SyncSql): void {
+    if (ControllerCore.columnType(sql, "wal_tail", "append_lsn") !== "INTEGER") return;
+    sql.exec(`CREATE TABLE wal_tail_v9(${WAL_TAIL_COLUMNS})`);
+    const rows = sql.exec(
+      `SELECT database_id, generation, CAST(append_lsn AS TEXT) AS lsn_text,
+              CAST(type_sequence AS TEXT) AS ts_text, sequencing_kind, payload_key,
+              payload_digest, payload_length, finalization_operation_id, request_digest,
+              unsequenced_logical_key, startup_session_id, CAST(control_seq AS TEXT) AS cs_text,
+              record_type
+       FROM wal_tail`);
+    for (const row of rows) {
+      sql.exec(
+        `INSERT INTO wal_tail_v9(database_id, generation, append_lsn, type_sequence,
+           sequencing_kind, payload_key, payload_digest, payload_length,
+           finalization_operation_id, request_digest, unsequenced_logical_key,
+           startup_session_id, control_seq, record_type)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        row.database_id, row.generation,
+        u64Blob(BigInt(String(row.lsn_text)), "append_lsn"),
+        u64Blob(BigInt(String(row.ts_text)), "type_sequence"),
+        row.sequencing_kind, row.payload_key, row.payload_digest, row.payload_length,
+        row.finalization_operation_id, row.request_digest, row.unsequenced_logical_key,
+        row.startup_session_id,
+        u64Blob(BigInt(String(row.cs_text)), "control_seq"), row.record_type);
+    }
+    const copied = Number(sql.exec(`SELECT COUNT(*) AS n FROM wal_tail_v9`)[0].n);
+    if (copied !== rows.length) {
+      throw new Error(`MIGRATION_VERIFY_FAILED: wal_tail rebuild copied ${copied}/${rows.length}`);
+    }
+    sql.exec(`DROP TABLE wal_tail`);
+    sql.exec(`ALTER TABLE wal_tail_v9 RENAME TO wal_tail`);
+    // the dropped table takes its indexes with it; recreate the two the
+    // schema (v1) and v3 own
+    sql.exec(`CREATE UNIQUE INDEX IF NOT EXISTS wal_status_singleton
+              ON wal_tail(database_id, generation, unsequenced_logical_key)
+              WHERE unsequenced_logical_key IS NOT NULL`);
+    sql.exec(`CREATE INDEX IF NOT EXISTS wal_type_scan
+              ON wal_tail(database_id, generation, record_type, append_lsn)`);
+  }
+
+  /** v9: rebuild an era-A control_outbox (INTEGER control_seq, no hash
+   *  chain) into the canonical chained shape, computing the v2-framed hash
+   *  chain and commit MACs from genesis in sequence order. */
+  private static rebuildLegacyOutbox(sql: SyncSql, core: ControllerCore): void {
+    const missingChain = ControllerCore.columnType(sql, "control_outbox", "entry_hash") === null;
+    const integerSeq = ControllerCore.columnType(sql, "control_outbox", "control_seq") === "INTEGER";
+    if (!missingChain && !integerSeq) return;
+    sql.exec(`CREATE TABLE control_outbox_v9(${CONTROL_OUTBOX_COLUMNS})`);
+    const rows = sql.exec(
+      `SELECT CAST(control_seq AS TEXT) AS cs_text, database_id, kind, canonical_body, published
+       FROM control_outbox ORDER BY control_seq`);
+    let prev: Uint8Array = GENESIS_HASH;
+    for (const row of rows) {
+      const seqBytes = u64Blob(BigInt(String(row.cs_text)), "control_seq");
+      const entryHash = journalEntryHash(
+        prev, seqBytes, String(row.database_id), String(row.kind), String(row.canonical_body));
+      sql.exec(
+        `INSERT INTO control_outbox_v9(control_seq, database_id, kind, canonical_body,
+           published, prev_hash, entry_hash, mac) VALUES (?,?,?,?,?,?,?,?)`,
+        seqBytes, row.database_id, row.kind, row.canonical_body, row.published,
+        prev, entryHash, hmacSha256(core.journalKey, entryHash));
+      prev = entryHash;
+    }
+    const copied = Number(sql.exec(`SELECT COUNT(*) AS n FROM control_outbox_v9`)[0].n);
+    if (copied !== rows.length) {
+      throw new Error(`MIGRATION_VERIFY_FAILED: control_outbox rebuild copied ${copied}/${rows.length}`);
+    }
+    sql.exec(`DROP TABLE control_outbox`);
+    sql.exec(`ALTER TABLE control_outbox_v9 RENAME TO control_outbox`);
+    sql.exec(`CREATE INDEX IF NOT EXISTS outbox_unpublished
+              ON control_outbox(control_seq) WHERE published=0`);
+  }
 
   // ------------------------------------------------------------------
   // Q-03 / directive 12.4: the startup-session lifecycle.
@@ -717,18 +935,33 @@ export class ControllerCore {
   }
 
   /**
-   * Lifecycle gate for authority-bearing mutations (12.4): a
-   * lifecycle-managed session must be ACTIVE or DRAINING with an unexpired
-   * controller-time lease BEFORE counters/outbox are consumed. A session
-   * with no lifecycle row is the legacy L1 lane (registerSession routes
-   * through the lifecycle, so post-migration cores always have rows; the
-   * no-row case covers databases migrated with live legacy sessions).
+   * Lifecycle gate for authority-bearing mutations (12.4): a session must be
+   * ACTIVE or DRAINING with an unexpired controller-time lease, under the
+   * CURRENT controller incarnation, and (when the mutation is
+   * generation-scoped) in the generation the lifecycle row currently binds -
+   * all BEFORE counters/outbox are consumed.
+   *
+   * Fail directions (audit C-P0-04/05):
+   *  - no lifecycle row is SESSION_UNMIGRATED, never a pass - migration v10
+   *    backfills every historical session into a terminal state, so a
+   *    missing row is either a pre-v10 database (quarantine it by refusing)
+   *    or a forged session id;
+   *  - a row from a superseded incarnation refuses even if bumpIncarnation's
+   *    own revocation sweep were bypassed - two independent enforcement
+   *    points for one invariant;
+   *  - after a generation rollover the actor may commit ONLY in its current
+   *    generation ("registered in generations 1 and 2, finalized in both"
+   *    was the audit's executed violation).
    */
-  private requireLeasedAuthority(databaseId: string, startupSessionId: string):
-    { ok: true } | { ok: false; error: "SESSION_NOT_ACTIVE"; state: string }
-    | { ok: false; error: "SESSION_LEASE_EXPIRED" } {
+  private requireLeasedAuthority(databaseId: string, startupSessionId: string, generation?: number):
+    { ok: true }
+    | { ok: false; error: "SESSION_NOT_ACTIVE"; state: string }
+    | { ok: false; error: "SESSION_LEASE_EXPIRED" }
+    | { ok: false; error: "SESSION_UNMIGRATED" }
+    | { ok: false; error: "STALE_INCARNATION"; current: number }
+    | { ok: false; error: "SESSION_GENERATION_MISMATCH"; sessionGeneration: number } {
     const row = this.startupSession(databaseId, startupSessionId);
-    if (!row) return { ok: true };
+    if (!row) return { ok: false as const, error: "SESSION_UNMIGRATED" as const };
     const state = String(row.state);
     if (state !== "ACTIVE" && state !== "DRAINING") {
       return { ok: false as const, error: "SESSION_NOT_ACTIVE" as const, state };
@@ -736,6 +969,14 @@ export class ControllerCore {
     if (Number(row.lease_deadline_ms) <= this.controllerNow()) {
       this.expireSession(databaseId, startupSessionId);
       return { ok: false as const, error: "SESSION_LEASE_EXPIRED" as const };
+    }
+    const currentIncarnation = this.currentIncarnation();
+    if (Number(row.incarnation) !== currentIncarnation) {
+      return { ok: false as const, error: "STALE_INCARNATION" as const, current: currentIncarnation };
+    }
+    if (generation !== undefined && Number(row.generation) !== generation) {
+      return { ok: false as const, error: "SESSION_GENERATION_MISMATCH" as const,
+               sessionGeneration: Number(row.generation) };
     }
     return { ok: true };
   }
@@ -864,10 +1105,7 @@ export class ControllerCore {
     databaseId: string,
     b: { maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number },
     startupSessionId: string,
-  ): { ok: true } | { ok: false; error: "SESSION_UNKNOWN" | "SESSION_FENCED" }
-    | { ok: false; error: "INVALID_BUDGET"; field: string }
-    | { ok: false; error: "SESSION_NOT_ACTIVE"; state: string }
-    | { ok: false; error: "SESSION_LEASE_EXPIRED" } {
+  ): { ok: true } | TypedErr {
     // the whole procedure is one transaction: requireLeasedAuthority can
     // expire a session (an UPDATE plus a journaled command), and that
     // multi-statement mutation must never run auto-committed
@@ -1026,8 +1264,10 @@ export class ControllerCore {
 
     // Q-03 / 12.4: authority is LEASED. The fence check above says the actor
     // was not superseded; this says its lease is still running on controller
-    // time. Both must hold before any counter or outbox row is consumed.
-    const leased = this.requireLeasedAuthority(req.databaseId, req.startupSessionId);
+    // time, under the current incarnation, in the session's CURRENT
+    // generation (audit C-P0-04). All must hold before any counter or
+    // outbox row is consumed.
+    const leased = this.requireLeasedAuthority(req.databaseId, req.startupSessionId, req.generation);
     if (!leased.ok) return leased;
 
     // exact-once replay by operation identity
@@ -1056,14 +1296,25 @@ export class ControllerCore {
     // budget.
     if (req.logicalKey !== null) {
       const existing = this.sql.exec(
-        `SELECT append_lsn, type_sequence, control_seq, payload_digest FROM wal_tail
+        `SELECT append_lsn, type_sequence, control_seq, payload_digest, payload_key,
+                payload_length, sequencing_kind, record_type FROM wal_tail
          WHERE database_id=? AND generation=? AND unsequenced_logical_key=?`,
         req.databaseId, req.generation, req.logicalKey,
       );
       if (existing.length) {
         // duplicate identical status: idempotent accept of the original;
         // conflicting status: typed rejection. Never both accepted.
-        if (existing[0].payload_digest === req.payloadDigest) {
+        // "Identical" is the COMPLETE status identity (audit C-P1-07): a
+        // same-digest write whose record type, sequencing kind, key or
+        // length differs is a conflict, never a silent dedupe under a
+        // partial comparison.
+        const identical =
+          existing[0].payload_digest === req.payloadDigest
+          && String(existing[0].payload_key) === req.payloadKey
+          && Number(existing[0].payload_length) === req.payloadLength
+          && String(existing[0].sequencing_kind) === req.sequencingKind
+          && Number(existing[0].record_type) === req.recordType;
+        if (identical) {
           // Q-11: make the answer durable under the id the CLIENT used.
           // Returning the original record's receipt for a fresh operation id
           // without recording the mapping left that operation queryable
@@ -1164,30 +1415,93 @@ export class ControllerCore {
 
   bumpIncarnation(): number {
     return this.sql.transaction(() => {
-      const next = this.currentIncarnation() + 1;
+      const current = this.currentIncarnation();
+      const next = current + 1;
+      // audit C-P1-02: checked increment - exhaustion is a typed terminal
+      // refusal with NO mutation, never a silent drift into float rounding
+      if (!Number.isSafeInteger(next)) {
+        throw new Error(`INTEGER_RANGE_VIOLATION: incarnation ${current} cannot increment exactly`);
+      }
       this.sql.exec(
         `INSERT INTO controller_meta(key, value) VALUES ('incarnation', ?)
          ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
         String(next),
       );
-      this.appendCommand("@controller", "CONTROLLER_INCARNATION_BUMPED", { incarnation: next });
+      // audit C-P0-04: rotation transactionally TERMINALIZES all previous
+      // authority. Every live lifecycle session is revoked and every
+      // unfenced actor fenced in the same transaction as the bump - an old
+      // actor cannot finalize, ack or move budgets under the new
+      // incarnation, and requireLeasedAuthority's incarnation check backs
+      // this sweep as an independent second enforcement point.
+      const revoked = Number(this.sql.exec(
+        `SELECT COUNT(*) AS n FROM startup_sessions WHERE state IN ('ACTIVE','DRAINING')`)[0].n);
+      this.sql.exec(`UPDATE startup_sessions SET state='REVOKED' WHERE state IN ('ACTIVE','DRAINING')`);
+      const fenced = Number(this.sql.exec(
+        `SELECT COUNT(*) AS n FROM sessions WHERE fenced=0`)[0].n);
+      this.sql.exec(`UPDATE sessions SET fenced=1 WHERE fenced=0`);
+      this.appendCommand("@controller", "CONTROLLER_INCARNATION_BUMPED", {
+        incarnation: next, revokedSessions: revoked, fencedActors: fenced,
+      });
       return next;
     });
   }
 
   /**
-   * Burn a capability nonce (F9 single-use rule): true exactly once per
-   * nonce. Transactional check-and-insert; expired burns are pruned lazily
-   * so the table stays bounded by the live-token window.
+   * Capability use as an idempotent outcome machine (audit C-P0-08).
+   * Supersedes the bare nonce burn (`capability_nonces` remains in the
+   * schema as a historical table; the v8 index migration refers to it).
+   *
+   * The bare nonce burn converted every transport ambiguity into permanent
+   * authority loss: a client whose finalize RESPONSE was lost held a burned
+   * token and a refusal, with no durable record of what its one use did.
+   * A use now binds the nonce to the canonical digest of the ONE request it
+   * authorized:
+   *  - first presentation records IN_FLIGHT and admits;
+   *  - an IDENTICAL retry (same nonce, same use digest) admits again with
+   *    the recorded state - safe because every authorized procedure is
+   *    itself idempotent by operation identity (finalize replay, PUT
+   *    create-or-identical, reads), so re-execution reproduces the original
+   *    outcome rather than performing a second operation;
+   *  - a DIFFERENT request under a used nonce is CAPABILITY_REPLAYED - the
+   *    single-use rule now means single-REQUEST, which is the property that
+   *    was always wanted from it;
+   *  - infrastructure uncertainty is recorded as AMBIGUOUS by the caller
+   *    (resolveCapabilityUse) and stays retryable, never a deterministic
+   *    abort.
+   * Expired uses are pruned by token-expiry so the table stays bounded by
+   * the live-token window.
    */
-  burnCapabilityNonce(nonce: string, expiresAtMs: number, nowMs: number): boolean {
+  claimCapability(nonce: string, useDigest: string, expiresAtMs: number, nowMs: number):
+    { ok: true; fresh: boolean; state: string; outcome: string | null }
+    | { ok: false; error: "CAPABILITY_REPLAYED" } {
     return this.sql.transaction(() => {
-      this.sql.exec(`DELETE FROM capability_nonces WHERE expires_at <= ?`, nowMs);
-      const seen = this.sql.exec(`SELECT 1 FROM capability_nonces WHERE nonce=?`, nonce);
-      if (seen.length) return false;
-      this.sql.exec(`INSERT INTO capability_nonces(nonce, expires_at) VALUES (?,?)`, nonce, expiresAtMs);
-      return true;
+      this.sql.exec(`DELETE FROM capability_uses WHERE expires_at <= ?`, nowMs);
+      const prior = this.sql.exec(
+        `SELECT use_digest, state, outcome FROM capability_uses WHERE nonce=?`, nonce);
+      if (prior.length) {
+        if (String(prior[0].use_digest) !== useDigest) {
+          return { ok: false as const, error: "CAPABILITY_REPLAYED" as const };
+        }
+        return { ok: true as const, fresh: false, state: String(prior[0].state),
+                 outcome: prior[0].outcome === null ? null : String(prior[0].outcome) };
+      }
+      this.sql.exec(
+        `INSERT INTO capability_uses(nonce, use_digest, state, expires_at, used_at_ms)
+         VALUES (?,?,'IN_FLIGHT',?,?)`, nonce, useDigest, expiresAtMs, nowMs);
+      return { ok: true as const, fresh: true, state: "IN_FLIGHT", outcome: null };
     });
+  }
+
+  /** Record the durable outcome of a claimed use. Idempotent; an unknown or
+   *  expired-and-pruned nonce is a no-op (the authority record of what
+   *  happened lives in wal_tail/journal - this is the per-use outcome
+   *  index, not a second source of truth). */
+  resolveCapabilityUse(
+    nonce: string, state: "RESOLVED_SUCCESS" | "RESOLVED_REJECTED" | "AMBIGUOUS", outcome?: string,
+  ): void {
+    this.sql.exec(
+      `UPDATE capability_uses SET state=?, outcome=? WHERE nonce=?`,
+      state, outcome ?? null, nonce);
   }
 
   /** Allocate the next global ControlSeq (exact bytewise-u64 max + 1). */
@@ -1391,7 +1705,7 @@ export class ControllerCore {
   private appendJournalEntry(controlSeq: bigint, databaseId: string, kind: string, canonicalBody: string): Uint8Array {
     const tail = this.sql.exec(`SELECT entry_hash FROM control_outbox ORDER BY control_seq DESC LIMIT 1`);
     const prevHash = tail.length ? asHash(tail[0].entry_hash, "prev entry_hash") : GENESIS_HASH;
-    const entryHash = sha256(prevHash, u64Blob(controlSeq, "control_seq"), utf8(kind), utf8(canonicalBody));
+    const entryHash = journalEntryHash(prevHash, u64Blob(controlSeq, "control_seq"), databaseId, kind, canonicalBody);
     const mac = hmacSha256(this.journalKey, entryHash);
     this.sql.exec(
       `INSERT INTO control_outbox(control_seq, database_id, kind, canonical_body, prev_hash, entry_hash, mac)
@@ -1416,7 +1730,7 @@ export class ControllerCore {
     | { ok: true; length: number; headHash: string }
     | { ok: false; error: "JOURNAL_GAP" | "JOURNAL_CHAIN_BROKEN" | "JOURNAL_HASH_MISMATCH" | "JOURNAL_MAC_INVALID"; atControlSeq: string } {
     const rows = this.sql.exec(
-      `SELECT control_seq, kind, canonical_body, prev_hash, entry_hash, mac FROM control_outbox ORDER BY control_seq`,
+      `SELECT control_seq, database_id, kind, canonical_body, prev_hash, entry_hash, mac FROM control_outbox ORDER BY control_seq`,
     );
     let expectedSeq = 1n;
     let expectedPrev: Uint8Array = GENESIS_HASH;
@@ -1428,7 +1742,8 @@ export class ControllerCore {
       const entryHash = asHash(row.entry_hash, "entry_hash");
       const mac = asHash(row.mac, "mac");
       if (!bytesEqual(prevHash, expectedPrev)) return { ok: false, error: "JOURNAL_CHAIN_BROKEN", atControlSeq: at };
-      const recomputed = sha256(prevHash, u64Blob(seq, "control_seq"), utf8(String(row.kind)), utf8(String(row.canonical_body)));
+      const recomputed = journalEntryHash(
+        prevHash, u64Blob(seq, "control_seq"), String(row.database_id), String(row.kind), String(row.canonical_body));
       if (!bytesEqual(entryHash, recomputed)) return { ok: false, error: "JOURNAL_HASH_MISMATCH", atControlSeq: at };
       if (!bytesEqual(mac, hmacSha256(this.journalKey, entryHash))) {
         return { ok: false, error: "JOURNAL_MAC_INVALID", atControlSeq: at };
@@ -1481,9 +1796,7 @@ export class ControllerCore {
   }
 
   outboxAck(databaseId: string, upToControlSeq: bigint, startupSessionId: string):
-    Typed<{ acked: number }> | { ok: false; error: "SESSION_UNKNOWN" | "SESSION_FENCED" }
-    | { ok: false; error: "SESSION_NOT_ACTIVE"; state: string }
-    | { ok: false; error: "SESSION_LEASE_EXPIRED" } {
+    Typed<{ acked: number }> | TypedErr {
     const bound = u64Blob(upToControlSeq, "up_to_control_seq");
     return this.sql.transaction(() => {
       // guards INSIDE the transaction: lease expiry mutates (see setBudgets)
@@ -1681,15 +1994,21 @@ export class ControllerCore {
        FROM wal_tail WHERE database_id=? AND generation=? AND finalization_operation_id=?`,
       databaseId, generation, operationId,
     );
+    // audit C-P1-07: an alias-resolved answer returns the ALIASED
+    // operation's own request binding plus the original physical outcome -
+    // returning the original row's digest would attribute request A's bytes
+    // to operation B.
+    let requestDigest: string | null = null;
     if (!rows.length) {
       // Q-11: an operation answered by status-singleton dedupe resolves
       // through its durable alias to the record it was answered with
       const alias = this.sql.exec(
-        `SELECT append_lsn FROM operation_aliases
+        `SELECT append_lsn, request_digest FROM operation_aliases
          WHERE database_id=? AND generation=? AND operation_id=?`,
         databaseId, generation, operationId,
       );
       if (!alias.length) return { ok: false, error: "NOT_FOUND" };
+      requestDigest = String(alias[0].request_digest);
       rows = this.sql.exec(
         `SELECT ${WAL_DESCRIPTOR_COLUMNS}, request_digest, control_seq
          FROM wal_tail WHERE database_id=? AND generation=? AND append_lsn=?`,
@@ -1700,7 +2019,7 @@ export class ControllerCore {
     return {
       ok: true,
       record: descriptorOf(rows[0]),
-      requestDigest: String(rows[0].request_digest),
+      requestDigest: requestDigest ?? String(rows[0].request_digest),
       controlSeq: u64FromSql(rows[0].control_seq, "control_seq"),
     };
   }

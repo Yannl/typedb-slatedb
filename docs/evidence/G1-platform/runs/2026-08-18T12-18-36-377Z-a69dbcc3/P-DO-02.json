@@ -1,0 +1,390 @@
+{
+  "probe_id": "P-DO-02",
+  "title": "Alarm durability",
+  "spec_section": "## P-DO-02 — Alarm durability",
+  "mode": "mock",
+  "injected_fault": null,
+  "started_at": "2026-08-18T12:18:36.392Z",
+  "finished_at": "2026-08-18T12:18:36.393Z",
+  "verdict": "PASS",
+  "expected_outcome": "duplicate delivery is idempotent; handler throw retries; after DO reset the required work is reconstructed from durable intent and eventually rescheduled — no transition relies on retry counts",
+  "actual_outcome": "all 10 checks passed",
+  "checks": [
+    {
+      "label": "alarm state reset (got 200)",
+      "ok": true
+    },
+    {
+      "label": "alarm not delivered early (got [\"not-due\"])",
+      "ok": true
+    },
+    {
+      "label": "first delivery throws, platform retries (got [\"threw\"])",
+      "ok": true
+    },
+    {
+      "label": "duplicate delivery is idempotent (got [\"done\",\"duplicate-ignored\"])",
+      "ok": true
+    },
+    {
+      "label": "work-1 applied exactly once (got 1)",
+      "ok": true
+    },
+    {
+      "label": "DO reset accepted (got 200)",
+      "ok": true
+    },
+    {
+      "label": "outstanding work rescheduled from durable intent after reset (got alarmScheduled=true)",
+      "ok": true
+    },
+    {
+      "label": "rescheduled alarm respects its time (got [\"not-due\"])",
+      "ok": true
+    },
+    {
+      "label": "rescheduled work completes (got [\"done\"])",
+      "ok": true
+    },
+    {
+      "label": "both required work items eventually done (got 2)",
+      "ok": true
+    }
+  ],
+  "exchanges": [
+    {
+      "seq": 1,
+      "at": "2026-08-18T12:18:36.392Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/alarm/reset-all",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "d3e22329d31dd1fd4fffcaf30f6f2b3ccdefde935a6a1fb5254c87f460b827e0",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 11,
+        "body_sha256": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93",
+        "body_preview": "{\"ok\":true}"
+      },
+      "response_sha256": "d4a677d42a9d4d999ac650db5cb5b9f01bfbaa57f1d4256a5a347c22799e81f9"
+    },
+    {
+      "seq": 2,
+      "at": "2026-08-18T12:18:36.393Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/alarm/schedule",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 26,
+        "body_sha256": "cd1c06774d367c68f9f1a37cea8552d6ca710bffd8a931315d6a3a54c1747da0",
+        "body_preview": "{\"workId\":\"work-1\",\"at\":2}"
+      },
+      "request_sha256": "a881b72b0aca0584633305a29a06a3c7393f5558680efa2118e63cee9c5b4750",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 18,
+        "body_sha256": "91e3fafa0969d3e1dd6c94301327c83b87d32885b7fe56bb8552ee3ad47aebee",
+        "body_preview": "{\"scheduled\":true}"
+      },
+      "response_sha256": "0b9936dadb0467ea5b8ccf4c1be02e58d726237da770c23c76983d0bb7ec2b53"
+    },
+    {
+      "seq": 3,
+      "at": "2026-08-18T12:18:36.393Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/alarm/config",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 19,
+        "body_sha256": "53f0057c4701624a6948860e2fa71a53d0039016a366abccbcdd7d866c5b42db",
+        "body_preview": "{\"throwFirst\":true}"
+      },
+      "request_sha256": "5feab9b26de576d3da418dc60699cca568811b1102843ba818197942d21275e6",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 11,
+        "body_sha256": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93",
+        "body_preview": "{\"ok\":true}"
+      },
+      "response_sha256": "d4a677d42a9d4d999ac650db5cb5b9f01bfbaa57f1d4256a5a347c22799e81f9"
+    },
+    {
+      "seq": 4,
+      "at": "2026-08-18T12:18:36.393Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/alarm/tick",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "23775e2c9159a907036eeda19acd46bd6facd47ee6121c4fc0e09d314870a505",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 23,
+        "body_sha256": "35db0549640f5310db0856723f8ab221928369011b27c2bd3be07138a6c95fe5",
+        "body_preview": "{\"results\":[\"not-due\"]}"
+      },
+      "response_sha256": "71349a9931d7411db817d525864618de69e5028dc7ecb9fea37e682bec74e7f1"
+    },
+    {
+      "seq": 5,
+      "at": "2026-08-18T12:18:36.393Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/alarm/tick",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "23775e2c9159a907036eeda19acd46bd6facd47ee6121c4fc0e09d314870a505",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 21,
+        "body_sha256": "f278260f5fa0d4a8cac294aa8d92e29adadf6ce563838a37d100311ad46d3d52",
+        "body_preview": "{\"results\":[\"threw\"]}"
+      },
+      "response_sha256": "535e3da517eb0d8d9278b9013e7a6a2a2652847dfbf2cad9116cc44e50f9a639"
+    },
+    {
+      "seq": 6,
+      "at": "2026-08-18T12:18:36.393Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/alarm/tick",
+        "headers": {
+          "content-type": "application/json",
+          "x-mock-duplicate": "1"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "f30f5ca60bddbc06decc47d77695b127f4c8a11d0ae84308c8f913a66bb6df2f",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 40,
+        "body_sha256": "127479cdf75581f9166a8d21801af4c18f067b6477f062e99423aece03a1d485",
+        "body_preview": "{\"results\":[\"done\",\"duplicate-ignored\"]}"
+      },
+      "response_sha256": "9da15d6a04fbd5be382ffc93160fcd8526bf027eab62370a0c22e5478b7a4931"
+    },
+    {
+      "seq": 7,
+      "at": "2026-08-18T12:18:36.393Z",
+      "request": {
+        "service": "harness",
+        "method": "GET",
+        "path": "/do/alarm/state",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "bfacbd4efabe865f26ae55ac61d9a9f41e65a443f162aeb16b62dfd025fc9b05",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 80,
+        "body_sha256": "1713e05a247d38f0643cb062c07f52253a4febab0167eda8c115b6ee51de48e2",
+        "body_preview": "{\"workCount\":1,\"alarmScheduled\":false,\"retries\":1,\"deliveries\":3,\"virtualNow\":3}"
+      },
+      "response_sha256": "7ea07c0108903094bf9af86533d9acc027af6b222607b0f8646e2431707e4434"
+    },
+    {
+      "seq": 8,
+      "at": "2026-08-18T12:18:36.393Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/alarm/schedule",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 26,
+        "body_sha256": "cc428f772412500847a737ce17d2a35e0539d2232a21c9b3afbe44c433b3ded7",
+        "body_preview": "{\"workId\":\"work-2\",\"at\":5}"
+      },
+      "request_sha256": "638e60ae7df2dcbe5c55b2880873253799e865b8cce298829f94d8d0eeae6c37",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 18,
+        "body_sha256": "91e3fafa0969d3e1dd6c94301327c83b87d32885b7fe56bb8552ee3ad47aebee",
+        "body_preview": "{\"scheduled\":true}"
+      },
+      "response_sha256": "0b9936dadb0467ea5b8ccf4c1be02e58d726237da770c23c76983d0bb7ec2b53"
+    },
+    {
+      "seq": 9,
+      "at": "2026-08-18T12:18:36.393Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/alarm/do-reset",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "52565b6ab0fd3d2e88445b45c78ebd5ba64931b81d42732dece24ee4a2283b9d",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 11,
+        "body_sha256": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93",
+        "body_preview": "{\"ok\":true}"
+      },
+      "response_sha256": "d4a677d42a9d4d999ac650db5cb5b9f01bfbaa57f1d4256a5a347c22799e81f9"
+    },
+    {
+      "seq": 10,
+      "at": "2026-08-18T12:18:36.393Z",
+      "request": {
+        "service": "harness",
+        "method": "GET",
+        "path": "/do/alarm/state",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "bfacbd4efabe865f26ae55ac61d9a9f41e65a443f162aeb16b62dfd025fc9b05",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 79,
+        "body_sha256": "7330b3bdd8dc6f4eb17cd938aa959256f211606f5b1e000ec96695753e6547f6",
+        "body_preview": "{\"workCount\":1,\"alarmScheduled\":true,\"retries\":1,\"deliveries\":3,\"virtualNow\":3}"
+      },
+      "response_sha256": "5ac493bfd418cad83cfb3ef5c25adfebb69f61bbe43583bf786b33d3a572a340"
+    },
+    {
+      "seq": 11,
+      "at": "2026-08-18T12:18:36.393Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/alarm/tick",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "23775e2c9159a907036eeda19acd46bd6facd47ee6121c4fc0e09d314870a505",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 23,
+        "body_sha256": "35db0549640f5310db0856723f8ab221928369011b27c2bd3be07138a6c95fe5",
+        "body_preview": "{\"results\":[\"not-due\"]}"
+      },
+      "response_sha256": "71349a9931d7411db817d525864618de69e5028dc7ecb9fea37e682bec74e7f1"
+    },
+    {
+      "seq": 12,
+      "at": "2026-08-18T12:18:36.393Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/alarm/tick",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "23775e2c9159a907036eeda19acd46bd6facd47ee6121c4fc0e09d314870a505",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 20,
+        "body_sha256": "6bb237155ab23152e34bdbe6eee472ee69e8a18e753dacf876d18873d38dcdaa",
+        "body_preview": "{\"results\":[\"done\"]}"
+      },
+      "response_sha256": "2f86ac313af670403596e56c96fcac7cacc138d15ddde25c71f79206599fc3ff"
+    },
+    {
+      "seq": 13,
+      "at": "2026-08-18T12:18:36.393Z",
+      "request": {
+        "service": "harness",
+        "method": "GET",
+        "path": "/do/alarm/state",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "bfacbd4efabe865f26ae55ac61d9a9f41e65a443f162aeb16b62dfd025fc9b05",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 80,
+        "body_sha256": "2fc16c26728ff3206fa2a95a15e24ccd4c9d67331f32a2a387e15db91111e24b",
+        "body_preview": "{\"workCount\":2,\"alarmScheduled\":false,\"retries\":1,\"deliveries\":4,\"virtualNow\":5}"
+      },
+      "response_sha256": "33924d1a4986b46d607ce693595838881c3ad64bbe2c748364d70993d8d784ac"
+    }
+  ],
+  "notes": []
+}

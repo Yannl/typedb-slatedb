@@ -30,6 +30,8 @@ use std::{env, error::Error, fmt, path::Path, sync::OnceLock};
 use diagnostics::metrics::FsyncMetrics;
 use durability::{DurabilityServiceError, wal::WAL};
 
+use crate::keyspace::StorageBackend;
+
 /// Environment variable selecting the storage backend profile for factory
 /// construction. Unset means [`StorageBackendProfile::U1ForkRocksFileWal`].
 pub const STORAGE_PROFILE_ENV: &str = "TYPEDB_STORAGE_PROFILE";
@@ -75,6 +77,25 @@ impl StorageBackendProfile {
             "U3" => Some(Self::U3SlateRemoteSim),
             "U4" => Some(Self::U4ProductionRemote),
             _ => None,
+        }
+    }
+
+    /// Resolve this profile to its typed keyspace backend (S-P0-06, v17
+    /// A17.4). This is the ONE place a profile becomes a
+    /// [`StorageBackend`]; the keyspace layer takes the result as an
+    /// explicit constructor argument and never consults the profile (or any
+    /// process-global) itself. Fail-closed: a profile whose backend is not
+    /// yet buildable (U3/U4 — the remote/product lanes) is a typed
+    /// `BackendNotYetAvailable` refusal here, BEFORE any engine or
+    /// namespace is touched, never a fallback to a default engine.
+    pub fn storage_backend(&self) -> Result<StorageBackend, StorageFactoryError> {
+        match self {
+            Self::U0PristineUpstream | Self::U1ForkRocksFileWal => Ok(StorageBackend::Rocks),
+            Self::U2SlateLocalFs => Ok(StorageBackend::SlateLocalFs),
+            Self::U2S3SlateS3FileWal => Ok(StorageBackend::SlateS3),
+            Self::U3SlateRemoteSim | Self::U4ProductionRemote => {
+                Err(StorageFactoryError::BackendNotYetAvailable { profile: self.code() })
+            }
         }
     }
 
@@ -151,9 +172,20 @@ impl StorageFactory {
 
 #[derive(Debug, Clone)]
 pub enum StorageFactoryError {
-    InvalidProfile { value: String },
-    ProfileUnavailable { profile: &'static str },
-    WalOpen { source: DurabilityServiceError },
+    InvalidProfile {
+        value: String,
+    },
+    ProfileUnavailable {
+        profile: &'static str,
+    },
+    /// The profile's keyspace backend is not yet buildable (S-P0-06): the
+    /// remote/product lanes stay a typed refusal until their gate opens.
+    BackendNotYetAvailable {
+        profile: &'static str,
+    },
+    WalOpen {
+        source: DurabilityServiceError,
+    },
 }
 
 impl fmt::Display for StorageFactoryError {
@@ -165,6 +197,13 @@ impl fmt::Display for StorageFactoryError {
             Self::ProfileUnavailable { profile } => {
                 write!(f, "storage backend profile '{profile}' is not available in this build; refusing to fall back")
             }
+            Self::BackendNotYetAvailable { profile } => {
+                write!(
+                    f,
+                    "the keyspace backend for storage profile '{profile}' is not yet available (v17 A17.4); \
+                     refusing before any engine or namespace mutation rather than falling back"
+                )
+            }
             Self::WalOpen { .. } => write!(f, "error opening write-ahead log"),
         }
     }
@@ -173,8 +212,51 @@ impl fmt::Display for StorageFactoryError {
 impl Error for StorageFactoryError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::InvalidProfile { .. } | Self::ProfileUnavailable { .. } => None,
+            Self::InvalidProfile { .. } | Self::ProfileUnavailable { .. } | Self::BackendNotYetAvailable { .. } => None,
             Self::WalOpen { source } => Some(source),
         }
+    }
+}
+
+#[cfg(test)]
+mod backend_seam_tests {
+    //! S-P0-06: the profile -> backend resolution is the seam's single
+    //! decision point. Positive cases pin the exact typed mapping; the
+    //! negative case proves the not-yet-available lanes are a typed refusal
+    //! at resolution — BEFORE any engine or namespace could be touched —
+    //! and never a silent fallback to a default engine.
+
+    use super::{StorageBackendProfile, StorageFactoryError};
+    use crate::keyspace::StorageBackend;
+
+    #[test]
+    fn every_available_profile_resolves_to_its_exact_backend() {
+        assert_eq!(StorageBackendProfile::U0PristineUpstream.storage_backend().unwrap(), StorageBackend::Rocks);
+        assert_eq!(StorageBackendProfile::U1ForkRocksFileWal.storage_backend().unwrap(), StorageBackend::Rocks);
+        assert_eq!(StorageBackendProfile::U2SlateLocalFs.storage_backend().unwrap(), StorageBackend::SlateLocalFs);
+        assert_eq!(StorageBackendProfile::U2S3SlateS3FileWal.storage_backend().unwrap(), StorageBackend::SlateS3);
+    }
+
+    #[test]
+    fn a_not_yet_available_lane_is_a_typed_refusal_never_a_default_engine() {
+        for profile in [StorageBackendProfile::U3SlateRemoteSim, StorageBackendProfile::U4ProductionRemote] {
+            let refused = profile.storage_backend();
+            assert!(
+                matches!(refused, Err(StorageFactoryError::BackendNotYetAvailable { profile: code }) if code == profile.code()),
+                "profile {} must refuse with the typed BackendNotYetAvailable, got: {refused:?}",
+                profile.code(),
+            );
+        }
+    }
+
+    #[test]
+    fn an_unknown_profile_value_is_a_typed_error_not_a_silent_default() {
+        assert!(matches!(StorageBackendProfile::parse("U9"), None));
+        // and the parse-level fail-closed contract feeds the same seam: an
+        // unset value defaults to the oracle profile EXPLICITLY (U1), while
+        // any present-but-unknown value refuses in resolve_from_env — that
+        // path reads the process environment, so it is pinned here only at
+        // the parse level to keep this test hermetic.
+        assert_eq!(StorageBackendProfile::parse("u2s3"), Some(StorageBackendProfile::U2S3SlateS3FileWal));
     }
 }

@@ -1,3 +1,12 @@
+> **STATUS SUPERSEDED (2026-08-18 deep audit).** The Q-closure labels in
+> this document reflect the state at the time of writing and several are
+> OVERSTATED against the deeper audit (see `docs/ledger/gates.json`
+> `q_dispositions` for the current authoritative dispositions — e.g. the
+> corpus verdict is a historical observation over a superseded tree, the
+> Rust client is protocol-incompatible with the current Worker, and the
+> tenant/authorization boundary items reopened as P0). This file is kept
+> as the historical record of that round.
+
 # Response to the consolidated convergence and total-quality directive
 
 **Directive audited baseline:** `0a697870` (with the follow-up round `7fd118f`

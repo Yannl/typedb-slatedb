@@ -1,0 +1,278 @@
+{
+  "probe_id": "P-R2-02",
+  "title": "Temporary credential action and path scope",
+  "spec_section": "## P-R2-02 — Temporary credential action and path scope",
+  "mode": "mock",
+  "injected_fault": null,
+  "started_at": "2026-08-18T12:18:36.383Z",
+  "finished_at": "2026-08-18T12:18:36.384Z",
+  "verdict": "PASS",
+  "expected_outcome": "temporary credentials work only for their exact actions and prefixes; every forbidden action denied; parent revocation kills minted credentials",
+  "actual_outcome": "all 9 checks passed",
+  "checks": [
+    {
+      "label": "temp credential mint succeeds (got 200)",
+      "ok": true
+    },
+    {
+      "label": "in-scope PUT allowed (got 200)",
+      "ok": true
+    },
+    {
+      "label": "in-scope GET allowed and byte-exact",
+      "ok": true
+    },
+    {
+      "label": "DELETE with put/get-only credential denied (got 403)",
+      "ok": true
+    },
+    {
+      "label": "PUT outside credential prefix denied (got 403)",
+      "ok": true
+    },
+    {
+      "label": "parent credential seeds outside object (got 200)",
+      "ok": true
+    },
+    {
+      "label": "GET outside credential prefix denied (got 403)",
+      "ok": true
+    },
+    {
+      "label": "parent revocation accepted (got 200)",
+      "ok": true
+    },
+    {
+      "label": "minted credential dead after parent revocation (got 403)",
+      "ok": true
+    }
+  ],
+  "exchanges": [
+    {
+      "seq": 1,
+      "at": "2026-08-18T12:18:36.383Z",
+      "request": {
+        "service": "cfapi",
+        "method": "POST",
+        "path": "/r2/temp-access-credentials",
+        "headers": {},
+        "body_length": 109,
+        "body_sha256": "344c722d3b99abbceeb0881b703265a5b0052257ffeedb037a46150078066353",
+        "body_preview": "{\"bucket\":\"mock-bucket\",\"prefixes\":[\"probes/msymppeh-4779dbc6/p-r2-02/allowed/\"],\"permissions\":[\"put\",\"get\"]}"
+      },
+      "request_sha256": "077d4ac4d6859366331374b4cc248bd8b662d680e46569850c2791c8d8cd54d5",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 78,
+        "body_sha256": "9261ad42ede6aef0141751bf9bb8f6690aa45cd398931f18efa5ac79e935fcb2",
+        "body_preview": "{\"keyId\":\"mocktmp-1\",\"secret\":\"mock-secret-1\",\"sessionToken\":\"mock-session-1\"}"
+      },
+      "response_sha256": "f45b7306426a1655c3ad1a1f967a471724e9f27de23e9c74173ed61d3d6f6dd3"
+    },
+    {
+      "seq": 2,
+      "at": "2026-08-18T12:18:36.383Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-02/allowed/obj",
+        "headers": {},
+        "body_length": 12,
+        "body_sha256": "a16b0540a44046af9302f567b9a7c86274d08880fefd2a62db8ab615054687bd",
+        "body_preview": "scoped-write",
+        "credential_key_id": "mocktmp-1"
+      },
+      "request_sha256": "1e9ef3959830bb764f902fad443191328233d91bd91ccdcea0f3678a3280c4c2",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"a16b0540a44046af\"",
+          "x-mock-commit-seq": "5"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "c3fe3a30144927beac8e66016e491c1a71fb67fe5994e6a577834a73a536497c"
+    },
+    {
+      "seq": 3,
+      "at": "2026-08-18T12:18:36.383Z",
+      "request": {
+        "service": "r2",
+        "method": "GET",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-02/allowed/obj",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": "",
+        "credential_key_id": "mocktmp-1"
+      },
+      "request_sha256": "8021720c3eb49f73879c32276b5008bde657a57818567623506c166fe1817f30",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"a16b0540a44046af\"",
+          "x-mock-commit-seq": "5"
+        },
+        "body_length": 12,
+        "body_sha256": "a16b0540a44046af9302f567b9a7c86274d08880fefd2a62db8ab615054687bd",
+        "body_preview": "scoped-write"
+      },
+      "response_sha256": "ce3faf9362f675fb953e37460976aa61a1ed182cfd0dec79807c813c848cc5a9"
+    },
+    {
+      "seq": 4,
+      "at": "2026-08-18T12:18:36.384Z",
+      "request": {
+        "service": "r2",
+        "method": "DELETE",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-02/allowed/obj",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": "",
+        "credential_key_id": "mocktmp-1"
+      },
+      "request_sha256": "bcec0e1c55fb4a191359efeef2389b12393a055b6f5a6e16e1ed8fda40cc4318",
+      "response": {
+        "status": 403,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 49,
+        "body_sha256": "c2bd02837d5d459f99352d13f642265fff33f01c337c8f25a0519b2745cc8db5",
+        "body_preview": "{\"error\":\"action delete not in credential scope\"}"
+      },
+      "response_sha256": "c4d8f4b0f600c3a0cb63b73b34fd9d8a324a0fd47a22414bed1b8c826bdf3b0c"
+    },
+    {
+      "seq": 5,
+      "at": "2026-08-18T12:18:36.384Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-02/outside/obj",
+        "headers": {},
+        "body_length": 13,
+        "body_sha256": "11a1cb6360ce3845b06ffa36b0cff269dc8b16d02cd9360f2d07bf8405717fc4",
+        "body_preview": "must-not-land",
+        "credential_key_id": "mocktmp-1"
+      },
+      "request_sha256": "e744b307650e9b2f84e22f7d7b43d6af8c93f34164ec60af571aec090d754517",
+      "response": {
+        "status": 403,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 47,
+        "body_sha256": "4fa0030b6a25f5e3ab4533abd56079f78400b2b67305b967b905992d3f40b823",
+        "body_preview": "{\"error\":\"key outside credential prefix scope\"}"
+      },
+      "response_sha256": "e2e59b00ad7843a374d07634e09f0fe08a91d5efa7753a227aba4266c2fe0aab"
+    },
+    {
+      "seq": 6,
+      "at": "2026-08-18T12:18:36.384Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-02/outside/obj",
+        "headers": {},
+        "body_length": 11,
+        "body_sha256": "99ea6fbece98c9cb32da94c6cce846c6323a1b8a9a76e05631b6d1c4cc88645d",
+        "body_preview": "parent-data"
+      },
+      "request_sha256": "2420ae203fd725ea987414d3d15b1659b8eb935a7d19bc2838880a33c8a5c688",
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"99ea6fbece98c9cb\"",
+          "x-mock-commit-seq": "6"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "response_sha256": "54940e5fb7b1a6809abfb937f88e485543e0d80d6139e1a00c7d7030451aaef5"
+    },
+    {
+      "seq": 7,
+      "at": "2026-08-18T12:18:36.384Z",
+      "request": {
+        "service": "r2",
+        "method": "GET",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-02/outside/obj",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": "",
+        "credential_key_id": "mocktmp-1"
+      },
+      "request_sha256": "ddab4a11cda2c0f1042f730cfd2646ad409654b6bd6e3e43c1c83a058c7ff7db",
+      "response": {
+        "status": 403,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 47,
+        "body_sha256": "4fa0030b6a25f5e3ab4533abd56079f78400b2b67305b967b905992d3f40b823",
+        "body_preview": "{\"error\":\"key outside credential prefix scope\"}"
+      },
+      "response_sha256": "e2e59b00ad7843a374d07634e09f0fe08a91d5efa7753a227aba4266c2fe0aab"
+    },
+    {
+      "seq": 8,
+      "at": "2026-08-18T12:18:36.384Z",
+      "request": {
+        "service": "cfapi",
+        "method": "POST",
+        "path": "/r2/temp-access-credentials/revoke-parent",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "ad6178b3350f18e1f253aac159af022570559a4745c40512aa96ffb9bac4a28a",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 16,
+        "body_sha256": "e35edb6495ef7fcd38ccf18e6c6c94401834abaa9e3f19a9ad43fe82eb2a828b",
+        "body_preview": "{\"revoked\":true}"
+      },
+      "response_sha256": "8cf0c9395706fe6df226ab80686073c2282121939ef35e61e5e16d38a72b570a"
+    },
+    {
+      "seq": 9,
+      "at": "2026-08-18T12:18:36.384Z",
+      "request": {
+        "service": "r2",
+        "method": "PUT",
+        "path": "/mock-bucket/probes/msymppeh-4779dbc6/p-r2-02/allowed/obj",
+        "headers": {},
+        "body_length": 15,
+        "body_sha256": "7c9bdbf7f6472a649aaa51441ea82068e73c4f963a1ba507197c3809e85bc361",
+        "body_preview": "post-revocation",
+        "credential_key_id": "mocktmp-1"
+      },
+      "request_sha256": "980c0696e2d60e27fd0bdb33c969639f9ef67bf5b3462b4ba40d304e736c46d6",
+      "response": {
+        "status": 403,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 41,
+        "body_sha256": "b9fd6b45e5f4c25fe7a11a9e07f390ae4578a5e4959444d8f7392d05849e44fb",
+        "body_preview": "{\"error\":\"credential revoked or unknown\"}"
+      },
+      "response_sha256": "0a6c8e5814ca674452676c7e932fa00decd901e387d0e08508fb58b3928da41f"
+    }
+  ],
+  "notes": []
+}

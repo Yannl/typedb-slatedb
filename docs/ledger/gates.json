@@ -1,0 +1,316 @@
+{
+ "document": "Machine-readable gate / lane / contradiction / action ledger. This file is the SINGLE source of truth for gate state; docs/operations.md's gate table is rendered from it by tools/ledger/render_status.py and tools/ledger/lint_ledger.py rejects drift and forbidden green prose. A gate state here may only improve when an immutable evaluation over the CURRENT commit exists.",
+ "authority_order": [
+  "contract/AGENTS.md",
+  "contract/typedb-r2-v17-final-addendum.md",
+  "contract/typedb-r2-implementation-brief-v16.md",
+  "v16 playbook / platform-probe spec / schemas / conformance plan",
+  "compatible ADRs",
+  "reviews, evidence summaries, operations notes, handoff prose"
+ ],
+ "adopted_audit": {
+  "directive": "typedb-r2 main-branch deep audit and total-quality implementation directive, 2026-08-18",
+  "audited_commit": "640c7d465fa83670f938d97b55d0d5f827adf946",
+  "decision": "NO-GO for a product-labelled live Cloudflare qualification run"
+ },
+ "gates": [
+  {
+   "id": "G0",
+   "title": "Source graph, identities, tools, fixtures, document truth",
+   "state": "OPEN_RED",
+   "authority": "v16 brief G0; v17 addendum Mode Q selection",
+   "why": "Mandatory Mode-Q Bazel cquery evidence is ABSENT (SI-G0-1 reopened; the static avoidance proof is a lower-authority substitution and cannot amend v17). The source-lock validator previously accepted forged metadata and carried a real OBJECT_STORE version mismatch (repaired; validators + mutants added). Raw source/tool evidence is not yet durably retrievable by digest.",
+   "blockers": [
+    "SI-G0-1 Mode-Q evidence or explicit owner amendment to v17",
+    "raw artifact retrievability archive"
+   ]
+  },
+  {
+   "id": "G1",
+   "title": "Models, catalogue as qualification denominator, platform contracts, budgets, controller/container separation",
+   "state": "OPEN",
+   "authority": "v16 brief G1",
+   "why": "Catalogue v1 is a repaired census, not a leaf/profile/fixture qualification denominator (E-P0-03/04): identity collapses catalogue ids onto runner row ids, only Cargo targets are execution-reconciled, composite suites are opaque, and no immutable qualification plan artifact exists. Pure models (37) and local suites are useful groundwork only. ContainerDO remains a stub (C-P0-11).",
+   "blockers": [
+    "catalogue v2 + immutable plan (PR2)",
+    "leaf-level evidence producer (PR3)",
+    "official driver suites (E-P0-08)",
+    "ContainerDO lifecycle model"
+   ]
+  },
+  {
+   "id": "G2",
+   "title": "Real-platform probe run under an owner-approved envelope",
+   "state": "NOT_READY_TO_EXECUTE",
+   "authority": "v16 brief G2; platform-probe spec (14 probe IDs)",
+   "why": "Probe harness now implements all 14 IDs with fail-closed verdict aggregation and mock/fault self-tests (C-P0-10 repaired locally), but there is no owner-approved latency/throughput/cost/amplification envelope, no live credentials (SI-G0-3), and the control-plane authority boundary (C-P0-02..09) and product seam are prerequisites for anything beyond disposable platform probes.",
+   "blockers": [
+    "SI-G0-3 credentials",
+    "owner-approved G2 envelope",
+    "PR4 authority repairs",
+    "disposable resource plan"
+   ]
+  },
+  {
+   "id": "G3_PLUS",
+   "title": "Conformance / release gates beyond G2",
+   "state": "NOT_REACHABLE",
+   "authority": "v16 playbook ordering",
+   "why": "Earlier gates are open.",
+   "blockers": [
+    "G0",
+    "G1",
+    "G2"
+   ]
+  }
+ ],
+ "lanes": [
+  {
+   "id": "U0",
+   "state": "OPEN",
+   "why": "Baseline is a stale 104-row identity-weak archive; no fresh pristine U0 over the current tree."
+  },
+  {
+   "id": "U1",
+   "state": "OPEN",
+   "why": "104 rows, weak target-name identity, no current per-row provenance; oracle joins on name (CD-003)."
+  },
+  {
+   "id": "U2",
+   "state": "HISTORICAL_EXPERIMENTAL_NON_QUALIFYING",
+   "why": "Historical observation only; not current qualification."
+  },
+  {
+   "id": "U2S3",
+   "state": "HISTORICAL_EXPERIMENTAL_NON_QUALIFYING",
+   "why": "Archived run used a dirty 23-file staged tree (digest cc0d283a...); the current staged tree has 24 files and a different digest, and critical storage (cursor.rs, slate.rs, post_wal_guard.rs, storage.rs) changed after the run. Raw observation: 106 unique executable rows, 105 exited 0, 1 exited 101, 0 timeouts, 462 parsed passed, 2 parsed failed, 1 parsed ignored, 34 zero-case rows. That observation is preserved; it is NOT current-tree conformance and is never to be summarised as '105 green'.",
+   "raw_observation": {
+    "rows": 106,
+    "exit_zero": 105,
+    "exit_nonzero": 1,
+    "timeouts": 0,
+    "parsed_passed": 462,
+    "parsed_failed": 2,
+    "parsed_ignored": 1,
+    "zero_case_rows": 34,
+    "staged_tree_digest": "cc0d283a",
+    "staged_file_count": 23
+   }
+  },
+  {
+   "id": "U3.0",
+   "state": "RED",
+   "why": "The Rust remote-WAL client is incompatible with the current Worker protocol (C-P0-01): no capabilities, numeric u64 parsing, caller-supplied throughLsn, no batch envelope, legacy fencedBy expectations. Any prior U3.0 green claim is stale."
+  },
+  {
+   "id": "U3_U4_PRODUCT",
+   "state": "TYPED_UNAVAILABLE_BY_DESIGN",
+   "why": "Product profiles fail closed; the v17 per-database classic|slatedb-r2 seam is being built as refusal-first (S-P0-06). No product E2E exists."
+  },
+  {
+   "id": "OFFICIAL_DRIVERS",
+   "state": "NOT_IMPLEMENTED",
+   "why": "v17 requires official Rust/Python/TS driver suites on pristine and fork-classic now (post-G2 for slatedb-r2). Catalogue rows are in-repo wrappers only."
+  }
+ ],
+ "contradictions_registry": "docs/contradictions.json",
+ "owner_decisions_registry": "docs/owner-decisions.json",
+ "owner_decision_rule": "An OPEN owner decision cannot support a green gate. OD-005 (flake expiry placeholders) is OPEN; therefore any policy verdict that leans on the flake ledger is a development comparison, not final conformance.",
+ "actions": [
+  {
+   "id": "PR0",
+   "title": "Truth-only freeze and production containment",
+   "status": "DONE",
+   "items": [
+    "gate ledger + linter + rendered status",
+    "Mode-Q stop item reopened",
+    "ADR-0002/ADR-0010 marked incompatible (CD-005/CD-006)",
+    "legacy /session/register, /session/fence, local issuance, batch, budgets, outbox, audit excluded from the production surface",
+    "legacy sessions without lifecycle state refused + terminal backfill migration",
+    "U3/U4 remain typed-unavailable"
+   ],
+   "commits": [
+    "db1a103",
+    "20f542b"
+   ]
+  },
+  {
+   "id": "PR1",
+   "title": "Rebuild G0 source/tool truth",
+   "status": "DONE_WITH_RECORDED_REMAINDER",
+   "items": [
+    "OBJECT_STORE version/checksum reconciled",
+    "TDRIVER tree recorded",
+    "schema-driven per-kind lock validation + behavioral mutants",
+    "Mode-Q evidence itself remains BLOCKED (no Bazel here) - gate stays OPEN_RED"
+   ],
+   "commits": [
+    "db1a103"
+   ],
+   "status_note": "Mode-Q evidence itself remains BLOCKED (no Bazel here); G0 stays OPEN_RED"
+  },
+  {
+   "id": "PR2",
+   "title": "Catalogue v2 and immutable qualification plan",
+   "status": "BLOCKED_WITH_LOCAL_PARTIALS",
+   "items": [
+    "canonical shared identity",
+    "leaf/profile/fixture plan",
+    "Mode-Q crosswalk",
+    "driver namespaces"
+   ],
+   "commits": [
+    "5d072c6"
+   ],
+   "status_note": "identity fail-closure + machine-readable denominator scope landed; the leaf/profile qualification plan's Mode-Q crosswalk is Bazel-blocked and driver namespaces need the driver lane"
+  },
+  {
+   "id": "PR3",
+   "title": "Immutable leaf-level evidence producer and validator",
+   "status": "DONE_WITH_RECORDED_REMAINDER",
+   "items": [
+    "raw-log hashing + reparse binding",
+    "bundle root + COMPLETE-last",
+    "observation/policy split",
+    "ledger fingerprint binding",
+    "behavioral producer mutants",
+    "per-leaf result mapping for composite suites remains OPEN"
+   ],
+   "commits": [
+    "5d072c6"
+   ],
+   "status_note": "per-leaf result mapping for composite suites remains OPEN"
+  },
+  {
+   "id": "PR4",
+   "title": "Control-plane authority, migration, protocol",
+   "status": "DONE_WITH_RECORDED_REMAINDER",
+   "items": [
+    "immutable DO database binding",
+    "incarnation/generation-bound authority + rotation revocation",
+    "historical migration matrix from old-schema fixtures",
+    "canonical payload key binding",
+    "framed journal v2 with database identity",
+    "canonical u64 (no aliases) + checked incarnation",
+    "pre-auth structural bounds",
+    "capability outcome records",
+    "full tenant registry + external recovery root remain OPEN (platform-blocked)"
+   ],
+   "commits": [
+    "20f542b",
+    "864e727"
+   ],
+   "status_note": "full tenant/environment registry, authenticated ingress and external recovery root are platform work (C-P0-02/11, C-P1-03/05/06/08/09 partials recorded in the response document)"
+  },
+  {
+   "id": "PR4b",
+   "title": "Rust L1 client rewritten to the current protocol",
+   "status": "DONE",
+   "items": [
+    "capabilities + decimal u64 + snapshotId + batch envelope client",
+    "workerd integration test"
+   ],
+   "commits": [
+    "99038fc"
+   ]
+  },
+  {
+   "id": "PR5",
+   "title": "Storage containment and product seam",
+   "status": "DONE_WITH_RECORDED_REMAINDER",
+   "items": [
+    "bounded SlateDB uploader (patch series)",
+    "bounded post-WAL waits",
+    "recovery singleton idempotence/quarantine",
+    "checkpoint enumeration/fsync integrity",
+    "supervised background tasks",
+    "typed backend seam + BackendNotYetAvailable",
+    "checked sequence exhaustion (partial)"
+   ],
+   "commits": [
+    "60da7d8"
+   ],
+   "status_note": "uploader deadline/cancellation budgets, obligation-frontier redesign and registry-backed backend spec remain OPEN per the evidence file; slatedb patches 0002/0003 land with this commit"
+  },
+  {
+   "id": "PR6",
+   "title": "Fresh local baselines and official drivers",
+   "status": "OPEN",
+   "items": [
+    "fresh U0/U1/comparison/drivers/U2/U2S3 in order against packaged binaries"
+   ]
+  },
+  {
+   "id": "PR7",
+   "title": "CI as fail-closed truth plane",
+   "status": "DONE_WITH_RECORDED_REMAINDER",
+   "items": [
+    "pinned action SHAs",
+    "ledger/document-authority linter in CI",
+    "new validators + mutants in CI",
+    "full qualification jobs remain OPEN"
+   ],
+   "commits": [
+    "0b407ff"
+   ],
+   "status_note": "SBOM/provenance/tested-equals-shipped await a release pipeline; fresh qualification is a dispatch-only job"
+  },
+  {
+   "id": "PR8",
+   "title": "Complete Cloudflare probe harness locally",
+   "status": "DONE",
+   "items": [
+    "all 14 normative probe IDs",
+    "fail-closed verdict aggregation",
+    "mock/fault self-tests + mutants",
+    "bundle root + COMPLETE-last",
+    "owner envelope remains OPEN (owner input required)"
+   ],
+   "commits": [
+    "36f3f9f"
+   ]
+  }
+ ],
+ "q_dispositions": {
+  "dirty_read_scan_defaults": "CLOSED_NARROW regression guard (paused-precommit tests kept)",
+  "optional_capability_restrictions": "CLOSED_NARROW; broader authorization/receipt/ambiguity tracked under PR4",
+  "exact_blob_authority_counters": "PARTIAL; generation/incarnation now checked-canonical, Rust IDs/exhaustion partial",
+  "key_count_memo": "CLOSED_NARROW; TTL/object-I/O/singleflight controls OPEN",
+  "destructive_open_s3_purge": "APPLICATION_FIXED; provider IAM/delete/lifecycle proof OPEN (platform-blocked)",
+  "cache_wipe_error": "FIXED_AT_CALL_SITE with control",
+  "rocks_cursor_drop_order": "CLOSED_NARROW; complete forged-lifetime boundary OPEN (S-P1-02)",
+  "get_prev_retry_policy": "PARTIAL; terminal branch fail-stops, typed boundary + uploader budget under PR5",
+  "post_wal_containment": "PARTIAL; waits bounded this commit, validation-I/O semantics under J.5",
+  "session_takeover": "CONTAINED; legacy register excluded from production surface, refusal for unmigrated sessions",
+  "production_auth_tenant_boundary": "OPEN_P0; DO binding landed, full tenant registry OPEN",
+  "historical_migration": "REPAIRED_WITH_FIXTURES this commit (C-P0-06)",
+  "batch": "DISABLED_IN_PRODUCTION until G2 authorizes; pre-I/O bounds added",
+  "checkpoint": "PARTIAL; enumeration/fsync integrity landed, global-cut protocol OPEN",
+  "external_epochs": "PRIMITIVE_PROVED; full candidate integration OPEN (post-G2)",
+  "no_fork_firewall": "HYPOTHESIS_WITH_SPIKE; TOCTOU noted, contract revision required for adoption",
+  "evidence_denominator": "OPEN_P0; log-reparse/bundle binding landed, leaf-level plan OPEN",
+  "u2_u2s3_verdict": "HISTORICAL_NON_QUALIFYING",
+  "official_driver_parity": "NOT_IMPLEMENTED",
+  "G0": "OPEN_RED",
+  "G1": "OPEN",
+  "G2": "NOT_READY_TO_EXECUTE"
+ },
+ "forbidden_claims": [
+  {
+   "pattern": "G0.*\\bgreen\\b|\\bgreen\\b.*G0",
+   "reason": "G0 is OPEN_RED while Mode-Q evidence is absent"
+  },
+  {
+   "pattern": "[Ee]verything local is done",
+   "reason": "false: see ledger actions with status OPEN"
+  },
+  {
+   "pattern": "U3\\.0.*\\bgreen\\b",
+   "reason": "the Rust client is incompatible with the current Worker (C-P0-01)"
+  },
+  {
+   "pattern": "105 green",
+   "reason": "the U2S3 archive is a historical observation: 105 exited 0, with 2 parsed failed cases; never summarise as green"
+  }
+ ]
+}

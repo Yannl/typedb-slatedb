@@ -1,0 +1,173 @@
+{
+  "probe_id": "P-DO-01",
+  "title": "Request interleaving",
+  "spec_section": "## P-DO-01 — Request interleaving",
+  "mode": "mock",
+  "injected_fault": null,
+  "started_at": "2026-08-18T12:18:36.391Z",
+  "finished_at": "2026-08-18T12:18:36.392Z",
+  "verdict": "PASS",
+  "expected_outcome": "a controller procedure paused at a non-storage await never commits stale post-await validation; exactly one legal reducer trace",
+  "actual_outcome": "all 7 checks passed",
+  "checks": [
+    {
+      "label": "interleave state reset (got 200)",
+      "ok": true
+    },
+    {
+      "label": "conflicting commit lands while first op is parked (got 200)",
+      "ok": true
+    },
+    {
+      "label": "gate released (got 200)",
+      "ok": true
+    },
+    {
+      "label": "resumed operation must NOT commit its stale validation (got 409)",
+      "ok": true
+    },
+    {
+      "label": "exactly one commit in the reducer trace (got 1)",
+      "ok": true
+    },
+    {
+      "label": "committed value is the winner's (got conflict-B)",
+      "ok": true
+    },
+    {
+      "label": "trace is the one legal interleaving (got [\"slow:read@v1\",\"conflict:commit\",\"slow:rejected-stale\"])",
+      "ok": true
+    }
+  ],
+  "exchanges": [
+    {
+      "seq": 1,
+      "at": "2026-08-18T12:18:36.392Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/interleave/reset",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "0ee0231439f2d5cf4df03956583d650bba772e3b68e973f918f6e890f2441c44",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 11,
+        "body_sha256": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93",
+        "body_preview": "{\"ok\":true}"
+      },
+      "response_sha256": "d4a677d42a9d4d999ac650db5cb5b9f01bfbaa57f1d4256a5a347c22799e81f9"
+    },
+    {
+      "seq": 2,
+      "at": "2026-08-18T12:18:36.392Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/interleave/conflict",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 22,
+        "body_sha256": "9417d6e2b762fffb6ae8bc91f0c23a46fa5da5cddc4553db69f640be87586f76",
+        "body_preview": "{\"value\":\"conflict-B\"}"
+      },
+      "request_sha256": "99d99ab1c5b1e1f6ec4726bfcb06e12846c46028989c62bc2bef70e0cde7f14c",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 18,
+        "body_sha256": "93e592b48fad388bd2cc3698bb7355da877d1de728026adfd42437a456455bc4",
+        "body_preview": "{\"committed\":true}"
+      },
+      "response_sha256": "80570fde6f218993226b3cd4b3dedef4037822221ae7514a4c639cb28e593bb5"
+    },
+    {
+      "seq": 3,
+      "at": "2026-08-18T12:18:36.392Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/interleave/release",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "203e2722459b8320abf06257ca0c047c82547ad0659b6fa5770579356d309d25",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 17,
+        "body_sha256": "3bbb434f30b56ad676784700d5a01b35aa2fa939940c80af1f9f1d98052e11d6",
+        "body_preview": "{\"released\":true}"
+      },
+      "response_sha256": "cfb7cf3a4864a6d6d43e4b348538d11dc5cb07b3afc4afc3d099af8db6cffd22"
+    },
+    {
+      "seq": 4,
+      "at": "2026-08-18T12:18:36.392Z",
+      "request": {
+        "service": "harness",
+        "method": "POST",
+        "path": "/do/interleave/slow-op",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 18,
+        "body_sha256": "f2c7043ba5a7742fdbcc22b94d2821ec2eea55e16209e49d5d47a1130f4b90b9",
+        "body_preview": "{\"value\":\"slow-A\"}"
+      },
+      "request_sha256": "454276f91ba7b95ae00dcee20f38c065ea713f1069b586009ce74d4219e444bf",
+      "response": {
+        "status": 409,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 28,
+        "body_sha256": "a3a7746d751431fc8b7e669148a91b36f41cbc4b9f85a00b54ee79833ac283bb",
+        "body_preview": "{\"error\":\"stale validation\"}"
+      },
+      "response_sha256": "63e63fc23807bfc9ede5ed3996ad3784317d79e94ba4a14c846224039175e595"
+    },
+    {
+      "seq": 5,
+      "at": "2026-08-18T12:18:36.392Z",
+      "request": {
+        "service": "harness",
+        "method": "GET",
+        "path": "/do/interleave/trace",
+        "headers": {},
+        "body_length": 0,
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "body_preview": ""
+      },
+      "request_sha256": "c4576f32596285d47f23db64149bcb3a3401f1119bdee56136180072b72e6507",
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body_length": 111,
+        "body_sha256": "60037fb9f612debbd4afd172de17fc7682d8f6ad6a1b221be1a6cab7a159ad3d",
+        "body_preview": "{\"trace\":[\"slow:read@v1\",\"conflict:commit\",\"slow:rejected-stale\"],\"commits\":1,\"version\":2,\"value\":\"conflict-B\"}"
+      },
+      "response_sha256": "45a600159eaec8bccaa9586c679aa95adec2af02a034d13c19de38697a5519bb"
+    }
+  ],
+  "notes": []
+}

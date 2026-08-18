@@ -1,8 +1,8 @@
 {
   "document": "workspace release binding (brief v16 \u00a70.2.1; generated, never hand-edited)",
   "generated_by": "tools/source-lock/generate_workspace_lock.py",
-  "repo_commit": "938584140d0cb842987d50bd816c92a119c66b42",
-  "source_lock_sha256": "9cf330d8d30de531c94bdb40ecfcde38a84f5dc124d6289a8b61568af8a51860",
+  "repo_commit": "99038fc96ab2b72709bbd535e02cb78d0b81f2a2",
+  "source_lock_sha256": "c813de8925c0984c7da1a52c8ff58b3a1fc796a6b026faea0be32f7a158e350e",
   "workspaces": {
     "fork/typedb": {
       "manifest": "fork/typedb/Cargo.toml",
@@ -18,7 +18,7 @@
     },
     "control-plane": {
       "manifest": "control-plane/package.json",
-      "manifest_sha256": "114a5d1a3fdfa4e04679da7c5e5eda2946b1c290b38ce5212ef93dc16f0f66b5",
+      "manifest_sha256": "967c99ddb84a1840ea4a107c09f724c191e5d972e9adda32dff2c90516e348c3",
       "lockfile": "control-plane/package-lock.json",
       "lockfile_sha256": "5a6476047a4a68ae604dcec17adda832fb7b7868adf49cf7bcb17449af473fce"
     }
@@ -26,7 +26,7 @@
   "fork_staging": {
     "fork_root": "fork/typedb",
     "staged_file_count": 776,
-    "staged_tree_sha256": "52dc107b71c00f9b8211524b74101f3c0fc5751ceeaa39f4fcfdd67e7371a430",
+    "staged_tree_sha256": "e02b79fca653d24964d6766c3c09612ad0b50e32240432f202e0bb5609d480d1",
     "note": "sources/typedb under test == locked TB revision + this patch set"
   },
   "slatedb_consumption": {

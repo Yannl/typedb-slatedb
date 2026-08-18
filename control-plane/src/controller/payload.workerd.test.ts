@@ -10,6 +10,7 @@
  * layers: the capability refusal and the surviving identical-bytes races.
  */
 import { SELF, env } from "cloudflare:test";
+import { DEV_ISSUER_SECRET } from "./core/key-config.ts";
 import { describe, expect, it } from "vitest";
 
 interface TestEnv {
@@ -29,7 +30,7 @@ async function issueCap(spec: Record<string, unknown>): Promise<{ token: string;
     method: "POST",
     // Q-02: issuance is credentialed in every posture; this is the L1 dev
     // credential from wrangler.toml's local-dev profile (core/key-config.ts)
-    headers: { "content-type": "application/json", "x-issuer-authorization": "dev-insecure-issuer-secret" },
+    headers: { "content-type": "application/json", "x-issuer-authorization": DEV_ISSUER_SECRET },
     body: JSON.stringify({ principal: "workerd-test", databaseId: DB, ...spec }),
   });
   return (await response.json()) as { token: string; key?: string };

@@ -85,10 +85,14 @@ def fetch(crate: str, version: str, digest: str) -> pathlib.Path:
     if target.exists() and sha256_file(target) == digest:
         return target
     url = f"https://static.crates.io/crates/{crate}/{crate}-{version}.crate"
+    # curl, not urllib: it picks up the environment's proxy and CA
+    # configuration, which sandboxed/corporate networks depend on (same
+    # rationale, verbatim, as materialize_sources.py's fetch)
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
-        with urllib.request.urlopen(url, timeout=120) as response:
-            shutil.copyfileobj(response, tmp)
         staged = pathlib.Path(tmp.name)
+    subprocess.run(["curl", "--fail", "--location", "--silent", "--show-error",
+                    "--retry", "5", "--retry-all-errors",
+                    url, "--output", str(staged)], check=True)
     observed = sha256_file(staged)
     if observed != digest:
         staged.unlink()

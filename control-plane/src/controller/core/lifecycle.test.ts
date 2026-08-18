@@ -15,38 +15,16 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import Database from "better-sqlite3";
-import { ControllerCore, type FinalizeRequest, type SyncSql } from "./procedures.ts";
+import { ControllerCore, type FinalizeRequest } from "./procedures.ts";
+import { makeSql as makeSqlFixture, reqFactory } from "./test-support.ts";
 
-function makeSql(): SyncSql {
-  const db = new Database(":memory:");
-  return {
-    exec(sql: string, ...params: unknown[]) {
-      if (params.length === 0 && /;\s*\S/.test(sql)) {
-        db.exec(sql);
-        return [];
-      }
-      const stmt = db.prepare(sql);
-      if (stmt.reader) return stmt.all(...params) as Record<string, unknown>[];
-      stmt.run(...params);
-      return [];
-    },
-    transaction<T>(fn: () => T): T {
-      return db.transaction(fn)();
-    },
-  };
+function makeSql() {
+  return makeSqlFixture().sql;
 }
 
-let opCounter = 0;
+const baseReq = reqFactory("op");
 function req(session: string, overrides: Partial<FinalizeRequest> = {}): FinalizeRequest {
-  opCounter += 1;
-  return {
-    databaseId: "db1", generation: 1, startupSessionId: session,
-    operationId: `op-${opCounter}`, requestDigest: `digest-op-${opCounter}`,
-    sequencingKind: "SEQUENCED", recordType: 2, logicalKey: null,
-    payloadKey: `payload/op-${opCounter}`, payloadDigest: `pd-op-${opCounter}`, payloadLength: 10,
-    ...overrides,
-  };
+  return baseReq({ startupSessionId: session, ...overrides });
 }
 
 /** A core with a fully controllable clock. */

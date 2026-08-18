@@ -10,6 +10,7 @@ Negative control: hide or corrupt any checkout (e.g. rename sources/typedb)
 and this linter MUST fail. The archived run of that control lives in
 docs/evidence/G0/negative-control-missing-node.txt.
 """
+import hashlib
 import json
 import pathlib
 import subprocess
@@ -89,7 +90,6 @@ def check_registry_node(nid: str, node: dict, lock_rel: str, failures: list) -> 
 
 
 def sha256(path: pathlib.Path) -> str:
-    import hashlib
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
@@ -97,7 +97,7 @@ def sha256(path: pathlib.Path) -> str:
     return h.hexdigest()
 
 
-def check_staged_fork(dest):
+def check_staged_fork(workspace_lock_stale):
     """The staged tree must be exactly `locked revision + the locked fork`.
 
     Returns [] when sources/typedb carries the complete fork patch set and
@@ -123,10 +123,9 @@ def check_staged_fork(dest):
         out.append("TB: workspace-lock.json records no fork_staging digest - "
                    "regenerate it (tools/source-lock/generate_workspace_lock.py)")
         return out
-    gen = subprocess.run(
-        [sys.executable, str(REPO / "tools" / "source-lock" / "generate_workspace_lock.py"),
-         "--check"], capture_output=True, text=True)
-    if gen.returncode != 0:
+    # the digest comparison itself is main()'s single generate_workspace_lock
+    # --check run (previously re-run here: a second full-tree rehash per lint)
+    if workspace_lock_stale:
         out.append("TB: staged fork digest does not match workspace-lock.json "
                    "(see generate_workspace_lock.py --check)")
     return out
@@ -136,6 +135,13 @@ def main() -> int:
     failures = []
     lock = json.loads(LOCK.read_text())
     nodes = {n["id"]: n for n in lock["nodes"]}
+
+    # ONE workspace-lock verification per lint (it rehashes the whole fork
+    # tree); both the TB staged-fork check and the workspace binding check
+    # below consume this result
+    ws_check = subprocess.run(
+        [sys.executable, str(REPO / "tools" / "source-lock" / "generate_workspace_lock.py"), "--check"],
+        capture_output=True, text=True)
 
     for nid, node in nodes.items():
         status = node.get("status", "")
@@ -170,7 +176,7 @@ def main() -> int:
                 # ignore the lint. Accept exactly one dirty state - fully
                 # staged, with the fork patch set matching the digest bound
                 # in workspace-lock.json - and fail everything else.
-                failures.extend(check_staged_fork(d))
+                failures.extend(check_staged_fork(ws_check.returncode != 0))
             else:
                 failures.append(f"{nid}: dirty tree at sources/{dirname}")
 
@@ -185,10 +191,6 @@ def main() -> int:
         for lock_rel in lock_rels:
             check_registry_node(nid, node, lock_rel, failures)
 
-    # workspace release binding must exist and match reality
-    ws_check = subprocess.run(
-        [sys.executable, str(REPO / "tools" / "source-lock" / "generate_workspace_lock.py"), "--check"],
-        capture_output=True, text=True)
     if ws_check.returncode != 0:
         failures.append(f"workspace-lock: {ws_check.stdout.strip() or ws_check.stderr.strip()}")
 

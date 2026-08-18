@@ -91,8 +91,10 @@ export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   return diff === 0;
 }
 
+const UTF8_ENCODER = new TextEncoder();
+
 export function utf8(text: string): Uint8Array {
-  return new TextEncoder().encode(text);
+  return UTF8_ENCODER.encode(text);
 }
 
 export function hex(bytes: Uint8Array): string {

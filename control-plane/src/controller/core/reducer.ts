@@ -20,7 +20,8 @@ export interface WalRecordEvent {
   appendLsn: string | number;
   typeSequence: string | number;
   sequencingKind: "SEQUENCED" | "UNSEQUENCED";
-  recordType: number;
+  /** absent on events journaled before migration v2 (reducer defaults 0) */
+  recordType?: number;
   payloadKey: string;
   payloadDigest: string;
   logicalKey: string | null;

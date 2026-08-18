@@ -41,13 +41,14 @@ import re
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import common  # noqa: E402
 import verdict as verdict_policy  # noqa: E402
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 TB = REPO / "sources" / "typedb"
 BH = REPO / "sources" / "typedb-behaviour"
 CATALOG = REPO / "docs" / "evidence" / "G1" / "upstream-test-catalog.json"
-LEDGER = REPO / "docs" / "evidence" / "flake-ledger.json"
+LEDGER = verdict_policy.LEDGER
 
 # Bazel rust_test names that intentionally have no cargo-lane equivalent.
 # Every entry needs a reason; an empty reason is treated as absent.
@@ -270,41 +271,9 @@ def check_failpoints(catalog):
 # ------------------------------------------------------------- flake ledger
 
 def required_targets_from_catalog(catalog):
-    """The executable denominator, joined to the runner's row ids.
-
-    The catalogue's target ids (`cargo:<pkg>:<kind>:<target>`) and the
-    runner's row ids (`<pkg>:<target>`) live in different id spaces, which is
-    why NONE of the 106 result ids could be found in the catalogue and the
-    denominator was never actually checked. The cargo package/target pair the
-    catalogue already records is the join, and every target it declares
-    zero-case (bench targets, crates with no #[test]) is subtracted here with
-    its declared reason rather than silently ignored.
-    """
-    declared = {e["subject_id"]: e.get("reason") for e in catalog.get("exclusions", [])}
-    leaves = {}
-    for lc in catalog["leaf_cases"]:
-        leaves[lc["target_id"]] = leaves.get(lc["target_id"], 0) + 1
-    required, case_bearing, excluded = set(), set(), {}
-    for t in catalog["targets"]:
-        if t.get("origin") != "CARGO":
-            continue
-        pkg, tgt = t.get("cargo_package"), t.get("cargo_target")
-        if not pkg or not tgt:
-            continue
-        rid = f"{pkg}:{tgt}"
-        n = leaves.get(t["target_id"], 0)
-        # see run_u0.required_executable_targets: only [[bench]] targets are
-        # exempt from producing a row; a crate with no #[test] still runs and
-        # reports zero cases
-        is_bench = t["target_id"].split(":")[2:3] == ["bench"]
-        if is_bench:
-            excluded[rid] = declared.get(
-                t["target_id"], "cargo target kind == bench: compiled, never executed as a test")
-            continue
-        required.add(rid)
-        if n > 0:
-            case_bearing.add(rid)
-    return required, case_bearing, excluded
+    """The shared denominator join - see common.required_executable_targets
+    (one implementation; run_u0 consumes the same one)."""
+    return common.required_executable_targets(catalog)
 
 
 def check_ledger(results_dir, catalog=None, ledger_path=None):

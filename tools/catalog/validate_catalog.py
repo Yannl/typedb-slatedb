@@ -28,6 +28,7 @@ Usage:
 """
 import argparse
 import datetime
+import copy
 import json
 import pathlib
 import re
@@ -48,8 +49,6 @@ def type_ok(value, spec):
     for n in names:
         t = TYPES.get(n)
         if t is None:
-            continue
-        if n == "integer" and isinstance(value, bool):
             continue
         if n in ("number", "integer") and isinstance(value, bool):
             continue
@@ -185,7 +184,6 @@ def self_test():
     failures = []
 
     def check(label, mutate, expect_schema=False):
-        import copy
         cat = copy.deepcopy(base)
         mutate(cat)
         errs = []

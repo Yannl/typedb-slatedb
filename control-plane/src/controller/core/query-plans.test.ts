@@ -20,58 +20,16 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import Database from "better-sqlite3";
-import { ControllerCore, u64Blob, type FinalizeRequest, type SyncSql } from "./procedures.ts";
+import type Database from "better-sqlite3";
+import { ControllerCore, u64Blob } from "./procedures.ts";
+import { boot as bootFixture, reqFactory, type TestDb } from "./test-support.ts";
 
 interface Recorded {
   sql: string;
   params: unknown[];
 }
 
-function makeRecordingSql(): { sql: SyncSql; db: InstanceType<typeof Database>; recorded: Recorded[]; recording: { on: boolean } } {
-  const db = new Database(":memory:");
-  const recorded: Recorded[] = [];
-  const recording = { on: false };
-  const sql: SyncSql = {
-    exec(text: string, ...params: unknown[]) {
-      if (params.length === 0 && /;\s*\S/.test(text)) {
-        db.exec(text);
-        return [];
-      }
-      if (recording.on && /^\s*(SELECT|UPDATE|DELETE)\b/i.test(text)) {
-        recorded.push({ sql: text, params });
-      }
-      const stmt = db.prepare(text);
-      if (stmt.reader) return stmt.all(...params) as Record<string, unknown>[];
-      stmt.run(...params);
-      return [];
-    },
-    transaction<T>(fn: () => T): T {
-      return db.transaction(fn)();
-    },
-  };
-  return { sql, db, recorded, recording };
-}
-
-let opCounter = 0;
-function req(overrides: Partial<FinalizeRequest> = {}): FinalizeRequest {
-  opCounter += 1;
-  const id = `qp-op-${opCounter}`;
-  return {
-    databaseId: "db1",
-    generation: 3,
-    startupSessionId: "sess-1",
-    operationId: id,
-    requestDigest: `digest-${id}`,
-    sequencingKind: "SEQUENCED",
-    recordType: 2,
-    logicalKey: null,
-    payloadKey: `payload/${id}`,
-    payloadDigest: `pd-${id}`,
-    payloadLength: 100,
-    ...overrides,
-  };
-}
+const req = reqFactory("qp-op", { generation: 3, payloadLength: 100 });
 
 /** Directly seed `n` finalized WAL rows (and the tail counter that admission
  *  reads) so history exists without paying n journal appends in test time. */
@@ -93,13 +51,16 @@ function seedHistory(db: InstanceType<typeof Database>, n: number): void {
   })();
 }
 
-function bootCore(): { core: ControllerCore; db: InstanceType<typeof Database>; recorded: Recorded[]; recording: { on: boolean } } {
-  const { sql, db, recorded, recording } = makeRecordingSql();
-  const core = new ControllerCore(sql);
-  core.registerSession("db1", 3, "sess-1");
-  const budgeted = core.setBudgets("db1",
-    { maxUnpublishedOutbox: 100_000, maxPayloadLength: 1_000_000, maxTailRecords: 10_000_000 }, "sess-1");
-  if (!budgeted.ok) throw new Error(`fixture budget refused: ${JSON.stringify(budgeted)}`);
+function bootCore(): { core: ControllerCore; db: TestDb; recorded: Recorded[]; recording: { on: boolean } } {
+  const recorded: Recorded[] = [];
+  const recording = { on: false };
+  const { core, db } = bootFixture({
+    generation: 3,
+    budgets: { maxUnpublishedOutbox: 100_000, maxPayloadLength: 1_000_000, maxTailRecords: 10_000_000 },
+    observe: (sql, params) => {
+      if (recording.on && /^\s*(SELECT|UPDATE|DELETE)\b/i.test(sql)) recorded.push({ sql, params });
+    },
+  });
   return { core, db, recorded, recording };
 }
 

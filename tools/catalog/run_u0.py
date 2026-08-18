@@ -15,7 +15,10 @@ Usage: run_u0.py [--filter SUBSTR] [--skip SUBSTR ...] [--out DIR]
 import argparse
 import json
 import os
+import hashlib
 import pathlib
+import shutil
+import re
 import signal
 import subprocess
 import sys
@@ -28,7 +31,9 @@ DEFAULT_TIMEOUT = 1800
 CATALOG = REPO / "docs" / "evidence" / "G1" / "upstream-test-catalog.json"
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import common  # noqa: E402
 import verdict as verdict_policy  # noqa: E402
+from common import package_name_from_id, sha256_file  # noqa: E402
 
 ENV_BASE = {
     **os.environ,
@@ -42,21 +47,6 @@ ASSEMBLY_TARGETS = {"test_assembly", "test_fail_points", "test_admin_assembly"}
 ASSEMBLY_ENV = {"TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"}
 # execution order: fast crates first, server-binding suites last
 ORDER_LAST = ("test_behaviour", "test_http", "test_assembly", "test_fail_points")
-
-
-def package_name_from_id(package_id):
-    """Package name from a cargo package-id spec (`url[#[name@]version]`).
-
-    Cargo omits the `name@` part of the fragment when the name equals the
-    final path segment of the url, so `...typedb/concept#0.0.0` means package
-    `concept` while `...storage/tests#test_utils_storage@0.0.0` means package
-    `test_utils_storage`. Parsing the fragment alone collapses most workspace
-    crates onto the bare version string.
-    """
-    url, _, frag = package_id.partition("#")
-    if "@" in frag:
-        return frag.split("@")[0]
-    return url.rstrip("/").rsplit("/", 1)[-1]
 
 
 def discover_executables(packages=None):
@@ -128,7 +118,6 @@ def executed_tree_identity():
                               capture_output=True, text=True).stdout.strip()
     status = subprocess.run(["git", "-C", str(TB), "status", "--porcelain"],
                             capture_output=True, text=True).stdout
-    import hashlib
     h = hashlib.sha256()
     # `git status --porcelain` lists exactly the staged-fork delta against the
     # pinned revision; hashing the delta's contents (not just its names) makes
@@ -148,57 +137,11 @@ def executed_tree_identity():
 
 
 def required_executable_targets():
-    """Catalogue targets that MUST produce a result row, and the case-bearing
-    subset. The catalogue's own `target_id` (`cargo:<pkg>:<kind>:<target>`) is
-    not the runner's row id (`<pkg>:<target>`); the join is the cargo
-    package/target pair the catalogue already records, and without it the
-    denominator was never checked at all (none of the 106 result ids exists
-    in the catalogue's id space).
-    """
+    """The shared denominator join (common.required_executable_targets),
+    fronted by the missing-catalogue case this runner tolerates."""
     if not CATALOG.exists():
         return None, None, {}
-    cat = json.loads(CATALOG.read_text())
-    leaves = {}
-    for lc in cat["leaf_cases"]:
-        leaves[lc["target_id"]] = leaves.get(lc["target_id"], 0) + 1
-    # exclusions are declared against CATALOGUE ids; translate them into the
-    # runner's row-id space here, or they silently never match
-    declared_by_catalog_id = {e["subject_id"]: e.get("reason")
-                              for e in cat.get("exclusions", []) if e.get("subject_id")}
-    required, case_bearing, excluded = set(), set(), {}
-    for t in cat["targets"]:
-        if t.get("origin") != "CARGO":
-            continue
-        pkg, tgt = t.get("cargo_package"), t.get("cargo_target")
-        if not pkg or not tgt:
-            continue
-        rid = f"{pkg}:{tgt}"
-        n = leaves.get(t["target_id"], 0)
-        # Two different things wear the same "zero leaves" label and must not
-        # be confused. A [[bench]] target is COMPILED by the cargo test lane
-        # and never executed as a test, so it produces no row and is exempt
-        # from the denominator. A crate with no #[test] functions DOES get
-        # executed and reports zero cases - it stays required, it is simply
-        # not case-bearing. Excluding the second kind made every one of them
-        # look like "declared excluded but ran anyway".
-        is_bench = t["target_id"].split(":")[2:3] == ["bench"]
-        if is_bench:
-            excluded[rid] = declared_by_catalog_id.get(
-                t["target_id"], "cargo target kind == bench: compiled, never executed as a test")
-            continue
-        required.add(rid)
-        if n > 0:
-            case_bearing.add(rid)
-    return required, case_bearing, excluded
-
-
-def sha256_file(p):
-    import hashlib
-    h = hashlib.sha256()
-    with open(p, "rb") as f:
-        for c in iter(lambda: f.read(1 << 20), b""):
-            h.update(c)
-    return h.hexdigest()
+    return common.required_executable_targets(json.loads(CATALOG.read_text()))
 
 
 def run_one(e, out_dir, timeout, reap=False):
@@ -221,14 +164,12 @@ def run_one(e, out_dir, timeout, reap=False):
         # test a private runfiles tree; extraction into a shared cwd races)
         iso = out_dir / "iso" / e["target"]
         if iso.exists():
-            import shutil as _sh
-            _sh.rmtree(iso)
+            shutil.rmtree(iso)
         (iso / "tests" / "assembly").mkdir(parents=True)
         os.link(REPO / "sources" / "assembly-artifacts" / "typedb-all-linux-x86_64.tar.gz",
                 iso / "typedb-all-linux-x86_64.tar.gz")
-        import shutil as _sh
-        _sh.copy2(TB / "tests" / "assembly" / "script.tql",
-                  iso / "tests" / "assembly" / "script.tql")
+        shutil.copy2(TB / "tests" / "assembly" / "script.tql",
+                     iso / "tests" / "assembly" / "script.tql")
         cwd = iso
     start = time.time()
 
@@ -256,7 +197,7 @@ def run_one(e, out_dir, timeout, reap=False):
         time.sleep(0.5)
 
     argv = [e["executable"], "--format", "terse"]
-    if e["target"] in ASSEMBLY_TARGETS or e["target"] == "test_admin_assembly":
+    if e["target"] in ASSEMBLY_TARGETS:
         reap_strays()
         # serial group: the tests inside these binaries extract/spawn a
         # server in the shared per-target cwd; Bazel's sandbox equivalent is
@@ -268,8 +209,7 @@ def run_one(e, out_dir, timeout, reap=False):
     # a retry: a libtest run that FAILED its tests is never re-executed.
     if code not in (0, None):
         head = raw.read_text(errors="replace")[:400]
-        if "Unrecognized option" in head or "unexpected argument" in head \
-                or "error: Found argument" in head:
+        if common.is_non_libtest_harness_error(head):
             code, timed_out = execute([e["executable"]])
     dur = time.time() - start
     text = raw.read_text(errors="replace")
@@ -278,7 +218,6 @@ def run_one(e, out_dir, timeout, reap=False):
     passed = failed = ignored = measured = filtered = 0
     for line in text.splitlines():
         if line.startswith("test result:"):
-            import re
             for n, key in re.findall(r"(\d+) (passed|failed|ignored|measured|filtered out)", line):
                 n = int(n)
                 if key == "passed":
@@ -291,7 +230,7 @@ def run_one(e, out_dir, timeout, reap=False):
                     measured += n
                 else:
                     filtered += n
-    if e["target"] in ASSEMBLY_TARGETS or e["target"] == "test_admin_assembly":
+    if e["target"] in ASSEMBLY_TARGETS:
         reap_strays()
     if reap:
         # free disk: the binary is reproducible from the pinned source +
@@ -300,7 +239,6 @@ def run_one(e, out_dir, timeout, reap=False):
             os.unlink(e["executable"])
         except OSError:
             pass
-        import shutil
         shutil.rmtree(tmp, ignore_errors=True)
     return {
         "target_id": tid,

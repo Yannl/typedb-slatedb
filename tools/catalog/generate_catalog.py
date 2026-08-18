@@ -28,11 +28,12 @@ import re
 import subprocess
 import sys
 
-ENV = {**os.environ, "CARGO_INCREMENTAL": "0",
-       "CARGO_PROFILE_DEV_DEBUG": "false",
-       "CARGO_PROFILE_TEST_DEBUG": "false"}
-
 REPO = pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import common  # noqa: E402
+from common import package_name_from_id  # noqa: E402
+
+ENV = common.CARGO_ENV
 # WHICH TREE this catalogue describes.
 #
 # The catalogue is the UPSTREAM denominator, so it must be enumerated from a
@@ -61,21 +62,6 @@ SERIAL_GROUPS = {
 }
 
 DEFAULT_TIMEOUT = 1800
-
-
-def package_name_from_id(package_id: str) -> str:
-    """Package name from a cargo package-id spec (`url[#[name@]version]`).
-
-    Cargo omits the `name@` part of the fragment when the name equals the
-    final path segment of the url, so `...typedb/concept#0.0.0` means package
-    `concept` while `...storage/tests#test_utils_storage@0.0.0` means package
-    `test_utils_storage`. Parsing the fragment alone collapses most workspace
-    crates onto the bare version string.
-    """
-    url, _, frag = package_id.partition("#")
-    if "@" in frag:
-        return frag.split("@")[0]
-    return url.rstrip("/").rsplit("/", 1)[-1]
 
 
 def sha256_bytes(b: bytes) -> str:
@@ -156,9 +142,7 @@ def libtest_cases():
         for run in (listing, ignored):
             if run.returncode != 0:
                 combined = (run.stdout + run.stderr)
-                if not ("Unrecognized option" in combined
-                        or "unexpected argument" in combined
-                        or "error: Found argument" in combined):
+                if not common.is_non_libtest_harness_error(combined):
                     raise RuntimeError(
                         f"--list failed for {pkg}:{tname} ({exe}) rc={run.returncode}: "
                         f"{combined[:400]}")
@@ -626,8 +610,16 @@ def main():
     catalog = {
         "schema_version": 1,
         "source_lock_digest": source_lock_digest,
-        "rust_toolchain": {"rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
-                           "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)"},
+        # measured from the toolchain that actually enumerated this tree -
+        # an asserted string here misfiles the catalogue under a toolchain
+        # nobody ran (the exact defect run_u0.executed_toolchain closed for
+        # corpus rows)
+        "rust_toolchain": {
+            "rustc": subprocess.check_output(
+                ["rustc", TOOLCHAIN, "--version"], env=ENV, text=True).strip(),
+            "cargo": subprocess.check_output(
+                ["cargo", TOOLCHAIN, "--version"], env=ENV, text=True).strip(),
+        },
         "target_triple": "x86_64-unknown-linux-gnu",
         "bazel_query_oracle": None,
         "profiles": profiles,
@@ -637,7 +629,6 @@ def main():
         "fixtures": fixtures,
         "exclusions": exclusions,
     }
-    OUT.parent.mkdir(parents=True, exist_ok=True)
     out_path = pathlib.Path(args.out).resolve() if args.out else OUT
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(catalog, indent=1, sort_keys=True) + "\n")

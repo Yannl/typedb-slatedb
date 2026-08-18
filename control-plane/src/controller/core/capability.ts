@@ -23,6 +23,8 @@
 
 import { bytesEqual, canonicalJson, fromHex, hmacSha256, hex, utf8 } from "./journal-crypto.ts";
 
+const UTF8_DECODER = new TextDecoder();
+
 export interface CapabilityPayload {
   principal: string;
   databaseId: string;
@@ -73,8 +75,10 @@ export type CapabilityCheck =
  */
 export const REQUIRED_RESTRICTIONS: Record<string, ReadonlyArray<"session" | "key" | "digest" | "maxBytes">> = {
   PUT_PAYLOAD: ["key", "digest", "maxBytes"],
+  // the batch route authorizes as WAL_FINALIZE (one session-bound token, one
+  // transaction) - a separate batch method name here would be unreachable
+  // policy nothing mints or expects
   WAL_FINALIZE: ["session"],
-  WAL_FINALIZE_BATCH: ["session"],
 };
 
 /**
@@ -147,7 +151,7 @@ export function checkCapability(
   }
   let payload: CapabilityPayload;
   try {
-    payload = JSON.parse(new TextDecoder().decode(bodyBytes)) as CapabilityPayload;
+    payload = JSON.parse(UTF8_DECODER.decode(bodyBytes)) as CapabilityPayload;
   } catch {
     return { ok: false, error: "CAPABILITY_MALFORMED" };
   }

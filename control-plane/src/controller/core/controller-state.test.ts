@@ -15,50 +15,15 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import Database from "better-sqlite3";
-import { ControllerCore, u64Blob, type FinalizeRequest, type SyncSql } from "./procedures.ts";
+import type Database from "better-sqlite3";
+import { ControllerCore, u64Blob } from "./procedures.ts";
 import { utf8 } from "./journal-crypto.ts";
+import { boot as bootFixture, reqFactory } from "./test-support.ts";
 
-function makeSql(): { sql: SyncSql; db: InstanceType<typeof Database> } {
-  const db = new Database(":memory:");
-  const sql: SyncSql = {
-    exec(query: string, ...params: unknown[]) {
-      if (params.length === 0 && /;\s*\S/.test(query)) {
-        db.exec(query);
-        return [];
-      }
-      const stmt = db.prepare(query);
-      if (stmt.reader) return stmt.all(...params) as Record<string, unknown>[];
-      stmt.run(...params);
-      return [];
-    },
-    transaction<T>(fn: () => T): T {
-      return db.transaction(fn)();
-    },
-  };
-  return { sql, db };
-}
-
-let opCounter = 0;
-function req(overrides: Partial<FinalizeRequest> = {}): FinalizeRequest {
-  opCounter += 1;
-  const id = `sop-${opCounter}`;
-  return {
-    databaseId: "db1", generation: 1, startupSessionId: "sess-1",
-    operationId: id, requestDigest: `digest-${id}`,
-    sequencingKind: "SEQUENCED", recordType: 2, logicalKey: null,
-    payloadKey: `payload/${id}`, payloadDigest: `pd-${id}`, payloadLength: 10,
-    ...overrides,
-  };
-}
+const req = reqFactory("sop");
 
 function boot(): { core: ControllerCore; db: InstanceType<typeof Database> } {
-  const { sql, db } = makeSql();
-  const core = new ControllerCore(sql, { journalKey: utf8("state-test-key") });
-  core.registerSession("db1", 1, "sess-1");
-  // Q-12: writes are denied without a validated budget row
-  core.setBudgets("db1", { maxUnpublishedOutbox: 10_000, maxPayloadLength: 1_000_000, maxTailRecords: 1_000_000 }, "sess-1");
-  return { core, db };
+  return bootFixture({ journalKey: utf8("state-test-key") });
 }
 
 function kinds(db: InstanceType<typeof Database>): string[] {

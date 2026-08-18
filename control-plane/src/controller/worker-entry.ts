@@ -45,14 +45,15 @@
  *   POST /outbox/{db}/ack          {upToControlSeq} - ack after durable processing
  */
 
-export { DatabaseControllerDO } from "./database-controller.ts";
+import { DatabaseControllerDO } from "./database-controller.ts";
+export { DatabaseControllerDO };
 
-import { u64FromWire } from "./core/procedures.ts";
+import { u64FromWire, type FinalizeRequest } from "./core/procedures.ts";
 import { canonicalJson } from "./core/journal-crypto.ts";
 import { resolveKeyConfig } from "./core/key-config.ts";
 
 interface Env {
-  CONTROLLER: DurableObjectNamespace;
+  CONTROLLER: DurableObjectNamespace<DatabaseControllerDO>;
   PAYLOADS: R2Bucket;
   /** Q-24/Q-02: key posture + issuance credential; see core/key-config.ts. */
   CONTROLLER_KEY_PROFILE?: string;
@@ -153,8 +154,10 @@ async function mapBounded<T, R>(items: T[], limit: number, fn: (item: T) => Prom
 const R2_SUBREQUEST_CEILING = 6;
 const PAYLOAD_FETCH_CONCURRENCY = R2_SUBREQUEST_CEILING;
 
-/** Hard admission bound on any single request body, enforced BEFORE the body
- *  is read (contract F9: 8 MiB per data-path object). The payload route used
+/** Admission bound for the two byte-bearing routes (payload PUT and batch
+ *  finalize), enforced BEFORE the body is read (contract F9: 8 MiB per
+ *  data-path object). Other routes carry small structural JSON bodies and
+ *  are not gated by this constant. The payload route used
  *  to buffer the whole body and only then consult the capability's budget, so
  *  the first oversized object was always admitted, fully materialised, and
  *  base64-expanded in a 128 MiB isolate before anything refused it. */
@@ -241,13 +244,17 @@ async function canonicalRequestDigest(req: Record<string, unknown>): Promise<str
   return sha256hex(new TextEncoder().encode(canonicalJson(subject)).buffer as ArrayBuffer);
 }
 
-/** Sequence-valued query parameters (F7): exact u64 from a decimal string,
- *  over the full range - no 2^53 cliff. Returns null when invalid. */
+/** Sequence-valued query/path parameters (F7): exact u64 from a decimal
+ *  string, over the full range - no 2^53 cliff. Null-on-invalid wrapper
+ *  over the core's u64FromWire, so there is one exact parser, not two. */
 function nonNegativeU64(raw: string | null, fallback: bigint): bigint | null {
   if (raw === null) return fallback;
   if (!/^\d+$/.test(raw)) return null;
-  const value = BigInt(raw);
-  return value <= (1n << 64n) - 1n ? value : null;
+  try {
+    return u64FromWire(raw, "wire parameter");
+  } catch {
+    return null;
+  }
 }
 
 export default {
@@ -259,54 +266,34 @@ export default {
       return json({ ok: true, runtime: "workerd", stack: "L1-local" });
     }
 
-    // controller routing: one DO per database
-    const stubFor = (databaseId: string) =>
-      env.CONTROLLER.get(env.CONTROLLER.idFromName(databaseId)) as unknown as {
-        registerSession(db: string, generation: number, session: string): Promise<void>;
-        reserveSession(db: string, generation: number, session: string, holder: string):
-          Promise<{ ok: boolean } & Record<string, unknown>>;
-        attestSession(db: string, session: string, processNonce: string):
-          Promise<{ ok: boolean } & Record<string, unknown>>;
-        activateSession(db: string, session: string, proof: object):
-          Promise<{ ok: boolean } & Record<string, unknown>>;
-        renewLease(db: string, session: string, leaseMs: number):
-          Promise<{ ok: boolean } & Record<string, unknown>>;
-        beginDrain(db: string, session: string): Promise<{ ok: boolean } & Record<string, unknown>>;
-        revokeSession(db: string, session: string): Promise<{ ok: boolean } & Record<string, unknown>>;
-        fenceSession(db: string, session: string): Promise<void>;
-        setBudgets(db: string, budgets: object, session: string):
-          Promise<{ ok: true } | { ok: false; error: string }>;
-        finalizeWalRecord(req: object): Promise<Record<string, unknown>>;
-        finalizeBatch(reqs: object[], envelope?: object):
-          Promise<Record<string, unknown>[] | Record<string, unknown>>;
-        exactLookup(db: string, generation: number, lsn: bigint): Promise<Record<string, unknown>>;
-        auditContiguity(db: string, generation: number): Promise<Record<string, unknown>>;
-        head(db: string, generation: number): Promise<Record<string, unknown>>;
-        openIterator(db: string, generation: number): Promise<Record<string, unknown>>;
-        resolveSnapshot(db: string, generation: number, snapshotId: string):
-          Promise<{ ok: true; headLsn: bigint } | { ok: false; error: string }>;
-        scan(db: string, generation: number, opts: object): Promise<{
-          records: Record<string, unknown>[]; nextFromLsn: bigint | null;
-        }>;
-        lastByType(db: string, generation: number, recordType: number): Promise<Record<string, unknown>>;
-        queryOperation(db: string, generation: number, operationId: string, session: string):
-          Promise<Record<string, unknown>>;
-      };
+    // controller routing: one DO per database. The stub is typed straight
+    // off the DO class (workers-types RPC), so there is exactly ONE method
+    // surface - the class itself - and nothing hand-maintained to drift.
+    const stubFor = (databaseId: string) => env.CONTROLLER.get(env.CONTROLLER.idFromName(databaseId));
 
-    /** F9 middleware: verify-and-burn the request's capability at the
-     *  database's authority. null = authorized; otherwise the typed 401/403. */
+    /** The ONE F9 verification core: verify-and-burn the request's
+     *  capability at the database's authority. Both route-facing shapes
+     *  below delegate here so the check can never fork. */
+    const verifyCapability = async (
+      databaseId: string,
+      expect: { method: string; session?: string; key?: string; bodyDigest?: string; bodyLength?: number },
+    ) => {
+      const token = request.headers.get("x-capability");
+      if (token === null) {
+        return { authorized: false as const, denied: json({ ok: false, error: "CAPABILITY_REQUIRED" }, 401) };
+      }
+      const verdict = await stubFor(databaseId).useCapability(token, { databaseId, ...expect });
+      if (!verdict.ok) return { authorized: false as const, denied: json(verdict, 403) };
+      return { authorized: true as const, verdict };
+    };
+
+    /** null = authorized; otherwise the typed 401/403. */
     const requireCapability = async (
       databaseId: string,
       expect: { method: string; session?: string; key?: string; bodyDigest?: string; bodyLength?: number },
     ): Promise<Response | null> => {
-      const token = request.headers.get("x-capability");
-      if (token === null) return json({ ok: false, error: "CAPABILITY_REQUIRED" }, 401);
-      const stub = stubFor(databaseId) as unknown as {
-        useCapability(token: string, expect: object): Promise<{ ok: boolean } & Record<string, unknown>>;
-      };
-      const verdict = await stub.useCapability(token, { databaseId, ...expect });
-      if (!verdict.ok) return json(verdict, 403);
-      return null;
+      const auth = await verifyCapability(databaseId, expect);
+      return auth.authorized ? null : auth.denied;
     };
 
     /** Same check, but hands the ACTOR back to the route.
@@ -320,19 +307,22 @@ export default {
       databaseId: string,
       expect: { method: string; key?: string; bodyDigest?: string; bodyLength?: number },
     ): Promise<{ denied: Response } | { session: string }> => {
-      const token = request.headers.get("x-capability");
-      if (token === null) return { denied: json({ ok: false, error: "CAPABILITY_REQUIRED" }, 401) };
-      const stub = stubFor(databaseId) as unknown as {
-        useCapability(token: string, expect: object): Promise<
-          { ok: boolean; payload?: { session?: string } } & Record<string, unknown>>;
-      };
-      const verdict = await stub.useCapability(token, { databaseId, ...expect });
-      if (!verdict.ok) return { denied: json(verdict, 403) };
-      const session = verdict.payload?.session;
+      const auth = await verifyCapability(databaseId, expect);
+      if (!auth.authorized) return { denied: auth.denied };
+      const session = auth.verdict.payload?.session;
       if (typeof session !== "string" || session.length === 0) {
         return { denied: json({ ok: false, error: "CAPABILITY_RESTRICTION_MISSING", restriction: "session" }, 403) };
       }
       return { session };
+    };
+
+    /** Exact generation or the typed 400 (donor A5): the one refusal every
+     *  generation-bearing route answers identically. */
+    const generationOr = (raw: unknown): number | Response => {
+      const gen = exactGeneration(raw);
+      return gen === null
+        ? json({ ok: false, error: "INVALID_GENERATION", observed: raw ?? null }, 400)
+        : gen;
     };
 
     /** Core-level authority outcomes surfaced as protocol shapes. */
@@ -362,18 +352,14 @@ export default {
       const spec = (await request.json()) as {
         principal: string; databaseId: string; method: string; digest?: string; maxBytes?: number; ttlMs?: number;
       };
-      const stub = stubFor(spec.databaseId) as unknown as {
-        issueCapability(spec: object): Promise<Record<string, unknown>>;
-      };
-      return json({ ok: true, ...(await stub.issueCapability(spec)) });
+      return json({ ok: true, ...(await stubFor(spec.databaseId).issueCapability(spec)) });
     }
 
     const adminBump = path.match(/^\/admin\/([^/]+)\/incarnation\/bump$/);
     if (request.method === "POST" && adminBump) {
       const denied = await requireCapability(adminBump[1], { method: "SESSION_ADMIN" });
       if (denied) return denied;
-      const stub = stubFor(adminBump[1]) as unknown as { bumpIncarnation(): Promise<number> };
-      return json({ ok: true, incarnation: await stub.bumpIncarnation() });
+      return json({ ok: true, incarnation: await stubFor(adminBump[1]).bumpIncarnation() });
     }
 
     if (request.method === "PUT" && path.startsWith("/payload/")) {
@@ -385,6 +371,12 @@ export default {
       }
       const tooLarge = refuseOversizedBody(request);
       if (tooLarge) return tooLarge;
+      // the digest binding genuinely needs the body hashed before the
+      // capability verdict; the null-token refusal does not - answer it
+      // before buffering anything
+      if (request.headers.get("x-capability") === null) {
+        return json({ ok: false, error: "CAPABILITY_REQUIRED" }, 401);
+      }
       const bytes = await request.arrayBuffer();
       if (bytes.byteLength > MAX_REQUEST_BODY_BYTES) {
         // declared length lied; the read is bounded by the platform anyway,
@@ -423,12 +415,11 @@ export default {
 
     if (request.method === "POST" && path === "/session/register") {
       const b = (await request.json()) as { databaseId: string; generation: number; startupSessionId: string };
-      if (exactGeneration(b.generation) === null) {
-        return json({ ok: false, error: "INVALID_GENERATION", observed: b.generation ?? null }, 400);
-      }
+      const gen = generationOr(b.generation);
+      if (gen instanceof Response) return gen;
       const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
       if (denied) return denied;
-      await stubFor(b.databaseId).registerSession(b.databaseId, b.generation, b.startupSessionId);
+      await stubFor(b.databaseId).registerSession(b.databaseId, gen, b.startupSessionId);
       return json({ ok: true });
     }
 
@@ -439,13 +430,12 @@ export default {
       const b = (await request.json()) as {
         databaseId: string; generation: number; startupSessionId: string; holder: string;
       };
-      if (exactGeneration(b.generation) === null) {
-        return json({ ok: false, error: "INVALID_GENERATION", observed: b.generation ?? null }, 400);
-      }
+      const gen = generationOr(b.generation);
+      if (gen instanceof Response) return gen;
       const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
       if (denied) return denied;
       const result = await stubFor(b.databaseId)
-        .reserveSession(b.databaseId, b.generation, b.startupSessionId, b.holder);
+        .reserveSession(b.databaseId, gen, b.startupSessionId, b.holder);
       return json(result, result.ok ? 200 : 409);
     }
 
@@ -462,13 +452,12 @@ export default {
       const b = (await request.json()) as {
         databaseId: string; startupSessionId: string; processNonce: string; generation: number; leaseMs: number;
       };
-      if (exactGeneration(b.generation) === null) {
-        return json({ ok: false, error: "INVALID_GENERATION", observed: b.generation ?? null }, 400);
-      }
+      const gen = generationOr(b.generation);
+      if (gen instanceof Response) return gen;
       const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
       if (denied) return denied;
       const result = await stubFor(b.databaseId).activateSession(b.databaseId, b.startupSessionId, {
-        processNonce: b.processNonce, generation: b.generation, leaseMs: b.leaseMs,
+        processNonce: b.processNonce, generation: gen, leaseMs: b.leaseMs,
       });
       return json(result, result.ok ? 200 : 409);
     }
@@ -499,9 +488,8 @@ export default {
 
     if (request.method === "POST" && path === "/session/fence") {
       const b = (await request.json()) as { databaseId: string; generation: number; startupSessionId: string };
-      if (exactGeneration(b.generation) === null) {
-        return json({ ok: false, error: "INVALID_GENERATION", observed: b.generation ?? null }, 400);
-      }
+      const gen = generationOr(b.generation);
+      if (gen instanceof Response) return gen;
       // the fence is actor-wide: any `generation` in the body is accepted for
       // wire compatibility but does not scope the revocation
       const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
@@ -544,9 +532,8 @@ export default {
       if (invalidRecordType(req.recordType)) {
         return json({ ok: false, error: "INVALID_RECORD_TYPE", observed: req.recordType ?? null }, 400);
       }
-      if (exactGeneration(req.generation) === null) {
-        return json({ ok: false, error: "INVALID_GENERATION", observed: req.generation ?? null }, 400);
-      }
+      const gen = generationOr(req.generation);
+      if (gen instanceof Response) return gen;
       // the finalize capability MUST be bound to the request's session
       // (donor A3): a session id in the body is not by itself write authority
       const denied = await requireCapability(req.databaseId, {
@@ -561,8 +548,10 @@ export default {
         return json({ ok: false, error: "REQUEST_DIGEST_MISMATCH",
                       computed: computedDigest, supplied: req.requestDigest }, 400);
       }
+      // the wire body is validated field-by-field above and again in the
+      // core; the cast is the JSON boundary, not a trust statement
       const result = await stubFor(req.databaseId)
-        .finalizeWalRecord({ ...req, requestDigest: computedDigest });
+        .finalizeWalRecord({ ...req, requestDigest: computedDigest } as unknown as FinalizeRequest);
       return json(result, result.ok ? 200 : 409);
     }
 
@@ -585,7 +574,10 @@ export default {
                       hint: "batchOperationId is required; batchDigest is optional and only checked" }, 400);
       }
       if (body.batchDigest !== undefined && typeof body.batchDigest !== "string") {
-        return json({ ok: false, error: "BATCH_DIGEST_MISMATCH" }, 400);
+        // a non-string digest is a malformed request, not a failed
+        // comparison - the comparison verdicts are MISMATCH (member) and
+        // CONFLICT (envelope), and this is neither
+        return json({ ok: false, error: "BATCH_DIGEST_MALFORMED", observed: typeof body.batchDigest }, 400);
       }
       const databaseId = body.requests[0].databaseId;
       const batchSession = String((body.requests[0] as { startupSessionId?: unknown }).startupSessionId ?? "");
@@ -602,9 +594,8 @@ export default {
         if (invalidRecordType(req.recordType)) {
           return json({ ok: false, error: "INVALID_RECORD_TYPE", observed: req.recordType ?? null }, 400);
         }
-        if (exactGeneration(req.generation) === null) {
-          return json({ ok: false, error: "INVALID_GENERATION", observed: req.generation ?? null }, 400);
-        }
+        const memberGen = generationOr(req.generation);
+        if (memberGen instanceof Response) return memberGen;
       }
       const denied = await requireCapability(databaseId, { method: "WAL_FINALIZE", session: batchSession });
       if (denied) return denied;
@@ -621,7 +612,7 @@ export default {
         }
         digested.push({ ...req, requestDigest: computed });
       }
-      const result = await stubFor(databaseId).finalizeBatch(digested, {
+      const result = await stubFor(databaseId).finalizeBatch(digested as unknown as FinalizeRequest[], {
         batchOperationId: body.batchOperationId,
         ...(body.batchDigest !== undefined ? { batchDigest: body.batchDigest } : {}),
       });
@@ -634,11 +625,16 @@ export default {
     const walRead = path.match(/^\/wal\/([^/]+)\/(\d+)\/(\d+)$/);
     if (request.method === "GET" && walRead) {
       const [, db, generation, lsn] = walRead;
-      const gen = exactGeneration(generation);
-      if (gen === null) return json({ ok: false, error: "INVALID_GENERATION", observed: generation }, 400);
+      const gen = generationOr(generation);
+      if (gen instanceof Response) return gen;
+      // the LSN segment is u64-bounded like every sequence parameter: an
+      // overflowing value is a typed 400 here, never an exception (500)
+      // after the caller's single-use capability was already burned
+      const lsnValue = nonNegativeU64(lsn, 0n);
+      if (lsnValue === null) return json({ ok: false, error: "INVALID_PARAMETER", field: "lsn" }, 400);
       const denied = await requireCapability(db, { method: "WAL_READ" });
       if (denied) return denied;
-      const record = await stubFor(db).exactLookup(db, gen, BigInt(lsn));
+      const record = await stubFor(db).exactLookup(db, gen, lsnValue);
       if (!record.ok) return json(record, 404);
       // exact reads re-verify bytes against the catalogued digest: serving
       // corrupted payload under valid metadata is worse than failing; a
@@ -652,8 +648,8 @@ export default {
     const walHead = path.match(/^\/wal\/([^/]+)\/(\d+)\/head$/);
     if (request.method === "GET" && walHead) {
       const [, db, generation] = walHead;
-      const gen = exactGeneration(generation);
-      if (gen === null) return json({ ok: false, error: "INVALID_GENERATION", observed: generation }, 400);
+      const gen = generationOr(generation);
+      if (gen instanceof Response) return gen;
       const denied = await requireCapability(db, { method: "WAL_READ" });
       if (denied) return denied;
       return json({ ok: true, ...(await stubFor(db).head(db, gen)) });
@@ -662,8 +658,8 @@ export default {
     const walIterator = path.match(/^\/wal\/([^/]+)\/(\d+)\/iterator$/);
     if (request.method === "POST" && walIterator) {
       const [, db, generation] = walIterator;
-      const gen = exactGeneration(generation);
-      if (gen === null) return json({ ok: false, error: "INVALID_GENERATION", observed: generation }, 400);
+      const gen = generationOr(generation);
+      if (gen instanceof Response) return gen;
       const denied = await requireCapability(db, { method: "WAL_READ" });
       if (denied) return denied;
       return json({ ok: true, ...(await stubFor(db).openIterator(db, gen)) });
@@ -672,8 +668,8 @@ export default {
     const walScan = path.match(/^\/wal\/([^/]+)\/(\d+)\/scan$/);
     if (request.method === "GET" && walScan) {
       const [, db, generation] = walScan;
-      const gen = exactGeneration(generation);
-      if (gen === null) return json({ ok: false, error: "INVALID_GENERATION", observed: generation }, 400);
+      const gen = generationOr(generation);
+      if (gen instanceof Response) return gen;
       const denied = await requireCapability(db, { method: "WAL_READ" });
       if (denied) return denied;
       const recordTypeParam = url.searchParams.get("recordType");
@@ -770,8 +766,8 @@ export default {
     const walOperation = path.match(/^\/wal\/([^/]+)\/(\d+)\/operation\/([^/]+)$/);
     if (request.method === "GET" && walOperation) {
       const [, db, generation, operationId] = walOperation;
-      const gen = exactGeneration(generation);
-      if (gen === null) return json({ ok: false, error: "INVALID_GENERATION", observed: generation }, 400);
+      const gen = generationOr(generation);
+      if (gen instanceof Response) return gen;
       const auth = await requireCapabilityWithSession(db, { method: "WAL_READ" });
       if ("denied" in auth) return auth.denied;
       // Read surface: immutable durable history stays queryable by operation
@@ -792,8 +788,8 @@ export default {
     const walLast = path.match(/^\/wal\/([^/]+)\/(\d+)\/last$/);
     if (request.method === "GET" && walLast) {
       const [, db, generation] = walLast;
-      const gen = exactGeneration(generation);
-      if (gen === null) return json({ ok: false, error: "INVALID_GENERATION", observed: generation }, 400);
+      const gen = generationOr(generation);
+      if (gen instanceof Response) return gen;
       const denied = await requireCapability(db, { method: "WAL_READ" });
       if (denied) return denied;
       const recordType = Number(url.searchParams.get("recordType") ?? "NaN");
@@ -812,9 +808,13 @@ export default {
     if (request.method === "GET" && outboxPeek) {
       const denied = await requireCapability(outboxPeek[1], { method: "OUTBOX" });
       if (denied) return denied;
-      const limit = Number(url.searchParams.get("limit") ?? "100");
-      const stub = stubFor(outboxPeek[1]) as unknown as { outboxPeek(limit: number): Promise<unknown[]> };
-      return json({ ok: true, events: await stub.outboxPeek(limit) });
+      // validated and clamped like scan's: a negative LIMIT is documented by
+      // SQLite as "no upper bound", so an unchecked value here was the one
+      // route where a caller could request an unbounded page
+      const rawPeek = nonNegativeInt(url.searchParams.get("limit"), 100);
+      if (rawPeek === null) return json({ ok: false, error: "INVALID_PARAMETER", field: "limit" }, 400);
+      const limit = Math.min(Math.max(rawPeek, 1), 1000);
+      return json({ ok: true, events: await stubFor(outboxPeek[1]).outboxPeek(limit) });
     }
 
     const outboxAck = path.match(/^\/outbox\/([^/]+)\/ack$/);
@@ -822,32 +822,27 @@ export default {
       const auth = await requireCapabilityWithSession(outboxAck[1], { method: "OUTBOX" });
       if ("denied" in auth) return auth.denied;
       const b = (await request.json()) as { upToControlSeq: number | string };
-      const stub = stubFor(outboxAck[1]) as unknown as {
-        outboxAck(db: string, seq: bigint, session: string):
-          Promise<{ ok: true; acked: number } | { ok: false; error: string }>;
-      };
       let upTo: bigint;
       try {
         upTo = u64FromWire(b.upToControlSeq, "upToControlSeq");
       } catch {
         return json({ ok: false, error: "INVALID_PARAMETER", field: "upToControlSeq" }, 400);
       }
-      const result = await stub.outboxAck(outboxAck[1], upTo, auth.session);
+      const result = await stubFor(outboxAck[1]).outboxAck(outboxAck[1], upTo, auth.session);
       if (!result.ok) return sessionRefusal(result) ?? json(result, 409);
       return json({ ok: true, acked: result.acked });
     }
 
     const cutOpen = path.match(/^\/checkpoint\/([^/]+)\/(\d+)\/cut$/);
     if (request.method === "POST" && cutOpen) {
+      // invalid input refuses BEFORE the capability check, like every other
+      // route family: a 400 must not burn the caller's single-use token
+      const cutGen = generationOr(cutOpen[2]);
+      if (cutGen instanceof Response) return cutGen;
       const denied = await requireCapability(cutOpen[1], { method: "SESSION_ADMIN" });
       if (denied) return denied;
       const b = (await request.json()) as { cutId: string };
-      const stub = stubFor(cutOpen[1]) as unknown as {
-        openCheckpointCut(db: string, generation: number, cutId: string): Promise<{ ok: boolean }>;
-      };
-      const cutGen = exactGeneration(cutOpen[2]);
-      if (cutGen === null) return json({ ok: false, error: "INVALID_GENERATION", observed: cutOpen[2] }, 400);
-      const result = await stub.openCheckpointCut(cutOpen[1], cutGen, b.cutId);
+      const result = await stubFor(cutOpen[1]).openCheckpointCut(cutOpen[1], cutGen, b.cutId);
       return json(result, result.ok ? 200 : 409);
     }
 
@@ -856,23 +851,18 @@ export default {
       const denied = await requireCapability(cutActivate[1], { method: "SESSION_ADMIN" });
       if (denied) return denied;
       const b = (await request.json()) as { materializations: string[]; logicalDigest: string };
-      const stub = stubFor(cutActivate[1]) as unknown as {
-        activateCheckpointCut(db: string, cutId: string, evidence: object): Promise<{ ok: boolean }>;
-      };
-      const result = await stub.activateCheckpointCut(cutActivate[1], decodeURIComponent(cutActivate[2]), b);
+      const result = await stubFor(cutActivate[1])
+        .activateCheckpointCut(cutActivate[1], decodeURIComponent(cutActivate[2]), b);
       return json(result, result.ok ? 200 : 409);
     }
 
     const cutActive = path.match(/^\/checkpoint\/([^/]+)\/(\d+)\/active$/);
     if (request.method === "GET" && cutActive) {
+      const activeGen = generationOr(cutActive[2]);
+      if (activeGen instanceof Response) return activeGen;
       const denied = await requireCapability(cutActive[1], { method: "WAL_READ" });
       if (denied) return denied;
-      const stub = stubFor(cutActive[1]) as unknown as {
-        activeCheckpointCut(db: string, generation: number): Promise<{ ok: boolean }>;
-      };
-      const activeGen = exactGeneration(cutActive[2]);
-      if (activeGen === null) return json({ ok: false, error: "INVALID_GENERATION", observed: cutActive[2] }, 400);
-      const result = await stub.activeCheckpointCut(cutActive[1], activeGen);
+      const result = await stubFor(cutActive[1]).activeCheckpointCut(cutActive[1], activeGen);
       return json(result, result.ok ? 200 : 404);
     }
 
@@ -880,10 +870,7 @@ export default {
     if (request.method === "GET" && journalVerifyAnchored) {
       const denied = await requireCapability(journalVerifyAnchored[1], { method: "JOURNAL_VERIFY" });
       if (denied) return denied;
-      const stub = stubFor(journalVerifyAnchored[1]) as unknown as {
-        verifyJournalAnchored(): Promise<{ ok: boolean }>;
-      };
-      const verdict = await stub.verifyJournalAnchored();
+      const verdict = await stubFor(journalVerifyAnchored[1]).verifyJournalAnchored();
       return json(verdict, verdict.ok ? 200 : 409);
     }
 
@@ -894,19 +881,18 @@ export default {
       // global outbox; the id names the authority instance to audit).
       const denied = await requireCapability(journalVerify[1], { method: "JOURNAL_VERIFY" });
       if (denied) return denied;
-      const stub = stubFor(journalVerify[1]) as unknown as { verifyJournal(): Promise<Record<string, unknown>> };
-      const verdict = await stub.verifyJournal();
+      const verdict = await stubFor(journalVerify[1]).verifyJournal();
       return json(verdict, verdict.ok ? 200 : 409);
     }
 
     const walAudit = path.match(/^\/wal\/([^/]+)\/(\d+)\/audit$/);
     if (request.method === "GET" && walAudit) {
       const [, db, generation] = walAudit;
-      const gen = exactGeneration(generation);
-      if (gen === null) return json({ ok: false, error: "INVALID_GENERATION", observed: generation }, 400);
+      const gen = generationOr(generation);
+      if (gen instanceof Response) return gen;
       const denied = await requireCapability(db, { method: "WAL_READ" });
       if (denied) return denied;
-      return json(await stubFor(db).auditContiguity(db, gen));
+      return json({ ok: true, ...(await stubFor(db).auditContiguity(db, gen)) });
     }
 
     return json({ ok: false, error: "NOT_FOUND" }, 404);

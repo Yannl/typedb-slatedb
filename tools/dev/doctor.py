@@ -126,16 +126,17 @@ def check_rust(rep: Report, lock: dict) -> None:
     else:
         rep.fail("rust stable (tools workspace)", "not installed",
                  "rustup toolchain install stable")
-    # the static lane shells out to the pinned nightly rustfmt
-    nightly = re.search(r"RUSTFMT_TOOLCHAIN = \"([^\"]+)\"",
-                        (REPO / "tools" / "catalog" / "run_static.py").read_text())
-    if nightly:
-        if nightly.group(1) in installed:
-            rep.ok(f"rustfmt {nightly.group(1)}", "installed")
-        else:
-            rep.fail(f"rustfmt {nightly.group(1)} (static lane)", "not installed",
-                     f"rustup toolchain install {nightly.group(1)} "
-                     f"--profile minimal --component rustfmt")
+    # the static lane shells out to the pinned nightly rustfmt. IMPORT the
+    # pin rather than regex-scraping run_static's source: a constant rename
+    # made the scrape miss silently and doctor skipped the check entirely.
+    sys.path.insert(0, str(REPO / "tools" / "catalog"))
+    from run_static import RUSTFMT_TOOLCHAIN  # noqa: E402
+    if RUSTFMT_TOOLCHAIN in installed:
+        rep.ok(f"rustfmt {RUSTFMT_TOOLCHAIN}", "installed")
+    else:
+        rep.fail(f"rustfmt {RUSTFMT_TOOLCHAIN} (static lane)", "not installed",
+                 f"rustup toolchain install {RUSTFMT_TOOLCHAIN} "
+                 f"--profile minimal --component rustfmt")
 
 
 def check_sources(rep: Report) -> None:

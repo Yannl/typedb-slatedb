@@ -7,64 +7,24 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import Database from "better-sqlite3";
 import {
   ControllerCore, MAX_BATCH_BYTES, MAX_BATCH_MEMBERS,
   MAX_OUTBOX_DEPTH_CEILING, MAX_PAYLOAD_LENGTH_CEILING, MAX_TAIL_RECORDS_CEILING,
-  u64Blob, type FinalizeRequest, type SyncSql,
+  u64Blob, type SyncSql,
 } from "./procedures.ts";
 import { replay, type WalRecordEvent } from "./reducer.ts";
+import { boot as bootFixture, makeSql as makeSqlFixture, reqFactory } from "./test-support.ts";
 
 const MUTANT = process.env.CONTROLLER_MUTANT ?? "";
 
-function makeSql(): SyncSql {
-  const db = new Database(":memory:");
-  return {
-    exec(sql: string, ...params: unknown[]) {
-      if (params.length === 0 && /;\s*\S/.test(sql)) {
-        db.exec(sql);
-        return [];
-      }
-      const stmt = db.prepare(sql);
-      if (stmt.reader) return stmt.all(...params) as Record<string, unknown>[];
-      stmt.run(...params);
-      return [];
-    },
-    transaction<T>(fn: () => T): T {
-      return db.transaction(fn)();
-    },
-  };
-}
+const req = reqFactory("op", { generation: 3, payloadLength: 100 });
 
-let opCounter = 0;
-function req(overrides: Partial<FinalizeRequest> = {}): FinalizeRequest {
-  opCounter += 1;
-  const id = `op-${opCounter}`;
-  return {
-    databaseId: "db1",
-    generation: 3,
-    startupSessionId: "sess-1",
-    operationId: id,
-    requestDigest: `digest-${id}`,
-    sequencingKind: "SEQUENCED",
-    recordType: 2, // CommitRecord's durability record type
-    logicalKey: null,
-    payloadKey: `payload/${id}`,
-    payloadDigest: `pd-${id}`,
-    payloadLength: 100,
-    ...overrides,
-  };
+function makeSql(): SyncSql {
+  return makeSqlFixture().sql;
 }
 
 function boot(): ControllerCore {
-  const core = new ControllerCore(makeSql());
-  core.registerSession("db1", 3, "sess-1");
-  // Q-12: a database with NO budget row denies writes (missing budget =
-  // deny, never unlimited), so every booted fixture carries a generous one
-  const budgeted = core.setBudgets("db1",
-    { maxUnpublishedOutbox: 10_000, maxPayloadLength: 1_000_000, maxTailRecords: 1_000_000 }, "sess-1");
-  if (!budgeted.ok) throw new Error(`fixture budget refused: ${JSON.stringify(budgeted)}`);
-  return core;
+  return bootFixture({ generation: 3 }).core;
 }
 
 test("contiguous LSN allocation, monotone type sequence", () => {
@@ -195,12 +155,9 @@ test("outbox drain is exactly-once per control_seq across repeated alarms", () =
 test("batch candidate: all-or-nothing equivalence with per-record finalisation", () => {
   const perRecord = boot();
   const batched = boot();
-  // build identical request triples for both cores (opCounter rewind gives
-  // the second core the same operation ids)
-  const savedCounter = opCounter;
+  // identical request triples for both cores: same operation ids, same bytes
   const triple1 = [req(), req({ sequencingKind: "UNSEQUENCED" }), req()];
-  opCounter = savedCounter;
-  const triple2 = [req(), req({ sequencingKind: "UNSEQUENCED" }), req()];
+  const triple2 = triple1.map((r) => ({ ...r }));
 
   for (const r of triple1) assert.ok(perRecord.finalizeWalRecord(r).ok);
   const batchResult = batched.finalizeBatch(triple2, { batchOperationId: "batch-triple" });
@@ -210,6 +167,14 @@ test("batch candidate: all-or-nothing equivalence with per-record finalisation",
     [[0n, 1n], [1n, 1n], [2n, 2n]],
   );
   assert.deepEqual(perRecord.auditContiguity("db1", 3), batched.auditContiguity("db1", 3));
+
+  // one batch, one authority scope: a member from another generation would
+  // be recorded (and replayable) nowhere - typed refusal, nothing allocated
+  const mixed = boot();
+  const mixedResult = mixed.finalizeBatch(
+    [req(), req({ generation: 4 })], { batchOperationId: "batch-mixed" });
+  assert.ok(!Array.isArray(mixedResult) && mixedResult.error === "BATCH_MIXED_SCOPE");
+  assert.equal(mixed.auditContiguity("db1", 3).count, 0);
 
   // failing member aborts the whole batch: nothing allocated
   const failing = boot();

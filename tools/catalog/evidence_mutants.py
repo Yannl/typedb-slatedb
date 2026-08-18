@@ -18,6 +18,7 @@ the consolidation audit demonstrated were accepted before this change:
 Usage: python3 tools/catalog/evidence_mutants.py
 """
 import importlib.util
+import atexit
 import json
 import pathlib
 import shutil
@@ -144,12 +145,15 @@ def verdict_controls():
                clean, {"a:a", "storage:test_recovery"},
                {"a:a": "declared out of lane"}) != [])
     expect("an expired ledger entry is reported, not silently honoured",
-           bool(verdict_policy.load_ledger.__doc__) and
            verdict_policy.load_ledger(_expired_ledger())[1] != [])
 
 
 def _expired_ledger():
-    tmp = pathlib.Path(tempfile.mkdtemp()) / "ledger.json"
+    # the temp dir is registered for cleanup at exit; the ledger file must
+    # outlive the expect() call that reads it
+    tmpdir = tempfile.mkdtemp()
+    atexit.register(shutil.rmtree, tmpdir, True)
+    tmp = pathlib.Path(tmpdir) / "ledger.json"
     tmp.write_text(json.dumps({"entries": [
         {"target_id": "x:y", "reason": "r", "expiry": "2000-01-01"}]}))
     return tmp

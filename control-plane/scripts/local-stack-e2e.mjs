@@ -122,6 +122,13 @@ async function uploadPayload(bytes, opts = {}) {
   return { key, digest, length: bytes.length, response };
 }
 
+/** The three finalize payload fields, always derived from ONE upload
+ *  receipt - hand-pairing a key with another payload's length was possible
+ *  at every call site before this. */
+function payloadFields(up) {
+  return { payloadKey: up.key, payloadDigest: up.digest, payloadLength: up.length };
+}
+
 const health = await rawApi("GET", "/health");
 check("health", health.body.ok === true, JSON.stringify(health.body));
 
@@ -150,7 +157,7 @@ const preBudgetUp = await uploadPayload(preBudgetPayload);
 const preBudget = await api("POST", "/wal/finalize", {
   databaseId: DB, generation: GEN, startupSessionId: SESSION,
   operationId: "op-pre-budget", sequencingKind: "SEQUENCED", recordType: 2, logicalKey: null,
-  payloadKey: preBudgetUp.key, payloadDigest: preBudgetUp.digest, payloadLength: preBudgetPayload.length,
+  ...payloadFields(preBudgetUp),
 });
 check("a database with no budget row denies writes",
   preBudget.status === 409 && preBudget.body.error === "ADMISSION_REJECTED_NO_BUDGET",
@@ -178,7 +185,7 @@ const finalizeRequest = {
   databaseId: DB, generation: GEN, startupSessionId: SESSION,
   operationId: "op-1",
   sequencingKind: "SEQUENCED", recordType: 2, logicalKey: null,
-  payloadKey: up1.key, payloadDigest: up1.digest, payloadLength: payload1.length,
+  ...payloadFields(up1),
 };
 const f1 = await api("POST", "/wal/finalize", finalizeRequest);
 check("finalize allocates lsn 0", f1.body.ok === true && f1.body.appendLsn === "0" && f1.body.replayed === false,
@@ -205,7 +212,7 @@ const upStatus = await uploadPayload(statusPayload);
 const s1 = await api("POST", "/wal/finalize", {
   ...finalizeRequest, operationId: "st-1", sequencingKind: "UNSEQUENCED",
   recordType: 1,
-  logicalKey: "status:cp", payloadKey: upStatus.key, payloadDigest: upStatus.digest, payloadLength: statusPayload.length,
+  logicalKey: "status:cp", ...payloadFields(upStatus),
 });
 check("status singleton accepted", s1.body.ok === true);
 
@@ -213,7 +220,7 @@ const statusB = Buffer.from("status-B-conflicting");
 const upStatusB = await uploadPayload(statusB);
 const s2 = await api("POST", "/wal/finalize", {
   ...finalizeRequest, operationId: "st-2", sequencingKind: "UNSEQUENCED",
-  logicalKey: "status:cp", payloadKey: upStatusB.key, payloadDigest: upStatusB.digest, payloadLength: statusB.length,
+  logicalKey: "status:cp", ...payloadFields(upStatusB),
 });
 check("conflicting status rejected", s2.status === 409 && s2.body.error === "STATUS_CONFLICT");
 
@@ -345,14 +352,14 @@ const payload2 = Buffer.from("commit-record-2");
 const up2 = await uploadPayload(payload2);
 const takeover = await api("POST", "/wal/finalize", {
   ...finalizeRequest, startupSessionId: "sess-2", operationId: "op-2",
-  payloadKey: up2.key, payloadDigest: up2.digest, payloadLength: payload2.length,
+  ...payloadFields(up2),
 });
 check("new actor appends after taking over", takeover.body.ok === true && takeover.body.appendLsn === "2");
 await api("POST", "/session/register", { databaseId: DB, generation: GEN, startupSessionId: "sess-3" });
 CURRENT_SESSION = "sess-3";
 const fencedByRegister = await api("POST", "/wal/finalize", {
   ...finalizeRequest, startupSessionId: "sess-2", operationId: "op-2b",
-  payloadKey: up2.key, payloadDigest: up2.digest, payloadLength: payload2.length,
+  ...payloadFields(up2),
 });
 check("register fences the predecessor, and the refusal names no holder",
   fencedByRegister.status === 409 && fencedByRegister.body.error === "SESSION_FENCED" &&
@@ -363,7 +370,7 @@ const payload3 = Buffer.from("commit-record-3");
 const up3 = await uploadPayload(payload3);
 const f3 = await api("POST", "/wal/finalize", {
   ...finalizeRequest, startupSessionId: "sess-3", operationId: "op-3",
-  payloadKey: up3.key, payloadDigest: up3.digest, payloadLength: payload3.length,
+  ...payloadFields(up3),
 });
 check("current actor appends lsn 3", f3.body.ok === true && f3.body.appendLsn === "3");
 
@@ -420,7 +427,7 @@ check("limit=0 is clamped to one record, never a crash",
 const scanBadParam = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=abc&${SNAP}`);
 check("non-numeric scan parameter is a typed 400",
   scanBadParam.status === 400 && scanBadParam.body.error === "INVALID_PARAMETER");
-// byte budget: maxBytes=1 forces a one-record page (progress guaranteed),
+// byte budget: a budget of exactly the first record's length forces a one-record page (progress guaranteed),
 // resumable exactly like a limit cut
 const oneRecordBudget = payload1.length; // exactly the first record, nothing more
 const scanByteCut = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&${SNAP}&maxBytes=${oneRecordBudget}`);
@@ -471,19 +478,19 @@ const upA = await uploadPayload(batchA);
 const upB = await uploadPayload(batchB);
 const batchOk = await api("POST", "/wal/finalize-batch", { batchOperationId: "bo-1", requests: [
   { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-1",
-    payloadKey: upA.key, payloadDigest: upA.digest, payloadLength: batchA.length },
+    ...payloadFields(upA), },
   { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-2",
-    payloadKey: upB.key, payloadDigest: upB.digest, payloadLength: batchB.length },
+    ...payloadFields(upB), },
 ]});
 check("batch finalize allocates contiguously",
   batchOk.body.ok === true && JSON.stringify(batchOk.body.results.map((r) => r.appendLsn)) === JSON.stringify(["4", "5"]),
   JSON.stringify(batchOk.body));
 const batchAborted = await api("POST", "/wal/finalize-batch", { batchOperationId: "bo-2", requests: [
   { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-3",
-    payloadKey: upA.key, payloadDigest: upA.digest, payloadLength: batchA.length },
+    ...payloadFields(upA), },
   { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-4",
     sequencingKind: "UNSEQUENCED", recordType: 1, logicalKey: "status:cp",
-    payloadKey: upB.key, payloadDigest: upB.digest, payloadLength: batchB.length },
+    ...payloadFields(upB), },
 ]});
 check("failing member aborts the whole batch",
   batchAborted.status === 409 && batchAborted.body.error === "STATUS_CONFLICT");
@@ -495,14 +502,14 @@ check("aborted batch allocated nothing",
 // name a different set of members
 const batchUnnamed = await api("POST", "/wal/finalize-batch", { requests: [
   { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-5",
-    payloadKey: upA.key, payloadDigest: upA.digest, payloadLength: batchA.length },
+    ...payloadFields(upA), },
 ] });
 check("a batch without an envelope is refused",
   batchUnnamed.status === 400 && batchUnnamed.body.error === "BATCH_ENVELOPE_REQUIRED",
   JSON.stringify(batchUnnamed.body));
 const batchReused = await api("POST", "/wal/finalize-batch", { batchOperationId: "bo-1", requests: [
   { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-6",
-    payloadKey: upA.key, payloadDigest: upA.digest, payloadLength: batchA.length },
+    ...payloadFields(upA), },
 ] });
 check("the same batch id with different members is a permanent conflict",
   batchReused.status === 409 && batchReused.body.error === "BATCH_DIGEST_CONFLICT",

@@ -80,24 +80,27 @@ impl CommandLedger {
             return Err(CmdError::AlreadyIntent);
         }
         match self.entries.get_mut(&id) {
-            Some((_, s @ ExecState::Assigned { .. })) => {
-                if let ExecState::Assigned { epoch: e } = *s {
-                    if e != epoch {
-                        return Err(CmdError::NotAssignable);
-                    }
+            Some((_, s)) => match *s {
+                ExecState::Assigned { epoch: e } if e == epoch => {
+                    *s = ExecState::IntentFinalized { epoch };
+                    self.intents.push((id, epoch));
+                    self.wal_head += 1;
+                    Ok(())
                 }
-                *s = ExecState::IntentFinalized { epoch };
-                self.intents.push((id, epoch));
-                self.wal_head += 1;
-                Ok(())
-            }
-            _ => Err(CmdError::NotAssignable),
+                _ => Err(CmdError::NotAssignable),
+            },
+            None => Err(CmdError::NotAssignable),
         }
     }
 
     /// Exact no-intent proof (§11.7): capture the head, search archived +
     /// active bindings, then atomically recheck the head is unchanged.
-    pub fn no_intent_proof(&mut self, id: CommandId, epoch: u32, captured_head: u64) -> Result<(), CmdError> {
+    pub fn no_intent_proof(
+        &mut self,
+        id: CommandId,
+        epoch: u32,
+        captured_head: u64,
+    ) -> Result<(), CmdError> {
         if captured_head != self.wal_head {
             return Err(CmdError::NoIntentProofStale); // repeat with fresh capture
         }
@@ -122,7 +125,10 @@ impl CommandLedger {
 
     pub fn terminalize(&mut self, id: CommandId, outcome: Outcome) {
         if let Some((_, s)) = self.entries.get_mut(&id) {
-            *s = ExecState::Terminal { outcome, available: true };
+            *s = ExecState::Terminal {
+                outcome,
+                available: true,
+            };
         }
     }
 
@@ -130,7 +136,10 @@ impl CommandLedger {
     pub fn expire_result(&mut self, id: CommandId) {
         if let Some((_, s)) = self.entries.get_mut(&id) {
             if let ExecState::Terminal { outcome, .. } = *s {
-                *s = ExecState::Terminal { outcome, available: false };
+                *s = ExecState::Terminal {
+                    outcome,
+                    available: false,
+                };
             }
         }
     }
@@ -157,8 +166,13 @@ mod tests {
         l.terminalize(1, Outcome::Succeeded);
         l.expire_result(1);
         // permanent: still returns stored state / conflict, never re-executes
-        assert!(matches!(l.reserve(1, 100).unwrap(),
-                         ExecState::Terminal { outcome: Outcome::Succeeded, available: false }));
+        assert!(matches!(
+            l.reserve(1, 100).unwrap(),
+            ExecState::Terminal {
+                outcome: Outcome::Succeeded,
+                available: false
+            }
+        ));
         assert_eq!(l.reserve(1, 999), Err(CmdError::DigestConflict));
     }
 
@@ -186,8 +200,11 @@ mod tests {
             let head = l.wal_head;
             let proof = l.no_intent_proof(1, 1, head);
             if intent_done {
-                assert_eq!(proof, Err(CmdError::AlreadyIntent),
-                           "crash_after={crash_after}: proof must find the binding");
+                assert_eq!(
+                    proof,
+                    Err(CmdError::AlreadyIntent),
+                    "crash_after={crash_after}: proof must find the binding"
+                );
                 // and a fresh epoch may never finalise a second intent
                 assert_eq!(l.finalize_intent(1, 2), Err(CmdError::AlreadyIntent));
             } else {
@@ -219,7 +236,10 @@ mod tests {
         l.assign(1, 1).unwrap();
         let head = l.wal_head; // capture
         l.finalize_intent(1, 1).unwrap(); // interleaved!
-        assert_eq!(l.no_intent_proof(1, 1, head), Err(CmdError::NoIntentProofStale));
+        assert_eq!(
+            l.no_intent_proof(1, 1, head),
+            Err(CmdError::NoIntentProofStale)
+        );
         // fresh capture then finds the binding
         let head2 = l.wal_head;
         assert_eq!(l.no_intent_proof(1, 1, head2), Err(CmdError::AlreadyIntent));
@@ -235,8 +255,13 @@ mod tests {
         l.finalize_intent(9, 1).unwrap();
         l.terminalize(9, Outcome::FailedFinal);
         l.expire_result(9);
-        assert!(matches!(l.state(9),
-            Some(ExecState::Terminal { outcome: Outcome::FailedFinal, available: false })));
+        assert!(matches!(
+            l.state(9),
+            Some(ExecState::Terminal {
+                outcome: Outcome::FailedFinal,
+                available: false
+            })
+        ));
         assert_eq!(l.finalize_intent(9, 2), Err(CmdError::AlreadyIntent));
     }
 
@@ -254,12 +279,22 @@ mod tests {
         // proof for epoch 2: the epoch-1 intent refutes it
         assert_eq!(l.no_intent_proof(1, 2, head), Err(CmdError::AlreadyIntent));
         // the terminal outcome is untouched and re-assignment stays closed
-        assert!(matches!(l.state(1),
-            Some(ExecState::Terminal { outcome: Outcome::Succeeded, available: true })));
+        assert!(matches!(
+            l.state(1),
+            Some(ExecState::Terminal {
+                outcome: Outcome::Succeeded,
+                available: true
+            })
+        ));
         assert_eq!(l.assign(1, 2), Err(CmdError::NotAssignable));
         // idempotent reserve still reports the terminal state, not Reserved
-        assert!(matches!(l.reserve(1, 100).unwrap(),
-            ExecState::Terminal { outcome: Outcome::Succeeded, available: true }));
+        assert!(matches!(
+            l.reserve(1, 100).unwrap(),
+            ExecState::Terminal {
+                outcome: Outcome::Succeeded,
+                available: true
+            }
+        ));
     }
 
     /// Regression companion: a successful proof collapses ONLY the exact
@@ -280,21 +315,38 @@ mod tests {
         assert!(matches!(l.state(7), Some(ExecState::Reserved)));
     }
 
-    // negative control: a broken proof that skips the head recheck would
-    // return a false absence under interleaving B above.
+    // negative control: a broken proof that skips the head recheck and
+    // consults a pre-race snapshot of the intent table — EXECUTED as a real
+    // function, so the false absence is an observed result, not a narration.
     #[test]
     fn broken_no_intent_proof_mutant_is_observable() {
+        // MUTANT: no captured-head check, stale intent table
+        fn broken_proof(
+            intents_at_capture: &[(CommandId, u32)],
+            id: CommandId,
+        ) -> Result<(), CmdError> {
+            if intents_at_capture.iter().any(|(c, _)| *c == id) {
+                return Err(CmdError::AlreadyIntent);
+            }
+            Ok(())
+        }
         let mut l = CommandLedger::default();
         l.reserve(1, 100).unwrap();
         l.assign(1, 1).unwrap();
-        let _stale_head = l.wal_head;
+        let captured_head = l.wal_head;
+        let intents_at_capture = l.intents.clone();
+        // the interleaved finalisation lands AFTER capture
         l.finalize_intent(1, 1).unwrap();
-        // MUTANT: proof that ignores the captured head and only checks a
-        // stale local snapshot of `intents` taken at capture time (empty)
-        let stale_snapshot_empty = true; // what the mutant saw at capture
-        let mutant_result_would_be_absent = stale_snapshot_empty;
-        assert!(mutant_result_would_be_absent,
-                "mutant returns false absence; the real proof returns Stale/AlreadyIntent");
-        assert_ne!(l.no_intent_proof(1, 1, 0), Ok(()));
+        // the mutant proves a false absence over its stale view...
+        assert_eq!(
+            broken_proof(&intents_at_capture, 1),
+            Ok(()),
+            "mutant must return the false absence"
+        );
+        // ...while the real proof refuses: the head moved under it
+        assert_eq!(
+            l.no_intent_proof(1, 1, captured_head),
+            Err(CmdError::NoIntentProofStale)
+        );
     }
 }

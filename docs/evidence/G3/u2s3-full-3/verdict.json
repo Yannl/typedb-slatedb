@@ -1,0 +1,19 @@
+{
+ "green": false,
+ "complete_selection": true,
+ "anomaly_count": 8,
+ "anomalies": [
+  "denominator: required target concept:bench_thing_write produced NO result row",
+  "denominator: required target durability:throughput produced NO result row",
+  "denominator: required target encoding:benchmark produced NO result row",
+  "denominator: required target executor:bench_instructions produced NO result row",
+  "denominator: required target query:bench_insert_queries produced NO result row",
+  "denominator: required target query:bench_insert_queries_multithreaded produced NO result row",
+  "denominator: required target storage:bench_mvcc_storage produced NO result row",
+  "denominator: required target storage:bench_rocks produced NO result row"
+ ],
+ "producer": "tools/catalog/run_u0.py --verdict-only",
+ "re_derived_from": "docs/evidence/G3/u2s3-full-3/u0-results.json",
+ "denominator_checked": true,
+ "executables": 106
+}

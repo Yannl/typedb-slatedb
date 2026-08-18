@@ -1,0 +1,25 @@
+{
+  "profile": "U2S3",
+  "toolchain": {
+    "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+    "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+    "requested": "1.93.0"
+  },
+  "storage_profile_env": "U2S3",
+  "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+  "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+  "repo_dirty": true,
+  "executed_tree": {
+    "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+    "dirty": true,
+    "staged_delta_files": 23,
+    "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+  },
+  "executables": 106,
+  "green": 105,
+  "red": 1,
+  "timeout": 0,
+  "cases_passed": 462,
+  "cases_failed": 2,
+  "cases_ignored": 1
+}

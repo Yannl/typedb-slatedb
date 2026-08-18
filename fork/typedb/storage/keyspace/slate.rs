@@ -424,6 +424,28 @@ impl ObjectStore for NoDeleteStore {
     }
 }
 
+/// Clear the local object cache before a keyspace opens on it.
+///
+/// Q-14: this is CORRECTNESS-critical, not hygiene. Cache entries are keyed
+/// by STORE-RELATIVE paths, and those paths repeat across materialisations -
+/// so an entry that survives from a previous materialisation is served for
+/// THIS one's object paths. That is wrong bytes under valid metadata, which
+/// is strictly worse than failing to open.
+///
+/// The failure that matters is a PARTIAL wipe: `remove_dir_all` deleting
+/// some entries and erroring midway leaves the directory present, so the
+/// `create_dir_all` that follows succeeds and the survivors are used. The
+/// call site discarded this error (`let _ = fs::remove_dir_all(..)`), which
+/// is why the partial case was silent. `NotFound` is the one benign
+/// outcome: there was nothing to wipe.
+fn wipe_object_cache(cache_dir: &Path) -> io::Result<()> {
+    match fs::remove_dir_all(cache_dir) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
 /// Upload a local directory tree (a restored checkpoint) under `prefix`,
 /// preserving the relative layout.
 async fn upload_dir_to_remote(store: &dyn ObjectStore, prefix: &ObjectPath, root: &Path) -> Result<(), slatedb::Error> {
@@ -580,21 +602,7 @@ impl SlateKeyspace {
             // materialisations — a surviving entry would serve the previous
             // materialisation's bytes for this one's object paths.
             let cache_dir = path.join(OBJECT_CACHE_SUBDIR);
-            // Q-14: this wipe is CORRECTNESS-critical, not hygiene - the
-            // paragraph above says why - so its failure cannot be discarded.
-            // `let _ = remove_dir_all(..)` meant that a cache directory this
-            // process could not clear (a permission change, a leftover file
-            // where the directory belongs, an I/O error) was silently kept,
-            // and the keyspace then opened on top of entries keyed to a
-            // PREVIOUS materialisation's identical object paths. That serves
-            // the wrong bytes under valid metadata, which is worse than
-            // failing to open. NotFound is the one benign outcome: there was
-            // nothing to wipe.
-            match fs::remove_dir_all(&cache_dir) {
-                Ok(()) => {}
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                Err(error) => return Err(Arc::new(io_error(error))),
-            }
+            wipe_object_cache(&cache_dir).map_err(|error| Arc::new(io_error(error)))?;
             fs::create_dir_all(&cache_dir).map_err(|error| Arc::new(io_error(error)))?;
             settings.object_store_cache_options.root_folder = Some(cache_dir);
             settings.object_store_cache_options.max_cache_size_bytes = Some(cache_bytes);
@@ -1472,34 +1480,37 @@ mod materialization_tests {
     }
 
     #[test]
-    fn a_cache_wipe_that_fails_refuses_the_open() {
-        // Q-14: the cache wipe is correctness-critical. Cache entries are
-        // keyed by STORE-RELATIVE paths, which repeat across
-        // materialisations, so a surviving entry serves the PREVIOUS
-        // materialisation's bytes for this one's object paths. Discarding
-        // the wipe's error meant opening on top of exactly that.
+    fn a_failed_object_cache_wipe_is_propagated_not_discarded() {
+        // Q-14. The call site used to be `let _ = fs::remove_dir_all(..)`.
         //
-        // The failure is injected the way it actually happens: something
-        // that is not a directory occupies the cache path, so
-        // `remove_dir_all` cannot clear it.
-        let (_store_dir, inner) = remote_fixture();
-        let keyspace_dir = create_tmp_dir("slate-cache-wipe");
-        std::fs::create_dir_all(&*keyspace_dir).unwrap();
-        std::fs::write(keyspace_dir.join(super::OBJECT_CACHE_SUBDIR), b"not a directory").unwrap();
+        // The failure that matters is a PARTIAL wipe - remove_dir_all
+        // deleting some entries and erroring midway - because the
+        // create_dir_all that follows then SUCCEEDS (the directory is still
+        // there) and the surviving entries are served for this
+        // materialisation's object paths. So the assertion has to be on the
+        // wipe's own result, not on whether the open happens to fail for
+        // some other reason: injecting an obstruction that also breaks
+        // create_dir_all would pass whether or not the error is discarded,
+        // which is no control at all.
+        let dir = create_tmp_dir("slate-cache-wipe");
+        let cache = dir.join("object-cache");
 
-        let opened = SlateKeyspace::open_remote(inner.clone(), ObjectPath::from(BASE), &keyspace_dir, Some(1 << 20));
-        assert!(
-            opened.is_err(),
-            "an unclearable object cache must refuse the open, not serve another \
-             materialisation's bytes under this one's paths",
-        );
+        // nothing to wipe is benign
+        assert!(super::wipe_object_cache(&cache).is_ok(), "absent cache is not an error");
 
-        // and with the obstruction gone the same open succeeds, so the
-        // refusal is about the failure, not about caching at all
-        std::fs::remove_file(keyspace_dir.join(super::OBJECT_CACHE_SUBDIR)).unwrap();
+        // a real cache directory with contents is cleared, and reported cleared
+        std::fs::create_dir_all(cache.join("nested")).unwrap();
+        std::fs::write(cache.join("nested").join("entry"), b"stale bytes").unwrap();
+        assert!(super::wipe_object_cache(&cache).is_ok());
+        assert!(!cache.exists(), "the wipe must actually remove the cache");
+
+        // and a wipe that CANNOT succeed is reported, never swallowed
+        std::fs::write(&cache, b"not a directory").unwrap();
+        let refused = super::wipe_object_cache(&cache);
         assert!(
-            SlateKeyspace::open_remote(inner, ObjectPath::from(BASE), &keyspace_dir, Some(1 << 20)).is_ok(),
-            "a clearable cache directory must open normally",
+            refused.is_err(),
+            "a cache the process cannot clear must be an error - discarding it opens the \
+             keyspace on entries keyed to a previous materialisation's object paths",
         );
     }
 

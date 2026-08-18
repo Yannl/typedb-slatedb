@@ -1,0 +1,60 @@
+# Executed negative controls: storage containment (Q-01, Q-14, Q-27)
+# Toolchain rustc 1.93.0, profile U2S3 (MinIO at 127.0.0.1:9000).
+
+$ cargo +1.93.0 test -p storage --lib --locked
+test result: ok. 25 passed; 0 failed; 0 ignored      (was 18: +5 post_wal_guard
+                                                      transitions, +2 slate.rs controls)
+$ cargo +1.93.0 test -p storage --test test_isolation --locked
+test result: ok. 14 passed; 0 failed; 1 ignored      (baseline-equal)
+$ cargo +1.93.0 test -p storage --test test_mvcc --locked
+test result: ok. 4 passed; 0 failed
+$ cargo +1.93.0 test -p storage --test test_snapshot --locked
+test result: ok. 10 passed; 0 failed
+$ cargo +1.93.0 test -p storage --test test_storage --locked
+test result: ok. 6 passed; 0 failed
+$ cargo +1.93.0 test -p storage --test test_recovery --locked
+test result: FAILED. 5 passed; 2 failed             (the two upstream todo!() stubs,
+                                                     exactly the ledgered expectation)
+
+Every one of these matches the u2s3-full-3 archived row for the same target,
+except storage:storage, which gains the two controls added here.
+
+## Q-01 - the guard is WIRED, not merely present
+MUTANT: the success path stops resolving the obligation
+  (`obligation.resolved_visibility_complete(..)` removed)
+
+  cargo +1.93.0 test -p storage --test test_isolation
+  ERROR storage::post_wal_guard: FATAL: post-WAL commit guard dropped while armed
+    in database 'storage' (assigned sequence: 1). An early return escaped the
+    post-obligation region without resolving it; the isolation slot would stay
+    pending forever. Aborting.
+  process didn't exit successfully: (signal: 6, SIGABRT: process abort signal)
+
+  -> restored: 14 passed / 0 failed / 1 ignored
+
+  Note which suite kills it: `test_storage` passes UNDER the mutant because its
+  cases never reach `snapshot_commit`. A mutant is only evidence against a test
+  that exercises the path, and saying which one does is part of the evidence.
+
+## Q-14 - a failed object-cache wipe is propagated, not discarded
+The FIRST version of this control was wrong and is recorded here because the
+mutant caught it: it injected a non-directory at the cache path and asserted
+that `open_remote` failed. It passed under the mutant, because `create_dir_all`
+fails on the same obstruction whether or not the wipe's error is discarded -
+so it proved nothing. The failure that actually matters is a PARTIAL wipe:
+`remove_dir_all` deleting some entries and erroring midway leaves the directory
+present, `create_dir_all` then succeeds, and the survivors are served for this
+materialisation's object paths.
+
+The wipe is now a named function and the control asserts its own result.
+
+MUTANT: `wipe_object_cache` restored to `let _ = fs::remove_dir_all(..); Ok(())`
+  not ok - keyspace::slate::materialization_tests::
+           a_failed_object_cache_wipe_is_propagated_not_discarded
+  test result: FAILED. 24 passed; 1 failed   -> restored: 25 passed; 0 failed
+
+## Q-27 - a blocked rename leaves no copy behind
+MUTANT: the `rename_opts` override removed (ObjectStore's default
+        copy-then-delete restored)
+  not ok - keyspace::slate::materialization_tests::a_blocked_rename_leaves_no_copy_behind
+  test result: FAILED. 24 passed; 1 failed   -> restored: 25 passed; 0 failed

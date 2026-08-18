@@ -265,9 +265,11 @@ const fencedByRegister = await api("POST", "/wal/finalize", {
   ...finalizeRequest, startupSessionId: "sess-2", operationId: "op-2b",
   payloadKey: up2.key, payloadDigest: up2.digest, payloadLength: payload2.length,
 });
-check("register fences the predecessor, with attribution",
+check("register fences the predecessor, and the refusal names no holder",
   fencedByRegister.status === 409 && fencedByRegister.body.error === "SESSION_FENCED" &&
-  fencedByRegister.body.fencedBy === "sess-3");
+  fencedByRegister.body.fencedBy === undefined &&
+  Object.keys(fencedByRegister.body).sort().join(",") === "error,ok",
+  JSON.stringify(fencedByRegister.body));
 const payload3 = Buffer.from("commit-record-3");
 const up3 = await uploadPayload(payload3);
 const f3 = await api("POST", "/wal/finalize", {
@@ -307,13 +309,20 @@ check("non-numeric scan parameter is a typed 400",
   scanBadParam.status === 400 && scanBadParam.body.error === "INVALID_PARAMETER");
 // byte budget: maxBytes=1 forces a one-record page (progress guaranteed),
 // resumable exactly like a limit cut
-const scanByteCut = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&throughLsn=${iter.body.headLsn}&maxBytes=1`);
+const oneRecordBudget = payload1.length; // exactly the first record, nothing more
+const scanByteCut = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&throughLsn=${iter.body.headLsn}&maxBytes=${oneRecordBudget}`);
 check("scan byte budget cuts the page with progress",
   scanByteCut.body.ok === true && scanByteCut.body.records.length === 1 && scanByteCut.body.nextFromLsn === "1",
   JSON.stringify({ n: scanByteCut.body.records?.length, next: scanByteCut.body.nextFromLsn }));
-const scanResume = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&fromLsn=${scanByteCut.body.nextFromLsn}&throughLsn=${iter.body.headLsn}&maxBytes=1`);
+const scanResume = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&fromLsn=${scanByteCut.body.nextFromLsn}&throughLsn=${iter.body.headLsn}&maxBytes=${statusPayload.length}`);
 check("byte-cut pages resume without overlap",
   scanResume.body.records.length === 1 && scanResume.body.records[0].appendLsn === "1");
+// a descriptor larger than the WHOLE page budget is refused before any
+// fetch - "record zero" is not an exception (directive 12.6)
+const scanTooSmall = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&throughLsn=${iter.body.headLsn}&maxBytes=1`);
+check("a first record larger than the page budget is refused, not admitted",
+  scanTooSmall.status === 413 && scanTooSmall.body.error === "RECORD_EXCEEDS_PAGE_BUDGET",
+  JSON.stringify(scanTooSmall.body));
 
 // a finalized operation stays queryable by operation id after ITS finalizing
 // session was fenced (op-1 was finalized by SESSION, since superseded). The

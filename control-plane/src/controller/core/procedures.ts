@@ -177,7 +177,7 @@ export type TypedErr =
   | { ok: false; error: "ADMISSION_REJECTED_TAIL_BUDGET"; limit: number }
   | { ok: false; error: "OPERATION_DIGEST_CONFLICT" }
   | { ok: false; error: "STATUS_CONFLICT" }
-  | { ok: false; error: "SESSION_FENCED"; fencedBy: string | null }
+  | { ok: false; error: "SESSION_FENCED" }
   | { ok: false; error: "SESSION_UNKNOWN" }
   | { ok: false; error: "NOT_FOUND" };
 
@@ -476,25 +476,23 @@ export class ControllerCore {
     );
     if (!session.length) return { ok: false as const, error: "SESSION_UNKNOWN" as const };
     if (Number(session[0].fenced)) {
-      // Attribution, not a credential (donor A3): the fenced actor learns
-      // WHO superseded it — the first question in a fence incident is "who
-      // is the writer now?". This disclosure is only SAFE because the
-      // session id is no longer sufficient to write: WAL_FINALIZE authority
-      // requires a capability BOUND to the session (worker-entry's finalize
-      // guard passes the session; capability.ts enforces the binding), and
-      // the controller issues a session-bound finalize capability only to
-      // the actor it admitted as that session. A leaked id without such a
-      // capability finalizes nothing. Served from the authority row
-      // read-only; it can never change this call's outcome.
-      const live = this.sql.exec(
-        `SELECT startup_session_id FROM sessions WHERE database_id=? AND fenced=0 LIMIT 1`,
-        req.databaseId,
-      );
-      return {
-        ok: false as const,
-        error: "SESSION_FENCED" as const,
-        fencedBy: live.length ? String(live[0].startup_session_id) : null,
-      };
+      // A stale actor receives EXACTLY `SESSION_FENCED` - no result fields
+      // and NO holder attribution (v16 inv. 38, ADR-0006, and the
+      // convergence directive's §12.5 correction).
+      //
+      // The previous version returned `fencedBy`, reasoning that the id was
+      // no longer a credential once finalize capabilities became
+      // session-bound. Two things are wrong with that. The attribution was
+      // read from "any unfenced session of this database" without the
+      // generation/materialisation authority scope, so it could name a
+      // session that is not the holder of the scope the caller asked about;
+      // and a refusal surface that answers "who is the writer now?" to an
+      // actor that has just been superseded is an identity oracle whose
+      // safety depends on every OTHER control staying perfect. Attribution
+      // belongs in privileged audit telemetry, which is where the
+      // SESSION_REGISTERED/SESSION_FENCED command-ledger entries already
+      // record it from the correctly scoped durable transition.
+      return { ok: false as const, error: "SESSION_FENCED" as const };
     }
 
     // exact-once replay by operation identity

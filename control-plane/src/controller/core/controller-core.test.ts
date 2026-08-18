@@ -111,7 +111,7 @@ test("status singleton: identical duplicate is idempotent, conflicting duplicate
 test("stale session fencing: fenced or unknown sessions cannot finalise", () => {
   const core = boot();
   core.fenceSession("db1", "sess-1");
-  assert.deepEqual(core.finalizeWalRecord(req()), { ok: false, error: "SESSION_FENCED", fencedBy: null });
+  assert.deepEqual(core.finalizeWalRecord(req()), { ok: false, error: "SESSION_FENCED" });
   assert.deepEqual(
     core.finalizeWalRecord(req({ startupSessionId: "sess-ghost" })),
     { ok: false, error: "SESSION_UNKNOWN" },
@@ -130,7 +130,7 @@ test("fenced replay: a fenced session retrying a durable finalize gets SESSION_F
   assert.ok(r1.ok && !r1.replayed);
   core.fenceSession("db1", "sess-1");
   // identical retry (lost-response recovery) after the fence
-  assert.deepEqual(core.finalizeWalRecord(first), { ok: false, error: "SESSION_FENCED", fencedBy: null });
+  assert.deepEqual(core.finalizeWalRecord(first), { ok: false, error: "SESSION_FENCED" });
   // the record itself is untouched durable history (fencing revokes reporting,
   // never durability): still exactly one record, still contiguous
   const audit = core.auditContiguity("db1", 3);
@@ -214,7 +214,7 @@ test("a finalized operation stays queryable by operation id after its session is
   assert.ok(r1.ok);
   core.registerSession("db1", 3, "sess-2"); // takeover fences sess-1
   // the finalize-RETRY path stays fenced (inv. 38 - reporting is revoked)...
-  assert.deepEqual(core.finalizeWalRecord(first), { ok: false, error: "SESSION_FENCED", fencedBy: "sess-2" });
+  assert.deepEqual(core.finalizeWalRecord(first), { ok: false, error: "SESSION_FENCED" });
   // ...but the immutable durable record is queryable by operation identity:
   // authority gates mutation, never hides finalized history
   const query = core.queryOperation("db1", 3, first.operationId, "sess-2");
@@ -339,7 +339,7 @@ test("register fences the predecessor: a new actor's register revokes the old ac
   const core = boot();
   assert.ok(core.finalizeWalRecord(req()).ok);
   core.registerSession("db1", 3, "sess-2"); // restart: strictly newer actor
-  assert.deepEqual(core.finalizeWalRecord(req()), { ok: false, error: "SESSION_FENCED", fencedBy: "sess-2" });
+  assert.deepEqual(core.finalizeWalRecord(req()), { ok: false, error: "SESSION_FENCED" });
   assert.ok(core.finalizeWalRecord(req({ startupSessionId: "sess-2" })).ok);
   assert.equal(core.auditContiguity("db1", 3).count, 2);
 });
@@ -349,7 +349,7 @@ test("a fenced actor cannot re-take authority by re-registering", () => {
   core.registerSession("db1", 3, "sess-2"); // fences sess-1
   core.registerSession("db1", 3, "sess-1"); // stale actor retries registration
   // sess-1 stays fenced; sess-2 keeps authority (and the attribution names it)
-  assert.deepEqual(core.finalizeWalRecord(req()), { ok: false, error: "SESSION_FENCED", fencedBy: "sess-2" });
+  assert.deepEqual(core.finalizeWalRecord(req()), { ok: false, error: "SESSION_FENCED" });
   assert.ok(core.finalizeWalRecord(req({ startupSessionId: "sess-2" })).ok);
 });
 
@@ -361,8 +361,8 @@ test("fencing is actor-wide: revoking a rollover-spanning actor covers every gen
   core.fenceSession("db1", "sess-1");
   // both generations are revoked — a per-generation fence would leave the
   // actor blocked from re-registering yet still able to append elsewhere
-  assert.deepEqual(core.finalizeWalRecord(req()), { ok: false, error: "SESSION_FENCED", fencedBy: null });
-  assert.deepEqual(core.finalizeWalRecord(req({ generation: 4 })), { ok: false, error: "SESSION_FENCED", fencedBy: null });
+  assert.deepEqual(core.finalizeWalRecord(req()), { ok: false, error: "SESSION_FENCED" });
+  assert.deepEqual(core.finalizeWalRecord(req({ generation: 4 })), { ok: false, error: "SESSION_FENCED" });
 });
 
 test("one actor spans a generation rollover without fencing itself", () => {

@@ -577,6 +577,24 @@ export default {
       // any payload is fetched - a worker never materialises an unbounded
       // multi-payload response. Always at least one record makes progress;
       // the cut is reported through nextFromLsn exactly like a limit cut.
+      // A descriptor whose declared payload exceeds the whole page budget is
+      // REFUSED before any fetch - "record zero" is not an exception
+      // (directive §12.6). Admitting it was the one path by which a single
+      // oversized object could still be materialised and base64-expanded in
+      // a 128 MiB isolate, and it made the byte bound advisory for exactly
+      // the record that needed it most. The record stays reachable through
+      // the exact-lookup route, so refusing here wedges nothing.
+      const first = page.records[0] as { payloadLength: number; appendLsn: unknown } | undefined;
+      if (first !== undefined && Number(first.payloadLength) > maxBytes) {
+        return json({
+          ok: false,
+          error: "RECORD_EXCEEDS_PAGE_BUDGET",
+          appendLsn: first.appendLsn,
+          payloadLength: Number(first.payloadLength),
+          maxBytes,
+          hint: "fetch this record through /wal/{db}/{generation}/{lsn}",
+        }, 413);
+      }
       let cut = page.records.length;
       let budget = maxBytes;
       for (const [index, record] of page.records.entries()) {

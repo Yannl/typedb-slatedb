@@ -122,6 +122,36 @@ export class DatabaseControllerDO extends DurableObject {
     this.core().registerSession(databaseId, generation, startupSessionId);
   }
 
+  reserveSession(databaseId: string, generation: number, startupSessionId: string, holder: string):
+    ReturnType<ControllerCore["reserveSession"]> {
+    return this.core().reserveSession(databaseId, generation, startupSessionId, holder);
+  }
+
+  attestSession(databaseId: string, startupSessionId: string, processNonce: string):
+    ReturnType<ControllerCore["attestSession"]> {
+    return this.core().attestSession(databaseId, startupSessionId, processNonce);
+  }
+
+  activateSession(
+    databaseId: string, startupSessionId: string,
+    proof: Parameters<ControllerCore["activateSession"]>[2],
+  ): ReturnType<ControllerCore["activateSession"]> {
+    return this.core().activateSession(databaseId, startupSessionId, proof);
+  }
+
+  renewLease(databaseId: string, startupSessionId: string, leaseMs: number):
+    ReturnType<ControllerCore["renewLease"]> {
+    return this.core().renewLease(databaseId, startupSessionId, leaseMs);
+  }
+
+  beginDrain(databaseId: string, startupSessionId: string): ReturnType<ControllerCore["beginDrain"]> {
+    return this.core().beginDrain(databaseId, startupSessionId);
+  }
+
+  revokeSession(databaseId: string, startupSessionId: string): ReturnType<ControllerCore["revokeSession"]> {
+    return this.core().revokeSession(databaseId, startupSessionId);
+  }
+
   fenceSession(databaseId: string, startupSessionId: string): void {
     this.core().fenceSession(databaseId, startupSessionId);
   }

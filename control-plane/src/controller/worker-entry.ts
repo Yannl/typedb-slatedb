@@ -263,6 +263,16 @@ export default {
     const stubFor = (databaseId: string) =>
       env.CONTROLLER.get(env.CONTROLLER.idFromName(databaseId)) as unknown as {
         registerSession(db: string, generation: number, session: string): Promise<void>;
+        reserveSession(db: string, generation: number, session: string, holder: string):
+          Promise<{ ok: boolean } & Record<string, unknown>>;
+        attestSession(db: string, session: string, processNonce: string):
+          Promise<{ ok: boolean } & Record<string, unknown>>;
+        activateSession(db: string, session: string, proof: object):
+          Promise<{ ok: boolean } & Record<string, unknown>>;
+        renewLease(db: string, session: string, leaseMs: number):
+          Promise<{ ok: boolean } & Record<string, unknown>>;
+        beginDrain(db: string, session: string): Promise<{ ok: boolean } & Record<string, unknown>>;
+        revokeSession(db: string, session: string): Promise<{ ok: boolean } & Record<string, unknown>>;
         fenceSession(db: string, session: string): Promise<void>;
         setBudgets(db: string, budgets: object, session: string):
           Promise<{ ok: true } | { ok: false; error: string }>;
@@ -420,6 +430,71 @@ export default {
       if (denied) return denied;
       await stubFor(b.databaseId).registerSession(b.databaseId, b.generation, b.startupSessionId);
       return json({ ok: true });
+    }
+
+    // ---- Q-03 / 12.4 lifecycle routes (SESSION_ADMIN-gated) -------------
+    // Registration is the legacy macro over these; the real flow is
+    // reserve -> attest -> activate, and ONLY activation fences.
+    if (request.method === "POST" && path === "/session/reserve") {
+      const b = (await request.json()) as {
+        databaseId: string; generation: number; startupSessionId: string; holder: string;
+      };
+      if (exactGeneration(b.generation) === null) {
+        return json({ ok: false, error: "INVALID_GENERATION", observed: b.generation ?? null }, 400);
+      }
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      if (denied) return denied;
+      const result = await stubFor(b.databaseId)
+        .reserveSession(b.databaseId, b.generation, b.startupSessionId, b.holder);
+      return json(result, result.ok ? 200 : 409);
+    }
+
+    if (request.method === "POST" && path === "/session/attest") {
+      const b = (await request.json()) as { databaseId: string; startupSessionId: string; processNonce: string };
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      if (denied) return denied;
+      const result = await stubFor(b.databaseId)
+        .attestSession(b.databaseId, b.startupSessionId, b.processNonce);
+      return json(result, result.ok ? 200 : 409);
+    }
+
+    if (request.method === "POST" && path === "/session/activate") {
+      const b = (await request.json()) as {
+        databaseId: string; startupSessionId: string; processNonce: string; generation: number; leaseMs: number;
+      };
+      if (exactGeneration(b.generation) === null) {
+        return json({ ok: false, error: "INVALID_GENERATION", observed: b.generation ?? null }, 400);
+      }
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      if (denied) return denied;
+      const result = await stubFor(b.databaseId).activateSession(b.databaseId, b.startupSessionId, {
+        processNonce: b.processNonce, generation: b.generation, leaseMs: b.leaseMs,
+      });
+      return json(result, result.ok ? 200 : 409);
+    }
+
+    if (request.method === "POST" && path === "/session/renew") {
+      const b = (await request.json()) as { databaseId: string; startupSessionId: string; leaseMs: number };
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      if (denied) return denied;
+      const result = await stubFor(b.databaseId).renewLease(b.databaseId, b.startupSessionId, b.leaseMs);
+      return json(result, result.ok ? 200 : 409);
+    }
+
+    if (request.method === "POST" && path === "/session/drain") {
+      const b = (await request.json()) as { databaseId: string; startupSessionId: string };
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      if (denied) return denied;
+      const result = await stubFor(b.databaseId).beginDrain(b.databaseId, b.startupSessionId);
+      return json(result, result.ok ? 200 : 409);
+    }
+
+    if (request.method === "POST" && path === "/session/revoke") {
+      const b = (await request.json()) as { databaseId: string; startupSessionId: string };
+      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
+      if (denied) return denied;
+      const result = await stubFor(b.databaseId).revokeSession(b.databaseId, b.startupSessionId);
+      return json(result, result.ok ? 200 : 409);
     }
 
     if (request.method === "POST" && path === "/session/fence") {

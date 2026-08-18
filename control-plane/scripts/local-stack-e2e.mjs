@@ -265,7 +265,7 @@ check("outbox peek returns finalized + command events",
 const peek2 = await api("GET", `/outbox/${DB}?limit=10`);
 check("unacked events are redelivered", peek2.body.events.length === peek1.body.events.length);
 const kinds = new Set(peek1.body.events.map((e) => e.kind));
-check("events carry canonical bodies", kinds.has("WAL_RECORD_FINALIZED") && kinds.has("SESSION_REGISTERED") &&
+check("events carry canonical bodies", kinds.has("WAL_RECORD_FINALIZED") && kinds.has("SESSION_ACTIVATED") &&
   peek1.body.events.every((e) => JSON.parse(e.body).databaseId === DB));
 // controlSeq is a decimal-string u64 on the wire (F7): compare as bigint
 const maxSeq = peek1.body.events.map((e) => BigInt(e.controlSeq)).reduce((a, b) => (a > b ? a : b)).toString();
@@ -293,6 +293,50 @@ const fenced = await api("POST", "/wal/finalize", {
 });
 check("fenced session rejected", fenced.status === 409 && fenced.body.error === "SESSION_FENCED");
 
+
+// 9c. Q-03 / 12.4: the lifecycle over HTTP. Reservation and attestation
+// grant nothing; a made-up id activates nothing; the verified activation is
+// the takeover.
+const lcReserve = await api("POST", "/session/reserve",
+  { databaseId: DB, generation: GEN, startupSessionId: "sess-lc", holder: "e2e-host" });
+check("lifecycle: reservation accepted", lcReserve.body.ok === true, JSON.stringify(lcReserve.body));
+const lcEarlyActivate = await api("POST", "/session/activate",
+  { databaseId: DB, generation: GEN, startupSessionId: "sess-lc", processNonce: "n-lc", leaseMs: 60000 });
+check("lifecycle: activation before attestation is refused",
+  lcEarlyActivate.status === 409 && lcEarlyActivate.body.error === "SESSION_NOT_ATTESTED",
+  JSON.stringify(lcEarlyActivate.body));
+const lcAttest = await api("POST", "/session/attest",
+  { databaseId: DB, startupSessionId: "sess-lc", processNonce: "n-lc" });
+check("lifecycle: attestation accepted", lcAttest.body.ok === true, JSON.stringify(lcAttest.body));
+const lcWrongNonce = await api("POST", "/session/activate",
+  { databaseId: DB, generation: GEN, startupSessionId: "sess-lc", processNonce: "n-imposter", leaseMs: 60000 });
+check("lifecycle: activation with a hijacked nonce is refused",
+  lcWrongNonce.status === 409 && lcWrongNonce.body.error === "PROCESS_NONCE_MISMATCH",
+  JSON.stringify(lcWrongNonce.body));
+const lcGhostActivate = await api("POST", "/session/activate",
+  { databaseId: DB, generation: GEN, startupSessionId: "sess-never-reserved", processNonce: "n", leaseMs: 60000 });
+check("lifecycle: a fresh random id cannot activate (or fence anyone)",
+  lcGhostActivate.status === 409 && lcGhostActivate.body.error === "SESSION_NOT_RESERVED",
+  JSON.stringify(lcGhostActivate.body));
+const lcActivate = await api("POST", "/session/activate",
+  { databaseId: DB, generation: GEN, startupSessionId: "sess-lc", processNonce: "n-lc", leaseMs: 60000 });
+check("lifecycle: verified activation succeeds under a controller-time lease",
+  lcActivate.body.ok === true && typeof lcActivate.body.leaseDeadlineMs === "number"
+  // SESSION was already fenced in the fencing section, so this activation
+  // finds no live predecessor - the takeover COUNT is exercised in the core
+  // lifecycle suite; here the wire shape and the lease are under test
+  && lcActivate.body.fencedPredecessors === 0, JSON.stringify(lcActivate.body));
+CURRENT_SESSION = "sess-lc";
+const lcRenew = await api("POST", "/session/renew",
+  { databaseId: DB, startupSessionId: "sess-lc", leaseMs: 120000 });
+check("lifecycle: an unexpired lease renews from controller time",
+  lcRenew.body.ok === true && lcRenew.body.leaseDeadlineMs > lcActivate.body.leaseDeadlineMs,
+  JSON.stringify(lcRenew.body));
+const lcReuse = await api("POST", "/session/reserve",
+  { databaseId: DB, generation: GEN, startupSessionId: SESSION, holder: "someone-else" });
+check("lifecycle: a spent session id is a permanent refusal",
+  lcReuse.status === 409 && lcReuse.body.error === "SESSION_ID_ALREADY_USED",
+  JSON.stringify(lcReuse.body));
 
 // 10. register-fences-predecessor over HTTP (takeover; three-lane pin)
 await api("POST", "/session/register", { databaseId: DB, generation: GEN, startupSessionId: "sess-2" });
@@ -558,7 +602,7 @@ check("active cut is readable", activeCut.body.ok === true && activeCut.body.cut
 // incarnation bump, and the cut events, against the newest cut anchor
 const journal = await api("GET", `/journal/${DB}/verify`);
 check("authenticated journal verifies (chain + MACs)",
-  journal.body.ok === true && journal.body.length === 14 && /^[0-9a-f]{64}$/.test(journal.body.headHash),
+  journal.body.ok === true && journal.body.length === 15 && /^[0-9a-f]{64}$/.test(journal.body.headHash),
   JSON.stringify(journal.body));
 const anchored = await api("GET", `/journal/${DB}/verify-anchored`);
 check("journal verifies against the cut anchor",

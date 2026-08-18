@@ -196,3 +196,41 @@ $ node scripts/local-stack-e2e.mjs          L1 LOCAL STACK E2E: ALL PASS (76 che
   PASS  a database with no budget row denies writes   {"error":"ADMISSION_REJECTED_NO_BUDGET"}
   PASS  a validated budget opens admission
   PASS  a fractional budget is a typed refusal        {"error":"INVALID_BUDGET","field":"maxUnpublishedOutbox"}
+
+## Q-03 / 12.4 - the startup-session lifecycle
+Takeover-at-open is gone as a MECHANISM: activateSession is the only code
+that fences, and it is one transaction that revalidates reservation,
+attested process nonce, controller incarnation and generation first.
+Authority lives under a controller-time lease over a persisted NONDECREASING
+floor; finalize/setBudgets/outboxAck revalidate the lease before any
+counter/outbox is consumed; expiry is terminal. Session ids are single-use.
+The legacy registerSession is a macro over reserve->attest->activate, so the
+three-lane pin (register-fences-predecessor) keeps its trace while the
+directive's rule ("a new random session id cannot fence anyone" outside the
+protocol) holds structurally. Reads survive expiry (12.4: expiry blocks new
+mutations, it does not make durable history unreadable).
+
+$ node --test ... lifecycle.test.ts          # pass 13 / # fail 0
+  (reservation/attestation grant nothing; random-id activation refused at
+   every stage while the incumbent keeps appending; hijacked nonce refused;
+   stale incarnation refused; generation mismatch refused; spent ids
+   permanent; expiry blocks mutations pre-allocation and is terminal;
+   backward clock jump cannot extend a lease; forward jump fails closed;
+   renewal from controller time; drain retains authority, revoke ends it;
+   activation idempotent for a lost response only; legacy macro = lifecycle)
+
+MUTANT A: activation verifies nothing (takeover-at-open restored)
+  not ok 2, 3, 4, 12    # pass 9 / # fail 4     -> restored: 13/0
+MUTANT B: lease revalidation removed from the finalize path
+  not ok 6, 8, 9        # pass 10 / # fail 3    -> restored: 13/0
+
+$ full core suites: lifecycle 13, core 31, state 5, journal 7, capability 5,
+  key-config 7; vitest 8/8; L1 E2E 84/84 ALL PASS (8 new lifecycle checks
+  over HTTP: reserve, activate-before-attest refused, attest, hijacked
+  nonce refused, ghost-id activation refused, verified activation + lease,
+  renewal, spent-id refusal).
+
+Honest remainder: on L1 the lifecycle's CALLERS are gated by SESSION_ADMIN
+capabilities, not real container attestation - the external attestation
+root, provider-enforced routing/ingress fencing, and the external recovery
+lock for incarnation recovery are real-platform work and stay OPEN.

@@ -69,14 +69,16 @@ function kinds(db: InstanceType<typeof Database>): string[] {
 test("authority mutations are journaled commands, exactly once", () => {
   const { core, db } = boot();
   core.registerSession("db1", 1, "sess-1"); // idempotent: no new command
-  assert.deepEqual(kinds(db), ["SESSION_REGISTERED", "BUDGETS_SET"]); // register + the fixture budget (Q-12)
+  // register now routes through the lifecycle: activation is the one
+  // operation that fences, and SESSION_ACTIVATED is its honest name (Q-03)
+  assert.deepEqual(kinds(db), ["SESSION_ACTIVATED", "BUDGETS_SET"]);
   core.setBudgets("db1", { maxUnpublishedOutbox: 100, maxPayloadLength: 1000, maxTailRecords: 100 }, "sess-1");
   core.fenceSession("db1", "sess-1");
   core.fenceSession("db1", "sess-1"); // already fenced: no new command
   core.fenceSession("db1", "sess-ghost"); // unknown actor: no state change, no command
   core.registerSession("db1", 1, "sess-2"); // takeover: journaled
   assert.deepEqual(kinds(db),
-    ["SESSION_REGISTERED", "BUDGETS_SET", "BUDGETS_SET", "SESSION_FENCED", "SESSION_REGISTERED"]);
+    ["SESSION_ACTIVATED", "BUDGETS_SET", "BUDGETS_SET", "SESSION_FENCED", "SESSION_ACTIVATED"]);
   // and the ledger is an authenticated journal: every command verifies
   const verdict = core.verifyJournal();
   assert.ok(verdict.ok && verdict.length === 5, JSON.stringify(verdict));

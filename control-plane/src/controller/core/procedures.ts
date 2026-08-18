@@ -227,7 +227,17 @@ export type TypedErr =
   | { ok: false; error: "ADMISSION_REJECTED_NO_BUDGET" }
   // Q-10: authority-sized wire values are exact or refused, never coerced
   | { ok: false; error: "INVALID_BUDGET"; field: string }
-  | { ok: false; error: "INVALID_PAYLOAD_LENGTH"; observed: unknown };
+  | { ok: false; error: "INVALID_PAYLOAD_LENGTH"; observed: unknown }
+  // Q-03 / 12.4 lifecycle
+  | { ok: false; error: "SESSION_ID_ALREADY_USED" }
+  | { ok: false; error: "SESSION_NOT_RESERVED" }
+  | { ok: false; error: "SESSION_NOT_ATTESTED" }
+  | { ok: false; error: "PROCESS_NONCE_MISMATCH" }
+  | { ok: false; error: "STALE_INCARNATION"; current: number }
+  | { ok: false; error: "GENERATION_MISMATCH"; reserved: number }
+  | { ok: false; error: "SESSION_NOT_ACTIVE"; state: string }
+  | { ok: false; error: "SESSION_LEASE_EXPIRED" }
+  | { ok: false; error: "INVALID_LEASE"; observed: unknown };
 
 export interface FinalizeRequest {
   databaseId: string;
@@ -270,10 +280,34 @@ export class ControllerCore {
    *  production provisioning of a managed secret is a G2 gate item. */
   private readonly journalKey: Uint8Array;
 
-  constructor(sql: SyncSql, options?: { journalKey?: Uint8Array }) {
+  private readonly wallClock: () => number;
+
+  constructor(sql: SyncSql, options?: { journalKey?: Uint8Array; now?: () => number }) {
     this.sql = sql;
     this.journalKey = options?.journalKey ?? utf8("dev-insecure-journal-key");
+    this.wallClock = options?.now ?? Date.now;
     this.migrate();
+  }
+
+  /**
+   * Controller time (§12.4): a persisted, nondecreasing floor over the wall
+   * clock. Every lease computation reads THIS, never Date.now() directly,
+   * so a backward clock jump cannot extend a lease - the floor simply stops
+   * advancing until the wall clock catches up. Forward jumps make leases
+   * expire early, which fails closed (a new session is required; expiry is
+   * terminal, there is no resurrection).
+   */
+  controllerNow(): number {
+    const wall = this.wallClock();
+    const rows = this.sql.exec(`SELECT value FROM controller_meta WHERE key='time_floor_ms'`);
+    const floor = rows.length ? Number(rows[0].value) : 0;
+    if (wall > floor) {
+      this.sql.exec(
+        `INSERT INTO controller_meta(key, value) VALUES ('time_floor_ms', ?)
+         ON CONFLICT(key) DO UPDATE SET value=?`, wall, wall);
+      return wall;
+    }
+    return floor;
   }
 
   /**
@@ -416,7 +450,283 @@ export class ControllerCore {
         )`);
       },
     },
+    {
+      version: 7,
+      up: (sql) => {
+        // Q-03 / directive 12.4: the startup-session lifecycle. Activation
+        // is the ONLY operation that fences; a session id that never went
+        // through reserve -> attest -> activate is not an authority, however
+        // fresh or random it is.
+        sql.exec(`CREATE TABLE IF NOT EXISTS startup_sessions(
+          database_id TEXT NOT NULL,
+          startup_session_id TEXT NOT NULL,
+          generation INTEGER NOT NULL,
+          incarnation INTEGER NOT NULL,
+          holder TEXT NOT NULL,
+          process_nonce TEXT,
+          state TEXT NOT NULL CHECK(state IN
+            ('RESERVED','ATTESTED','ACTIVE','DRAINING','REVOKED','EXPIRED','ABANDONED')),
+          lease_deadline_ms INTEGER,
+          reserved_at_ms INTEGER NOT NULL,
+          activated_at_ms INTEGER,
+          PRIMARY KEY(database_id, startup_session_id)
+        )`);
+        sql.exec(`CREATE INDEX IF NOT EXISTS startup_sessions_live
+                  ON startup_sessions(database_id, state)`);
+      },
+    },
   ];
+
+  // ------------------------------------------------------------------
+  // Q-03 / directive 12.4: the startup-session lifecycle.
+  //
+  // The pre-fix behaviour was takeover-at-open: any fresh session id could
+  // fence every live actor by calling register. The lifecycle splits
+  // identity from authority. Reservation and attestation grant NOTHING;
+  // activation is one transaction that revalidates reservation, attestation
+  // nonce, controller incarnation and generation before it fences anyone;
+  // authority then lives under a controller-time lease that every
+  // finalisation revalidates, and expiry is terminal - a dead session is
+  // replaced, never resurrected.
+  //
+  // Pre-G2 honesty: on the L1 facade the caller of these procedures is
+  // gated by SESSION_ADMIN capabilities, not by real container attestation
+  // - the external attestation root and provider-enforced routing are
+  // real-platform work and stay OPEN. What this closes is the PROTOCOL
+  // hole: there is no longer any code path in which an unactivated id
+  // fences an authority or appends under one.
+  // ------------------------------------------------------------------
+
+  /** Reserve a session id. Grants nothing; single-use per id (a reused id
+   *  is a permanent refusal - ids are identities, not slots). Idempotent
+   *  for an exact repeat of the same reservation while still RESERVED. */
+  reserveSession(databaseId: string, generation: number, startupSessionId: string, holder: string):
+    Typed<{ state: "RESERVED" }> | TypedErr {
+    if (typeof startupSessionId !== "string" || startupSessionId.length === 0
+        || typeof holder !== "string" || holder.length === 0) {
+      return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
+    }
+    return this.sql.transaction(() => {
+      const existing = this.sql.exec(
+        `SELECT state, generation, holder FROM startup_sessions
+         WHERE database_id=? AND startup_session_id=?`, databaseId, startupSessionId);
+      if (existing.length) {
+        const row = existing[0];
+        if (String(row.state) === "RESERVED" && Number(row.generation) === generation
+            && String(row.holder) === holder) {
+          return { ok: true as const, state: "RESERVED" as const }; // idempotent retry
+        }
+        return { ok: false as const, error: "SESSION_ID_ALREADY_USED" as const };
+      }
+      this.sql.exec(
+        `INSERT INTO startup_sessions(database_id, startup_session_id, generation, incarnation,
+           holder, state, reserved_at_ms) VALUES (?,?,?,?,?,'RESERVED',?)`,
+        databaseId, startupSessionId, generation, this.currentIncarnation(), holder,
+        this.controllerNow());
+      return { ok: true as const, state: "RESERVED" as const };
+    });
+  }
+
+  /** Bind the reservation to one process. Still grants nothing. A second
+   *  process presenting a different nonce for the same reservation is a
+   *  conflict, not a race winner. */
+  attestSession(databaseId: string, startupSessionId: string, processNonce: string):
+    Typed<{ state: "ATTESTED" }> | TypedErr {
+    if (typeof processNonce !== "string" || processNonce.length === 0) {
+      return { ok: false as const, error: "PROCESS_NONCE_MISMATCH" as const };
+    }
+    return this.sql.transaction(() => {
+      const rows = this.sql.exec(
+        `SELECT state, process_nonce FROM startup_sessions
+         WHERE database_id=? AND startup_session_id=?`, databaseId, startupSessionId);
+      if (!rows.length) return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
+      const state = String(rows[0].state);
+      if (state === "ATTESTED" && String(rows[0].process_nonce) === processNonce) {
+        return { ok: true as const, state: "ATTESTED" as const }; // idempotent retry
+      }
+      if (state !== "RESERVED") return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
+      this.sql.exec(
+        `UPDATE startup_sessions SET state='ATTESTED', process_nonce=?
+         WHERE database_id=? AND startup_session_id=?`,
+        processNonce, databaseId, startupSessionId);
+      return { ok: true as const, state: "ATTESTED" as const };
+    });
+  }
+
+  /**
+   * The ONE transaction that authorizes takeover (12.4). Verifies, inside
+   * the transaction: the reservation exists and is ATTESTED; the presented
+   * process nonce is the attested one; the controller incarnation has not
+   * moved since reservation; the generation is the reserved one; the lease
+   * is a sane duration. Only then does it fence the predecessors and
+   * establish the active session under a controller-time lease.
+   */
+  activateSession(
+    databaseId: string, startupSessionId: string,
+    proof: { processNonce: string; generation: number; leaseMs: number },
+  ): Typed<{ leaseDeadlineMs: number; fencedPredecessors: number }> | TypedErr {
+    if (typeof proof.leaseMs !== "number" || !Number.isSafeInteger(proof.leaseMs)
+        || proof.leaseMs < 1_000 || proof.leaseMs > 24 * 60 * 60 * 1000) {
+      return { ok: false as const, error: "INVALID_LEASE" as const, observed: proof.leaseMs };
+    }
+    return this.sql.transaction(() => {
+      const rows = this.sql.exec(
+        `SELECT state, process_nonce, incarnation, generation, lease_deadline_ms
+         FROM startup_sessions WHERE database_id=? AND startup_session_id=?`,
+        databaseId, startupSessionId);
+      if (!rows.length) return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
+      const row = rows[0];
+      const state = String(row.state);
+      const now = this.controllerNow();
+      if (state === "ACTIVE" && String(row.process_nonce) === proof.processNonce) {
+        // lost-response retry of a completed activation: same outcome again
+        return { ok: true as const, leaseDeadlineMs: Number(row.lease_deadline_ms),
+                 fencedPredecessors: 0 };
+      }
+      if (state !== "ATTESTED") return { ok: false as const, error: "SESSION_NOT_ATTESTED" as const };
+      if (String(row.process_nonce) !== proof.processNonce) {
+        return { ok: false as const, error: "PROCESS_NONCE_MISMATCH" as const };
+      }
+      const currentIncarnation = this.currentIncarnation();
+      if (Number(row.incarnation) !== currentIncarnation) {
+        // the controller moved on since this reservation: the reservation is
+        // evidence about a superseded authority, not this one
+        return { ok: false as const, error: "STALE_INCARNATION" as const, current: currentIncarnation };
+      }
+      if (Number(row.generation) !== proof.generation) {
+        return { ok: false as const, error: "GENERATION_MISMATCH" as const, reserved: Number(row.generation) };
+      }
+      const leaseDeadlineMs = now + proof.leaseMs;
+      // fence-and-establish: exactly the legacy takeover semantics, but
+      // reachable ONLY through the verified protocol above
+      const fencedCount = Number(this.sql.exec(
+        `SELECT COUNT(*) AS n FROM sessions WHERE database_id=? AND startup_session_id<>? AND fenced=0`,
+        databaseId, startupSessionId)[0].n);
+      this.sql.exec(
+        `UPDATE sessions SET fenced=1 WHERE database_id=? AND startup_session_id<>?`,
+        databaseId, startupSessionId);
+      this.sql.exec(
+        `UPDATE startup_sessions SET state='ACTIVE', lease_deadline_ms=?, activated_at_ms=?
+         WHERE database_id=? AND startup_session_id=?`,
+        leaseDeadlineMs, now, databaseId, startupSessionId);
+      this.sql.exec(
+        `INSERT OR IGNORE INTO sessions(database_id, generation, startup_session_id) VALUES (?,?,?)`,
+        databaseId, proof.generation, startupSessionId);
+      this.sql.exec(
+        `UPDATE startup_sessions SET state='REVOKED'
+         WHERE database_id=? AND startup_session_id<>? AND state IN ('ACTIVE','DRAINING')`,
+        databaseId, startupSessionId);
+      this.appendCommand(databaseId, "SESSION_ACTIVATED", {
+        databaseId, generation: proof.generation, startupSessionId,
+        fencedPredecessors: fencedCount, leaseDeadlineMs,
+      });
+      return { ok: true as const, leaseDeadlineMs, fencedPredecessors: fencedCount };
+    });
+  }
+
+  /** Extend an unexpired lease from controller time. An expired lease is
+   *  TERMINAL: renewal refuses and the state moves to EXPIRED - a backward
+   *  clock jump cannot resurrect it because controllerNow never decreases. */
+  renewLease(databaseId: string, startupSessionId: string, leaseMs: number):
+    Typed<{ leaseDeadlineMs: number }> | TypedErr {
+    if (typeof leaseMs !== "number" || !Number.isSafeInteger(leaseMs)
+        || leaseMs < 1_000 || leaseMs > 24 * 60 * 60 * 1000) {
+      return { ok: false as const, error: "INVALID_LEASE" as const, observed: leaseMs };
+    }
+    return this.sql.transaction(() => {
+      const rows = this.sql.exec(
+        `SELECT state, lease_deadline_ms FROM startup_sessions
+         WHERE database_id=? AND startup_session_id=?`, databaseId, startupSessionId);
+      if (!rows.length) return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
+      const state = String(rows[0].state);
+      if (state !== "ACTIVE" && state !== "DRAINING") {
+        return { ok: false as const, error: "SESSION_NOT_ACTIVE" as const, state };
+      }
+      const now = this.controllerNow();
+      if (Number(rows[0].lease_deadline_ms) <= now) {
+        this.expireSession(databaseId, startupSessionId);
+        return { ok: false as const, error: "SESSION_LEASE_EXPIRED" as const };
+      }
+      const leaseDeadlineMs = now + leaseMs;
+      this.sql.exec(
+        `UPDATE startup_sessions SET lease_deadline_ms=? WHERE database_id=? AND startup_session_id=?`,
+        leaseDeadlineMs, databaseId, startupSessionId);
+      return { ok: true as const, leaseDeadlineMs };
+    });
+  }
+
+  /** ACTIVE -> DRAINING: authority retained for in-flight work under the
+   *  existing lease; a successor's activation (or revoke/expiry) ends it. */
+  beginDrain(databaseId: string, startupSessionId: string):
+    Typed<{ state: "DRAINING" }> | TypedErr {
+    return this.sql.transaction(() => {
+      const rows = this.sql.exec(
+        `SELECT state FROM startup_sessions WHERE database_id=? AND startup_session_id=?`,
+        databaseId, startupSessionId);
+      if (!rows.length) return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
+      const state = String(rows[0].state);
+      if (state === "DRAINING") return { ok: true as const, state: "DRAINING" as const };
+      if (state !== "ACTIVE") return { ok: false as const, error: "SESSION_NOT_ACTIVE" as const, state };
+      this.sql.exec(
+        `UPDATE startup_sessions SET state='DRAINING' WHERE database_id=? AND startup_session_id=?`,
+        databaseId, startupSessionId);
+      this.appendCommand(databaseId, "SESSION_DRAINING", { databaseId, startupSessionId });
+      return { ok: true as const, state: "DRAINING" as const };
+    });
+  }
+
+  /** Revoke a session's authority outright (terminal). */
+  revokeSession(databaseId: string, startupSessionId: string): Typed<{ state: "REVOKED" }> | TypedErr {
+    return this.sql.transaction(() => {
+      const rows = this.sql.exec(
+        `SELECT state FROM startup_sessions WHERE database_id=? AND startup_session_id=?`,
+        databaseId, startupSessionId);
+      if (!rows.length) return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
+      if (String(rows[0].state) === "REVOKED") return { ok: true as const, state: "REVOKED" as const };
+      this.sql.exec(
+        `UPDATE startup_sessions SET state='REVOKED' WHERE database_id=? AND startup_session_id=?`,
+        databaseId, startupSessionId);
+      this.sql.exec(
+        `UPDATE sessions SET fenced=1 WHERE database_id=? AND startup_session_id=?`,
+        databaseId, startupSessionId);
+      this.appendCommand(databaseId, "SESSION_REVOKED", { databaseId, startupSessionId });
+      return { ok: true as const, state: "REVOKED" as const };
+    });
+  }
+
+  /** Terminal expiry, journaled. Caller holds the transaction. */
+  private expireSession(databaseId: string, startupSessionId: string): void {
+    this.sql.exec(
+      `UPDATE startup_sessions SET state='EXPIRED' WHERE database_id=? AND startup_session_id=?`,
+      databaseId, startupSessionId);
+    this.appendCommand(databaseId, "SESSION_LEASE_EXPIRED", { databaseId, startupSessionId });
+  }
+
+  /**
+   * Lifecycle gate for authority-bearing mutations (12.4): a
+   * lifecycle-managed session must be ACTIVE or DRAINING with an unexpired
+   * controller-time lease BEFORE counters/outbox are consumed. A session
+   * with no lifecycle row is the legacy L1 lane (registerSession routes
+   * through the lifecycle, so post-migration cores always have rows; the
+   * no-row case covers databases migrated with live legacy sessions).
+   */
+  private requireLeasedAuthority(databaseId: string, startupSessionId: string):
+    { ok: true } | { ok: false; error: "SESSION_NOT_ACTIVE"; state: string }
+    | { ok: false; error: "SESSION_LEASE_EXPIRED" } {
+    const rows = this.sql.exec(
+      `SELECT state, lease_deadline_ms FROM startup_sessions
+       WHERE database_id=? AND startup_session_id=?`, databaseId, startupSessionId);
+    if (!rows.length) return { ok: true };
+    const state = String(rows[0].state);
+    if (state !== "ACTIVE" && state !== "DRAINING") {
+      return { ok: false as const, error: "SESSION_NOT_ACTIVE" as const, state };
+    }
+    if (Number(rows[0].lease_deadline_ms) <= this.controllerNow()) {
+      this.expireSession(databaseId, startupSessionId);
+      return { ok: false as const, error: "SESSION_LEASE_EXPIRED" as const };
+    }
+    return { ok: true };
+  }
 
   /**
    * Register a session AND fence every other live session of the database
@@ -428,44 +738,68 @@ export class ControllerCore {
    * prevent. Re-registering the same session is idempotent and fences
    * nothing of its own.
    */
+  /**
+   * Legacy register: the L1 lane's one-call takeover, REWIRED THROUGH the
+   * lifecycle (Q-03 / 12.4) rather than fencing directly.
+   *
+   * The three reference lanes (this core, remote-wal-spike, protocol-models)
+   * pin register-fences-predecessor (ADR-0006), and the directive requires
+   * that only the lifecycle protocol authorizes takeover. Both hold at once
+   * by making register a macro: reserve -> attest -> activate in one
+   * transaction, with a synthetic holder ("legacy-register") and process
+   * nonce and a default lease. The observable trace is unchanged; the
+   * MECHANISM is now exactly one - `activateSession` is the only code that
+   * fences, and every register leaves a lifecycle row with a real lease
+   * that finalisation revalidates.
+   *
+   * A generation ROLLOVER by the incumbent actor re-reserves under the same
+   * id (ids are single-use for NEW actors, but the same live actor moving
+   * generations is the documented rollover case) - handled by treating an
+   * ACTIVE self re-register as a lease renewal + generation update.
+   */
   registerSession(databaseId: string, generation: number, startupSessionId: string): void {
+    const LEGACY_LEASE_MS = 15 * 60 * 1000;
     this.sql.transaction(() => {
-      // The authority unit is the ACTOR (startup session), not the
-      // (generation, session) pair: one live process may span a generation
-      // rollover without fencing itself. A superseded (fenced) actor can
-      // never re-take authority — the models' session counter only moves
-      // forward — so its re-register is a no-op, leaving it fenced and the
-      // current owner untouched.
+      // a superseded (fenced) actor can never re-take authority - the
+      // models' session counter only moves forward
       const fencedRows = this.sql.exec(
         `SELECT 1 FROM sessions WHERE database_id=? AND startup_session_id=? AND fenced=1 LIMIT 1`,
         databaseId, startupSessionId,
       );
       if (fencedRows.length) return;
-      // command ledger (F7r): the fence-and-register is journaled ONLY when
-      // it changes authority state - an idempotent re-register writes no
-      // ledger entry (replaying the ledger must reproduce state exactly,
-      // and a no-op that appends would break trace equivalence)
-      const fencedCount = Number(this.sql.exec(
-        `SELECT COUNT(*) AS n FROM sessions WHERE database_id=? AND startup_session_id<>? AND fenced=0`,
-        databaseId, startupSessionId,
-      )[0].n);
-      const known = this.sql.exec(
-        `SELECT 1 FROM sessions WHERE database_id=? AND generation=? AND startup_session_id=?`,
-        databaseId, generation, startupSessionId,
-      ).length > 0;
-      this.sql.exec(
-        `UPDATE sessions SET fenced=1 WHERE database_id=? AND startup_session_id<>?`,
-        databaseId, startupSessionId,
-      );
-      this.sql.exec(
-        `INSERT OR IGNORE INTO sessions(database_id, generation, startup_session_id) VALUES (?,?,?)`,
-        databaseId, generation, startupSessionId,
-      );
-      if (!known || fencedCount > 0) {
-        this.appendCommand(databaseId, "SESSION_REGISTERED", {
-          databaseId, generation, startupSessionId, fencedPredecessors: fencedCount,
-        });
+
+      const lifecycle = this.sql.exec(
+        `SELECT state FROM startup_sessions WHERE database_id=? AND startup_session_id=?`,
+        databaseId, startupSessionId);
+      const nonce = `legacy-nonce-${startupSessionId}`;
+      if (lifecycle.length && ["ACTIVE", "DRAINING"].includes(String(lifecycle[0].state))) {
+        // idempotent re-register / rollover by the live actor: refresh the
+        // lease, record the (possibly new) generation, fence nobody
+        this.sql.exec(
+          `UPDATE startup_sessions SET lease_deadline_ms=?, generation=?
+           WHERE database_id=? AND startup_session_id=?`,
+          this.controllerNow() + LEGACY_LEASE_MS, generation, databaseId, startupSessionId);
+        const known = this.sql.exec(
+          `SELECT 1 FROM sessions WHERE database_id=? AND generation=? AND startup_session_id=?`,
+          databaseId, generation, startupSessionId).length > 0;
+        this.sql.exec(
+          `INSERT OR IGNORE INTO sessions(database_id, generation, startup_session_id) VALUES (?,?,?)`,
+          databaseId, generation, startupSessionId);
+        if (!known) {
+          this.appendCommand(databaseId, "SESSION_REGISTERED", {
+            databaseId, generation, startupSessionId, fencedPredecessors: 0,
+          });
+        }
+        return;
       }
+      const reserved = this.reserveSession(databaseId, generation, startupSessionId, "legacy-register");
+      if (!reserved.ok) throw new Error(`legacy register: reserve failed: ${reserved.error}`);
+      const attested = this.attestSession(databaseId, startupSessionId, nonce);
+      if (!attested.ok) throw new Error(`legacy register: attest failed: ${attested.error}`);
+      const activated = this.activateSession(databaseId, startupSessionId, {
+        processNonce: nonce, generation, leaseMs: LEGACY_LEASE_MS,
+      });
+      if (!activated.ok) throw new Error(`legacy register: activate failed: ${activated.error}`);
     });
   }
 
@@ -481,6 +815,13 @@ export class ControllerCore {
       )[0].n);
       this.sql.exec(
         `UPDATE sessions SET fenced=1 WHERE database_id=? AND startup_session_id=?`,
+        databaseId, startupSessionId,
+      );
+      // the lifecycle row moves with the fence: a fenced actor's session is
+      // REVOKED, not left nominally ACTIVE under a lease nobody honours
+      this.sql.exec(
+        `UPDATE startup_sessions SET state='REVOKED'
+         WHERE database_id=? AND startup_session_id=? AND state IN ('ACTIVE','DRAINING')`,
         databaseId, startupSessionId,
       );
       if (live > 0) {
@@ -524,11 +865,15 @@ export class ControllerCore {
     b: { maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number },
     startupSessionId: string,
   ): { ok: true } | { ok: false; error: "SESSION_UNKNOWN" | "SESSION_FENCED" }
-    | { ok: false; error: "INVALID_BUDGET"; field: string } {
+    | { ok: false; error: "INVALID_BUDGET"; field: string }
+    | { ok: false; error: "SESSION_NOT_ACTIVE"; state: string }
+    | { ok: false; error: "SESSION_LEASE_EXPIRED" } {
     const authority = this.requireLiveSession(databaseId, startupSessionId);
     if (!authority.ok) return authority;
     // Q-10: budgets are authority-sized values; exact or refused. Validated
     // BELOW the immutable platform ceilings - a budget widens nothing.
+    const leasedBudget = this.requireLeasedAuthority(databaseId, startupSessionId);
+    if (!leasedBudget.ok) return leasedBudget;
     const bad =
       validateBudgetField("maxUnpublishedOutbox", b.maxUnpublishedOutbox, MAX_OUTBOX_DEPTH_CEILING)
       ?? validateBudgetField("maxPayloadLength", b.maxPayloadLength, MAX_PAYLOAD_LENGTH_CEILING)
@@ -667,6 +1012,12 @@ export class ControllerCore {
       // record it from the correctly scoped durable transition.
       return { ok: false as const, error: "SESSION_FENCED" as const };
     }
+
+    // Q-03 / 12.4: authority is LEASED. The fence check above says the actor
+    // was not superseded; this says its lease is still running on controller
+    // time. Both must hold before any counter or outbox row is consumed.
+    const leased = this.requireLeasedAuthority(req.databaseId, req.startupSessionId);
+    if (!leased.ok) return leased;
 
     // exact-once replay by operation identity
     const replay = this.sql.exec(
@@ -1112,9 +1463,13 @@ export class ControllerCore {
   }
 
   outboxAck(databaseId: string, upToControlSeq: bigint, startupSessionId: string):
-    Typed<{ acked: number }> | { ok: false; error: "SESSION_UNKNOWN" | "SESSION_FENCED" } {
+    Typed<{ acked: number }> | { ok: false; error: "SESSION_UNKNOWN" | "SESSION_FENCED" }
+    | { ok: false; error: "SESSION_NOT_ACTIVE"; state: string }
+    | { ok: false; error: "SESSION_LEASE_EXPIRED" } {
     const authority = this.requireLiveSession(databaseId, startupSessionId);
     if (!authority.ok) return authority;
+    const leasedAck = this.requireLeasedAuthority(databaseId, startupSessionId);
+    if (!leasedAck.ok) return leasedAck;
     const bound = u64Blob(upToControlSeq, "up_to_control_seq");
     return this.sql.transaction(() => {
       // bounded by the ack window, not by history: the partial index over

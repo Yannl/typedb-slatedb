@@ -19,6 +19,7 @@ typedb-r2-v14-upstream-test-catalog.schema.json, generated from:
 No count in this file is hand-asserted; rerunning the generator against the
 pinned checkout must reproduce the output byte-for-byte (ordering is sorted).
 """
+import argparse
 import hashlib
 import json
 import os
@@ -32,6 +33,17 @@ ENV = {**os.environ, "CARGO_INCREMENTAL": "0",
        "CARGO_PROFILE_TEST_DEBUG": "false"}
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
+# WHICH TREE this catalogue describes.
+#
+# The catalogue is the UPSTREAM denominator, so it must be enumerated from a
+# PRISTINE checkout - but the corpus runs against the fork staged over that
+# same checkout, and one warm build cannot be both (contradiction CD-004).
+# `--tree` makes the choice explicit and records it in the artefact, instead
+# of leaving it to whatever state sources/typedb happened to be in when
+# somebody ran the generator. A dedicated pristine worktree is the intended
+# use:
+#     git -C sources/typedb worktree add ../typedb-pristine <locked-revision>
+#     python3 tools/catalog/generate_catalog.py --tree sources/typedb-pristine
 TB = REPO / "sources" / "typedb"
 BH = REPO / "sources" / "typedb-behaviour"
 TOOLCHAIN = "+1.93.0"
@@ -261,6 +273,25 @@ def build_targets_recon():
 
 
 def main():
+    global TB
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--tree", default=None,
+                    help="checkout to enumerate (default sources/typedb); use a pristine "
+                         "worktree so fork-owned tests never inflate the upstream denominator")
+    ap.add_argument("--out", default=None, help="output path for the catalogue JSON")
+    args = ap.parse_args()
+    if args.tree:
+        TB = pathlib.Path(args.tree).resolve()
+        if not (TB / "Cargo.toml").exists():
+            sys.exit(f"{TB} does not look like a TypeDB checkout")
+    tree_state = subprocess.run(["git", "-C", str(TB), "status", "--porcelain"],
+                                capture_output=True, text=True).stdout.strip()
+    tree_revision = subprocess.run(["git", "-C", str(TB), "rev-parse", "HEAD"],
+                                   capture_output=True, text=True).stdout.strip()
+    if tree_state:
+        print(f"WARNING: {TB} is DIRTY ({len(tree_state.splitlines())} paths). The upstream "
+              f"denominator must come from a pristine checkout; fork-owned tests would inflate "
+              f"it. Pass --tree with a clean worktree.", file=sys.stderr)
     source_lock_digest = sha256_file(REPO / "source-lock" / "source-lock.json")
     meta = cargo_metadata()
     cargo_targets = collect_cargo_targets(meta)
@@ -607,7 +638,9 @@ def main():
         "exclusions": exclusions,
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps(catalog, indent=1, sort_keys=True) + "\n")
+    out_path = pathlib.Path(args.out).resolve() if args.out else OUT
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(catalog, indent=1, sort_keys=True) + "\n")
     summary = {
         "targets": len(targets),
         "explicit_cargo_test_targets": sum(1 for t in cargo_targets if t["kind"] == "test"),
@@ -623,7 +656,10 @@ def main():
         "fixtures": len(fixtures),
         "build_recon_targets": len(recon),
     }
-    (OUT.parent / "catalog-summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    summary["enumerated_tree"] = str(TB)
+    summary["enumerated_tree_revision"] = tree_revision
+    summary["enumerated_tree_dirty"] = bool(tree_state)
+    (out_path.parent / "catalog-summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary, indent=2))
 
 

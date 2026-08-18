@@ -26,7 +26,7 @@ negative controls and mutant runs:
 |---|---|---|
 | F3 storage side (purge at open) | CLOSED | `3c00b9e` — immutable materialisation namespaces; open never deletes; `NoDeleteStore` |
 | F7r exact u64 sequences | CLOSED | `997da46` — BE-blob SQL, bigint core, decimal-string wire; 2^53 mutant |
-| F7r/F6r controller surface | PARTIAL→ commands ledger, CheckpointCut, anchored verification | `d47378e` (F6r remainder: TypeDB-integrated global cut, U3.2) |
+| F7r/F6r controller surface | PARTIAL→ journaled authority commands (NOT the inv. 85–98 command ledger — Q-28), CheckpointCut, anchored verification | `d47378e` (F6r remainder: TypeDB-integrated global cut, U3.2) |
 | F8 authenticated journal | CLOSED (R2 RecoveryAnchor publication remains) | `ed13a9a` |
 | F9 data-path hardening | CLOSED (streaming payloads remain) | `fe853aa` — capability tokens, content-addressed keys |
 | F10 verification infra | CLOSED (Mode-Q Bazel oracle remains) | `b76ad35` — fail-closed declaration parsing, leaf recounts, flake ledger |
@@ -171,7 +171,12 @@ integration, F8r RecoveryAnchor publication. Donor P1 dispositions:
   background rewrites) and is proven baseline-equal by the storage
   suite; it does not claim to be the global-cut protocol.
 
-## F7 — remote durability/controller completeness — **PARTIAL** @ `997da46`+`d47378e` (exact u64 CLOSED; ledger/CheckpointCut landed; U3.2 integration remains)
+## F7 — remote durability/controller completeness — **PARTIAL** @ `997da46`+`d47378e` (exact u64 CLOSED; journaled authority commands + CheckpointCut landed; U3.2 integration remains)
+
+Q-28 label correction: `appendCommand` journals authority mutations into
+the authenticated journal (F8). It is **not** the contract command ledger —
+inv. 85–98's `CommandRecord` reservation/no-intent/outcome protocol remains
+OPEN below — and no prose in this audit may call it one.
 
 - **Closed now:**
   - **F7a** — finalized operations queryable by operation id after their

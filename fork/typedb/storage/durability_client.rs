@@ -224,6 +224,11 @@ typedb_error! {
         SerializeError(1, "Durability client failed to serialise/deserialise durability record", source: Arc<bincode::Error>),
         ServiceError(2, "Error from durability service.", source: DurabilityServiceError),
         CompressionError(3, "Error while compressing durability record.", source: Arc<io::Error>),
+        // S-P0-02: commit validation's predecessor wait is bounded; expiry is
+        // validation-infrastructure ambiguity (the predecessor's verdict is
+        // UNKNOWN), which the commit path resolves as an unresolved
+        // obligation — never as an abort verdict.
+        PredecessorWaitTimeout(4, "Commit validation timed out after {waited_secs}s waiting for predecessor commit {predecessor} to leave state '{state}'. The predecessor's verdict is unknown; this commit's outcome is unresolved.", predecessor: u64, state: &'static str, waited_secs: u64),
     }
 }
 

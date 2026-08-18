@@ -20,7 +20,6 @@ use serde::{Deserialize, Serialize};
 
 use super::{IteratorPool, constants, iterator};
 use crate::{
-    factory::{StorageBackendProfile, StorageFactoryError, resolved_backend_profile},
     key_range::KeyRange,
     keyspace::{
         cursor::RawCursor,
@@ -30,6 +29,25 @@ use crate::{
     },
     write_batches::{KeyspaceWriteBatch, WriteBatches},
 };
+
+/// The typed storage-backend seam (S-P0-06, v17 A17.4): which key-value
+/// engine a keyspace opens with is an EXPLICIT constructor-level choice,
+/// resolved once by the caller (see
+/// [`StorageBackendProfile::storage_backend`][crate::factory::StorageBackendProfile::storage_backend])
+/// and passed down — the keyspace layer itself consults no environment and
+/// no process-global. Fail-closed by construction: there is no variant for
+/// a backend that cannot be built, so "not yet available" is refused at
+/// resolution, before any engine or namespace is touched, and an
+/// unrecognised configuration can never silently degrade to a default here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StorageBackend {
+    /// RocksDB keyspaces — the classic/oracle engine (U0/U1).
+    Rocks,
+    /// SlateDB keyspaces over the local-filesystem object store (U2).
+    SlateLocalFs,
+    /// SlateDB keyspaces over the S3-compatible object store (U2S3).
+    SlateS3,
+}
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct KeyspaceId(pub u8);
@@ -77,6 +95,7 @@ impl Keyspaces {
     pub(crate) fn open<KS: KeyspaceSet>(
         storage_dir: impl AsRef<Path>,
         resources: &RocksResources,
+        backend: StorageBackend,
     ) -> Result<Self, KeyspaceOpenError> {
         let path = storage_dir.as_ref();
 
@@ -89,15 +108,13 @@ impl Keyspaces {
             // engine options are only built for the engine actually selected:
             // under U2 the RocksDB tuning (block cache wiring, bloom setup)
             // would be constructed and discarded per keyspace
-            let profile = resolved_backend_profile()
-                .map_err(|source| KeyspaceOpenError::Factory { name: keyspace.name(), source })?;
-            let options = match profile {
-                StorageBackendProfile::U0PristineUpstream | StorageBackendProfile::U1ForkRocksFileWal => {
+            let options = match backend {
+                StorageBackend::Rocks => {
                     build_rocks_options(keyspace.tuning_profile(), keyspace.prefix_length(), resources)
                 }
-                _ => Options::default(),
+                StorageBackend::SlateLocalFs | StorageBackend::SlateS3 => Options::default(),
             };
-            keyspaces.keyspaces.push(Keyspace::open(path, keyspace, &options)?);
+            keyspaces.keyspaces.push(Keyspace::open(path, keyspace, &options, backend)?);
             keyspaces.index[keyspace.id().0 as usize] = Some(KeyspaceId(keyspaces.keyspaces.len() as u8 - 1));
         }
         Ok(keyspaces)
@@ -242,17 +259,21 @@ pub(crate) struct Keyspace {
 }
 
 impl Keyspace {
+    /// Open one keyspace on the EXPLICITLY chosen backend (S-P0-06). The
+    /// choice arrives as a typed constructor argument; this layer never
+    /// consults the environment or a process-global, so which engine touches
+    /// the directory is decided exactly once, by the caller, at open.
     pub(crate) fn open(
         storage_path: &Path,
         keyspace: impl KeyspaceSet,
         options: &Options,
+        backend: StorageBackend,
     ) -> Result<Keyspace, KeyspaceOpenError> {
-        use KeyspaceOpenError::{Factory, ProfileUnavailable, RocksDB, SlateDB};
+        use KeyspaceOpenError::{RocksDB, SlateDB};
         let name = keyspace.name();
         let path = storage_path.join(name);
-        let profile = resolved_backend_profile().map_err(|source| Factory { name, source })?;
-        let engine = match profile {
-            StorageBackendProfile::U0PristineUpstream | StorageBackendProfile::U1ForkRocksFileWal => {
+        let engine = match backend {
+            StorageBackend::Rocks => {
                 let db = DB::open(options, &path).map_err(|error| RocksDB { name, source: error })?;
                 // initial read options, should be customised to this storage's properties
                 let read_options = ReadOptions::default();
@@ -260,14 +281,11 @@ impl Keyspace {
                 write_options.disable_wal(true);
                 KeyspaceEngine::Rocks { db: Arc::new(db), read_options, write_options }
             }
-            StorageBackendProfile::U2SlateLocalFs => {
+            StorageBackend::SlateLocalFs => {
                 KeyspaceEngine::Slate(SlateKeyspace::open(&path).map_err(|source| SlateDB { name, source })?)
             }
-            StorageBackendProfile::U2S3SlateS3FileWal => {
+            StorageBackend::SlateS3 => {
                 KeyspaceEngine::Slate(SlateKeyspace::open_s3(&path).map_err(|source| SlateDB { name, source })?)
-            }
-            StorageBackendProfile::U3SlateRemoteSim | StorageBackendProfile::U4ProductionRemote => {
-                return Err(ProfileUnavailable { name, profile: profile.code() });
             }
         };
         Ok(Self { path, name, id: keyspace.id(), engine, prefix_length: keyspace.prefix_length() })
@@ -497,8 +515,6 @@ impl fmt::Debug for Keyspace {
 pub enum KeyspaceOpenError {
     RocksDB { name: &'static str, source: rocksdb::Error },
     SlateDB { name: &'static str, source: Arc<slatedb::Error> },
-    Factory { name: &'static str, source: StorageFactoryError },
-    ProfileUnavailable { name: &'static str, profile: &'static str },
     Validation { source: KeyspaceValidationError },
 }
 
@@ -513,8 +529,6 @@ impl Error for KeyspaceOpenError {
         match self {
             Self::RocksDB { source, .. } => Some(source),
             Self::SlateDB { source, .. } => Some(source.as_ref()),
-            Self::Factory { source, .. } => Some(source),
-            Self::ProfileUnavailable { .. } => None,
             Self::Validation { source, .. } => Some(source),
         }
     }

@@ -83,12 +83,31 @@ impl DurabilitySequenceNumber {
         Self { number }
     }
 
+    /// Successor, refusing to wrap (S-P0-09). Positional arithmetic at the
+    /// top of the sequence space is a hard fault in every build profile:
+    /// the unchecked `+ 1` panicked in debug but WRAPPED to zero in release,
+    /// silently re-issuing the identity of the first commit ever made.
+    /// Callers that can surface a typed error use [`Self::checked_next`];
+    /// the panicking form exists for positional uses where an overflow is
+    /// unreachable by construction.
     pub fn next(&self) -> Self {
-        Self { number: self.number + 1 }
+        self.checked_next().expect("DurabilitySequenceNumber overflow: the u64 sequence space is exhausted")
+    }
+
+    /// Successor, or `None` at the top of the sequence space. The checked
+    /// boundary for allocation paths (S-P0-09): exhaustion must become a
+    /// typed error with no state mutated, never a wrap or a panic.
+    pub fn checked_next(&self) -> Option<Self> {
+        self.number.checked_add(1).map(|number| Self { number })
     }
 
     pub fn previous(&self) -> Self {
-        Self { number: self.number - 1 }
+        Self {
+            number: self
+                .number
+                .checked_sub(1)
+                .expect("DurabilitySequenceNumber underflow: no sequence number precedes MIN"),
+        }
     }
 
     pub fn number(&self) -> u64 {
@@ -130,11 +149,20 @@ impl From<u64> for DurabilitySequenceNumber {
     }
 }
 
+// Positional arithmetic is CHECKED in every build profile (S-P0-09): the
+// previous unchecked operators panicked in debug but wrapped in release,
+// which is exactly the split the audit forbids — a release binary walking
+// off either end of the sequence space would silently alias an existing
+// (or nonexistent) sequence number instead of failing.
 impl Add<usize> for DurabilitySequenceNumber {
     type Output = DurabilitySequenceNumber;
 
     fn add(self, rhs: usize) -> Self::Output {
-        DurabilitySequenceNumber::from(self.number + rhs as u64)
+        DurabilitySequenceNumber::from(
+            self.number
+                .checked_add(rhs as u64)
+                .expect("DurabilitySequenceNumber overflow: the u64 sequence space is exhausted"),
+        )
     }
 }
 
@@ -142,13 +170,17 @@ impl Sub<usize> for DurabilitySequenceNumber {
     type Output = DurabilitySequenceNumber;
 
     fn sub(self, rhs: usize) -> Self::Output {
-        DurabilitySequenceNumber::from(self.number - rhs as u64)
+        DurabilitySequenceNumber::from(
+            self.number
+                .checked_sub(rhs as u64)
+                .expect("DurabilitySequenceNumber underflow: subtrahend exceeds the sequence number"),
+        )
     }
 }
 
 impl AddAssign<usize> for DurabilitySequenceNumber {
     fn add_assign(&mut self, rhs: usize) {
-        self.number = self.number + rhs as u64
+        *self = *self + rhs
     }
 }
 
@@ -156,7 +188,10 @@ impl Sub<DurabilitySequenceNumber> for DurabilitySequenceNumber {
     type Output = usize;
 
     fn sub(self, rhs: DurabilitySequenceNumber) -> Self::Output {
-        (self.number - rhs.number) as usize
+        self.number
+            .checked_sub(rhs.number)
+            .expect("DurabilitySequenceNumber underflow: subtracting a later sequence number from an earlier one")
+            as usize
     }
 }
 
@@ -208,5 +243,61 @@ impl Error for DurabilityServiceError {
             Self::WAL { source, .. } => Some(source),
             Self::DeleteFailed { source, .. } => Some(source),
         }
+    }
+}
+
+#[cfg(test)]
+mod sequence_boundary_tests {
+    //! S-P0-09: the u64 boundaries of the sequence space. Positive cases
+    //! prove the checked arithmetic is exact up to the boundary; negative
+    //! cases prove crossing it is a hard fault (never a release-mode wrap)
+    //! and that the checked allocation form reports exhaustion as `None`
+    //! without producing a value.
+
+    use super::DurabilitySequenceNumber;
+
+    #[test]
+    fn next_is_exact_up_to_the_last_representable_sequence_number() {
+        let penultimate = DurabilitySequenceNumber::new(u64::MAX - 1);
+        assert_eq!(penultimate.next(), DurabilitySequenceNumber::MAX);
+        assert_eq!(penultimate.checked_next(), Some(DurabilitySequenceNumber::MAX));
+    }
+
+    #[test]
+    fn checked_next_reports_exhaustion_at_max_instead_of_wrapping() {
+        assert_eq!(DurabilitySequenceNumber::MAX.checked_next(), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "sequence space is exhausted")]
+    fn next_at_max_is_a_hard_fault_not_a_wrap() {
+        let _ = DurabilitySequenceNumber::MAX.next();
+    }
+
+    #[test]
+    #[should_panic(expected = "sequence space is exhausted")]
+    fn add_across_max_is_a_hard_fault_not_a_wrap() {
+        let _ = DurabilitySequenceNumber::new(u64::MAX - 1) + 2usize;
+    }
+
+    #[test]
+    #[should_panic(expected = "no sequence number precedes MIN")]
+    fn previous_at_min_is_a_hard_fault_not_a_wrap() {
+        let _ = DurabilitySequenceNumber::MIN.previous();
+    }
+
+    #[test]
+    #[should_panic(expected = "underflow")]
+    fn subtracting_a_later_sequence_number_is_a_hard_fault_not_a_wrap() {
+        let _ = DurabilitySequenceNumber::new(1) - DurabilitySequenceNumber::new(2);
+    }
+
+    #[test]
+    fn add_assign_and_sub_are_exact_at_the_boundary() {
+        let mut sequence_number = DurabilitySequenceNumber::new(u64::MAX - 3);
+        sequence_number += 3usize;
+        assert_eq!(sequence_number, DurabilitySequenceNumber::MAX);
+        assert_eq!(DurabilitySequenceNumber::MAX - 1usize, DurabilitySequenceNumber::new(u64::MAX - 1));
+        assert_eq!(DurabilitySequenceNumber::MAX - DurabilitySequenceNumber::new(u64::MAX), 0usize);
     }
 }

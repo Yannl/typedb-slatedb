@@ -107,8 +107,30 @@ impl WAL {
         })
     }
 
-    fn increment(&self) -> DurabilitySequenceNumber {
-        DurabilitySequenceNumber::from(self.next_sequence_number.fetch_add(1, Ordering::Relaxed))
+    /// Allocate the next sequence number, refusing exhaustion (S-P0-09).
+    ///
+    /// `u64::MAX` is never allocated: the previous `fetch_add` handed it out
+    /// AND wrapped the counter to zero in release builds, so the write after
+    /// exhaustion would silently reuse the identity of the first record ever
+    /// written. Allocation at the top of the space is now a typed terminal
+    /// error and the counter is NOT advanced, so repeated attempts fail
+    /// identically instead of corrupting the sequence space.
+    fn increment(&self) -> Result<DurabilitySequenceNumber, WALError> {
+        let mut current = self.next_sequence_number.load(Ordering::Relaxed);
+        loop {
+            if current == u64::MAX {
+                return Err(WALError::SequenceExhausted);
+            }
+            match self.next_sequence_number.compare_exchange_weak(
+                current,
+                current + 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return Ok(DurabilitySequenceNumber::from(current)),
+                Err(observed) => current = observed,
+            }
+        }
     }
 
     pub fn current(&self) -> DurabilitySequenceNumber {
@@ -139,7 +161,9 @@ impl DurabilityService for WAL {
     ) -> Result<DurabilitySequenceNumber, DurabilityServiceError> {
         debug_assert!(self.registered_types.contains_key(&record_type));
         let mut files = self.files.write().unwrap();
-        let sequence_number = self.increment();
+        // exhaustion is refused BEFORE any bytes are written: no record, no
+        // counter movement, no partial state (S-P0-09)
+        let sequence_number = self.increment()?;
         debug!("Writing unsequenced record with {sequence_number}");
         let raw_record = RawRecord { sequence_number, record_type, bytes: Cow::Borrowed(bytes) };
         files.write_record(raw_record)?;
@@ -229,15 +253,41 @@ impl DurabilityService for WAL {
 
 #[derive(Debug, Clone)]
 pub enum WALError {
-    Create { source: Arc<io::Error> },
-    CreateDirectoryExists { directory: PathBuf },
-    Load { source: Arc<io::Error> },
-    LoadDirectoryMissing { directory: PathBuf },
-    Compression { source: Arc<io::Error> },
-    Decompression { source: Arc<io::Error> },
-    Sync { source: Arc<io::Error> },
-    UnrecognizedWalFilename { path: PathBuf },
+    Create {
+        source: Arc<io::Error>,
+    },
+    CreateDirectoryExists {
+        directory: PathBuf,
+    },
+    Load {
+        source: Arc<io::Error>,
+    },
+    LoadDirectoryMissing {
+        directory: PathBuf,
+    },
+    Compression {
+        source: Arc<io::Error>,
+    },
+    Decompression {
+        source: Arc<io::Error>,
+    },
+    Sync {
+        source: Arc<io::Error>,
+    },
+    UnrecognizedWalFilename {
+        path: PathBuf,
+    },
     SyncAcknowledgementLost,
+    /// The sync worker is alive but has not acknowledged within the bounded
+    /// commit-path wait (S-P0-02): the outcome of the requested fsync is
+    /// unknown, which is ambiguity, never success.
+    SyncAcknowledgementTimeout {
+        waited_secs: u64,
+    },
+    /// The u64 sequence space is exhausted (S-P0-09): allocation refuses,
+    /// with the counter left unmutated, rather than wrapping to zero and
+    /// re-issuing the identity of the first record ever written.
+    SequenceExhausted,
 }
 
 impl fmt::Display for WALError {
@@ -258,6 +308,8 @@ impl Error for WALError {
             Self::Sync { source, .. } => Some(source),
             Self::UnrecognizedWalFilename { .. } => None,
             Self::SyncAcknowledgementLost => None,
+            Self::SyncAcknowledgementTimeout { .. } => None,
+            Self::SequenceExhausted => None,
         }
     }
 }
@@ -783,8 +835,8 @@ mod test {
     use itertools::Itertools;
     use tempdir::TempDir;
 
-    use super::{MAX_WAL_FILE_SIZE, WAL};
-    use crate::{DurabilityRecordType, DurabilitySequenceNumber, DurabilityService, RawRecord};
+    use super::{MAX_WAL_FILE_SIZE, WAL, WALError};
+    use crate::{DurabilityRecordType, DurabilitySequenceNumber, DurabilityService, DurabilityServiceError, RawRecord};
     #[derive(Debug, PartialEq, Eq, Clone, Copy)]
     struct TestRecord {
         bytes: [u8; 4],
@@ -1186,5 +1238,41 @@ mod test {
         // Writing after the no-op truncate must continue from the correct sequence
         let s3 = wal.sequenced_write(TestRecord::RECORD_TYPE, b"tre!").unwrap();
         assert_eq!(s3, s2.next(), "next write must follow the last existing sequence number");
+    }
+
+    #[test]
+    fn sequence_exhaustion_is_a_typed_terminal_error_with_no_mutation() {
+        // S-P0-09 boundary: the last representable sequence number is
+        // allocatable; the one past it is a typed refusal that mutates
+        // NOTHING — no record written, counter not advanced — and repeats
+        // identically, instead of the previous fetch_add which handed out
+        // u64::MAX and wrapped the counter to zero in release builds.
+        use std::sync::atomic::Ordering;
+
+        let directory = TempDir::new("wal-test").unwrap();
+        let wal = create_wal(&directory);
+        let records_before_boundary = read_all_records(&wal).count();
+
+        wal.next_sequence_number.store(u64::MAX - 1, Ordering::SeqCst);
+        let last = wal.sequenced_write(TestRecord::RECORD_TYPE, b"last").unwrap();
+        assert_eq!(last, DurabilitySequenceNumber::new(u64::MAX - 1), "MAX-1 is still allocatable");
+
+        for _ in 0..2 {
+            let refused = wal.sequenced_write(TestRecord::RECORD_TYPE, b"over");
+            assert!(
+                matches!(refused, Err(DurabilityServiceError::WAL { source: WALError::SequenceExhausted })),
+                "allocation of u64::MAX must be the typed exhaustion error"
+            );
+            assert_eq!(
+                wal.next_sequence_number.load(Ordering::SeqCst),
+                u64::MAX,
+                "a refused allocation must not move the counter (no wrap, no partial state)"
+            );
+        }
+        assert_eq!(
+            read_all_records(&wal).count(),
+            records_before_boundary + 1,
+            "only the pre-exhaustion record may exist; a refused allocation writes nothing"
+        );
     }
 }

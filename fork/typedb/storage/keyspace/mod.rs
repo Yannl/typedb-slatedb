@@ -7,7 +7,9 @@
 pub use cursor::CursorError;
 pub use engine::KeyspaceTuningProfile;
 pub(crate) use keyspace::{KEYSPACE_MAXIMUM_COUNT, Keyspace, KeyspaceCheckpointError, KeyspaceError, Keyspaces};
-pub use keyspace::{KeyspaceDeleteError, KeyspaceId, KeyspaceOpenError, KeyspaceSet, KeyspaceValidationError};
+pub use keyspace::{
+    KeyspaceDeleteError, KeyspaceId, KeyspaceOpenError, KeyspaceSet, KeyspaceValidationError, StorageBackend,
+};
 
 use crate::{
     keyspace::cursor::RawCursor,

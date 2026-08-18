@@ -1,0 +1,148 @@
+diff -ruN orig/src/db/builder.rs slatedb-0.15.0/src/db/builder.rs
+--- orig/src/db/builder.rs
++++ slatedb-0.15.0/src/db/builder.rs
+@@ -2504,4 +2504,144 @@
+         );
+         db.close().await.expect("failed to close db");
+     }
++
++    // ----------------------------------------------------------------
++    // ADR-0012 external epochs, proven through the ENFORCED path: the
++    // public `DbBuilder`, not the private manifest helpers. A mutant that
++    // ignores the builder field survives helper-only tests; it dies here.
++    // ----------------------------------------------------------------
++
++    async fn latest_writer_epoch(store: &Arc<dyn ObjectStore>, path: &str) -> u64 {
++        let manifest_store = Arc::new(ManifestStore::new(&Path::from(path), Arc::clone(store)));
++        manifest_store
++            .read_latest_manifest()
++            .await
++            .expect("manifest must exist")
++            .manifest
++            .writer_epoch
++    }
++
++    #[tokio::test]
++    async fn dbbuilder_stores_the_exact_external_writer_epoch() {
++        let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
++        let path = "dbbuilder_stores_the_exact_external_writer_epoch";
++
++        // Internal allocation would produce 1 on first open; the controller
++        // issues 7 and the manifest must carry exactly 7.
++        let db = crate::Db::builder(path, Arc::clone(&store))
++            .with_external_writer_epoch(7)
++            .build()
++            .await
++            .expect("authorized open with an exact external epoch");
++        db.close().await.expect("close");
++        assert_eq!(latest_writer_epoch(&store, path).await, 7);
++
++        // A successor issued 8 claims exactly 8 through the same real path.
++        let db = crate::Db::builder(path, Arc::clone(&store))
++            .with_external_writer_epoch(8)
++            .build()
++            .await
++            .expect("successor open");
++        db.close().await.expect("close");
++        assert_eq!(latest_writer_epoch(&store, path).await, 8);
++    }
++
++    #[tokio::test]
++    async fn a_stale_external_epoch_is_refused_by_the_real_builder_before_any_write() {
++        let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
++        let path = "a_stale_external_epoch_is_refused_by_the_real_builder";
++
++        let db = crate::Db::builder(path, Arc::clone(&store))
++            .with_external_writer_epoch(7)
++            .build()
++            .await
++            .expect("authorized open");
++        db.close().await.expect("close");
++
++        // Replaying the spent epoch (and anything below it) through the
++        // PUBLIC builder is a typed fenced refusal, and the stored epoch is
++        // untouched — refused means nothing was written.
++        for stale in [7u64, 6, 0] {
++            let refused = crate::Db::builder(path, Arc::clone(&store))
++                .with_external_writer_epoch(stale)
++                .build()
++                .await;
++            match refused {
++                Err(error) => assert_eq!(
++                    error.kind(),
++                    ErrorKind::Closed(crate::CloseReason::Fenced),
++                    "stale epoch {stale} must be a typed Fenced refusal"
++                ),
++                Ok(_) => panic!("stale epoch {stale} must not open a writer"),
++            }
++            assert_eq!(latest_writer_epoch(&store, path).await, 7);
++        }
++    }
++
++    #[tokio::test]
++    async fn the_top_of_the_epoch_space_still_fences_exactly() {
++        // MAX-1 then MAX are claimed exactly through the real builder; after
++        // MAX every possible replay (there is no larger u64) is fenced, so
++        // the fence cannot be climbed over by wrapping.
++        let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
++        let path = "the_top_of_the_epoch_space_still_fences_exactly";
++
++        for epoch in [u64::MAX - 1, u64::MAX] {
++            let db = crate::Db::builder(path, Arc::clone(&store))
++                .with_external_writer_epoch(epoch)
++                .build()
++                .await
++                .unwrap_or_else(|e| panic!("exact claim of {epoch} must succeed: {e}"));
++            db.close().await.expect("close");
++            assert_eq!(latest_writer_epoch(&store, path).await, epoch);
++        }
++        for replay in [u64::MAX, u64::MAX - 1, 0] {
++            let refused = crate::Db::builder(path, Arc::clone(&store))
++                .with_external_writer_epoch(replay)
++                .build()
++                .await;
++            match refused {
++                Err(error) => assert_eq!(
++                    error.kind(),
++                    ErrorKind::Closed(crate::CloseReason::Fenced),
++                    "epoch {replay} after MAX must be fenced"
++                ),
++                Ok(_) => panic!("epoch {replay} after MAX must not open a writer"),
++            }
++            assert_eq!(latest_writer_epoch(&store, path).await, u64::MAX);
++        }
++    }
++
++    /// Production-lane posture: with `external_epoch_required` on, the real
++    /// builder REFUSES an open with no external epoch — before mutating the
++    /// stored epoch — instead of silently falling back to observe-and-bind
++    /// internal allocation.
++    #[cfg(feature = "external_epoch_required")]
++    #[tokio::test]
++    async fn a_missing_external_epoch_is_refused_not_defaulted() {
++        let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
++        let path = "a_missing_external_epoch_is_refused_not_defaulted";
++
++        let db = crate::Db::builder(path, Arc::clone(&store))
++            .with_external_writer_epoch(7)
++            .build()
++            .await
++            .expect("authorized open");
++        db.close().await.expect("close");
++
++        let refused = crate::Db::builder(path, Arc::clone(&store)).build().await;
++        match refused {
++            Err(error) => assert_eq!(
++                error.kind(),
++                ErrorKind::Invalid,
++                "a missing external epoch is a configuration refusal"
++            ),
++            Ok(_) => panic!("an epoch-less open must refuse under external_epoch_required"),
++        }
++        assert_eq!(
++            latest_writer_epoch(&store, path).await,
++            7,
++            "a refused open must not have advanced the stored epoch"
++        );
++    }
+ }

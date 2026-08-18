@@ -15,6 +15,29 @@ with the brief itself; decision record required before code moves).
 An item is only CLOSED here if a test exists that FAILS when the defect is
 deliberately reintroduced, and the mutant run was actually executed.
 
+**Status update (closure session, merged to main in PR #1 @ `5f9fbd5`):**
+the statuses in the section bodies below are the audit-time assessments;
+the closure session then moved several of them. The heading of each
+section carries the CURRENT status; where it differs from the body, the
+heading (and this table) wins. Closures this session, each with executed
+negative controls and mutant runs:
+
+| Finding | Now | Closure commit |
+|---|---|---|
+| F3 storage side (purge at open) | CLOSED | `3c00b9e` — immutable materialisation namespaces; open never deletes; `NoDeleteStore` |
+| F7r exact u64 sequences | CLOSED | `997da46` — BE-blob SQL, bigint core, decimal-string wire; 2^53 mutant |
+| F7r/F6r controller surface | PARTIAL→ commands ledger, CheckpointCut, anchored verification | `d47378e` (F6r remainder: TypeDB-integrated global cut, U3.2) |
+| F8 authenticated journal | CLOSED (R2 RecoveryAnchor publication remains) | `ed13a9a` |
+| F9 data-path hardening | CLOSED (streaming payloads remain) | `fe853aa` — capability tokens, content-addressed keys |
+| F10 verification infra | CLOSED (Mode-Q Bazel oracle remains) | `b76ad35` — fail-closed declaration parsing, leaf recounts, flake ledger |
+| Donor A3 (session-bound finalize) | CLOSED | `c71b8e1` |
+| Donor A6 (metrics lock + dead memo) | CLOSED | `f8c1bae` |
+
+Still OPEN-P0 by design (staged, no completion claim): F4/F5 external-epoch
+fork (interim posture guard landed in `3c00b9e`), F6r global-cut
+integration, F8r RecoveryAnchor publication. Donor P1 dispositions:
+`docs/reviews/donor-a-branch-response.md`.
+
 ---
 
 ## F2 — SlateDB read contract (`dirty=true`) — **CLOSED** @ `65da032`
@@ -59,7 +82,7 @@ deliberately reintroduced, and the mutant run was actually executed.
 - **Fail-closed/observability:** contract violation is impossible to
   reach by configuration — the options are hard-resolved in one place.
 
-## F3 — destructive purge of the remote prefix at open — **OPEN-P0 (design staged), with the contested part narrowed**
+## F3 — destructive purge of the remote prefix at open — **CLOSED (storage side) @ `3c00b9e`**
 
 - **File/symbol:** `fork/typedb/storage/keyspace/slate.rs` `open_s3()`
   (`purge_remote_prefix` + `upload_dir_to_remote`), `purge_remote()` used
@@ -148,7 +171,7 @@ deliberately reintroduced, and the mutant run was actually executed.
   background rewrites) and is proven baseline-equal by the storage
   suite; it does not claim to be the global-cut protocol.
 
-## F7 — remote durability/controller completeness — **PARTIAL** @ `ce3d64c`
+## F7 — remote durability/controller completeness — **PARTIAL** @ `997da46`+`d47378e` (exact u64 CLOSED; ledger/CheckpointCut landed; U3.2 integration remains)
 
 - **Closed now:**
   - **F7a** — finalized operations queryable by operation id after their
@@ -171,7 +194,7 @@ deliberately reintroduced, and the mutant run was actually executed.
   three lanes, not the complete V16 controller, and this audit does not
   claim otherwise.
 
-## F8 — authenticated control journal — **OPEN-P0 (design staged)**
+## F8 — authenticated control journal — **CLOSED @ `ed13a9a`** (R2 RecoveryAnchor publication remains OPEN)
 
 - **Present today:** transactional outbox with contiguous ControlSeq,
   exactly-once drain, at-least-once peek/ack, and SQL-vs-pure-reducer
@@ -184,7 +207,7 @@ deliberately reintroduced, and the mutant run was actually executed.
   incarnation rotation. Outbox peek/ack exposure: flagged into F9's
   capability work — admin surfaces must not be public.
 
-## F9 — Worker/data-path hardening — **PARTIAL** @ `ce3d64c`
+## F9 — Worker/data-path hardening — **CLOSED @ `fe853aa`+`c71b8e1`** (streaming payloads remain)
 
 - **Closed now:** bounded scan responses (byte budget from catalogued
   lengths BEFORE fetch, 8 MiB cap, one-record progress, exact resume —
@@ -200,7 +223,7 @@ deliberately reintroduced, and the mutant run was actually executed.
   bodies (today bounded, not streamed); auth/replay/cross-tenant/
   oversized/stale-incarnation negative matrix.
 
-## F10 — donor verification infrastructure — **PARTIAL (evaluated; imports selected)**
+## F10 — donor verification infrastructure — **CLOSED @ `b76ad35`** (Mode-Q Bazel oracle remains)
 
 - **Imported now:** the entire `contract/` set (normative brief v16, v17
   addendum, playbook, contract lock, source matrix, probe plan) @ donor

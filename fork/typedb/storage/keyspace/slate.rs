@@ -621,27 +621,45 @@ impl SlateKeyspace {
 
     /// Exact floor lookup (last entry with key <= `key`): a descending scan
     /// over `..=key` — the same contract as RocksDB `seek_for_prev`.
+    ///
+    /// Error posture (donor A10): SlateDB classifies its errors, and
+    /// `ErrorKind::Unavailable` is BY CONTRACT the transient class ("a
+    /// storage or network service is unavailable; the user must retry or
+    /// drop") — an object-store blip on the remote lane. Aborting the whole
+    /// server on the first such blip turns routine S3 weather into an
+    /// outage, so Unavailable is retried a bounded number of times with
+    /// backoff. Everything else — and Unavailable beyond the budget — still
+    /// FAILS CLOSED with a panic: the Option-only signature cannot carry an
+    /// error, and the caller (vertex ID allocator seeding) would treat a
+    /// silent None as "nothing allocated" and re-issue existing IDs — data
+    /// corruption. A crash is recoverable; ID reuse is not.
     pub(super) fn get_prev<M, T>(&self, key: &[u8], mut mapper: M) -> Option<T>
     where
         M: FnMut(&[u8], &[u8]) -> T,
     {
-        let db = self.db.clone();
-        let key = key.to_vec();
-        let result = bridge(async move {
-            let options = scan_options().with_order(slatedb::IterationOrder::Descending);
-            let mut iterator = db.scan_with_options(..=key, &options).await?;
-            iterator.next().await
-        });
-        match result {
-            Ok(Some(kv)) => Some(mapper(kv.key.as_ref(), kv.value.as_ref())),
-            Ok(None) => None,
-            // FAIL CLOSED: the Option-only signature cannot carry an error,
-            // and the caller (vertex ID allocator seeding) would treat a
-            // silent None as "nothing allocated" and re-issue existing IDs —
-            // data corruption. A storage-engine failure here must stop the
-            // process, exactly like an unreadable RocksDB would.
-            Err(error) => {
-                panic!("SlateDB floor scan (get_prev) failed; refusing to report absence: {error}")
+        let mut attempt = 0;
+        loop {
+            let db = self.db.clone();
+            let key = key.to_vec();
+            let result = bridge(async move {
+                let options = scan_options().with_order(slatedb::IterationOrder::Descending);
+                let mut iterator = db.scan_with_options(..=key, &options).await?;
+                iterator.next().await
+            });
+            match result {
+                Ok(Some(kv)) => return Some(mapper(kv.key.as_ref(), kv.value.as_ref())),
+                Ok(None) => return None,
+                Err(error) if retry_transient(&error, attempt) => {
+                    attempt += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(50 << attempt));
+                }
+                Err(error) => {
+                    panic!(
+                        "SlateDB floor scan (get_prev) failed ({} transient retries); \
+                         refusing to report absence: {error}",
+                        attempt
+                    )
+                }
             }
         }
     }
@@ -1020,6 +1038,18 @@ fn io_error(error: io::Error) -> slatedb::Error {
     slatedb::Error::unavailable(format!("keyspace object store I/O: {error}"))
 }
 
+/// The single retry decision for read paths whose signature cannot carry an
+/// error (donor A10). ONLY SlateDB's contractual transient class
+/// (`ErrorKind::Unavailable` — "must retry or drop") is retried, and only
+/// within the bounded budget; every other kind (Invalid, Data, Internal,
+/// Closed, Transaction) fails closed immediately — retrying those would
+/// mask corruption or a bug behind latency.
+const TRANSIENT_RETRIES: u32 = 4;
+
+fn retry_transient(error: &slatedb::Error, attempt: u32) -> bool {
+    error.kind() == slatedb::ErrorKind::Unavailable && attempt < TRANSIENT_RETRIES
+}
+
 fn copy_dir_recursive_excluding(from: &Path, to: &Path, exclude_dir: Option<&Path>) -> io::Result<()> {
     fs::create_dir_all(to)?;
     for entry in fs::read_dir(from)? {
@@ -1045,6 +1075,44 @@ fn copy_dir_recursive_excluding(from: &Path, to: &Path, exclude_dir: Option<&Pat
 fn find_manifest_dir(keyspace_path: &Path) -> io::Result<Option<PathBuf>> {
     let candidate = keyspace_path.join(DB_SUBDIR).join(MANIFEST_SUBDIR);
     if candidate.is_dir() { Ok(Some(candidate)) } else { Ok(None) }
+}
+
+#[cfg(test)]
+mod retry_channel_tests {
+    //! Donor A10 control: the get_prev retry decision. Reintroducing
+    //! panic-on-any (never retrying) fails `unavailable_is_retried…`;
+    //! widening the retry to every kind (masking corruption behind latency)
+    //! fails `non_transient_kinds_fail_closed…`; removing the bound fails
+    //! `the_retry_budget_is_bounded`.
+
+    use super::{retry_transient, TRANSIENT_RETRIES};
+
+    #[test]
+    fn unavailable_is_retried_within_the_budget() {
+        let transient = slatedb::Error::unavailable("s3 blip".to_string());
+        for attempt in 0..TRANSIENT_RETRIES {
+            assert!(retry_transient(&transient, attempt), "attempt {attempt} must retry");
+        }
+    }
+
+    #[test]
+    fn the_retry_budget_is_bounded() {
+        let transient = slatedb::Error::unavailable("s3 outage".to_string());
+        assert!(!retry_transient(&transient, TRANSIENT_RETRIES),
+            "an exhausted budget must fail closed, not spin");
+    }
+
+    #[test]
+    fn non_transient_kinds_fail_closed_immediately() {
+        for error in [
+            slatedb::Error::invalid("bad argument".to_string()),
+            slatedb::Error::data("corrupt sst".to_string()),
+            slatedb::Error::internal("bug".to_string()),
+        ] {
+            assert!(!retry_transient(&error, 0),
+                "{:?} must never be retried - retrying would mask corruption or a bug", error.kind());
+        }
+    }
 }
 
 #[cfg(test)]

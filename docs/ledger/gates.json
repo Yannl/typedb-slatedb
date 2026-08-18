@@ -305,12 +305,27 @@
   {
    "id": "R3-C",
    "title": "Storage backend seam, shipping SlateDB, checkpoint safety (S-01..S-05,R-03..R-06,O-01)",
-   "status": "IN_PROGRESS",
+   "status": "DONE_WITH_RECORDED_REMAINDER",
    "items": [
-    "S-02/S-03 shipping the patched SlateDB (external epochs + bounded uploader) - landing",
-    "OPEN: S-01 persisted BackendSpec resolved-before-touch; S-04 immutability boundary; R-03 checkpoint out of auto path; R-04 concurrent-checkpoint serialisation; R-05 scratch-first restore; R-06 remote COMPLETE/fsync; O-01 budgeted metrics; S-05 no-compactor admission bound"
+    "S-02/S-03 patched SlateDB linked via [patch.crates-io] + external epochs + bounded uploader (storage lib 70)",
+    "S-01 typed BackendSpec + persisted marker resolved before any touch; MaterialisationNamespace seam",
+    "S-04 real immutability boundary (create-only/same-digest, journaled multipart, quarantine flag)",
+    "S-05 no-compactor admission bound (OD-007)",
+    "R-03 checkpoint off the automatic path (BackgroundTaskPolicy + task-inventory attestation)",
+    "R-04 unique attempt id + safe sibling deletion + post-catchup scheduling",
+    "R-05 scratch-first validate-before-activate restore + no-follow guard",
+    "R-06 digest-bound COMPLETE + bottom-up fsync",
+    "O-01 total/typed/budgeted metrics (TTL memo, single-flight, no fabricated counts)",
+    "source-lock updated for the patched fork consumption (CD-007)",
+    "storage lib 110, database 11, test_recovery 7, test_snapshot 10; every finding a killed mutant",
+    "REMAINDER: R-08 crash-convergence assertions (subprocess-gated assembly lane); controller-provisioned namespaces need control-plane wiring; fsync crash-domain + MinIO LIST-fault not exercised here"
    ],
-   "commits": []
+   "commits": [
+    "8393d8f",
+    "0530dc3",
+    "cf1eb50",
+    "3d75d38"
+   ]
   },
   {
    "id": "R3-D",
@@ -388,12 +403,15 @@
     "round-3 response document",
     "ADR-0009/spec-delivery/handoff \u00a718 corrections",
     "ledger round-3 adoption",
-    "REMAINING: workspace-lock regen after fork settles; factorization review; full-suite sweep; PR + merge to main"
+    "source-lock truth for the shipped fork (CD-007)",
+    "REMAINING: factorization review; full-suite sweep; PR + merge to main"
    ],
    "commits": [
     "273d0d5",
     "11401b2",
-    "af83476"
+    "af83476",
+    "765c4e9",
+    "3d75d38"
    ]
   }
  ],

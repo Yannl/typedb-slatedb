@@ -87,6 +87,19 @@ mod write_batches;
 pub(crate) const STORAGE_WAIT_DEADLINE: Duration = Duration::from_secs(600);
 /// How often a still-pending bounded wait reports progress.
 pub(crate) const STORAGE_WAIT_REPORT_INTERVAL: Duration = Duration::from_secs(30);
+/// R-09: bound for the commit path's PREDECESSOR waits (the `Empty` slot
+/// race and the `Pending` validation chain in the isolation manager). These
+/// waits sit on the normal request path, so wedging for the full 600 s
+/// containment deadline would let one stuck predecessor pin every dependent
+/// commit for minutes; instead the wait returns the typed
+/// `PredecessorWaitTimeout` (verdict UNKNOWN — an unresolved obligation,
+/// never an abort) promptly. The value deliberately REUSES the existing
+/// OD-002/OD-006 30 s report cadence rather than inventing a new
+/// owner-policy number: healthy predecessor transitions are microseconds to
+/// milliseconds, so 30 s only ever fires on a genuine wedge. Like the other
+/// bounds here it is a containment default, not an approved SLO (OD-002 /
+/// OD-006 govern any change).
+pub(crate) const PREDECESSOR_WAIT_DEADLINE: Duration = STORAGE_WAIT_REPORT_INTERVAL;
 
 #[derive(Debug)]
 pub struct MVCCStorage<Durability> {
@@ -131,7 +144,10 @@ impl<Durability> MVCCStorage<Durability> {
             durability_client,
             keyspaces,
             isolation_manager,
-            highest_committed_snapshot: AtomicU64::new(next_sequence_number.number() - 1),
+            // R-07: checked, not raw `- 1`. The first allocatable sequence
+            // number is MIN.next(), so MIN itself never names a commit and a
+            // saturated origin is exact, never a release-mode wrap.
+            highest_committed_snapshot: AtomicU64::new(next_sequence_number.number().saturating_sub(1)),
         })
     }
 
@@ -194,7 +210,10 @@ impl<Durability> MVCCStorage<Durability> {
             trace!("No checkpoint found, loading from WAL");
             let commits = load_commit_data_from(SequenceNumber::MIN.next(), &durability_client)
                 .map_err(|err| RecoverFromDurability { name: name.to_owned(), typedb_source: err })?;
-            let next_sequence_number = commits.keys().max().cloned().unwrap_or(SequenceNumber::MIN).next();
+            // R-01: the frontier is the WAL's own recovered end. The strict
+            // loader above has PROVEN exactly one commit for every sequence
+            // in start..=head, so this is never a max() over an unproved set.
+            let next_sequence_number = durability_client.current();
             apply_recovered(name, commits, &durability_client, &keyspaces)
                 .map_err(|err| RecoverFromDurability { name: name.to_owned(), typedb_source: err })?;
             trace!("Finished applying commits from WAL.");
@@ -208,7 +227,10 @@ impl<Durability> MVCCStorage<Durability> {
             durability_client,
             keyspaces,
             isolation_manager,
-            highest_committed_snapshot: AtomicU64::new(next_sequence_number.number() - 1),
+            // R-07: checked, not raw `- 1`. The first allocatable sequence
+            // number is MIN.next(), so MIN itself never names a commit and a
+            // saturated origin is exact, never a release-mode wrap.
+            highest_committed_snapshot: AtomicU64::new(next_sequence_number.number().saturating_sub(1)),
         })
     }
 

@@ -9,7 +9,7 @@
 
 use std::{
     cmp::max,
-    collections::{HashMap, VecDeque},
+    collections::VecDeque,
     error::Error,
     fmt,
     sync::{
@@ -26,6 +26,7 @@ use resource::constants::storage::TIMELINE_WINDOW_SIZE;
 use crate::{
     durability_client::{DurabilityClient, DurabilityClientError},
     record::{CommitRecord, StatusRecord},
+    recovery::status_resolver::{StatusConflict, resolve_status_history},
     sequence_number::SequenceNumber,
     write_batches::WriteBatches,
 };
@@ -152,20 +153,25 @@ impl IsolationManager {
             commit_record.open_sequence_number().next(),
             stop_sequence_number,
         )? {
-            if let Ok((_, commit_status)) = commit_status_result {
-                let commit_dependency = match commit_status {
-                    CommitStatus::Aborted => CommitDependency::Independent,
-                    CommitStatus::Applied(predecessor_record) => commit_record.compute_dependency(&predecessor_record),
-                    CommitStatus::Pending(_) => {
-                        unreachable!("Evicted records cannot be pending")
-                    }
-                    CommitStatus::Empty | CommitStatus::Validated(_) => unreachable!(),
-                };
-                if let Some(conflict) = handle_dependency(commit_dependency) {
-                    return Ok(Some(conflict));
+            let (sequence_number, commit_status) = commit_status_result?;
+            let commit_dependency = match commit_status {
+                DiskCommitStatus::Aborted => CommitDependency::Independent,
+                DiskCommitStatus::Applied(predecessor_record) => commit_record.compute_dependency(&predecessor_record),
+                DiskCommitStatus::MissingStatus => {
+                    // R-02: a predecessor evicted from the timeline with NO
+                    // durable status record is a missing certificate. Its
+                    // verdict cannot be deterministically recomputed on the
+                    // live path (that would require re-validating it against
+                    // ITS predecessors mid-flight), so this is a typed
+                    // refusal — never an unreachable!/panic and never a
+                    // silent assumption of either verdict.
+                    return Err(DurabilityClientError::MissingCommitStatus {
+                        sequence_number: sequence_number.number(),
+                    });
                 }
-            } else if let Err(err) = commit_status_result {
-                return Err(err);
+            };
+            if let Some(conflict) = handle_dependency(commit_dependency) {
+                return Ok(Some(conflict));
             }
         }
         Ok(None)
@@ -200,15 +206,21 @@ impl IsolationManager {
         start_sequence_number: SequenceNumber,
         stop_sequence_number: SequenceNumber,
     ) -> Result<
-        impl Iterator<Item = Result<(SequenceNumber, CommitStatus<'_>), DurabilityClientError>>,
+        impl Iterator<Item = Result<(SequenceNumber, DiskCommitStatus), DurabilityClientError>>,
         DurabilityClientError,
     > {
-        let mut is_committed = HashMap::new();
-        for record in durability_client.iter_unsequenced_type_from::<StatusRecord>(start_sequence_number)? {
-            let record = record?;
-            // We can't stop early because status records may be out-of-order
-            is_committed.insert(record.commit_record_sequence_number(), record.was_committed());
-        }
+        // R-02: status folding goes through the ONE shared resolver, the same
+        // one recovery uses: identical duplicates converge, opposite verdicts
+        // are an order-independent typed quarantine — never last-write-wins.
+        // We can't stop early because status records may be out-of-order.
+        let statuses = durability_client
+            .iter_unsequenced_type_from::<StatusRecord>(start_sequence_number)?
+            .map(|record| record.map(|record| (record.commit_record_sequence_number(), record.was_committed())));
+        let is_committed = resolve_status_history(statuses.collect::<Result<Vec<_>, _>>()?).map_err(
+            |StatusConflict { sequence_number }| DurabilityClientError::ConflictingCommitStatus {
+                sequence_number: sequence_number.number(),
+            },
+        )?;
 
         Ok(durability_client.iter_sequenced_type_from::<CommitRecord>(start_sequence_number)?.map_while(
             move |result| match result {
@@ -217,9 +229,9 @@ impl IsolationManager {
                         None
                     } else {
                         let status = match is_committed.get(&commit_sequence_number) {
-                            None => CommitStatus::Pending(MaybeOwns::Owned(commit_record)),
-                            Some(true) => CommitStatus::Applied(MaybeOwns::Owned(commit_record)),
-                            Some(false) => CommitStatus::Aborted,
+                            None => DiskCommitStatus::MissingStatus,
+                            Some(true) => DiskCommitStatus::Applied(commit_record),
+                            Some(false) => DiskCommitStatus::Aborted,
                         };
                         Some(Ok((commit_sequence_number, status)))
                     }
@@ -362,7 +374,13 @@ impl Timeline {
     // The whole of the timeline uses the underlying u64
     fn new(next_sequence_number: SequenceNumber) -> Timeline {
         let windows = VecDeque::from([Arc::new(TimelineWindow::new(next_sequence_number))]);
-        Timeline { windows: RwLock::new(windows), watermark: AtomicU64::new(next_sequence_number.number() - 1) }
+        // R-07: checked, not raw `- 1`. The first allocatable sequence number
+        // is MIN.next(), so MIN never names a commit and a saturated origin
+        // watermark is exact, never a release-mode wrap to u64::MAX.
+        Timeline {
+            windows: RwLock::new(windows),
+            watermark: AtomicU64::new(next_sequence_number.number().saturating_sub(1)),
+        }
     }
 
     fn may_free_windows(&self) {
@@ -378,7 +396,14 @@ impl Timeline {
     }
 
     fn may_increment_watermark(&self, sequence_number: SequenceNumber) {
-        if self.watermark() != sequence_number - 1 {
+        // R-07: canonical checked helpers instead of raw +/- 1. A sequence
+        // number with no predecessor (MIN) can never be a commit, and a
+        // candidate with no successor (MAX) simply stops the advance — no
+        // debug-panic/release-wrap split anywhere on this path.
+        let Some(predecessor) = sequence_number.try_previous() else {
+            return; // MIN never names a commit; nothing to advance past
+        };
+        if self.watermark() != predecessor {
             return;
         }
 
@@ -389,18 +414,22 @@ impl Timeline {
                 let should_update = window.as_ref().is_some_and(|window| {
                     matches!(window.get_status(candidate_watermark), CommitStatus::Aborted | CommitStatus::Applied(_))
                 });
+                let Some(candidate_predecessor) = candidate_watermark.try_previous() else { break };
                 if should_update
                     && self
                         .watermark
                         .compare_exchange(
-                            (candidate_watermark - 1).number(),
+                            candidate_predecessor.number(),
                             candidate_watermark.number(),
                             Ordering::SeqCst,
                             Ordering::SeqCst,
                         )
                         .is_ok()
                 {
-                    candidate_watermark += 1;
+                    candidate_watermark = match candidate_watermark.try_next() {
+                        Some(next) => next,
+                        None => break, // top of the sequence space: refuse to advance further
+                    };
                     if candidate_watermark >= window.as_ref().unwrap().end() {
                         drop(window.take());
                         window = self.try_get_window(candidate_watermark);
@@ -411,8 +440,11 @@ impl Timeline {
             }
         }
 
-        let watermark = candidate_watermark - 1; // Invaraint
-        if let Some(watermark_window_end) = { self.try_get_window(sequence_number - 1).map(|w| w.end()) } {
+        let watermark = match candidate_watermark.try_previous() {
+            Some(watermark) => watermark, // Invariant
+            None => return,
+        };
+        if let Some(watermark_window_end) = { self.try_get_window(predecessor).map(|w| w.end()) } {
             if watermark >= watermark_window_end {
                 self.may_free_windows();
             }
@@ -500,11 +532,13 @@ impl Timeline {
     }
 }
 
-/// A spin wait carrying the shared containment bound (S-P0-02). It still
-/// spins — the expected waits are the sub-microsecond insert race and short
-/// overlapping validation chains — but every iteration checks the shared
-/// OD-002/OD-006 deadline and report cadence, so a predecessor that never
-/// transitions becomes a typed error instead of a silent forever-spin.
+/// A spin wait carrying a containment bound (S-P0-02). It still spins — the
+/// expected waits are the sub-microsecond insert race and short overlapping
+/// validation chains — but every iteration checks its deadline, so a
+/// predecessor that never transitions becomes a typed error instead of a
+/// silent forever-spin. R-09: the predecessor waits pass the SHORT
+/// [`crate::PREDECESSOR_WAIT_DEADLINE`], not the global 600 s storage
+/// deadline, so the typed outcome is prompt.
 struct BoundedSpin {
     state: &'static str,
     sequence_number: SequenceNumber,
@@ -583,7 +617,13 @@ impl<const SIZE: usize> TimelineWindow<SIZE> {
     }
 
     fn end(&self) -> SequenceNumber {
-        self.start + TIMELINE_WINDOW_SIZE
+        // R-07: checked window arithmetic. Capping the exclusive end at MAX
+        // is exact, not lossy: allocation refuses u64::MAX (typed WAL
+        // exhaustion), so no allocatable sequence number is ever excluded,
+        // and the previous unchecked `+` panicked in debug and wrapped the
+        // window end around to a TINY value in release at the top of the
+        // sequence space.
+        self.start.checked_window_end(TIMELINE_WINDOW_SIZE).unwrap_or(SequenceNumber::MAX)
     }
 
     fn insert_pending(&self, sequence_number: SequenceNumber, commit_record: CommitRecord) {
@@ -626,9 +666,13 @@ impl<const SIZE: usize> TimelineWindow<SIZE> {
     /// predecessor thread dying inside that window pinned every waiter
     /// forever with no diagnostic.
     fn await_slot_occupied(&self, sequence_number: SequenceNumber) -> Result<(), DurabilityClientError> {
+        // R-09: predecessor waits are bounded by the SHORT predecessor
+        // deadline, not the global 600 s storage deadline — a wedged
+        // predecessor becomes a prompt typed unresolved outcome instead of
+        // pinning this commit for minutes.
         self.await_slot_occupied_within(
             sequence_number,
-            crate::STORAGE_WAIT_DEADLINE,
+            crate::PREDECESSOR_WAIT_DEADLINE,
             crate::STORAGE_WAIT_REPORT_INTERVAL,
         )
     }
@@ -654,9 +698,12 @@ impl<const SIZE: usize> TimelineWindow<SIZE> {
     /// verdict is UNKNOWN), which the commit path records as an unresolved
     /// obligation, never as an abort verdict.
     fn await_pending_status_commits(&self, sequence_number: SequenceNumber) -> Result<bool, DurabilityClientError> {
+        // R-09: bounded by the SHORT predecessor deadline (see
+        // crate::PREDECESSOR_WAIT_DEADLINE) — expiry is the typed
+        // PredecessorWaitTimeout, an unresolved obligation, never an abort.
         self.await_pending_status_commits_within(
             sequence_number,
-            crate::STORAGE_WAIT_DEADLINE,
+            crate::PREDECESSOR_WAIT_DEADLINE,
             crate::STORAGE_WAIT_REPORT_INTERVAL,
         )
     }
@@ -699,6 +746,17 @@ pub(crate) enum CommitStatus<'a> {
     Validated(MaybeOwns<'a, CommitRecord>),
     Applied(MaybeOwns<'a, CommitRecord>),
     Aborted,
+}
+
+/// A predecessor commit's durable state as reconstructed from disk (R-02):
+/// only the states the WAL can actually certify. `MissingStatus` means the
+/// commit record exists but no status record certifies its verdict — the
+/// caller must refuse with a typed error, never assume or panic.
+#[derive(Debug)]
+pub(crate) enum DiskCommitStatus {
+    Applied(CommitRecord),
+    Aborted,
+    MissingStatus,
 }
 
 #[derive(Debug)]
@@ -999,6 +1057,34 @@ mod predecessor_wait_tests {
             }
             other => panic!("expected the typed PredecessorWaitTimeout for state '{expected_state}', got: {other:?}"),
         }
+    }
+
+    #[test]
+    fn the_default_predecessor_wait_is_promptly_bounded_not_the_global_storage_deadline() {
+        // R-09: the DEFAULT wait (no injected deadline) with a
+        // never-resolving predecessor must return the typed timeout within
+        // the short predecessor bound — never spin toward the global 600 s
+        // storage deadline. This test runs the real default (~30 s), so a
+        // mutant restoring STORAGE_WAIT_DEADLINE as the default fails it.
+        assert_eq!(crate::PREDECESSOR_WAIT_DEADLINE, crate::STORAGE_WAIT_REPORT_INTERVAL, "reused, not invented");
+        assert!(
+            crate::PREDECESSOR_WAIT_DEADLINE.as_secs() * 10 <= crate::STORAGE_WAIT_DEADLINE.as_secs(),
+            "the predecessor bound must be far below the global storage deadline"
+        );
+
+        let window = window();
+        let (result_sender, result_receiver) = mpsc::channel();
+        thread::spawn({
+            let window = Arc::clone(&window);
+            move || {
+                let outcome = window.await_slot_occupied(SequenceNumber::new(1));
+                let _ = result_sender.send(outcome);
+            }
+        });
+        let outcome = result_receiver
+            .recv_timeout(crate::PREDECESSOR_WAIT_DEADLINE + Duration::from_secs(30))
+            .expect("the DEFAULT predecessor wait must expire within the short bound, not minutes");
+        expect_timeout(outcome, "Empty");
     }
 
     #[test]

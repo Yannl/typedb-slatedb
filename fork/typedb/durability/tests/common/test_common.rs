@@ -38,3 +38,11 @@ pub fn load_wal(directory: impl AsRef<Path>) -> WAL {
     wal.register_record_type(TestRecord::RECORD_TYPE, TestRecord::RECORD_NAME);
     wal
 }
+
+/// Like [`load_wal`] but surfaces the typed load error (R-01b quarantines).
+pub fn try_load_wal(directory: impl AsRef<Path>) -> Result<WAL, durability::DurabilityServiceError> {
+    WAL::load(directory, FsyncMetrics::disabled()).map(|mut wal| {
+        wal.register_record_type(TestRecord::RECORD_TYPE, TestRecord::RECORD_NAME);
+        wal
+    })
+}

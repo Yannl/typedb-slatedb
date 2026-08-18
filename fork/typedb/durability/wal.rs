@@ -4,6 +4,54 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+//! # WAL on-disk frame format (R-01b)
+//!
+//! Two frame encodings coexist in one WAL directory; the reader dispatches
+//! per record on a 4-byte magic, so old directories keep loading while every
+//! new append is authenticated.
+//!
+//! **v1 (written by all new appends)** — 26-byte header + payload:
+//!
+//! | offset | size | field                                    |
+//! |--------|------|------------------------------------------|
+//! | 0      | 4    | magic `0xF7 'T' 'W' 'F'`                 |
+//! | 4      | 1    | format version (`1`)                     |
+//! | 5      | 1    | record type                              |
+//! | 6      | 8    | sequence number (BE)                     |
+//! | 14     | 4    | encoded (lz4) payload length (BE u32)    |
+//! | 18     | 4    | decoded payload length (BE u32)          |
+//! | 22     | 4    | CRC-32/IEEE over bytes 0..22 + payload   |
+//! | 26     | n    | lz4 payload (`encoded_len` bytes)        |
+//!
+//! Both declared lengths are bounded by [`MAX_FRAME_PAYLOAD_LEN`] on write
+//! AND on read (allocation/decompression budget), and the CRC covers the
+//! whole header and the compressed payload, so a bit flip anywhere in the
+//! frame is a typed [`WALError::CorruptFrame`] quarantine.
+//!
+//! **v0 (legacy, read-only)** — 17-byte header (sequence u64 BE, encoded
+//! length u64 BE, record type u8) + lz4 payload. v0 carries no checksum;
+//! it is accepted with a documented WEAKER guarantee, hardened as far as the
+//! format allows: declared lengths are budget-checked, decompression is
+//! budget-capped, and per-file sequence regression is refused. This was the
+//! smallest sound design: the old header has no spare bytes to extend in
+//! place, so old frames stay readable as-is and integrity is added only to
+//! frames written from now on.
+//!
+//! **Tail repair.** Only the torn-terminal-append class is auto-repaired,
+//! and only in the newest (unsealed) file: a syntactically incomplete FINAL
+//! frame reaching physical end-of-file (the writer emits a frame prefix
+//! first, so a torn append is always a valid-frame prefix), or a tail that
+//! is zero-filled from the failed frame's start to physical EOF (the
+//! crash artifact of page-zero-filling filesystems). Before
+//! truncating, the damaged original is copied to a forensic sidecar
+//! (`torn-<file>-at-<offset>` — the name does not match the `wal-` scan
+//! prefix), and the truncation fsyncs the repaired file and its directory.
+//! Every other defect — bad checksum, nonterminal damage, garbage between
+//! frames, oversized declared lengths, zero-length legacy frame not at EOF,
+//! damage in a sealed file, a file whose first record contradicts its
+//! filename — is a typed quarantine that leaves the original bytes
+//! untouched.
+
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -13,7 +61,6 @@ use std::{
     fs::{self, File as StdFile, OpenOptions},
     io::{self, BufReader, BufWriter, Read, Seek, Write},
     marker::PhantomData,
-    mem,
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex, RwLock, RwLockReadGuard,
@@ -39,6 +86,63 @@ use crate::{DurabilityRecordType, DurabilitySequenceNumber, DurabilityService, D
 const MAX_WAL_FILE_SIZE: u64 = 16 * 1024 * 1024;
 
 const FILE_PREFIX: &str = "wal-";
+
+/// Prefix of the forensic sidecar written before a permitted tail repair.
+/// Deliberately does NOT start with [`FILE_PREFIX`], so sidecars are never
+/// picked up by the WAL file scan.
+const FORENSIC_PREFIX: &str = "torn-";
+
+/// v1 frame magic. The first byte is outside 7-bit ASCII so that no v0
+/// header whose sequence number was allocated by this WAL (allocation
+/// refuses at `u64::MAX`, and real sequence numbers put zeros here) can
+/// alias it.
+const FRAME_MAGIC: [u8; 4] = [0xF7, b'T', b'W', b'F'];
+const FRAME_VERSION_1: u8 = 1;
+const V1_HEADER_LEN: u64 = 26;
+const V0_HEADER_LEN: u64 = 17;
+
+/// Single strict allocation/decompression budget for one frame's DECODED
+/// payload, enforced on write (typed refusal before a sequence number is
+/// allocated or any byte is written) and on read (declared decoded length
+/// and the actual decompressed size). A containment default, not an
+/// owner-approved SLO: it exists so a corrupt or hostile length field
+/// cannot make recovery allocate or inflate unbounded memory. Write-side
+/// enforcement guarantees the read-side check never rejects a legitimately
+/// written record.
+const MAX_FRAME_PAYLOAD_LEN: u64 = 256 * 1024 * 1024;
+
+/// Budget for a frame's ENCODED (lz4) payload: the lz4 worst-case expansion
+/// of [`MAX_FRAME_PAYLOAD_LEN`] input (`n + n/255 + 16`, rounded up), so a
+/// payload passing the decoded budget can never be refused for its encoding.
+const MAX_FRAME_ENCODED_LEN: u64 = MAX_FRAME_PAYLOAD_LEN + MAX_FRAME_PAYLOAD_LEN / 255 + 64;
+
+/// CRC-32 (IEEE 802.3, reflected, poly 0xEDB88320) — implemented locally so
+/// the frame checksum adds no new dependency to the locked workspace.
+static CRC32_TABLE: [u32; 256] = {
+    let mut table = [0u32; 256];
+    let mut i = 0;
+    while i < 256 {
+        let mut crc = i as u32;
+        let mut bit = 0;
+        while bit < 8 {
+            crc = if crc & 1 != 0 { (crc >> 1) ^ 0xEDB8_8320 } else { crc >> 1 };
+            bit += 1;
+        }
+        table[i] = crc;
+        i += 1;
+    }
+    table
+};
+
+fn crc32(chunks: &[&[u8]]) -> u32 {
+    let mut crc = 0xFFFF_FFFFu32;
+    for chunk in chunks {
+        for &byte in *chunk {
+            crc = (crc >> 8) ^ CRC32_TABLE[((crc ^ byte as u32) & 0xFF) as usize];
+        }
+    }
+    !crc
+}
 
 #[derive(Debug)]
 pub struct WAL {
@@ -67,7 +171,9 @@ impl WAL {
         let files = Arc::new(RwLock::new(files));
         let mut next = DurabilitySequenceNumber::MIN.next();
         for record in RecordIterator::new(files.read().unwrap(), DurabilitySequenceNumber::MIN)? {
-            next = record?.sequence_number.next();
+            // R-07: a recovered sequence number with no successor is typed
+            // exhaustion, never a debug-panic/release-wrap.
+            next = record?.sequence_number.try_next().ok_or(WALError::SequenceExhausted)?;
         }
         let mut fsync_thread = FsyncThread::new(files.clone(), metrics.clone());
         FsyncThread::start(&mut fsync_thread.handle, fsync_thread.context.clone());
@@ -93,7 +199,8 @@ impl WAL {
         let files = Arc::new(RwLock::new(files));
         let mut next = DurabilitySequenceNumber::MIN.next();
         for record in RecordIterator::new(files.read().unwrap(), start_seq_nr)? {
-            next = record?.sequence_number.next();
+            // R-07: typed exhaustion instead of raw `.next()` on recovered input
+            next = record?.sequence_number.try_next().ok_or(WALError::SequenceExhausted)?;
         }
 
         let mut fsync_thread = FsyncThread::new(files.clone(), metrics.clone());
@@ -138,7 +245,14 @@ impl WAL {
     }
 
     pub fn previous(&self) -> DurabilitySequenceNumber {
-        DurabilitySequenceNumber::from(self.next_sequence_number.load(Ordering::Relaxed) - 1)
+        // R-07: checked, not raw `- 1`. The counter is initialised at
+        // `MIN.next()` and only ever stores allocated or recovered sequence
+        // numbers >= 1, so the predecessor always exists; checked arithmetic
+        // keeps a violated assumption a loud fault in every build profile
+        // instead of a silent release-mode wrap to u64::MAX.
+        DurabilitySequenceNumber::from(self.next_sequence_number.load(Ordering::Relaxed))
+            .try_previous()
+            .expect("WAL sequence counter below MIN.next(): no previous sequence number exists")
     }
 
     pub fn request_sync(&self, ack_waits_for_sync: bool) -> mpsc::Receiver<Result<(), DurabilityServiceError>> {
@@ -160,6 +274,11 @@ impl DurabilityService for WAL {
         bytes: &[u8],
     ) -> Result<DurabilitySequenceNumber, DurabilityServiceError> {
         debug_assert!(self.registered_types.contains_key(&record_type));
+        // R-01b: the payload budget is refused BEFORE a sequence number is
+        // allocated — a refused write mutates nothing at all
+        if bytes.len() as u64 > MAX_FRAME_PAYLOAD_LEN {
+            return Err(WALError::RecordTooLarge { len: bytes.len() as u64, budget: MAX_FRAME_PAYLOAD_LEN }.into());
+        }
         let mut files = self.files.write().unwrap();
         // exhaustion is refused BEFORE any bytes are written: no record, no
         // counter movement, no partial state (S-P0-09)
@@ -173,6 +292,10 @@ impl DurabilityService for WAL {
 
     fn unsequenced_write(&self, record_type: DurabilityRecordType, bytes: &[u8]) -> Result<(), DurabilityServiceError> {
         debug_assert!(self.registered_types.contains_key(&record_type));
+        // R-01b: same budget refusal as the sequenced path, before any state
+        if bytes.len() as u64 > MAX_FRAME_PAYLOAD_LEN {
+            return Err(WALError::RecordTooLarge { len: bytes.len() as u64, budget: MAX_FRAME_PAYLOAD_LEN }.into());
+        }
         let mut files = self.files.write().unwrap();
         let sequence_number = self.previous();
         debug!("Writing unsequenced record with {sequence_number}");
@@ -288,6 +411,75 @@ pub enum WALError {
     /// with the counter left unmutated, rather than wrapping to zero and
     /// re-issuing the identity of the first record ever written.
     SequenceExhausted,
+    /// A frame in a WAL file is damaged in a way that is NOT the torn
+    /// terminal append of the unsealed file (R-01b): bad checksum, garbage
+    /// between frames, oversized declared lengths, sequence regression,
+    /// nonterminal or sealed-file damage. Quarantine: the original bytes are
+    /// left untouched and loading refuses.
+    CorruptFrame {
+        path: PathBuf,
+        offset: u64,
+        defect: FrameDefect,
+    },
+    /// A record submitted for writing exceeds the frame payload budget
+    /// (R-01b): typed refusal before any bytes are written.
+    RecordTooLarge {
+        len: u64,
+        budget: u64,
+    },
+    /// A WAL file's first record contradicts the sequence number declared in
+    /// its filename (R-01b): the file/sequence layout is not the one the
+    /// writer produced (rename, splice, or mixup). Quarantine.
+    FileStartMismatch {
+        path: PathBuf,
+        declared: u64,
+        found: u64,
+    },
+}
+
+/// The precise defect found while parsing a frame (R-01b). Only
+/// [`FrameDefect::is_torn_terminal_append`] classes may ever be repaired,
+/// and only in the unsealed final file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FrameDefect {
+    /// The frame header runs past the end of the file.
+    TruncatedHeader { available: u64 },
+    /// The declared payload runs past the end of the file.
+    TruncatedPayload { declared: u64, available: u64 },
+    /// The CRC-32 over header+payload does not match (v1).
+    ChecksumMismatch { declared: u32, computed: u32 },
+    /// A v1-magic frame with an unknown version byte.
+    UnsupportedVersion { version: u8 },
+    /// Declared encoded/decoded length exceeds the allocation budget.
+    LengthOverBudget { declared: u64, budget: u64 },
+    /// A frame's sequence number is lower than its predecessor's in the same
+    /// file — the append-only grammar never produces this.
+    SequenceRegression { previous: u64, found: u64 },
+    /// A v0 frame declaring a zero-length payload. At physical EOF this is
+    /// the legacy torn-append signature; anywhere else it is corruption.
+    ZeroLengthLegacyFrame { at_eof: bool },
+    /// The payload does not decompress to the declared length (v0: any lz4
+    /// failure; v1: a defect the CRC could not catch is impossible, so this
+    /// indicates an internal error or budget breach mid-stream).
+    PayloadDecode { detail: String },
+}
+
+impl FrameDefect {
+    /// True exactly for the damage classes a torn terminal append can
+    /// produce: the frame is syntactically incomplete because the file ends
+    /// mid-frame (or, for legacy v0, a zero-length frame terminates the
+    /// file). Everything else is stable corruption and must quarantine.
+    fn is_torn_terminal_append(&self) -> bool {
+        match self {
+            FrameDefect::TruncatedHeader { .. } | FrameDefect::TruncatedPayload { .. } => true,
+            FrameDefect::ZeroLengthLegacyFrame { at_eof } => *at_eof,
+            FrameDefect::ChecksumMismatch { .. }
+            | FrameDefect::UnsupportedVersion { .. }
+            | FrameDefect::LengthOverBudget { .. }
+            | FrameDefect::SequenceRegression { .. }
+            | FrameDefect::PayloadDecode { .. } => false,
+        }
+    }
 }
 
 impl fmt::Display for WALError {
@@ -310,6 +502,9 @@ impl Error for WALError {
             Self::SyncAcknowledgementLost => None,
             Self::SyncAcknowledgementTimeout { .. } => None,
             Self::SequenceExhausted => None,
+            Self::CorruptFrame { .. } => None,
+            Self::RecordTooLarge { .. } => None,
+            Self::FileStartMismatch { .. } => None,
         }
     }
 }
@@ -338,9 +533,17 @@ impl Files {
             .try_collect()?;
         files.sort_unstable_by(|lhs, rhs| lhs.path.cmp(&rhs.path));
 
+        // R-01b: the sorted+concatenated layout is not assumed, it is
+        // checked — every non-empty file's first frame must carry exactly
+        // the sequence number its filename declares. A renamed, spliced or
+        // misplaced file is a typed quarantine before any repair decision.
+        for file in &files {
+            file.check_first_record_matches_name()?;
+        }
+
         let last = files.last_mut();
         let writer = if let Some(last) = last {
-            last.trim_corrupted_tail_if_needed()?;
+            last.recover_unsealed_tail()?;
             Some(File::writer(last)?)
         } else {
             None
@@ -356,8 +559,12 @@ impl Files {
     }
 
     fn write_record(&mut self, record: RawRecord<'_>) -> Result<(), DurabilityServiceError> {
-        if self.files.is_empty() || self.files.last().unwrap().len >= MAX_WAL_FILE_SIZE {
-            self.open_new_file_at(record.sequence_number)?;
+        // defense in depth: the callers refuse over-budget payloads before
+        // allocating a sequence number (R-01b)
+        if record.bytes.len() as u64 > MAX_FRAME_PAYLOAD_LEN {
+            return Err(
+                WALError::RecordTooLarge { len: record.bytes.len() as u64, budget: MAX_FRAME_PAYLOAD_LEN }.into()
+            );
         }
 
         let mut compressed_bytes = Vec::new();
@@ -366,17 +573,35 @@ impl Files {
             .map_err(|err| WALError::Compression { source: Arc::new(err) })?;
         encoder.write_all(&record.bytes).map_err(|err| WALError::Compression { source: Arc::new(err) })?;
         encoder.finish().1.map_err(|err| WALError::Compression { source: Arc::new(err) })?;
+        if compressed_bytes.len() as u64 > MAX_FRAME_ENCODED_LEN {
+            // unreachable when the decoded budget held (lz4 worst-case bound)
+            return Err(
+                WALError::RecordTooLarge { len: compressed_bytes.len() as u64, budget: MAX_FRAME_ENCODED_LEN }.into()
+            );
+        }
+
+        if self.files.is_empty() || self.files.last().unwrap().len >= MAX_WAL_FILE_SIZE {
+            self.open_new_file_at(record.sequence_number)?;
+        }
+
+        // v1 authenticated frame (see module header): the CRC covers the
+        // whole header and the compressed payload.
+        let mut header = [0u8; V1_HEADER_LEN as usize];
+        header[0..4].copy_from_slice(&FRAME_MAGIC);
+        header[4] = FRAME_VERSION_1;
+        header[5] = record.record_type;
+        header[6..14].copy_from_slice(&record.sequence_number.to_be_bytes());
+        header[14..18].copy_from_slice(&(compressed_bytes.len() as u32).to_be_bytes());
+        header[18..22].copy_from_slice(&(record.bytes.len() as u32).to_be_bytes());
+        let crc = crc32(&[&header[0..22], &compressed_bytes]);
+        header[22..26].copy_from_slice(&crc.to_be_bytes());
 
         let writer = self.writer.as_mut().unwrap();
-        write_header(
-            writer,
-            RecordHeader {
-                sequence_number: record.sequence_number,
-                len: compressed_bytes.len() as u64,
-                record_type: record.record_type,
-            },
-        )?;
-
+        writer.write_all(&header[0..14])?; // magic, version, type, sequence
+        fail_point!(WAL_PARTIAL_HEADER_SEQ);
+        writer.write_all(&header[14..22])?; // encoded + decoded lengths
+        fail_point!(WAL_PARTIAL_HEADER_SEQ_LEN);
+        writer.write_all(&header[22..26])?; // checksum
         fail_point!(WAL_RECORD_ONLY_HEADER);
 
         writer.write_all(&compressed_bytes)?;
@@ -468,15 +693,6 @@ impl Files {
     }
 }
 
-fn write_header(file: &mut BufWriter<StdFile>, header: RecordHeader) -> io::Result<()> {
-    file.write_all(&header.sequence_number.to_be_bytes())?;
-    fail_point!(WAL_PARTIAL_HEADER_SEQ);
-    file.write_all(&header.len.to_be_bytes())?;
-    fail_point!(WAL_PARTIAL_HEADER_SEQ_LEN);
-    file.write_all(&[header.record_type])?;
-    Ok(())
-}
-
 #[derive(Debug, Clone)]
 struct File {
     start: DurabilitySequenceNumber,
@@ -506,27 +722,101 @@ impl File {
         Ok(Self { start: DurabilitySequenceNumber::from(num), len, path })
     }
 
-    fn trim_corrupted_tail_if_needed(&mut self) -> Result<(), DurabilityServiceError> {
+    /// R-01b: verify that a non-empty file's first frame carries exactly the
+    /// sequence number its filename declares. A torn-terminal defect is left
+    /// for [`Self::recover_unsealed_tail`] (last file) or for the reader's
+    /// quarantine (sealed file) — this check never repairs anything.
+    fn check_first_record_matches_name(&self) -> Result<(), DurabilityServiceError> {
+        if self.len == 0 {
+            return Ok(());
+        }
+        let mut reader = FileReader::new(self.clone())?;
+        match reader.peek_sequence_number() {
+            Ok(Some(sequence_number)) if sequence_number == self.start => Ok(()),
+            Ok(Some(sequence_number)) => Err(WALError::FileStartMismatch {
+                path: self.path.clone(),
+                declared: self.start.number(),
+                found: sequence_number.number(),
+            }
+            .into()),
+            Ok(None) => Ok(()),
+            Err(DurabilityServiceError::WAL { source: WALError::CorruptFrame { defect, .. } })
+                if defect.is_torn_terminal_append() =>
+            {
+                Ok(())
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    /// R-01b tail recovery for the newest (unsealed) file. Exactly one
+    /// damage class is repaired — a torn terminal append (a syntactically
+    /// incomplete final frame reaching physical EOF): the original file is
+    /// first copied to a forensic sidecar, then truncated to the last
+    /// authenticated prefix, and the truncation is fsynced (file + parent
+    /// directory). Every other defect is a typed quarantine with the
+    /// original bytes untouched.
+    fn recover_unsealed_tail(&mut self) -> Result<(), DurabilityServiceError> {
         let mut reader = FileReader::new(self.clone())?;
         let mut last_good_position_end = 0;
-        while let Some(record) = reader.read_one_record().transpose() {
-            if record.as_ref().is_ok_and(|record| !record.bytes.is_empty()) {
-                last_good_position_end = reader.reader.stream_position()?;
-            } else {
-                match record {
-                    Ok(_record) => warn!(
-                        "Encountered a zero-length WAL record. The last write may have been interrupted, discarding."
-                    ),
-                    Err(err) => warn!(
-                        "Encountered a corrupted WAL record: {}. The last write may have been interrupted, discarding.",
-                        err,
-                    ),
+        loop {
+            match reader.read_one_record() {
+                Ok(None) => return Ok(()), // clean end of file
+                Ok(Some(_)) => last_good_position_end = reader.reader.stream_position()?,
+                Err(error) => {
+                    let is_torn_terminal_append = matches!(
+                        &error,
+                        DurabilityServiceError::WAL { source: WALError::CorruptFrame { defect, .. } }
+                            if defect.is_torn_terminal_append()
+                    ) || self.is_zero_filled_to_eof(last_good_position_end)?;
+                    if !is_torn_terminal_append {
+                        return Err(error); // quarantine: stable corruption, bytes untouched
+                    }
+                    let forensic = self.copy_to_forensic_sidecar(last_good_position_end)?;
+                    warn!(
+                        "Torn terminal append in WAL file {:?}: truncating to the last authenticated prefix at \
+                         offset {} (original bytes preserved in {:?}). Defect: {}",
+                        self.path, last_good_position_end, forensic, error,
+                    );
+                    self.truncate_from_position(last_good_position_end)?;
+                    self.fsync_file_and_parent()?;
+                    return Ok(());
                 }
-                self.truncate_from_position(last_good_position_end)?;
-                break;
             }
         }
+    }
 
+    /// The second (and last) permitted torn-append signature: every byte
+    /// from the failed frame's start to physical EOF is zero. Filesystems
+    /// that zero-fill pages on crash produce exactly this; our writer emits
+    /// a frame prefix first, so any other byte pattern at the tail is
+    /// stable corruption, not a torn append.
+    fn is_zero_filled_to_eof(&self, frame_start: u64) -> Result<bool, DurabilityServiceError> {
+        use std::io::{Read as _, Seek as _, SeekFrom};
+        let mut file = StdFile::open(&self.path)?;
+        file.seek(SeekFrom::Start(frame_start))?;
+        let mut tail = Vec::new();
+        file.take(self.len - frame_start).read_to_end(&mut tail)?;
+        Ok(!tail.is_empty() && tail.iter().all(|&byte| byte == 0))
+    }
+
+    fn copy_to_forensic_sidecar(&self, offset: u64) -> Result<PathBuf, DurabilityServiceError> {
+        let file_name = self.path.file_name().and_then(OsStr::to_str).unwrap_or("wal-unnamed");
+        let parent = self.path.parent().ok_or_else(|| DurabilityServiceError::IO {
+            source: Arc::new(io::Error::other("WAL file has no parent directory")),
+        })?;
+        let sidecar = parent.join(format!("{FORENSIC_PREFIX}{file_name}-at-{offset}"));
+        fs::copy(&self.path, &sidecar)?;
+        StdFile::open(&sidecar)?.sync_all()?;
+        Ok(sidecar)
+    }
+
+    fn fsync_file_and_parent(&self) -> Result<(), DurabilityServiceError> {
+        OpenOptions::new().write(true).open(&self.path)?.sync_all()?;
+        #[cfg(unix)]
+        if let Some(parent) = self.path.parent() {
+            StdFile::open(parent)?.sync_all()?;
+        }
         Ok(())
     }
 
@@ -560,68 +850,207 @@ impl File {
 struct FileReader {
     file: File,
     reader: BufReader<StdFile>,
+    /// Last sequence number successfully read or skipped in this file:
+    /// frames must be non-decreasing (unsequenced records repeat their
+    /// predecessor's number), so a regression is a typed quarantine (R-01b).
+    last_sequence_number: Option<u64>,
+}
+
+/// One parsed frame header — v1 (authenticated) or v0 (legacy, weaker
+/// guarantee). See the module header for both layouts.
+#[derive(Debug)]
+struct ParsedHeader {
+    sequence_number: DurabilitySequenceNumber,
+    record_type: DurabilityRecordType,
+    encoded_len: u64,
+    header_len: u64,
+    /// v1 only: declared decompressed length, declared CRC, and the raw
+    /// header bytes the CRC covers.
+    v1: Option<(u64, u32, [u8; V1_HEADER_LEN as usize])>,
 }
 
 impl FileReader {
     fn new(file: File) -> io::Result<Self> {
-        Ok(Self { reader: BufReader::new(StdFile::open(&file.path)?), file })
+        Ok(Self { reader: BufReader::new(StdFile::open(&file.path)?), file, last_sequence_number: None })
     }
 
-    fn peek_sequence_number(&mut self) -> io::Result<Option<DurabilitySequenceNumber>> {
-        if self.reader.stream_position()? == self.file.len {
+    fn defect(&self, offset: u64, defect: FrameDefect) -> DurabilityServiceError {
+        WALError::CorruptFrame { path: self.file.path.clone(), offset, defect }.into()
+    }
+
+    fn peek_sequence_number(&mut self) -> Result<Option<DurabilitySequenceNumber>, DurabilityServiceError> {
+        let offset = self.reader.stream_position()?;
+        if offset == self.file.len {
             return Ok(None);
         }
-        let mut buf = [0; mem::size_of::<u64>()];
-        self.reader.read_exact(&mut buf)?;
-        self.reader.seek_relative(-(buf.len() as i64))?;
-        Ok(Some(DurabilitySequenceNumber::from_be_bytes(&buf)))
+        let header = self.read_header(offset)?;
+        self.reader.seek_relative(-(header.header_len as i64))?;
+        Ok(Some(header.sequence_number))
     }
 
     fn skip_one_record(&mut self) -> Result<(), DurabilityServiceError> {
-        if self.reader.stream_position()? == self.file.len {
+        let offset = self.reader.stream_position()?;
+        if offset == self.file.len {
             return Ok(());
         }
-        let RecordHeader { len, .. } = self.read_header()?;
-        self.reader.seek_relative(len as i64)?;
+        let header = self.read_header(offset)?;
+        self.check_sequence_progression(offset, &header)?;
+        let payload_available = self.file.len - offset - header.header_len;
+        if header.encoded_len > payload_available {
+            return Err(self.defect(
+                offset,
+                FrameDefect::TruncatedPayload { declared: header.encoded_len, available: payload_available },
+            ));
+        }
+        self.reader.seek_relative(header.encoded_len as i64)?;
+        Ok(())
+    }
+
+    fn check_sequence_progression(&mut self, offset: u64, header: &ParsedHeader) -> Result<(), DurabilityServiceError> {
+        if let Some(previous) = self.last_sequence_number {
+            if header.sequence_number.number() < previous {
+                return Err(self.defect(
+                    offset,
+                    FrameDefect::SequenceRegression { previous, found: header.sequence_number.number() },
+                ));
+            }
+        }
+        self.last_sequence_number = Some(header.sequence_number.number());
         Ok(())
     }
 
     fn read_one_record(&mut self) -> Result<Option<RawRecord<'static>>, DurabilityServiceError> {
-        if self.reader.stream_position()? == self.file.len {
+        let offset = self.reader.stream_position()?;
+        if offset == self.file.len {
             return Ok(None);
         }
-        let RecordHeader { sequence_number, len, record_type } = self.read_header()?;
+        let header = self.read_header(offset)?;
+        self.check_sequence_progression(offset, &header)?;
 
-        let mut decompressed_bytes = Vec::new();
-        lz4::Decoder::new((&mut self.reader).take(len))
-            .and_then(|mut decoder| decoder.read_to_end(&mut decompressed_bytes))
-            .map_err(|err| WALError::Decompression { source: Arc::new(err) })?;
+        let payload_available = self.file.len - offset - header.header_len;
+        if header.encoded_len > payload_available {
+            return Err(self.defect(
+                offset,
+                FrameDefect::TruncatedPayload { declared: header.encoded_len, available: payload_available },
+            ));
+        }
+        let mut compressed = vec![0u8; header.encoded_len as usize];
+        self.reader.read_exact(&mut compressed)?;
 
-        Ok(Some(RawRecord { sequence_number, record_type, bytes: Cow::Owned(decompressed_bytes) }))
+        let decompressed = match header.v1 {
+            Some((decoded_len, declared_crc, raw_header)) => {
+                let computed = crc32(&[&raw_header[0..22], &compressed]);
+                if computed != declared_crc {
+                    return Err(self.defect(offset, FrameDefect::ChecksumMismatch { declared: declared_crc, computed }));
+                }
+                let mut decompressed = Vec::new();
+                lz4::Decoder::new(&compressed[..])
+                    .and_then(|decoder| decoder.take(decoded_len + 1).read_to_end(&mut decompressed))
+                    .map_err(|error| self.defect(offset, FrameDefect::PayloadDecode { detail: error.to_string() }))?;
+                if decompressed.len() as u64 != decoded_len {
+                    return Err(self.defect(
+                        offset,
+                        FrameDefect::PayloadDecode {
+                            detail: format!("declared decoded length {decoded_len}, got {}", decompressed.len()),
+                        },
+                    ));
+                }
+                decompressed
+            }
+            None => {
+                // v0 legacy: no checksum to verify (documented weaker
+                // guarantee); the decompression itself is budget-capped and
+                // any lz4 failure is a typed quarantine.
+                let mut decompressed = Vec::new();
+                lz4::Decoder::new(&compressed[..])
+                    .and_then(|decoder| decoder.take(MAX_FRAME_PAYLOAD_LEN + 1).read_to_end(&mut decompressed))
+                    .map_err(|error| self.defect(offset, FrameDefect::PayloadDecode { detail: error.to_string() }))?;
+                if decompressed.len() as u64 > MAX_FRAME_PAYLOAD_LEN {
+                    return Err(self.defect(
+                        offset,
+                        FrameDefect::LengthOverBudget {
+                            declared: decompressed.len() as u64,
+                            budget: MAX_FRAME_PAYLOAD_LEN,
+                        },
+                    ));
+                }
+                decompressed
+            }
+        };
+
+        Ok(Some(RawRecord {
+            sequence_number: header.sequence_number,
+            record_type: header.record_type,
+            bytes: Cow::Owned(decompressed),
+        }))
     }
 
-    fn read_header(&mut self) -> io::Result<RecordHeader> {
-        let mut buf: [u8; mem::size_of::<u64>()] = [0; mem::size_of::<u64>()];
-        self.reader.read_exact(&mut buf)?;
-        let sequence_number = DurabilitySequenceNumber::from_be_bytes(&buf);
+    /// Parse one frame header at `offset`, consuming exactly
+    /// `ParsedHeader::header_len` bytes. All defects are typed
+    /// [`WALError::CorruptFrame`]s carrying the offset.
+    fn read_header(&mut self, offset: u64) -> Result<ParsedHeader, DurabilityServiceError> {
+        let available = self.file.len - offset;
+        if available < FRAME_MAGIC.len() as u64 {
+            return Err(self.defect(offset, FrameDefect::TruncatedHeader { available }));
+        }
+        let mut prefix = [0u8; 4];
+        self.reader.read_exact(&mut prefix)?;
 
-        let mut buf = [0; std::mem::size_of::<u64>()];
-        self.reader.read_exact(&mut buf)?;
-        let len = u64::from_be_bytes(buf);
-
-        let mut buf = [0; 1];
-        self.reader.read_exact(&mut buf)?;
-        let [record_type] = buf;
-
-        Ok(RecordHeader { sequence_number, len, record_type })
+        if prefix == FRAME_MAGIC {
+            if available < V1_HEADER_LEN {
+                self.reader.seek_relative(-(prefix.len() as i64))?;
+                return Err(self.defect(offset, FrameDefect::TruncatedHeader { available }));
+            }
+            let mut raw = [0u8; V1_HEADER_LEN as usize];
+            raw[0..4].copy_from_slice(&prefix);
+            self.reader.read_exact(&mut raw[4..])?;
+            let version = raw[4];
+            if version != FRAME_VERSION_1 {
+                return Err(self.defect(offset, FrameDefect::UnsupportedVersion { version }));
+            }
+            let record_type = raw[5];
+            let sequence_number = DurabilitySequenceNumber::from_be_bytes(&raw[6..14]);
+            let encoded_len = u32::from_be_bytes(raw[14..18].try_into().unwrap()) as u64;
+            let decoded_len = u32::from_be_bytes(raw[18..22].try_into().unwrap()) as u64;
+            for (declared, budget) in [(encoded_len, MAX_FRAME_ENCODED_LEN), (decoded_len, MAX_FRAME_PAYLOAD_LEN)] {
+                if declared > budget {
+                    return Err(self.defect(offset, FrameDefect::LengthOverBudget { declared, budget }));
+                }
+            }
+            let crc = u32::from_be_bytes(raw[22..26].try_into().unwrap());
+            Ok(ParsedHeader {
+                sequence_number,
+                record_type,
+                encoded_len,
+                header_len: V1_HEADER_LEN,
+                v1: Some((decoded_len, crc, raw)),
+            })
+        } else {
+            if available < V0_HEADER_LEN {
+                self.reader.seek_relative(-(prefix.len() as i64))?;
+                return Err(self.defect(offset, FrameDefect::TruncatedHeader { available }));
+            }
+            let mut rest = [0u8; (V0_HEADER_LEN - 4) as usize];
+            self.reader.read_exact(&mut rest)?;
+            let mut sequence_bytes = [0u8; 8];
+            sequence_bytes[0..4].copy_from_slice(&prefix);
+            sequence_bytes[4..8].copy_from_slice(&rest[0..4]);
+            let sequence_number = DurabilitySequenceNumber::from_be_bytes(&sequence_bytes);
+            let encoded_len = u64::from_be_bytes(rest[4..12].try_into().unwrap());
+            let record_type = rest[12];
+            if encoded_len == 0 {
+                let at_eof = offset + V0_HEADER_LEN == self.file.len;
+                return Err(self.defect(offset, FrameDefect::ZeroLengthLegacyFrame { at_eof }));
+            }
+            if encoded_len > MAX_FRAME_ENCODED_LEN {
+                return Err(self.defect(
+                    offset,
+                    FrameDefect::LengthOverBudget { declared: encoded_len, budget: MAX_FRAME_ENCODED_LEN },
+                ));
+            }
+            Ok(ParsedHeader { sequence_number, record_type, encoded_len, header_len: V0_HEADER_LEN, v1: None })
+        }
     }
-}
-
-#[derive(Debug)]
-struct RecordHeader {
-    sequence_number: DurabilitySequenceNumber,
-    len: u64,
-    record_type: DurabilityRecordType,
 }
 
 #[derive(Debug)]
@@ -646,11 +1075,10 @@ impl<'a> RecordIterator<'a> {
         let mut reader = FileReader::new(files.files[current].clone())?;
 
         while current_start < start {
-            match reader.peek_sequence_number().transpose() {
+            match reader.peek_sequence_number()? {
                 None => break, // sequence number is past the end of this file.
-                Some(Err(err)) => return Err(DurabilityServiceError::IO { source: Arc::new(err) }),
-                Some(Ok(sequence_number)) if sequence_number == start => break,
-                Some(Ok(sequence_number)) => {
+                Some(sequence_number) if sequence_number == start => break,
+                Some(sequence_number) => {
                     current_start = sequence_number;
                     reader.skip_one_record()?;
                 }
@@ -701,11 +1129,10 @@ impl<'a> FileRecordIterator<'a> {
 
         let mut current_start = file.start;
         while current_start < start {
-            match reader.peek_sequence_number().transpose() {
+            match reader.peek_sequence_number()? {
                 None => break, // sequence number is past the end of this file.
-                Some(Err(err)) => return Err(DurabilityServiceError::IO { source: Arc::new(err) }),
-                Some(Ok(sequence_number)) if sequence_number == start => break,
-                Some(Ok(sequence_number)) => {
+                Some(sequence_number) if sequence_number == start => break,
+                Some(sequence_number) => {
                     current_start = sequence_number;
                     reader.skip_one_record()?;
                 }
@@ -1241,6 +1668,26 @@ mod test {
     }
 
     #[test]
+    fn record_over_the_frame_budget_is_a_typed_refusal_with_no_mutation() {
+        // R-01b write-side budget: the refusal happens before compression,
+        // rollover or any byte reaches the file.
+        use super::MAX_FRAME_PAYLOAD_LEN;
+        let directory = TempDir::new("wal-test").unwrap();
+        let wal = create_wal(&directory);
+        wal.sequenced_write(TestRecord::RECORD_TYPE, b"okay").unwrap();
+        let counter_before = wal.current();
+        let records_before = read_all_records_tupled(&wal);
+
+        let oversized = vec![0u8; MAX_FRAME_PAYLOAD_LEN as usize + 1];
+        let refused = wal.sequenced_write(TestRecord::RECORD_TYPE, &oversized);
+        assert_true!(matches!(refused, Err(DurabilityServiceError::WAL { source: WALError::RecordTooLarge { .. } })));
+        // the refusal precedes sequence allocation: no counter movement,
+        // no frame written, reads unaffected
+        assert_eq!(wal.current(), counter_before);
+        assert_eq!(read_all_records_tupled(&wal), records_before);
+    }
+
+    #[test]
     fn sequence_exhaustion_is_a_typed_terminal_error_with_no_mutation() {
         // S-P0-09 boundary: the last representable sequence number is
         // allocatable; the one past it is a typed refusal that mutates
@@ -1273,6 +1720,360 @@ mod test {
             read_all_records(&wal).count(),
             records_before_boundary + 1,
             "only the pre-exhaustion record may exist; a refused allocation writes nothing"
+        );
+    }
+}
+
+#[cfg(test)]
+mod frame_integrity_tests {
+    //! R-01b corruption matrix, executed over real temp WAL directories.
+    //! One damage class converges (torn terminal append of the unsealed
+    //! file, with a forensic copy); every other class is a typed
+    //! [`WALError::CorruptFrame`] / [`WALError::FileStartMismatch`]
+    //! quarantine that leaves the original bytes untouched. Legacy v0
+    //! frames (no checksum) must still load, and new appends after them are
+    //! v1-authenticated.
+
+    use std::{fs, io::Write, path::PathBuf};
+
+    use diagnostics::metrics::FsyncMetrics;
+    use tempdir::TempDir;
+
+    use super::{FILE_PREFIX, FORENSIC_PREFIX, FrameDefect, V1_HEADER_LEN, WAL, WALError};
+    use crate::{DurabilitySequenceNumber, DurabilityService, DurabilityServiceError};
+
+    const TEST_TYPE: u8 = 0;
+
+    fn create_wal(directory: &TempDir) -> WAL {
+        let mut wal = WAL::create(directory, FsyncMetrics::disabled()).unwrap();
+        wal.register_record_type(TEST_TYPE, "TEST");
+        wal
+    }
+
+    fn load_wal(directory: &TempDir) -> Result<WAL, DurabilityServiceError> {
+        WAL::load(directory, FsyncMetrics::disabled()).map(|mut wal| {
+            wal.register_record_type(TEST_TYPE, "TEST");
+            wal
+        })
+    }
+
+    fn read_all(wal: &WAL) -> Result<Vec<(u64, Vec<u8>)>, DurabilityServiceError> {
+        wal.iter_any_from(DurabilitySequenceNumber::MIN)
+            .unwrap()
+            .map(|res| res.map(|r| (r.sequence_number.number(), r.bytes.into_owned())))
+            .collect()
+    }
+
+    fn try_first_wal_file(directory: &TempDir) -> Option<PathBuf> {
+        let wal_dir = directory.path().join(WAL::WAL_DIR_NAME);
+        let mut files: Vec<_> = fs::read_dir(&wal_dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.file_name().unwrap().to_str().unwrap().starts_with(FILE_PREFIX))
+            .collect();
+        files.sort();
+        files.into_iter().next()
+    }
+
+    fn first_wal_file(directory: &TempDir) -> PathBuf {
+        try_first_wal_file(directory).expect("no wal file")
+    }
+
+    fn forensic_sidecars(directory: &TempDir) -> Vec<PathBuf> {
+        let wal_dir = directory.path().join(WAL::WAL_DIR_NAME);
+        fs::read_dir(&wal_dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.file_name().unwrap().to_str().unwrap().starts_with(FORENSIC_PREFIX))
+            .collect()
+    }
+
+    fn expect_corrupt_frame(error: DurabilityServiceError) -> FrameDefect {
+        match error {
+            DurabilityServiceError::WAL { source: WALError::CorruptFrame { defect, .. } } => defect,
+            other => panic!("expected the typed CorruptFrame quarantine, got: {other:?}"),
+        }
+    }
+
+    /// A directory with three small v1 records; returns the record byte
+    /// offsets [0, end_of_1, end_of_2] and the total file length.
+    fn three_record_wal() -> (TempDir, Vec<u64>, u64) {
+        let directory = TempDir::new("wal-corruption").unwrap();
+        let wal = create_wal(&directory);
+        let mut offsets = Vec::new();
+        for payload in [b"one!", b"two!", b"tre!"] {
+            let current_len = try_first_wal_file(&directory).map(|path| fs::metadata(path).unwrap().len()).unwrap_or(0);
+            offsets.push(current_len);
+            wal.sequenced_write(TEST_TYPE, payload).unwrap();
+        }
+        let total = fs::metadata(first_wal_file(&directory)).unwrap().len();
+        drop(wal);
+        (directory, offsets, total)
+    }
+
+    #[test]
+    fn a_flipped_payload_bit_mid_file_is_a_checksum_quarantine_not_a_repair() {
+        let (directory, offsets, _) = three_record_wal();
+        let path = first_wal_file(&directory);
+        let mut bytes = fs::read(&path).unwrap();
+        // flip one bit inside the FIRST record's payload (nonterminal damage)
+        let target = offsets[0] as usize + V1_HEADER_LEN as usize + 1;
+        bytes[target] ^= 0x01;
+        fs::write(&path, &bytes).unwrap();
+
+        let error = load_wal(&directory).expect_err("nonterminal payload damage must quarantine the load");
+        let defect = expect_corrupt_frame(error);
+        assert!(matches!(defect, FrameDefect::ChecksumMismatch { .. }), "expected ChecksumMismatch, got {defect:?}");
+        assert_eq!(fs::read(&path).unwrap(), bytes, "quarantine must leave the original bytes untouched");
+        assert!(forensic_sidecars(&directory).is_empty(), "quarantine must not produce a repair sidecar");
+    }
+
+    #[test]
+    fn a_flipped_header_bit_mid_file_is_a_typed_quarantine() {
+        let (directory, offsets, _) = three_record_wal();
+        let path = first_wal_file(&directory);
+        let mut bytes = fs::read(&path).unwrap();
+        // flip a bit in record 2's declared decoded length (header damage)
+        let target = offsets[1] as usize + 18;
+        bytes[target + 3] ^= 0x01;
+        fs::write(&path, &bytes).unwrap();
+
+        let error = load_wal(&directory).expect_err("header damage must quarantine the load");
+        expect_corrupt_frame(error);
+        assert_eq!(fs::read(&path).unwrap(), bytes, "quarantine must leave the original bytes untouched");
+    }
+
+    #[test]
+    fn truncation_at_several_offsets_in_the_final_record_repairs_to_the_authenticated_prefix() {
+        // several torn points inside the FINAL record: mid-magic, mid-header
+        // and mid-payload — every one converges to the last authenticated
+        // prefix, with the damaged original preserved in a forensic sidecar
+        for delta in [1u64, 5, 13, V1_HEADER_LEN - 1, V1_HEADER_LEN + 1, V1_HEADER_LEN + 3] {
+            let (directory, offsets, total) = three_record_wal();
+            let path = first_wal_file(&directory);
+            let cut = offsets[2] + delta;
+            assert!(cut < total);
+            let damaged = {
+                let bytes = fs::read(&path).unwrap();
+                fs::write(&path, &bytes[..cut as usize]).unwrap();
+                bytes[..cut as usize].to_vec()
+            };
+
+            let wal = load_wal(&directory)
+                .unwrap_or_else(|error| panic!("torn tail at +{delta} must be repaired, got: {error:?}"));
+            let records = read_all(&wal).unwrap();
+            assert_eq!(
+                records.iter().map(|(_, bytes)| bytes.as_slice()).collect::<Vec<_>>(),
+                vec![b"one!", b"two!"],
+                "repair must keep exactly the authenticated prefix (cut at +{delta})"
+            );
+            let sidecars = forensic_sidecars(&directory);
+            assert_eq!(sidecars.len(), 1, "exactly one forensic sidecar for the torn tail (cut at +{delta})");
+            assert_eq!(fs::read(&sidecars[0]).unwrap(), damaged, "the sidecar must hold the damaged original bytes");
+
+            // and the repaired WAL accepts new appends that survive reload
+            wal.sequenced_write(TEST_TYPE, b"new!").unwrap();
+            drop(wal);
+            let wal = load_wal(&directory).unwrap();
+            assert_eq!(read_all(&wal).unwrap().len(), 3);
+        }
+    }
+
+    #[test]
+    fn garbage_between_frames_is_a_typed_quarantine() {
+        let (directory, offsets, _) = three_record_wal();
+        let path = first_wal_file(&directory);
+        let bytes = fs::read(&path).unwrap();
+        let mut spliced = bytes[..offsets[1] as usize].to_vec();
+        spliced.extend(std::iter::repeat_n(0xABu8, 32)); // garbage between record 1 and record 2
+        spliced.extend_from_slice(&bytes[offsets[1] as usize..]);
+        fs::write(&path, &spliced).unwrap();
+
+        let error = load_wal(&directory).expect_err("garbage between frames must quarantine the load");
+        expect_corrupt_frame(error);
+        assert_eq!(fs::read(&path).unwrap(), spliced, "quarantine must leave the original bytes untouched");
+        assert!(forensic_sidecars(&directory).is_empty());
+    }
+
+    #[test]
+    fn a_lying_declared_length_is_a_typed_budget_refusal() {
+        use super::{FRAME_MAGIC, FRAME_VERSION_1, MAX_FRAME_ENCODED_LEN, crc32};
+        let (directory, _, _) = three_record_wal();
+        let path = first_wal_file(&directory);
+        let mut bytes = fs::read(&path).unwrap();
+        // append a syntactically complete frame whose encoded length lies
+        // far beyond the budget (and beyond the file), CRC self-consistent
+        let mut header = [0u8; V1_HEADER_LEN as usize];
+        header[0..4].copy_from_slice(&FRAME_MAGIC);
+        header[4] = FRAME_VERSION_1;
+        header[5] = TEST_TYPE;
+        header[6..14].copy_from_slice(&4u64.to_be_bytes());
+        header[14..18].copy_from_slice(&u32::MAX.to_be_bytes()); // encoded_len lie: 4 GiB
+        header[18..22].copy_from_slice(&16u32.to_be_bytes());
+        let crc = crc32(&[&header[0..22]]);
+        header[22..26].copy_from_slice(&crc.to_be_bytes());
+        bytes.extend_from_slice(&header);
+        bytes.extend_from_slice(&[0u8; 64]); // some bytes follow, so the frame is not a bare torn header
+        fs::write(&path, &bytes).unwrap();
+
+        let error = load_wal(&directory).expect_err("an over-budget declared length must be refused");
+        let defect = expect_corrupt_frame(error);
+        match defect {
+            FrameDefect::LengthOverBudget { declared, budget } => {
+                assert_eq!(declared, u32::MAX as u64);
+                assert_eq!(budget, MAX_FRAME_ENCODED_LEN);
+            }
+            other => panic!("expected LengthOverBudget, got {other:?}"),
+        }
+        assert_eq!(fs::read(&path).unwrap(), bytes, "refusal must leave the original bytes untouched");
+    }
+
+    #[test]
+    fn a_damaged_sealed_file_is_a_quarantine_never_a_repair() {
+        // roll to a second file with one large incompressible record, then
+        // damage the SEALED first file: the tail-repair path must not touch
+        // it, and reading it must quarantine
+        let directory = TempDir::new("wal-corruption").unwrap();
+        let wal = create_wal(&directory);
+        let mut big = vec![0u8; (super::MAX_WAL_FILE_SIZE + 4096) as usize];
+        let mut state = 0x9E3779B97F4A7C15u64; // deterministic incompressible filler
+        for byte in big.iter_mut() {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            *byte = (state >> 33) as u8;
+        }
+        wal.sequenced_write(TEST_TYPE, &big).unwrap();
+        wal.sequenced_write(TEST_TYPE, b"in-second-file").unwrap();
+        drop(wal);
+
+        let wal_dir = directory.path().join(WAL::WAL_DIR_NAME);
+        let mut files: Vec<_> = fs::read_dir(&wal_dir).unwrap().map(|e| e.unwrap().path()).collect();
+        files.sort();
+        assert!(files.len() >= 2, "expected the WAL to have rolled to a second file");
+        let sealed = &files[0];
+        let mut sealed_bytes = fs::read(sealed).unwrap();
+        let mid = sealed_bytes.len() / 2;
+        sealed_bytes[mid] ^= 0x40;
+        fs::write(sealed, &sealed_bytes).unwrap();
+
+        // load succeeds (only the unsealed file is scanned at open) ...
+        let wal = load_wal(&directory).expect("open must not scan-repair sealed files");
+        // ... but reading through the sealed file is a typed quarantine
+        let error = read_all(&wal).expect_err("a damaged sealed frame must surface as a typed error");
+        expect_corrupt_frame(error);
+        assert_eq!(fs::read(sealed).unwrap(), sealed_bytes, "the sealed file's bytes must stay untouched");
+        assert!(forensic_sidecars(&directory).is_empty(), "no repair may be attempted on a sealed file");
+    }
+
+    #[test]
+    fn a_file_renamed_to_the_wrong_range_is_a_typed_quarantine() {
+        let (directory, _, _) = three_record_wal();
+        let path = first_wal_file(&directory);
+        let renamed = path.with_file_name(format!("{}{:025}", FILE_PREFIX, 9u64));
+        fs::rename(&path, &renamed).unwrap();
+
+        let error = load_wal(&directory).expect_err("a file whose name contradicts its first record must quarantine");
+        match error {
+            DurabilityServiceError::WAL { source: WALError::FileStartMismatch { declared, found, .. } } => {
+                assert_eq!(declared, 9);
+                assert_eq!(found, 1);
+            }
+            other => panic!("expected the typed FileStartMismatch, got: {other:?}"),
+        }
+    }
+
+    fn v0_record_bytes(sequence_number: u64, record_type: u8, payload: &[u8]) -> Vec<u8> {
+        let mut compressed = Vec::new();
+        let mut encoder = lz4::EncoderBuilder::new().build(&mut compressed).unwrap();
+        encoder.write_all(payload).unwrap();
+        encoder.finish().1.unwrap();
+        let mut out = Vec::new();
+        out.extend_from_slice(&sequence_number.to_be_bytes());
+        out.extend_from_slice(&(compressed.len() as u64).to_be_bytes());
+        out.push(record_type);
+        out.extend_from_slice(&compressed);
+        out
+    }
+
+    #[test]
+    fn legacy_v0_frames_still_load_and_new_appends_are_authenticated_v1() {
+        // hand-write a v0-format file (the pre-R-01b encoding), prove it
+        // loads, then append through the WAL and prove the mixed file reads
+        // back completely after another reload
+        let directory = TempDir::new("wal-legacy").unwrap();
+        let wal_dir = directory.path().join(WAL::WAL_DIR_NAME);
+        fs::create_dir_all(&wal_dir).unwrap();
+        let path = wal_dir.join(format!("{}{:025}", FILE_PREFIX, 1u64));
+        let mut bytes = v0_record_bytes(1, TEST_TYPE, b"old1");
+        bytes.extend(v0_record_bytes(2, TEST_TYPE, b"old2"));
+        fs::write(&path, &bytes).unwrap();
+
+        let wal = load_wal(&directory).expect("a legacy v0 file must still load");
+        assert_eq!(
+            read_all(&wal).unwrap(),
+            vec![(1, b"old1".to_vec()), (2, b"old2".to_vec())],
+            "v0 records must read back exactly"
+        );
+        let appended = wal.sequenced_write(TEST_TYPE, b"new3").unwrap();
+        assert_eq!(appended.number(), 3);
+        drop(wal);
+
+        let wal = load_wal(&directory).unwrap();
+        assert_eq!(
+            read_all(&wal).unwrap(),
+            vec![(1, b"old1".to_vec()), (2, b"old2".to_vec()), (3, b"new3".to_vec())],
+            "mixed v0+v1 file must read back completely after reload"
+        );
+    }
+
+    #[test]
+    fn a_torn_v0_tail_is_repaired_but_a_nonterminal_v0_defect_quarantines() {
+        // torn v0 header at physical EOF -> repaired (legacy torn signature)
+        let directory = TempDir::new("wal-legacy").unwrap();
+        let wal_dir = directory.path().join(WAL::WAL_DIR_NAME);
+        fs::create_dir_all(&wal_dir).unwrap();
+        let path = wal_dir.join(format!("{}{:025}", FILE_PREFIX, 1u64));
+        let mut bytes = v0_record_bytes(1, TEST_TYPE, b"old1");
+        bytes.extend_from_slice(&2u64.to_be_bytes()); // half a v0 header, then EOF
+        fs::write(&path, &bytes).unwrap();
+        let wal = load_wal(&directory).expect("a torn v0 tail must be repaired");
+        assert_eq!(read_all(&wal).unwrap(), vec![(1, b"old1".to_vec())]);
+        assert_eq!(forensic_sidecars(&directory).len(), 1);
+        drop(wal);
+
+        // zero-length v0 frame NOT at EOF -> quarantine
+        let directory = TempDir::new("wal-legacy").unwrap();
+        let wal_dir = directory.path().join(WAL::WAL_DIR_NAME);
+        fs::create_dir_all(&wal_dir).unwrap();
+        let path = wal_dir.join(format!("{}{:025}", FILE_PREFIX, 1u64));
+        let mut bytes = v0_record_bytes(1, TEST_TYPE, b"old1");
+        bytes.extend_from_slice(&1u64.to_be_bytes());
+        bytes.extend_from_slice(&0u64.to_be_bytes()); // declared zero-length payload
+        bytes.push(TEST_TYPE);
+        bytes.extend(v0_record_bytes(2, TEST_TYPE, b"old2")); // valid data AFTER the defect
+        fs::write(&path, &bytes).unwrap();
+        let error = load_wal(&directory).expect_err("a nonterminal zero-length v0 frame must quarantine");
+        let defect = expect_corrupt_frame(error);
+        assert!(matches!(defect, FrameDefect::ZeroLengthLegacyFrame { at_eof: false }), "got {defect:?}");
+        assert_eq!(fs::read(&path).unwrap(), bytes, "quarantine must leave the original bytes untouched");
+    }
+
+    #[test]
+    fn a_sequence_regression_between_frames_is_a_typed_quarantine() {
+        // splice a v0 frame with a LOWER sequence number after a valid one:
+        // append-only allocation never produces this
+        let directory = TempDir::new("wal-legacy").unwrap();
+        let wal_dir = directory.path().join(WAL::WAL_DIR_NAME);
+        fs::create_dir_all(&wal_dir).unwrap();
+        let path = wal_dir.join(format!("{}{:025}", FILE_PREFIX, 1u64));
+        let mut bytes = v0_record_bytes(1, TEST_TYPE, b"old1");
+        bytes.extend(v0_record_bytes(5, TEST_TYPE, b"old5"));
+        bytes.extend(v0_record_bytes(3, TEST_TYPE, b"old3")); // regression
+        fs::write(&path, &bytes).unwrap();
+        let error = load_wal(&directory).expect_err("a sequence regression must quarantine");
+        let defect = expect_corrupt_frame(error);
+        assert!(
+            matches!(defect, FrameDefect::SequenceRegression { previous: 5, found: 3 }),
+            "expected SequenceRegression, got {defect:?}"
         );
     }
 }

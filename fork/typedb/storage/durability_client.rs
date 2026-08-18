@@ -229,6 +229,13 @@ typedb_error! {
         // UNKNOWN), which the commit path resolves as an unresolved
         // obligation — never as an abort verdict.
         PredecessorWaitTimeout(4, "Commit validation timed out after {waited_secs}s waiting for predecessor commit {predecessor} to leave state '{state}'. The predecessor's verdict is unknown; this commit's outcome is unresolved.", predecessor: u64, state: &'static str, waited_secs: u64),
+        // R-02: the live disk-validation path shares recovery's status
+        // resolver — one commit carrying both verdicts is the same
+        // order-independent quarantine here as it is during recovery.
+        ConflictingCommitStatus(5, "Quarantined WAL: commit {sequence_number} carries both a committed and a rejected status record. The durability log is corrupt; refusing to pick either outcome.", sequence_number: u64),
+        // R-02: a missing certificate is a typed refusal on the live path,
+        // where the verdict cannot be deterministically recomputed.
+        MissingCommitStatus(6, "Commit {sequence_number} was evicted from the in-memory timeline but the durability log holds no status record certifying its verdict. The verdict cannot be recomputed on the live validation path; refusing.", sequence_number: u64),
     }
 }
 

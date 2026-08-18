@@ -6,3 +6,4 @@
 
 pub mod checkpoint;
 pub mod commit_recovery;
+pub mod status_resolver;

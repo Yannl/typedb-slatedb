@@ -27,7 +27,10 @@ import {
   type SyncSql,
 } from "./core/procedures.ts";
 import { fromHex, utf8 } from "./core/journal-crypto.ts";
-import { checkCapability, mintCapability, type CapabilityCheck, type CapabilityPayload } from "./core/capability.ts";
+import {
+  checkCapability, mintCapability, MAX_CAPABILITY_BYTES, REQUIRED_RESTRICTIONS,
+  type CapabilityCheck, type CapabilityPayload,
+} from "./core/capability.ts";
 
 export interface Env {
   CONTAINER_LIFECYCLE: DurableObjectNamespace;
@@ -116,8 +119,12 @@ export class DatabaseControllerDO extends DurableObject {
     this.core().fenceSession(databaseId, startupSessionId);
   }
 
-  setBudgets(databaseId: string, budgets: Parameters<ControllerCore["setBudgets"]>[1]): void {
-    this.core().setBudgets(databaseId, budgets);
+  setBudgets(
+    databaseId: string,
+    budgets: Parameters<ControllerCore["setBudgets"]>[1],
+    startupSessionId: string,
+  ): ReturnType<ControllerCore["setBudgets"]> {
+    return this.core().setBudgets(databaseId, budgets, startupSessionId);
   }
 
   exactLookup(databaseId: string, generation: number, appendLsn: bigint): ReturnType<ControllerCore["exactLookup"]> {
@@ -148,16 +155,20 @@ export class DatabaseControllerDO extends DurableObject {
     return this.core().lastByType(databaseId, generation, recordType);
   }
 
-  queryOperation(databaseId: string, generation: number, operationId: string): ReturnType<ControllerCore["queryOperation"]> {
-    return this.core().queryOperation(databaseId, generation, operationId);
+  queryOperation(
+    databaseId: string, generation: number, operationId: string, startupSessionId: string,
+  ): ReturnType<ControllerCore["queryOperation"]> {
+    return this.core().queryOperation(databaseId, generation, operationId, startupSessionId);
   }
 
   outboxPeek(limit: number): ReturnType<ControllerCore["outboxPeek"]> {
     return this.core().outboxPeek(limit);
   }
 
-  outboxAck(upToControlSeq: bigint): number {
-    return this.core().outboxAck(upToControlSeq);
+  outboxAck(
+    databaseId: string, upToControlSeq: bigint, startupSessionId: string,
+  ): ReturnType<ControllerCore["outboxAck"]> {
+    return this.core().outboxAck(databaseId, upToControlSeq, startupSessionId);
   }
 
   verifyJournal(): ReturnType<ControllerCore["verifyJournal"]> {
@@ -187,6 +198,24 @@ export class DatabaseControllerDO extends DurableObject {
     const key = spec.method === "PUT_PAYLOAD" && spec.digest !== undefined
       ? `p/${spec.databaseId}/${spec.digest}`
       : undefined;
+    // Issuance is fail-closed on the same restriction table verification
+    // enforces. Minting a PUT_PAYLOAD token with no digest/budget used to
+    // produce a token that authorized ANY key, ANY body and ANY length; it
+    // now produces nothing at all, so the two ends cannot disagree about
+    // what a capability is allowed to leave unbound.
+    const derived: Record<string, unknown> = {
+      session: spec.session, key, digest: spec.digest, maxBytes: spec.maxBytes,
+    };
+    for (const required of REQUIRED_RESTRICTIONS[spec.method] ?? []) {
+      if (derived[required] === undefined) {
+        throw new Error(`CAPABILITY_RESTRICTION_MISSING: ${spec.method} requires ${required}`);
+      }
+    }
+    if (spec.maxBytes !== undefined
+        && (!Number.isSafeInteger(spec.maxBytes) || spec.maxBytes < 0 || spec.maxBytes > MAX_CAPABILITY_BYTES)) {
+      throw new Error(
+        `CAPABILITY_BUDGET_ABOVE_CEILING: ${spec.maxBytes} exceeds the ${MAX_CAPABILITY_BYTES}-byte data-path ceiling`);
+    }
     const payload: CapabilityPayload = {
       principal: spec.principal,
       databaseId: spec.databaseId,

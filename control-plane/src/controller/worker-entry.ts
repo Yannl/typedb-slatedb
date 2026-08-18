@@ -48,6 +48,7 @@
 export { DatabaseControllerDO } from "./database-controller.ts";
 
 import { u64FromWire } from "./core/procedures.ts";
+import { canonicalJson } from "./core/journal-crypto.ts";
 
 interface Env {
   CONTROLLER: DurableObjectNamespace;
@@ -137,7 +138,37 @@ async function mapBounded<T, R>(items: T[], limit: number, fn: (item: T) => Prom
   return results;
 }
 
-const PAYLOAD_FETCH_CONCURRENCY = 8;
+/** Platform hard ceiling: six simultaneous outgoing connections per Worker
+ *  invocation (contract lock `typedb-r2-v16-cloudflare-contract-lock.json`,
+ *  brief §"maximum current shape"). The pool was set to eight, which is not
+ *  a tuning choice but a request the platform cannot serve - the seventh and
+ *  eighth connections queue or fail depending on the runtime, and a local
+ *  simulator that tolerates them proves nothing about R2. */
+const R2_SUBREQUEST_CEILING = 6;
+const PAYLOAD_FETCH_CONCURRENCY = R2_SUBREQUEST_CEILING;
+
+/** Hard admission bound on any single request body, enforced BEFORE the body
+ *  is read (contract F9: 8 MiB per data-path object). The payload route used
+ *  to buffer the whole body and only then consult the capability's budget, so
+ *  the first oversized object was always admitted, fully materialised, and
+ *  base64-expanded in a 128 MiB isolate before anything refused it. */
+const MAX_REQUEST_BODY_BYTES = 8 * 1024 * 1024;
+
+/** Declared-length admission: refuse before reading. A request with no
+ *  content-length is refused too - an unbounded stream cannot be admitted
+ *  against a byte budget, and accepting it is how the bound becomes
+ *  advisory. Returns null when admissible. */
+function refuseOversizedBody(request: Request, limit = MAX_REQUEST_BODY_BYTES): Response | null {
+  const declared = request.headers.get("content-length");
+  if (declared === null || !/^\d+$/.test(declared)) {
+    return json({ ok: false, error: "CONTENT_LENGTH_REQUIRED", limit }, 411);
+  }
+  const length = Number(declared);
+  if (!Number.isSafeInteger(length) || length > limit) {
+    return json({ ok: false, error: "REQUEST_BODY_TOO_LARGE", declared, limit }, 413);
+  }
+  return null;
+}
 
 /** Hard per-response byte budget for scan pages (payload bytes, pre-base64):
  *  a full page must fit working memory in the 128 MiB worker isolate with
@@ -169,6 +200,29 @@ function exactGeneration(raw: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
+/**
+ * Q-18: the replay/dedupe digest is RECOMPUTED over the canonical request,
+ * never taken from the caller.
+ *
+ * `request_digest` is the key that decides whether a retry is the same
+ * operation (return the original receipt) or a different one under a reused
+ * id (typed conflict). A caller-supplied digest makes that decision a claim
+ * rather than a fact: send operation X's id with body Y and X's digest, and
+ * the controller hands back X's receipt for Y. The digest therefore covers
+ * exactly the authority-bearing fields of the request, in a fixed order,
+ * with the caller's own `requestDigest` excluded from its own input.
+ */
+const DIGESTED_FIELDS = [
+  "databaseId", "generation", "startupSessionId", "operationId", "sequencingKind",
+  "recordType", "logicalKey", "payloadKey", "payloadDigest", "payloadLength",
+] as const;
+
+async function canonicalRequestDigest(req: Record<string, unknown>): Promise<string> {
+  const subject: Record<string, unknown> = {};
+  for (const field of DIGESTED_FIELDS) subject[field] = req[field] ?? null;
+  return sha256hex(new TextEncoder().encode(canonicalJson(subject)).buffer as ArrayBuffer);
+}
+
 /** Sequence-valued query parameters (F7): exact u64 from a decimal string,
  *  over the full range - no 2^53 cliff. Returns null when invalid. */
 function nonNegativeU64(raw: string | null, fallback: bigint): bigint | null {
@@ -192,7 +246,8 @@ export default {
       env.CONTROLLER.get(env.CONTROLLER.idFromName(databaseId)) as unknown as {
         registerSession(db: string, generation: number, session: string): Promise<void>;
         fenceSession(db: string, session: string): Promise<void>;
-        setBudgets(db: string, budgets: object): Promise<void>;
+        setBudgets(db: string, budgets: object, session: string):
+          Promise<{ ok: true } | { ok: false; error: string }>;
         finalizeWalRecord(req: object): Promise<Record<string, unknown>>;
         finalizeBatch(reqs: object[]): Promise<Record<string, unknown>[] | Record<string, unknown>>;
         exactLookup(db: string, generation: number, lsn: bigint): Promise<Record<string, unknown>>;
@@ -203,7 +258,8 @@ export default {
           records: Record<string, unknown>[]; nextFromLsn: bigint | null;
         }>;
         lastByType(db: string, generation: number, recordType: number): Promise<Record<string, unknown>>;
-        queryOperation(db: string, generation: number, operationId: string): Promise<Record<string, unknown>>;
+        queryOperation(db: string, generation: number, operationId: string, session: string):
+          Promise<Record<string, unknown>>;
       };
 
     /** F9 middleware: verify-and-burn the request's capability at the
@@ -221,6 +277,38 @@ export default {
       if (!verdict.ok) return json(verdict, 403);
       return null;
     };
+
+    /** Same check, but hands the ACTOR back to the route.
+     *
+     *  Donor A4: procedures that act on authority state revalidate the actor
+     *  at the core, beneath this layer. The route therefore needs to know
+     *  which actor the token was issued to, and a token with no session
+     *  binding cannot authorize such a procedure at all - it would leave the
+     *  core with nothing to revalidate. */
+    const requireCapabilityWithSession = async (
+      databaseId: string,
+      expect: { method: string; key?: string; bodyDigest?: string; bodyLength?: number },
+    ): Promise<{ denied: Response } | { session: string }> => {
+      const token = request.headers.get("x-capability");
+      if (token === null) return { denied: json({ ok: false, error: "CAPABILITY_REQUIRED" }, 401) };
+      const stub = stubFor(databaseId) as unknown as {
+        useCapability(token: string, expect: object): Promise<
+          { ok: boolean; payload?: { session?: string } } & Record<string, unknown>>;
+      };
+      const verdict = await stub.useCapability(token, { databaseId, ...expect });
+      if (!verdict.ok) return { denied: json(verdict, 403) };
+      const session = verdict.payload?.session;
+      if (typeof session !== "string" || session.length === 0) {
+        return { denied: json({ ok: false, error: "CAPABILITY_RESTRICTION_MISSING", restriction: "session" }, 403) };
+      }
+      return { session };
+    };
+
+    /** Core-level authority outcomes surfaced as protocol shapes. */
+    const sessionRefusal = (result: { ok: false; error: string }): Response | null =>
+      result.error === "SESSION_FENCED" || result.error === "SESSION_UNKNOWN"
+        ? json({ ok: false, error: result.error }, 409)
+        : null;
 
     if (request.method === "POST" && path === "/capability") {
       const spec = (await request.json()) as {
@@ -247,7 +335,15 @@ export default {
       if (parts.length !== 3 || parts[0] !== "p") {
         return json({ ok: false, error: "INVALID_PAYLOAD_KEY", key }, 400);
       }
+      const tooLarge = refuseOversizedBody(request);
+      if (tooLarge) return tooLarge;
       const bytes = await request.arrayBuffer();
+      if (bytes.byteLength > MAX_REQUEST_BODY_BYTES) {
+        // declared length lied; the read is bounded by the platform anyway,
+        // but the refusal must not depend on the client's honesty
+        return json({ ok: false, error: "REQUEST_BODY_TOO_LARGE",
+                      observed: bytes.byteLength, limit: MAX_REQUEST_BODY_BYTES }, 413);
+      }
       const digest = await sha256hex(bytes);
       const denied = await requireCapability(parts[1], {
         method: "PUT_PAYLOAD", key, bodyDigest: digest, bodyLength: bytes.byteLength,
@@ -305,13 +401,14 @@ export default {
       const b = (await request.json()) as {
         databaseId: string; maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number;
       };
-      const denied = await requireCapability(b.databaseId, { method: "SESSION_ADMIN" });
-      if (denied) return denied;
-      await stubFor(b.databaseId).setBudgets(b.databaseId, {
+      const auth = await requireCapabilityWithSession(b.databaseId, { method: "SESSION_ADMIN" });
+      if ("denied" in auth) return auth.denied;
+      const result = await stubFor(b.databaseId).setBudgets(b.databaseId, {
         maxUnpublishedOutbox: b.maxUnpublishedOutbox,
         maxPayloadLength: b.maxPayloadLength,
         maxTailRecords: b.maxTailRecords,
-      });
+      }, auth.session);
+      if (!result.ok) return sessionRefusal(result) ?? json(result, 409);
       return json({ ok: true });
     }
 
@@ -345,7 +442,14 @@ export default {
       if (denied) return denied;
       const receiptError = await verifyReceipt(req);
       if (receiptError !== null) return receiptError;
-      const result = await stubFor(req.databaseId).finalizeWalRecord(req);
+      // Q-18: the dedupe key is derived here, not asserted by the caller
+      const computedDigest = await canonicalRequestDigest(req);
+      if (typeof req.requestDigest === "string" && req.requestDigest !== computedDigest) {
+        return json({ ok: false, error: "REQUEST_DIGEST_MISMATCH",
+                      computed: computedDigest, supplied: req.requestDigest }, 400);
+      }
+      const result = await stubFor(req.databaseId)
+        .finalizeWalRecord({ ...req, requestDigest: computedDigest });
       return json(result, result.ok ? 200 : 409);
     }
 
@@ -381,7 +485,17 @@ export default {
       const receiptErrors = await mapBounded(body.requests, PAYLOAD_FETCH_CONCURRENCY, verifyReceipt);
       const firstReceiptError = receiptErrors.find((error) => error !== null);
       if (firstReceiptError) return firstReceiptError;
-      const result = await stubFor(databaseId).finalizeBatch(body.requests);
+      // Q-18: same rule for every batch member - the digest is derived here
+      const digested: Record<string, unknown>[] = [];
+      for (const req of body.requests) {
+        const computed = await canonicalRequestDigest(req);
+        if (typeof req.requestDigest === "string" && req.requestDigest !== computed) {
+          return json({ ok: false, error: "REQUEST_DIGEST_MISMATCH", operationId: req.operationId ?? null,
+                        computed, supplied: req.requestDigest }, 400);
+        }
+        digested.push({ ...req, requestDigest: computed });
+      }
+      const result = await stubFor(databaseId).finalizeBatch(digested);
       // all-or-nothing: an array is N successes; a single typed error aborted
       // (and rolled back) the whole batch
       if (Array.isArray(result)) return json({ ok: true, results: result });
@@ -493,13 +607,20 @@ export default {
       const [, db, generation, operationId] = walOperation;
       const gen = exactGeneration(generation);
       if (gen === null) return json({ ok: false, error: "INVALID_GENERATION", observed: generation }, 400);
-      const denied = await requireCapability(db, { method: "WAL_READ" });
-      if (denied) return denied;
-      // read surface: immutable durable history stays queryable by operation
-      // identity even after the finalizing session is fenced (V16; the
-      // finalize-RETRY path still answers SESSION_FENCED per inv. 38)
-      const result = await stubFor(db).queryOperation(db, gen, decodeURIComponent(operationId));
-      if (!result.ok) return json(result, 404);
+      const auth = await requireCapabilityWithSession(db, { method: "WAL_READ" });
+      if ("denied" in auth) return auth.denied;
+      // Read surface: immutable durable history stays queryable by operation
+      // identity across a fence of some OTHER actor (V16; the finalize-RETRY
+      // path still answers SESSION_FENCED per inv. 38). "By the current
+      // actor" is load-bearing, so the core revalidates the caller's own
+      // session (donor A4): a fenced actor holding an unexpired WAL_READ
+      // capability reads nothing.
+      const result = await stubFor(db).queryOperation(
+        db, gen, decodeURIComponent(operationId), auth.session);
+      if (!result.ok) {
+        const refusal = sessionRefusal(result as { ok: false; error: string });
+        return refusal ?? json(result, 404);
+      }
       return json(result);
     }
 
@@ -533,17 +654,22 @@ export default {
 
     const outboxAck = path.match(/^\/outbox\/([^/]+)\/ack$/);
     if (request.method === "POST" && outboxAck) {
-      const denied = await requireCapability(outboxAck[1], { method: "OUTBOX" });
-      if (denied) return denied;
+      const auth = await requireCapabilityWithSession(outboxAck[1], { method: "OUTBOX" });
+      if ("denied" in auth) return auth.denied;
       const b = (await request.json()) as { upToControlSeq: number | string };
-      const stub = stubFor(outboxAck[1]) as unknown as { outboxAck(seq: bigint): Promise<number> };
+      const stub = stubFor(outboxAck[1]) as unknown as {
+        outboxAck(db: string, seq: bigint, session: string):
+          Promise<{ ok: true; acked: number } | { ok: false; error: string }>;
+      };
       let upTo: bigint;
       try {
         upTo = u64FromWire(b.upToControlSeq, "upToControlSeq");
       } catch {
         return json({ ok: false, error: "INVALID_PARAMETER", field: "upToControlSeq" }, 400);
       }
-      return json({ ok: true, acked: await stub.outboxAck(upTo) });
+      const result = await stub.outboxAck(outboxAck[1], upTo, auth.session);
+      if (!result.ok) return sessionRefusal(result) ?? json(result, 409);
+      return json({ ok: true, acked: result.acked });
     }
 
     const cutOpen = path.match(/^\/checkpoint\/([^/]+)\/(\d+)\/cut$/);

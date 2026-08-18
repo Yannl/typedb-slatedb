@@ -60,8 +60,6 @@ export const SCHEMA = `
   CREATE UNIQUE INDEX IF NOT EXISTS wal_status_singleton
     ON wal_tail(database_id, generation, unsequenced_logical_key)
     WHERE unsequenced_logical_key IS NOT NULL;
-  CREATE INDEX IF NOT EXISTS wal_type_scan
-    ON wal_tail(database_id, generation, record_type, append_lsn);
   CREATE TABLE IF NOT EXISTS control_outbox(
     control_seq BLOB PRIMARY KEY,
     database_id TEXT NOT NULL,
@@ -227,19 +225,96 @@ export class ControllerCore {
   constructor(sql: SyncSql, options?: { journalKey?: Uint8Array }) {
     this.sql = sql;
     this.journalKey = options?.journalKey ?? utf8("dev-insecure-journal-key");
-    this.sql.exec(SCHEMA);
-    // pre-record_type dev state (CREATE TABLE IF NOT EXISTS cannot add
-    // columns to an existing table): additive migration, idempotent.
-    // NOTE (F7 blob representation): rows written before the u64-blob change
-    // stored INTEGER sequences; they are NOT migrated - u64FromSql fails
-    // closed on them with a typed representation violation. Dev lanes
-    // recreate their state; there is no production data behind this schema.
-    try {
-      this.sql.exec(`ALTER TABLE wal_tail ADD COLUMN record_type INTEGER NOT NULL DEFAULT 0`);
-    } catch {
-      // column already exists
+    this.migrate();
+  }
+
+  /**
+   * Ordered, transactional, idempotent schema migration (Q-09).
+   *
+   * The previous sequence could not migrate an existing database at all:
+   * the declarative schema script created `wal_type_scan` over
+   * `wal_tail(record_type)` and ran BEFORE the `ALTER TABLE ... ADD COLUMN
+   * record_type` that introduces the column. On a fresh database that works
+   * (CREATE TABLE already declares the column); on a database created before
+   * the column existed, the CREATE INDEX raises "no such column" inside the
+   * schema script, the whole script aborts, and construction fails - so the
+   * ALTER meant to fix it was unreachable. The ordering, not the SQL, was
+   * the defect.
+   *
+   * The fix is to make order explicit and recorded: declarative tables
+   * first, additive columns second (driven by PRAGMA table_info, so it is
+   * correct on both fresh and old databases), dependent indexes last, each
+   * step transactional and stamped in `schema_migrations`.
+   *
+   * NOTE (F7 blob representation): rows written before the u64-blob change
+   * stored INTEGER sequences; they are NOT migrated - u64FromSql fails
+   * closed on them with a typed representation violation rather than
+   * reinterpreting them.
+   */
+  private migrate(): void {
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS schema_migrations(
+      version INTEGER PRIMARY KEY,
+      applied_at_ms INTEGER NOT NULL
+    )`);
+    const applied = new Set(
+      this.sql.exec(`SELECT version FROM schema_migrations`).map((r) => Number(r.version)),
+    );
+    for (const step of ControllerCore.MIGRATIONS) {
+      if (applied.has(step.version)) continue;
+      this.sql.transaction(() => {
+        step.up(this.sql);
+        this.sql.exec(`INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?,?)`,
+          step.version, Date.now());
+      });
     }
   }
+
+  /** Columns added after the original table shape. Applied by name against
+   *  PRAGMA table_info, so the step is a no-op on a fresh database (where
+   *  CREATE TABLE already declares them) and additive on an old one. */
+  private static readonly ADDITIVE_COLUMNS: ReadonlyArray<{ table: string; column: string; ddl: string }> = [
+    { table: "wal_tail", column: "record_type", ddl: "INTEGER NOT NULL DEFAULT 0" },
+  ];
+
+  private static readonly MIGRATIONS: ReadonlyArray<{ version: number; up: (sql: SyncSql) => void }> = [
+    { version: 1, up: (sql) => { sql.exec(SCHEMA); } },
+    {
+      version: 2,
+      up: (sql) => {
+        for (const { table, column, ddl } of ControllerCore.ADDITIVE_COLUMNS) {
+          const present = sql.exec(`PRAGMA table_info(${table})`).some((r) => String(r.name) === column);
+          if (!present) sql.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+        }
+      },
+    },
+    {
+      version: 3,
+      up: (sql) => {
+        // dependent on the v2 column: never earlier than the column itself
+        sql.exec(`CREATE INDEX IF NOT EXISTS wal_type_scan
+                  ON wal_tail(database_id, generation, record_type, append_lsn)`);
+      },
+    },
+    {
+      version: 4,
+      up: (sql) => {
+        // Q-11: durable idempotency aliases. A status-singleton dedupe
+        // answers a FRESH operation id with the original record's receipt;
+        // without an alias that operation id exists nowhere, so a client
+        // that lost the response a second time can never re-resolve the
+        // receipt it was given. The alias makes the answer durable and
+        // queryable under the id the client actually used.
+        sql.exec(`CREATE TABLE IF NOT EXISTS operation_aliases(
+          database_id TEXT NOT NULL,
+          generation INTEGER NOT NULL,
+          operation_id TEXT NOT NULL,
+          append_lsn BLOB NOT NULL,
+          request_digest TEXT NOT NULL,
+          PRIMARY KEY(database_id, generation, operation_id)
+        )`);
+      },
+    },
+  ];
 
   /**
    * Register a session AND fence every other live session of the database
@@ -312,15 +387,52 @@ export class ControllerCore {
     });
   }
 
-  setBudgets(databaseId: string, b: { maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number }): void {
+  /**
+   * Donor A4: per-procedure actor revalidation AT THE CORE, beneath the
+   * capability layer.
+   *
+   * The capability layer proves a token was issued to an actor; it cannot
+   * prove the actor is still the authority when the token is USED. A
+   * capability has a TTL, so there is a window in which a session is fenced
+   * and its already-minted, still-unexpired token keeps working - the
+   * fenced actor could still move budgets, ack the outbox out from under
+   * the live actor, or read the operation surface. The window closes only
+   * where the authority state actually lives, which is here.
+   *
+   * No holder attribution is returned (v16 inv. 38 / ADR-0006): a fenced
+   * actor learns that it is fenced, never who superseded it.
+   */
+  private requireLiveSession(databaseId: string, startupSessionId: string):
+    { ok: true } | { ok: false; error: "SESSION_UNKNOWN" | "SESSION_FENCED" } {
+    if (typeof startupSessionId !== "string" || startupSessionId.length === 0) {
+      return { ok: false, error: "SESSION_UNKNOWN" };
+    }
+    const rows = this.sql.exec(
+      `SELECT fenced FROM sessions WHERE database_id=? AND startup_session_id=?`,
+      databaseId, startupSessionId,
+    );
+    if (!rows.length) return { ok: false, error: "SESSION_UNKNOWN" };
+    // an actor spans generations; it is live only if NO row for it is fenced
+    if (rows.some((r) => Number(r.fenced) === 1)) return { ok: false, error: "SESSION_FENCED" };
+    return { ok: true };
+  }
+
+  setBudgets(
+    databaseId: string,
+    b: { maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number },
+    startupSessionId: string,
+  ): { ok: true } | { ok: false; error: "SESSION_UNKNOWN" | "SESSION_FENCED" } {
+    const authority = this.requireLiveSession(databaseId, startupSessionId);
+    if (!authority.ok) return authority;
     this.sql.transaction(() => {
       this.sql.exec(
         `INSERT OR REPLACE INTO budgets(database_id, max_unpublished_outbox, max_payload_length, max_tail_records)
          VALUES (?,?,?,?)`,
         databaseId, b.maxUnpublishedOutbox, b.maxPayloadLength, b.maxTailRecords,
       );
-      this.appendCommand(databaseId, "BUDGETS_SET", { databaseId, ...b });
+      this.appendCommand(databaseId, "BUDGETS_SET", { databaseId, ...b, startupSessionId });
     });
+    return { ok: true };
   }
 
   /**
@@ -419,6 +531,12 @@ export class ControllerCore {
         // duplicate identical status: idempotent accept of the original;
         // conflicting status: typed rejection. Never both accepted.
         if (existing[0].payload_digest === req.payloadDigest) {
+          // Q-11: make the answer durable under the id the CLIENT used.
+          // Returning the original record's receipt for a fresh operation id
+          // without recording the mapping left that operation queryable
+          // nowhere - a second lost response had nothing to resolve against.
+          const aliasConflict = this.recordOperationAlias(req, existing[0].append_lsn as Uint8Array);
+          if (aliasConflict) return aliasConflict;
           return {
             ok: true as const,
             appendLsn: u64FromSql(existing[0].append_lsn, "append_lsn"),
@@ -787,13 +905,16 @@ export class ControllerCore {
       }));
   }
 
-  outboxAck(upToControlSeq: bigint): number {
+  outboxAck(databaseId: string, upToControlSeq: bigint, startupSessionId: string):
+    Typed<{ acked: number }> | { ok: false; error: "SESSION_UNKNOWN" | "SESSION_FENCED" } {
+    const authority = this.requireLiveSession(databaseId, startupSessionId);
+    if (!authority.ok) return authority;
     const bound = u64Blob(upToControlSeq, "up_to_control_seq");
     return this.sql.transaction(() => {
       const before = Number(this.sql.exec(
         `SELECT COUNT(*) AS n FROM control_outbox WHERE published=0 AND control_seq <= ?`, bound)[0].n);
       this.sql.exec(`UPDATE control_outbox SET published=1 WHERE published=0 AND control_seq <= ?`, bound);
-      return before;
+      return { ok: true as const, acked: before };
     });
   }
 
@@ -894,21 +1015,70 @@ export class ControllerCore {
    * hide the immutable durable record itself: lost-response recovery and
    * forensics by the CURRENT actor resolve here.
    */
-  queryOperation(databaseId: string, generation: number, operationId: string):
-    Typed<{ record: WalDescriptor; requestDigest: string; controlSeq: bigint }> | TypedErr {
-    const rows = this.sql.exec(
+  queryOperation(databaseId: string, generation: number, operationId: string, startupSessionId: string):
+    Typed<{ record: WalDescriptor; requestDigest: string; controlSeq: bigint }>
+    | TypedErr | { ok: false; error: "SESSION_UNKNOWN" | "SESSION_FENCED" } {
+    // "by the CURRENT actor" is the whole point of this surface: a fenced
+    // actor must not keep reading the immutable history it can no longer
+    // extend, and its unexpired WAL_READ capability must not let it.
+    const authority = this.requireLiveSession(databaseId, startupSessionId);
+    if (!authority.ok) return authority;
+    let rows = this.sql.exec(
       `SELECT append_lsn, type_sequence, sequencing_kind, record_type, payload_key, payload_digest,
               payload_length, unsequenced_logical_key, request_digest, control_seq
        FROM wal_tail WHERE database_id=? AND generation=? AND finalization_operation_id=?`,
       databaseId, generation, operationId,
     );
-    if (!rows.length) return { ok: false, error: "NOT_FOUND" };
+    if (!rows.length) {
+      // Q-11: an operation answered by status-singleton dedupe resolves
+      // through its durable alias to the record it was answered with
+      const alias = this.sql.exec(
+        `SELECT append_lsn FROM operation_aliases
+         WHERE database_id=? AND generation=? AND operation_id=?`,
+        databaseId, generation, operationId,
+      );
+      if (!alias.length) return { ok: false, error: "NOT_FOUND" };
+      rows = this.sql.exec(
+        `SELECT append_lsn, type_sequence, sequencing_kind, record_type, payload_key, payload_digest,
+                payload_length, unsequenced_logical_key, request_digest, control_seq
+         FROM wal_tail WHERE database_id=? AND generation=? AND append_lsn=?`,
+        databaseId, generation, alias[0].append_lsn,
+      );
+      if (!rows.length) return { ok: false, error: "NOT_FOUND" };
+    }
     return {
       ok: true,
       record: descriptorOf(rows[0]),
       requestDigest: String(rows[0].request_digest),
       controlSeq: u64FromSql(rows[0].control_seq, "control_seq"),
     };
+  }
+
+  /**
+   * Record `operationId -> the physical record it was answered with`.
+   *
+   * Returns a typed conflict when the same operation id was already aliased
+   * with a different request digest: one operation id may resolve to exactly
+   * one answer, and a second, different request under it is a client defect,
+   * never a silent re-point.
+   */
+  private recordOperationAlias(
+    req: FinalizeRequest, appendLsn: Uint8Array,
+  ): { ok: false; error: "OPERATION_DIGEST_CONFLICT" } | null {
+    const prior = this.sql.exec(
+      `SELECT request_digest FROM operation_aliases
+       WHERE database_id=? AND generation=? AND operation_id=?`,
+      req.databaseId, req.generation, req.operationId,
+    );
+    if (prior.length && String(prior[0].request_digest) !== req.requestDigest) {
+      return { ok: false as const, error: "OPERATION_DIGEST_CONFLICT" as const };
+    }
+    this.sql.exec(
+      `INSERT OR IGNORE INTO operation_aliases(database_id, generation, operation_id, append_lsn, request_digest)
+       VALUES (?,?,?,?,?)`,
+      req.databaseId, req.generation, req.operationId, appendLsn, req.requestDigest,
+    );
+    return null;
   }
 
   /** Last record of a type in physical order (`find_last_type`). */

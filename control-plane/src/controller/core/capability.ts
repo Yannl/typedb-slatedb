@@ -56,7 +56,35 @@ export type CapabilityCheck =
       | "CAPABILITY_KEY_MISMATCH"
       | "CAPABILITY_DIGEST_MISMATCH"
       | "CAPABILITY_BUDGET_EXCEEDED"
+      | "CAPABILITY_RESTRICTION_MISSING"
+      | "CAPABILITY_BUDGET_ABOVE_CEILING"
       | "CAPABILITY_STALE_INCARNATION" };
+
+/**
+ * Restrictions that are MANDATORY for a method, not optional decoration.
+ *
+ * Every restriction used to be checked as `if (payload.X !== undefined)`, so
+ * a correctly-MACed token that simply OMITTED key, digest and maxBytes
+ * satisfied all three checks and authorized any key, any body, any length.
+ * That is not a narrower capability - it is a wider one, and it is exactly
+ * how a capability system inverts into a bearer token. A method's
+ * restrictions are therefore required by name; a token missing one is
+ * refused before any of the value comparisons run.
+ */
+export const REQUIRED_RESTRICTIONS: Record<string, ReadonlyArray<"session" | "key" | "digest" | "maxBytes">> = {
+  PUT_PAYLOAD: ["key", "digest", "maxBytes"],
+  WAL_FINALIZE: ["session"],
+  WAL_FINALIZE_BATCH: ["session"],
+};
+
+/**
+ * Hard ceiling on any byte budget a capability may carry (contract F9: the
+ * data path admits at most 8 MiB per object). A budget is a NARROWING of
+ * this ceiling, never a widening of it: a token minted - or tampered into -
+ * carrying 999,999,999 is refused at verification, so the ceiling does not
+ * depend on the issuer being correct.
+ */
+export const MAX_CAPABILITY_BYTES = 8 * 1024 * 1024;
 
 function base64urlEncode(bytes: Uint8Array): string {
   let binary = "";
@@ -136,12 +164,33 @@ export function checkCapability(
   if (expect.session !== undefined && payload.session !== expect.session) {
     return { ok: false, error: "CAPABILITY_SESSION_MISMATCH" };
   }
+  // mandatory-by-method restrictions: absence is refusal, not permission
+  for (const required of REQUIRED_RESTRICTIONS[payload.method] ?? []) {
+    if (payload[required] === undefined) {
+      return { ok: false, error: "CAPABILITY_RESTRICTION_MISSING" };
+    }
+  }
+  // a restriction the REQUEST needs must also be present in the token: a
+  // route that checks a key/digest/length cannot be satisfied by a token
+  // that declines to bind one
+  if (expect.key !== undefined && payload.key === undefined) return { ok: false, error: "CAPABILITY_RESTRICTION_MISSING" };
+  if (expect.bodyDigest !== undefined && payload.digest === undefined) {
+    return { ok: false, error: "CAPABILITY_RESTRICTION_MISSING" };
+  }
+  if (expect.bodyLength !== undefined && payload.maxBytes === undefined) {
+    return { ok: false, error: "CAPABILITY_RESTRICTION_MISSING" };
+  }
   if (payload.key !== undefined && payload.key !== expect.key) return { ok: false, error: "CAPABILITY_KEY_MISMATCH" };
   if (payload.digest !== undefined && payload.digest !== expect.bodyDigest) {
     return { ok: false, error: "CAPABILITY_DIGEST_MISMATCH" };
   }
-  if (payload.maxBytes !== undefined && (expect.bodyLength === undefined || expect.bodyLength > payload.maxBytes)) {
-    return { ok: false, error: "CAPABILITY_BUDGET_EXCEEDED" };
+  if (payload.maxBytes !== undefined) {
+    if (!Number.isSafeInteger(payload.maxBytes) || payload.maxBytes < 0 || payload.maxBytes > MAX_CAPABILITY_BYTES) {
+      return { ok: false, error: "CAPABILITY_BUDGET_ABOVE_CEILING" };
+    }
+    if (expect.bodyLength === undefined || expect.bodyLength > payload.maxBytes) {
+      return { ok: false, error: "CAPABILITY_BUDGET_EXCEEDED" };
+    }
   }
   return { ok: true, payload };
 }

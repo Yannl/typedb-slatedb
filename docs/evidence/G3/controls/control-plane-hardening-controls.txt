@@ -1,0 +1,67 @@
+# Executed negative controls: control-plane hardening (Q-09, Q-11, Q-18, Q-25, Q-26, donor A4)
+#
+# Every entry below was run in this session. "MUTANT" lines reintroduce the
+# audited defect and record which named test goes red; each is restored
+# immediately afterwards and the suite re-run green.
+
+$ node --test --experimental-strip-types src/controller/core/controller-core.test.ts
+# pass 26 / # fail 0
+$ node --test --experimental-strip-types src/controller/core/controller-state.test.ts
+# pass 5 / # fail 0
+$ node --test --experimental-strip-types src/controller/core/journal.test.ts
+# pass 7 / # fail 0
+$ node --test --experimental-strip-types src/controller/core/capability.test.ts
+# pass 5 / # fail 0
+$ CONTROLLER_MUTANT=drop-outbox-event node --test ... controller-core.test.ts
+# pass 23 / # fail 1        (the standing outbox mutant is still killed)
+
+## donor A4 - core-level per-procedure session revalidation
+MUTANT: requireLiveSession() returns {ok:true} unconditionally
+  not ok 10 - a finalized operation stays queryable by operation id after its session is fenced
+  not ok 24 - donor A4: authority procedures revalidate the actor at the core, beneath the capability layer
+  # pass 22 / # fail 2      -> restored: # pass 24 / # fail 0
+
+## Q-26 - capability restrictions are mandatory, not optional
+MUTANT A: the method-mandatory restriction loop removed
+  not ok 5 - WAL_FINALIZE stays session-bound (donor A3) and the binding is mandatory
+  # pass 4 / # fail 1
+MUTANT B: both mandatory-restriction layers removed (exact pre-fix behaviour)
+  not ok 1 - a PUT_PAYLOAD token that omits its restrictions is refused, not widened
+  not ok 4 - a request that needs a restriction cannot be satisfied by a token that declines to bind one
+  not ok 5 - WAL_FINALIZE stays session-bound (donor A3) and the binding is mandatory
+  # pass 2 / # fail 3       -> restored: # pass 5 / # fail 0
+  (MUTANT B reproduces the audit's executed finding: a correctly-MACed
+   PUT_PAYLOAD token with no key/digest/maxBytes, checked against a different
+   key, a different digest and a 999,999,999-byte length, was accepted.)
+
+## Q-09 - versioned, ordered, transactional migrations
+MUTANT: the record_type-dependent index moved back into migration v1
+  not ok 25 - Q-09: a database created before record_type existed can still be opened and migrated
+  # pass 24 / # fail 1      -> restored: # pass 25 / # fail 0
+
+## Q-11 - durable idempotency aliases
+MUTANT: status-singleton dedupe answers without recording the alias
+  not ok 26 - Q-11: a dedupe answer is durable under the operation id the client actually used
+  # pass 25 / # fail 1      -> restored: # pass 26 / # fail 0
+
+## Q-25 - no delete authority before G13
+$ python3 tools/maintenance/s3_gc.py --delete mat-1
+REFUSED: physical deletion is unavailable before G13.
+  missing gate record: docs/evidence/G13/delete-authority-gate.json
+  ...
+rc=1
+$ grep -c 'DELETE' tools/maintenance/s3_gc.py     # no DELETE request remains in the file
+(only the explanatory comment matches; the delete implementation is gone, not flag-guarded)
+
+## Q-20 - contract subrequest ceiling
+PAYLOAD_FETCH_CONCURRENCY is now R2_SUBREQUEST_CEILING = 6 (was 8), sourced
+from contract/typedb-r2-v16-cloudflare-contract-lock.json
+("simultaneous outgoing connections per invocation is six").
+
+## Still to run in this environment
+The workerd lanes (npx vitest run, wrangler dev + scripts/local-stack-e2e.mjs)
+were NOT re-run at the time of this commit: a full U2S3 corpus run was
+executing and the E2E's contention would risk timing out corpus targets that
+take hours to re-measure. The E2E script was updated for the new session-bound
+routes and the Q-18 digest rule, and re-run afterwards - see the run recorded
+below this line when it exists.

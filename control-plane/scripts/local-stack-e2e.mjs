@@ -21,6 +21,11 @@ const BASE = process.argv[2] ?? "http://127.0.0.1:8787";
 const DB = `e2e-db-${process.pid}-${Date.now()}`;
 const GEN = 1;
 const SESSION = "sess-e2e";
+/** The actor the script is currently acting AS. Donor A4 revalidates the
+ *  session at the core for authority procedures (budgets, outbox ack,
+ *  operation query), so the harness has to know which actor it is - a
+ *  superseded one is refused there even with a valid capability. */
+let CURRENT_SESSION = SESSION;
 const PRINCIPAL = "e2e-driver";
 
 let failures = 0;
@@ -54,7 +59,13 @@ async function issueCap(spec) {
 function capSpecFor(method, rawPath, body) {
   const path = rawPath.split("?")[0]; // the audience derives from the path, never the query
   if (path === "/capability" || path === "/health") return null;
-  if (path.startsWith("/session/") || path === "/budgets") {
+  if (path === "/budgets") {
+    // donor A4: budgets are an authority mutation, so the capability names
+    // the actor and the CORE revalidates that the actor is still live
+    return { databaseId: body.databaseId, method: "SESSION_ADMIN", session: CURRENT_SESSION };
+  }
+  if (path.startsWith("/session/")) {
+    // registration ESTABLISHES the actor: it cannot be session-revalidated
     return { databaseId: body.databaseId, method: "SESSION_ADMIN" };
   }
   // finalize capabilities are SESSION-bound (donor A3): the token carries
@@ -65,8 +76,12 @@ function capSpecFor(method, rawPath, body) {
   if (path === "/wal/finalize-batch") {
     return { databaseId: body.requests[0].databaseId, method: "WAL_FINALIZE", session: body.requests[0].startupSessionId };
   }
-  let m = path.match(/^\/wal\/([^/]+)\//);
+  let m = path.match(/^\/wal\/([^/]+)\/\d+\/operation\//);
+  if (m) return { databaseId: m[1], method: "WAL_READ", session: CURRENT_SESSION };
+  m = path.match(/^\/wal\/([^/]+)\//);
   if (m) return { databaseId: m[1], method: "WAL_READ" };
+  m = path.match(/^\/outbox\/([^/]+)\/ack$/);
+  if (m) return { databaseId: m[1], method: "OUTBOX", session: CURRENT_SESSION };
   m = path.match(/^\/outbox\/([^/]+)/);
   if (m) return { databaseId: m[1], method: "OUTBOX" };
   m = path.match(/^\/journal\/([^/]+)\/verify(-anchored)?$/);
@@ -116,7 +131,7 @@ check("payload key is issuer-derived and content-addressed",
 
 const finalizeRequest = {
   databaseId: DB, generation: GEN, startupSessionId: SESSION,
-  operationId: "op-1", requestDigest: "rd-1",
+  operationId: "op-1",
   sequencingKind: "SEQUENCED", recordType: 2, logicalKey: null,
   payloadKey: up1.key, payloadDigest: up1.digest, payloadLength: payload1.length,
 };
@@ -130,12 +145,12 @@ check("ambiguous retry replays identically",
   f1retry.body.ok === true && f1retry.body.appendLsn === "0" && f1retry.body.replayed === true);
 
 // 3. tampered digest is rejected by the DATA PATH before the controller
-const tampered = { ...finalizeRequest, operationId: "op-tampered", requestDigest: "rd-t", payloadDigest: "0".repeat(64) };
+const tampered = { ...finalizeRequest, operationId: "op-tampered", payloadDigest: "0".repeat(64) };
 const ft = await api("POST", "/wal/finalize", tampered);
 check("data path rejects digest mismatch", ft.status === 422 && ft.body.error === "PAYLOAD_DIGEST_MISMATCH");
 
 // 4. finalize referencing a never-uploaded payload is rejected
-const ghost = { ...finalizeRequest, operationId: "op-ghost", requestDigest: "rd-g", payloadKey: `p/${DB}/${"f".repeat(64)}` };
+const ghost = { ...finalizeRequest, operationId: "op-ghost", payloadKey: `p/${DB}/${"f".repeat(64)}` };
 const fg = await api("POST", "/wal/finalize", ghost);
 check("data path rejects missing payload", fg.status === 422 && fg.body.error === "PAYLOAD_MISSING");
 
@@ -143,7 +158,7 @@ check("data path rejects missing payload", fg.status === 422 && fg.body.error ==
 const statusPayload = Buffer.from("status-A");
 const upStatus = await uploadPayload(statusPayload);
 const s1 = await api("POST", "/wal/finalize", {
-  ...finalizeRequest, operationId: "st-1", requestDigest: "rd-s1", sequencingKind: "UNSEQUENCED",
+  ...finalizeRequest, operationId: "st-1", sequencingKind: "UNSEQUENCED",
   recordType: 1,
   logicalKey: "status:cp", payloadKey: upStatus.key, payloadDigest: upStatus.digest, payloadLength: statusPayload.length,
 });
@@ -152,10 +167,21 @@ check("status singleton accepted", s1.body.ok === true);
 const statusB = Buffer.from("status-B-conflicting");
 const upStatusB = await uploadPayload(statusB);
 const s2 = await api("POST", "/wal/finalize", {
-  ...finalizeRequest, operationId: "st-2", requestDigest: "rd-s2", sequencingKind: "UNSEQUENCED",
+  ...finalizeRequest, operationId: "st-2", sequencingKind: "UNSEQUENCED",
   logicalKey: "status:cp", payloadKey: upStatusB.key, payloadDigest: upStatusB.digest, payloadLength: statusB.length,
 });
 check("conflicting status rejected", s2.status === 409 && s2.body.error === "STATUS_CONFLICT");
+
+// 5b. Q-18: the replay/dedupe digest is derived from the canonical request,
+// never asserted by the caller. A caller-supplied digest that disagrees with
+// the request it claims to describe is refused - otherwise sending operation
+// X's digest with body Y would hand back X's receipt for Y.
+const forgedDigest = await api("POST", "/wal/finalize", {
+  ...finalizeRequest, operationId: "op-forged-digest", requestDigest: "f".repeat(64),
+});
+check("a caller-supplied request digest that disagrees with the request is refused",
+  forgedDigest.status === 400 && forgedDigest.body.error === "REQUEST_DIGEST_MISMATCH",
+  JSON.stringify(forgedDigest.body));
 
 // 6. exact read-back through the data path
 const read = await api("GET", `/wal/${DB}/${GEN}/0`);
@@ -163,13 +189,6 @@ check("exact read returns the exact payload",
   read.body.ok === true && Buffer.from(read.body.payloadBase64, "base64").equals(payload1));
 const miss = await api("GET", `/wal/${DB}/${GEN}/99`);
 check("exact read miss is typed NOT_FOUND", miss.status === 404 && miss.body.error === "NOT_FOUND");
-
-// 7. fencing over HTTP
-await api("POST", "/session/fence", { databaseId: DB, generation: GEN, startupSessionId: SESSION });
-const fenced = await api("POST", "/wal/finalize", {
-  ...finalizeRequest, operationId: "op-after-fence", requestDigest: "rd-f",
-});
-check("fenced session rejected", fenced.status === 409 && fenced.body.error === "SESSION_FENCED");
 
 // 8. contiguity audit
 const audit = await api("GET", `/wal/${DB}/${GEN}/audit`);
@@ -190,11 +209,13 @@ check("identical re-upload is idempotent", idempotentPut.response.status === 200
 
 // 9. outbox consumer loop: at-least-once peek/ack with redelivery
 const peek1 = await api("GET", `/outbox/${DB}?limit=10`);
-// the bus carries the COMMAND LEDGER too (F7r): register + fence commands
-// ride alongside the two WAL_RECORD_FINALIZED events
+// the bus carries the COMMAND LEDGER too (F7r): the SESSION_REGISTERED
+// command rides alongside the two WAL_RECORD_FINALIZED events (the fence
+// command lands after this section - the outbox must be drained by a LIVE
+// actor, donor A4)
 const walEvents = peek1.body.events.filter((e) => e.kind === "WAL_RECORD_FINALIZED");
 check("outbox peek returns finalized + command events",
-  peek1.body.ok && walEvents.length === 2 && peek1.body.events.length === 4,
+  peek1.body.ok && walEvents.length === 2 && peek1.body.events.length === 3,
   `events=${peek1.body.events?.length} wal=${walEvents.length}`);
 const peek2 = await api("GET", `/outbox/${DB}?limit=10`);
 check("unacked events are redelivered", peek2.body.events.length === peek1.body.events.length);
@@ -204,24 +225,44 @@ check("events carry canonical bodies", kinds.has("WAL_RECORD_FINALIZED") && kind
 // controlSeq is a decimal-string u64 on the wire (F7): compare as bigint
 const maxSeq = peek1.body.events.map((e) => BigInt(e.controlSeq)).reduce((a, b) => (a > b ? a : b)).toString();
 const ack = await api("POST", `/outbox/${DB}/ack`, { upToControlSeq: maxSeq });
-check("ack marks events", ack.body.ok && ack.body.acked === 4, JSON.stringify(ack.body));
+check("ack marks events", ack.body.ok && ack.body.acked === 3, JSON.stringify(ack.body));
 const peek3 = await api("GET", `/outbox/${DB}?limit=10`);
 check("acked events are not redelivered", peek3.body.events.length === 0);
 const ackAgain = await api("POST", `/outbox/${DB}/ack`, { upToControlSeq: maxSeq });
 check("duplicate ack is idempotent", ackAgain.body.acked === 0);
 
+// 9b. donor A4: the outbox is acked BY THE CURRENT ACTOR. A superseded actor
+// holding a still-valid OUTBOX capability must not be able to mark control
+// events published - that would silently drop them for its successor. The
+// capability layer cannot see this: the token is MAC-valid and unexpired.
+const staleAckToken = (await issueCap({ databaseId: DB, method: "OUTBOX", session: "sess-never-registered" })).token;
+const staleAck = await rawApi("POST", `/outbox/${DB}/ack`, { upToControlSeq: maxSeq }, false,
+  { "x-capability": staleAckToken });
+check("an unregistered actor cannot ack the outbox",
+  staleAck.status === 409 && staleAck.body.error === "SESSION_UNKNOWN", JSON.stringify(staleAck.body));
+
+// 7. fencing over HTTP
+await api("POST", "/session/fence", { databaseId: DB, generation: GEN, startupSessionId: SESSION });
+const fenced = await api("POST", "/wal/finalize", {
+  ...finalizeRequest, operationId: "op-after-fence",
+});
+check("fenced session rejected", fenced.status === 409 && fenced.body.error === "SESSION_FENCED");
+
+
 // 10. register-fences-predecessor over HTTP (takeover; three-lane pin)
 await api("POST", "/session/register", { databaseId: DB, generation: GEN, startupSessionId: "sess-2" });
+CURRENT_SESSION = "sess-2";
 const payload2 = Buffer.from("commit-record-2");
 const up2 = await uploadPayload(payload2);
 const takeover = await api("POST", "/wal/finalize", {
-  ...finalizeRequest, startupSessionId: "sess-2", operationId: "op-2", requestDigest: "rd-2",
+  ...finalizeRequest, startupSessionId: "sess-2", operationId: "op-2",
   payloadKey: up2.key, payloadDigest: up2.digest, payloadLength: payload2.length,
 });
 check("new actor appends after taking over", takeover.body.ok === true && takeover.body.appendLsn === "2");
 await api("POST", "/session/register", { databaseId: DB, generation: GEN, startupSessionId: "sess-3" });
+CURRENT_SESSION = "sess-3";
 const fencedByRegister = await api("POST", "/wal/finalize", {
-  ...finalizeRequest, startupSessionId: "sess-2", operationId: "op-2b", requestDigest: "rd-2b",
+  ...finalizeRequest, startupSessionId: "sess-2", operationId: "op-2b",
   payloadKey: up2.key, payloadDigest: up2.digest, payloadLength: payload2.length,
 });
 check("register fences the predecessor, with attribution",
@@ -230,7 +271,7 @@ check("register fences the predecessor, with attribution",
 const payload3 = Buffer.from("commit-record-3");
 const up3 = await uploadPayload(payload3);
 const f3 = await api("POST", "/wal/finalize", {
-  ...finalizeRequest, startupSessionId: "sess-3", operationId: "op-3", requestDigest: "rd-3",
+  ...finalizeRequest, startupSessionId: "sess-3", operationId: "op-3",
   payloadKey: up3.key, payloadDigest: up3.digest, payloadLength: payload3.length,
 });
 check("current actor appends lsn 3", f3.body.ok === true && f3.body.appendLsn === "3");
@@ -274,13 +315,22 @@ const scanResume = await api("GET", `/wal/${DB}/${GEN}/scan?fromTs=0&fromLsn=${s
 check("byte-cut pages resume without overlap",
   scanResume.body.records.length === 1 && scanResume.body.records[0].appendLsn === "1");
 
-// a finalized operation stays queryable by operation id after its session was
-// fenced (op-1 was finalized by SESSION, fenced in step 7)
+// a finalized operation stays queryable by operation id after ITS finalizing
+// session was fenced (op-1 was finalized by SESSION, since superseded). The
+// READER is the current actor: donor A4 revalidates the caller's own session
+// at the core, so history survives a fence but a fenced reader does not.
 const opQuery = await api("GET", `/wal/${DB}/${GEN}/operation/op-1`);
 check("finalized operation queryable after fencing",
-  opQuery.body.ok === true && opQuery.body.record.appendLsn === "0" && opQuery.body.requestDigest === "rd-1");
+  opQuery.body.ok === true && opQuery.body.record.appendLsn === "0"
+  && /^[0-9a-f]{64}$/.test(opQuery.body.requestDigest), JSON.stringify(opQuery.body).slice(0, 200));
 const opMiss = await api("GET", `/wal/${DB}/${GEN}/operation/op-ghost-never`);
 check("operation query miss is typed NOT_FOUND", opMiss.status === 404 && opMiss.body.error === "NOT_FOUND");
+// donor A4: a superseded actor reads nothing, capability or not
+const staleReadToken = (await issueCap({ databaseId: DB, method: "WAL_READ", session: SESSION })).token;
+const staleRead = await rawApi("GET", `/wal/${DB}/${GEN}/operation/op-1`, undefined, false,
+  { "x-capability": staleReadToken });
+check("a fenced actor cannot read the operation surface",
+  staleRead.status === 409 && staleRead.body.error === "SESSION_FENCED", JSON.stringify(staleRead.body));
 
 // 13. last-by-type
 const last = await api("GET", `/wal/${DB}/${GEN}/last?recordType=1`);
@@ -288,7 +338,7 @@ check("last-by-type finds the status record", last.body.ok === true && last.body
 const lastMiss = await api("GET", `/wal/${DB}/${GEN}/last?recordType=99`);
 check("last-by-type miss is typed NOT_FOUND", lastMiss.status === 404 && lastMiss.body.error === "NOT_FOUND");
 const badType = await api("POST", "/wal/finalize", {
-  ...finalizeRequest, startupSessionId: "sess-3", operationId: "op-bad-type", requestDigest: "rd-bt", recordType: 999,
+  ...finalizeRequest, startupSessionId: "sess-3", operationId: "op-bad-type", recordType: 999,
 });
 check("out-of-range record type is a typed 400", badType.status === 400 && badType.body.error === "INVALID_RECORD_TYPE");
 
@@ -298,18 +348,18 @@ const batchB = Buffer.from("batch-record-B");
 const upA = await uploadPayload(batchA);
 const upB = await uploadPayload(batchB);
 const batchOk = await api("POST", "/wal/finalize-batch", { requests: [
-  { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-1", requestDigest: "rd-bb1",
+  { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-1",
     payloadKey: upA.key, payloadDigest: upA.digest, payloadLength: batchA.length },
-  { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-2", requestDigest: "rd-bb2",
+  { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-2",
     payloadKey: upB.key, payloadDigest: upB.digest, payloadLength: batchB.length },
 ]});
 check("batch finalize allocates contiguously",
   batchOk.body.ok === true && JSON.stringify(batchOk.body.results.map((r) => r.appendLsn)) === JSON.stringify(["4", "5"]),
   JSON.stringify(batchOk.body));
 const batchAborted = await api("POST", "/wal/finalize-batch", { requests: [
-  { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-3", requestDigest: "rd-bb3",
+  { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-3",
     payloadKey: upA.key, payloadDigest: upA.digest, payloadLength: batchA.length },
-  { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-4", requestDigest: "rd-bb4",
+  { ...finalizeRequest, startupSessionId: "sess-3", operationId: "bb-4",
     sequencingKind: "UNSEQUENCED", recordType: 1, logicalKey: "status:cp",
     payloadKey: upB.key, payloadDigest: upB.digest, payloadLength: batchB.length },
 ]});

@@ -72,7 +72,7 @@ EXPLAINED = {
                   "the U2 run; it contains 0 test cases on every lane.",
     },
     "typedb_server_bin:bench_iam": {
-        "u2s3": ["1/0/0 ok"],
+        "u2s3": ["2/0/0 ok"],
         "u1": ["ABSENT"],
         "reason": "absent from the U1 baseline (same dedupe collapse) and GREEN on "
                   "U2S3 where U2 is red: the upstream environment defect (the test "

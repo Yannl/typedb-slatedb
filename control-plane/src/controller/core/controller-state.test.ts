@@ -68,7 +68,7 @@ test("authority mutations are journaled commands, exactly once", () => {
   const { core, db } = boot();
   core.registerSession("db1", 1, "sess-1"); // idempotent: no new command
   assert.deepEqual(kinds(db), ["SESSION_REGISTERED"]);
-  core.setBudgets("db1", { maxUnpublishedOutbox: 100, maxPayloadLength: 1000, maxTailRecords: 100 });
+  core.setBudgets("db1", { maxUnpublishedOutbox: 100, maxPayloadLength: 1000, maxTailRecords: 100 }, "sess-1");
   core.fenceSession("db1", "sess-1");
   core.fenceSession("db1", "sess-1"); // already fenced: no new command
   core.fenceSession("db1", "sess-ghost"); // unknown actor: no state change, no command

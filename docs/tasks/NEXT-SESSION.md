@@ -7,6 +7,11 @@ merged.
 
 ## One-paragraph state
 
+The corpus re-run landed: `docs/evidence/G3/u2s3-full-3/` is 106 executables,
+105 green, 1 ledgered red, 0 timeouts, 462/2/1 cases, with a **GREEN verdict
+over a closed denominator** and an oracle comparison reporting **0
+unexplained** divergences.
+
 The truth plane is repaired and now fails closed: both corpus producers
 return terminal verdicts, the comparator is symmetric and exact, the
 catalogue is joinable to results and checked against the normative v14
@@ -22,7 +27,9 @@ post-WAL commit boundary that returned an ordinary error while a durable
 obligation stood. F4/F5 is built: ADR-0012 Candidate A is a five-file patch
 series over the digest-pinned SlateDB crate with a passing qualifying matrix
 and a killed observe-and-bind mutant. **The release decision is still
-NO-GO**, and G1 is explicitly not green — see `docs/operations.md`.
+NO-GO**, and G1 is explicitly not green — but what keeps it red is now U3/U4
+coverage and the absent Mode-Q Bazel oracle, not a denominator nobody could
+join. See `docs/operations.md`.
 
 ## Read these first (15 minutes)
 
@@ -51,25 +58,31 @@ nightly, the source lock and `control-plane/node_modules`.
 
 ## Top follow-ups, in order
 
-1. **Regenerate the catalogue from a pristine tree.** The generator, the
-   validator and the completeness checker are fixed; the committed
-   catalogue is not — `python3 tools/catalog/validate_catalog.py` reports
-   116 errors against it, and the CI `truth-plane` job is red until it is
-   regenerated. It needs a PRISTINE `sources/typedb` build (contradiction
-   CD-004), and a worktree is already prepared for exactly that:
+1. **Q-06 remainder: the Mode-Q Bazel oracle (SI-G0-1).** The catalogue is
+   now regenerated from a pristine worktree, validates with 0 errors, and its
+   denominator closes against the U2S3 corpus (106 required == 106 rows). The
+   one piece the catalogue still lacks is the Bazel cquery oracle v17 selects
+   as Mode Q; `bazel_query_oracle` is `null` and no Bazel has ever run here.
+   Until it exists the catalogue is self-derived, and G1 cannot be green even
+   with U3/U4 covered.
+
+   Regenerating after any source-lock bump:
 
    ```sh
    git -C sources/typedb worktree add ../typedb-pristine <locked-revision>   # if absent
-   cd sources/typedb-pristine && CARGO_TARGET_DIR=/some/other/dir \
-       cargo +1.93.0 test --workspace --locked --no-run
-   python3 tools/catalog/generate_catalog.py --tree sources/typedb-pristine
+   CARGO_TARGET_DIR=sources/pristine-target PROTOC=$(command -v protoc) \
+       cargo +1.93.0 test --manifest-path sources/typedb-pristine/Cargo.toml \
+       --workspace --locked --no-run
+   CARGO_TARGET_DIR=sources/pristine-target \
+       python3 tools/catalog/generate_catalog.py --tree sources/typedb-pristine
    python3 tools/catalog/validate_catalog.py
    python3 tools/catalog/run_u0.py --verdict-only --out docs/evidence/G3/u2s3-full-3
    python3 tools/catalog/completeness.py --results docs/evidence/G3/u2s3-full-3
    ```
 
-   `--verdict-only` re-derives the archived run's verdict against the
-   repaired denominator without re-running the two-hour corpus.
+   `--verdict-only` re-derives an archived run's verdict against a repaired
+   denominator without re-running the two-hour corpus. Delete
+   `sources/pristine-target` afterwards; it is ~6 GB.
 
 2. **Q-03 / §12.4: the controller lifecycle protocol.** Registration is
    still takeover-at-open — any fresh session id takes over. This is the
@@ -138,8 +151,7 @@ anchored command ledger), and the Mode-Q Bazel oracle.
 ## Suggested opening message for the new session
 
 > Continue the TypeDB-on-SlateDB/R2 work. Read
-> docs/reviews/consolidated-directive-response.md first, then start with
-> follow-up 1: regenerate the catalogue from the pristine worktree, validate
-> it, and re-derive the u2s3-full-3 verdict with
-> `run_u0.py --verdict-only`. Then Q-03/§12.4, the controller lifecycle
-> protocol.
+> docs/reviews/consolidated-directive-response.md first (the corpus, the
+> catalogue and the denominator are done; the response document says what is
+> not). Then take follow-up 2: Q-03/§12.4, the controller lifecycle protocol
+> — registration is still takeover-at-open, and it gates Q-02.

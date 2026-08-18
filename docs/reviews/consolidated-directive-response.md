@@ -16,6 +16,13 @@ Statuses used below:
 - **CONTRADICTION** — the directive conflicts with a pinned contract; recorded in
   `docs/contradictions.json` and the safe side taken.
 
+> **Corpus result (follow-up 1).** `docs/evidence/G3/u2s3-full-3/`: 106
+> executables, 105 green, 1 ledgered red (the two upstream `todo!()` stubs),
+> 0 timeouts, 462 cases passed / 2 failed / 1 ignored. Verdict GREEN with the
+> denominator checked; oracle comparison 0 unexplained. Each row names the
+> tree that produced it (checkout `2256711a` + staged-fork digest
+> `cc0d283a`), not the outer repo commit.
+>
 > **Scope honesty.** This directive is a multi-phase programme. One session
 > closed the truth-plane defects, the executable security and correctness
 > defects the audit itself demonstrated, the P1 donor remainder, and the F4/F5
@@ -61,7 +68,7 @@ that nothing forces the check before a build. That is the Q-21 remainder.
 |---|---|---|
 | **Q-29** evidence: `run_static.py` false-green | **CLOSED** `52707a7` | Terminal verdict; any FAIL/ERROR row, and an empty selection, exit nonzero. |
 | **Q-30** evidence: `run_u0.py` no terminal verdict | **CLOSED** `52707a7` | One shared policy (`tools/catalog/verdict.py`) decides GREEN/RED. The flake ledger is the only tolerance, matched on exact target **and** counts **and** exit code. Timeouts, unknown crash rcs, unledgered ignores, stale ledger entries, missing required targets and case-bearing targets that ran zero cases are all red. A filtered run can never be a corpus verdict. `verdict.json` + a `COMPLETE` marker per run; a re-run that goes red removes a stale marker. |
-| **Q-06** catalogue + comparator + completeness | **CLOSED** `52707a7` (Mode-Q Bazel oracle remains OPEN) | Duplicate leaf ids disambiguated by occurrence; failpoint parent resolved from the cargo target table; all 42 zero-case targets declared with a reason; the U0..U4 required matrix the conformance plan asks for; generation fails closed on duplicate or dangling ids. The comparator now walks the **union** of both sides, folds `ok`/`rc=N`/`TIMEOUT` into the profile, and requires each classification to declare the exact expected profiles on both sides. Completeness joins results to the catalogue through the cargo package/target pair — the join that did not exist. A new validator checks the catalogue against the normative v14 contract schema, which nothing had ever done. |
+| **Q-06** catalogue + comparator + completeness | **CLOSED** `52707a7`, `255e0d8` (Mode-Q Bazel oracle remains OPEN) | **Regenerated and measured:** the catalogue now comes from a pristine worktree (`2256711a`, clean), validates with 0 errors (was 116), has 4,740/4,740 unique leaf ids, and emits 23,132 required pairs across U0..U4. The U2S3 corpus denominator closes: 106 required executable targets == 106 rows, `run_u0.py --verdict-only` GREEN, `completeness.py` exit 0, comparator 4 divergent / 0 unexplained. Three mutants over the same archived rows each turn that green red. | Duplicate leaf ids disambiguated by occurrence; failpoint parent resolved from the cargo target table; all 42 zero-case targets declared with a reason; the U0..U4 required matrix the conformance plan asks for; generation fails closed on duplicate or dangling ids. The comparator now walks the **union** of both sides, folds `ok`/`rc=N`/`TIMEOUT` into the profile, and requires each classification to declare the exact expected profiles on both sides. Completeness joins results to the catalogue through the cargo package/target pair — the join that did not exist. A new validator checks the catalogue against the normative v14 contract schema, which nothing had ever done. |
 | **Q-05** source/workspace lock red | **CLOSED** `52707a7` | Workspace lock regenerated. The lint no longer fails with a bare "dirty tree" in the only state the test lane can run in: it accepts exactly one dirty state — fully staged, with the fork patch set matching a digest now bound in `workspace-lock.json`. Before this the fork's own content was unpinned: any edit to a staged file produced a differently-behaving tree under an unchanged lock. |
 | **Q-21** no root CI | **OPEN** | No CI workflow exists. The commands are all runnable and now all fail closed, which is the precondition; wiring them into a root workflow is unbuilt. |
 

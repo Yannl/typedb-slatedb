@@ -228,6 +228,10 @@ jobs:
       - name: materialise and stage the fork
         run: |
           python3 tools/source-lock/materialize_sources.py
+          # the patched SlateDB the fork links via [patch.crates-io]
+          # (round-3 S-02): reconstruct sources/slatedb-fork or cargo cannot
+          # resolve the `slatedb` path dependency.
+          python3 tools/fork/materialize_slatedb.py
           python3 tools/fork/stage.py
       - name: protocol models
         run: cargo +1.93.0 test --manifest-path tools/Cargo.toml -p protocol-models --locked
@@ -275,7 +279,12 @@ jobs:
             exit 1
           }
       - name: stage the fork (after the pristine drift check, which must see the unstaged tree)
-        run: python3 tools/fork/stage.py
+        run: |
+          # the staged fork links the patched SlateDB via [patch.crates-io]
+          # (round-3 S-02), so reconstruct sources/slatedb-fork before the
+          # post-staging cargo build resolves the path dependency.
+          python3 tools/fork/materialize_slatedb.py
+          python3 tools/fork/stage.py
       - name: storage integration tests (E-06 - includes tests/, e.g. test_recovery)
         # --all-targets compiles and runs unit + integration + doc-test
         # binaries for the storage crate over the staged fork; kept here

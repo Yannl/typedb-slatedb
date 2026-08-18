@@ -1,0 +1,47 @@
+
+running 7 tests
+[2m2026-08-18T03:21:00.526754Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+...[2m2026-08-18T03:21:00.626349Z[0m [35mTRACE[0m [2mstorage::recovery::checkpoint[0m[2m:[0m Recovering keyspace from checkpoint
+[2m2026-08-18T03:21:00.628077Z[0m [34mDEBUG[0m [2mobject_store::aws::builder[0m[2m:[0m Using Static credential provider
+[2m2026-08-18T03:21:00.679883Z[0m [35mTRACE[0m [2mstorage::recovery::checkpoint[0m[2m:[0m Finished recovering keyspaces, recovering missing commits
+[2m2026-08-18T03:21:00.679962Z[0m [35mTRACE[0m [2mstorage::recovery::checkpoint[0m[2m:[0m Applying missing commits
+[2m2026-08-18T03:21:00.679970Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Applying recovered commits
+ 3/7
+wal_missing_records_for_checkpoint_replay_fails --- FAILED
+wal_missing_records_entire_replay_fails --- FAILED
+..
+failures:
+
+---- wal_missing_records_for_checkpoint_replay_fails stdout ----
+
+thread 'wal_missing_records_for_checkpoint_replay_fails' (7471) panicked at storage/tests/test_recovery.rs:67:5:
+not yet implemented
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::panicking::panic
+   3: test_recovery::wal_missing_records_for_checkpoint_replay_fails
+   4: test_recovery::wal_missing_records_for_checkpoint_replay_fails::{{closure}}
+   5: core::ops::function::FnOnce::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- wal_missing_records_entire_replay_fails stdout ----
+
+thread 'wal_missing_records_entire_replay_fails' (7470) panicked at storage/tests/test_recovery.rs:73:5:
+not yet implemented
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::panicking::panic
+   3: test_recovery::wal_missing_records_entire_replay_fails
+   4: test_recovery::wal_missing_records_entire_replay_fails::{{closure}}
+   5: core::ops::function::FnOnce::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+
+failures:
+    wal_missing_records_entire_replay_fails
+    wal_missing_records_for_checkpoint_replay_fails
+
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+

@@ -65,3 +65,29 @@ executing and the E2E's contention would risk timing out corpus targets that
 take hours to re-measure. The E2E script was updated for the new session-bound
 routes and the Q-18 digest rule, and re-run afterwards - see the run recorded
 below this line when it exists.
+
+## Workerd lanes, re-run after the corpus contention window closed
+$ npx vitest run
+Test Files 2 passed (2) / Tests 8 passed (8)
+
+$ rm -rf .wrangler/state && npx wrangler dev --port 8787
+$ node scripts/local-stack-e2e.mjs
+L1 LOCAL STACK E2E: ALL PASS   (65 checks, was 61)
+
+New checks in this run:
+  PASS  a caller-supplied request digest that disagrees with the request is refused
+        {"error":"REQUEST_DIGEST_MISMATCH","computed":"6f677f31...","supplied":"ffffffff..."}   (Q-18)
+  PASS  an unregistered actor cannot ack the outbox
+        {"error":"SESSION_UNKNOWN"}                                                             (donor A4)
+  PASS  a fenced actor cannot read the operation surface
+        {"error":"SESSION_FENCED"}                                                              (donor A4)
+  PASS  a first record larger than the page budget is refused, not admitted
+        {"error":"RECORD_EXCEEDS_PAGE_BUDGET","appendLsn":"0","payloadLength":15,"maxBytes":1}  (12.6)
+Changed check:
+  PASS  register fences the predecessor, and the refusal names no holder
+        {"ok":false,"error":"SESSION_FENCED"}   - the body now carries exactly {ok,error}       (12.5)
+
+The outbox section moved ahead of the fencing section: donor A4 makes the
+outbox drainable only by a LIVE actor, and the previous order acked it after
+fencing the only registered session. Event counts moved 4 -> 3 accordingly
+(the SESSION_FENCED command now lands after the ack rather than before it).

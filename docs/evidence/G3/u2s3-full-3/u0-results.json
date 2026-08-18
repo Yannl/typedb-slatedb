@@ -1,0 +1,3097 @@
+{
+ "profile": "U2S3",
+ "toolchain": {
+  "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+  "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+  "requested": "1.93.0"
+ },
+ "last_write_run": {
+  "profile": "U2S3",
+  "toolchain": {
+   "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+   "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+   "requested": "1.93.0"
+  },
+  "storage_profile_env": "U2S3",
+  "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+  "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+  "repo_dirty": true,
+  "executed_tree": {
+   "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+   "dirty": true,
+   "staged_delta_files": 23,
+   "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+  }
+ },
+ "results": [
+  {
+   "target_id": "answer:answer",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/answer-656ca6696b2b63c5",
+   "executable_sha256": "4b8a1fadd9e49e9c1c325d808807eca60f8c1bfe497f99e77c8c5cccd1c1ac48",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.01,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/answer__answer.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "bytes:bytes",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/bytes-41ecfafba2608c5f",
+   "executable_sha256": "e105ad265a5686a16e7c30f212d97f4c91e9a6baa56d95be14ac9b856e7f25da",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/bytes__bytes.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "cache:cache",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/cache-f7fa30855847be8e",
+   "executable_sha256": "be3d41ac5ca207b281ecd479c92b57a4e2e853ebbe345a96679db1dc3a408a09",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.02,
+   "passed": 2,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/cache__cache.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "compiler:compiler",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/compiler-206c1b7b3bc26a69",
+   "executable_sha256": "420ed539d5c047ea25b41f264383571b924b41a8fb20b25274bfdb2e4ca155ec",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 1.52,
+   "passed": 10,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/compiler__compiler.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "compiler:transformation",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/transformation-4146fca9b8eacde5",
+   "executable_sha256": "2195eaf1d54e1bd8e80d66094ee00e7dfb0f8ae8dc98f800b06b274c66f185a3",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 1.52,
+   "passed": 12,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/compiler__transformation.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "concept:concept",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/concept-b539e2753f994160",
+   "executable_sha256": "c0cabe72007862b60023b452e3fc6d9dd76de17024b7483379ab02dc2078114a",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.01,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/concept__concept.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "concept:test_statistics",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_statistics-13cbb68786dc7c71",
+   "executable_sha256": "b140afa39c9146033a7f97f90d7090d0ee0aff1f5f53d6d8dc9db712dc06d488",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 1.17,
+   "passed": 9,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/concept__test_statistics.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "concept:test_thing",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_thing-f33aad9157bfabf3",
+   "executable_sha256": "d421efb5b68aae0a1e8e43f7b8c42edc52b8ca68796ce77813c065e065153c9c",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 1.87,
+   "passed": 15,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/concept__test_thing.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "concept:test_type",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_type-8b22fd98d43bbf78",
+   "executable_sha256": "085b906ac937b478733a4f70e612aeea0e5d05e0dede68aa791b6825dca59894",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.67,
+   "passed": 6,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/concept__test_type.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "concept:test_utils_concept",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_utils_concept-d9bba9b0c0d805d0",
+   "executable_sha256": "85face11e528ef00e5b2f811265f8b2264db16dd0bad7b912aa41a23727d33a5",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/concept__test_utils_concept.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "concurrency:concurrency",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/concurrency-ca638ab9555a4951",
+   "executable_sha256": "e9a67fd699793ec9c652a02c13b3c70caa26b92622fd6aaa4185d16afe4d3f8d",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.01,
+   "passed": 8,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/concurrency__concurrency.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "database-tools:read_wal",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/read_wal-ddee4b3804a2dc1a",
+   "executable_sha256": "8e17b85b31f9e3475e08057be81a52ca12b4ba580587c58246b5acbd78ac0d68",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/database-tools__read_wal.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "database-tools:replay_wal",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/replay_wal-c17e86c7a646bec0",
+   "executable_sha256": "3a84fedc2a96a29a49223a74818c0dd2ee99e5d2ff3355ac1f1422ab143de9d9",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/database-tools__replay_wal.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "database:database",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/database-e0b32c79a9ba8bc6",
+   "executable_sha256": "44000c1289a3e30c9aec43fd656848135118cf2f268363cecfda49f1c1165cca",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/database__database.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "database:test_database",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_database-08ca5ef897511f75",
+   "executable_sha256": "b4f1b5910fdd54e3c3c4c4dc024322985df15eec044f0348d8f15f9c6a8e16c8",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.87,
+   "passed": 2,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/database__test_database.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "database:test_diagnostics_posthog_pii",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_diagnostics_posthog_pii-422b89ab1341924a",
+   "executable_sha256": "adbcde89a6f599ce5a2ca57c2e36a7d06a7722d92d664ec05b73903ee7e6424f",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.12,
+   "passed": 2,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/database__test_diagnostics_posthog_pii.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "database:test_statistics_synchronization",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_statistics_synchronization-8c1d0b1b5e5f3bf9",
+   "executable_sha256": "3ea60b120840250f1e7f24a577cb3deafcb73c9d4791a830af58a50b912590e6",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 6.74,
+   "passed": 1,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/database__test_statistics_synchronization.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "database:test_transaction",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_transaction-b2a06a791f8d01e6",
+   "executable_sha256": "15a5eacd4db4f943d7e072e782afe4343f8ea5b012e78e2be7f24f4af217e005",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 34.59,
+   "passed": 31,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/database__test_transaction.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "database:test_transaction_isolation",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_transaction_isolation-352d34af61ed1924",
+   "executable_sha256": "d224e89bedf2be34621303cb2217277fcfb555c53f8c83eb9661a6229590b50f",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 2.73,
+   "passed": 22,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/database__test_transaction_isolation.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "diagnostics:diagnostics",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/diagnostics-16e7a0294f9667a5",
+   "executable_sha256": "de7c95266fa86d3cf9e5a371700d183b1c15a3f393e1fc3bac2c44c0ef4afa51",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.11,
+   "passed": 10,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/diagnostics__diagnostics.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "durability:basic",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/basic-5629dc1c4e8847b4",
+   "executable_sha256": "d3dac47572e7d03266e0e67815c585e9533561ee3909ecd0509a3e7c5bb2bc19",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.06,
+   "passed": 5,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/durability__basic.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "durability:crash",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/crash-63bef3bef6a2b96d",
+   "executable_sha256": "3c8006466ad23f2e384331e9b27b73eaf714c4c729fb32a819f88328cd51b6bb",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/durability__crash.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "durability:durability",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/durability-1552e06659b963ea",
+   "executable_sha256": "1caa340108b24211b84b36aa7039d9659babb2ed299dea559903d181d4f4f8f0",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 5.13,
+   "passed": 12,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/durability__durability.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "durability_test_common:durability_test_common",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/durability_test_common-5763c247af90adca",
+   "executable_sha256": "8e40b22c017f9901f91c7bfbe2d42da261e6d7f0b02a355c6f30b4b9b6f7c464",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/durability_test_common__durability_test_common.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "encoding:encoding",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/encoding-074500400bf88250",
+   "executable_sha256": "1faccfafdc9f3e882ff77a5dcee2112221b1a31ebef8914bb1e720232c3fd42b",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 4.06,
+   "passed": 22,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/encoding__encoding.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "encoding:test_attribute_vertex",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_attribute_vertex-4a4ff918b23e6851",
+   "executable_sha256": "49922a6f9e428f5ef8be7ee45edd18a2b72d763c6dbffda5df5d3495019f55f5",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 3.26,
+   "passed": 7,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/encoding__test_attribute_vertex.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "encoding:test_definitions",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_definitions-ccd2b7c0609f2311",
+   "executable_sha256": "3332ea01a01c9c9b409906815e606787dad6db4bc9b4aa7eb3e510dbf757c5f3",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.27,
+   "passed": 1,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/encoding__test_definitions.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "encoding:test_type_vertex",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_type_vertex-4fcd47f73ae14e94",
+   "executable_sha256": "c02d47eb9bf01c976b73fdfcbc50e91ffb4c4d14fc111545637ef95506902723",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 39.29,
+   "passed": 3,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/encoding__test_type_vertex.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "encoding:test_utils_encoding",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_utils_encoding-18454cd62f16c4dc",
+   "executable_sha256": "f1f47e3f959a0b06f1ffefe0f06315aa29d63fc9f629ca63ae8fcb68c062062c",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/encoding__test_utils_encoding.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "error:error",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/error-ef158a752feb37cb",
+   "executable_sha256": "9843969c58bb07f4de4c74c85340bb1a1e78c1dd469c96effbf28c32b3837b68",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/error__error.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "executor:execute_comparison_check",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/execute_comparison_check-53bac3849f8fa9ad",
+   "executable_sha256": "af42a8147e14ae6256733f78d5dff8cd023119819e3b1ab54e15942179acfc2b",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.32,
+   "passed": 1,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/executor__execute_comparison_check.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "executor:executor",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/executor-f888626a2530763e",
+   "executable_sha256": "18389459c8babfe79f98cd187737b8e6421edd47645ed8169f4032d483a62478",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/executor__executor.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "executor:test_compile_execute",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_compile_execute-b9c6af8ca26edb8c",
+   "executable_sha256": "36ab33d4400e0ce85c4201427615be33c5b0b07c0853b66782f9b51a182d11a6",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 2.02,
+   "passed": 9,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/executor__test_compile_execute.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "executor:test_efficiency",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_efficiency-b84fd4bb12d02902",
+   "executable_sha256": "c47a7014217a6f31a629d3180b57acdeba19a54cbb92c82dcae62f7e521ad4ae",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 2.72,
+   "passed": 9,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/executor__test_efficiency.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "executor:test_execute_expression",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_execute_expression-335aa7299d8e84c3",
+   "executable_sha256": "4ef5870b298991f6a8762590739db75477fd2731fd1308edbd057b606a34f95f",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.02,
+   "passed": 4,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/executor__test_execute_expression.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "executor:test_execute_has",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_execute_has-afe8a00167bad587",
+   "executable_sha256": "25bedabac51dd9f38ab30e7e939f2d0e158361ef0d850d3128f77a35cce057d9",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 1.02,
+   "passed": 5,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/executor__test_execute_has.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "executor:test_execute_isa",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_execute_isa-13b0552bf859182a",
+   "executable_sha256": "fd56f6787cc9b0106c18061b1c763cf3c2eb189ff3a780bc820bf4954f26df2e",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 1.07,
+   "passed": 9,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/executor__test_execute_isa.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "executor:test_execute_links",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_execute_links-edac9e99ef6075ad",
+   "executable_sha256": "8c6b2ae7fca03dffdd3d94d5041b8c53120ed0e1717fe7796c7bd89aad18c95f",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 1.12,
+   "passed": 8,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/executor__test_execute_links.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "executor:test_execute_relation_index",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_execute_relation_index-ab8d804c037bd445",
+   "executable_sha256": "bba3405feb4de75f430b0475db1197f322234688b59fbfd16440f97355a5e2bb",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.72,
+   "passed": 3,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/executor__test_execute_relation_index.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "executor:test_functions",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_functions-237ba208a13a1733",
+   "executable_sha256": "5c0d1844afea8c60eabc723b09dabe4293d3141833c8c278a1d6b30642003f6d",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 6.44,
+   "passed": 10,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/executor__test_functions.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "executor:test_pipelines",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_pipelines-0aabd221530d6ae2",
+   "executable_sha256": "41b2a901e75c122c196b27cdb3eb68d74d0592048c0cd3245bba5f11d06cbba7",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 1.48,
+   "passed": 9,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/executor__test_pipelines.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "executor:test_select",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_select-cf5a26004aa1b77a",
+   "executable_sha256": "2f7803fc0fac07ea9c374ec487e2d1a81f0a63ab2e120f642924aebc1cc9e9c6",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.62,
+   "passed": 3,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/executor__test_select.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "executor:test_writes",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_writes-5a610078e49e4505",
+   "executable_sha256": "4d39dcd66c418cbb8690ad7d1181482b4cfafa1f3685ee5e15ab4a52280ee80f",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.92,
+   "passed": 6,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/executor__test_writes.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "fail_point:fail_point",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/fail_point-32c99e9ac10e2d38",
+   "executable_sha256": "cda6d767216e6851449055991e80e2ebd62888b04e6a72be3f101f8f5f5fd0eb",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/fail_point__fail_point.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "function:function",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/function-7c368b7e32d35fe3",
+   "executable_sha256": "40a44a6a56d79e5b122f6db72ca27442759c718a1e7f9a0c232d00a123c88ff5",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.42,
+   "passed": 1,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/function__function.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "function:test_definition",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_definition-239157c5155b8f39",
+   "executable_sha256": "d127ae20a5bd5cabfa46bfafaa6af7ba0ec397fb35674f76d9fdbbb6308382ab",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/function__test_definition.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "http_steps:http_steps",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/http_steps-545d1a1e8c7a914f",
+   "executable_sha256": "87c30b19f5595cc9aa00be8705dc591408586ef368c6cc038fc12ea50947fa67",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.01,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/http_steps__http_steps.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "ir:binding_modes",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/binding_modes-69a067351c3c5474",
+   "executable_sha256": "04f4c9a1dc00a9546e3f9b87ab9d6b77afdd0e0f8f615e0c693ffc7c61b56941",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.03,
+   "passed": 15,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/ir__binding_modes.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "ir:ir",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/ir-b201c5863c191cc7",
+   "executable_sha256": "615b4edd820ffc7a1ad7c0daa4a984ca0a0b527495bfed658b09f36a4768cb2c",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.02,
+   "passed": 2,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/ir__ir.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "ir:pattern",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/pattern-51495952cc637877",
+   "executable_sha256": "98f128b08201b0e03cc36e1d2f3704df9a869e5e4490a53ded27a444062bf304",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.02,
+   "passed": 3,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/ir__pattern.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "ir:pipeline",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/pipeline-2ca99b1c92d9e5e5",
+   "executable_sha256": "6d14b18e3516c42686f3e187ce7a1db10cce11f6b95a9c381f74022a0d881a50",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.03,
+   "passed": 4,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/ir__pipeline.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "ir:test_structural_equality",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_structural_equality-5aec8a314abcb421",
+   "executable_sha256": "82018b4afc9f1558df65bf743aeeab1e26abc305d7c2298d857f3c9ff2c36da6",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.02,
+   "passed": 5,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/ir__test_structural_equality.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "iterator:iterator",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/iterator-e4bdea9b21cfe0b9",
+   "executable_sha256": "af9f1ab9553cfaf153d9e0e8547aa3823136ca4fcc2085b00bde58bcdda917c7",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/iterator__iterator.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "lending_iterator:lending_iterator",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/lending_iterator-957424fee7340e49",
+   "executable_sha256": "a4204e5be5d79fa31bf73408374c124ef0d5aaf49cca9d7212224845efb0dead",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 5,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/lending_iterator__lending_iterator.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "logger:logger",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/logger-f899cf53541478b7",
+   "executable_sha256": "e33566777d202669bcbf3d6d3eb6585d5cb6188c1be843f0a17ce2b9bafe308d",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 3,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/logger__logger.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "options:options",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/options-f9f6266237266413",
+   "executable_sha256": "941e835e9417c40096b08ad7f58d5f1d573943508bdd1fd1cb27fd0e0fd1254e",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.01,
+   "passed": 20,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/options__options.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "params:params",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/params-7fcd669833f496f7",
+   "executable_sha256": "b1184bf199baadc58fd44529a48e55e0ed9b4684fb2f33c6b6ee969d99d9272f",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/params__params.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "primitive:primitive",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/primitive-2d53e7f87dd6e778",
+   "executable_sha256": "79a7e95df3fb674bf5ce525c291f3d4f0a5e8def030c143e347fb4f45cb9f68a",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/primitive__primitive.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "project:project",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/project-a7c90e36b608cd56",
+   "executable_sha256": "acc57cbf43404178258e063f57f8ce3430e8b7116ce789e8426971f546128e86",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 2,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/project__project.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "query:query",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/query-b4f76dac0b1e1f9b",
+   "executable_sha256": "44165da67a0ad6f8874aab49e9756ca953d2284476d5df088c5f916687e60d02",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/query__query.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "query:test_define",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_define-1e6544bcaaf1ea72",
+   "executable_sha256": "41a966e7dcd37cbc8fd9441505cd3e159e70f93ee7c12276d3d7dc611a557517",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.27,
+   "passed": 1,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/query__test_define.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "query:test_fetch",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_fetch-016c5a51e14a638d",
+   "executable_sha256": "f2856c34ff3880bcef236780e89074287eec15bf8c1fbb369915dfe348520399",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.87,
+   "passed": 1,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/query__test_fetch.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "query:test_pipeline_stages_limit",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_pipeline_stages_limit-532035f275c43c80",
+   "executable_sha256": "a809be6488c9cbd88569a22c8b8210ee1bf4b96b3d3a7702565dbc6910ce5d60",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.32,
+   "passed": 2,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/query__test_pipeline_stages_limit.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "query:test_query_cache",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_query_cache-6ab3677edbb32301",
+   "executable_sha256": "96b6fb1faa71b3460cf1c02578d4db520394088b337a876a70c2933ff54c5f43",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.42,
+   "passed": 3,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/query__test_query_cache.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "query:test_query_profile",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_query_profile-1a9c1f27f657649b",
+   "executable_sha256": "a2761f00564c7d413d77496b6659cb5548e356e6f2300f37dbf6a08be2d32254",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 1.07,
+   "passed": 1,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/query__test_query_profile.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "query:test_unimplemented",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_unimplemented-9c2c9837ce47286d",
+   "executable_sha256": "3ff8dfb61ee18536c2a93e5a215fc6dd7bf9a14cc10dc2c2cfb366c4533bdfcf",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.42,
+   "passed": 2,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/query__test_unimplemented.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "recoverer:recoverer",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/recoverer-371c9b347a0565f7",
+   "executable_sha256": "098582e2c31dc06d3e0cb5622774728105c18900db76bc3f81dc3361d860d8fe",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/recoverer__recoverer.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "resource:resource",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/resource-5eee0ac9681970ec",
+   "executable_sha256": "e59a61777341a5400aff27f2fcfd0c89f0e70ab0fb27887194eb9379c73cc95c",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/resource__resource.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "server:server",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/server-b027a2cfe13c70e7",
+   "executable_sha256": "814feab61ba8538d15f14e05c062420139d730d456f0228cdfe530d70519cff2",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.02,
+   "passed": 4,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/server__server.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "server:test_admin_service",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_admin_service-038c18688e978760",
+   "executable_sha256": "c58ba11a29156165d0f30d0f59e72e69cdf5499f1bd64c215ffecf2fe26c381a",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 2.27,
+   "passed": 10,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/server__test_admin_service.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "server_admin_proto:server_admin_proto",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/server_admin_proto-1c071f9d7363b3b0",
+   "executable_sha256": "a33542a4867cc1a5aa37b82d20afcd167548e74a8f92f372c952cbdefe1f6467",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/server_admin_proto__server_admin_proto.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "steps:steps",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/steps-36fc49e770fdc904",
+   "executable_sha256": "68c6e86e918ff6a7b6ab71b81fdd48d69b5791043a5c06315c51ab915700b175",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.02,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/steps__steps.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "storage:storage",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/storage-22b8b4f94fef3025",
+   "executable_sha256": "feb178405a949c05a8825fd0eb121b36963b4f64380a83535c8a8c913b21491e",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.32,
+   "passed": 18,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/storage__storage.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "storage:test_isolation",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_isolation-66d1f7087b1add05",
+   "executable_sha256": "7f706ea760675e57384575f4c146d2f30916b0fcc932e182711c6edb3fe25e82",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.37,
+   "passed": 14,
+   "failed": 0,
+   "ignored": 1,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/storage__test_isolation.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "storage:test_mvcc",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_mvcc-7e19d628cded8a69",
+   "executable_sha256": "a366a905f4ce0ded3d23cda74a5edac40e00551ae71e48d5c9532a697567027d",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.11,
+   "passed": 4,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/storage__test_mvcc.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "storage:test_recovery",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_recovery-8caf700248707bb3",
+   "executable_sha256": "102f647103e9c2d748e040a6fbc1f18ac9fe0da1021af4b9ab6c07d801a03327",
+   "exit_code": 101,
+   "timed_out": false,
+   "duration_seconds": 0.22,
+   "passed": 5,
+   "failed": 2,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/storage__test_recovery.log",
+   "tail": "0m \u001b[34mDEBUG\u001b[0m \u001b[2mobject_store::aws::builder\u001b[0m\u001b[2m:\u001b[0m Using Static credential provider\n\u001b[2m2026-08-18T03:21:00.679883Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mstorage::recovery::checkpoint\u001b[0m\u001b[2m:\u001b[0m Finished recovering keyspaces, recovering missing commits\n\u001b[2m2026-08-18T03:21:00.679962Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mstorage::recovery::checkpoint\u001b[0m\u001b[2m:\u001b[0m Applying missing commits\n\u001b[2m2026-08-18T03:21:00.679970Z\u001b[0m \u001b[35mTRACE\u001b[0m \u001b[2mstorage::recovery::commit_recovery\u001b[0m\u001b[2m:\u001b[0m Applying recovered commits\n 3/7\nwal_missing_records_for_checkpoint_replay_fails --- FAILED\nwal_missing_records_entire_replay_fails --- FAILED\n..\nfailures:\n\n---- wal_missing_records_for_checkpoint_replay_fails stdout ----\n\nthread 'wal_missing_records_for_checkpoint_replay_fails' (7471) panicked at storage/tests/test_recovery.rs:67:5:\nnot yet implemented\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::panicking::panic\n   3: test_recovery::wal_missing_records_for_checkpoint_replay_fails\n   4: test_recovery::wal_missing_records_for_checkpoint_replay_fails::{{closure}}\n   5: core::ops::function::FnOnce::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n\n---- wal_missing_records_entire_replay_fails stdout ----\n\nthread 'wal_missing_records_entire_replay_fails' (7470) panicked at storage/tests/test_recovery.rs:73:5:\nnot yet implemented\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::panicking::panic\n   3: test_recovery::wal_missing_records_entire_replay_fails\n   4: test_recovery::wal_missing_records_entire_replay_fails::{{closure}}\n   5: core::ops::function::FnOnce::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n\n\nfailures:\n    wal_missing_records_entire_replay_fails\n    wal_missing_records_for_checkpoint_replay_fails\n\ntest result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s\n\n",
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "storage:test_snapshot",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_snapshot-6d5291cffb109712",
+   "executable_sha256": "9f3e7bffdda02a68bfde52fb8adc6e22c631d4ee51bf578d0c1dc258d2ff09bf",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.42,
+   "passed": 10,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/storage__test_snapshot.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "storage:test_storage",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_storage-b9343227e81907e7",
+   "executable_sha256": "d7d29ffa156d5acc8e01ee9f40877734d0eea7e002728778906d75ec9a3a2f1d",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.22,
+   "passed": 6,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/storage__test_storage.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "streamer:streamer",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/streamer-e4603e4fa8b1f9bb",
+   "executable_sha256": "b3ff129cca2deb5fc6b80f7867ecc7c2cc1bc43904f1190f711154fb37c23767",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/streamer__streamer.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "structural_equality:structural_equality",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/structural_equality-b649a051e7b563a5",
+   "executable_sha256": "5eb266e6046a497e6419ffa07d19791a260f8eda45206b785664775e82977e1f",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/structural_equality__structural_equality.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "system:system",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/system-46307d3dce6828bb",
+   "executable_sha256": "d08aeec485697977d8321ad24ad51ce2cd21f00993846d4adf5f28613ff5126b",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/system__system.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "test_utils:test_utils",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_utils-7768062d2ac38b96",
+   "executable_sha256": "4192d197043b3ce409564d7de8744fa43b5317b2f090dda9a883a211d7404722",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/test_utils__test_utils.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "test_utils_concept:test_utils_concept",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_utils_concept-6bd6c6185f997784",
+   "executable_sha256": "10e8f98203d6d512e391cbd6333ccb5b25b439fd5a5430b34c7505cfe317f452",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/test_utils_concept__test_utils_concept.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "test_utils_encoding:test_utils_encoding",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_utils_encoding-8df727cfb2e33825",
+   "executable_sha256": "1c26f4728530fa4d176aef347085a64b948f1fc49bf36981b8f9afb4587d0a12",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/test_utils_encoding__test_utils_encoding.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "test_utils_storage:test_utils_storage",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_utils_storage-a0f94fecb6e83cc9",
+   "executable_sha256": "7b4c91739998586e928f87ef692a10ef1277802f33b16eebc1622a6726b20897",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.02,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/test_utils_storage__test_utils_storage.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "typedb-admin:typedb_admin",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/typedb_admin-ad96503651e345d7",
+   "executable_sha256": "d4ebd3cb4411a7b59f3df23f7be37d8caabbd16fdab7c65ca2928f8657f2bc66",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.01,
+   "passed": 8,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/typedb-admin__typedb_admin.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "typedb_admin_bin:test_admin_assembly",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_admin_assembly-4986312fa8033c8c",
+   "executable_sha256": "22b3c5ea745b1e9e648a28a812e45197de4c9d0448d4b5b39e767cff9ab511c8",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 17.69,
+   "passed": 1,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/typedb_admin_bin__test_admin_assembly.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "typedb_admin_bin:typedb_admin_bin",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/typedb_admin_bin-be99f197a598b04a",
+   "executable_sha256": "8ce8aae8439a45e6430f537f091ecbec1a71d59cc4f5adac42a31b72d95c3a40",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/typedb_admin_bin__typedb_admin_bin.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "typedb_server_bin:bench_concurrency",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/bench_concurrency-7d5b4c419626f30b",
+   "executable_sha256": "f096cc0050d599e914a6e68e49ca4664588aac0130f6caf2fe217b09950e5858",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "passed": 0,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/typedb_server_bin__bench_concurrency.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "typedb_server_bin:bench_iam",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/bench_iam-b48c577711e8a0e1",
+   "executable_sha256": "a422e2927fd7c015b6e88df0389e81637702479520cecb9f85ff47930778eee8",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 28.46,
+   "passed": 2,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/typedb_server_bin__bench_iam.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "typedb_server_bin:test_concept",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_concept-6fda6ea340333276",
+   "executable_sha256": "cb13372e6c9b3b79dab38c7b3a4e1c825dfa4cf9df14852616b9baabc5de441a",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 1556.56,
+   "passed": 13,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/typedb_server_bin__test_concept.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "typedb_server_bin:test_connection",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_connection-620ce1c25738d862",
+   "executable_sha256": "9131e2fffa9889671af3275ae9b8dc694cf9d4586f0d6888764c378e5e3070da",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 18.14,
+   "passed": 2,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/typedb_server_bin__test_connection.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  },
+  {
+   "target_id": "typedb_server_bin:test_debug",
+   "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_debug-ebbcff47dca00412",
+   "executable_sha256": "d51dbce62325fb057459998c66c409f012d2494968a6198b87ff38b556260c32",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 5.26,
+   "passed": 1,
+   "failed": 0,
+   "ignored": 0,
+   "measured": 0,
+   "filtered_out": 0,
+   "raw_log": "docs/evidence/G3/u2s3-full-3/typedb_server_bin__test_debug.log",
+   "tail": null,
+   "run": {
+    "profile": "U2S3",
+    "toolchain": {
+     "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+     "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+     "requested": "1.93.0"
+    },
+    "storage_profile_env": "U2S3",
+    "assembly_archive_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+    "repo_commit": "52707a7977bc3d1c4b9a72a197f840f3731a461f",
+    "repo_dirty": true,
+    "executed_tree": {
+     "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+     "dirty": true,
+     "staged_delta_files": 23,
+     "staged_delta_sha256": "cc0d283af7c441fcbef1bd815c4c8abd67765409082f0953acfc844c7b069186"
+    }
+   }
+  }
+ ]
+}

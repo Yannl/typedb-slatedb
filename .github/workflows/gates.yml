@@ -98,6 +98,12 @@ jobs:
         run: python3 tools/catalog/validate_catalog.py --self-test
       - name: catalogue conforms to the normative v14 contract schema
         run: python3 tools/catalog/validate_catalog.py
+      - name: materialise the pinned source graph
+        # completeness (--results) cross-checks the catalogue's failpoint
+        # leaves against the fail_point registry in the typedb source tree, so
+        # the sources must be present in this job too (same materialisation the
+        # source-identity/storage jobs run).
+        run: python3 tools/source-lock/materialize_sources.py
       - name: archived corpus bundle re-verifies from raw logs
         # reparse every archived log, re-bind hashes, recompute the bundle
         # root against the COMPLETE seal, re-check the flake ledger's
@@ -143,7 +149,11 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: "22.12.0"
+          # 22.22.2, not the older 22.12.0: the better-sqlite3 native addon the
+          # controller-core suites load segfaults under 22.12.0 (SIGSEGV across
+          # journal/lifecycle/migration/query-plans/controller-state) but runs
+          # clean on the 22.22.x line the code is developed and verified against.
+          node-version: "22.22.2"
       - run: npm ci
       - name: typecheck
         run: npx tsc --noEmit

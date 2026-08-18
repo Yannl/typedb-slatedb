@@ -37,6 +37,10 @@ import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 LOCK = REPO / "source-lock" / "source-lock.json"
+# the materialization root: every GIT_DIRS checkout and ARTIFACTS file lands
+# under here (main() re-resolves it from an optional --root, but this is the
+# default and the one materialize_sources.py imports and writes into).
+SOURCES = REPO / "sources"
 
 # lock node id -> sources/ directory name
 GIT_DIRS = {

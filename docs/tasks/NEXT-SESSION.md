@@ -1,111 +1,145 @@
-# Handoff: state at merge to main, and what a fresh session does next
+# Handoff: state after the consolidated-directive session
 
-**Written at:** end of the V16-convergence + donor-response session; updated
-after the follow-up round (PR #2). Start a new session FROM `main`.
+**Written at:** end of the session that worked the consolidated convergence
+and total-quality directive (the independent SWE review) on top of `main`
+@ `7fd118f`. Start a new session FROM this branch or from `main` once it is
+merged.
 
 ## One-paragraph state
 
-Every P0 the V16 convergence audit accepted is closed with code, executed
-negative controls, and executed mutant runs; the independent donor's
-adversarial audit (branch `claude/typedb-donor-verification-sfxfbz`) filed
-4 P0s — all four are closed, and of its 7 P1s, A5 and A10 are now also
-closed (A4/A8 substantially addressed, A7 documented interim, A9/A11
-staged for U3.2). All lanes are green: storage lib 18/18 on U2S3 (memo,
-posture, materialisation and retry-channel controls, mutant-verified),
-control-plane core 23/23 / journal 7/7 / state 5/5 / workerd 8/8 / L1 E2E
-61/61, catalogue completeness green (exit 0). The full single-commit
-corpus evidence exists at `docs/evidence/G3/u2s3-full-2/` (105/106,
-0 unexplained) but predates this session's storage changes — a re-run is
-the top follow-up.
+The truth plane is repaired and now fails closed: both corpus producers
+return terminal verdicts, the comparator is symmetric and exact, the
+catalogue is joinable to results and checked against the normative v14
+contract schema, the source locks pass with the fork patch set bound by
+digest, and a root CI workflow runs all of it. The executable defects the
+audit itself demonstrated are closed with executed mutants: the capability
+gate that accepted an unrestricted token, the controller database that could
+not migrate, the dedupe that answered a fresh operation id and recorded
+nothing, the caller-supplied replay digest, the caller-owned iteration cut,
+the append path whose cost grew with history, the shipping raw `--delete`,
+the ignored cache-wipe error, the rename that left a copy behind, and the
+post-WAL commit boundary that returned an ordinary error while a durable
+obligation stood. F4/F5 is built: ADR-0012 Candidate A is a five-file patch
+series over the digest-pinned SlateDB crate with a passing qualifying matrix
+and a killed observe-and-bind mutant. **The release decision is still
+NO-GO**, and G1 is explicitly not green — see `docs/operations.md`.
 
-## Read these first (10 minutes)
+## Read these first (15 minutes)
 
-1. `docs/reviews/v16-convergence-audit.md` — the finding-by-finding truth
-   table (headings + status table are current).
-2. `docs/reviews/donor-a-branch-response.md` — all 14 donor findings with
-   dispositions and SHAs.
-3. `docs/design/slatedb-external-epochs.md` — the staged F4/F5 fork design
-   (file/symbol level).
-4. `docs/operations.md` — gate table + how to run everything.
+1. `docs/reviews/consolidated-directive-response.md` — every directive
+   finding with a status, a commit, and what is actually missing where it
+   is not closed. Read this before anything else.
+2. `docs/contradictions.json` — four open contract-vs-implementation
+   contradictions, each with the safe side taken.
+3. `docs/owner-decisions.json` — five values that were deliberately not
+   invented.
+4. `docs/operations.md` — the gate table (honest), and the truth-plane
+   checks to run **before** trusting any run.
+5. `fork/slatedb/PATCH-LEDGER.md` — what the SlateDB fork is and, more
+   importantly, what it is not.
 
-## Commit map (this session, oldest first)
+## Run this first, always
 
-| SHA | What |
-|---|---|
-| `e20cff5` | u2s3-full-2 corpus evidence (single-commit, 105/106, 0 unexplained) |
-| `997da46` | F7r: exact u64 (BE-blob SQL, bigint core, decimal-string wire) + 2^53 mutant |
-| `ed13a9a` | F8: authenticated journal (canonical encoding, chain, MAC) + tamper matrix |
-| `fe853aa` | F9r: capability tokens on every route; content-addressed keys; refusal matrix |
-| `d47378e` | F7r/F6r: command ledger, CheckpointCut, anchored journal verification |
-| `3c00b9e` | F3: immutable materialisation namespaces, NoDeleteStore; F4/F5 posture guard + fork design |
-| `b76ad35` | F10r: completeness tooling (fail-closed BUILD parse, leaf recounts, flake ledger) |
-| `c71b8e1` | Donor A3: session-bound WAL_FINALIZE capabilities |
-| `f8c1bae` | Donor A6: key-count memo actually written; schema lock off the remote scan |
+```sh
+python3 tools/dev/doctor.py
+```
 
-## Follow-ups already done (second round, PR #2)
-
-- Catalogue regenerated from the pristine tree (4740 leaves; dead outlines
-  correctly excluded) and `completeness.py` runs GREEN against
-  `u2s3-full-2` (`3fde3be`) — the one fail-closed catch (Bazel
-  `test_crate_client`) resolved by directory identity, no allowlist entry.
-- V16 audit statuses folded into the headings + a status table (`d16a912`).
-- Donor A5 CLOSED (`0953ec0`): `generation` exact at every wire entry
-  point, E2E 61/61 with two new refusal controls.
-- Donor A10 CLOSED (`5d05d5c`): `get_prev` retries `ErrorKind::Unavailable`
-  (bounded, backoff) before the fail-closed panic; retry-everything mutant
-  executed; storage lib 18/18 on U2S3.
+This session's only environment failure was a cold Rust build dying ten
+minutes in on a missing `protoc`. Doctor reports that in one second. It also
+checks `cmake`, `pkg-config`, both Rust toolchains, the pinned rustfmt
+nightly, the source lock and `control-plane/node_modules`.
 
 ## Top follow-ups, in order
 
-1. **Re-run the single-commit corpus on the merged tree.** The
-   `u2s3-full-2` evidence is from `c75a1af`; F3/A6/A10 changed `open_s3`,
-   the estimate path and `get_prev` since. Run:
-   `python3 tools/fork/stage.py && cd sources/typedb && cargo +1.93.0 test --workspace --no-run`
-   then `python3 tools/catalog/package_assembly.py` and
-   `python3 tools/catalog/run_u0.py --reap --timeout 7200 --out docs/evidence/G3/u2s3-full-3`
-   (U2S3 env vars in `docs/operations.md`; MinIO must be up), then
-   `python3 tools/catalog/compare_u2s3.py u2s3-full-3` and
-   `python3 tools/catalog/completeness.py --results docs/evidence/G3/u2s3-full-3`.
-   Expect the same 105/106 with the storage:storage delta growing by the
-   new controls (+8 lib tests vs u2s3-full-2: memo, posture,
-   materialisation, retry-channel).
-2. **Donor P1 remainders**: A4 core-level per-procedure session
-   revalidation beneath the capability layer; A9/A11 are U3.2 integration
-   items (native checkpoint clone, container epoch token).
-3. **The remaining OPEN-P0s are the big builds**: F4/F5 external-epoch
-   SlateDB fork (design staged at file/symbol level), F6r controller-owned
-   global CheckpointCut integration with TypeDB (U3.2), F8r immutable R2
-   RecoveryAnchor publication. G2/L3 remain blocked on credentials
-   (SI-G0-3).
+1. **Regenerate the catalogue from a pristine tree.** The generator, the
+   validator and the completeness checker are fixed; the committed
+   catalogue is not — `python3 tools/catalog/validate_catalog.py` reports
+   116 errors against it, and the CI `truth-plane` job is red until it is
+   regenerated. It needs a PRISTINE `sources/typedb` build (contradiction
+   CD-004), and a worktree is already prepared for exactly that:
+
+   ```sh
+   git -C sources/typedb worktree add ../typedb-pristine <locked-revision>   # if absent
+   cd sources/typedb-pristine && CARGO_TARGET_DIR=/some/other/dir \
+       cargo +1.93.0 test --workspace --locked --no-run
+   python3 tools/catalog/generate_catalog.py --tree sources/typedb-pristine
+   python3 tools/catalog/validate_catalog.py
+   python3 tools/catalog/run_u0.py --verdict-only --out docs/evidence/G3/u2s3-full-3
+   python3 tools/catalog/completeness.py --results docs/evidence/G3/u2s3-full-3
+   ```
+
+   `--verdict-only` re-derives the archived run's verdict against the
+   repaired denominator without re-running the two-hour corpus.
+
+2. **Q-03 / §12.4: the controller lifecycle protocol.** Registration is
+   still takeover-at-open — any fresh session id takes over. This is the
+   largest remaining control-plane hole and it gates Q-02 (capability
+   issuance is still open on the L1 facade, which is fine for L1 and not
+   fine for anything deployable). It needs `reserveSession` /
+   `attestContainer` / `activateSession` with holder nonces, controller-time
+   leases and an external recovery root — none of it exists.
+
+3. **Q-01 remainder: the J.5 shared resolver.** The containment guard is in
+   and proven, but it decides nothing: `ValidationBasisV1`,
+   `TransactionResolutionV1`, idempotent per-keyspace apply markers and the
+   failpoint schedule matrix (§9.5) are unbuilt. Pre-G2 this is correctly
+   scoped as containment; do not let "guard exists" become "boundary
+   repaired" in status prose.
+
+4. **ADR-0012 Candidate B.** Candidate A is built and measured. The
+   directive requires a two-candidate spike: a provider-enforced publication
+   firewall over stock SlateDB with a fresh credential domain. Until B
+   exists there is no comparison and therefore no decision, and the
+   production lane must stay on crates.io.
+
+5. **G2 and everything behind it** stays blocked on SI-G0-3 (Cloudflare
+   staging credentials). Before requesting them, finish the probe harness
+   (Q-08) — the directive is explicit that the harness comes first.
+
+## What is deliberately still OPEN
+
+Marked so in the response document, with the missing part named: Q-02
+(issuance authentication), Q-03 (lifecycle), Q-04 (IAM/provider no-delete
+proof), Q-07 (per-database backend + driver gates), Q-08 (probes),
+Q-13/Q-23 (SlateDB lower-layer retry bounds and a bridge deadline), Q-16
+(checkpoint closure), Q-19 (streaming remote helpers), Q-22 (Rocks cursor
+`transmute`), Q-24 (key management), Q-28 (journal is not yet an externally
+anchored command ledger), and the Mode-Q Bazel oracle.
 
 ## Environment notes (save yourself an hour)
 
-- Build/test in `sources/typedb` (materialize via
+- `python3 tools/dev/doctor.py` first. Then
   `python3 tools/source-lock/materialize_sources.py`, then
-  `python3 tools/fork/stage.py`). `stage.py` now bumps mtimes — do NOT
-  revert that; cargo fingerprints by mtime and stale mutant binaries
-  survive restores otherwise.
+  `python3 tools/fork/stage.py`.
+- `protoc` is required and is NOT in the base image here; install it before
+  building (`doctor.py` names the fix).
 - Never `pkill rustc` mid-build: cargo orphans into `do_wait` holding
-  `target/debug/.cargo-lock`, and every later build deadlocks silently at
-  0% CPU. If it happens: kill the cargos, `rm target/debug/.cargo-lock`.
-- MinIO: binary + data in the session scratchpad previously; a fresh
-  session should install its own (`docs/operations.md`) and export the
-  TYPEDB_S3_* env vars before any U2S3 test. Two lib tests hang (not
-  fail) if MinIO is down.
-- Disk: the session allowance dies at ~38G used; `sources/typedb/target`
-  is ~15G after a full corpus build. Delete target/ before a fresh corpus
-  run if a previous build generation exists.
-- Control-plane: `cd control-plane && npx tsc --noEmit`, node suites via
-  `node --test --experimental-strip-types src/controller/core/*.test.ts`,
-  `npx vitest run`, E2E via `npx wrangler dev --port 8787` +
-  `node scripts/local-stack-e2e.mjs` (wipe `.wrangler/state` first — old
-  DO SQLite rows predate the blob-sequence schema and fail closed).
+  `target/debug/.cargo-lock` and every later build deadlocks silently. Kill
+  the cargos, then `rm target/debug/.cargo-lock`.
+- Never `pkill -f "<pattern>"` where the pattern also appears in your own
+  command line — it matches your own shell. (Learned the hard way here.)
+- Two concurrent cargo builds in one target directory serialise on that
+  lock. Use a separate `CARGO_TARGET_DIR` for the pristine catalogue build.
+- Disk: `sources/typedb/target` is ~9 GB warm; the corpus runner's `--reap`
+  frees binaries as it goes. A second (pristine) build needs its own ~9 GB.
+- MinIO: install per `docs/operations.md` and export the `TYPEDB_S3_*`
+  variables before any U2S3 test. Two storage lib tests hang, not fail, if
+  it is down.
+- Control plane: `cd control-plane && npx tsc --noEmit`;
+  `node --test --experimental-strip-types src/controller/core/*.test.ts`;
+  `npx vitest run`; E2E via `npx wrangler dev --port 8787` +
+  `node scripts/local-stack-e2e.mjs` (wipe `.wrangler/state` first — old DO
+  SQLite rows predate the current migrations and fail closed, which is the
+  intended behaviour).
+- Do not run the workerd lanes while a corpus run is executing unless you
+  have checked the headroom: the corpus has timing-sensitive targets that
+  take hours to re-measure.
 
 ## Suggested opening message for the new session
 
-> Continue the TypeDB-on-SlateDB/R2 work from main (see
-> docs/tasks/NEXT-SESSION.md). Start with follow-up 1: re-run the
-> single-commit corpus on the merged tree into u2s3-full-3, with the
-> oracle comparison and a completeness run against the new results. Then
-> the donor P1 remainders (A4 core-level session revalidation) and the
-> staged OPEN-P0 builds per the audit (F4/F5 external-epoch fork first).
+> Continue the TypeDB-on-SlateDB/R2 work. Read
+> docs/reviews/consolidated-directive-response.md first, then start with
+> follow-up 1: regenerate the catalogue from the pristine worktree, validate
+> it, and re-derive the u2s3-full-3 verdict with
+> `run_u0.py --verdict-only`. Then Q-03/§12.4, the controller lifecycle
+> protocol.

@@ -26,6 +26,22 @@ import { bytesEqual, canonicalJson, CANONICAL_U64, fromHex, hmacSha256, hex, utf
 const UTF8_DECODER = new TextDecoder();
 
 export interface CapabilityPayload {
+  /** Token schema version (audit 4.4 item 4). Exactly 2; any other value -
+   *  including the absent field of the retired v1 shape - is refused, so a
+   *  schema change can never be smuggled past an old verifier. */
+  v: 2;
+  /** Key id: the derived scope key this token is MACed under
+   *  ("cap:<env>" | "prov:<env>", registry.ts). Verified against the scope
+   *  the checking key belongs to - a token cannot claim one scope while
+   *  validating under another. */
+  kid: string;
+  /** Environment the token is bound to; must equal the verifier's own. */
+  env: string;
+  /** Tenant of the registry record this token was issued against. Together
+   *  with env + databaseId it is the FULL routing/binding triple: the
+   *  Worker derives the controller DO id from these verified fields, and
+   *  the DO cross-checks them against its provisioned binding. */
+  tenantId: string;
   principal: string;
   databaseId: string;
   method: string;
@@ -56,6 +72,11 @@ export type CapabilityCheck =
   | { ok: true; payload: CapabilityPayload }
   | { ok: false; error:
       | "CAPABILITY_MALFORMED"
+      | "CAPABILITY_VERSION_UNKNOWN"
+      | "CAPABILITY_FIELD_UNKNOWN"
+      | "CAPABILITY_KID_MISMATCH"
+      | "CAPABILITY_ENV_MISMATCH"
+      | "CAPABILITY_TENANT_MISMATCH"
       | "CAPABILITY_MAC_INVALID"
       | "CAPABILITY_EXPIRED"
       | "CAPABILITY_METHOD_MISMATCH"
@@ -129,6 +150,12 @@ export const REQUIRED_RESTRICTIONS: Record<string, ReadonlyArray<"session" | "ge
   // (history must stay auditable after every actor is fenced), private
   // and read-only.
   JOURNAL_VERIFY: [],
+  // R4 PR1: the internal provisioning power - the ONLY method that may bind
+  // an uninitialized controller DO to its registry record. Its authority IS
+  // the binding triple (env/tenantId/databaseId are mandatory core fields
+  // of every v2 token) under the SEPARATE "prov:<env>" scope key
+  // (registry.ts): ordinary capability-scope material cannot mint it.
+  PROVISION: [],
 };
 
 /**
@@ -184,12 +211,28 @@ export function mintCapability(capabilityKey: Uint8Array, payload: CapabilityPay
  * the authority (ControllerCore.claimCapability), called after this check
  * passes.
  */
+/** The CLOSED field set of a v2 token. Any key outside this list refuses
+ *  the whole token (audit 4.4 item 4): an unknown field is a schema the
+ *  verifier does not understand, and "ignore it" is how a future
+ *  authority-bearing field gets silently dropped by old verifiers. */
+const V2_FIELDS = new Set([
+  "v", "kid", "env", "tenantId", "principal", "databaseId", "method",
+  "session", "generation", "key", "digest", "maxBytes",
+  "incarnation", "nonce", "expiresAtMs",
+]);
+
 export function checkCapability(
   capabilityKey: Uint8Array,
   token: string,
   expect: {
     method: string;
     databaseId: string;
+    /** the verifier's own environment; the token's `env` (and its kid's
+     *  scope) must name exactly this. */
+    env: string;
+    /** when set (the DO passes its provisioned tenant; a provision check
+     *  passes the binding's tenant), the token's tenantId must match. */
+    tenantId?: string;
     /** the authority's current incarnation. OMIT it (undefined) for a
      *  stateless FRAMING pre-check at the outer worker (audit C-03): the
      *  worker verifies MAC/expiry/audience/method/key/digest/session/
@@ -219,13 +262,27 @@ export function checkCapability(
   if (!bytesEqual(hmacSha256(capabilityKey, bodyBytes), fromHex(macHex))) {
     return { ok: false, error: "CAPABILITY_MAC_INVALID" };
   }
-  let payload: CapabilityPayload;
+  let parsed: unknown;
   try {
-    payload = JSON.parse(UTF8_DECODER.decode(bodyBytes)) as CapabilityPayload;
+    parsed = JSON.parse(UTF8_DECODER.decode(bodyBytes));
   } catch {
     return { ok: false, error: "CAPABILITY_MALFORMED" };
   }
-  if (typeof payload.nonce !== "string" || typeof payload.expiresAtMs !== "number") {
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { ok: false, error: "CAPABILITY_MALFORMED" };
+  }
+  // schema versioning (audit 4.4 item 4): version FIRST - a v1-shaped or
+  // future-versioned token is a version refusal, not a field-by-field guess
+  const record = parsed as Record<string, unknown>;
+  if (record.v !== 2) return { ok: false, error: "CAPABILITY_VERSION_UNKNOWN" };
+  for (const field of Object.keys(record)) {
+    if (!V2_FIELDS.has(field)) return { ok: false, error: "CAPABILITY_FIELD_UNKNOWN" };
+  }
+  const payload = record as unknown as CapabilityPayload;
+  if (typeof payload.kid !== "string" || typeof payload.env !== "string"
+      || typeof payload.tenantId !== "string" || typeof payload.method !== "string"
+      || typeof payload.databaseId !== "string"
+      || typeof payload.nonce !== "string" || typeof payload.expiresAtMs !== "number") {
     return { ok: false, error: "CAPABILITY_MALFORMED" };
   }
   if (expect.nowMs >= payload.expiresAtMs) return { ok: false, error: "CAPABILITY_EXPIRED" };
@@ -238,6 +295,19 @@ export function checkCapability(
   // it; the `?? []` fallback below must never launder an unknown method
   // into a restriction-free bearer token.
   if (!isKnownCapabilityMethod(payload.method)) return { ok: false, error: "CAPABILITY_METHOD_UNKNOWN" };
+  // environment + key-scope binding (R4 PR1): the token must name the
+  // verifier's own environment, and its kid must be the exact scope the
+  // presented method belongs to in that environment - the PROVISION power
+  // lives under "prov:<env>", everything else under "cap:<env>"
+  // (registry.ts). The MAC above already proves which key signed it; the
+  // kid check refuses a token that CLAIMS a different scope than the one
+  // it validated under.
+  if (payload.env !== expect.env) return { ok: false, error: "CAPABILITY_ENV_MISMATCH" };
+  const expectedKid = payload.method === "PROVISION" ? `prov:${expect.env}` : `cap:${expect.env}`;
+  if (payload.kid !== expectedKid) return { ok: false, error: "CAPABILITY_KID_MISMATCH" };
+  if (expect.tenantId !== undefined && payload.tenantId !== expect.tenantId) {
+    return { ok: false, error: "CAPABILITY_TENANT_MISMATCH" };
+  }
   if (payload.databaseId !== expect.databaseId) return { ok: false, error: "CAPABILITY_AUDIENCE_MISMATCH" };
   // session binding: when the route demands a session (finalize), the token
   // must carry exactly that session - a session-unbound token is refused, so

@@ -13,6 +13,7 @@
 import { SELF, env } from "cloudflare:test";
 import { DEV_ISSUER_SECRET } from "./core/key-config.ts";
 import { describe, expect, it } from "vitest";
+import { provisionViaSelf } from "./workerd-test-support.ts";
 
 interface TestEnv {
   PAYLOADS: R2Bucket;
@@ -46,6 +47,8 @@ async function postJson(path: string, token: string, body: unknown): Promise<Res
 /** Catalogue one WAL record end-to-end (register → budget → put → finalize),
  *  returning the content-addressed key it was catalogued under. */
 async function catalogueRecord(db: string, session: string, gen: number, bytes: Uint8Array): Promise<string> {
+  // R4 PR1: provision the registry binding before anything may bind the DO
+  expect((await provisionViaSelf(db)).status).toBe(200);
   // R4-SEC-04: exact per-action capabilities bound to the exact actor
   const reg = await postJson("/session/register",
     (await issue({ databaseId: db, method: "SESSION_REGISTER", session, generation: gen })).token,

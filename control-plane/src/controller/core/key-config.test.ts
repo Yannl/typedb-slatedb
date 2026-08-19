@@ -8,17 +8,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  DEV_CAPABILITY_KEY, DEV_ISSUER_SECRET, DEV_JOURNAL_KEY, KeyConfigError,
-  MIN_KEY_BYTES, resolveKeyConfig,
+  DEV_CAPABILITY_KEY, DEV_ENVIRONMENT, DEV_ISSUER_SECRET, DEV_JOURNAL_KEY, DEV_PROVISION_KEY,
+  KeyConfigError, MIN_KEY_BYTES, resolveKeyConfig,
 } from "./key-config.ts";
 
 const GOOD_JOURNAL = "a1".repeat(MIN_KEY_BYTES);
 const GOOD_CAPABILITY = "b2".repeat(MIN_KEY_BYTES);
+const GOOD_PROVISION = "c3".repeat(MIN_KEY_BYTES);
 const GOOD = {
   CONTROLLER_KEY_PROFILE: "managed",
   CONTROLLER_JOURNAL_KEY: GOOD_JOURNAL,
   CONTROLLER_CAPABILITY_KEY: GOOD_CAPABILITY,
+  CONTROLLER_PROVISION_KEY: GOOD_PROVISION,
   CONTROLLER_ISSUER_SECRET: "issuer-secret-of-adequate-length",
+  CONTROLLER_ENVIRONMENT: "managed-e2e",
 };
 
 function refuses(env: Record<string, string | undefined>, why: string) {
@@ -30,7 +33,9 @@ test("Q-24: a correctly provisioned managed profile resolves", () => {
   assert.equal(keys.profile, "managed");
   assert.equal(keys.journalKey.length, MIN_KEY_BYTES);
   assert.equal(keys.capabilityKey.length, MIN_KEY_BYTES);
+  assert.equal(keys.provisionKey.length, MIN_KEY_BYTES);
   assert.equal(keys.issuerSecret, GOOD.CONTROLLER_ISSUER_SECRET);
+  assert.equal(keys.environment, "managed-e2e");
 });
 
 test("Q-24: an UNSET profile is managed - a lost variable refuses, it does not downgrade", () => {
@@ -74,4 +79,21 @@ test("Q-24: local-dev works with zero provisioning and stays loudly named", () =
   const keys = resolveKeyConfig({ CONTROLLER_KEY_PROFILE: "local-dev" });
   assert.equal(keys.profile, "local-dev");
   assert.ok(keys.issuerSecret.length > 0, "issuance is credentialed even in dev (Q-02)");
+});
+
+test("R4 PR1: managed requires the provisioning key + environment, both fail-closed", () => {
+  refuses({ ...GOOD, CONTROLLER_PROVISION_KEY: undefined }, "absent provision key");
+  refuses({ ...GOOD, CONTROLLER_PROVISION_KEY: DEV_PROVISION_KEY }, "dev provision constant");
+  refuses({ ...GOOD, CONTROLLER_PROVISION_KEY: GOOD_CAPABILITY }, "provision key == capability key");
+  refuses({ ...GOOD, CONTROLLER_PROVISION_KEY: GOOD_JOURNAL }, "provision key == journal key");
+  refuses({ ...GOOD, CONTROLLER_ENVIRONMENT: undefined }, "absent environment");
+  refuses({ ...GOOD, CONTROLLER_ENVIRONMENT: "Has/Bad Chars" }, "unnormalized environment");
+  refuses({ ...GOOD, CONTROLLER_ENVIRONMENT: DEV_ENVIRONMENT },
+    "the reserved local-dev environment name must never be a managed environment");
+});
+
+test("R4 PR1: local-dev pins the reserved environment and derives its keys with zero provisioning", () => {
+  const keys = resolveKeyConfig({ CONTROLLER_KEY_PROFILE: "local-dev" });
+  assert.equal(keys.environment, DEV_ENVIRONMENT);
+  assert.ok(keys.provisionKey.length > 0);
 });

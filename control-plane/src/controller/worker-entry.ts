@@ -20,7 +20,10 @@
  *
  * Endpoints (JSON unless noted):
  *   GET  /health
- *   POST /capability               {principal, databaseId, method, digest?, maxBytes?, ttlMs?} → {token, key?}
+ *   POST /provision                internal provisioning transaction (R4 PR1): binds an
+ *                                  uninitialized controller authority to its registry record
+ *                                  {tenantId, databaseId, budgets?} + x-provision token
+ *   POST /capability               {principal, tenantId?, databaseId, method, digest?, maxBytes?, ttlMs?} → {token, key?}
  *   POST /admin/{db}/incarnation/bump  supersede the controller incarnation (INCARNATION_BUMP)
  *   PUT  /payload/{key}            raw body → R2; returns {key, sha256hex, length}
  *   POST /session/register         {databaseId, generation, startupSessionId}
@@ -58,8 +61,9 @@ export { DatabaseContainerDO };
 import { MAX_BATCH_BYTES, MAX_BATCH_MEMBERS, u64FromWire, type FinalizeRequest } from "./core/procedures.ts";
 import { devOnlyRoute } from "./surface.ts";
 import { canonicalJson } from "./core/journal-crypto.ts";
-import { checkCapability } from "./core/capability.ts";
-import { resolveKeyConfig } from "./core/key-config.ts";
+import { checkCapability, type CapabilityPayload } from "./core/capability.ts";
+import { resolveKeyConfig, type ResolvedKeys } from "./core/key-config.ts";
+import { checkBinding, checkProvisionToken, controllerDoName, type ProvisionBinding } from "./core/registry.ts";
 
 interface Env {
   CONTROLLER: DurableObjectNamespace<DatabaseControllerDO>;
@@ -73,6 +77,10 @@ interface Env {
   CONTROLLER_KEY_PROFILE?: string;
   CONTROLLER_JOURNAL_KEY?: string;
   CONTROLLER_CAPABILITY_KEY?: string;
+  /** R4 PR1: PROVISION-scope verification key + the deployment's
+   *  environment name (registry.ts / key-config.ts). */
+  CONTROLLER_PROVISION_KEY?: string;
+  CONTROLLER_ENVIRONMENT?: string;
   CONTROLLER_ISSUER_SECRET?: string;
   /** Surface posture (audit C-P0-01/03/09, PR0 containment). ONLY the exact
    *  value "local-dev" opens the dev-only routes; anything else - including
@@ -468,38 +476,81 @@ export default {
       return json({ ok: false, error: "NOT_FOUND" }, 404);
     }
 
-    // controller routing: one DO per database. The stub is typed straight
-    // off the DO class (workers-types RPC), so there is exactly ONE method
-    // surface - the class itself - and nothing hand-maintained to drift.
-    const stubFor = (databaseId: string) => env.CONTROLLER.get(env.CONTROLLER.idFromName(databaseId));
+    /** Fail-closed key/environment resolution shared by every route that
+     *  needs it; the typed 500 mirrors the DO's own construction refusal. */
+    const resolveKeysOr500 = (): { keys: ResolvedKeys } | { denied: Response } => {
+      try {
+        return { keys: resolveKeyConfig(env) };
+      } catch (error) {
+        return { denied: json({ ok: false, error: "KEY_CONFIG_INVALID",
+                                detail: error instanceof Error ? error.message : String(error) }, 500) };
+      }
+    };
+
+    /**
+     * Controller routing (R4 PR1): one DO per PROVISIONED database, and the
+     * DO name is derived from the registry binding triple (environment +
+     * tenant + opaque database id, registry.ts controllerDoName) - never
+     * from a caller-supplied database id alone. The map records, per
+     * request, which stub each database id resolved to: it is populated
+     * ONLY from a verified token's binding (frameCheck) or an explicitly
+     * validated provisioning/issuance binding, so every later `stubFor`
+     * lookup inside a route body reuses the registry-derived route. The
+     * stub is typed straight off the DO class (workers-types RPC), so there
+     * is exactly ONE method surface - the class itself - and nothing
+     * hand-maintained to drift.
+     */
+    const routed = new Map<string, DurableObjectStub<DatabaseControllerDO>>();
+    const routeBinding = (binding: ProvisionBinding): DurableObjectStub<DatabaseControllerDO> => {
+      const stub = env.CONTROLLER.get(env.CONTROLLER.idFromName(controllerDoName(binding)));
+      routed.set(binding.databaseId, stub);
+      return stub;
+    };
+    const stubFor = (databaseId: string): DurableObjectStub<DatabaseControllerDO> => {
+      const stub = routed.get(databaseId);
+      if (stub === undefined) {
+        // structurally unreachable: every route verifies a token (which
+        // routes its binding) before touching an authority. Loud, not
+        // silent, if a future route forgets.
+        throw new Error(`UNROUTED_DATABASE: ${databaseId} was never bound to a verified route`);
+      }
+      return stub;
+    };
 
     type CapExpect = { method: string; session?: string; generation?: string;
                        key?: string; bodyDigest?: string; bodyLength?: number };
 
     /**
      * Stateless capability FRAMING pre-check at the outer worker (audit
-     * C-03): verify MAC, expiry, audience, method, key/digest/session/
-     * generation using the worker's own resolved capability key BEFORE any
-     * Durable Object is contacted. A junk, forged, expired, wrong-audience
-     * or wrong-method token is refused here, so it never instantiates,
-     * migrates or binds a DO. The authoritative incarnation check and the
+     * C-03): verify schema version, kid/env scope, MAC, expiry, audience,
+     * method, key/digest/session/generation using the worker's own resolved
+     * capability key BEFORE any Durable Object is contacted. A junk,
+     * forged, expired, wrong-audience or wrong-method token is refused
+     * here, so it never instantiates, migrates or binds a DO. On success
+     * the token's verified binding triple decides the DO route
+     * (routeBinding); the authoritative incarnation/binding checks and the
      * single-request nonce claim then run inside the DO. Returns the token
-     * on success, or the typed denial Response.
+     * + verified payload, or the typed denial Response.
      */
-    const frameCheck = (databaseId: string, expect: CapExpect): { token: string } | { denied: Response } => {
+    const frameCheck = (databaseId: string, expect: CapExpect):
+      { token: string; payload: CapabilityPayload } | { denied: Response } => {
       const token = request.headers.get("x-capability");
       if (token === null) return { denied: json({ ok: false, error: "CAPABILITY_REQUIRED" }, 401) };
-      let capabilityKey: Uint8Array;
-      try {
-        capabilityKey = resolveKeyConfig(env).capabilityKey;
-      } catch (error) {
-        return { denied: json({ ok: false, error: "KEY_CONFIG_INVALID",
-                                detail: error instanceof Error ? error.message : String(error) }, 500) };
-      }
+      const resolved = resolveKeysOr500();
+      if ("denied" in resolved) return resolved;
       // currentIncarnation omitted: the DO owns the authoritative check
-      const framed = checkCapability(capabilityKey, token, { databaseId, ...expect, nowMs: Date.now() });
+      const framed = checkCapability(resolved.keys.capabilityKey, token, {
+        databaseId, env: resolved.keys.environment, ...expect, nowMs: Date.now(),
+      });
       if (!framed.ok) return { denied: json(framed, framed.error === "CAPABILITY_MALFORMED" ? 400 : 403) };
-      return { token };
+      // the routing triple comes from the VERIFIED token, and its ids must
+      // be normalized bounded identifiers before they name a DO
+      const binding = checkBinding({
+        environment: framed.payload.env, tenantId: framed.payload.tenantId, databaseId,
+      });
+      if (!binding.ok) return { denied: json(binding, 400) };
+      routeBinding(binding.binding);
+      return { token, payload: framed.payload };
     };
 
     /** Mutating routes: frame-check (no DO on failure), then verify-and-CLAIM
@@ -509,7 +560,11 @@ export default {
     const verifyCapability = async (databaseId: string, expect: CapExpect, useDigest: string) => {
       const framed = frameCheck(databaseId, expect);
       if ("denied" in framed) return { authorized: false as const, denied: framed.denied };
-      const verdict = await stubFor(databaseId).useCapability(framed.token, { databaseId, ...expect }, useDigest);
+      // the DO call carries the full expected binding (tenant from the
+      // verified token), so the authority can verify it was addressed as
+      // the database it is provisioned to be (R4 PR1)
+      const verdict = await stubFor(databaseId).useCapability(
+        framed.token, { databaseId, tenantId: framed.payload.tenantId, ...expect }, useDigest);
       if (!verdict.ok) return { authorized: false as const, denied: json(verdict, 403) };
       return { authorized: true as const, verdict };
     };
@@ -521,7 +576,8 @@ export default {
       Promise<{ authorized: true; payload: { session?: string } } | { authorized: false; denied: Response }> => {
       const framed = frameCheck(databaseId, expect);
       if ("denied" in framed) return { authorized: false as const, denied: framed.denied };
-      const verdict = await stubFor(databaseId).checkCapabilityOnly(framed.token, { databaseId, ...expect });
+      const verdict = await stubFor(databaseId).checkCapabilityOnly(
+        framed.token, { databaseId, tenantId: framed.payload.tenantId, ...expect });
       if (!verdict.ok) return { authorized: false as const, denied: json(verdict, 403) };
       return { authorized: true as const, payload: verdict.payload };
     };
@@ -667,6 +723,45 @@ export default {
         ? json({ ok: false, error: result.error }, 409)
         : null;
 
+    if (request.method === "POST" && path === "/provision") {
+      // R4 PR1: the internal provisioning transaction - the ONLY path that
+      // binds an uninitialized controller authority, and the production
+      // bootstrap route (it is NOT dev-only; its authorization is the
+      // PROVISION capability, mintable only from the private issuer's
+      // provisioning-scope key). The worker frame-checks the token against
+      // the exact binding BEFORE any DO is contacted, then the DO
+      // re-verifies authoritatively and binds transactionally.
+      const resolved = resolveKeysOr500();
+      if ("denied" in resolved) return resolved.denied;
+      const parsed = await readJson(request);
+      if ("errorResponse" in parsed) return parsed.errorResponse;
+      const body = parsed.body as { tenantId?: unknown; databaseId?: unknown; budgets?: unknown };
+      const binding = checkBinding({
+        environment: resolved.keys.environment, tenantId: body.tenantId, databaseId: body.databaseId,
+      });
+      if (!binding.ok) return json(binding, 400);
+      const token = request.headers.get("x-provision");
+      if (token === null) return json({ ok: false, error: "PROVISION_TOKEN_REQUIRED" }, 401);
+      const framed = checkProvisionToken(resolved.keys.provisionKey, token, {
+        binding: binding.binding, nowMs: Date.now(),
+      });
+      if (!framed.ok) return json(framed, framed.error === "CAPABILITY_MALFORMED" ? 400 : 403);
+      // budgets ride the provisioning transaction because the production
+      // surface has no budget-admin route; shape validation is the core's
+      const budgets = body.budgets;
+      if (budgets !== undefined && (typeof budgets !== "object" || budgets === null || Array.isArray(budgets))) {
+        return json({ ok: false, error: "MALFORMED_JSON", hint: "budgets must be an object" }, 400);
+      }
+      const stub = routeBinding(binding.binding);
+      const result = await stub.provision(token, binding.binding,
+        budgets as { maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number } | undefined);
+      const status = result.ok ? 200
+        : result.error === "PROVISION_CONFLICT" ? 409
+        : result.error === "INVALID_BUDGET" || result.error === "INVALID_BINDING" ? 400
+        : 403;
+      return json(result, status);
+    }
+
     if (request.method === "POST" && path === "/capability") {
       // Q-02: issuance is CREDENTIALED in every posture. The audit's finding
       // was that a self-issued capability does not create authentication;
@@ -674,23 +769,36 @@ export default {
       // in which an anonymous caller can mint authority. Resolution is
       // fail-closed: a worker whose key config cannot resolve refuses
       // issuance outright rather than falling back to open issuance.
-      let issuerSecret: string;
-      try {
-        issuerSecret = resolveKeyConfig(env).issuerSecret;
-      } catch (error) {
-        return json({ ok: false, error: "KEY_CONFIG_INVALID",
-                      detail: error instanceof Error ? error.message : String(error) }, 500);
-      }
+      const resolved = resolveKeysOr500();
+      if ("denied" in resolved) return resolved.denied;
       const presented = request.headers.get("x-issuer-authorization");
-      if (presented === null || !credentialsEqual(presented, issuerSecret)) {
+      if (presented === null || !credentialsEqual(presented, resolved.keys.issuerSecret)) {
         return json({ ok: false, error: "ISSUER_UNAUTHORIZED" }, 401);
       }
       const parsed = await readJson(request);
       if ("errorResponse" in parsed) return parsed.errorResponse;
       const spec = parsed.body as unknown as {
-        principal: string; databaseId: string; method: string; digest?: string; maxBytes?: number; ttlMs?: number;
+        principal: string; tenantId?: string; databaseId: string; method: string;
+        digest?: string; maxBytes?: number; ttlMs?: number;
       };
-      return json({ ok: true, ...(await stubFor(spec.databaseId).issueCapability(spec)) });
+      // dev-lane routing follows the same registry-derived DO name as the
+      // data path (default local tenant), so the dev issuer addresses the
+      // SAME authority the tokens it mints will be used against. Issuance
+      // to an unprovisioned authority is refused by the DO.
+      const binding = checkBinding({
+        environment: resolved.keys.environment, tenantId: spec.tenantId ?? "local", databaseId: spec.databaseId,
+      });
+      if (!binding.ok) return json(binding, 400);
+      const stub = routeBinding(binding.binding);
+      try {
+        return json({ ok: true, ...(await stub.issueCapability(spec)) });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes("DATABASE_UNPROVISIONED")) {
+          return json({ ok: false, error: "DATABASE_UNPROVISIONED" }, 409);
+        }
+        throw error;
+      }
     }
 
     const adminBump = path.match(/^\/admin\/([^/]+)\/incarnation\/bump$/);

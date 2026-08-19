@@ -31,6 +31,17 @@ import {
   checkCapability, isKnownCapabilityMethod, mintCapability, MAX_CAPABILITY_BYTES, REQUIRED_RESTRICTIONS,
   type CapabilityCheck, type CapabilityPayload,
 } from "./core/capability.ts";
+import {
+  bindingsEqual, checkBinding, checkProvisionToken, type ProvisionBinding,
+} from "./core/registry.ts";
+
+/** Typed refusals of the registry-binding gate (R4 PR1): every ordinary
+ *  call to an authority that has not been provisioned - or that is
+ *  provisioned as a DIFFERENT tenant/database/environment than the caller's
+ *  verified token names - fails closed with one of these. */
+export type BindingRefusal =
+  | { ok: false; error: "DATABASE_UNPROVISIONED" }
+  | { ok: false; error: "DO_BINDING_MISMATCH" };
 
 export interface Env {
   /** Q-24: key posture. "managed" (the default when unset - a lost variable
@@ -40,6 +51,9 @@ export interface Env {
   CONTROLLER_KEY_PROFILE?: string;
   CONTROLLER_JOURNAL_KEY?: string;
   CONTROLLER_CAPABILITY_KEY?: string;
+  /** R4 PR1: PROVISION-scope verification key + environment name. */
+  CONTROLLER_PROVISION_KEY?: string;
+  CONTROLLER_ENVIRONMENT?: string;
   CONTROLLER_ISSUER_SECRET?: string;
 }
 
@@ -47,6 +61,8 @@ export class DatabaseControllerDO extends DurableObject {
   private sql: SqlStorage;
   private readonly controllerCore: ControllerCore;
   private readonly capabilityKey: Uint8Array;
+  private readonly provisionKey: Uint8Array;
+  private readonly environment: string;
 
   constructor(state: DurableObjectState, env: Env) {
     super(state, env);
@@ -81,6 +97,8 @@ export class DatabaseControllerDO extends DurableObject {
     const keys = resolveKeyConfig(env);
     this.controllerCore = new ControllerCore(adapter, { journalKey: keys.journalKey });
     this.capabilityKey = keys.capabilityKey;
+    this.provisionKey = keys.provisionKey;
+    this.environment = keys.environment;
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS databases(
         database_id TEXT PRIMARY KEY,
@@ -97,33 +115,120 @@ export class DatabaseControllerDO extends DurableObject {
         attempts INTEGER NOT NULL DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS do_binding(
-        key TEXT PRIMARY KEY CHECK(key='database_id'),
+        key TEXT PRIMARY KEY CHECK(key IN ('environment','tenant_id','database_id')),
         value TEXT NOT NULL
       );
     `);
   }
 
+  /** The provisioned registry record of this authority, or null before
+   *  provisioning. Three rows so the binding is one durable fact per
+   *  field, written only inside the provisioning transaction. */
+  private boundBinding(): ProvisionBinding | null {
+    const rows = this.sql.exec(`SELECT key, value FROM do_binding`).toArray();
+    if (!rows.length) return null;
+    const byKey = new Map(rows.map((row) => [String(row.key), String(row.value)]));
+    const environment = byKey.get("environment");
+    const tenantId = byKey.get("tenant_id");
+    const databaseId = byKey.get("database_id");
+    if (environment === undefined || tenantId === undefined || databaseId === undefined) {
+      // a partial binding must be impossible (single provisioning
+      // transaction); observing one is a consistency violation, not a state
+      throw new Error("DO_BINDING_CORRUPT: partial provisioning record");
+    }
+    return { environment, tenantId, databaseId };
+  }
+
   /**
-   * Immutable database binding (audit C-P0-02): this DO durably binds the
-   * first database identity it serves and every later call must present
-   * exactly that identity - a mis-routed or forged cross-database call
-   * fails closed here, BEFORE any SQL/R2 authority work, even though the
-   * worker's idFromName routing should make it unreachable. workerd does
-   * not let an object read its own name, so first-authenticated-call
-   * binding is the strongest locally available form of "bound at
-   * initialization"; the full tenant/environment binding registry is a
-   * platform-blocked PR4 remainder recorded in the ledger.
+   * R4 PR1: the provisioning transaction - the ONLY path that binds this
+   * uninitialized authority to a registry record, and it binds exactly
+   * once. The caller (worker /provision route) has already frame-checked
+   * the PROVISION token; this re-verifies it AUTHORITATIVELY under the
+   * DO's own provisioning-scope key and environment, then writes the
+   * binding + initial budgets + the DATABASE_PROVISIONED journal row in
+   * one synchronous transaction. Two racing provisioners are serialized by
+   * the DO: the first writes the record, the second gets the idempotent
+   * replay (identical binding) or the typed conflict (different binding) -
+   * never a partial or overwritten binding.
+   */
+  provision(
+    token: string,
+    wireBinding: { environment?: unknown; tenantId?: unknown; databaseId?: unknown },
+    budgets?: { maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number },
+  ):
+    | { ok: true; created: boolean; binding: ProvisionBinding }
+    | { ok: false; error: string; field?: string } {
+    const checked = checkBinding(wireBinding);
+    if (!checked.ok) return checked;
+    const binding = checked.binding;
+    if (binding.environment !== this.environment) {
+      return { ok: false, error: "PROVISION_ENVIRONMENT_MISMATCH" };
+    }
+    const verdict = checkProvisionToken(this.provisionKey, token, {
+      binding, nowMs: this.controllerCore.controllerNow(),
+    });
+    if (!verdict.ok) return verdict;
+    return this.ctx.storage.transactionSync(() => {
+      const bound = this.boundBinding();
+      if (bound !== null) {
+        if (bindingsEqual(bound, binding)) return { ok: true as const, created: false, binding: bound };
+        // the race loser (or a later conflicting provisioner): typed
+        // refusal, the standing record is never overwritten
+        return { ok: false as const, error: "PROVISION_CONFLICT" };
+      }
+      const provisioned = this.controllerCore.provisionDatabase(binding, budgets);
+      if (!provisioned.ok) return provisioned;
+      this.sql.exec(`INSERT INTO do_binding(key, value) VALUES ('environment', ?)`, binding.environment);
+      this.sql.exec(`INSERT INTO do_binding(key, value) VALUES ('tenant_id', ?)`, binding.tenantId);
+      this.sql.exec(`INSERT INTO do_binding(key, value) VALUES ('database_id', ?)`, binding.databaseId);
+      return { ok: true as const, created: true, binding };
+    });
+  }
+
+  /** Read the provisioned registry record (worker bootstrap verification /
+   *  tests). Null means unprovisioned - and unprovisioned serves nothing. */
+  getBinding(): ProvisionBinding | null {
+    return this.boundBinding();
+  }
+
+  /**
+   * The registry-binding gate for the capability entry points (R4 PR1,
+   * audit 4.4 items 1-2): an authority with NO provisioned record refuses
+   * every ordinary call with a typed error and NO binding side effect
+   * (first-call squatting is dead - only `provision` writes the record),
+   * and a provisioned authority refuses any call whose verified token
+   * names a different tenant/database/environment than the record.
+   */
+  private requireBinding(expect: { databaseId: string; tenantId?: string }): BindingRefusal | null {
+    const bound = this.boundBinding();
+    if (bound === null) return { ok: false, error: "DATABASE_UNPROVISIONED" };
+    if (bound.environment !== this.environment || bound.databaseId !== expect.databaseId
+        || (expect.tenantId !== undefined && bound.tenantId !== expect.tenantId)) {
+      return { ok: false, error: "DO_BINDING_MISMATCH" };
+    }
+    return null;
+  }
+
+  /**
+   * Immutable database binding (audit C-P0-02), now backed by the
+   * provisioned registry record: every direct authority procedure asserts
+   * the presented identity is exactly the provisioned one. These RPCs sit
+   * BEHIND the worker's capability verification (which already answers the
+   * typed requireBinding refusals), so a violation here is a mis-routed or
+   * forged internal call - it throws as a hard defense-in-depth failure
+   * rather than a wire shape. Unlike the pre-PR1 first-authenticated-call
+   * binding, this NEVER writes: an unprovisioned authority cannot be bound
+   * by any amount of calling.
    */
   private bind(databaseId: string): void {
     if (typeof databaseId !== "string" || databaseId.length === 0) {
       throw new Error("DO_DATABASE_BINDING_VIOLATION: empty database identity");
     }
-    const bound = this.sql.exec(`SELECT value FROM do_binding WHERE key='database_id'`).toArray();
-    if (!bound.length) {
-      this.sql.exec(`INSERT INTO do_binding(key, value) VALUES ('database_id', ?)`, databaseId);
-      return;
+    const bound = this.boundBinding();
+    if (bound === null) {
+      throw new Error("DO_DATABASE_BINDING_VIOLATION: authority is not provisioned");
     }
-    if (String(bound[0].value) !== databaseId) {
+    if (bound.databaseId !== databaseId) {
       throw new Error(
         `DO_DATABASE_BINDING_VIOLATION: this authority is bound to another database; ` +
           `presented ${JSON.stringify(databaseId)}`,
@@ -294,6 +399,11 @@ export class DatabaseControllerDO extends DurableObject {
     maxBytes?: number;
     ttlMs?: number;
   }): { token: string; key?: string; expiresAtMs: number; incarnation: number } {
+    // R4 PR1: issuance embeds the PROVISIONED binding (env + tenant), so it
+    // is impossible before provisioning - the dev issuer cannot be used to
+    // squat an unbound authority either.
+    const binding = this.boundBinding();
+    if (binding === null) throw new Error("DATABASE_UNPROVISIONED: cannot issue before provisioning");
     this.bind(spec.databaseId);
     // R4-SEC-04: the method space is a CLOSED registry; an unknown method
     // would fall through the restriction table as a restriction-free
@@ -337,6 +447,10 @@ export class DatabaseControllerDO extends DurableObject {
         `CAPABILITY_BUDGET_ABOVE_CEILING: ${spec.maxBytes} exceeds the ${MAX_CAPABILITY_BYTES}-byte data-path ceiling`);
     }
     const payload: CapabilityPayload = {
+      v: 2,
+      kid: `cap:${binding.environment}`,
+      env: binding.environment,
+      tenantId: binding.tenantId,
       principal: spec.principal,
       databaseId: spec.databaseId,
       method: spec.method,
@@ -364,16 +478,23 @@ export class DatabaseControllerDO extends DurableObject {
    */
   useCapability(
     token: string,
-    expect: { method: string; databaseId: string; session?: string; generation?: string;
+    expect: { method: string; databaseId: string; tenantId?: string; session?: string; generation?: string;
               key?: string; bodyDigest?: string; bodyLength?: number },
     useDigest: string,
   ): (CapabilityCheck & { claim?: { fresh: boolean; terminal: boolean; response: string | null } })
-    | { ok: false; error: "CAPABILITY_REPLAYED" } {
-    this.bind(expect.databaseId);
+    | { ok: false; error: "CAPABILITY_REPLAYED" }
+    | BindingRefusal {
+    // R4 PR1: the registry-binding gate FIRST, as a typed refusal with no
+    // side effect - an unprovisioned authority cannot be bound (or even
+    // touched) by an ordinary authenticated call, and a provisioned one
+    // refuses a token naming another tenant/database than its record.
+    const unbound = this.requireBinding(expect);
+    if (unbound !== null) return unbound;
     // audit C-05: verification reads the same controller clock issuance used
     const nowMs = this.controllerCore.controllerNow();
     const checked = checkCapability(this.capabilityKey, token, {
       ...expect,
+      env: this.environment,
       currentIncarnation: this.controllerCore.currentIncarnation(),
       nowMs,
     });
@@ -396,12 +517,14 @@ export class DatabaseControllerDO extends DurableObject {
    */
   checkCapabilityOnly(
     token: string,
-    expect: { method: string; databaseId: string; session?: string; generation?: string;
+    expect: { method: string; databaseId: string; tenantId?: string; session?: string; generation?: string;
               key?: string; bodyDigest?: string; bodyLength?: number },
-  ): CapabilityCheck {
-    this.bind(expect.databaseId);
+  ): CapabilityCheck | BindingRefusal {
+    const unbound = this.requireBinding(expect);
+    if (unbound !== null) return unbound;
     return checkCapability(this.capabilityKey, token, {
       ...expect,
+      env: this.environment,
       currentIncarnation: this.controllerCore.currentIncarnation(),
       nowMs: this.controllerCore.controllerNow(),
     });

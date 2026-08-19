@@ -9,11 +9,14 @@
     "probes:preflight": "node --experimental-strip-types probes/preflight.ts",
     "probes:recording-tests": "node --experimental-strip-types --test probes/recording.test.ts",
     "probes:r2": "node --experimental-strip-types probes/run-r2-probes.ts",
+    "test": "npm run test:core",
     "test:core": "node --experimental-strip-types --test src/controller/core/*.test.ts src/controller/surface.test.ts",
     "test:controller:mutant": "CONTROLLER_MUTANT=drop-outbox-event node --experimental-strip-types --test src/controller/core/controller-core.test.ts",
     "test:workerd": "vitest run",
     "stack:local": "wrangler dev --local -c wrangler.local-dev.toml --port 8787",
-    "stack:e2e": "node scripts/local-stack-e2e.mjs"
+    "stack:e2e": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/local-stack-e2e.mjs",
+    "e2e": "node scripts/run-local-e2e.mjs",
+    "e2e:managed": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/managed-stack-e2e.mjs"
   },
   "devDependencies": {
     "@cloudflare/containers": "0.3.7",

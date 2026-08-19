@@ -35,6 +35,13 @@ import { fromHex, hex, utf8 } from "./journal-crypto.ts";
 export const DEV_JOURNAL_KEY = "dev-insecure-journal-key";
 export const DEV_CAPABILITY_KEY = "dev-insecure-capability-key";
 export const DEV_ISSUER_SECRET = "dev-insecure-issuer-secret";
+/** R4 PR1: the PROVISION-scope verification key (registry.ts). Distinct
+ *  from the capability key BY CONSTRUCTION so capability-scope material
+ *  can never mint the registry-binding power. */
+export const DEV_PROVISION_KEY = "dev-insecure-provision-key";
+/** R4 PR1: the local-dev environment name. Reserved: a managed deployment
+ *  must name its own environment and may never claim this one. */
+export const DEV_ENVIRONMENT = "local";
 
 /** Policy minima (managed profile). 32 bytes = 256-bit MAC keys; the issuer
  *  secret is a shared credential, not a MAC key, and gets a lower floor. */
@@ -45,17 +52,30 @@ export interface KeyConfigEnv {
   CONTROLLER_KEY_PROFILE?: string;
   CONTROLLER_JOURNAL_KEY?: string;
   CONTROLLER_CAPABILITY_KEY?: string;
+  CONTROLLER_PROVISION_KEY?: string;
   CONTROLLER_ISSUER_SECRET?: string;
+  CONTROLLER_ENVIRONMENT?: string;
 }
 
 export interface ResolvedKeys {
   profile: "managed" | "local-dev";
   journalKey: Uint8Array;
+  /** Ordinary-capability VERIFICATION key: the "cap:<environment>" scope
+   *  derived from the private issuer's root (registry.ts). The runtime is
+   *  provisioned with this derived key only, never the root. */
   capabilityKey: Uint8Array;
+  /** PROVISION-scope verification key ("prov:<environment>"): validates the
+   *  internal provisioning capability that binds a controller DO to its
+   *  registry record. Deliberately distinct material from capabilityKey. */
+  provisionKey: Uint8Array;
   /** Credential the /capability issuance route requires (Q-02). Always
    *  present: even local-dev enforces it, so no configuration state exists
    *  in which issuance is anonymous. */
   issuerSecret: string;
+  /** The environment this deployment serves; part of every token's binding
+   *  and of the derived controller DO names. Managed requires an explicit
+   *  normalized name; local-dev is always DEV_ENVIRONMENT. */
+  environment: string;
 }
 
 export class KeyConfigError extends Error {
@@ -99,16 +119,34 @@ export function resolveKeyConfig(env: KeyConfigEnv): ResolvedKeys {
       capabilityKey: env.CONTROLLER_CAPABILITY_KEY
         ? fromHex(env.CONTROLLER_CAPABILITY_KEY)
         : utf8(DEV_CAPABILITY_KEY),
+      provisionKey: env.CONTROLLER_PROVISION_KEY
+        ? fromHex(env.CONTROLLER_PROVISION_KEY)
+        : utf8(DEV_PROVISION_KEY),
       issuerSecret: env.CONTROLLER_ISSUER_SECRET ?? DEV_ISSUER_SECRET,
+      // local-dev is ALWAYS the reserved dev environment: a dev stack cannot
+      // dress up as a managed environment by exporting a variable
+      environment: DEV_ENVIRONMENT,
     };
   }
 
   const journalKey = requireManagedKey("CONTROLLER_JOURNAL_KEY", env.CONTROLLER_JOURNAL_KEY, DEV_JOURNAL_KEY);
   const capabilityKey = requireManagedKey(
     "CONTROLLER_CAPABILITY_KEY", env.CONTROLLER_CAPABILITY_KEY, DEV_CAPABILITY_KEY);
-  if (hex(journalKey) === hex(capabilityKey)) {
-    // one compromised surface must not hand over the other (F8 vs F9)
-    throw new KeyConfigError("CONTROLLER_JOURNAL_KEY and CONTROLLER_CAPABILITY_KEY must be distinct");
+  const provisionKey = requireManagedKey(
+    "CONTROLLER_PROVISION_KEY", env.CONTROLLER_PROVISION_KEY, DEV_PROVISION_KEY);
+  const pairs: [string, Uint8Array][] = [
+    ["CONTROLLER_JOURNAL_KEY", journalKey],
+    ["CONTROLLER_CAPABILITY_KEY", capabilityKey],
+    ["CONTROLLER_PROVISION_KEY", provisionKey],
+  ];
+  for (let i = 0; i < pairs.length; i++) {
+    for (let j = i + 1; j < pairs.length; j++) {
+      if (hex(pairs[i][1]) === hex(pairs[j][1])) {
+        // one compromised surface must not hand over another (F8 vs F9 vs
+        // the provisioning power - mint/verify blast-radius separation)
+        throw new KeyConfigError(`${pairs[i][0]} and ${pairs[j][0]} must be distinct`);
+      }
+    }
   }
   const issuerSecret = env.CONTROLLER_ISSUER_SECRET;
   if (issuerSecret === undefined || issuerSecret === "" || issuerSecret === DEV_ISSUER_SECRET) {
@@ -119,5 +157,15 @@ export function resolveKeyConfig(env: KeyConfigEnv): ResolvedKeys {
     throw new KeyConfigError(
       `CONTROLLER_ISSUER_SECRET is below the ${MIN_ISSUER_SECRET_BYTES}-byte policy minimum`);
   }
-  return { profile, journalKey, capabilityKey, issuerSecret };
+  const environment = env.CONTROLLER_ENVIRONMENT;
+  if (environment === undefined || !/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(environment)) {
+    throw new KeyConfigError(
+      "CONTROLLER_ENVIRONMENT is required under the managed profile: a normalized bounded name" +
+      " (lowercase alphanumerics/hyphens, max 64 chars)");
+  }
+  if (environment === DEV_ENVIRONMENT) {
+    throw new KeyConfigError(
+      `CONTROLLER_ENVIRONMENT=${JSON.stringify(environment)} is the reserved local-dev environment`);
+  }
+  return { profile, journalKey, capabilityKey, provisionKey, issuerSecret, environment };
 }

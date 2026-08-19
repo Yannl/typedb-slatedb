@@ -11,7 +11,8 @@
  */
 import { SELF, env } from "cloudflare:test";
 import { DEV_ISSUER_SECRET } from "./core/key-config.ts";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { provisionViaSelf } from "./workerd-test-support.ts";
 
 interface TestEnv {
   PAYLOADS: R2Bucket;
@@ -48,6 +49,12 @@ async function putPayload(body: string, overrideKey?: string): Promise<Response>
 }
 
 describe("payload facade on workerd (capability boundary)", () => {
+  // R4 PR1: an unprovisioned authority serves nothing - every suite runs
+  // the provisioning transaction first, like the real bootstrap
+  beforeEach(async () => {
+    expect((await provisionViaSelf(DB)).status).toBe(200);
+  });
+
   it("keys are issuer-derived: a caller-selected key is refused before R2", async () => {
     const response = await putPayload("caller-keyed bytes", `${DB}/g1/custom-key`);
     // the malformed (non-content-addressed) key dies at the key-scheme

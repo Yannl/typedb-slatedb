@@ -1263,6 +1263,44 @@ export class ControllerCore {
     return { ok: true };
   }
 
+  /**
+   * R4 PR1: the provisioning transaction's CORE half. Runs when the
+   * internal PROVISION capability binds this authority to its registry
+   * record (database-controller.ts provision): journals the binding as a
+   * DATABASE_PROVISIONED command and - because the production surface has
+   * no budget-admin route - installs the initial admission budgets in the
+   * SAME transaction when the provisioner supplies them. This is the
+   * controller/provisioner role acting BEFORE any container session
+   * exists, so unlike setBudgets it binds no startup session; its
+   * authority is the PROVISION token verified by the caller.
+   */
+  provisionDatabase(
+    binding: { environment: string; tenantId: string; databaseId: string },
+    budgets?: { maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number },
+  ): { ok: true } | TypedErr {
+    return this.sql.transaction(() => {
+      if (budgets !== undefined) {
+        const bad =
+          validateBudgetField("maxUnpublishedOutbox", budgets.maxUnpublishedOutbox, MAX_OUTBOX_DEPTH_CEILING)
+          ?? validateBudgetField("maxPayloadLength", budgets.maxPayloadLength, MAX_PAYLOAD_LENGTH_CEILING)
+          ?? validateBudgetField("maxTailRecords", budgets.maxTailRecords, MAX_TAIL_RECORDS_CEILING);
+        if (bad !== null) return { ok: false as const, error: "INVALID_BUDGET" as const, field: bad };
+        this.sql.exec(
+          `INSERT OR REPLACE INTO budgets(database_id, max_unpublished_outbox, max_payload_length, max_tail_records)
+           VALUES (?,?,?,?)`,
+          binding.databaseId, budgets.maxUnpublishedOutbox, budgets.maxPayloadLength, budgets.maxTailRecords,
+        );
+      }
+      this.appendCommand(binding.databaseId, "DATABASE_PROVISIONED", {
+        databaseId: binding.databaseId,
+        tenantId: binding.tenantId,
+        environment: binding.environment,
+        budgetsInstalled: budgets !== undefined,
+      });
+      return { ok: true as const };
+    });
+  }
+
   setBudgets(
     databaseId: string,
     b: { maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number },

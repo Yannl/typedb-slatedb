@@ -181,6 +181,89 @@ fn encode_path(raw: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Provisioning (R4 PR1).
+//
+// Since the opaque tenant registry landed, an authority is UNBOUND until the
+// internal PROVISION capability binds it - issuance and every ordinary call
+// refuse with DATABASE_UNPROVISIONED before that. The PROVISION token is
+// minted by the ISSUER side (in these lanes, the test driver holding the
+// provisioning-scope key), so this client carries a byte-exact Rust
+// implementation of the worker's schema-v2 token mint for the PROVISION
+// method only: canonical JSON (sorted keys, JSON string escapes),
+// base64url-no-pad body, lowercase-hex HMAC-SHA-256 MAC. Parity with the
+// TypeScript `mintProvisionToken` is pinned by a cross-implementation
+// vector generated from the real `core/registry.ts` (see the contract
+// tests): if either side drifts, the token stops verifying.
+// ---------------------------------------------------------------------------
+
+/// HMAC-SHA-256 over the already-locked `sha2` dependency (RFC 2104: the
+/// crate set is pinned by `--locked`, and 15 lines beat a new dependency).
+fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let mut block = [0u8; 64];
+    if key.len() > 64 {
+        block[..32].copy_from_slice(&Sha256::digest(key));
+    } else {
+        block[..key.len()].copy_from_slice(key);
+    }
+    let mut inner = Sha256::new();
+    inner.update(block.map(|b| b ^ 0x36));
+    inner.update(message);
+    let mut outer = Sha256::new();
+    outer.update(block.map(|b| b ^ 0x5c));
+    outer.update(inner.finalize());
+    outer.finalize().into()
+}
+
+/// base64url WITHOUT padding - exactly the worker's `base64urlEncode`.
+fn base64url_no_pad(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let mut acc = 0u32;
+        for (i, &b) in chunk.iter().enumerate() {
+            acc |= (b as u32) << (16 - 8 * i);
+        }
+        for i in 0..(chunk.len() * 8).div_ceil(6) {
+            out.push(ALPHABET[((acc >> (18 - 6 * i)) & 0x3f) as usize] as char);
+        }
+    }
+    out
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Mint the internal PROVISION capability for `(environment, tenant,
+/// database)` - the schema-v2 payload with the exact canonical field order
+/// (sorted keys) the worker's `canonicalJson` produces. `serde_json`
+/// string encoding matches `JSON.stringify` for these identifier-shaped
+/// values (both emit minimal escapes).
+pub fn mint_provision_token(
+    provision_key: &[u8],
+    environment: &str,
+    tenant_id: &str,
+    database_id: &str,
+    nonce: &str,
+    expires_at_ms: u64,
+) -> String {
+    let js = |s: &str| serde_json::to_string(s).expect("string encodes");
+    let body = format!(
+        "{{\"databaseId\":{},\"env\":{},\"expiresAtMs\":{},\"incarnation\":0,\"kid\":{},\
+         \"method\":\"PROVISION\",\"nonce\":{},\"principal\":\"provisioner\",\"tenantId\":{},\"v\":2}}",
+        js(database_id),
+        js(environment),
+        expires_at_ms,
+        js(&format!("prov:{environment}")),
+        js(nonce),
+        js(tenant_id),
+    );
+    let mac = hmac_sha256(provision_key, body.as_bytes());
+    format!("{}.{}", base64url_no_pad(body.as_bytes()), hex_lower(&mac))
+}
+
+// ---------------------------------------------------------------------------
 // Wire shapes.
 // ---------------------------------------------------------------------------
 
@@ -576,6 +659,34 @@ impl L1Client {
         Ok(())
     }
 
+    /// Provision the authority for `(tenant_id, database_id)` through the
+    /// production `/provision` route (R4 PR1) - the ONLY act that binds an
+    /// uninitialized controller. `provision_token` is the internal
+    /// PROVISION capability (mint_provision_token). Success is `ok:true`;
+    /// an idempotent replay of the same binding also answers `ok:true`, so
+    /// suites may provision unconditionally. Everything else - forged
+    /// scope, conflicting binding, malformed ids - is the typed refusal.
+    pub fn provision(
+        &self,
+        database_id: &str,
+        tenant_id: &str,
+        provision_token: &str,
+    ) -> Result<(), L1Error> {
+        let mut response = self
+            .agent
+            .post(format!("{}/provision", self.base))
+            .header("x-provision", provision_token)
+            .send_json(&serde_json::json!({ "tenantId": tenant_id, "databaseId": database_id }))
+            .map_err(|e| L1Error::Http(e.to_string()))?;
+        let status = response.status().as_u16();
+        let raw = response.body_mut().read_to_string().map_err(|e| L1Error::Http(e.to_string()))?;
+        let body: serde_json::Value = serde_json::from_str(&raw).unwrap_or(serde_json::Value::Null);
+        if status != 200 || body["ok"] != serde_json::Value::Bool(true) {
+            return Err(L1Error::Protocol { status, body: raw });
+        }
+        Ok(())
+    }
+
     /// Register (or, for the live actor, roll over) a startup session. The
     /// SESSION_REGISTER capability binds the exact target actor AND the
     /// exact generation (R4-SEC-04). On success the client re-binds its
@@ -825,6 +936,48 @@ impl L1Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Cross-implementation parity pin: this exact token was generated from
+    /// the REAL worker code (`core/registry.ts` `mintProvisionToken` via
+    /// node --experimental-strip-types) for these exact inputs. If the Rust
+    /// mint's canonical JSON, base64url or HMAC drifts by one byte, this
+    /// fails - and so would live verification.
+    #[test]
+    fn provision_token_is_byte_identical_to_the_typescript_mint() {
+        let token = mint_provision_token(
+            b"dev-insecure-provision-key",
+            "local",
+            "local",
+            "parity-db-1",
+            "nonce-parity-1",
+            1_787_200_000_000,
+        );
+        assert_eq!(
+            token,
+            "eyJkYXRhYmFzZUlkIjoicGFyaXR5LWRiLTEiLCJlbnYiOiJsb2NhbCIsImV4cGlyZXNBdE1zIjoxNzg3MjAwMDAwMDAwLCJpbmNhcm5hdGlvbiI6MCwia2lkIjoicHJvdjpsb2NhbCIsIm1ldGhvZCI6IlBST1ZJU0lPTiIsIm5vbmNlIjoibm9uY2UtcGFyaXR5LTEiLCJwcmluY2lwYWwiOiJwcm92aXNpb25lciIsInRlbmFudElkIjoibG9jYWwiLCJ2IjoyfQ.4b631f8080c213b3b20eb21622f00fc6ed152d4643da941a6e9bc82412bab7b6",
+        );
+    }
+
+    /// RFC 4231 test case 2 pins the HMAC construction itself (key shorter
+    /// than the block, the common path here).
+    #[test]
+    fn hmac_sha256_matches_rfc_4231_vector() {
+        let mac = hmac_sha256(b"Jefe", b"what do ya want for nothing?");
+        assert_eq!(
+            hex_lower(&mac),
+            "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843",
+        );
+    }
+
+    #[test]
+    fn base64url_no_pad_matches_the_worker_encoder() {
+        // no padding, url-safe alphabet, all three tail lengths
+        assert_eq!(base64url_no_pad(b""), "");
+        assert_eq!(base64url_no_pad(b"f"), "Zg");
+        assert_eq!(base64url_no_pad(b"fo"), "Zm8");
+        assert_eq!(base64url_no_pad(b"foo"), "Zm9v");
+        assert_eq!(base64url_no_pad(&[0xfb, 0xff]), "-_8");
+    }
 
     #[test]
     fn wire_u64_accepts_only_canonical_decimals_over_the_full_range() {

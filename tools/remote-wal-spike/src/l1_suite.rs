@@ -76,6 +76,55 @@ pub fn run(client: &L1Client, database_id: &str) -> SuiteReport {
     let session = "sess-l1";
     const GEN: u64 = 1;
 
+    // ---- R4 PR1: the registry provisioning transaction gates EVERYTHING.
+    // These lanes run against the local-dev posture, whose provisioning
+    // scope key is the dev constant and whose environment/tenant are the
+    // dev defaults ("local"/"local" - the same identifiers the dev
+    // /capability route derives routing from).
+    const DEV_PROVISION_KEY: &[u8] = b"dev-insecure-provision-key";
+    const DEV_ENVIRONMENT: &str = "local";
+    const DEV_TENANT: &str = "local";
+    let expires_at_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock after epoch")
+        .as_millis() as u64
+        + 15 * 60 * 1000;
+    let provision_token = crate::l1_client::mint_provision_token(
+        DEV_PROVISION_KEY, DEV_ENVIRONMENT, DEV_TENANT, db, &format!("prov-{db}"), expires_at_ms);
+
+    // squat mutant first: BEFORE provisioning, issuance against this
+    // authority must refuse - an unprovisioned database is not a database.
+    let pre_provision = client.issue(db, CapabilityMethod::WalRead,
+        MintRestrictions { session: Some(session), generation: Some(GEN), ..Default::default() });
+    report.check(
+        "issuance to an unprovisioned database is refused (DATABASE_UNPROVISIONED)",
+        matches!(&pre_provision,
+            Err(L1Error::Issuance { status: 409, body }) if body.contains("DATABASE_UNPROVISIONED")),
+        &format!("{pre_provision:?}"),
+    );
+
+    // verifier-material mutant: a provision token minted under the
+    // CAPABILITY scope key must not carry the registry write power.
+    let forged = crate::l1_client::mint_provision_token(
+        b"dev-insecure-capability-key", DEV_ENVIRONMENT, DEV_TENANT, db,
+        &format!("forged-{db}"), expires_at_ms);
+    let forged_result = client.provision(db, DEV_TENANT, &forged);
+    report.check(
+        "capability-scope material cannot provision (mint/verify separation)",
+        matches!(&forged_result, Err(L1Error::Protocol { status: 403, .. })),
+        &format!("{forged_result:?}"),
+    );
+
+    if report.require("provisioning binds the authority (internal PROVISION capability)",
+        client.provision(db, DEV_TENANT, &provision_token)).is_none() {
+        return report;
+    }
+    report.check(
+        "provisioning replay of the same binding is idempotent",
+        client.provision(db, DEV_TENANT, &provision_token).is_ok(),
+        "replay refused",
+    );
+
     // ---- session + mandatory budgets ----------------------------------
     if report.require("session registers (exact SESSION_REGISTER capability, session+generation-bound)",
         client.register_session(db, GEN, session)).is_none() {

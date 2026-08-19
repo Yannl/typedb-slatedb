@@ -113,7 +113,8 @@
    "referenced_by": [
     "round-4 audit R4-LOCAL-01 / §6.2-6.4",
     "source-lock/source-lock.json node MINIO"
-   ]
+   ],
+   "progress_2026_08_19": "RustFS 1.0.0-rc.2 is now PINNED (source-lock node RUSTFS: release-zip sha256 dbe7b718…, binary sha256 d286e5f8…, tag commit e9f53180 verified against both git ls-remote and the binary's own --version attestation). Against exactly that binary, tools/s3-cert-corpus PASSED on 2026-08-19: SigV4 auth, byte-exact put/get/head, ranged reads, If-None-Match:* two-writer race with exactly one winner, If-Match update fencing, list pagination, multipart complete/abort, and kill -9 crash/restart byte-exact persistence — via object_store =0.14.1, the exact crate the storage engine uses. STILL OUTSTANDING before the default may flip: the timeout/ambiguity lane (fault-proxy schedules), the patched SlateDB suite, and the TypeDB corpus run on a RustFS backend. The corpus runner hard-refuses any rustfs binary whose digest differs from the lock."
   }
  ]
 }

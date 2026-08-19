@@ -63,11 +63,28 @@ server_bin() {
       echo "$bin"
       ;;
     rustfs)
-      if [ -z "${S3_CERT_SERVER_BIN:-}" ] || [ ! -x "${S3_CERT_SERVER_BIN}" ]; then
-        echo "corpus: S3_CERT_PROVIDER=rustfs requires S3_CERT_SERVER_BIN (the EXACT pinned artifact; OD-009)" >&2
+      # the OD-009 promotion candidate: the source-locked RUSTFS artifact.
+      # The digest check against the lock is MANDATORY — a corpus verdict
+      # may only ever cite the exact pinned binary. S3_CERT_SERVER_BIN can
+      # point at an alternate materialization of the SAME artifact, but it
+      # still has to match the locked sha256.
+      local bin="${S3_CERT_SERVER_BIN:-$REPO/sources/rustfs/rustfs-1.0.0-rc.2}"
+      if [ ! -x "$bin" ]; then
+        echo "corpus: pinned RustFS binary absent at $bin — fetch the source-locked release zip (RUSTFS node in source-lock/source-lock.json) and extract it there" >&2
         exit 2
       fi
-      echo "$S3_CERT_SERVER_BIN"
+      local want got
+      want="$(python3 -c "
+import json,sys
+nodes=json.load(open('$REPO/source-lock/source-lock.json'))['nodes']
+print(next(n['sha256'] for n in nodes if n.get('id')=='RUSTFS'))
+")"
+      got="$(sha256sum "$bin" | cut -d' ' -f1)"
+      if [ "$got" != "$want" ]; then
+        echo "corpus: RustFS binary digest mismatch — want $want (source-lock RUSTFS) got $got; refusing (OD-009: verdicts cite only the pinned artifact)" >&2
+        exit 2
+      fi
+      echo "$bin"
       ;;
     *)
       echo "corpus: unknown provider '$PROVIDER'" >&2; exit 2 ;;

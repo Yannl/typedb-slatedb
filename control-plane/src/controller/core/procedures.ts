@@ -365,6 +365,80 @@ export type AmbiguityResolution =
  *  not a token lifetime. An unredeemed lease expires; a fence revokes it. */
 export const READ_LEASE_TTL_MS = 5_000;
 
+/** How long an EXPIRED lease row is kept before pruning (R5-SEC-05). A
+ *  redemption that arrives after the TTL must be able to answer the exact
+ *  typed READ_LEASE_EXPIRED rather than the ambiguous READ_LEASE_UNKNOWN,
+ *  so pruning trails expiry by this grace window. Both refusals fail
+ *  closed; the distinction is diagnostic, not authorizing. */
+const READ_LEASE_PRUNE_GRACE_MS = 60_000;
+
+/**
+ * R5-SEC-05: the read a SINGLE authoritative DO hop performs.
+ *
+ * Before this type existed the read path took three hops - verify the
+ * token, ask whether the session is still a live reader, then ask for the
+ * data - with the R2 byte fetch after all three. A fence committing between
+ * any two of them left the old actor holding an authorization for a read it
+ * was no longer entitled to. The request is now DESCRIBED to the authority,
+ * which validates route/session/generation and performs the catalogue read
+ * inside ONE synchronous transaction; nothing can interleave.
+ */
+export type ReadRequest =
+  | { kind: "EXACT"; generation: number; appendLsn: bigint }
+  | { kind: "LAST_BY_TYPE"; generation: number; recordType: number }
+  | { kind: "SCAN"; generation: number; snapshotId: string; fromTypeSequence: bigint; fromLsn: bigint;
+      recordType: number | null; limit: number; maxBytes: number }
+  | { kind: "HEAD"; generation: number }
+  | { kind: "AUDIT"; generation: number }
+  | { kind: "ITERATOR"; generation: number }
+  | { kind: "ACTIVE_CUT"; generation: number }
+  | { kind: "OPERATION"; generation: number; operationId: string };
+
+/** The durable one-shot grant that lets the worker fetch the payload bytes
+ *  of a read the authority just authorized (R5-SEC-05). `keys` is the EXACT
+ *  set of R2 objects the grant covers - a redemption naming any other set is
+ *  refused, so a grant cannot be widened after the fact. */
+export interface ReadLeaseGrant { leaseId: string; expiresAtMs: number; keys: string[] }
+
+/** Redemption verdict for a read lease (R5-SEC-05). Every non-ok value is a
+ *  REFUSAL TO SERVE: the worker has the bytes in hand and must discard
+ *  them. */
+export type ReadLeaseRedemption =
+  | { ok: true }
+  | { ok: false; error: "READ_LEASE_UNKNOWN" }
+  | { ok: false; error: "READ_LEASE_EXPIRED" }
+  | { ok: false; error: "READ_LEASE_CONSUMED" }
+  | { ok: false; error: "READ_LEASE_KEY_MISMATCH" }
+  | { ok: false; error: "READ_LEASE_REVOKED" }
+  | TypedErr;
+
+/** The outcome of one authoritative read hop (R5-SEC-05). Payload-bearing
+ *  kinds carry a lease; metadata-only kinds carry none, because for them the
+ *  single hop IS the whole read - there is no second hop to race. */
+export type ReadOutcome =
+  | { ok: true; kind: "EXACT"; lease: ReadLeaseGrant;
+      record: { payloadKey: string; payloadDigest: string; payloadLength: number;
+                typeSequence: bigint; recordType: number } }
+  | { ok: true; kind: "LAST_BY_TYPE"; lease: ReadLeaseGrant; record: WalDescriptor }
+  | { ok: true; kind: "SCAN"; lease: ReadLeaseGrant; records: WalDescriptor[]; nextFromLsn: bigint | null }
+  | { ok: true; kind: "HEAD"; headLsn: bigint; headTypeSequence: bigint }
+  | { ok: true; kind: "AUDIT"; contiguous: boolean; count: number; maxLsn: bigint }
+  | { ok: true; kind: "ITERATOR"; headLsn: bigint; snapshotId: string }
+  | { ok: true; kind: "ACTIVE_CUT"; inner: Record<string, unknown> }
+  | { ok: true; kind: "OPERATION"; inner: Record<string, unknown> }
+  | { ok: false; error: "INVALID_SNAPSHOT_ID" }
+  | { ok: false; error: "CONTINUATION_OUTSIDE_SNAPSHOT"; fromLsn: bigint; throughLsn: bigint }
+  | { ok: false; error: "RECORD_EXCEEDS_PAGE_BUDGET"; appendLsn: bigint; payloadLength: number; maxBytes: number }
+  | TypedErr;
+
+/** The canonical stored form of a read lease's key set (R5-SEC-05): the
+ *  keys IN THE ORDER THEY WILL BE FETCHED, JSON-encoded. Redemption compares
+ *  this exact string, so neither a reordering nor a subset/superset of the
+ *  authorized objects can redeem a lease issued for something else. */
+function canonicalReadLeaseKeys(keys: string[]): string {
+  return JSON.stringify(keys);
+}
+
 /** Escape a LIKE pattern fragment so %, _ and \ in caller-influenced values
  *  cannot widen the match; used with `ESCAPE '\'`. */
 function likePattern(fragment: string): string {
@@ -1211,6 +1285,8 @@ export class ControllerCore {
       this.sql.exec(
         `UPDATE sessions SET fenced=1 WHERE database_id=? AND startup_session_id=?`,
         databaseId, startupSessionId);
+      // R5-SEC-05: revocation is a fence; outstanding read grants die with it
+      this.revokeReadLeases(databaseId, startupSessionId);
       this.appendCommand(databaseId, "SESSION_REVOKED", { databaseId, startupSessionId });
       return { ok: true as const, state: "REVOKED" as const };
     });
@@ -1221,6 +1297,8 @@ export class ControllerCore {
     this.sql.exec(
       `UPDATE startup_sessions SET state='EXPIRED' WHERE database_id=? AND startup_session_id=?`,
       databaseId, startupSessionId);
+    // R5-SEC-05: an expired lease is not authority; its read grants go too
+    this.revokeReadLeases(databaseId, startupSessionId);
     this.appendCommand(databaseId, "SESSION_LEASE_EXPIRED", { databaseId, startupSessionId });
   }
 
@@ -1355,6 +1433,12 @@ export class ControllerCore {
          WHERE database_id=? AND startup_session_id=? AND state IN ('ACTIVE','DRAINING')`,
         databaseId, startupSessionId,
       );
+      // R5-SEC-05: the fence revokes the actor's outstanding READ LEASES in
+      // the SAME transaction. This is the half of the race that the old
+      // three-hop read path could not win: a read authorized microseconds
+      // before the fence now has no redeemable grant, so its already-fetched
+      // bytes are refused instead of served.
+      this.revokeReadLeases(databaseId, startupSessionId);
       if (live > 0) {
         this.appendCommand(databaseId, "SESSION_FENCED", { databaseId, startupSessionId });
       }
@@ -1780,6 +1864,9 @@ export class ControllerCore {
       const fenced = Number(this.sql.exec(
         `SELECT COUNT(*) AS n FROM sessions WHERE fenced=0`)[0].n);
       this.sql.exec(`UPDATE sessions SET fenced=1 WHERE fenced=0`);
+      // R5-SEC-05: a new incarnation supersedes EVERY actor, so no read
+      // grant issued by the previous one may still be redeemed
+      this.sql.exec(`DELETE FROM read_leases`);
       this.appendCommand("@controller", "CONTROLLER_INCARNATION_BUMPED", {
         incarnation: next, revokedSessions: revoked, fencedActors: fenced,
       });
@@ -2645,6 +2732,254 @@ export class ControllerCore {
     const expected = hmacSha256(this.journalKey, this.snapshotPreimage(databaseId, generation, headLsn));
     if (!bytesEqual(expected, fromHexInternal(macHex))) return { ok: false, error: "INVALID_SNAPSHOT_ID" };
     return { ok: true, headLsn };
+  }
+
+  // -------------------------------------------------------------------
+  // R5-SEC-05: the single authoritative read hop + one-shot read leases
+  // -------------------------------------------------------------------
+
+  /**
+   * Authorize AND perform one catalogue read in a single synchronous
+   * transaction, issuing a one-shot read lease over the exact payload keys
+   * the worker will fetch.
+   *
+   * The residual this closes: the read path used to check the token, then
+   * ask (separate hop) whether the session still held live read authority,
+   * then ask (third hop) for the catalogue row, and only then fetch the R2
+   * bytes. A fence committing anywhere in that sequence left a superseded
+   * actor holding an authorization for a read the authority had already
+   * revoked, and the bytes were served anyway.
+   *
+   * Now: liveness revalidation and the catalogue read happen with NO await
+   * between them (the core is synchronous and the DO serializes calls), and
+   * the payload fetch that must still happen outside the authority is
+   * covered by a DURABLE lease recorded in the SAME transaction. Every
+   * fence/revoke/expiry/incarnation transition deletes that actor's leases
+   * inside its own transaction, so a fence racing an in-flight read wins by
+   * construction: the redemption (`redeemReadLease`) finds no lease and the
+   * worker refuses to serve the bytes it already holds.
+   *
+   * `readerGeneration` is the generation the CAPABILITY binds (the actor's
+   * liveness is judged in it); `req.generation` is the generation the ROUTE
+   * addresses. They are kept distinct deliberately - narrowing the route to
+   * the token's generation is a separate authorization change, not part of
+   * closing this race.
+   */
+  authorizeRead(
+    databaseId: string, startupSessionId: string, readerGeneration: number, req: ReadRequest,
+  ): ReadOutcome {
+    return this.sql.transaction(() => {
+      const live = this.assertActiveReader(databaseId, startupSessionId, readerGeneration);
+      if (!live.ok) return live;
+      switch (req.kind) {
+        case "HEAD": {
+          const head = this.head(databaseId, req.generation);
+          return { ok: true as const, kind: "HEAD" as const, ...head };
+        }
+        case "AUDIT": {
+          const audit = this.auditContiguity(databaseId, req.generation);
+          return { ok: true as const, kind: "AUDIT" as const, ...audit };
+        }
+        case "ITERATOR": {
+          const iterator = this.openIterator(databaseId, req.generation);
+          return { ok: true as const, kind: "ITERATOR" as const, ...iterator };
+        }
+        case "ACTIVE_CUT": {
+          const cut = this.activeCheckpointCut(databaseId, req.generation);
+          if (!cut.ok) return cut;
+          return { ok: true as const, kind: "ACTIVE_CUT" as const,
+                   inner: cut as unknown as Record<string, unknown> };
+        }
+        case "OPERATION": {
+          const result = this.queryOperation(
+            databaseId, req.generation, req.operationId, startupSessionId);
+          if (!result.ok) return result;
+          return { ok: true as const, kind: "OPERATION" as const,
+                   inner: result as unknown as Record<string, unknown> };
+        }
+        case "EXACT": {
+          const record = this.exactLookupWithLength(databaseId, req.generation, req.appendLsn);
+          if (!record.ok) return record;
+          const lease = this.grantReadLease(
+            databaseId, startupSessionId, readerGeneration, [record.payloadKey]);
+          return { ok: true as const, kind: "EXACT" as const, lease, record };
+        }
+        case "LAST_BY_TYPE": {
+          const result = this.lastByType(databaseId, req.generation, req.recordType);
+          if (!result.ok) return result;
+          const lease = this.grantReadLease(
+            databaseId, startupSessionId, readerGeneration, [result.record.payloadKey]);
+          return { ok: true as const, kind: "LAST_BY_TYPE" as const, lease, record: result.record };
+        }
+        case "SCAN": {
+          const snapshot = this.resolveSnapshot(databaseId, req.generation, req.snapshotId);
+          if (!snapshot.ok) return snapshot;
+          const throughLsn = snapshot.headLsn;
+          if (req.fromLsn > throughLsn) {
+            // a continuation outside its own snapshot is a client defect, not
+            // an empty page: answering "no records" would look like a
+            // completed replay
+            return { ok: false as const, error: "CONTINUATION_OUTSIDE_SNAPSHOT" as const,
+                     fromLsn: req.fromLsn, throughLsn };
+          }
+          const page = this.scanPageWithinBudget(databaseId, req.generation, {
+            fromTypeSequence: req.fromTypeSequence, fromLsn: req.fromLsn, throughLsn,
+            recordType: req.recordType, limit: req.limit, maxBytes: req.maxBytes,
+          });
+          if (!page.ok) return page;
+          const lease = this.grantReadLease(databaseId, startupSessionId, readerGeneration,
+            page.records.map((record) => record.payloadKey));
+          return { ok: true as const, kind: "SCAN" as const, lease,
+                   records: page.records, nextFromLsn: page.nextFromLsn };
+        }
+      }
+    });
+  }
+
+  /**
+   * The scan page cut to its RESPONSE BYTE BUDGET, computed at the authority
+   * (R5-PERF-01/R5-SEC-05). The catalogue knows every payload's length, so
+   * the page is cut BEFORE any payload is fetched - a worker never
+   * materialises an unbounded multi-payload response - and the lease can
+   * then cover exactly the keys that will be fetched. A first record larger
+   * than the whole budget is REFUSED rather than admitted as an exception:
+   * admitting it was the one path by which a single oversized object could
+   * still be materialised (it stays reachable through the exact-lookup
+   * route, so refusing wedges nothing).
+   */
+  private scanPageWithinBudget(
+    databaseId: string, generation: number,
+    opts: { fromTypeSequence: bigint; fromLsn: bigint; throughLsn: bigint;
+            recordType: number | null; limit: number; maxBytes: number },
+  ): { ok: true; records: WalDescriptor[]; nextFromLsn: bigint | null }
+    | { ok: false; error: "RECORD_EXCEEDS_PAGE_BUDGET"; appendLsn: bigint;
+        payloadLength: number; maxBytes: number } {
+    const page = this.scan(databaseId, generation, {
+      fromTypeSequence: opts.fromTypeSequence, fromLsn: opts.fromLsn,
+      throughLsn: opts.throughLsn, recordType: opts.recordType, limit: opts.limit,
+    });
+    const first = page.records[0];
+    if (first !== undefined && Number(first.payloadLength) > opts.maxBytes) {
+      return { ok: false as const, error: "RECORD_EXCEEDS_PAGE_BUDGET" as const,
+               appendLsn: first.appendLsn, payloadLength: Number(first.payloadLength),
+               maxBytes: opts.maxBytes };
+    }
+    let cut = page.records.length;
+    let budget = opts.maxBytes;
+    for (const [index, record] of page.records.entries()) {
+      const length = Number(record.payloadLength);
+      if (index > 0 && length > budget) {
+        cut = index;
+        break;
+      }
+      budget -= length;
+    }
+    const records = page.records.slice(0, cut);
+    const nextFromLsn = cut < page.records.length
+      ? records[records.length - 1].appendLsn + 1n
+      : page.nextFromLsn;
+    return { ok: true as const, records, nextFromLsn };
+  }
+
+  /** Exact lookup that also returns the catalogued payload LENGTH: the
+   *  streaming read path (R5-PERF-01) needs it to declare `content-length`
+   *  and to refuse an object whose stored size contradicts the catalogue. */
+  exactLookupWithLength(databaseId: string, generation: number, appendLsn: bigint):
+    Typed<{ payloadKey: string; payloadDigest: string; payloadLength: number;
+            typeSequence: bigint; recordType: number }>
+    | { ok: false; error: "NOT_FOUND" } {
+    const rows = this.sql.exec(
+      `SELECT payload_key, payload_digest, payload_length, type_sequence, record_type FROM wal_tail
+       WHERE database_id=? AND generation=? AND append_lsn=?`,
+      databaseId, generation, u64Blob(appendLsn, "append_lsn"),
+    );
+    if (!rows.length) return { ok: false, error: "NOT_FOUND" };
+    return {
+      ok: true,
+      payloadKey: String(rows[0].payload_key),
+      payloadDigest: String(rows[0].payload_digest),
+      payloadLength: Number(rows[0].payload_length),
+      typeSequence: u64FromSql(rows[0].type_sequence, "type_sequence"),
+      recordType: Number(rows[0].record_type),
+    };
+  }
+
+  /** Record one one-shot read lease. Caller holds the transaction, so the
+   *  lease becomes durable in the SAME commit as the liveness check that
+   *  authorized it - there is no instant at which the read is authorized but
+   *  the lease is not yet revocable. */
+  private grantReadLease(
+    databaseId: string, startupSessionId: string, generation: number, keys: string[],
+  ): ReadLeaseGrant {
+    const now = this.controllerNow();
+    // trailing prune, bounded by the grace window (see redeemReadLease)
+    this.sql.exec(`DELETE FROM read_leases WHERE expires_at <= ?`, now - READ_LEASE_PRUNE_GRACE_MS);
+    const leaseId = `rl-${crypto.randomUUID()}`;
+    const expiresAtMs = now + READ_LEASE_TTL_MS;
+    this.sql.exec(
+      `INSERT INTO read_leases(lease_id, database_id, startup_session_id, generation, keys, expires_at, consumed)
+       VALUES (?,?,?,?,?,?,0)`,
+      leaseId, databaseId, startupSessionId, generation, canonicalReadLeaseKeys(keys), expiresAtMs);
+    return { leaseId, expiresAtMs, keys };
+  }
+
+  /**
+   * Redeem a read lease AFTER the payload bytes were fetched and BEFORE they
+   * are served (R5-SEC-05).
+   *
+   * This is the second half of the fence race and the reason the lease is
+   * durable rather than a signed ticket: redemption RE-CHECKS, at redemption
+   * time, that the lease still exists (no fence deleted it), has not
+   * expired, has not already been consumed, covers exactly the keys that
+   * were fetched, and that its actor still holds live read authority. A
+   * replacement that activated while the bytes were in flight has already
+   * removed the row, so the old read cannot be served - it fails typed.
+   */
+  redeemReadLease(leaseId: string, keys: string[]): ReadLeaseRedemption {
+    return this.sql.transaction(() => {
+      const now = this.controllerNow();
+      const rows = this.sql.exec(
+        `SELECT database_id, startup_session_id, generation, keys, expires_at, consumed
+         FROM read_leases WHERE lease_id=?`, leaseId);
+      if (!rows.length) {
+        // either never issued, or REVOKED by a fence/incarnation bump that
+        // committed while the bytes were in flight; both refuse to serve
+        return { ok: false as const, error: "READ_LEASE_UNKNOWN" as const };
+      }
+      const row = rows[0];
+      if (Number(row.consumed) !== 0) return { ok: false as const, error: "READ_LEASE_CONSUMED" as const };
+      if (Number(row.expires_at) <= now) {
+        this.sql.exec(`DELETE FROM read_leases WHERE lease_id=?`, leaseId);
+        return { ok: false as const, error: "READ_LEASE_EXPIRED" as const };
+      }
+      if (String(row.keys) !== canonicalReadLeaseKeys(keys)) {
+        return { ok: false as const, error: "READ_LEASE_KEY_MISMATCH" as const };
+      }
+      const live = this.assertActiveReader(
+        String(row.database_id), String(row.startup_session_id), Number(row.generation));
+      if (!live.ok) {
+        this.sql.exec(`DELETE FROM read_leases WHERE lease_id=?`, leaseId);
+        return live;
+      }
+      // single use: the grant is spent whether or not the caller retries
+      this.sql.exec(`UPDATE read_leases SET consumed=1 WHERE lease_id=?`, leaseId);
+      return { ok: true as const };
+    });
+  }
+
+  /** Revoke every outstanding read lease of one actor. Caller holds the
+   *  transaction: the revocation must commit with the fence, not after it. */
+  private revokeReadLeases(databaseId: string, startupSessionId: string): void {
+    this.sql.exec(
+      `DELETE FROM read_leases WHERE database_id=? AND startup_session_id=?`,
+      databaseId, startupSessionId);
+  }
+
+  /** Test/diagnostic: how many unconsumed leases this actor still holds. */
+  countReadLeases(databaseId: string, startupSessionId: string): number {
+    return Number(this.sql.exec(
+      `SELECT COUNT(*) AS n FROM read_leases WHERE database_id=? AND startup_session_id=? AND consumed=0`,
+      databaseId, startupSessionId)[0].n);
   }
 
   /**

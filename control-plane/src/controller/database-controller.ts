@@ -25,6 +25,9 @@ import {
   type CapabilityEffect,
   type FinalizeRequest,
   type FinalizeResult,
+  type ReadLeaseRedemption,
+  type ReadOutcome,
+  type ReadRequest,
   type SqlRow,
   type SyncSql,
 } from "./core/procedures.ts";
@@ -580,6 +583,127 @@ export class DatabaseControllerDO extends DurableObject {
   async sweepAmbiguousUses(opts: { limit?: number; minAgeMs?: number } = {}):
     Promise<{ scanned: number; settled: number; quarantined: number; deferred: number }> {
     return this.controllerCore.sweepAmbiguousUses(opts);
+  }
+
+  /**
+   * R5-SEC-05: THE authoritative read hop.
+   *
+   * Verify the capability, revalidate that the bound actor still holds LIVE
+   * read authority, and perform the catalogue read - all inside this one
+   * RPC, with the liveness check and the read inside a single synchronous
+   * SQLite transaction. Payload-bearing reads additionally leave a durable
+   * ONE-SHOT lease over the exact object keys the worker is about to fetch
+   * (`redeemReadLease` below is its second half).
+   *
+   * DESIGN NOTE - why a lease and not "the DO performs the read itself":
+   * the alternative the audit offers is for this RPC to fetch the R2 bytes
+   * too. It was rejected for three reasons, none cosmetic. (1) It puts the
+   * payload byte path through the Durable Object, which the topology
+   * forbids by construction - the controller sees keys and digests, never
+   * bytes (inv. 151, brief S4.1.2). (2) A DO is single-threaded and
+   * serialized per object: every payload read of every actor would queue
+   * behind every control-plane mutation of that database, converting a
+   * parallel R2 fetch path into a global serial one. (3) It directly
+   * contradicts R5-PERF-01 - the DO would have to buffer each payload in
+   * its isolate to hand it back over RPC, which is the exact full-buffering
+   * the contract's P-WORKER rule forbids, and it would forfeit the
+   * streaming read path entirely. The lease keeps the authority decision
+   * where authority lives and makes the byte hop revocable, which is what
+   * the race actually needed.
+   *
+   * No durable USE row is claimed (audit C-07): reads remain replayable and
+   * side-effect-free in the capability sense. The lease is not a use claim -
+   * it is a revocable, seconds-long grant, pruned by expiry.
+   */
+  async authorizedRead(
+    token: string,
+    expect: { method: string; databaseId: string; tenantId?: string },
+    read: ReadRequest,
+  ): Promise<
+    ReadOutcome
+    | { ok: false; error: "CAPABILITY_RESTRICTION_MISSING"; restriction: string }
+    | Exclude<Awaited<ReturnType<typeof verifyCapabilityToken>>, { ok: true }>
+    | BindingRefusal
+  > {
+    const unbound = this.requireBinding(expect);
+    if (unbound !== null) return unbound;
+    const checked = await verifyCapabilityToken(this.capabilityKeyring, token, {
+      ...expect,
+      env: this.environment,
+      currentIncarnation: this.controllerCore.currentIncarnation(),
+      nowMs: this.controllerCore.controllerNow(),
+    });
+    if (!checked.ok) return checked;
+    // R4-SEC-05 restrictions, enforced HERE rather than at the worker: the
+    // authority must never be asked to authorize a read whose actor or
+    // generation binding is absent. (verifyCapabilityToken already requires
+    // both for WAL_READ; this is the second, independent enforcement point.)
+    const session = checked.payload.session;
+    if (typeof session !== "string" || session.length === 0) {
+      return { ok: false as const, error: "CAPABILITY_RESTRICTION_MISSING" as const, restriction: "session" };
+    }
+    const generationText = checked.payload.generation;
+    const readerGeneration = typeof generationText === "string" ? Number(generationText) : NaN;
+    if (!Number.isSafeInteger(readerGeneration) || readerGeneration < 0) {
+      return { ok: false as const, error: "CAPABILITY_RESTRICTION_MISSING" as const, restriction: "generation" };
+    }
+    // ONE hop from here: liveness + catalogue read + lease, no await between
+    return this.controllerCore.authorizeRead(expect.databaseId, session, readerGeneration, read);
+  }
+
+  /**
+   * R5-SEC-05, the SESSION-INDEPENDENT half: the outbox and journal read
+   * roles carry no startup session (downstream consumers and the
+   * recovery/forensics role), so there is no fence to race — but the
+   * INCARNATION bound is still authority, and answering it in one hop
+   * rather than two removes the same class of window. Verify and read
+   * happen inside this single RPC, with no await between them.
+   */
+  async authorizedControlRead(
+    token: string,
+    expect: { method: string; databaseId: string; tenantId?: string },
+    read: { kind: "OUTBOX_PEEK"; limit: number } | { kind: "JOURNAL_VERIFY" } | { kind: "JOURNAL_VERIFY_ANCHORED" },
+  ): Promise<
+    { ok: true; kind: "OUTBOX_PEEK"; events: { controlSeq: bigint; kind: string; body: string }[] }
+    | { ok: true; kind: "JOURNAL_VERIFY"; verified: boolean; verdict: Record<string, unknown> }
+    | { ok: true; kind: "JOURNAL_VERIFY_ANCHORED"; verified: boolean; verdict: Record<string, unknown> }
+    | Exclude<Awaited<ReturnType<typeof verifyCapabilityToken>>, { ok: true }>
+    | BindingRefusal
+  > {
+    const unbound = this.requireBinding(expect);
+    if (unbound !== null) return unbound;
+    const checked = await verifyCapabilityToken(this.capabilityKeyring, token, {
+      ...expect,
+      env: this.environment,
+      currentIncarnation: this.controllerCore.currentIncarnation(),
+      nowMs: this.controllerCore.controllerNow(),
+    });
+    if (!checked.ok) return checked;
+    if (read.kind === "OUTBOX_PEEK") {
+      return { ok: true as const, kind: "OUTBOX_PEEK" as const,
+               events: this.controllerCore.outboxPeek(read.limit) };
+    }
+    const verdict = read.kind === "JOURNAL_VERIFY"
+      ? this.controllerCore.verifyJournal()
+      : this.controllerCore.verifyJournalAnchored();
+    return { ok: true as const, kind: read.kind,
+             verified: verdict.ok, verdict: verdict as unknown as Record<string, unknown> };
+  }
+
+  /**
+   * R5-SEC-05: redeem a one-shot read lease AFTER the payload bytes were
+   * fetched and BEFORE the worker serves them. Re-checks existence (a fence
+   * deletes the row), expiry, single use, the exact key set, and the actor's
+   * live authority AT REDEMPTION TIME. Any refusal means the bytes in the
+   * worker's hand must be discarded, not served.
+   */
+  redeemReadLease(leaseId: string, keys: string[]): ReadLeaseRedemption {
+    return this.controllerCore.redeemReadLease(leaseId, keys);
+  }
+
+  /** Test/diagnostic: unconsumed read grants outstanding for one actor. */
+  countReadLeases(databaseId: string, startupSessionId: string): number {
+    return this.controllerCore.countReadLeases(databaseId, startupSessionId);
   }
 
   /**

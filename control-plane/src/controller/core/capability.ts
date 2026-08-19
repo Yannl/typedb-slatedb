@@ -67,6 +67,7 @@ export type CapabilityCheck =
       | "CAPABILITY_RESTRICTION_MISSING"
       | "CAPABILITY_BUDGET_ABOVE_CEILING"
       | "CAPABILITY_GENERATION_MISMATCH"
+      | "CAPABILITY_METHOD_UNKNOWN"
       | "CAPABILITY_STALE_INCARNATION" };
 
 /**
@@ -88,7 +89,58 @@ export const REQUIRED_RESTRICTIONS: Record<string, ReadonlyArray<"session" | "ge
   // (audit C-05): the token authorizes one actor in one generation, so a
   // rollover invalidates it.
   WAL_FINALIZE: ["session", "generation"],
+  // R4-SEC-05: runtime WAL reads are actor-bound. A read token names the
+  // active session AND the generation it reads under, and the DO
+  // revalidates both at use time (assertActiveReader) - a fenced stale
+  // container cannot keep reading history until token expiry.
+  // Session-independent history access is the separate, deliberately
+  // narrow JOURNAL_VERIFY recovery role below.
+  WAL_READ: ["session", "generation"],
+  // Outbox consumers are downstream services, not startup-session actors;
+  // their tokens carry no session by design. Kept in the closed registry
+  // with method-exact scope + expiry + incarnation as the authority bound.
+  OUTBOX: [],
+  // R4-SEC-04: the generic SESSION_ADMIN bearer method is GONE. Every
+  // lifecycle transition is its own exact action, bound to the exact
+  // actor it administers (token.session must equal the route's target
+  // startupSessionId; generation-bearing actions bind the exact canonical
+  // generation). A token minted for one action/actor authorizes nothing
+  // else, and the DO transaction revalidates the current role at use.
+  SESSION_REGISTER: ["session", "generation"], // legacy macro (dev-only route)
+  SESSION_RESERVE: ["session", "generation"],
+  SESSION_ATTEST: ["session"],
+  SESSION_ACTIVATE: ["session", "generation"],
+  SESSION_RENEW: ["session"],
+  SESSION_DRAIN: ["session"],
+  SESSION_REVOKE: ["session"],
+  SESSION_FENCE: ["session"],
+  BUDGETS_SET: ["session"],
+  // Checkpoint transitions are controller/recovery roles, bound to the
+  // acting session and generation; activation additionally requires the
+  // typed restore-evidence manifest (R4-SEC-06, procedures.ts).
+  CHECKPOINT_OPEN: ["session", "generation"],
+  CHECKPOINT_ACTIVATE: ["session", "generation"],
+  // Incarnation supersession deliberately binds NO session: it is the
+  // recovery power that fences every predecessor (a successor cannot hold
+  // a predecessor's session). Its authority is the exact method plus the
+  // single-use request-line-bound claim (withMutation use digest).
+  INCARNATION_BUMP: [],
+  // Recovery/forensic journal verification: session-independent BY DESIGN
+  // (history must stay auditable after every actor is fenced), private
+  // and read-only.
+  JOURNAL_VERIFY: [],
 };
+
+/**
+ * R4-SEC-04: the capability method space is a CLOSED registry — exactly
+ * the keys of REQUIRED_RESTRICTIONS. Minting or verifying an unknown
+ * method used to fall through `?? []` (no required restrictions at all),
+ * which is how a generic bearer method sneaks back in. Both ends refuse
+ * unknown methods outright.
+ */
+export function isKnownCapabilityMethod(method: string): boolean {
+  return Object.prototype.hasOwnProperty.call(REQUIRED_RESTRICTIONS, method);
+}
 
 /**
  * Hard ceiling on any byte budget a capability may carry (contract F9: the
@@ -181,6 +233,11 @@ export function checkCapability(
     return { ok: false, error: "CAPABILITY_STALE_INCARNATION" };
   }
   if (payload.method !== expect.method) return { ok: false, error: "CAPABILITY_METHOD_MISMATCH" };
+  // R4-SEC-04: closed method registry — a token naming a method outside
+  // REQUIRED_RESTRICTIONS is refused even when the route (buggily) expects
+  // it; the `?? []` fallback below must never launder an unknown method
+  // into a restriction-free bearer token.
+  if (!isKnownCapabilityMethod(payload.method)) return { ok: false, error: "CAPABILITY_METHOD_UNKNOWN" };
   if (payload.databaseId !== expect.databaseId) return { ok: false, error: "CAPABILITY_AUDIENCE_MISMATCH" };
   // session binding: when the route demands a session (finalize), the token
   // must carry exactly that session - a session-unbound token is refused, so

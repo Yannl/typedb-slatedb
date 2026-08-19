@@ -28,7 +28,7 @@ import {
 } from "./core/procedures.ts";
 import { resolveKeyConfig } from "./core/key-config.ts";
 import {
-  checkCapability, mintCapability, MAX_CAPABILITY_BYTES, REQUIRED_RESTRICTIONS,
+  checkCapability, isKnownCapabilityMethod, mintCapability, MAX_CAPABILITY_BYTES, REQUIRED_RESTRICTIONS,
   type CapabilityCheck, type CapabilityPayload,
 } from "./core/capability.ts";
 
@@ -197,6 +197,13 @@ export class DatabaseControllerDO extends DurableObject {
     this.controllerCore.fenceSession(databaseId, startupSessionId);
   }
 
+  /** R4-SEC-05: use-time revalidation for read authority (see core). */
+  assertActiveReader(databaseId: string, startupSessionId: string, generation: number):
+    ReturnType<ControllerCore["assertActiveReader"]> {
+    this.bind(databaseId);
+    return this.controllerCore.assertActiveReader(databaseId, startupSessionId, generation);
+  }
+
   setBudgets(
     databaseId: string,
     budgets: Parameters<ControllerCore["setBudgets"]>[1],
@@ -288,6 +295,12 @@ export class DatabaseControllerDO extends DurableObject {
     ttlMs?: number;
   }): { token: string; key?: string; expiresAtMs: number; incarnation: number } {
     this.bind(spec.databaseId);
+    // R4-SEC-04: the method space is a CLOSED registry; an unknown method
+    // would fall through the restriction table as a restriction-free
+    // bearer token, so issuance refuses it outright.
+    if (!isKnownCapabilityMethod(spec.method)) {
+      throw new Error(`CAPABILITY_METHOD_UNKNOWN: ${spec.method}`);
+    }
     const incarnation = this.controllerCore.currentIncarnation();
     // audit C-05: expiry is measured on the persisted nondecreasing
     // controller clock, not Date.now() - a backward wall-clock jump cannot

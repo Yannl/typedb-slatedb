@@ -83,21 +83,50 @@ test("Q-26: a byte budget above the data-path ceiling is refused at verification
   );
 });
 
-test("Q-26: a request that needs a restriction cannot be satisfied by a token that declines to bind one", () => {
-  // WAL_READ has no method-mandatory restrictions, but if the ROUTE checks a
-  // key/digest/length then the token must bind the matching one
-  const readToken = mintCapability(KEY, {
+test("Q-26/R4-SEC-05: WAL_READ binds session AND generation, both mandatory", () => {
+  // R4-SEC-05: runtime reads are actor-bound - a session/generation-unbound
+  // read token is refused by the METHOD's required restrictions, so a
+  // fenced actor cannot mint-and-hold an unbound reader.
+  const unboundRead = mintCapability(KEY, {
     principal: "p", databaseId: "db1", method: "WAL_READ",
     incarnation: 1, nonce: "n-2", expiresAtMs: NOW + 60_000,
   } as CapabilityPayload);
   assert.deepEqual(
-    checkCapability(KEY, readToken, { ...request, method: "WAL_READ" }),
+    checkCapability(KEY, unboundRead, {
+      method: "WAL_READ", databaseId: "db1", currentIncarnation: 1, nowMs: NOW,
+    }),
     { ok: false, error: "CAPABILITY_RESTRICTION_MISSING" },
   );
-  // with no per-request restriction demanded, the same token is fine
-  assert.ok(checkCapability(KEY, readToken, {
+  // fully actor-bound: fine (use-time liveness is the DO's assertActiveReader)
+  const boundRead = mintCapability(KEY, {
+    principal: "p", databaseId: "db1", method: "WAL_READ", session: "sess-1", generation: "7",
+    incarnation: 1, nonce: "n-2b", expiresAtMs: NOW + 60_000,
+  } as CapabilityPayload);
+  assert.ok(checkCapability(KEY, boundRead, {
     method: "WAL_READ", databaseId: "db1", currentIncarnation: 1, nowMs: NOW,
   }).ok);
+  // and if the ROUTE additionally checks a key/digest/length, the token
+  // must bind the matching one (the original Q-26 property, retained)
+  assert.deepEqual(
+    checkCapability(KEY, boundRead, { ...request, method: "WAL_READ" }),
+    { ok: false, error: "CAPABILITY_RESTRICTION_MISSING" },
+  );
+});
+
+test("R4-SEC-04: the capability method space is a CLOSED registry", () => {
+  // an unknown method must refuse at VERIFICATION even when the route
+  // (buggily) expects it - `?? []` must never launder it into a
+  // restriction-free bearer token
+  const rogue = mintCapability(KEY, {
+    principal: "p", databaseId: "db1", method: "TOTALLY_NEW_ADMIN",
+    incarnation: 1, nonce: "n-x", expiresAtMs: NOW + 60_000,
+  } as CapabilityPayload);
+  assert.deepEqual(
+    checkCapability(KEY, rogue, {
+      method: "TOTALLY_NEW_ADMIN", databaseId: "db1", currentIncarnation: 1, nowMs: NOW,
+    }),
+    { ok: false, error: "CAPABILITY_METHOD_UNKNOWN" },
+  );
 });
 
 test("Q-26/C-05: WAL_FINALIZE binds session AND generation, both mandatory", () => {

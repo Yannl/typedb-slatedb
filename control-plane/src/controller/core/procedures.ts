@@ -1033,6 +1033,44 @@ export class ControllerCore {
     });
   }
 
+  /**
+   * R4-SEC-05: use-time revalidation for runtime READ authority. A read
+   * capability names its session and generation; MAC validity alone must
+   * not keep a fenced/expired/revoked actor reading until token expiry.
+   * A session reads while it holds live authority:
+   *   - lifecycle sessions: state ACTIVE or DRAINING (draining retains
+   *     authority for in-flight work) with an unexpired lease, in the
+   *     exact generation the token binds;
+   *   - legacy-register sessions: present and not fenced, exact generation.
+   * Everything else is a typed refusal. Read-only: no state is mutated
+   * here (expiry is enforced as a refusal; the reaping stays with the
+   * lifecycle procedures).
+   */
+  assertActiveReader(databaseId: string, startupSessionId: string, generation: number):
+    Typed<{ state: string }> | TypedErr {
+    const row = this.startupSession(databaseId, startupSessionId);
+    if (row) {
+      const state = String(row.state);
+      if (state !== "ACTIVE" && state !== "DRAINING") {
+        return { ok: false as const, error: "SESSION_NOT_ACTIVE" as const, state };
+      }
+      if (Number(row.lease_deadline_ms) <= this.controllerNow()) {
+        return { ok: false as const, error: "SESSION_LEASE_EXPIRED" as const };
+      }
+      if (Number(row.generation) !== generation) {
+        return { ok: false as const, error: "SESSION_GENERATION_MISMATCH" as const,
+                 sessionGeneration: Number(row.generation) };
+      }
+      return { ok: true as const, state };
+    }
+    const legacy = this.sql.exec(
+      `SELECT fenced FROM sessions WHERE database_id=? AND generation=? AND startup_session_id=?`,
+      databaseId, generation, startupSessionId);
+    if (legacy.length === 0) return { ok: false as const, error: "SESSION_UNKNOWN" as const };
+    if (Number(legacy[0].fenced) !== 0) return { ok: false as const, error: "SESSION_FENCED" as const };
+    return { ok: true as const, state: "LEGACY_REGISTERED" };
+  }
+
   /** Revoke a session's authority outright (terminal). */
   revokeSession(databaseId: string, startupSessionId: string): Typed<{ state: "REVOKED" }> | TypedErr {
     return this.sql.transaction(() => {
@@ -1746,18 +1784,84 @@ export class ControllerCore {
     });
   }
 
-  activateCheckpointCut(databaseId: string, cutId: string, evidence: { materializations: string[]; logicalDigest: string }):
+  /**
+   * R4-SEC-06: activation evidence is a BOUNDED, VERSIONED, MATERIALLY
+   * CHECKED manifest, not a set of nonempty strings. The core verifies
+   * every field against its own durable cut record (cut id, recorded WAL
+   * head) and against exact shape bounds; any violation is a typed
+   * refusal that leaves the predecessor ACTIVE cut untouched. The
+   * scratch restore itself runs in the Rust recovery path
+   * (checkpoint.rs validate-before-restore); this manifest is the
+   * controller-side binding of that proof to THIS cut.
+   */
+  static validateRestoreEvidence(raw: unknown, cutId: string, recordedHeadLsn: bigint | null):
+    { ok: true; evidence: { materializations: string[]; logicalDigest: string;
+                            keyspaceRoots: Array<{ keyspace: string; rootDigest: string }>;
+                            walHead: string | null; verifier: string } }
+    | { ok: false; reason: string } {
+    const HEX64 = /^[0-9a-f]{64}$/;
+    const bad = (reason: string) => ({ ok: false as const, reason });
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return bad("evidence is not an object");
+    const e = raw as Record<string, unknown>;
+    if (e.schema !== "checkpoint-restore-evidence/v2") return bad("schema must be checkpoint-restore-evidence/v2");
+    if (e.cutId !== cutId) return bad("evidence.cutId does not name the cut being activated");
+    // WAL head binding: the evidence must restate the exact head the cut
+    // recorded at open - a manifest computed for another cut cannot pass.
+    const recorded = recordedHeadLsn === null ? null : recordedHeadLsn.toString();
+    const walHead = e.walHead === null ? null : typeof e.walHead === "string" ? e.walHead : undefined;
+    if (walHead === undefined) return bad("evidence.walHead must be a canonical decimal string or null");
+    if (walHead !== recorded) return bad(`evidence.walHead ${walHead ?? "null"} != cut's recorded head ${recorded ?? "null"}`);
+    if (!Array.isArray(e.keyspaceRoots) || e.keyspaceRoots.length === 0 || e.keyspaceRoots.length > 64) {
+      return bad("evidence.keyspaceRoots must list 1..64 keyspace roots");
+    }
+    const seen = new Set<string>();
+    const keyspaceRoots: Array<{ keyspace: string; rootDigest: string }> = [];
+    for (const kr of e.keyspaceRoots) {
+      if (typeof kr !== "object" || kr === null) return bad("keyspaceRoots entry is not an object");
+      const { keyspace, rootDigest } = kr as Record<string, unknown>;
+      if (typeof keyspace !== "string" || !/^[a-z0-9_-]{1,64}$/.test(keyspace)) return bad("keyspaceRoots.keyspace malformed");
+      if (typeof rootDigest !== "string" || !HEX64.test(rootDigest)) return bad(`keyspaceRoots[${keyspace}].rootDigest is not 64-hex`);
+      if (seen.has(keyspace)) return bad(`duplicate keyspace root: ${keyspace}`);
+      seen.add(keyspace);
+      keyspaceRoots.push({ keyspace, rootDigest });
+    }
+    if (typeof e.logicalDigest !== "string" || !HEX64.test(e.logicalDigest)) return bad("logicalDigest is not 64-hex");
+    const scratch = e.scratchRestore;
+    if (typeof scratch !== "object" || scratch === null) return bad("scratchRestore proof is missing");
+    const { verifier } = scratch as Record<string, unknown>;
+    if (typeof verifier !== "string" || verifier.length === 0 || verifier.length > 128) {
+      return bad("scratchRestore.verifier must be a nonempty identity <=128 chars");
+    }
+    if (!Array.isArray(e.materializations) || e.materializations.length === 0 || e.materializations.length > 64
+        || !e.materializations.every((m) => typeof m === "string" && m.length > 0 && m.length <= 128)) {
+      return bad("materializations must list 1..64 nonempty ids");
+    }
+    return {
+      ok: true as const,
+      evidence: {
+        materializations: (e.materializations as string[]).slice().sort(),
+        logicalDigest: e.logicalDigest,
+        keyspaceRoots,
+        walHead,
+        verifier,
+      },
+    };
+  }
+
+  activateCheckpointCut(databaseId: string, cutId: string, evidence: unknown):
     Typed<{ cutId: string; superseded: string | null }>
-    | { ok: false; error: "CUT_NOT_FOUND" | "CUT_NOT_PENDING" | "CUT_EVIDENCE_MISSING" } {
+    | { ok: false; error: "CUT_NOT_FOUND" | "CUT_NOT_PENDING" | "CUT_EVIDENCE_INVALID"; reason?: string } {
     return this.sql.transaction(() => {
       const rows = this.sql.exec(
-        `SELECT state, generation FROM checkpoint_cuts WHERE cut_id=? AND database_id=?`, cutId, databaseId);
+        `SELECT state, generation, head_lsn FROM checkpoint_cuts WHERE cut_id=? AND database_id=?`, cutId, databaseId);
       if (!rows.length) return { ok: false as const, error: "CUT_NOT_FOUND" as const };
       if (String(rows[0].state) !== "PENDING") return { ok: false as const, error: "CUT_NOT_PENDING" as const };
-      if (!evidence.materializations.length || !evidence.logicalDigest) {
-        // inv. 102: activation only from verified restore evidence - an
-        // empty evidence set fails closed
-        return { ok: false as const, error: "CUT_EVIDENCE_MISSING" as const };
+      const recordedHead = rows[0].head_lsn === null ? null : u64FromSql(rows[0].head_lsn, "head_lsn");
+      const checked = ControllerCore.validateRestoreEvidence(evidence, cutId, recordedHead);
+      if (!checked.ok) {
+        // R4-SEC-06: a malformed/mismatched manifest changes nothing - the
+        // predecessor ACTIVE cut is preserved and the refusal is typed.
+        return { ok: false as const, error: "CUT_EVIDENCE_INVALID" as const, reason: checked.reason };
       }
       const generation = Number(rows[0].generation);
       const active = this.sql.exec(
@@ -1769,12 +1873,15 @@ export class ControllerCore {
       }
       this.sql.exec(
         `UPDATE checkpoint_cuts SET state='ACTIVE', materializations=?, logical_digest=? WHERE cut_id=?`,
-        JSON.stringify(evidence.materializations.slice().sort()), evidence.logicalDigest, cutId,
+        JSON.stringify(checked.evidence.materializations), checked.evidence.logicalDigest, cutId,
       );
       this.appendCommand(databaseId, "CHECKPOINT_CUT_ACTIVATED", {
         databaseId, generation, cutId, superseded,
-        materializations: evidence.materializations.slice().sort(),
-        logicalDigest: evidence.logicalDigest,
+        materializations: checked.evidence.materializations,
+        logicalDigest: checked.evidence.logicalDigest,
+        keyspaceRoots: checked.evidence.keyspaceRoots,
+        walHead: checked.evidence.walHead,
+        verifier: checked.evidence.verifier,
       });
       return { ok: true as const, cutId, superseded };
     });

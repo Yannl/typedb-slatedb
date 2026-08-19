@@ -21,7 +21,7 @@
  * Endpoints (JSON unless noted):
  *   GET  /health
  *   POST /capability               {principal, databaseId, method, digest?, maxBytes?, ttlMs?} → {token, key?}
- *   POST /admin/{db}/incarnation/bump  supersede the controller incarnation (SESSION_ADMIN)
+ *   POST /admin/{db}/incarnation/bump  supersede the controller incarnation (INCARNATION_BUMP)
  *   PUT  /payload/{key}            raw body → R2; returns {key, sha256hex, length}
  *   POST /session/register         {databaseId, generation, startupSessionId}
  *   POST /session/fence            {databaseId, generation, startupSessionId}
@@ -38,8 +38,8 @@
  *   GET  /wal/{db}/{generation}/last?recordType=N  last record of a type + payload (find_last_type)
  *   GET  /journal/{db}/verify      recompute + verify the authenticated journal (F8)
  *   GET  /journal/{db}/verify-anchored  journal verification against the newest cut anchor (F6r/F8)
- *   POST /checkpoint/{db}/{gen}/cut          open a CheckpointCut {cutId} (SESSION_ADMIN)
- *   POST /checkpoint/{db}/cut/{cutId}/activate  activate with restore evidence (SESSION_ADMIN)
+ *   POST /checkpoint/{db}/{gen}/cut          open a CheckpointCut {cutId} (CHECKPOINT_OPEN)
+ *   POST /checkpoint/{db}/cut/{cutId}/activate  activate with the typed restore-evidence manifest (CHECKPOINT_ACTIVATE)
  *   GET  /checkpoint/{db}/{gen}/active       the ACTIVE cut record
  *   GET  /outbox/{db}?limit=N      peek unpublished control events (no marking)
  *   POST /outbox/{db}/ack          {upToControlSeq} - ack after durable processing
@@ -563,7 +563,7 @@ export default {
      *  {status, body} to send; the wrapper stores it as the use outcome. */
     const withMutation = async (
       databaseId: string, expect: CapExpect, useDigest: string,
-      execute: (payload: { session?: string }) => Promise<{ status: number; body: unknown }>,
+      execute: (payload: { session?: string; generation?: string }) => Promise<{ status: number; body: unknown }>,
     ): Promise<Response> => {
       const auth = await verifyCapability(databaseId, expect, useDigest);
       if (!auth.authorized) return auth.denied;
@@ -589,22 +589,53 @@ export default {
     };
 
     /** Bind a mutating use to the request line (method + path + query) when the
-     *  route carries no body of its own (e.g. SESSION_ADMIN). Read routes claim
+     *  route carries no body of its own (e.g. INCARNATION_BUMP). Read routes claim
      *  no use (C-07) and do not call this. */
     const routeUseDigest = () =>
       useDigestOf({ method: request.method, path, search: url.search });
 
-    /** null = authorized; otherwise the typed 401/403. Read helper (no claim):
-     *  reads never claim a use (C-07), so no request-line digest is bound. */
+    /** null = authorized; otherwise the typed 401/403/409. Read helper (no
+     *  claim): reads never claim a use (C-07), so no request-line digest is
+     *  bound. R4-SEC-05: a WAL_READ token names its session AND generation
+     *  (REQUIRED_RESTRICTIONS), and the DO revalidates that the session
+     *  holds LIVE authority at use time — MAC validity alone must not keep
+     *  a fenced/expired actor reading until token expiry. (The residual
+     *  window is one in-flight read racing a fence between the two DO
+     *  hops; folding the check into each read RPC is the recorded
+     *  optimization remainder.) JOURNAL_VERIFY deliberately skips this:
+     *  it is the session-independent recovery/forensics role. */
     const requireCapability = async (
       databaseId: string, expect: CapExpect,
     ): Promise<Response | null> => {
       const auth = await verifyRead(databaseId, expect);
-      return auth.authorized ? null : auth.denied;
+      if (!auth.authorized) return auth.denied;
+      if (expect.method === "WAL_READ") {
+        const live = await assertLiveReader(databaseId, auth.payload);
+        if (live !== null) return live;
+      }
+      return null;
+    };
+
+    /** R4-SEC-05 use-time actor revalidation for a verified WAL_READ
+     *  payload; null = live, otherwise the typed refusal Response. */
+    const assertLiveReader = async (
+      databaseId: string, payload: { session?: string; generation?: string } | undefined,
+    ): Promise<Response | null> => {
+      const session = payload?.session;
+      if (typeof session !== "string" || session.length === 0) {
+        return json({ ok: false, error: "CAPABILITY_RESTRICTION_MISSING", restriction: "session" }, 403);
+      }
+      const gen = exactGeneration(typeof payload?.generation === "string" ? Number(payload.generation) : undefined);
+      if (gen === null) {
+        return json({ ok: false, error: "CAPABILITY_RESTRICTION_MISSING", restriction: "generation" }, 403);
+      }
+      const live = await stubFor(databaseId).assertActiveReader(databaseId, session, gen);
+      if (!live.ok) return json(live, 409);
+      return null;
     };
 
     /** Read helper that also hands back the session (WAL_READ operation
-     *  query). No durable claim (C-07). */
+     *  query). No durable claim (C-07); same use-time revalidation. */
     const requireCapabilityWithSession = async (
       databaseId: string, expect: CapExpect,
     ): Promise<{ denied: Response } | { session: string }> => {
@@ -613,6 +644,10 @@ export default {
       const session = auth.payload?.session;
       if (typeof session !== "string" || session.length === 0) {
         return { denied: json({ ok: false, error: "CAPABILITY_RESTRICTION_MISSING", restriction: "session" }, 403) };
+      }
+      if (expect.method === "WAL_READ") {
+        const live = await assertLiveReader(databaseId, auth.payload);
+        if (live !== null) return { denied: live };
       }
       return { session };
     };
@@ -662,7 +697,7 @@ export default {
     if (request.method === "POST" && adminBump) {
       // incarnation bump is NOT idempotent (each call increments), so it is a
       // single-request mutation: a replayed token returns the stored result
-      return withMutation(adminBump[1], { method: "SESSION_ADMIN" }, await routeUseDigest(), async () => ({
+      return withMutation(adminBump[1], { method: "INCARNATION_BUMP" }, await routeUseDigest(), async () => ({
         status: 200, body: { ok: true, incarnation: await stubFor(adminBump[1]).bumpIncarnation() },
       }));
     }
@@ -739,14 +774,16 @@ export default {
       const b = parsed.body as unknown as { databaseId: string; generation: number; startupSessionId: string };
       const gen = generationOr(b.generation);
       if (gen instanceof Response) return gen;
-      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+      return withMutation(b.databaseId,
+        { method: "SESSION_REGISTER", session: b.startupSessionId, generation: String(gen) },
         await useDigestOf({ path, body: parsed.body }), async () => {
           await stubFor(b.databaseId).registerSession(b.databaseId, gen, b.startupSessionId);
           return { status: 200, body: { ok: true } };
         });
     }
 
-    // ---- Q-03 / 12.4 lifecycle routes (SESSION_ADMIN-gated) -------------
+    // ---- Q-03 / 12.4 lifecycle routes (exact per-action capabilities, ----
+    //      R4-SEC-04: each token names its action AND its exact target actor)
     // Registration is the legacy macro over these; the real flow is
     // reserve -> attest -> activate, and ONLY activation fences.
     if (request.method === "POST" && path === "/session/reserve") {
@@ -757,7 +794,8 @@ export default {
       };
       const gen = generationOr(b.generation);
       if (gen instanceof Response) return gen;
-      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+      return withMutation(b.databaseId,
+        { method: "SESSION_RESERVE", session: b.startupSessionId, generation: String(gen) },
         await useDigestOf({ path, body: parsed.body }), async () => {
           const result = await stubFor(b.databaseId)
             .reserveSession(b.databaseId, gen, b.startupSessionId, b.holder);
@@ -769,7 +807,7 @@ export default {
       const parsed = await readJson(request);
       if ("errorResponse" in parsed) return parsed.errorResponse;
       const b = parsed.body as unknown as { databaseId: string; startupSessionId: string; processNonce: string };
-      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+      return withMutation(b.databaseId, { method: "SESSION_ATTEST", session: b.startupSessionId },
         await useDigestOf({ path, body: parsed.body }), async () => {
           const result = await stubFor(b.databaseId)
             .attestSession(b.databaseId, b.startupSessionId, b.processNonce);
@@ -785,7 +823,8 @@ export default {
       };
       const gen = generationOr(b.generation);
       if (gen instanceof Response) return gen;
-      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+      return withMutation(b.databaseId,
+        { method: "SESSION_ACTIVATE", session: b.startupSessionId, generation: String(gen) },
         await useDigestOf({ path, body: parsed.body }), async () => {
           const result = await stubFor(b.databaseId).activateSession(b.databaseId, b.startupSessionId, {
             processNonce: b.processNonce, generation: gen, leaseMs: b.leaseMs,
@@ -798,7 +837,7 @@ export default {
       const parsed = await readJson(request);
       if ("errorResponse" in parsed) return parsed.errorResponse;
       const b = parsed.body as unknown as { databaseId: string; startupSessionId: string; leaseMs: number };
-      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+      return withMutation(b.databaseId, { method: "SESSION_RENEW", session: b.startupSessionId },
         await useDigestOf({ path, body: parsed.body }), async () => {
           const result = await stubFor(b.databaseId).renewLease(b.databaseId, b.startupSessionId, b.leaseMs);
           return { status: result.ok ? 200 : 409, body: result };
@@ -809,7 +848,7 @@ export default {
       const parsed = await readJson(request);
       if ("errorResponse" in parsed) return parsed.errorResponse;
       const b = parsed.body as unknown as { databaseId: string; startupSessionId: string };
-      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+      return withMutation(b.databaseId, { method: "SESSION_DRAIN", session: b.startupSessionId },
         await useDigestOf({ path, body: parsed.body }), async () => {
           const result = await stubFor(b.databaseId).beginDrain(b.databaseId, b.startupSessionId);
           return { status: result.ok ? 200 : 409, body: result };
@@ -820,7 +859,9 @@ export default {
       const parsed = await readJson(request);
       if ("errorResponse" in parsed) return parsed.errorResponse;
       const b = parsed.body as unknown as { databaseId: string; startupSessionId: string };
-      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+      // The token names the TARGET session (its minter decides which actor
+      // may be revoked); the revocation power is not a generic bearer right.
+      return withMutation(b.databaseId, { method: "SESSION_REVOKE", session: b.startupSessionId },
         await useDigestOf({ path, body: parsed.body }), async () => {
           const result = await stubFor(b.databaseId).revokeSession(b.databaseId, b.startupSessionId);
           return { status: result.ok ? 200 : 409, body: result };
@@ -835,7 +876,7 @@ export default {
       if (gen instanceof Response) return gen;
       // the fence is actor-wide: any `generation` in the body is accepted for
       // wire compatibility but does not scope the revocation
-      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+      return withMutation(b.databaseId, { method: "SESSION_FENCE", session: b.startupSessionId },
         await useDigestOf({ path, body: parsed.body }), async () => {
           await stubFor(b.databaseId).fenceSession(b.databaseId, b.startupSessionId);
           return { status: 200, body: { ok: true } };
@@ -851,7 +892,7 @@ export default {
       // BUDGETS_SET appends a journal row per call, so budgets is a
       // single-request mutation: the audit's "reuse one token twice -> two
       // BUDGETS_SET rows" mutant is killed by the terminal replay (C-02).
-      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+      return withMutation(b.databaseId, { method: "BUDGETS_SET" },
         await useDigestOf({ path, body: parsed.body }), async (payload) => {
           const session = payload.session;
           if (typeof session !== "string" || session.length === 0) {
@@ -1270,8 +1311,14 @@ export default {
       const parsedCut = await readJson(request);
       if ("errorResponse" in parsedCut) return parsedCut.errorResponse;
       const b = parsedCut.body as unknown as { cutId: string };
-      return withMutation(cutOpen[1], { method: "SESSION_ADMIN" },
-        await useDigestOf({ path, body: parsedCut.body }), async () => {
+      return withMutation(cutOpen[1], { method: "CHECKPOINT_OPEN", generation: String(cutGen) },
+        await useDigestOf({ path, body: parsedCut.body }), async (payload) => {
+          // R4-SEC-04/06: the acting session must hold LIVE authority in
+          // this generation at use time - a fenced/stale actor cannot open
+          // a cut with a still-valid token.
+          const actor = typeof payload.session === "string" ? payload.session : "";
+          const live = await stubFor(cutOpen[1]).assertActiveReader(cutOpen[1], actor, cutGen);
+          if (!live.ok) return { status: 409, body: live };
           const result = await stubFor(cutOpen[1]).openCheckpointCut(cutOpen[1], cutGen, b.cutId);
           return { status: result.ok ? 200 : 409, body: result };
         });
@@ -1285,11 +1332,21 @@ export default {
       if ("errorResponse" in decodedCut) return decodedCut.errorResponse;
       const parsedEvidence = await readJson(request);
       if ("errorResponse" in parsedEvidence) return parsedEvidence.errorResponse;
-      const b = parsedEvidence.body as unknown as { materializations: string[]; logicalDigest: string };
-      return withMutation(cutActivate[1], { method: "SESSION_ADMIN" },
-        await useDigestOf({ path, body: parsedEvidence.body }), async () => {
+      // R4-SEC-06: the body is the versioned restore-evidence manifest,
+      // validated MATERIALLY by the core (schema, cut id, recorded WAL
+      // head, 64-hex digests, scratch-restore verifier) - never cast.
+      return withMutation(cutActivate[1], { method: "CHECKPOINT_ACTIVATE" },
+        await useDigestOf({ path, body: parsedEvidence.body }), async (payload) => {
+          const actor = typeof payload.session === "string" ? payload.session : "";
+          const gen = exactGeneration(
+            typeof payload.generation === "string" ? Number(payload.generation) : undefined);
+          if (gen === null) {
+            return { status: 403, body: { ok: false, error: "CAPABILITY_RESTRICTION_MISSING", restriction: "generation" } };
+          }
+          const live = await stubFor(cutActivate[1]).assertActiveReader(cutActivate[1], actor, gen);
+          if (!live.ok) return { status: 409, body: live };
           const result = await stubFor(cutActivate[1])
-            .activateCheckpointCut(cutActivate[1], decodedCut.value, b);
+            .activateCheckpointCut(cutActivate[1], decodedCut.value, parsedEvidence.body);
           return { status: result.ok ? 200 : 409, body: result };
         });
     }

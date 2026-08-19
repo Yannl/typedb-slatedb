@@ -62,23 +62,51 @@ test("cut lifecycle: open captures head + anchor; activation needs evidence and 
 
   assert.deepEqual(core.openCheckpointCut("db1", 1, "cut-1"), { ok: false, error: "CUT_EXISTS" });
 
-  // activation without evidence fails closed (inv. 102)
+  // R4-SEC-06: activation takes a VERSIONED, materially checked manifest;
+  // the legacy loose shape and every malformed/mismatched field are typed
+  // refusals that leave no active cut behind.
+  const HEX = "a".repeat(64);
+  const manifest = (cutId: string, walHead: string | null, over: Record<string, unknown> = {}) => ({
+    schema: "checkpoint-restore-evidence/v2",
+    cutId,
+    walHead,
+    keyspaceRoots: [{ keyspace: "default", rootDigest: HEX }],
+    logicalDigest: HEX,
+    scratchRestore: { verifier: "test-scratch-restore", verifiedAtMs: 1 },
+    materializations: ["m-a", "m-b"],
+    ...over,
+  });
   assert.deepEqual(
     core.activateCheckpointCut("db1", "cut-1", { materializations: [], logicalDigest: "" }),
-    { ok: false, error: "CUT_EVIDENCE_MISSING" },
+    { ok: false, error: "CUT_EVIDENCE_INVALID", reason: "schema must be checkpoint-restore-evidence/v2" },
+  );
+  // wrong cut id inside the manifest
+  assert.equal(
+    (core.activateCheckpointCut("db1", "cut-1", manifest("cut-other", "1")) as { error: string }).error,
+    "CUT_EVIDENCE_INVALID",
+  );
+  // wrong WAL head (the cut recorded head 1)
+  assert.equal(
+    (core.activateCheckpointCut("db1", "cut-1", manifest("cut-1", "999")) as { error: string }).error,
+    "CUT_EVIDENCE_INVALID",
+  );
+  // malformed root digest
+  assert.equal(
+    (core.activateCheckpointCut("db1", "cut-1",
+      manifest("cut-1", "1", { keyspaceRoots: [{ keyspace: "default", rootDigest: "nothex" }] })) as { error: string }).error,
+    "CUT_EVIDENCE_INVALID",
   );
   assert.deepEqual(core.activeCheckpointCut("db1", 1), { ok: false, error: "NOT_FOUND" });
 
-  const activated = core.activateCheckpointCut("db1", "cut-1", {
-    materializations: ["m-a", "m-b"], logicalDigest: "ld-1",
-  });
-  assert.ok(activated.ok && activated.superseded === null);
+  const activated = core.activateCheckpointCut("db1", "cut-1", manifest("cut-1", "1"));
+  assert.ok(activated.ok && activated.superseded === null,
+    JSON.stringify(activated));
   const active = core.activeCheckpointCut("db1", 1);
-  assert.ok(active.ok && active.cutId === "cut-1" && active.logicalDigest === "ld-1");
+  assert.ok(active.ok && active.cutId === "cut-1" && active.logicalDigest === HEX);
 
   // re-activation of a non-PENDING cut is refused
   assert.deepEqual(
-    core.activateCheckpointCut("db1", "cut-1", { materializations: ["m-a"], logicalDigest: "x" }),
+    core.activateCheckpointCut("db1", "cut-1", manifest("cut-1", "1")),
     { ok: false, error: "CUT_NOT_PENDING" },
   );
 
@@ -86,9 +114,8 @@ test("cut lifecycle: open captures head + anchor; activation needs evidence and 
   core.finalizeWalRecord(req());
   const opened2 = core.openCheckpointCut("db1", 1, "cut-2");
   assert.ok(opened2.ok && opened2.headLsn === 2n);
-  const activated2 = core.activateCheckpointCut("db1", "cut-2", {
-    materializations: ["m-c"], logicalDigest: "ld-2",
-  });
+  const activated2 = core.activateCheckpointCut("db1", "cut-2",
+    manifest("cut-2", "2", { materializations: ["m-c"] }));
   assert.ok(activated2.ok && activated2.superseded === "cut-1");
   const nowActive = core.activeCheckpointCut("db1", 1);
   assert.ok(nowActive.ok && nowActive.cutId === "cut-2");

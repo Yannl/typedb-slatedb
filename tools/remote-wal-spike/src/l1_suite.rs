@@ -10,7 +10,8 @@
 use std::time::{Duration, Instant};
 
 use crate::l1_client::{
-    base64_decode, Budgets, FinalizeHttpRequest, L1Client, L1Error, ScanQuery, SequencingKind, WalPosition,
+    base64_decode, Budgets, CapabilityMethod, FinalizeHttpRequest, L1Client, L1Error, MintRestrictions,
+    ScanQuery, SequencingKind, WalPosition,
 };
 
 #[derive(Debug, Default)]
@@ -76,10 +77,32 @@ pub fn run(client: &L1Client, database_id: &str) -> SuiteReport {
     const GEN: u64 = 1;
 
     // ---- session + mandatory budgets ----------------------------------
-    if report.require("session registers (SESSION_ADMIN capability)",
+    if report.require("session registers (exact SESSION_REGISTER capability, session+generation-bound)",
         client.register_session(db, GEN, session)).is_none() {
         return report;
     }
+
+    // ---- R4-SEC-03/05: under-restricted mints die at ISSUANCE -----------
+    // The Worker's issuer enforces REQUIRED_RESTRICTIONS at mint time:
+    // removing the generation from a WAL_FINALIZE or WAL_READ mint must
+    // fail HERE, before the guarded route is ever reached - a token
+    // missing a required restriction would be a WIDER capability.
+    let no_gen_finalize = client.issue(db, CapabilityMethod::WalFinalize,
+        MintRestrictions { session: Some(session), ..Default::default() });
+    report.check(
+        "a finalize mint omitting the generation is refused at issuance",
+        matches!(&no_gen_finalize,
+            Err(L1Error::Issuance { body, .. }) if body.contains("CAPABILITY_RESTRICTION_MISSING")),
+        &format!("{no_gen_finalize:?}"),
+    );
+    let no_gen_read = client.issue(db, CapabilityMethod::WalRead,
+        MintRestrictions { session: Some(session), ..Default::default() });
+    report.check(
+        "a read mint omitting the generation is refused at issuance",
+        matches!(&no_gen_read,
+            Err(L1Error::Issuance { body, .. }) if body.contains("CAPABILITY_RESTRICTION_MISSING")),
+        &format!("{no_gen_read:?}"),
+    );
 
     let payload1: &[u8] = b"l1-commit-record-1";
     let Some(receipt1) = report.require("payload uploads under the issuer-derived key",
@@ -113,7 +136,7 @@ pub fn run(client: &L1Client, database_id: &str) -> SuiteReport {
         ),
         Err(error) => report.check("a database with no budget row denies writes", false, &error.to_string()),
     }
-    if report.require("budgets install (session-restricted SESSION_ADMIN)",
+    if report.require("budgets install (session-bound BUDGETS_SET)",
         client.set_budgets(db, session, &Budgets {
             max_unpublished_outbox: 10_000,
             max_payload_length: 1_000_000,

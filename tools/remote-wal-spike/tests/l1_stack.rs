@@ -47,7 +47,14 @@ fn boot_stack() -> Stack {
     let persist_to = std::env::temp_dir().join(format!("l1-stack-state-{}", std::process::id()));
     let child = Command::new("npx")
         .args([
-            "wrangler", "dev", "--local", "--port", &port.to_string(),
+            "wrangler", "dev", "--local",
+            // R4-STACK-01: the DEFAULT wrangler.toml is the managed
+            // fail-closed posture (no CONTROLLER_SURFACE - /capability and
+            // the dev admin routes answer 404). The local lane must be
+            // NAMED to be selected; this is the config the managed-surface
+            // stack checks verify as the developer-convenience posture.
+            "-c", "wrangler.local-dev.toml",
+            "--port", &port.to_string(),
             "--persist-to", &persist_to.to_string_lossy(),
         ])
         .current_dir(control_plane_dir)

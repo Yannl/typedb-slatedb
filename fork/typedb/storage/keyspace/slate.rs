@@ -340,10 +340,11 @@ fn local_writer_epoch() -> u64 {
     }
 }
 
-/// U2S3 profile configuration (TB-P8): every variable is required except
-/// region (default `auto`, the R2 convention) and the root prefix (default
-/// `typedb`). Missing values are a typed open error — fail closed, never a
-/// silent fallback to another store.
+/// U2S3 profile configuration variable NAMES (TB-P8). These constants are the
+/// ADMISSION POINT'S input names only (R5-STOR-01): the values behind them are
+/// read exactly once, by `crate::factory`'s `BackendContext` resolution, and
+/// travel from there as an immutable [`S3RuntimeConfig`]. Nothing in this
+/// module reads the process environment.
 pub const S3_ENDPOINT_ENV: &str = "TYPEDB_S3_ENDPOINT";
 pub const S3_BUCKET_ENV: &str = "TYPEDB_S3_BUCKET";
 pub const S3_REGION_ENV: &str = "TYPEDB_S3_REGION";
@@ -362,35 +363,78 @@ pub const S3_CACHE_BYTES_ENV: &str = "TYPEDB_S3_CACHE_BYTES";
 /// wiped at open as defense in depth).
 const OBJECT_CACHE_SUBDIR: &str = "object-cache";
 
-struct S3Config {
-    endpoint: String,
-    bucket: String,
-    region: String,
-    access_key_id: String,
-    secret_access_key: String,
-    root_prefix: String,
+/// An opaque secret handle (R5-STOR-01): S3 credentials travel inside the
+/// admitted [`S3RuntimeConfig`] but are never rendered by `Debug`, never
+/// serialised into the persisted backend identity, and never enter any
+/// digest or fingerprint. The raw value is exposed only to the store
+/// builder, crate-internally.
+#[derive(Clone, PartialEq, Eq)]
+pub struct S3Secret(String);
+
+impl S3Secret {
+    pub fn new(value: String) -> Self {
+        Self(value)
+    }
+
+    pub(crate) fn expose(&self) -> &str {
+        &self.0
+    }
 }
 
-/// Resolved once per process, like the backend profile itself: two opens
-/// racing different S3 configurations against one prefix would corrupt it.
-fn s3_config() -> Result<&'static S3Config, slatedb::Error> {
-    static CONFIG: OnceLock<Result<S3Config, String>> = OnceLock::new();
-    CONFIG
-        .get_or_init(|| {
-            let require = |variable: &str| {
-                std::env::var(variable).map_err(|_| format!("{variable} must be set for the U2S3 storage profile"))
-            };
-            Ok(S3Config {
-                endpoint: require(S3_ENDPOINT_ENV)?,
-                bucket: require(S3_BUCKET_ENV)?,
-                region: std::env::var(S3_REGION_ENV).unwrap_or_else(|_| "auto".to_owned()),
-                access_key_id: require(S3_ACCESS_KEY_ENV)?,
-                secret_access_key: require(S3_SECRET_KEY_ENV)?,
-                root_prefix: std::env::var(S3_PREFIX_ENV).unwrap_or_else(|_| "typedb".to_owned()),
-            })
-        })
-        .as_ref()
-        .map_err(|message| slatedb::Error::unavailable(message.clone()))
+impl std::fmt::Debug for S3Secret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("<redacted>")
+    }
+}
+
+/// R5-STOR-01: the COMPLETE effective (non-secret-rendered) S3 configuration
+/// for one database open. Resolved from the environment exactly once, at the
+/// `BackendContext` admission point in `crate::factory`, then passed down
+/// explicitly — this module holds NO environment reads and NO config cache of
+/// its own, so a mid-process environment change can never make the engine
+/// open a different backend than the one the marker attests. Secrets ride
+/// along as opaque [`S3Secret`] handles resolved at the SAME admission point.
+#[derive(Clone, PartialEq, Eq)]
+pub struct S3RuntimeConfig {
+    pub endpoint: String,
+    pub bucket: String,
+    pub region: String,
+    pub root_prefix: String,
+    /// Bounded disk-cache budget in bytes; `None` means the cache is off
+    /// (unset or an explicit 0 at the admission point).
+    pub cache_bytes: Option<usize>,
+    pub access_key_id: S3Secret,
+    pub secret_access_key: S3Secret,
+}
+
+impl S3RuntimeConfig {
+    /// The non-secret rendering used in typed refusals and witness
+    /// mismatches. Secrets never appear here.
+    pub fn fingerprint(&self) -> String {
+        format!(
+            "endpoint={};bucket={};region={};root-prefix={};cache-bytes={}",
+            self.endpoint,
+            self.bucket,
+            self.region,
+            self.root_prefix,
+            match self.cache_bytes {
+                None => "none".to_owned(),
+                Some(bytes) => bytes.to_string(),
+            }
+        )
+    }
+
+    /// Full behavioural equality, credentials included (a changed credential
+    /// is behaviour-affecting even though it is never rendered).
+    pub fn same_effective_config(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
+impl std::fmt::Debug for S3RuntimeConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "S3RuntimeConfig({}, credentials <redacted>)", self.fingerprint())
+    }
 }
 
 /// O-01: the remote key-count memo TTL. A metrics scrape re-scanning the whole
@@ -406,11 +450,11 @@ const REMOTE_KEY_COUNT_TTL: std::time::Duration = std::time::Duration::from_secs
 /// - anything else bad -> `Err`     (was silently `None` — the exact "invalid
 ///   config silently disables protection" defect).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum CacheConfigError {
+pub(crate) enum CacheConfigError {
     Invalid { value: String },
 }
 
-pub(super) fn validate_cache_config(raw: Option<&str>) -> Result<Option<usize>, CacheConfigError> {
+pub(crate) fn validate_cache_config(raw: Option<&str>) -> Result<Option<usize>, CacheConfigError> {
     match raw {
         None => Ok(None),
         Some(text) => match text.trim().parse::<usize>() {
@@ -418,25 +462,6 @@ pub(super) fn validate_cache_config(raw: Option<&str>) -> Result<Option<usize>, 
             Ok(bytes) => Ok(Some(bytes)),
             Err(_) => Err(CacheConfigError::Invalid { value: text.to_owned() }),
         },
-    }
-}
-
-/// Optional disk-cache budget, validated at startup (O-01). Unset or an explicit
-/// `0` disables the cache; a set-but-invalid value is a typed refusal so a
-/// fat-fingered budget cannot silently degrade every read to a remote round trip
-/// while the operator believes the cache is on.
-fn s3_cache_bytes() -> Result<Option<usize>, CacheConfigError> {
-    let raw = std::env::var(S3_CACHE_BYTES_ENV).ok();
-    validate_cache_config(raw.as_deref())
-}
-
-/// Render an invalid cache budget as a typed engine-open failure (O-01).
-fn cache_config_error(error: &CacheConfigError) -> slatedb::Error {
-    match error {
-        CacheConfigError::Invalid { value } => slatedb::Error::unavailable(format!(
-            "invalid {S3_CACHE_BYTES_ENV} value {value:?}: expected a byte count (0 or unset disables the cache); \
-             refusing rather than silently disabling the read cache"
-        )),
     }
 }
 
@@ -481,7 +506,7 @@ fn key_count_with_memo<E>(
     Ok(count)
 }
 
-fn build_s3_store(config: &S3Config) -> Result<Arc<dyn ObjectStore>, slatedb::Error> {
+fn build_s3_store(config: &S3RuntimeConfig) -> Result<Arc<dyn ObjectStore>, slatedb::Error> {
     // Conditional put stays on the 0.14.1 default (`ETagMatch`): both MinIO
     // and Cloudflare R2 implement the standard HTTP preconditions SlateDB's
     // manifest CAS requires.
@@ -490,8 +515,8 @@ fn build_s3_store(config: &S3Config) -> Result<Arc<dyn ObjectStore>, slatedb::Er
         .with_allow_http(config.endpoint.starts_with("http://"))
         .with_bucket_name(config.bucket.clone())
         .with_region(config.region.clone())
-        .with_access_key_id(config.access_key_id.clone())
-        .with_secret_access_key(config.secret_access_key.clone())
+        .with_access_key_id(config.access_key_id.expose().to_owned())
+        .with_secret_access_key(config.secret_access_key.expose().to_owned())
         .build()
         .map(|store| Arc::new(store) as Arc<dyn ObjectStore>)
         .map_err(store_error)
@@ -509,7 +534,7 @@ fn build_s3_store(config: &S3Config) -> Result<Arc<dyn ObjectStore>, slatedb::Er
 /// Byte-wise `=xHH` escaping of non-ASCII produces the identical encoding to
 /// the previous per-UTF-8-char escaping for all valid-UTF-8 paths, so every
 /// existing prefix keeps resolving.
-fn object_prefix(config: &S3Config, keyspace_path: &Path) -> ObjectPath {
+fn object_prefix(config: &S3RuntimeConfig, keyspace_path: &Path) -> ObjectPath {
     let mut encoded = String::new();
     for &byte in keyspace_path.as_os_str().as_encoded_bytes() {
         encode_segment_byte(byte, &mut encoded);
@@ -611,6 +636,41 @@ fn is_manifest_key(location: &ObjectPath) -> bool {
     location.parts().any(|part| part.as_ref() == MANIFEST_SUBDIR)
 }
 
+/// The infix every multipart STAGING key carries (R5-STOR-05). Staging keys
+/// are transient: a completed attempt is verified there and then atomically
+/// PROMOTED to its target name; the staging object is cleaned best-effort
+/// afterwards. Listings that feed durable artifacts (the remote checkpoint)
+/// exclude them by this infix.
+const MULTIPART_ATTEMPT_INFIX: &str = ".mpa-";
+
+/// Is this key a multipart staging key (never authoritative state)?
+fn is_multipart_attempt_key(location: &ObjectPath) -> bool {
+    location.as_ref().contains(MULTIPART_ATTEMPT_INFIX)
+}
+
+/// Mint the globally unique staging key one multipart attempt completes to
+/// before its create-only promote (R5-STOR-05). Uniqueness across processes:
+/// pid + a per-process random seed + wall nanoseconds + the per-store attempt
+/// id — two attempts (same or different processes) can never share a staging
+/// key, so the ONLY contended operation left is the atomic promote.
+fn mint_attempt_location(location: &ObjectPath, attempt_id: u64) -> ObjectPath {
+    static SEED: OnceLock<u64> = OnceLock::new();
+    let seed = *SEED.get_or_init(|| {
+        use std::hash::{BuildHasher, Hasher};
+        let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+        hasher.write_u32(std::process::id());
+        hasher.finish()
+    });
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or(0);
+    ObjectPath::from(format!(
+        "{location}{MULTIPART_ATTEMPT_INFIX}{:08x}-{seed:016x}-{nanos:024x}-{attempt_id:08x}",
+        std::process::id()
+    ))
+}
+
 /// Compare an outgoing [`PutPayload`] against bytes already stored at an
 /// immutable key: an idempotent replay must match in length AND content
 /// (S-04: "exact same-key/same-length/same-digest replay"). Byte-exact
@@ -659,24 +719,169 @@ enum AttemptState {
     Aborted,
 }
 
-/// The multipart attempt journal (S-04, R4-STOR-04): every attempt carries a
-/// unique id and its own state row, and each location additionally records
-/// which attempt is the ACTIVE (most recently initiated) one. Completion
-/// requires being the active, uncommitted attempt; abort requires only being
-/// uncommitted — a superseded attempt must still be able to reclaim its exact
-/// provider upload, or its parts would be unreclaimable through this guard.
+/// R5-STOR-08 admission budgets for the multipart journal. Containment
+/// defaults, not ratified SLOs: far above any healthy SlateDB workload (the
+/// engine streams one SST at a time per flush/compaction path) while giving
+/// the journal a hard ceiling so repeated disconnects/abandons reach a TYPED
+/// refusal instead of unbounded memory.
+const MULTIPART_MAX_OPEN_ATTEMPTS: usize = 64;
+/// Maximum bytes journaled (reserved) across ALL open attempts at once.
+const MULTIPART_MAX_JOURNALED_BYTES: u64 = 8 * 1024 * 1024 * 1024; // 8 GiB
+/// How many TERMINAL (committed/aborted) attempt receipts are retained for
+/// idempotency answers ("this attempt is already committed/was aborted")
+/// before the oldest is reaped. Bounded count — the documented retention
+/// window N of R5-STOR-08.
+const MULTIPART_TERMINAL_RECEIPTS: usize = 128;
+
+/// Typed budget refusal (R5-STOR-08): exceeding an admission budget refuses,
+/// it never grows the journal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MultipartBudgetRefused {
+    Attempts { open: usize, max: usize },
+    Bytes { reserved: u64, incoming: u64, max: u64 },
+}
+
+impl MultipartBudgetRefused {
+    fn into_store_error(self, location: &ObjectPath) -> slatedb::object_store::Error {
+        let detail = match self {
+            Self::Attempts { open, max } => format!(
+                "{open} multipart attempts already open, at the admission budget of {max} concurrent attempts"
+            ),
+            Self::Bytes { reserved, incoming, max } => format!(
+                "{reserved} bytes already journaled and {incoming} more requested, over the admission \
+                 budget of {max} journaled bytes"
+            ),
+        };
+        slatedb::object_store::Error::Precondition {
+            path: location.to_string(),
+            source: format!(
+                "multipart admission refused (R5-STOR-08): {detail}; budget is reserved at initiation/\
+                 streaming and released only on proven abort or commit — refusing rather than growing \
+                 without bound"
+            )
+            .into(),
+        }
+    }
+}
+
+/// Pure attempt-count admission (R5-STOR-08): a NEW attempt is admitted only
+/// while the open-attempt count is strictly below the budget — at the budget
+/// (`==`) the initiation refuses. Total function so the boundary is an exact
+/// unit test.
+fn admit_multipart_attempt(open: usize, max: usize) -> Result<(), MultipartBudgetRefused> {
+    if open >= max { Err(MultipartBudgetRefused::Attempts { open, max }) } else { Ok(()) }
+}
+
+/// Pure byte-budget admission (R5-STOR-08): the incoming reservation is
+/// admitted only while `reserved + incoming <= max` (exactly AT the budget is
+/// still admitted; one byte over refuses; overflow refuses).
+fn admit_multipart_bytes(reserved: u64, incoming: u64, max: u64) -> Result<(), MultipartBudgetRefused> {
+    match reserved.checked_add(incoming) {
+        Some(total) if total <= max => Ok(()),
+        _ => Err(MultipartBudgetRefused::Bytes { reserved, incoming, max }),
+    }
+}
+
+/// The multipart attempt journal (S-04, R4-STOR-04, R5-STOR-08): every OPEN
+/// (unresolved) attempt carries a row with its reserved byte count, and each
+/// location additionally records which attempt is the ACTIVE (most recently
+/// initiated) one. Completion requires being the active, uncommitted attempt;
+/// abort requires only being uncommitted — a superseded attempt must still be
+/// able to reclaim its exact provider upload.
+///
+/// R5-STOR-08 lifecycle: rows exist only while an attempt is unresolved.
+/// Initiation reserves against the attempt budget; part streaming reserves
+/// against the byte budget; a proven abort/commit RETIRES the row — releasing
+/// its budget and moving its id into a bounded terminal-receipt window
+/// (last [`MULTIPART_TERMINAL_RECEIPTS`] receipts) that keeps idempotency
+/// answers addressable without unbounded growth. Exceeding either budget is a
+/// typed refusal, never growth.
 ///
 /// Honest scope: this journal is process-local — neither controller-durable
 /// nor shared across restarts/incarnations. Cross-process and cross-restart
-/// safety rests on the completion-time revalidation against the STORE
-/// (quarantine re-check + create-only existence check), never on this map.
-#[derive(Debug, Default)]
+/// safety rests on the completion-time create-only PROMOTE against the STORE
+/// (R5-STOR-05), never on this map.
+#[derive(Debug)]
 struct MultipartJournal {
-    /// location → the attempt id most recently initiated for it.
+    /// location → the attempt id most recently initiated for it. The entry is
+    /// removed when that attempt retires, so this map is bounded by the open
+    /// attempts.
     active: HashMap<String, u64>,
-    /// attempt id → its state. Rows are never removed: a superseded attempt
-    /// keeps its addressability so a cleanup actor can abort it.
-    attempts: HashMap<u64, AttemptState>,
+    /// attempt id → bytes reserved by its streamed parts. ONLY unresolved
+    /// (uncommitted) attempts have rows here.
+    open_attempts: HashMap<u64, u64>,
+    /// Total bytes reserved across every open attempt.
+    reserved_bytes: u64,
+    /// Bounded terminal receipts, oldest at the front.
+    terminal: std::collections::VecDeque<(u64, AttemptState)>,
+    max_open_attempts: usize,
+    max_journaled_bytes: u64,
+    max_terminal_receipts: usize,
+}
+
+impl Default for MultipartJournal {
+    fn default() -> Self {
+        Self {
+            active: HashMap::new(),
+            open_attempts: HashMap::new(),
+            reserved_bytes: 0,
+            terminal: std::collections::VecDeque::new(),
+            max_open_attempts: MULTIPART_MAX_OPEN_ATTEMPTS,
+            max_journaled_bytes: MULTIPART_MAX_JOURNALED_BYTES,
+            max_terminal_receipts: MULTIPART_TERMINAL_RECEIPTS,
+        }
+    }
+}
+
+impl MultipartJournal {
+    /// The state of an attempt: open rows are `Uncommitted`; retired ids
+    /// answer from the bounded receipt window; anything older is `None`
+    /// (retired beyond retention).
+    fn state_of(&self, attempt_id: u64) -> Option<AttemptState> {
+        if self.open_attempts.contains_key(&attempt_id) {
+            return Some(AttemptState::Uncommitted);
+        }
+        self.terminal.iter().rev().find(|(id, _)| *id == attempt_id).map(|(_, state)| *state)
+    }
+
+    /// Admit and record a fresh attempt (R5-STOR-08): the attempt budget is
+    /// checked BEFORE any row is inserted or any provider upload opened.
+    fn initiate(&mut self, location: &ObjectPath, attempt_id: u64) -> Result<(), MultipartBudgetRefused> {
+        admit_multipart_attempt(self.open_attempts.len(), self.max_open_attempts)?;
+        self.open_attempts.insert(attempt_id, 0);
+        self.active.insert(location.to_string(), attempt_id);
+        Ok(())
+    }
+
+    /// Reserve `len` streamed bytes for an open attempt against the byte
+    /// budget; a refusal reserves nothing.
+    fn reserve_part_bytes(&mut self, attempt_id: u64, len: u64) -> Result<(), MultipartBudgetRefused> {
+        admit_multipart_bytes(self.reserved_bytes, len, self.max_journaled_bytes)?;
+        let Some(bytes) = self.open_attempts.get_mut(&attempt_id) else {
+            // no open row: nothing to reserve against (the caller's state
+            // gate reports the precise refusal)
+            return Ok(());
+        };
+        *bytes = bytes.saturating_add(len);
+        self.reserved_bytes = self.reserved_bytes.saturating_add(len);
+        Ok(())
+    }
+
+    /// Retire an attempt on proven abort/commit (R5-STOR-08): release its
+    /// byte reservation, drop its open row (and its active-attempt entry when
+    /// it holds one), and record a bounded terminal receipt.
+    fn retire(&mut self, location: &str, attempt_id: u64, state: AttemptState) {
+        if let Some(bytes) = self.open_attempts.remove(&attempt_id) {
+            self.reserved_bytes = self.reserved_bytes.saturating_sub(bytes);
+        }
+        if self.active.get(location) == Some(&attempt_id) {
+            self.active.remove(location);
+        }
+        self.terminal.push_back((attempt_id, state));
+        while self.terminal.len() > self.max_terminal_receipts {
+            self.terminal.pop_front();
+        }
+    }
 }
 
 /// The runtime storage principal and immutability boundary (V16 inv. 81–84,
@@ -743,6 +948,18 @@ impl NoDeleteStore {
     /// refused on this principal (S-04 quarantine signal).
     fn is_quarantined(&self) -> bool {
         self.quarantined.load(Ordering::SeqCst)
+    }
+
+    /// Lower the R5-STOR-08 journal budgets so a test can reach them without
+    /// streaming gigabytes. Test-only: production budgets are the named
+    /// constants ([`MULTIPART_MAX_OPEN_ATTEMPTS`],
+    /// [`MULTIPART_MAX_JOURNALED_BYTES`], [`MULTIPART_TERMINAL_RECEIPTS`]).
+    #[cfg(test)]
+    fn set_multipart_budgets_for_test(&self, max_open_attempts: usize, max_journaled_bytes: u64, receipts: usize) {
+        let mut journal = self.multipart_journal.lock().unwrap();
+        journal.max_open_attempts = max_open_attempts;
+        journal.max_journaled_bytes = max_journaled_bytes;
+        journal.max_terminal_receipts = receipts;
     }
 
     /// Record (or verify) an immutable key's checksum in the ledger. Returns
@@ -865,27 +1082,38 @@ impl ObjectStore for NoDeleteStore {
                     .into(),
             });
         }
-        // Initiation at an occupied immutable key is admitted: until
-        // completion the provider holds only uncommitted parts, and the
-        // mutation decision is create-only AT COMPLETION, where the key's
-        // existence is revalidated against the store.
-        let inner = self.inner.put_multipart_opts(location, opts).await?;
-        // Journal a fresh attempt id and record it as the active attempt for
-        // this location; any earlier attempt for the same location is thereby
-        // superseded and can no longer complete (S-04 stale-completion guard),
-        // though its own row keeps it addressable for abort.
+        // Initiation at an occupied immutable key is admitted: until the
+        // create-only PROMOTE at completion the provider holds only staged
+        // bytes under this attempt's own unique key, and the mutation decision
+        // is the atomic promote (R5-STOR-05), never an overwrite.
         let attempt_id = self.next_attempt_id.fetch_add(1, Ordering::SeqCst);
+        let attempt_location = mint_attempt_location(location, attempt_id);
+        // R5-STOR-08: budget admission BEFORE the provider upload is opened —
+        // a refused attempt journals nothing and touches no provider state.
         {
             let mut journal = self.multipart_journal.lock().unwrap();
-            journal.attempts.insert(attempt_id, AttemptState::Uncommitted);
-            journal.active.insert(location.to_string(), attempt_id);
+            journal.initiate(location, attempt_id).map_err(|refused| refused.into_store_error(location))?;
         }
+        // The provider upload streams to the ATTEMPT key (R5-STOR-05): two
+        // racing completers can never collide before the promote.
+        let inner = match self.inner.put_multipart_opts(&attempt_location, opts).await {
+            Ok(upload) => upload,
+            Err(error) => {
+                // release the reservation: the attempt never opened
+                self.multipart_journal.lock().unwrap().retire(location.as_ref(), attempt_id, AttemptState::Aborted);
+                return Err(error);
+            }
+        };
         Ok(Box::new(JournaledMultipart {
             inner,
             store: self.inner.clone(),
             quarantined: self.quarantined.clone(),
             location: location.clone(),
+            attempt_location,
             attempt_id,
+            attempt_object_completed: false,
+            streamed_len: 0,
+            streamed_hasher: std::hash::DefaultHasher::new(),
             journal: self.multipart_journal.clone(),
             manifest_key: is_manifest_key(location),
         }))
@@ -975,53 +1203,94 @@ impl ObjectStore for NoDeleteStore {
     }
 }
 
-/// A multipart upload gated by the [`NoDeleteStore`] journal (S-04,
-/// R4-STOR-04). Parts stream straight through, but completion REVALIDATES at
-/// use time:
+/// A multipart upload gated by the [`NoDeleteStore`] journal and published
+/// through a provider-atomic create-only PROMOTE (S-04, R4-STOR-04,
+/// R5-STOR-05). Parts stream to this attempt's own globally unique STAGING
+/// key (never the target), with their length and checksum accounted as they
+/// stream; completion then:
 ///
 /// - **quarantine re-check**: a namespace quarantined since initiation refuses
-///   the completion and aborts the provider upload, so its parts are
-///   reclaimed rather than layered on top of a detected violation;
+///   the completion and reclaims the staged upload;
 /// - **journal gate**: only the still-active, uncommitted attempt recorded for
 ///   this location may complete — a stale attempt (one superseded by a newer
 ///   `put_multipart_opts` on the same location) and an already-committed
 ///   attempt are both typed refusals;
-/// - **create-only against the store**: completion onto an existing immutable
-///   key is refused and quarantines the materialisation — the fail-closed
-///   analogue of `put_opts`'s changed-bytes branch. The parts have already
-///   streamed to the provider, so byte-identity with the existing object
-///   cannot be proved here, and fail-closed is correct because byte-identical
-///   multipart re-publication is not a path SlateDB needs: SSTs are
-///   content-unique, ULID-named objects that are written exactly once.
-///   Completion onto an existing MANIFEST key is refused WITHOUT quarantine:
-///   an existing manifest is the normal CAS-republished state (not tamper
-///   evidence), but the multipart API carries no CAS precondition, so
-///   manifest republication is only ever admitted through the typed
-///   conditional single-put path.
+/// - **stage + verify**: the provider upload completes to the unique staging
+///   key (no contention possible there), and the staged object is read back
+///   and verified against the streamed length + checksum;
+/// - **atomic promote (R5-STOR-05)**: the staged object is promoted to the
+///   target name with a create-only conditional copy
+///   (`CopyMode::Create` — atomic `hard_link` on `LocalFileSystem`,
+///   `copy-if-not-exists` where the provider supports it). Where the store
+///   reports conditional copy unsupported (plain S3 without a
+///   copy-if-not-exists configuration), the promote falls back to a
+///   create-only single PUT of the verified staged bytes — byte cost: one
+///   full readback (always paid for verification) plus one full re-upload on
+///   the fallback path only;
+/// - **loser settlement**: the loser of a promote race (or a replay onto an
+///   already-published key) compares the published bytes against its staged
+///   bytes: IDENTICAL bytes settle idempotently as success (timeout-after-
+///   promote replays converge); DIFFERENT bytes are a typed refusal — with
+///   quarantine for immutable keys (changed-byte overwrite attempt), without
+///   quarantine for the manifest (an existing manifest is normal CAS state,
+///   and manifest republication is only admitted through the conditional
+///   single-put path). Either way the loser cleans its OWN staging object.
 ///
 /// Abort is allowed for ANY still-uncommitted attempt — superseded and
 /// quarantined included — so an authorized cleanup actor can always reclaim
-/// an attempt's exact provider upload; only the committed attempt (whose
-/// object is published) and an already-aborted one refuse.
+/// an attempt's exact staged upload; only the committed attempt (whose object
+/// is published) and an already-aborted one refuse.
 ///
 /// Honest scope: the journal is process-local (see [`MultipartJournal`]); the
-/// store-level revalidation above — not the journal — is what holds across a
-/// restart, where a replayed completion onto the previously published key is
-/// refused by the create-only check.
-#[derive(Debug)]
+/// atomic promote against the STORE — not the journal — is what holds across
+/// processes and restarts (R5-STOR-05). Staging cleanup is best-effort and
+/// scoped to THIS attempt's own staging key (a named exception to the
+/// no-delete posture: a staging object never became authoritative state); a
+/// failed cleanup leaves an inert `.mpa-` orphan for the separated
+/// maintenance principal, and durable listings (the remote checkpoint)
+/// exclude staging keys by infix.
 struct JournaledMultipart {
+    /// Provider upload streaming to [`Self::attempt_location`].
     inner: Box<dyn MultipartUpload>,
-    /// The wrapped store, for completion-time revalidation (existence check).
+    /// The RAW inner store, for stage-verify-promote at completion.
     store: Arc<dyn ObjectStore>,
     /// The materialisation's shared quarantine flag, re-checked at completion.
     quarantined: Arc<AtomicBool>,
+    /// The TARGET key this attempt publishes to (via the promote).
     location: ObjectPath,
+    /// This attempt's globally unique staging key (R5-STOR-05).
+    attempt_location: ObjectPath,
     attempt_id: u64,
+    /// Whether the provider upload has completed to the staging key (so a
+    /// later abort must clean the staged OBJECT, not the provider upload).
+    attempt_object_completed: bool,
+    /// Streamed-part accounting for stage verification.
+    streamed_len: u64,
+    streamed_hasher: std::hash::DefaultHasher,
     journal: Arc<Mutex<MultipartJournal>>,
     /// Manifest multipart (should not occur — manifests are small single
-    /// puts): gated exactly like data, except an existing-key completion
-    /// refusal does not quarantine (see the type-level policy above).
+    /// puts): gated exactly like data, except an occupied-target refusal does
+    /// not quarantine (see the type-level policy above).
     manifest_key: bool,
+}
+
+impl std::fmt::Debug for JournaledMultipart {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "JournaledMultipart[target={}, attempt={}, staging={}]",
+            self.location, self.attempt_id, self.attempt_location
+        )
+    }
+}
+
+/// The two outcomes of the atomic promote (R5-STOR-05).
+enum PromoteOutcome {
+    /// This attempt's staged object became the target — the one winner.
+    Won,
+    /// The target already holds an object (a racing winner or a replay):
+    /// settle by byte comparison.
+    Occupied,
 }
 
 impl JournaledMultipart {
@@ -1040,45 +1309,81 @@ impl JournaledMultipart {
     }
 
     /// Is this attempt itself still uncommitted? Supersession is deliberately
-    /// NOT checked: a superseded attempt must remain abortable so its provider
+    /// NOT checked: a superseded attempt must remain abortable so its staged
     /// upload stays reclaimable (R4-STOR-04).
     fn own_uncommitted(&self) -> Result<(), String> {
         Self::own_state_uncommitted(&self.journal.lock().unwrap(), self.attempt_id)
     }
 
     fn own_state_uncommitted(journal: &MultipartJournal, attempt_id: u64) -> Result<(), String> {
-        match journal.attempts.get(&attempt_id) {
+        match journal.state_of(attempt_id) {
             Some(AttemptState::Uncommitted) => Ok(()),
             Some(AttemptState::Committed) => Err("this attempt is already committed".to_owned()),
             Some(AttemptState::Aborted) => Err("this attempt was aborted".to_owned()),
-            None => Err("no journal entry for this attempt".to_owned()),
+            None => Err("no journal entry for this attempt (retired beyond the receipt window)".to_owned()),
         }
     }
 
-    /// Mark exactly THIS attempt's journal row — never another attempt's.
-    fn mark(&self, state: AttemptState) {
-        self.journal.lock().unwrap().attempts.insert(self.attempt_id, state);
+    /// Retire exactly THIS attempt's journal row (R5-STOR-08): budget
+    /// released, bounded terminal receipt recorded — never another attempt's.
+    fn retire(&self, state: AttemptState) {
+        self.journal.lock().unwrap().retire(self.location.as_ref(), self.attempt_id, state);
     }
 
     fn refusal(&self, message: String) -> slatedb::object_store::Error {
         slatedb::object_store::Error::Precondition { path: self.location.to_string(), source: message.into() }
+    }
+
+    /// Best-effort cleanup of THIS attempt's own staging object (R5-STOR-05).
+    /// Scoped to the exact staging key this instance minted — never a listing,
+    /// never another attempt's key — which is why this is a sound named
+    /// exception to the no-delete posture: the staging object never became
+    /// authoritative state. A failure leaves an inert `.mpa-` orphan for the
+    /// maintenance principal.
+    async fn cleanup_attempt_object(&mut self) {
+        let _ = self.store.delete(&self.attempt_location).await;
+    }
+
+    /// The published target's metadata as a [`PutResult`].
+    async fn published_result(&mut self) -> slatedb::object_store::Result<PutResult> {
+        let meta = self.store.head(&self.location).await?;
+        Ok(PutResult { e_tag: meta.e_tag, version: meta.version, extensions: Default::default() })
     }
 }
 
 #[async_trait]
 impl MultipartUpload for JournaledMultipart {
     fn put_part(&mut self, data: PutPayload) -> UploadPart {
+        use std::hash::Hasher;
+        let len = data.content_length() as u64;
+        // R5-STOR-08: streamed bytes are reserved against the journal's byte
+        // budget as they arrive; a refusal reserves nothing and streams
+        // nothing — typed admission, not growth.
+        let admission = self.journal.lock().unwrap().reserve_part_bytes(self.attempt_id, len);
+        if let Err(refused) = admission {
+            let error = refused.into_store_error(&self.location);
+            return Box::pin(async move { Err(error) });
+        }
+        // account the exact byte stream for stage verification (R5-STOR-05)
+        for chunk in &data {
+            self.streamed_hasher.write(chunk.as_ref());
+        }
+        self.streamed_len += len;
         self.inner.put_part(data)
     }
 
     async fn complete(&mut self) -> slatedb::object_store::Result<PutResult> {
+        use std::hash::Hasher;
         // Quarantine, revalidated AT USE TIME (R4-STOR-04): a namespace
-        // quarantined since initiation admits no completion. The provider
-        // upload is aborted so its parts are reclaimed — and marked Aborted
-        // only when that abort succeeds, so a failed abort stays retryable.
+        // quarantined since initiation admits no completion. The staged
+        // upload is reclaimed — and marked Aborted only when that reclaim
+        // succeeds, so a failed reclaim stays retryable.
         if self.quarantined.load(Ordering::SeqCst) {
-            if self.inner.abort().await.is_ok() {
-                self.mark(AttemptState::Aborted);
+            if self.attempt_object_completed {
+                self.cleanup_attempt_object().await;
+                self.retire(AttemptState::Aborted);
+            } else if self.inner.abort().await.is_ok() {
+                self.retire(AttemptState::Aborted);
             }
             return Err(self.refusal(format!(
                 "multipart completion refused for {} (S-04): the materialisation was quarantined after \
@@ -1094,46 +1399,99 @@ impl MultipartUpload for JournaledMultipart {
                 self.location
             )));
         }
-        // Create-only, revalidated against the STORE — not the journal. This
-        // clause is what holds across a process restart, where the journal is
-        // gone: completion onto an existing key never silently overwrites.
-        match self.store.head(&self.location).await {
-            Err(slatedb::object_store::Error::NotFound { .. }) => {}
-            Ok(_) if self.manifest_key => {
-                // manifest republication is legitimate, but ONLY through the
-                // conditional single-put path — the multipart API carries no
-                // CAS precondition, so this is a refusal, not tamper evidence.
-                return Err(self.refusal(format!(
-                    "multipart completion refused for manifest key {} (S-04): the multipart API carries \
-                     no CAS precondition; manifest republication must use the typed conditional \
-                     single-put path",
-                    self.location
-                )));
-            }
-            Ok(_) => {
-                // the fail-closed analogue of put_opts's changed-bytes branch:
-                // byte-identity with the published object cannot be proved
-                // (the parts already streamed through), and SlateDB never
-                // re-publishes an SST/blob key — refuse + quarantine.
-                self.quarantined.store(true, Ordering::SeqCst);
-                return Err(self.refusal(format!(
-                    "immutable key multipart overwrite refused (S-04, V16 inv. 81-83): completing this \
-                     upload would replace already-written immutable key {}; the materialisation is \
-                     quarantined",
-                    self.location
-                )));
-            }
-            Err(other) => return Err(other),
+        // Stage (R5-STOR-05): complete the provider upload to this attempt's
+        // globally unique staging key — no other attempt can contend there.
+        if !self.attempt_object_completed {
+            self.inner.complete().await?;
+            self.attempt_object_completed = true;
         }
-        let result = self.inner.complete().await?;
-        self.mark(AttemptState::Committed);
-        Ok(result)
+        // Verify the staged object against the streamed accounting before
+        // anything can be published under the target name.
+        let staged = self.store.get(&self.attempt_location).await?.bytes().await?;
+        if staged.len() as u64 != self.streamed_len || content_checksum(&staged) != self.streamed_hasher.finish() {
+            self.cleanup_attempt_object().await;
+            self.retire(AttemptState::Aborted);
+            return Err(self.refusal(format!(
+                "multipart stage verification failed for {} (R5-STOR-05): the staged object does not \
+                 match the streamed parts (length/checksum); the staged upload has been reclaimed",
+                self.location
+            )));
+        }
+        // Atomic promote (R5-STOR-05): create-only conditional copy where the
+        // store supports it; create-only single PUT of the verified staged
+        // bytes where it does not. Exactly one contender can win the target.
+        let create_copy = CopyOptions { mode: CopyMode::Create, ..Default::default() };
+        let outcome = match self.store.copy_opts(&self.attempt_location, &self.location, create_copy).await {
+            Ok(()) => PromoteOutcome::Won,
+            Err(slatedb::object_store::Error::AlreadyExists { .. }) => PromoteOutcome::Occupied,
+            Err(
+                slatedb::object_store::Error::NotSupported { .. }
+                | slatedb::object_store::Error::NotImplemented { .. },
+            ) => {
+                // documented fallback: one full re-upload of the verified bytes
+                let create_put = PutOptions { mode: PutMode::Create, ..Default::default() };
+                match self.store.put_opts(&self.location, PutPayload::from(staged.to_vec()), create_put).await {
+                    Ok(_) => PromoteOutcome::Won,
+                    Err(slatedb::object_store::Error::AlreadyExists { .. }) => PromoteOutcome::Occupied,
+                    Err(other) => {
+                        self.cleanup_attempt_object().await;
+                        return Err(other);
+                    }
+                }
+            }
+            Err(other) => {
+                self.cleanup_attempt_object().await;
+                return Err(other);
+            }
+        };
+        match outcome {
+            PromoteOutcome::Won => {
+                self.cleanup_attempt_object().await;
+                self.retire(AttemptState::Committed);
+                self.published_result().await
+            }
+            PromoteOutcome::Occupied => {
+                // Loser settlement: idempotent on identical bytes, typed
+                // refusal (no overwrite, ever) on different bytes.
+                let published = self.store.get(&self.location).await?.bytes().await?;
+                self.cleanup_attempt_object().await;
+                if published == staged {
+                    // a replayed/racing publication of the SAME bytes has
+                    // already converged — settle as success (R5-STOR-05
+                    // timeout-after-promote convergence).
+                    self.retire(AttemptState::Committed);
+                    self.published_result().await
+                } else if self.manifest_key {
+                    // manifest republication is legitimate, but ONLY through
+                    // the conditional single-put path — the multipart API
+                    // carries no CAS precondition, so this is a refusal, not
+                    // tamper evidence.
+                    Err(self.refusal(format!(
+                        "multipart completion refused for manifest key {} (S-04): the multipart API \
+                         carries no CAS precondition; manifest republication must use the typed \
+                         conditional single-put path",
+                        self.location
+                    )))
+                } else {
+                    // the changed-byte overwrite the boundary exists to stop:
+                    // this attempt lost the create-only promote and its bytes
+                    // differ from the published object — refuse + quarantine.
+                    self.quarantined.store(true, Ordering::SeqCst);
+                    Err(self.refusal(format!(
+                        "immutable key multipart overwrite refused (S-04, V16 inv. 81-83, R5-STOR-05): \
+                         the create-only promote for already-written immutable key {} lost to different \
+                         published bytes; the materialisation is quarantined",
+                        self.location
+                    )))
+                }
+            }
+        }
     }
 
     async fn abort(&mut self) -> slatedb::object_store::Result<()> {
         // Abort is allowed for ANY still-uncommitted attempt — superseded and
         // quarantined included (R4-STOR-04): cleanup must always be able to
-        // reclaim an uncommitted provider upload. Only the committed attempt
+        // reclaim an uncommitted staged upload. Only the committed attempt
         // (whose object is published) and an already-aborted one refuse.
         if let Err(reason) = self.own_uncommitted() {
             return Err(self.refusal(format!(
@@ -1142,9 +1500,15 @@ impl MultipartUpload for JournaledMultipart {
                 self.location
             )));
         }
-        self.inner.abort().await?;
-        // marked only on provider success, so a failed abort stays retryable
-        self.mark(AttemptState::Aborted);
+        if self.attempt_object_completed {
+            // the provider upload already became a staged object: reclaim is
+            // the staging cleanup, not a provider abort
+            self.cleanup_attempt_object().await;
+        } else {
+            self.inner.abort().await?;
+        }
+        // retired only on success, so a failed abort stays retryable
+        self.retire(AttemptState::Aborted);
         Ok(())
     }
 }
@@ -1303,14 +1667,33 @@ impl SlateKeyspace {
     }
 
     /// Open over the configured S3-compatible store (TB-P8, profile U2S3).
+    ///
+    /// R5-STOR-01: the configuration consumed here is the process-ADMITTED
+    /// one — resolved from the environment exactly once at the
+    /// `BackendContext` admission point and witnessed against every later
+    /// context (`verify_process_consistency`), so it is provably the same
+    /// object the caller's context carries and the marker attests. This
+    /// module performs no environment read of its own; an open before any
+    /// admission is a typed refusal, never a fresh resolution.
     pub(super) fn open_s3(path: &Path) -> Result<Self, Arc<slatedb::Error>> {
-        let config = s3_config().map_err(Arc::new)?;
+        let config = crate::factory::admitted_s3_runtime().ok_or_else(|| {
+            Arc::new(slatedb::Error::unavailable(
+                "no admitted S3 runtime configuration for this process (R5-STOR-01): the S3 lane opens \
+                 only through BackendContext admission; refusing rather than re-reading the environment \
+                 below the admission point"
+                    .to_owned(),
+            ))
+        })?;
+        Self::open_s3_with(&config, path)
+    }
+
+    /// The explicit-config S3 open (R5-STOR-01): every effective input —
+    /// endpoint, region, bucket, root prefix, cache budget, credentials —
+    /// comes from the passed [`S3RuntimeConfig`] and nowhere else.
+    pub(super) fn open_s3_with(config: &S3RuntimeConfig, path: &Path) -> Result<Self, Arc<slatedb::Error>> {
         let store = build_s3_store(config).map_err(Arc::new)?;
         let base_prefix = object_prefix(config, path);
-        // O-01: validate the cache budget at startup. An invalid budget is a
-        // typed open failure, never a silent fallback that disables the cache.
-        let cache_bytes = s3_cache_bytes().map_err(|error| Arc::new(cache_config_error(&error)))?;
-        Self::open_remote(store, base_prefix, path, cache_bytes)
+        Self::open_remote(store, base_prefix, path, config.cache_bytes)
     }
 
     /// Open over a remote object store, under a FRESH immutable
@@ -1612,13 +1995,27 @@ impl SlateKeyspace {
             // keyspace always has a published manifest, so an empty manifest
             // listing is missing or corrupt root state, never emptiness — the
             // checkpoint is refused before anything is downloaded.
-            let pinned = manifests.iter().map(|meta| &meta.location).max().cloned().ok_or_else(|| {
-                missing_manifest_root_error(format!("empty remote manifest listing under {manifest_dir}"))
-            })?;
+            // R5-STOR-05: transient multipart STAGING objects (`.mpa-` infix)
+            // are never authoritative state — they are excluded both from the
+            // pin (a staging name could sort after the newest real manifest)
+            // and from the download set (a concurrently cleaned staging object
+            // would otherwise fail the checkpoint with NotFound).
+            let pinned = manifests
+                .iter()
+                .map(|meta| &meta.location)
+                .filter(|location| !is_multipart_attempt_key(location))
+                .max()
+                .cloned()
+                .ok_or_else(|| {
+                    missing_manifest_root_error(format!("empty remote manifest listing under {manifest_dir}"))
+                })?;
             let objects = list_remote_prefix(store.as_ref(), &prefix).await?;
             let is_manifest = |location: &ObjectPath| location.as_ref().starts_with(&manifest_prefix);
-            let mut to_copy: Vec<ObjectPath> =
-                objects.iter().map(|meta| meta.location.clone()).filter(|location| !is_manifest(location)).collect();
+            let mut to_copy: Vec<ObjectPath> = objects
+                .iter()
+                .map(|meta| meta.location.clone())
+                .filter(|location| !is_manifest(location) && !is_multipart_attempt_key(location))
+                .collect();
             to_copy.push(pinned);
             download_remote_objects(store.as_ref(), &prefix, &to_copy, &dir).await
         })
@@ -2247,16 +2644,17 @@ mod object_prefix_tests {
 
     use std::{ffi::OsStr, os::unix::ffi::OsStrExt, path::Path};
 
-    use super::{S3Config, object_prefix};
+    use super::{S3RuntimeConfig, S3Secret, object_prefix};
 
-    fn config() -> S3Config {
-        S3Config {
+    fn config() -> S3RuntimeConfig {
+        S3RuntimeConfig {
             endpoint: "http://127.0.0.1:9000".to_owned(),
             bucket: "bucket".to_owned(),
             region: "auto".to_owned(),
-            access_key_id: "key".to_owned(),
-            secret_access_key: "secret".to_owned(),
             root_prefix: "typedb".to_owned(),
+            cache_bytes: None,
+            access_key_id: S3Secret::new("key".to_owned()),
+            secret_access_key: S3Secret::new("secret".to_owned()),
         }
     }
 
@@ -3279,10 +3677,10 @@ mod immutability_boundary_tests {
         let journal = store.multipart_journal.lock().unwrap();
         let active_id = journal.active.get(location.as_ref()).copied().expect("an active attempt is recorded");
         assert_eq!(active_id, 2, "the second attempt is the active one");
-        assert_eq!(journal.attempts.get(&active_id), Some(&AttemptState::Uncommitted));
+        assert_eq!(journal.state_of(active_id), Some(AttemptState::Uncommitted));
         assert_eq!(
-            journal.attempts.get(&1),
-            Some(&AttemptState::Uncommitted),
+            journal.state_of(1),
+            Some(AttemptState::Uncommitted),
             "the superseded attempt keeps its own row — individually addressable for abort",
         );
     }
@@ -3517,6 +3915,426 @@ mod immutability_boundary_tests {
             async move { store.get(&manifest).await.unwrap().bytes().await.unwrap() }
         });
         assert_eq!(&bytes[..], b"manifest v1", "the published manifest bytes are untouched");
+    }
+}
+
+#[cfg(test)]
+mod multipart_promote_tests {
+    //! R5-STOR-05 controls: multipart completion is provider-ATOMIC
+    //! create-only. Each attempt stages to its own globally unique key and
+    //! publishes through a create-only conditional copy (falling back to a
+    //! create-only single PUT of the verified bytes where conditional copy is
+    //! unsupported). Two INDEPENDENT completer instances — separate journals,
+    //! simulating two processes — synchronized after both have fully staged
+    //! ("passed their prechecks"), completing DIFFERENT bytes, produce
+    //! exactly one winner and no changed-byte overwrite; a replay of the SAME
+    //! bytes after a lost response converges idempotently.
+
+    use std::sync::{Arc, Barrier};
+
+    use async_trait::async_trait;
+    use futures::stream::BoxStream;
+    use slatedb::object_store::{
+        CopyOptions, GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, ObjectStore, ObjectStoreExt,
+        PutMultipartOptions, PutOptions, PutPayload, PutResult, local::LocalFileSystem, path::Path as ObjectPath,
+    };
+    use test_utils::create_tmp_dir;
+
+    use super::{NoDeleteStore, bridge, list_remote_prefix};
+
+    fn raw_local_store() -> (test_utils::TempDir, Arc<dyn ObjectStore>) {
+        let dir = create_tmp_dir("slate-r5-promote");
+        let inner: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
+        (dir, inner)
+    }
+
+    /// Open a multipart attempt on `store` and stage `bytes` into it — the
+    /// full "precheck + upload" phase, everything short of completion.
+    fn staged_upload(
+        store: &Arc<NoDeleteStore>,
+        target: &ObjectPath,
+        bytes: &'static [u8],
+    ) -> Box<dyn MultipartUpload> {
+        bridge({
+            let (store, target) = (store.clone(), target.clone());
+            async move {
+                let mut upload = store.put_multipart(&target).await.unwrap();
+                upload.put_part(PutPayload::from_static(bytes)).await.unwrap();
+                upload
+            }
+        })
+    }
+
+    fn read_target(inner: &Arc<dyn ObjectStore>, target: &ObjectPath) -> Vec<u8> {
+        bridge({
+            let (inner, target) = (inner.clone(), target.clone());
+            async move { inner.get(&target).await.unwrap().bytes().await.unwrap().to_vec() }
+        })
+    }
+
+    fn objects_under(inner: &Arc<dyn ObjectStore>, prefix: &str) -> Vec<String> {
+        bridge({
+            let (inner, prefix) = (inner.clone(), ObjectPath::from(prefix));
+            async move {
+                list_remote_prefix(inner.as_ref(), &prefix)
+                    .await
+                    .unwrap()
+                    .into_iter()
+                    .map(|meta| meta.location.to_string())
+                    .collect()
+            }
+        })
+    }
+
+    #[test]
+    fn two_independent_completers_publish_exactly_one_winner_and_no_changed_bytes() {
+        // R5-STOR-05 flagship mutant: two completer instances with SEPARATE
+        // journals (two "processes") over one store, both fully staged with
+        // DIFFERENT bytes, complete concurrently from a barrier. The old
+        // HEAD-then-complete TOCTOU let both pass the absence check and the
+        // last writer win; the atomic create-only promote admits exactly ONE
+        // winner, types the loser, and never replaces published bytes.
+        let (_dir, inner) = raw_local_store();
+        let store_a = Arc::new(NoDeleteStore::new(inner.clone()));
+        let store_b = Arc::new(NoDeleteStore::new(inner.clone()));
+        let target = ObjectPath::from("base/fv1/m1/keyspace/10AAA.sst");
+
+        let upload_a = staged_upload(&store_a, &target, b"completer-a bytes");
+        let upload_b = staged_upload(&store_b, &target, b"completer-b bytes");
+
+        // both prechecks (journal admission, staging upload) have passed;
+        // synchronize the decisive completions
+        let barrier = Arc::new(Barrier::new(2));
+        let race = |mut upload: Box<dyn MultipartUpload>, barrier: Arc<Barrier>| {
+            std::thread::spawn(move || {
+                barrier.wait();
+                bridge(async move { upload.complete().await })
+            })
+        };
+        let result_a = race(upload_a, barrier.clone());
+        let result_b = race(upload_b, barrier);
+        let result_a = result_a.join().unwrap();
+        let result_b = result_b.join().unwrap();
+
+        let winners = [result_a.is_ok(), result_b.is_ok()].iter().filter(|ok| **ok).count();
+        assert_eq!(winners, 1, "exactly one completer may win: a={result_a:?}, b={result_b:?}");
+        let (loser_result, winner_bytes, loser_store) = if result_a.is_ok() {
+            (result_b, b"completer-a bytes".as_slice(), &store_b)
+        } else {
+            (result_a, b"completer-b bytes".as_slice(), &store_a)
+        };
+        assert!(
+            matches!(loser_result, Err(slatedb::object_store::Error::Precondition { .. })),
+            "the loser must be a typed refusal, got: {loser_result:?}",
+        );
+        assert_eq!(read_target(&inner, &target), winner_bytes, "the published bytes are the winner's, never replaced");
+        assert!(loser_store.is_quarantined(), "a changed-byte loser quarantines its own materialisation");
+        // both staging objects are cleaned: only the published target remains
+        let remaining = objects_under(&inner, "base");
+        assert_eq!(remaining, vec![target.to_string()], "staging objects must be cleaned: {remaining:?}");
+    }
+
+    #[test]
+    fn a_timeout_after_promote_replay_converges_idempotently() {
+        // R5-STOR-05: incarnation ONE promotes bytes X and the response is
+        // lost; incarnation TWO (fresh wrapper, fresh journal — the restart)
+        // replays the same upload with the SAME bytes. The replay settles
+        // idempotently on the published object: success, no quarantine, no
+        // second object, bytes untouched.
+        let (_dir, inner) = raw_local_store();
+        let target = ObjectPath::from("base/fv1/m1/keyspace/11BBB.sst");
+
+        let first = Arc::new(NoDeleteStore::new(inner.clone()));
+        let mut upload = staged_upload(&first, &target, b"published bytes");
+        bridge(async move { upload.complete().await }).expect("the first completion publishes");
+
+        let second = Arc::new(NoDeleteStore::new(inner.clone()));
+        let mut replay = staged_upload(&second, &target, b"published bytes");
+        let converged = bridge(async move { replay.complete().await });
+        assert!(converged.is_ok(), "a same-bytes replay after restart must converge, got: {converged:?}");
+        assert!(!second.is_quarantined(), "idempotent convergence is not tamper evidence");
+        assert_eq!(read_target(&inner, &target), b"published bytes");
+        assert_eq!(objects_under(&inner, "base"), vec![target.to_string()], "no staging object survives");
+    }
+
+    /// A store shim whose conditional copy is unsupported (the plain-S3
+    /// posture without a copy-if-not-exists configuration): forces the
+    /// promote onto its documented fallback — a create-only single PUT of the
+    /// verified staged bytes.
+    #[derive(Debug)]
+    struct NoConditionalCopyStore {
+        inner: Arc<dyn ObjectStore>,
+    }
+
+    impl std::fmt::Display for NoConditionalCopyStore {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "NoConditionalCopyStore({})", self.inner)
+        }
+    }
+
+    #[async_trait]
+    impl ObjectStore for NoConditionalCopyStore {
+        async fn put_opts(
+            &self,
+            location: &ObjectPath,
+            payload: PutPayload,
+            opts: PutOptions,
+        ) -> slatedb::object_store::Result<PutResult> {
+            self.inner.put_opts(location, payload, opts).await
+        }
+
+        async fn put_multipart_opts(
+            &self,
+            location: &ObjectPath,
+            opts: PutMultipartOptions,
+        ) -> slatedb::object_store::Result<Box<dyn MultipartUpload>> {
+            self.inner.put_multipart_opts(location, opts).await
+        }
+
+        async fn get_opts(
+            &self,
+            location: &ObjectPath,
+            options: GetOptions,
+        ) -> slatedb::object_store::Result<GetResult> {
+            self.inner.get_opts(location, options).await
+        }
+
+        fn delete_stream(
+            &self,
+            locations: BoxStream<'static, slatedb::object_store::Result<ObjectPath>>,
+        ) -> BoxStream<'static, slatedb::object_store::Result<ObjectPath>> {
+            self.inner.delete_stream(locations)
+        }
+
+        fn list(&self, prefix: Option<&ObjectPath>) -> BoxStream<'static, slatedb::object_store::Result<ObjectMeta>> {
+            self.inner.list(prefix)
+        }
+
+        async fn list_with_delimiter(
+            &self,
+            prefix: Option<&ObjectPath>,
+        ) -> slatedb::object_store::Result<ListResult> {
+            self.inner.list_with_delimiter(prefix).await
+        }
+
+        async fn copy_opts(
+            &self,
+            _from: &ObjectPath,
+            _to: &ObjectPath,
+            _options: CopyOptions,
+        ) -> slatedb::object_store::Result<()> {
+            Err(slatedb::object_store::Error::NotSupported {
+                source: "this store does not support conditional copy".to_string().into(),
+            })
+        }
+    }
+
+    #[test]
+    fn promote_falls_back_to_a_create_only_put_when_conditional_copy_is_unsupported() {
+        // R5-STOR-05: on a store without conditional copy the promote pays
+        // its documented byte cost (one create-only re-upload of the verified
+        // staged bytes) but keeps the create-only guarantee: a fresh target
+        // publishes; a second, different-bytes completer is a typed refusal
+        // with the published bytes untouched.
+        let dir = create_tmp_dir("slate-r5-promote-fallback");
+        let local: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
+        let shim: Arc<dyn ObjectStore> = Arc::new(NoConditionalCopyStore { inner: local.clone() });
+        let target = ObjectPath::from("base/fv1/m1/keyspace/12CCC.sst");
+
+        let first = Arc::new(NoDeleteStore::new(shim.clone()));
+        let mut upload = staged_upload(&first, &target, b"fallback bytes");
+        let published = bridge(async move { upload.complete().await });
+        assert!(published.is_ok(), "the fallback promote must publish a fresh target, got: {published:?}");
+        assert_eq!(read_target(&local, &target), b"fallback bytes");
+
+        let second = Arc::new(NoDeleteStore::new(shim));
+        let mut contender = staged_upload(&second, &target, b"different bytes!");
+        let refused = bridge(async move { contender.complete().await });
+        assert!(
+            matches!(refused, Err(slatedb::object_store::Error::Precondition { .. })),
+            "the fallback path must stay create-only, got: {refused:?}",
+        );
+        assert_eq!(read_target(&local, &target), b"fallback bytes", "the published bytes are untouched");
+        assert_eq!(objects_under(&local, "base"), vec![target.to_string()], "staging cleaned on both paths");
+    }
+}
+
+#[cfg(test)]
+mod multipart_journal_budget_tests {
+    //! R5-STOR-08 controls: the multipart journal retires terminal rows into
+    //! a bounded receipt window and enforces hard admission budgets — max
+    //! concurrent attempts (reserved at initiation) and max journaled bytes
+    //! (reserved as parts stream) — released only on proven abort/commit.
+    //! Exceeding a budget is a typed refusal, never growth; repeated
+    //! disconnect/abandon cycles therefore reach typed admission instead of
+    //! unbounded memory.
+
+    use std::sync::Arc;
+
+    use slatedb::object_store::{
+        MultipartUpload, ObjectStore, ObjectStoreExt, PutPayload, local::LocalFileSystem, path::Path as ObjectPath,
+    };
+    use test_utils::create_tmp_dir;
+
+    use super::{
+        AttemptState, MULTIPART_MAX_JOURNALED_BYTES, MULTIPART_MAX_OPEN_ATTEMPTS, MULTIPART_TERMINAL_RECEIPTS,
+        MultipartBudgetRefused, NoDeleteStore, admit_multipart_attempt, admit_multipart_bytes, bridge,
+    };
+
+    fn wrapped_store() -> (test_utils::TempDir, Arc<NoDeleteStore>) {
+        let dir = create_tmp_dir("slate-r5-journal");
+        let inner: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
+        (dir, Arc::new(NoDeleteStore::new(inner)))
+    }
+
+    #[test]
+    fn multipart_budget_arithmetic_is_exact_at_the_boundary() {
+        // attempts: strictly-below admits, AT the budget refuses
+        assert_eq!(admit_multipart_attempt(0, 3), Ok(()));
+        assert_eq!(admit_multipart_attempt(2, 3), Ok(()));
+        assert_eq!(admit_multipart_attempt(3, 3), Err(MultipartBudgetRefused::Attempts { open: 3, max: 3 }));
+        assert_eq!(admit_multipart_attempt(4, 3), Err(MultipartBudgetRefused::Attempts { open: 4, max: 3 }));
+        // bytes: exactly AT the budget admits, one byte over refuses,
+        // overflow refuses (never wraps into admission)
+        assert_eq!(admit_multipart_bytes(0, 10, 10), Ok(()));
+        assert_eq!(admit_multipart_bytes(6, 4, 10), Ok(()));
+        assert_eq!(
+            admit_multipart_bytes(7, 4, 10),
+            Err(MultipartBudgetRefused::Bytes { reserved: 7, incoming: 4, max: 10 })
+        );
+        assert_eq!(
+            admit_multipart_bytes(u64::MAX, 1, u64::MAX),
+            Err(MultipartBudgetRefused::Bytes { reserved: u64::MAX, incoming: 1, max: u64::MAX })
+        );
+        // and the production budgets are real, positive bounds
+        assert!(MULTIPART_MAX_OPEN_ATTEMPTS > 0);
+        assert!(MULTIPART_MAX_JOURNALED_BYTES > 0);
+        assert!(MULTIPART_TERMINAL_RECEIPTS > 0);
+    }
+
+    #[test]
+    fn abandoned_attempts_reach_a_typed_admission_refusal_not_unbounded_growth() {
+        // R5-STOR-08 mutant: attempts that disconnect without abort/commit
+        // hold their reservation; once the budget is full, the NEXT
+        // initiation is a typed refusal BEFORE any journal row or provider
+        // upload is created — the journal cannot grow past its budget.
+        let (_dir, store) = wrapped_store();
+        store.set_multipart_budgets_for_test(3, 1_000_000, 8);
+        let mut abandoned = Vec::new();
+        for index in 0..3 {
+            let upload = bridge({
+                let store = store.clone();
+                let location = ObjectPath::from(format!("base/fv1/m1/keyspace/2{index}ABC.sst"));
+                async move { store.put_multipart(&location).await }
+            })
+            .expect("attempts below the budget are admitted");
+            abandoned.push(upload); // never completed, never aborted
+        }
+        let refused = bridge({
+            let store = store.clone();
+            async move { store.put_multipart(&ObjectPath::from("base/fv1/m1/keyspace/29XYZ.sst")).await.map(|_| ()) }
+        });
+        let error = refused.expect_err("the attempt over the budget must be refused");
+        assert!(
+            matches!(&error, slatedb::object_store::Error::Precondition { .. }),
+            "budget exhaustion is a typed refusal, got: {error:?}",
+        );
+        assert!(error.to_string().contains("admission refused"), "the refusal names the budget: {error}");
+        {
+            let journal = store.multipart_journal.lock().unwrap();
+            assert_eq!(journal.open_attempts.len(), 3, "the refused attempt must not have grown the journal");
+        }
+        // an abandoned attempt that finally aborts releases its slot
+        bridge(async move { abandoned.pop().unwrap().abort().await }).unwrap();
+        let admitted = bridge({
+            let store = store.clone();
+            async move { store.put_multipart(&ObjectPath::from("base/fv1/m1/keyspace/29XYZ.sst")).await.map(|_| ()) }
+        });
+        assert!(admitted.is_ok(), "a proven abort must release the reservation, got: {admitted:?}");
+    }
+
+    #[test]
+    fn terminal_attempts_are_retired_to_a_bounded_receipt_window_and_budgets_release() {
+        // R5-STOR-08: repeated disconnect/abort cycles never accumulate rows.
+        // Terminal rows retire into a bounded receipt window (last N), byte
+        // and attempt reservations release on proven abort/commit, and the
+        // active-location map empties with them.
+        let (_dir, store) = wrapped_store();
+        store.set_multipart_budgets_for_test(4, 1_000_000, 2);
+        for cycle in 0..5u32 {
+            let location = ObjectPath::from(format!("base/fv1/m1/keyspace/3{cycle}DEF.sst"));
+            bridge({
+                let (store, location) = (store.clone(), location.clone());
+                async move {
+                    let mut upload = store.put_multipart(&location).await.unwrap();
+                    upload.put_part(PutPayload::from_static(b"cycle bytes")).await.unwrap();
+                    upload.abort().await.unwrap();
+                }
+            });
+        }
+        // one full commit cycle retires the same way
+        bridge({
+            let store = store.clone();
+            async move {
+                let location = ObjectPath::from("base/fv1/m1/keyspace/39GHI.sst");
+                let mut upload = store.put_multipart(&location).await.unwrap();
+                upload.put_part(PutPayload::from_static(b"committed bytes")).await.unwrap();
+                upload.complete().await.unwrap();
+            }
+        });
+        let journal = store.multipart_journal.lock().unwrap();
+        assert!(journal.open_attempts.is_empty(), "terminal attempts must be retired: {:?}", journal.open_attempts);
+        assert_eq!(journal.reserved_bytes, 0, "every reservation must be released on proven abort/commit");
+        assert!(journal.active.is_empty(), "retired attempts must release their active-location rows");
+        assert!(
+            journal.terminal.len() <= 2,
+            "terminal receipts must be bounded to the retention window: {:?}",
+            journal.terminal
+        );
+        // the newest receipt is the committed attempt — still addressable for
+        // idempotency inside the window
+        let (_, newest_state) = journal.terminal.back().expect("the newest receipt is retained");
+        assert_eq!(*newest_state, AttemptState::Committed);
+    }
+
+    #[test]
+    fn the_byte_budget_is_reserved_while_streaming_and_released_on_abort() {
+        // R5-STOR-08: journaled bytes are reserved as parts stream — a part
+        // that would exceed the budget is a typed refusal that reserves and
+        // streams nothing — and a proven abort releases the reservation
+        // exactly.
+        let (_dir, store) = wrapped_store();
+        store.set_multipart_budgets_for_test(4, 10, 8);
+        let location = ObjectPath::from("base/fv1/m1/keyspace/40JKL.sst");
+        let mut upload = bridge({
+            let (store, location) = (store.clone(), location.clone());
+            async move { store.put_multipart(&location).await }
+        })
+        .unwrap();
+        bridge(async move {
+            upload.put_part(PutPayload::from_static(b"12345678")).await.expect("8 bytes fit the 10-byte budget");
+            let refused = upload.put_part(PutPayload::from_static(b"wxyz")).await;
+            assert!(
+                matches!(&refused, Err(slatedb::object_store::Error::Precondition { .. })),
+                "the part over the byte budget must be a typed refusal, got: {refused:?}",
+            );
+            upload.abort().await.expect("abort releases the reservation");
+        });
+        {
+            let journal = store.multipart_journal.lock().unwrap();
+            assert_eq!(journal.reserved_bytes, 0, "abort must release the exact reservation");
+        }
+        // released budget admits the next attempt's parts again
+        let location2 = ObjectPath::from("base/fv1/m1/keyspace/41MNO.sst");
+        let mut upload2 = bridge({
+            let (store, location2) = (store.clone(), location2.clone());
+            async move { store.put_multipart(&location2).await }
+        })
+        .unwrap();
+        bridge(async move {
+            upload2.put_part(PutPayload::from_static(b"12345678")).await.expect("the released budget re-admits");
+            upload2.abort().await.unwrap();
+        });
     }
 }
 

@@ -41,13 +41,16 @@ use std::{
     io,
     io::Write as _,
     path::{Path, PathBuf},
-    sync::OnceLock,
+    sync::{Arc, OnceLock},
 };
 
 use diagnostics::metrics::FsyncMetrics;
 use durability::{DurabilityServiceError, wal::WAL};
 
-use crate::keyspace::{S3_BUCKET_ENV, S3_ENDPOINT_ENV, S3_PREFIX_ENV, StorageBackend};
+use crate::keyspace::{
+    CacheConfigError, S3_ACCESS_KEY_ENV, S3_BUCKET_ENV, S3_CACHE_BYTES_ENV, S3_ENDPOINT_ENV, S3_PREFIX_ENV,
+    S3_REGION_ENV, S3_SECRET_KEY_ENV, S3RuntimeConfig, S3Secret, StorageBackend, validate_cache_config,
+};
 
 /// Environment variable selecting the storage backend profile for factory
 /// construction. Unset means [`StorageBackendProfile::U1ForkRocksFileWal`].
@@ -197,6 +200,12 @@ pub struct BackendContext {
     spec: BackendSpec,
     backend: StorageBackend,
     identity: BackendIdentity,
+    /// R5-STOR-01: the COMPLETE effective S3 configuration for the S3 lane
+    /// (endpoint, region, bucket, root prefix, cache budget, plus the
+    /// credentials as opaque secret handles), resolved from the environment
+    /// at this context's construction — the single admission point — and
+    /// owned here. `None` on every non-S3 lane.
+    s3_runtime: Option<Arc<S3RuntimeConfig>>,
 }
 
 /// The process-wide backend profile witness (R4-STOR-00). Seeded by the FIRST
@@ -207,6 +216,73 @@ pub struct BackendContext {
 /// consistency CHECK, not a resolution source — every resolution still reads
 /// the environment and then proves it agrees with the witness.
 static PROCESS_PROFILE_WITNESS: OnceLock<StorageBackendProfile> = OnceLock::new();
+
+/// R5-STOR-01: the process-wide ADMITTED S3 runtime configuration. Seeded by
+/// the FIRST verified context that carries an S3 runtime and never changed
+/// afterwards: two engines opening one process against different endpoints/
+/// buckets/prefixes/budgets would let the marker attest a different backend
+/// than the one receiving bytes, so a second, DIFFERENT configuration is a
+/// typed refusal ([`StorageFactoryError::BackendS3ConfigChanged`]) — the
+/// documented invariant for two databases with different S3 contexts in one
+/// process. Like the profile witness this is a consistency check + handoff of
+/// the admitted context object, never an environment-resolution source: every
+/// context still resolves the environment at ITS admission and then proves it
+/// agrees with the witness, and the keyspace layer consumes exactly this
+/// admitted object ([`admitted_s3_runtime`]) — provably the same
+/// configuration every verified context carries.
+static ADMITTED_S3_RUNTIME: OnceLock<Arc<S3RuntimeConfig>> = OnceLock::new();
+
+/// The admitted S3 runtime configuration, if any S3-lane context has been
+/// verified in this process (R5-STOR-01). The keyspace open path consumes
+/// this instead of ever reading the environment; before any admission it is
+/// `None` and the S3 open is a typed refusal.
+pub(crate) fn admitted_s3_runtime() -> Option<Arc<S3RuntimeConfig>> {
+    ADMITTED_S3_RUNTIME.get().cloned()
+}
+
+/// The pure witness decision (R5-STOR-01), extracted so the two-contexts-one-
+/// process invariant is a hermetic unit test: a resolved configuration that
+/// differs from the admitted one IN ANY behaviour-affecting field (secrets
+/// included) is a typed refusal whose rendering carries only the NON-SECRET
+/// fingerprints.
+fn verify_s3_runtime_witness(
+    admitted: &S3RuntimeConfig,
+    resolved: &S3RuntimeConfig,
+) -> Result<(), StorageFactoryError> {
+    if admitted.same_effective_config(resolved) {
+        Ok(())
+    } else {
+        Err(StorageFactoryError::BackendS3ConfigChanged {
+            admitted: admitted.fingerprint(),
+            resolved: resolved.fingerprint(),
+        })
+    }
+}
+
+/// R5-STOR-01: resolve the COMPLETE effective S3 runtime configuration from
+/// the environment — the ONLY site in the storage crate that reads the
+/// `TYPEDB_S3_*` values (the keyspace layer holds the NAMES only). Required
+/// values missing is a typed refusal naming the variable; the cache budget is
+/// validated by the same pure validator the O-01 tests pin (unset/0 = cache
+/// off, garbage = typed refusal). Secrets are wrapped as opaque handles at
+/// the moment they are read and never rendered anywhere.
+fn resolve_s3_runtime_from_env() -> Result<S3RuntimeConfig, StorageFactoryError> {
+    let require = |variable: &'static str| {
+        env::var(variable).map_err(|_| StorageFactoryError::S3ConfigMissing { variable })
+    };
+    let cache_raw = env::var(S3_CACHE_BYTES_ENV).ok();
+    let cache_bytes = validate_cache_config(cache_raw.as_deref())
+        .map_err(|CacheConfigError::Invalid { value }| StorageFactoryError::S3CacheBudgetInvalid { value })?;
+    Ok(S3RuntimeConfig {
+        endpoint: require(S3_ENDPOINT_ENV)?,
+        bucket: require(S3_BUCKET_ENV)?,
+        region: env::var(S3_REGION_ENV).unwrap_or_else(|_| "auto".to_owned()),
+        root_prefix: env::var(S3_PREFIX_ENV).unwrap_or_else(|_| "typedb".to_owned()),
+        cache_bytes,
+        access_key_id: S3Secret::new(require(S3_ACCESS_KEY_ENV)?),
+        secret_access_key: S3Secret::new(require(S3_SECRET_KEY_ENV)?),
+    })
+}
 
 impl BackendContext {
     /// Resolve the immutable context from the environment — the single
@@ -222,29 +298,71 @@ impl BackendContext {
     }
 
     /// Build a context for an explicit profile (tests / injected
-    /// configuration). Does NOT seed or consult the process witness — that
+    /// configuration). Does NOT seed or consult the process witnesses — that
     /// belongs to the env admission path — but still refuses the
-    /// not-yet-available lanes.
+    /// not-yet-available lanes. For the S3 lane this is where the COMPLETE
+    /// effective S3 configuration is read from the environment (R5-STOR-01):
+    /// the single admission read, captured immutably into the context.
     pub fn for_profile(profile: StorageBackendProfile) -> Result<Self, StorageFactoryError> {
         let spec = BackendSpec::from_profile(profile)?;
-        let backend = profile.storage_backend()?;
-        let identity = BackendIdentity::resolve(&spec);
-        Ok(Self { profile, spec, backend, identity })
+        let s3_runtime = match &spec {
+            BackendSpec::SlateDbR2(slate) if slate.object_store_profile == "s3" => {
+                Some(Arc::new(resolve_s3_runtime_from_env()?))
+            }
+            _ => None,
+        };
+        Self::for_profile_with_s3_runtime_impl(profile, spec, s3_runtime)
     }
 
-    /// The single OnceLock consistency check (R4-STOR-00): if the process
-    /// witness exists and disagrees with this context's profile, the
-    /// environment changed mid-process — a typed mismatch, never silent.
-    /// The lower storage layers call this when handed a context, so even a
-    /// mutant that re-resolves the environment somewhere below the admission
-    /// point cannot mix two profiles against one tree.
+    /// Build a context with an EXPLICITLY injected S3 runtime configuration
+    /// (tests / future controller-provisioned wiring): no environment read at
+    /// all. Refuses when the profile's lane is not the S3 lane.
+    pub fn for_profile_with_s3_runtime(
+        profile: StorageBackendProfile,
+        runtime: S3RuntimeConfig,
+    ) -> Result<Self, StorageFactoryError> {
+        let spec = BackendSpec::from_profile(profile)?;
+        match &spec {
+            BackendSpec::SlateDbR2(slate) if slate.object_store_profile == "s3" => {
+                Self::for_profile_with_s3_runtime_impl(profile, spec, Some(Arc::new(runtime)))
+            }
+            _ => Err(StorageFactoryError::InvalidProfile { value: format!("{} is not an S3 lane", profile.code()) }),
+        }
+    }
+
+    fn for_profile_with_s3_runtime_impl(
+        profile: StorageBackendProfile,
+        spec: BackendSpec,
+        s3_runtime: Option<Arc<S3RuntimeConfig>>,
+    ) -> Result<Self, StorageFactoryError> {
+        let backend = profile.storage_backend()?;
+        let identity = BackendIdentity::from_spec_and_runtime(&spec, s3_runtime.as_deref());
+        Ok(Self { profile, spec, backend, identity, s3_runtime })
+    }
+
+    /// The single OnceLock consistency check (R4-STOR-00/R5-STOR-01): if a
+    /// process witness exists and disagrees with this context — its profile,
+    /// or its complete effective S3 configuration — the environment changed
+    /// mid-process (or a second database resolved a different S3 backend):
+    /// a typed mismatch, never silent. The lower storage layers call this
+    /// when handed a context, so even a mutant that re-resolves the
+    /// environment somewhere below the admission point cannot mix two
+    /// profiles or two S3 configurations against one tree. A context whose S3
+    /// runtime verifies here also SEEDS the process handoff the keyspace open
+    /// path consumes ([`admitted_s3_runtime`]).
     pub fn verify_process_consistency(&self) -> Result<(), StorageFactoryError> {
         let witness = *PROCESS_PROFILE_WITNESS.get_or_init(|| self.profile);
-        if witness == self.profile {
-            Ok(())
-        } else {
-            Err(StorageFactoryError::BackendContextChanged { cached: witness.code(), resolved: self.profile.code() })
+        if witness != self.profile {
+            return Err(StorageFactoryError::BackendContextChanged {
+                cached: witness.code(),
+                resolved: self.profile.code(),
+            });
         }
+        if let Some(runtime) = &self.s3_runtime {
+            let admitted = ADMITTED_S3_RUNTIME.get_or_init(|| runtime.clone());
+            verify_s3_runtime_witness(admitted, runtime)?;
+        }
+        Ok(())
     }
 
     pub fn profile(&self) -> StorageBackendProfile {
@@ -261,6 +379,12 @@ impl BackendContext {
 
     pub fn identity(&self) -> &BackendIdentity {
         &self.identity
+    }
+
+    /// The complete effective S3 runtime configuration this context OWNS
+    /// (R5-STOR-01); `None` on non-S3 lanes.
+    pub fn s3_runtime(&self) -> Option<&Arc<S3RuntimeConfig>> {
+        self.s3_runtime.as_ref()
     }
 
     pub fn factory(&self) -> StorageFactory {
@@ -324,8 +448,8 @@ pub enum BackendMarker {
 /// The file, inside the database directory, that records the durable backend
 /// identity (S-01/R4-STOR-01). A sibling of the `storage/` subtree and the
 /// WAL, written once at creation and immutable thereafter (the single
-/// sanctioned exception is the one-time v1 → v2 in-place upgrade,
-/// [`upgrade_backend_marker_to_v2`]).
+/// sanctioned exception is the EXPLICIT operator-acknowledged v1 → v2 import,
+/// [`import_legacy_backend_marker`] — R5-STOR-10).
 pub const BACKEND_MARKER_FILE: &str = "backend-spec.marker";
 /// Temp-file prefix for the atomic marker write; a random per-attempt suffix
 /// is appended so two racing attempts can never open each other's temp file
@@ -415,6 +539,21 @@ pub struct BackendIdentity {
     pub bucket: Option<String>,
     /// S3 lane only: root prefix inside the bucket.
     pub root_prefix: Option<String>,
+    /// S3 lane only (R5-STOR-01): the region the client signs/routes for — a
+    /// behaviour-affecting input, so it is part of the attested identity.
+    pub region: Option<String>,
+    /// S3 lane only (R5-STOR-01): the effective disk-cache byte budget
+    /// (`none` when the cache is off). Behaviour-affecting (which bytes are
+    /// served from disk vs the remote store), so it is part of the attested
+    /// identity: changing the budget between opens is a typed identity
+    /// mismatch requiring an explicit reconfiguration, not an env switch.
+    pub cache_budget: Option<String>,
+    /// Provenance of an explicitly IMPORTED legacy marker (R5-STOR-10):
+    /// `Some("v1")` when this identity was written by
+    /// [`import_legacy_backend_marker`]. Recorded inside the sealed marker
+    /// body but EXCLUDED from configuration verification and from the
+    /// configuration digest — it is lineage metadata, not configuration.
+    pub imported_from: Option<String>,
 }
 
 /// v2 marker header. The version is part of the header line so a future
@@ -438,6 +577,9 @@ impl BackendIdentity {
             endpoint: None,
             bucket: None,
             root_prefix: None,
+            region: None,
+            cache_budget: None,
+            imported_from: None,
         };
         if let BackendSpec::SlateDbR2(slate) = spec {
             identity.object_store_profile = Some(slate.object_store_profile.to_owned());
@@ -449,26 +591,37 @@ impl BackendIdentity {
     }
 
     /// The full identity, including the NON-SECRET object-store binding for
-    /// the S3 lane (endpoint, bucket, root prefix — read from the same
-    /// environment the keyspace layer will bind to, at the ONE admission
-    /// point). Secrets (access/secret keys) are deliberately never read here.
-    pub fn resolve(spec: &BackendSpec) -> Self {
+    /// the S3 lane — endpoint, bucket, root prefix, region, and the effective
+    /// cache budget, all taken from the SAME admitted [`S3RuntimeConfig`] the
+    /// keyspace layer will open with (R5-STOR-01: one admission read, one
+    /// config object, one attested identity). Secrets never enter the
+    /// identity, its serialisation, or its digest.
+    pub fn from_spec_and_runtime(spec: &BackendSpec, runtime: Option<&S3RuntimeConfig>) -> Self {
         let mut identity = Self::from_spec(spec);
-        if let BackendSpec::SlateDbR2(slate) = spec {
+        if let (BackendSpec::SlateDbR2(slate), Some(runtime)) = (spec, runtime) {
             if slate.object_store_profile == "s3" {
-                identity.endpoint = env::var(S3_ENDPOINT_ENV).ok();
-                identity.bucket = env::var(S3_BUCKET_ENV).ok();
-                // same default the keyspace layer applies (slate::s3_config)
-                identity.root_prefix = Some(env::var(S3_PREFIX_ENV).unwrap_or_else(|_| "typedb".to_owned()));
+                identity.endpoint = Some(runtime.endpoint.clone());
+                identity.bucket = Some(runtime.bucket.clone());
+                identity.root_prefix = Some(runtime.root_prefix.clone());
+                identity.region = Some(runtime.region.clone());
+                identity.cache_budget = Some(match runtime.cache_bytes {
+                    None => "none".to_owned(),
+                    Some(bytes) => bytes.to_string(),
+                });
             }
         }
         identity
     }
 
-    /// The optional identity fields in their fixed canonical order, paired
-    /// with their canonical field names. One order for serialisation,
-    /// digesting, AND field-by-field verification.
-    fn optional_fields(&self) -> [(&'static str, &Option<String>); 7] {
+    /// The optional CONFIGURATION fields in their fixed canonical order,
+    /// paired with their canonical field names. One order for serialisation,
+    /// digesting, AND field-by-field verification. Append-only: `region` and
+    /// `cache-budget` (R5-STOR-01) come after the original seven so every
+    /// pre-existing identity's canonical body — and therefore its digest — is
+    /// byte-identical. `imported-from` is deliberately NOT here: provenance
+    /// is lineage metadata, excluded from configuration verification and the
+    /// configuration digest.
+    fn optional_fields(&self) -> [(&'static str, &Option<String>); 9] {
         [
             ("object-store", &self.object_store_profile),
             ("materialisation", &self.materialisation_policy),
@@ -477,11 +630,15 @@ impl BackendIdentity {
             ("endpoint", &self.endpoint),
             ("bucket", &self.bucket),
             ("root-prefix", &self.root_prefix),
+            ("region", &self.region),
+            ("cache-budget", &self.cache_budget),
         ]
     }
 
-    /// Canonical serialisation WITHOUT the digest line — the exact bytes the
-    /// configuration digest is computed over.
+    /// Canonical CONFIGURATION serialisation WITHOUT the digest line — the
+    /// exact bytes the configuration digest is computed over. Provenance
+    /// (`imported-from`) is excluded: two identities with the same
+    /// configuration have the same digest whether or not one was imported.
     pub fn canonical_body(&self) -> String {
         let mut out = String::new();
         out.push_str(BACKEND_IDENTITY_HEADER);
@@ -502,9 +659,17 @@ impl BackendIdentity {
         sha256::digest_hex(self.canonical_body().as_bytes())
     }
 
-    /// The full v2 marker content: canonical body sealed by its digest line.
+    /// The full v2 marker content: the canonical configuration body, then any
+    /// provenance line (`imported-from …`, R5-STOR-10), sealed by a digest
+    /// line computed over EVERY byte before it — so a hand-edited provenance
+    /// line breaks the seal exactly like an edited configuration field.
     pub fn serialise_marker(&self) -> String {
-        format!("{}digest {}\n", self.canonical_body(), self.config_digest())
+        let mut body = self.canonical_body();
+        if let Some(origin) = &self.imported_from {
+            body.push_str(&format!("imported-from {origin}\n"));
+        }
+        let seal = sha256::digest_hex(body.as_bytes());
+        format!("{body}digest {seal}\n")
     }
 
     /// Parse persisted marker content. A bare `classic`/`slatedb-r2` line is
@@ -535,7 +700,8 @@ impl BackendIdentity {
         }
         let mut kind = None;
         let mut durability = None;
-        let mut optionals: [Option<String>; 7] = Default::default();
+        let mut optionals: [Option<String>; 9] = Default::default();
+        let mut imported_from = None;
         for line in body.lines().skip(1) {
             if line.is_empty() {
                 continue;
@@ -556,6 +722,11 @@ impl BackendIdentity {
                 "endpoint" => optionals[4] = Some(value.to_owned()),
                 "bucket" => optionals[5] = Some(value.to_owned()),
                 "root-prefix" => optionals[6] = Some(value.to_owned()),
+                "region" => optionals[7] = Some(value.to_owned()),
+                "cache-budget" => optionals[8] = Some(value.to_owned()),
+                // provenance (R5-STOR-10): sealed by the digest but excluded
+                // from configuration verification.
+                "imported-from" => imported_from = Some(value.to_owned()),
                 // fail closed on an unknown field: a richer future format
                 // must bump the header version, not smuggle fields past v2.
                 unknown => {
@@ -566,7 +737,7 @@ impl BackendIdentity {
         let Some(kind) = kind else {
             return Err(StorageFactoryError::BackendMarkerUnrecognised { value: "<v2 marker without kind>".to_owned() });
         };
-        let [object_store_profile, materialisation_policy, cache_policy, protocol_versions, endpoint, bucket, root_prefix] =
+        let [object_store_profile, materialisation_policy, cache_policy, protocol_versions, endpoint, bucket, root_prefix, region, cache_budget] =
             optionals;
         Ok(PersistedBackendMarker::V2(BackendIdentity {
             kind,
@@ -578,6 +749,9 @@ impl BackendIdentity {
             endpoint,
             bucket,
             root_prefix,
+            region,
+            cache_budget,
+            imported_from,
         }))
     }
 }
@@ -593,15 +767,18 @@ pub enum PersistedBackendMarker {
     V2(BackendIdentity),
 }
 
-/// The verdict of a successful marker verification: whether the persisted
-/// marker already carries the full v2 identity or is a verified legacy v1
-/// that the caller should upgrade in place (the documented ONE-TIME upgrade).
+/// The verdict of a successful marker verification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MarkerVerification {
     /// Full v2 identity verified field-by-field.
     V2Verified,
-    /// A legacy v1 marker whose kind matches the resolved identity. The
-    /// caller upgrades it to v2 via [`upgrade_backend_marker_to_v2`].
+    /// HISTORICAL (R5-STOR-10): verification NO LONGER produces this verdict.
+    /// A legacy v1 marker — even with a matching kind — is now a typed
+    /// refusal ([`StorageFactoryError::LegacyMarkerRequiresExplicitImport`])
+    /// from ordinary open, because v1 bytes never proved the full identity;
+    /// the explicit [`import_legacy_backend_marker`] workflow replaces the
+    /// silent upgrade. The variant remains so callers matching on it keep
+    /// compiling; the branch is dead.
     LegacyV1Verified,
 }
 
@@ -675,12 +852,14 @@ pub fn write_backend_marker(database_dir: &Path, identity: &BackendIdentity) -> 
     crate::fsync_path(database_dir)
 }
 
-/// The ONE sanctioned marker replacement (R4-STOR-01): upgrade a VERIFIED
-/// legacy v1 marker to the full v2 identity, in place, on first open. The
-/// caller must hold a [`MarkerVerification::LegacyV1Verified`] verdict —
-/// i.e. the v1 kind was already proven to match `identity.kind`. The replace
-/// is atomic (synced temp + rename) and the existing marker is validated
-/// no-follow first; every other overwrite of a marker remains forbidden.
+/// The atomic replace mechanic behind [`import_legacy_backend_marker`]
+/// (R4-STOR-01/R5-STOR-10): rewrite the marker, in place, as the given full
+/// v2 identity. The replace is atomic (synced temp + rename) and the existing
+/// marker is validated no-follow first; every other overwrite of a marker
+/// remains forbidden. Ordinary open NEVER calls this any more (R5-STOR-10:
+/// verification refuses a v1 marker instead of upgrading it); it survives as
+/// a public symbol for the retired silent-upgrade call sites and as the
+/// import workflow's write step — which is the only path that reaches it.
 pub fn upgrade_backend_marker_to_v2(database_dir: &Path, identity: &BackendIdentity) -> io::Result<()> {
     let final_path = database_dir.join(BACKEND_MARKER_FILE);
     let existing = fs::symlink_metadata(&final_path)?;
@@ -696,6 +875,50 @@ pub fn upgrade_backend_marker_to_v2(database_dir: &Path, identity: &BackendIdent
         Err(error) => {
             let _ = fs::remove_file(&tmp);
             Err(error)
+        }
+    }
+}
+
+/// R5-STOR-10: the EXPLICIT legacy-marker import — the only sanctioned path
+/// from a v1 (kind-only) marker to a full v2 identity. Ordinary open refuses
+/// a v1 marker ([`StorageFactoryError::LegacyMarkerRequiresExplicitImport`])
+/// because its bytes never proved endpoint, bucket, prefix, or policy; this
+/// function requires the CALLER to assert the complete target identity
+/// (`acknowledged_identity` — the operator's explicit acknowledgement), and:
+///
+/// 1. reads the existing marker no-follow (a symlink or unreadable marker is
+///    a typed refusal, the tree untouched);
+/// 2. requires it to actually BE a legacy v1 marker — importing over a v2
+///    marker or a missing marker is refused;
+/// 3. requires the v1 kind to match the acknowledged identity's kind — a
+///    mismatched kind is the cross-engine refusal, never an import;
+/// 4. writes the acknowledged identity with `imported-from v1` provenance
+///    recorded INSIDE the sealed marker body, atomically (synced temp +
+///    rename), with the same no-follow/no-stray guarantees as
+///    [`write_backend_marker`].
+pub fn import_legacy_backend_marker(
+    database_dir: &Path,
+    acknowledged_identity: &BackendIdentity,
+) -> Result<(), StorageFactoryError> {
+    match read_backend_marker(database_dir)? {
+        None => Err(StorageFactoryError::BackendMarkerMissing),
+        Some(PersistedBackendMarker::V2(_)) => Err(StorageFactoryError::LegacyMarkerImportRefused {
+            reason: "the marker already carries a full v2 identity; there is nothing legacy to import".to_owned(),
+        }),
+        Some(PersistedBackendMarker::V1 { kind }) => {
+            if kind != acknowledged_identity.kind {
+                return Err(StorageFactoryError::BackendMarkerMismatch {
+                    persisted: kind.tag(),
+                    resolved: acknowledged_identity.kind.tag(),
+                });
+            }
+            let mut upgraded = acknowledged_identity.clone();
+            upgraded.imported_from = Some("v1".to_owned());
+            upgrade_backend_marker_to_v2(database_dir, &upgraded).map_err(|error| {
+                StorageFactoryError::LegacyMarkerImportRefused {
+                    reason: format!("the atomic marker replace failed: {error}"),
+                }
+            })
         }
     }
 }
@@ -736,11 +959,14 @@ pub fn read_backend_marker(database_dir: &Path) -> Result<Option<PersistedBacken
 ///
 /// A v2 marker is compared FIELD BY FIELD (kind, durability backend,
 /// object-store profile, materialisation policy, cache policy, protocol
-/// version, endpoint, bucket, root prefix) and finally by configuration
-/// digest; the first differing field is named in the typed refusal. A legacy
-/// v1 marker can only prove its kind; a matching kind yields
-/// [`MarkerVerification::LegacyV1Verified`] so the caller performs the
-/// one-time in-place upgrade to v2.
+/// version, endpoint, bucket, root prefix, region, cache budget) and finally
+/// by configuration digest; the first differing field is named in the typed
+/// refusal. Provenance (`imported-from`) is lineage metadata, excluded from
+/// verification. A legacy v1 marker can only prove its kind, which is not
+/// the full identity — even a matching kind is therefore the typed
+/// [`StorageFactoryError::LegacyMarkerRequiresExplicitImport`] refusal
+/// (R5-STOR-10), resolved only by the explicit
+/// [`import_legacy_backend_marker`] workflow.
 pub fn verify_backend_marker(
     resolved: &BackendIdentity,
     persisted: Option<&PersistedBackendMarker>,
@@ -753,7 +979,14 @@ pub fn verify_backend_marker(
         None => Err(StorageFactoryError::BackendMarkerMissing),
         Some(PersistedBackendMarker::V1 { kind }) => {
             if *kind == resolved.kind {
-                Ok(MarkerVerification::LegacyV1Verified)
+                // R5-STOR-10: a v1 marker proved ONLY its kind — those bytes
+                // never attested endpoint, bucket, prefix, or policy, so
+                // silently rebinding them to whatever configuration is
+                // current would launder an unproven identity into a full
+                // attestation. Ordinary open refuses; only the explicit
+                // [`import_legacy_backend_marker`] workflow — in which the
+                // operator asserts the full target identity — upgrades it.
+                Err(StorageFactoryError::LegacyMarkerRequiresExplicitImport { kind: kind.tag() })
             } else {
                 Err(StorageFactoryError::BackendMarkerMismatch {
                     persisted: kind.tag(),
@@ -890,6 +1123,38 @@ pub enum StorageFactoryError {
         cached: &'static str,
         resolved: &'static str,
     },
+    /// R5-STOR-01: a required `TYPEDB_S3_*` value is missing at the admission
+    /// point — a typed refusal BEFORE any engine or namespace is touched,
+    /// never a silent fallback to another store.
+    S3ConfigMissing {
+        variable: &'static str,
+    },
+    /// R5-STOR-01/O-01: the cache budget value is garbage — a typed refusal
+    /// at admission, never a silent cache-off fallback.
+    S3CacheBudgetInvalid {
+        value: String,
+    },
+    /// R5-STOR-01: this process already admitted a DIFFERENT effective S3
+    /// configuration. Two databases opening one process against different S3
+    /// backends would let a marker attest a backend that is not the one
+    /// receiving bytes; the second configuration is a typed refusal. The
+    /// rendered fingerprints are NON-SECRET.
+    BackendS3ConfigChanged {
+        admitted: String,
+        resolved: String,
+    },
+    /// R5-STOR-10: the database carries a legacy v1 (kind-only) marker. Those
+    /// bytes never proved the full identity, so ordinary open refuses;
+    /// upgrading requires the explicit [`import_legacy_backend_marker`]
+    /// workflow in which the operator asserts the complete target identity.
+    LegacyMarkerRequiresExplicitImport {
+        kind: &'static str,
+    },
+    /// R5-STOR-10: an explicit legacy import was refused (nothing legacy to
+    /// import, or the atomic replace failed) — the marker is untouched.
+    LegacyMarkerImportRefused {
+        reason: String,
+    },
     /// S-01: the existing database carries no backend marker — it is ambiguous
     /// and must not be opened by silently constructing a fresh engine beside
     /// the other backend's files. Requires an explicit migration/import.
@@ -954,6 +1219,45 @@ impl fmt::Display for StorageFactoryError {
                      two engines write one storage tree; the open is refused with the tree untouched."
                 )
             }
+            Self::S3ConfigMissing { variable } => {
+                write!(
+                    f,
+                    "refusing to open: required S3 configuration '{variable}' is not set at the admission \
+                     point (R5-STOR-01); the S3 lane fails closed rather than falling back to another store"
+                )
+            }
+            Self::S3CacheBudgetInvalid { value } => {
+                write!(
+                    f,
+                    "refusing to open: invalid {S3_CACHE_BYTES_ENV} value '{value}': expected a byte count \
+                     (0 or unset disables the cache); refusing at admission rather than silently disabling \
+                     the read cache (R5-STOR-01/O-01)"
+                )
+            }
+            Self::BackendS3ConfigChanged { admitted, resolved } => {
+                write!(
+                    f,
+                    "refusing to open: this process already admitted the S3 backend configuration \
+                     [{admitted}], but this open resolves [{resolved}] (R5-STOR-01). One process binds ONE \
+                     effective S3 backend; a second configuration is a typed refusal with the tree and \
+                     namespace untouched."
+                )
+            }
+            Self::LegacyMarkerRequiresExplicitImport { kind } => {
+                write!(
+                    f,
+                    "refusing to open: the database carries a legacy v1 backend marker (kind '{kind}') that \
+                     never attested the full backend identity — endpoint, bucket, prefix, policy \
+                     (R5-STOR-10). Ordinary open does not silently rebind it; run the explicit legacy \
+                     marker import, asserting the complete target identity, to upgrade it."
+                )
+            }
+            Self::LegacyMarkerImportRefused { reason } => {
+                write!(
+                    f,
+                    "legacy backend marker import refused (R5-STOR-10): {reason}; the marker is untouched"
+                )
+            }
             Self::BackendMarkerMissing => {
                 write!(
                     f,
@@ -1004,6 +1308,11 @@ impl Error for StorageFactoryError {
             | Self::ProfileUnavailable { .. }
             | Self::BackendNotYetAvailable { .. }
             | Self::BackendContextChanged { .. }
+            | Self::S3ConfigMissing { .. }
+            | Self::S3CacheBudgetInvalid { .. }
+            | Self::BackendS3ConfigChanged { .. }
+            | Self::LegacyMarkerRequiresExplicitImport { .. }
+            | Self::LegacyMarkerImportRefused { .. }
             | Self::BackendMarkerMissing
             | Self::BackendMarkerMismatch { .. }
             | Self::BackendIdentityFieldMismatch { .. }
@@ -1101,7 +1410,7 @@ mod backend_identity_tests {
 
     use super::{
         BackendIdentity, BackendMarker, BackendSpec, MarkerVerification, PersistedBackendMarker,
-        StorageBackendProfile, StorageFactoryError, read_backend_marker, upgrade_backend_marker_to_v2,
+        StorageBackendProfile, StorageFactoryError, import_legacy_backend_marker, read_backend_marker,
         verify_backend_marker, write_backend_marker,
     };
 
@@ -1111,6 +1420,8 @@ mod backend_identity_tests {
         identity.endpoint = Some("https://minio.local:9000".to_owned());
         identity.bucket = Some("typedb-conformance".to_owned());
         identity.root_prefix = Some("typedb".to_owned());
+        identity.region = Some("auto".to_owned());
+        identity.cache_budget = Some("none".to_owned());
         identity
     }
 
@@ -1144,6 +1455,10 @@ mod backend_identity_tests {
             ("protocol", Box::new(|id: &mut BackendIdentity| id.protocol_versions = Some("fv2".into()))),
             ("object-store", Box::new(|id: &mut BackendIdentity| id.object_store_profile = Some("local-fs".into()))),
             ("durability", Box::new(|id: &mut BackendIdentity| id.durability = "remote-wal".into())),
+            // R5-STOR-01 mutant (b): region and cache budget are
+            // behaviour-affecting, so each is verified and each is named.
+            ("region", Box::new(|id: &mut BackendIdentity| id.region = Some("eu-west-1".into()))),
+            ("cache-budget", Box::new(|id: &mut BackendIdentity| id.cache_budget = Some("1048576".into()))),
         ] {
             let mut resolved = persisted_identity.clone();
             mutate(&mut resolved);
@@ -1181,30 +1496,143 @@ mod backend_identity_tests {
     }
 
     #[test]
-    fn a_legacy_v1_marker_verifies_by_kind_and_upgrades_in_place_once() {
-        let dir = create_tmp_dir("identity-v1-upgrade");
-        // a database created before R4-STOR-01: bare kind line
+    fn an_ordinary_open_on_a_v1_marker_is_a_typed_refusal_that_touches_nothing() {
+        // R5-STOR-10 mutant: the silent v1 → v2 rebind is gone. A matching
+        // kind is still a REFUSAL from ordinary verification — v1 bytes never
+        // proved endpoint/bucket/prefix/policy — and the marker file is left
+        // byte-identical.
+        let dir = create_tmp_dir("identity-v1-refusal");
         std::fs::write(dir.join(super::BACKEND_MARKER_FILE), b"classic").unwrap();
+        let before = std::fs::read(dir.join(super::BACKEND_MARKER_FILE)).unwrap();
         let persisted = read_backend_marker(&dir).unwrap().expect("marker present");
         assert_eq!(persisted, PersistedBackendMarker::V1 { kind: BackendMarker::Classic });
 
         let resolved = BackendIdentity::from_spec(&BackendSpec::Classic);
-        // matching kind: verified as legacy, prompting the one-time upgrade
-        assert_eq!(
-            verify_backend_marker(&resolved, Some(&persisted)).unwrap(),
-            MarkerVerification::LegacyV1Verified
+        let refused = verify_backend_marker(&resolved, Some(&persisted));
+        assert!(
+            matches!(refused, Err(StorageFactoryError::LegacyMarkerRequiresExplicitImport { kind: "classic" })),
+            "a v1 marker with a matching kind must be the typed explicit-import refusal, got: {refused:?}",
         );
-        upgrade_backend_marker_to_v2(&dir, &resolved).unwrap();
-        // after the upgrade the marker is the full v2 identity
-        let upgraded = read_backend_marker(&dir).unwrap().expect("marker present");
-        assert_eq!(upgraded, PersistedBackendMarker::V2(resolved.clone()));
-        assert_eq!(verify_backend_marker(&resolved, Some(&upgraded)).unwrap(), MarkerVerification::V2Verified);
+        assert_eq!(
+            std::fs::read(dir.join(super::BACKEND_MARKER_FILE)).unwrap(),
+            before,
+            "the refusal must leave the legacy marker byte-identical",
+        );
+        // no temp/stray files either — the tree is untouched
+        let strays: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name != super::BACKEND_MARKER_FILE)
+            .collect();
+        assert!(strays.is_empty(), "the refusal must not create any file: {strays:?}");
 
-        // and a v1 marker with the WRONG kind never upgrades — it is the
-        // cross-engine refusal
+        // and a v1 marker with the WRONG kind stays the cross-engine refusal
         let slate_resolved = slate_s3_identity();
         let refused = verify_backend_marker(&slate_resolved, Some(&persisted));
         assert!(matches!(refused, Err(StorageFactoryError::BackendMarkerMismatch { .. })));
+    }
+
+    #[test]
+    fn an_explicit_import_upgrades_a_v1_marker_and_records_provenance() {
+        // R5-STOR-10: the import workflow — the caller asserts the FULL
+        // target identity, and the upgraded marker records `imported-from v1`
+        // inside its sealed body.
+        let dir = create_tmp_dir("identity-v1-import");
+        std::fs::write(dir.join(super::BACKEND_MARKER_FILE), b"classic").unwrap();
+        let acknowledged = BackendIdentity::from_spec(&BackendSpec::Classic);
+        import_legacy_backend_marker(&dir, &acknowledged).unwrap();
+
+        let text = std::fs::read_to_string(dir.join(super::BACKEND_MARKER_FILE)).unwrap();
+        assert!(text.contains("imported-from v1"), "provenance must be recorded inside the marker: {text}");
+
+        let upgraded = read_backend_marker(&dir).unwrap().expect("marker present");
+        let PersistedBackendMarker::V2(upgraded_identity) = &upgraded else {
+            panic!("the imported marker must parse as a full v2 identity, got: {upgraded:?}");
+        };
+        assert_eq!(upgraded_identity.imported_from.as_deref(), Some("v1"));
+        // ordinary verification now passes — provenance is lineage metadata,
+        // excluded from configuration verification and the config digest
+        assert_eq!(verify_backend_marker(&acknowledged, Some(&upgraded)).unwrap(), MarkerVerification::V2Verified);
+        assert_eq!(upgraded_identity.config_digest(), acknowledged.config_digest());
+        // no temp stray outlives the atomic replace
+        let strays: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name.contains(".tmp"))
+            .collect();
+        assert!(strays.is_empty(), "the atomic import must leave no temp file: {strays:?}");
+    }
+
+    #[test]
+    fn an_import_with_a_mismatched_kind_is_refused_and_the_marker_is_untouched() {
+        // R5-STOR-10 mutant: acknowledging the WRONG kind must never import.
+        let dir = create_tmp_dir("identity-v1-import-mismatch");
+        std::fs::write(dir.join(super::BACKEND_MARKER_FILE), b"classic").unwrap();
+        let before = std::fs::read(dir.join(super::BACKEND_MARKER_FILE)).unwrap();
+        let refused = import_legacy_backend_marker(&dir, &slate_s3_identity());
+        assert!(
+            matches!(
+                refused,
+                Err(StorageFactoryError::BackendMarkerMismatch { persisted: "classic", resolved: "slatedb-r2" })
+            ),
+            "a kind-mismatched import must be the typed cross-engine refusal, got: {refused:?}",
+        );
+        assert_eq!(std::fs::read(dir.join(super::BACKEND_MARKER_FILE)).unwrap(), before, "marker untouched");
+    }
+
+    #[test]
+    fn an_import_refuses_when_there_is_nothing_legacy_to_import() {
+        // missing marker: the migration refusal
+        let empty = create_tmp_dir("identity-import-missing");
+        let refused = import_legacy_backend_marker(&empty, &BackendIdentity::from_spec(&BackendSpec::Classic));
+        assert!(matches!(refused, Err(StorageFactoryError::BackendMarkerMissing)));
+
+        // already-v2 marker: refused, bytes untouched
+        let dir = create_tmp_dir("identity-import-v2");
+        let identity = BackendIdentity::from_spec(&BackendSpec::Classic);
+        write_backend_marker(&dir, &identity).unwrap();
+        let before = std::fs::read(dir.join(super::BACKEND_MARKER_FILE)).unwrap();
+        let refused = import_legacy_backend_marker(&dir, &identity);
+        assert!(
+            matches!(refused, Err(StorageFactoryError::LegacyMarkerImportRefused { .. })),
+            "importing over a v2 marker must be a typed refusal, got: {refused:?}",
+        );
+        assert_eq!(std::fs::read(dir.join(super::BACKEND_MARKER_FILE)).unwrap(), before, "marker untouched");
+    }
+
+    #[test]
+    fn an_import_never_follows_a_symlink_at_the_marker_path() {
+        // the import inherits read_backend_marker's no-follow: a symlinked
+        // marker is refused and its target is never read or written.
+        let dir = create_tmp_dir("identity-import-symlink");
+        let target = dir.join("elsewhere");
+        std::fs::write(&target, b"classic").unwrap();
+        std::os::unix::fs::symlink(&target, dir.join(super::BACKEND_MARKER_FILE)).unwrap();
+        let refused = import_legacy_backend_marker(&dir, &BackendIdentity::from_spec(&BackendSpec::Classic));
+        assert!(
+            matches!(refused, Err(StorageFactoryError::BackendMarkerRead { .. })),
+            "a symlink at the marker path must refuse the import, got: {refused:?}",
+        );
+        assert_eq!(std::fs::read(&target).unwrap(), b"classic", "the symlink target must be untouched");
+    }
+
+    #[test]
+    fn a_tampered_provenance_line_breaks_the_marker_seal() {
+        // the provenance line is INSIDE the sealed body: editing it after the
+        // digest sealed the marker is a typed digest refusal.
+        let dir = create_tmp_dir("identity-import-tamper");
+        std::fs::write(dir.join(super::BACKEND_MARKER_FILE), b"classic").unwrap();
+        let acknowledged = BackendIdentity::from_spec(&BackendSpec::Classic);
+        import_legacy_backend_marker(&dir, &acknowledged).unwrap();
+        let sealed = std::fs::read_to_string(dir.join(super::BACKEND_MARKER_FILE)).unwrap();
+        let tampered = sealed.replace("imported-from v1", "imported-from v0");
+        assert_ne!(sealed, tampered, "fixture: the tamper must change the bytes");
+        std::fs::write(dir.join(super::BACKEND_MARKER_FILE), tampered).unwrap();
+        let refused = read_backend_marker(&dir);
+        assert!(
+            matches!(refused, Err(StorageFactoryError::BackendMarkerDigestMismatch { .. })),
+            "an edited provenance line must fail the marker's own seal, got: {refused:?}",
+        );
     }
 
     #[test]
@@ -1342,5 +1770,203 @@ mod backend_marker_tests {
             matches!(&refused, Err(StorageFactoryError::BackendMarkerUnrecognised { value }) if value == "postgres"),
             "an unrecognised marker must refuse, got: {refused:?}",
         );
+    }
+}
+
+#[cfg(test)]
+mod s3_admission_tests {
+    //! R5-STOR-01 controls: the BackendContext OWNS the complete effective S3
+    //! configuration. The environment is read exactly once, at admission; the
+    //! captured context survives any later environment change; every
+    //! behaviour-affecting input moves the identity digest; two different S3
+    //! configurations in one process are a typed refusal; secrets never leak
+    //! into any rendering; and the slate adapter's source carries no
+    //! environment read or config cache at all (the grep guard).
+
+    use std::sync::Mutex;
+
+    use super::{
+        BackendContext, BackendIdentity, BackendSpec, S3RuntimeConfig, S3Secret, StorageBackendProfile,
+        StorageFactoryError, resolve_s3_runtime_from_env, verify_s3_runtime_witness,
+    };
+
+    /// Serialises the tests that mutate `TYPEDB_S3_*` process environment
+    /// variables (they are the only readers/writers of those variables in
+    /// this test binary).
+    static S3_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    const S3_VARIABLES: [&str; 7] = [
+        super::S3_ENDPOINT_ENV,
+        super::S3_BUCKET_ENV,
+        super::S3_REGION_ENV,
+        super::S3_PREFIX_ENV,
+        super::S3_CACHE_BYTES_ENV,
+        super::S3_ACCESS_KEY_ENV,
+        super::S3_SECRET_KEY_ENV,
+    ];
+
+    fn set_s3_env(values: [&str; 7]) {
+        for (variable, value) in S3_VARIABLES.iter().zip(values) {
+            // SAFETY: serialised by S3_ENV_LOCK; no other test in this binary
+            // reads or writes the TYPEDB_S3_* variables.
+            unsafe { std::env::set_var(variable, value) };
+        }
+    }
+
+    fn clear_s3_env() {
+        for variable in S3_VARIABLES {
+            // SAFETY: see set_s3_env.
+            unsafe { std::env::remove_var(variable) };
+        }
+    }
+
+    fn config_a() -> S3RuntimeConfig {
+        S3RuntimeConfig {
+            endpoint: "http://a.local:9000".to_owned(),
+            bucket: "bucket-a".to_owned(),
+            region: "region-a".to_owned(),
+            root_prefix: "prefix-a".to_owned(),
+            cache_bytes: Some(1_048_576),
+            access_key_id: S3Secret::new("AKIA-A".to_owned()),
+            secret_access_key: S3Secret::new("SUPERSECRET-A".to_owned()),
+        }
+    }
+
+    #[test]
+    fn the_captured_context_survives_a_post_admission_environment_change() {
+        // R5-STOR-01 mutant (a): every S3 environment variable changes AFTER
+        // context resolution and BEFORE open — the captured context (the only
+        // thing the open path consumes: BackendContext::s3_runtime is what
+        // admitted_s3_runtime hands the keyspace layer) must still carry the
+        // admission-time values, never the new environment.
+        let _guard = S3_ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        set_s3_env(["http://a.local:9000", "bucket-a", "region-a", "prefix-a", "1048576", "AKIA-A", "SUPERSECRET-A"]);
+        let context = BackendContext::for_profile(StorageBackendProfile::U2S3SlateS3FileWal)
+            .expect("the S3 context must resolve under environment A");
+        // the environment changes to B in every variable
+        set_s3_env(["http://b.local:9000", "bucket-b", "region-b", "prefix-b", "2097152", "AKIA-B", "SUPERSECRET-B"]);
+
+        let captured = context.s3_runtime().expect("the S3 lane context owns its runtime config");
+        assert_eq!(captured.endpoint, "http://a.local:9000");
+        assert_eq!(captured.bucket, "bucket-a");
+        assert_eq!(captured.region, "region-a");
+        assert_eq!(captured.root_prefix, "prefix-a");
+        assert_eq!(captured.cache_bytes, Some(1_048_576));
+        assert_eq!(captured.access_key_id, S3Secret::new("AKIA-A".to_owned()));
+
+        // and the identity the marker would attest is derived from the SAME
+        // captured configuration, not the new environment
+        let identity = context.identity();
+        assert_eq!(identity.endpoint.as_deref(), Some("http://a.local:9000"));
+        assert_eq!(identity.bucket.as_deref(), Some("bucket-a"));
+        assert_eq!(identity.region.as_deref(), Some("region-a"));
+        assert_eq!(identity.root_prefix.as_deref(), Some("prefix-a"));
+        assert_eq!(identity.cache_budget.as_deref(), Some("1048576"));
+
+        clear_s3_env();
+    }
+
+    #[test]
+    fn a_missing_required_variable_is_a_typed_refusal_naming_it() {
+        let _guard = S3_ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        clear_s3_env();
+        let refused = resolve_s3_runtime_from_env();
+        assert!(
+            matches!(refused, Err(StorageFactoryError::S3ConfigMissing { variable }) if variable == super::S3_ENDPOINT_ENV),
+            "an unset endpoint must be the typed refusal naming the variable, got: {refused:?}",
+        );
+
+        // a garbage cache budget is the typed refusal, never a silent cache-off
+        set_s3_env(["http://a.local:9000", "bucket-a", "region-a", "prefix-a", "not-a-number", "AKIA-A", "S-A"]);
+        let refused = resolve_s3_runtime_from_env();
+        assert!(
+            matches!(&refused, Err(StorageFactoryError::S3CacheBudgetInvalid { value }) if value == "not-a-number"),
+            "a garbage cache budget must be the typed refusal, got: {refused:?}",
+        );
+        clear_s3_env();
+    }
+
+    #[test]
+    fn every_behavior_affecting_s3_input_changes_the_identity_digest() {
+        // R5-STOR-01 mutant (b): endpoint, bucket, root prefix, REGION, and
+        // CACHE BUDGET (value change AND on/off) each move the configuration
+        // digest — no input can change behaviour while the marker digest
+        // stays put.
+        let spec = BackendSpec::from_profile(StorageBackendProfile::U2S3SlateS3FileWal).unwrap();
+        let base = BackendIdentity::from_spec_and_runtime(&spec, Some(&config_a())).config_digest();
+        let mutations: [(&str, Box<dyn Fn(&mut S3RuntimeConfig)>); 6] = [
+            ("endpoint", Box::new(|c| c.endpoint = "http://other:9000".to_owned())),
+            ("bucket", Box::new(|c| c.bucket = "bucket-other".to_owned())),
+            ("root prefix", Box::new(|c| c.root_prefix = "prefix-other".to_owned())),
+            ("region", Box::new(|c| c.region = "eu-west-1".to_owned())),
+            ("cache budget value", Box::new(|c| c.cache_bytes = Some(2_097_152))),
+            ("cache budget off", Box::new(|c| c.cache_bytes = None)),
+        ];
+        for (input, mutate) in mutations {
+            let mut mutated = config_a();
+            mutate(&mut mutated);
+            let digest = BackendIdentity::from_spec_and_runtime(&spec, Some(&mutated)).config_digest();
+            assert_ne!(digest, base, "a changed {input} must change the identity digest");
+        }
+    }
+
+    #[test]
+    fn two_different_s3_configs_in_one_process_are_a_typed_refusal() {
+        // R5-STOR-01: the documented process invariant — one process binds
+        // ONE effective S3 backend. The witness decision is pure, so the
+        // boundary is hermetic: same config verifies; any differing field —
+        // secrets included — refuses with NON-SECRET fingerprints.
+        let admitted = config_a();
+        assert!(verify_s3_runtime_witness(&admitted, &config_a()).is_ok(), "the same config must verify");
+
+        let mut other_bucket = config_a();
+        other_bucket.bucket = "bucket-b".to_owned();
+        let refused = verify_s3_runtime_witness(&admitted, &other_bucket);
+        assert!(
+            matches!(&refused, Err(StorageFactoryError::BackendS3ConfigChanged { .. })),
+            "a differing bucket must be the typed refusal, got: {refused:?}",
+        );
+
+        // a changed SECRET alone is behaviour-affecting too — refused, and
+        // the rendering carries no secret material
+        let mut other_secret = config_a();
+        other_secret.secret_access_key = S3Secret::new("SUPERSECRET-B".to_owned());
+        let refused = verify_s3_runtime_witness(&admitted, &other_secret).expect_err("a changed secret must refuse");
+        let rendered = refused.to_string();
+        assert!(!rendered.contains("SUPERSECRET"), "the refusal must never render a secret: {rendered}");
+        assert!(!rendered.contains("AKIA-A"), "the refusal must never render a key id: {rendered}");
+    }
+
+    #[test]
+    fn secrets_never_enter_identity_serialisation_debug_or_fingerprint() {
+        let config = config_a();
+        let spec = BackendSpec::from_profile(StorageBackendProfile::U2S3SlateS3FileWal).unwrap();
+        let identity = BackendIdentity::from_spec_and_runtime(&spec, Some(&config));
+        for rendering in [
+            identity.serialise_marker(),
+            identity.canonical_body(),
+            format!("{identity:?}"),
+            format!("{config:?}"),
+            config.fingerprint(),
+        ] {
+            assert!(!rendering.contains("SUPERSECRET"), "secret leaked into a rendering: {rendering}");
+            assert!(!rendering.contains("AKIA-A"), "key id leaked into a rendering: {rendering}");
+        }
+    }
+
+    #[test]
+    fn the_slate_adapter_reads_no_environment_below_the_admission_point() {
+        // R5-STOR-01 mutant (c) — the grep guard: the slate adapter's source
+        // must never regrow an environment read or a static S3 config cache.
+        // The admission point (THIS module) is the only reader of the
+        // TYPEDB_S3_* values; the adapter receives the admitted config
+        // object.
+        let source = include_str!("keyspace/slate.rs");
+        for forbidden in ["env::var", "std::env", "var_os", "OnceLock<S3Config", "static CONFIG"] {
+            assert!(
+                !source.contains(forbidden),
+                "keyspace/slate.rs must not contain {forbidden:?} below the admission point (R5-STOR-01)",
+            );
+        }
     }
 }

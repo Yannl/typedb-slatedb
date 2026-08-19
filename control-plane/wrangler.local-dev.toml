@@ -1,0 +1,46 @@
+# DEVELOPER-CONVENIENCE posture — the EXPLICIT local config (R4-STACK-01).
+#
+# This file must be NAMED to be used (`wrangler dev --local -c
+# wrangler.local-dev.toml`; vitest-pool-workers points here). The default
+# wrangler.toml is the managed fail-closed posture; nothing selects this
+# unsafe posture by accident. This posture is explicitly NON-PARITY: it
+# opens the dev issuer and dev-only admin routes for fast local iteration
+# and its results are never comparable with a managed lane's.
+#
+# stack/wrangler-check.mjs verifies this file against the canonical graph
+# (posture "developer-convenience") including the shared migration ledger.
+
+name = "typedb-r2-control-plane"
+main = "src/controller/worker-entry.ts"
+compatibility_date = "2025-11-01"
+
+workers_dev = false
+preview_urls = false
+
+[[durable_objects.bindings]]
+name = "CONTROLLER"
+class_name = "DatabaseControllerDO"
+
+[[durable_objects.bindings]]
+name = "CONTAINER"
+class_name = "DatabaseContainerDO"
+
+# Same append-only migration ledger as wrangler.toml (R4-STACK-10):
+# local state and managed state share DO schema history by construction.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["DatabaseControllerDO"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["DatabaseContainerDO"]
+
+[[r2_buckets]]
+binding = "PAYLOADS"
+bucket_name = "typedb-payloads-local"
+
+# Local developer-convenience vars — an EXACT allowlist. ONLY the exact
+# value "local-dev" opens dev-only routes (PR0 containment).
+[vars]
+CONTROLLER_KEY_PROFILE = "local-dev"
+CONTROLLER_SURFACE = "local-dev"

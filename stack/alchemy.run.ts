@@ -26,6 +26,57 @@ import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import path from "node:path";
+
+// ---------------------------------------------------------------------------
+// R4-STACK-02: EXECUTION-MODE ASSERTION — this program is mechanically
+// dev-only, before any resource is declared. A comment or wrapper
+// convention is not an enforcement boundary; this throw is. The round-4
+// audit proved a direct `alchemy deploy` of this file would use deploy
+// providers while the program contains local bucket names and local-dev
+// vars. Three independent refusals, all evaluated at module load, before
+// the first Cloudflare.* declaration below can exist:
+//
+//   1. the local-only acknowledgement variable is set EXCLUSIVELY by
+//      stack/cli.mjs dev; any other invocation (alchemy deploy, alchemy
+//      dev run directly, CI misuse) lacks it and fails here;
+//   2. a deploy/destroy-shaped CLI invocation fails even WITH the ack —
+//      the ack authorizes local dev, nothing else;
+//   3. live Cloudflare credentials in the environment fail outright:
+//      this program must never run where it could reach a real account.
+//
+// The deployable production stack is a SEPARATE generated program derived
+// from the same typed graph (stack/graph.data.mjs, posture "managed") —
+// it does not exist yet by design (ledger: Cloudflare NOT READY), and
+// when it lands it will refuse local names/vars symmetrically.
+// ---------------------------------------------------------------------------
+function assertLocalOnlyExecution(): void {
+  if (process.env.ALCHEMY_LOCAL_ONLY_ACK !== "stack-cli-dev") {
+    throw new Error(
+      "alchemy.run.ts is LOCAL-ONLY and must be started through `node stack/cli.mjs dev` " +
+        "(missing ALCHEMY_LOCAL_ONLY_ACK). Direct `alchemy deploy`/`alchemy dev` of this " +
+        "program is refused: it declares local bucket names and the developer-convenience " +
+        "posture, which must never reach a deploy provider (R4-STACK-02).",
+    );
+  }
+  const argv = process.argv.map((a) => a.toLowerCase());
+  for (const forbidden of ["deploy", "destroy", "apply", "push"]) {
+    if (argv.includes(forbidden)) {
+      throw new Error(
+        `alchemy.run.ts refuses a '${forbidden}'-shaped invocation even with the local ack — ` +
+          "the ack authorizes local dev only (R4-STACK-02).",
+      );
+    }
+  }
+  for (const v of ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "CF_API_TOKEN"]) {
+    if (process.env[v]) {
+      throw new Error(
+        `alchemy.run.ts refuses to run with live credential variable ${v} set — ` +
+          "this local-only program must be unable to reach a real account (R4-STACK-02).",
+      );
+    }
+  }
+}
+assertLocalOnlyExecution();
 import {
   COMPATIBILITY_DATE,
   CONTAINER_BINDING,

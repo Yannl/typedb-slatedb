@@ -43,12 +43,13 @@
    "title": "Real-platform probe run under an owner-approved envelope",
    "state": "NOT_READY_TO_EXECUTE",
    "authority": "v16 brief G2; platform-probe spec (14 probe IDs)",
-   "why": "Probe harness now implements all 14 IDs with fail-closed verdict aggregation and mock/fault self-tests (C-P0-10 repaired locally), but there is no owner-approved latency/throughput/cost/amplification envelope, no live credentials (SI-G0-3), and the control-plane authority boundary (C-P0-02..09) and product seam are prerequisites for anything beyond disposable platform probes.",
+   "why": "Round-4: the runner's destructive RED-preflight cleanup (R4-CF-00) is repaired with zero-authority refusal, lock-baseline restore and an enforced envelope meter (R4-CF-01), and redaction is a serialization invariant (R4-CF-03) — all mutant-proved locally. Still blocking: nine probes require /do|/ctr|/worker harness endpoints with no deployable implementation (R4-CF-02); several real-mode assertions invert or omit normative product requirements (R4-CF-04); no owner-approved envelope; no credentials; the production issuer/registry seam (R4-SEC-01) precedes any product-labelled run.",
    "blockers": [
+    "R4-CF-02 deployable probe harness in the canonical graph",
+    "R4-CF-04 obligation-manifest assertion split (provider facts vs product conformance)",
+    "owner-approved G2 numeric envelope file (absent by design until the owner signs one)",
     "SI-G0-3 credentials",
-    "owner-approved G2 envelope",
-    "PR4 authority repairs",
-    "disposable resource plan"
+    "R4-SEC-01 production issuer/registry seam"
    ]
   },
   {
@@ -401,7 +402,7 @@
    "status": "DONE",
    "items": [
     "round-3 response document",
-    "ADR-0009/spec-delivery/handoff \u00a718 corrections",
+    "ADR-0009/spec-delivery/handoff §18 corrections",
     "ledger round-3 adoption",
     "source-lock truth for the shipped fork (CD-007)",
     "evidence reconciliation after R3-B flake-ledger change (bundle root re-sealed, all 5 evidence checks green)",
@@ -421,6 +422,62 @@
     "4397747",
     "92573cb"
    ]
+  },
+  {
+   "id": "R4-A",
+   "title": "Destructive-stop safety: zero-authority refusal, lock baseline restore, enforced envelope, redaction invariant (R4-CF-00/01/03)",
+   "status": "DONE",
+   "items": [
+    "RefusedProvider + zero-call assertion",
+    "lock snapshot/conservative restore, never rules:[]",
+    "MeteredProvider budget-before-dispatch + intent journal + verdict-after-cleanup",
+    "write-time deep redaction + seal-time secret scanner",
+    "runner-safety.test.ts 14 mutants incl. the audit's reproduced counterexample; self-test control 7b"
+   ],
+   "commits": [
+    "d89b01d"
+   ]
+  },
+  {
+   "id": "R4-B",
+   "title": "Posture truth: managed default deploy, explicit local config, per-graph posture invariants, migration ledger (R4-STACK-01/02/08/10)",
+   "status": "IN_PROGRESS",
+   "items": [
+    "cloudflare-real graph emits managed vars; posture invariants validated per graph",
+    "wrangler.toml = managed fail-closed default; wrangler.local-dev.toml explicit",
+    "alchemy.run.ts execution-mode assertion (dev-only mechanically)",
+    "binding diff by stable name; bucketName only on PAYLOADS",
+    "append-only migration ledger enforced in both configs"
+   ],
+   "commits": []
+  },
+  {
+   "id": "R4-C",
+   "title": "Storage: multipart immutability bypass, manifest requirement, checkpoint ordering/fallback, backend identity (R4-STOR-00..11)",
+   "status": "IN_PROGRESS",
+   "items": [],
+   "commits": []
+  },
+  {
+   "id": "R4-D",
+   "title": "Evidence adjudication split, source-lock freshness, CI v2 enforcement, Mode-Q semantics (R4-EVID-01/01a/03a, R4-MODEQ-01)",
+   "status": "IN_PROGRESS",
+   "items": [],
+   "commits": []
+  },
+  {
+   "id": "R4-E",
+   "title": "Security seam: exact capability actions, read fencing, Rust finalize generation, checkpoint activation proof (R4-SEC-03..06)",
+   "status": "OPEN",
+   "items": [],
+   "commits": []
+  },
+  {
+   "id": "R4-F",
+   "title": "Local stack: semantic readiness, PID identity, transitive guard, secure downloader/secrets, S3 certification corpus, native-fidelity topology (R4-STACK-03..09, R4-LOCAL-05..07, PR2/PR3)",
+   "status": "IN_PROGRESS",
+   "items": [],
+   "commits": []
   }
  ],
  "q_dispositions": {
@@ -470,5 +527,13 @@
   "audited_commit": "05886cf1dde17b5e07c80684a691e83fb0401a64",
   "decision": "NO-GO for a live Cloudflare run today; continue local implementation",
   "response": "docs/reviews/deep-audit-2026-08-18-round3-response.md"
+ },
+ "adopted_audit_round4": {
+  "directive": "TypeDB on SlateDB/R2 round-4 deep audit and pre-Cloudflare total-quality directive, 2026-08-19",
+  "audited_commit": "e1f88a0ee6cd6d43f1fa6eeaa067161f58c2fc2a",
+  "decision": "NO-GO for a product-labelled Cloudflare live qualification; continue local implementation. The credentialed probe runner was additionally under a DESTRUCTIVE STOP (R4-CF-00: RED preflight issued a lock-policy reset) until the zero-authority repair landed; the stop is lifted for the repaired runner but the run remains NOT READY pending the R4 program (deployable harness, obligation-manifest assertions, owner envelope, credentials).",
+  "local_s3_decision": "OD-009: RustFS strategic target / MinIO loopback-confined transition baseline; promotion gated on the provider-neutral certification corpus",
+  "confidentiality_decision": "OD-008 OPEN: no confidentiality profile is decided; v16 §19.6 is NOT closed",
+  "response": "docs/reviews/deep-audit-2026-08-19-round4-response.md"
  }
 }

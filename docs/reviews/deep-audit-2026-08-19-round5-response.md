@@ -127,7 +127,18 @@ truth: `docs/ledger/gates.json`.
   per request on ACTUAL bytes, and in aggregate; the graph marks the
   container execution facet declared-ahead/advisory, enforced by a stack
   honesty test. No actual Container process exists — stated openly.
-- **SEC-05** (read-fence TOCTOU) — the last P0 of this pass, in flight.
+- **SEC-05** — CLOSED (`00fc024`): the token check, the actor-liveness
+  revalidation and the catalogue read happen in ONE synchronous
+  transaction that also records a single-use, short-TTL lease over the
+  exact object keys; fence/revoke/expire/incarnation-bump delete that
+  actor's leases in their own transactions; redemption re-checks
+  existence, expiry, single-use, exact key set and live authority AT
+  REDEMPTION TIME. The in-DO-read alternative was rejected on the record
+  (it would route payload bytes through the byte-blind controller,
+  serialize reads behind control mutations, and contradict PERF-01).
+  Executed: pause-after-authorization → fence → resume is refused on all
+  seven read routes, a pinned iterator cannot be paged after a fence, and
+  replayed/doubled/widened leases refuse.
 - **SEC-10 / OD-008** (confidentiality profile): remains an OPEN owner
   decision on purpose; no profile is silently inferred.
 
@@ -159,7 +170,47 @@ refuses to sign for a tree that differs from the draft's binding.
   partially closed by the managed E2E + native-fidelity lanes; the
   combined single-command topology remains tracked work.
 
-## Performance/robustness (R5-PERF-01/02) — in flight this pass (R5-SEC-09 closed above).
+## Performance/robustness (R5-PERF-01/02) — CLOSED (`00fc024`)
+
+The JSON cap binds ACTUAL bytes (stream-capped, strict UTF-8, depth
+bounded); payload writes are digest-declared streaming (stage → verify →
+create-only promote); reads gain a negotiated streaming variant while the
+DEFAULT response stays byte-identical base64 JSON, asserted including key
+order. Three limits are recorded in code rather than glossed: R2 refuses
+unknown-length streams (so the mandatory content-length becomes a
+FixedLengthStream length and the platform enforces the declaration both
+ways); a streamed read's digest verdict can only gate the last byte, so a
+corrupted object aborts the response body rather than refusing up front —
+which is why the default remains verify-then-serve; and the scan page
+still buffers within its authority-cut 8 MiB budget, because streaming an
+array-of-records would be a different protocol, not a different encoding.
+
+## Final sweep on the merge candidate
+
+Executed on the exact tree being merged, nothing skipped:
+
+| Lane | Result |
+|---|---|
+| fork Rust (storage, recovery, mvcc, snapshot, isolation, durability, database) | **345 passed, 0 failed** |
+| tools Rust (remote-wal-spike incl. both live lanes, protocol models) | **70 passed, 0 failed** |
+| control-plane node core | **124 passed, 0 failed** |
+| control-plane workerd | **69 passed, 0 failed** (10 files) |
+| L1 local-dev E2E / managed-surface E2E | **ALL PASS** / **ALL PASS** |
+| probe harness self-test | **25/25 controls** |
+| stack | **68 passed, 0 failed**; wrangler consistency PASS |
+| ledger lint / mutants | PASS / **16 executed, 16 killed** |
+| catalogue + plan (`--require-current-lock`) | PASS / PASS (23,132 rows) |
+| evidence-v2 / Mode-Q mutants | **15/15** / **11/11 killed** |
+| source-lock lint / mutants | PASS / **7/7** |
+| strict-epoch attestation + suite gate | PASS / PASS (420/420 failures accounted for as fence refusals) |
+| SlateDB fork reconstruction | OK (5 patches, deterministic) |
+
+What remains RED is red on purpose and unchanged: G0 OPEN_RED (Mode Q
+absent), G1 OPEN, G2 NOT_READY_TO_EXECUTE, plan coverage 0/23,138,
+official driver rows NOT_IMPLEMENTED, OD-008 confidentiality profile
+undecided. R5-LOCAL-02 (the single-command ladder) and the R5-CI-01
+release pipeline (tested-equals-shipped, SBOM/provenance) are the named
+carry-forward items.
 
 ## CI/packaging (R5-CI-01) — workflow hardening lands with R5-A; the
 package-once/test-the-digest release pipeline, SBOM/provenance and the

@@ -43,11 +43,10 @@
    "title": "Real-platform probe run under an owner-approved envelope",
    "state": "NOT_READY_TO_EXECUTE",
    "authority": "v16 brief G2; platform-probe spec (14 probe IDs)",
-   "why": "Round-4: the runner's destructive RED-preflight cleanup (R4-CF-00) is repaired with zero-authority refusal, lock-baseline restore and an enforced envelope meter (R4-CF-01), redaction is a serialization invariant (R4-CF-03), the nine /do|/ctr|/worker probes now have a deployable in-repo harness whose source digest is bound into the bundle (R4-CF-02, probes/harness-worker.ts + wrangler.probe-harness.toml), and every assertion is classified provider-fact vs product-conformance by the obligation manifest with three product obligations honestly OPEN so the product_conformance sub-verdict cannot overclaim (R4-CF-04) — all mutant-proved locally (24 self-test controls). Still blocking: no owner-approved envelope; no credentials; the production issuer/registry seam (R4-SEC-01) precedes any product-labelled run; the three OPEN product obligations (ambiguity-resolution-real, runtime-cannot-delete, attempt-identity-changed-bytes-real).",
+   "why": "Round-4: the runner's destructive RED-preflight cleanup (R4-CF-00) is repaired with zero-authority refusal, lock-baseline restore and an enforced envelope meter (R4-CF-01), redaction is a serialization invariant (R4-CF-03), the nine /do|/ctr|/worker probes now have a deployable in-repo harness whose source digest is bound into the bundle (R4-CF-02, probes/harness-worker.ts + wrangler.probe-harness.toml), and every assertion is classified provider-fact vs product-conformance by the obligation manifest with three product obligations honestly OPEN so the product_conformance sub-verdict cannot overclaim (R4-CF-04) — all mutant-proved locally (24 self-test controls). Still blocking: no owner-approved envelope; no credentials; the production issuer/registry seam (R4-SEC-01) is now implemented and proven locally (R4-PR1: opaque registry, provisioning transaction, mint/verify separation, managed-surface E2E) - what remains for live is provisioning real managed keys, under the credentials blocker; the three OPEN product obligations (ambiguity-resolution-real, runtime-cannot-delete, attempt-identity-changed-bytes-real).",
    "blockers": [
     "owner-approved G2 numeric envelope file (absent by design until the owner signs one)",
-    "SI-G0-3 credentials",
-    "R4-SEC-01 production issuer/registry seam (R4-PR1)",
+    "SI-G0-3 credentials (including real managed key provisioning for the R4-PR1 issuer hierarchy)",
     "three OPEN product-conformance obligations in probes/obligations.ts"
    ]
   },
@@ -488,11 +487,15 @@
     "R4-SEC-05: assertActiveReader — WAL_READ binds session+generation and is revalidated live at use time",
     "R4-SEC-03: Rust L1 client threads the exact generation through every mint (no default/zero fallback); bound actor; validating contract mock; live workerd 24/24",
     "R4-SEC-06: checkpoint activation takes the material checkpoint-restore-evidence/v2 manifest, validated field-by-field",
-    "OPEN remainder tracked as R4-PR1: tenant registry, private issuer/provisioner, managed-surface local E2E, keyring"
+    "R4-PR1 / R4-SEC-01 (locally executable): opaque tenant registry + PROVISION transaction (first-call squat dead, race loser typed PROVISION_CONFLICT), registry-derived DO routing (idFromName from the VERIFIED token binding), private-issuer key hierarchy (root never reaches runtime; per-scope derived keys; capability-scope material cannot mint PROVISION), token schema v2 (v/kid/env/tenantId, closed field set), per-run ephemeral managed keys, managed-surface E2E (dev-route 404 matrix with zero side effects + full internal bootstrap). Node 96/96, workerd 25/25, e2e 94 PASS, e2e:managed 23 PASS.",
+    "Rust client speaks the provisioning protocol: byte-exact v2 PROVISION mint pinned to the TS implementation by a cross-implementation vector; live workerd suite 28/28.",
+    "Still live-blocking (not locally provable): real managed key provisioning/rotation drills at deploy time; asymmetric upgrade seam recorded in registry.ts."
    ],
    "commits": [
     "56fda81",
-    "b53fd35"
+    "b53fd35",
+    "a8adfff",
+    "e434761"
    ]
   },
   {

@@ -97,9 +97,22 @@ and Mode-Q Bazel cquery semantic validation.
   holds a bound actor for reads, and its contract mock now VALIDATES
   issuance like the worker does (refusal matrix executed; live workerd
   24/24 including the issuance-refusal checks).
-- OPEN remainder (tracked as R4-PR1 / R4-SEC-01): production tenant
-  registry, private issuer/provisioner, managed-surface local E2E,
-  keyring/kid rotation.
+- R4-PR1 / R4-SEC-01, locally executable (`a8adfff`, `e434761`):
+  the opaque tenant registry + provisioning transaction kill first-call
+  squatting (only the internal PROVISION capability binds an authority,
+  transactionally, race loser typed); the Worker derives DO routing from
+  the VERIFIED token's binding, never the caller's database id; the
+  private issuer holds the only root — runtimes get per-scope derived
+  keys, so verifier material structurally cannot mint (schema v2 tokens:
+  v/kid/env/tenantId, closed field set, per-run ephemeral managed keys);
+  the managed-surface E2E boots the REAL production wrangler config,
+  proves the dev-route 404 matrix with zero side effects, and completes
+  the full bootstrap through the internal path only. The Rust client
+  speaks the same protocol (byte-exact v2 mint pinned to the TS
+  implementation by a cross-implementation vector; live suite 28/28).
+  Remaining for live: provisioning real managed keys + rotation drills
+  (under the G2 credentials blocker); the asymmetric upgrade seam is
+  recorded in `registry.ts`.
 
 ## Probe harness truth (R4-CF-04, R4-CF-02) — CLOSED (`6301fec`)
 

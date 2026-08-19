@@ -18,7 +18,7 @@
     },
     "control-plane": {
       "manifest": "control-plane/package.json",
-      "manifest_sha256": "43585cef914b65900326bfbd757d8a64778d2c1fbb1195fa3f90367dcfe9f459",
+      "manifest_sha256": "9e9b1d69181f583fd2ca4ecfa9b6df67dae07e9e5fe83001ec6fa441ae012fa7",
       "lockfile": "control-plane/package-lock.json",
       "lockfile_sha256": "5a6476047a4a68ae604dcec17adda832fb7b7868adf49cf7bcb17449af473fce"
     }

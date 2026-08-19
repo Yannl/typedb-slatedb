@@ -26,7 +26,7 @@
   "fork_staging": {
     "fork_root": "fork/typedb",
     "staged_file_count": 778,
-    "staged_tree_sha256": "32a753b2c93148821259bd31abf7f50a17941dbe377b25e0bea046db6a4e1c0e",
+    "staged_tree_sha256": "9cdc967eaeb403e6fd4e00223846caffca19a864edf0e23c427a25b60eb6e11d",
     "note": "sources/typedb under test == locked TB revision + this patch set"
   },
   "slatedb_consumption": {

@@ -321,6 +321,29 @@ fn mint_materialization_id() -> String {
 /// seam lands, this function is the single site that changes: it takes the
 /// controller-provided writer epoch and this local fallback becomes the
 /// no-controller degenerate case.
+/// R5-STOR-03 — WHAT THIS IS, AND WHAT IT IS NOT.
+///
+/// This is a LOCAL-LANE epoch source: a process-local wall-clock counter
+/// that lets the U2/U2S3 conformance lanes satisfy the SHIPPED
+/// `external_epoch_required` fence (R5-STOR-04) so a single local writer
+/// can open at all. It is NOT production fencing, and the round-5 audit
+/// was right to insist the difference be stated rather than implied:
+///
+///   * it is per PROCESS — two hosts opening the same store can mint
+///     overlapping epochs, so it cannot arbitrate a cross-host takeover;
+///   * it derives from the local clock — a clock rollback can produce a
+///     non-monotone sequence across restarts (the +1 tie-break only
+///     protects same-process ordering);
+///   * nothing ALLOCATES it authoritatively — no controller records which
+///     epoch a writer was granted, so no evidence exists to fence with.
+///
+/// Real fencing is the controller's reserve → acquire/fence → recover →
+/// attest → activate protocol, whose lanes (U3/U4) refuse at admission
+/// with `BackendNotYetAvailable` precisely so this local source can never
+/// be mistaken for it — asserted by
+/// `factory::product_backend_tests` and by the U3/U4 refusal tests. When
+/// the controller seam lands, the epoch arrives as a typed allocation in
+/// `BackendContext` and this function is deleted, not extended.
 fn local_writer_epoch() -> u64 {
     static LAST: AtomicU64 = AtomicU64::new(0);
     let wall = std::time::SystemTime::now()

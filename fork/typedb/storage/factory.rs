@@ -292,9 +292,57 @@ impl BackendContext {
     /// before any directory, WAL, engine, or namespace is touched.
     pub fn resolve_from_env() -> Result<Self, StorageFactoryError> {
         let profile = StorageFactory::resolve_from_env()?.profile();
+        // R5-STOR-02: if the deployment names a PRODUCT backend, it and the
+        // conformance profile must agree — see resolve_product_backend.
+        let requested = Self::resolve_product_backend()?;
         let context = Self::for_profile(profile)?;
+        context.verify_product_backend(requested)?;
         context.verify_process_consistency()?;
         Ok(context)
+    }
+
+    /// R5-STOR-02: read the operator's product-backend selection (the
+    /// `--storage.backend` / [`PRODUCT_BACKEND_ENV`] input the server
+    /// resolves per database at open). `None` means the deployment did not
+    /// name one, in which case the profile's implied backend stands and
+    /// nothing is silently overridden. An unparseable value is a typed
+    /// refusal, never a default.
+    pub fn resolve_product_backend() -> Result<Option<ProductBackend>, StorageFactoryError> {
+        match env::var(PRODUCT_BACKEND_ENV) {
+            Err(env::VarError::NotPresent) => Ok(None),
+            Err(env::VarError::NotUnicode(_)) => {
+                Err(StorageFactoryError::InvalidProductBackend { value: "<non-unicode>".to_owned() })
+            }
+            Ok(value) => match ProductBackend::parse(&value) {
+                Some(backend) => Ok(Some(backend)),
+                None => Err(StorageFactoryError::InvalidProductBackend { value }),
+            },
+        }
+    }
+
+    /// The PRODUCT backend this context actually runs (v17 §26(a)): a
+    /// first-class deployment property, derived from the resolved backend
+    /// rather than from the test profile's name.
+    pub fn product_backend(&self) -> ProductBackend {
+        ProductBackend::from_marker(self.identity.kind)
+    }
+
+    /// R5-STOR-02: the operator's selection and the lane must AGREE.
+    /// Disagreement is a typed refusal at admission — neither the test
+    /// profile nor the product setting silently wins.
+    pub fn verify_product_backend(
+        &self, requested: Option<ProductBackend>,
+    ) -> Result<(), StorageFactoryError> {
+        let Some(requested) = requested else { return Ok(()) };
+        let running = self.product_backend();
+        if requested == running {
+            return Ok(());
+        }
+        Err(StorageFactoryError::ProductBackendProfileMismatch {
+            requested: requested.tag(),
+            profile: self.profile.code(),
+            profile_implies: running.tag(),
+        })
     }
 
     /// Build a context for an explicit profile (tests / injected
@@ -469,6 +517,83 @@ impl BackendMarker {
             "classic" => Some(Self::Classic),
             "slatedb-r2" => Some(Self::SlateDbR2),
             _ => None,
+        }
+    }
+}
+
+/// R5-STOR-02: the PRODUCT storage-backend selection — v17 §26(a)'s
+/// `classic | slatedb-r2`, resolved per database at open from SERVER
+/// CONFIGURATION, not from the conformance profile.
+///
+/// The distinction the round-5 audit demanded, stated plainly:
+///
+///   * `ProductBackend` is what an OPERATOR chooses. It is a shipping
+///     product option; `classic` can never be compiled out of the release
+///     binary, and a database created under one product backend is not
+///     silently openable under the other.
+///   * `StorageBackendProfile` (U0..U4) is TEST TOPOLOGY: which lane the
+///     conformance programme is exercising around the same product binary
+///     and the same public API. It configures where bytes live in a test
+///     rig; it must not be the thing that decides product semantics.
+///
+/// The two must AGREE. Rather than letting either silently override the
+/// other (the exact defect: a test env var deciding a product's storage
+/// engine), a disagreement is the typed [`StorageFactoryError::
+/// ProductBackendProfileMismatch`] refusal at admission, before any engine
+/// or directory is touched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProductBackend {
+    /// RocksDB keyspaces + file WAL: upstream-identical, ships forever.
+    Classic,
+    /// SlateDB keyspaces on an object store + external WAL.
+    SlateDbR2,
+}
+
+/// Server-configuration input naming the product backend. This is the
+/// config-file/flag equivalent of `--storage.backend=classic|slatedb-r2`;
+/// the server passes its resolved value here so the product option is a
+/// first-class deployment choice rather than a test-lane side effect.
+pub const PRODUCT_BACKEND_ENV: &str = "TYPEDB_STORAGE_BACKEND";
+
+impl ProductBackend {
+    pub fn tag(self) -> &'static str {
+        match self {
+            Self::Classic => "classic",
+            Self::SlateDbR2 => "slatedb-r2",
+        }
+    }
+
+    /// Exact, case-sensitive parse of the two contract spellings. Anything
+    /// else is a typed refusal — never a silent fallback to a default
+    /// engine (an operator typo must not change where data lives).
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim() {
+            "classic" => Some(Self::Classic),
+            "slatedb-r2" => Some(Self::SlateDbR2),
+            _ => None,
+        }
+    }
+
+    /// The product backend a persisted marker names.
+    pub fn from_marker(marker: BackendMarker) -> Self {
+        match marker {
+            BackendMarker::Classic => Self::Classic,
+            BackendMarker::SlateDbR2 => Self::SlateDbR2,
+        }
+    }
+
+    /// The product backend a conformance profile implies. Every profile
+    /// exercises exactly one product backend; U0/U1 are the classic lanes,
+    /// U2/U2S3/U3/U4 are the slatedb-r2 lanes at increasing remoteness.
+    pub fn of_profile(profile: StorageBackendProfile) -> Self {
+        match profile {
+            StorageBackendProfile::U0PristineUpstream | StorageBackendProfile::U1ForkRocksFileWal => {
+                Self::Classic
+            }
+            StorageBackendProfile::U2SlateLocalFs
+            | StorageBackendProfile::U2S3SlateS3FileWal
+            | StorageBackendProfile::U3SlateRemoteSim
+            | StorageBackendProfile::U4ProductionRemote => Self::SlateDbR2,
         }
     }
 }
@@ -1150,6 +1275,28 @@ pub enum StorageFactoryError {
     LegacyMarkerRequiresExplicitImport {
         kind: &'static str,
     },
+    /// R5-STOR-02: the operator-selected PRODUCT backend and the
+    /// conformance profile's implied backend disagree. Neither silently
+    /// wins — a test lane must never decide a product's storage engine,
+    /// and a product setting must never mislabel which lane is running.
+    ProductBackendProfileMismatch {
+        requested: &'static str,
+        profile: &'static str,
+        profile_implies: &'static str,
+    },
+    /// R5-STOR-02: a database created under one product backend is not
+    /// silently openable under the other (v17 §26(c)); moving one is an
+    /// explicit export/import, never an implicit reinterpretation.
+    ProductBackendMismatch {
+        persisted: &'static str,
+        requested: &'static str,
+    },
+    /// R5-STOR-02: `TYPEDB_STORAGE_BACKEND` (the `--storage.backend`
+    /// equivalent) carried a value that is not exactly `classic` or
+    /// `slatedb-r2`. Refused rather than defaulted.
+    InvalidProductBackend {
+        value: String,
+    },
     /// R5-STOR-10: an explicit legacy import was refused (nothing legacy to
     /// import, or the atomic replace failed) — the marker is untouched.
     LegacyMarkerImportRefused {
@@ -1243,6 +1390,31 @@ impl fmt::Display for StorageFactoryError {
                      namespace untouched."
                 )
             }
+            Self::ProductBackendProfileMismatch { requested, profile, profile_implies } => {
+                write!(
+                    f,
+                    "refusing to open: the configured product storage backend is '{requested}' but the \
+                     conformance profile '{profile}' exercises '{profile_implies}' (R5-STOR-02). A test \
+                     profile must never decide a product's storage engine, and a product setting must \
+                     never mislabel the lane under test — fix whichever of the two is wrong."
+                )
+            }
+            Self::ProductBackendMismatch { persisted, requested } => {
+                write!(
+                    f,
+                    "refusing to open: this database was created under the '{persisted}' product storage \
+                     backend and was addressed as '{requested}' (v17 §26(c), R5-STOR-02). Cross-backend \
+                     movement is an explicit export/import, never an implicit reinterpretation of bytes."
+                )
+            }
+            Self::InvalidProductBackend { value } => {
+                write!(
+                    f,
+                    "invalid product storage backend {value:?}: expected exactly 'classic' or \
+                     'slatedb-r2' (--storage.backend / {PRODUCT_BACKEND_ENV}). Refused rather than \
+                     defaulted — a typo must not change where data lives."
+                )
+            }
             Self::LegacyMarkerRequiresExplicitImport { kind } => {
                 write!(
                     f,
@@ -1311,6 +1483,9 @@ impl Error for StorageFactoryError {
             | Self::S3ConfigMissing { .. }
             | Self::S3CacheBudgetInvalid { .. }
             | Self::BackendS3ConfigChanged { .. }
+            | Self::ProductBackendProfileMismatch { .. }
+            | Self::ProductBackendMismatch { .. }
+            | Self::InvalidProductBackend { .. }
             | Self::LegacyMarkerRequiresExplicitImport { .. }
             | Self::LegacyMarkerImportRefused { .. }
             | Self::BackendMarkerMissing
@@ -1396,6 +1571,141 @@ mod sha256_tests {
             digest_hex(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
             "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
         );
+    }
+}
+
+#[cfg(test)]
+mod product_backend_tests {
+    //! R5-STOR-02: `classic | slatedb-r2` is a PRODUCT option (v17 §26),
+    //! resolved from server configuration and persisted per database — not
+    //! a side effect of the conformance profile a test lane happens to set.
+
+    use super::*;
+
+    #[test]
+    fn the_product_backend_wire_spelling_is_exact_and_never_defaulted() {
+        assert_eq!(ProductBackend::parse("classic"), Some(ProductBackend::Classic));
+        assert_eq!(ProductBackend::parse("slatedb-r2"), Some(ProductBackend::SlateDbR2));
+        assert_eq!(ProductBackend::Classic.tag(), "classic");
+        assert_eq!(ProductBackend::SlateDbR2.tag(), "slatedb-r2");
+        // a typo, a case variant or an adjacent spelling must NOT resolve to
+        // some default engine — where data lives is not guessed
+        for bad in ["", "Classic", "CLASSIC", "slatedb", "slatedb_r2", "rocksdb", "u1", "classic "] {
+            if bad == "classic " {
+                // surrounding whitespace is trimmed; the VALUE still has to be exact
+                assert_eq!(ProductBackend::parse(bad), Some(ProductBackend::Classic));
+                continue;
+            }
+            assert_eq!(ProductBackend::parse(bad), None, "{bad:?} must not parse");
+        }
+    }
+
+    #[test]
+    fn every_conformance_profile_declares_which_product_backend_it_exercises() {
+        use StorageBackendProfile::*;
+        assert_eq!(ProductBackend::of_profile(U0PristineUpstream), ProductBackend::Classic);
+        assert_eq!(ProductBackend::of_profile(U1ForkRocksFileWal), ProductBackend::Classic);
+        assert_eq!(ProductBackend::of_profile(U2SlateLocalFs), ProductBackend::SlateDbR2);
+        assert_eq!(ProductBackend::of_profile(U2S3SlateS3FileWal), ProductBackend::SlateDbR2);
+        assert_eq!(ProductBackend::of_profile(U3SlateRemoteSim), ProductBackend::SlateDbR2);
+        assert_eq!(ProductBackend::of_profile(U4ProductionRemote), ProductBackend::SlateDbR2);
+    }
+
+    #[test]
+    fn the_running_product_backend_is_derived_from_the_resolved_backend() {
+        let classic = BackendContext::for_profile(StorageBackendProfile::U1ForkRocksFileWal).unwrap();
+        assert_eq!(classic.product_backend(), ProductBackend::Classic);
+        let slate = BackendContext::for_profile(StorageBackendProfile::U2SlateLocalFs).unwrap();
+        assert_eq!(slate.product_backend(), ProductBackend::SlateDbR2);
+    }
+
+    #[test]
+    fn agreeing_product_selection_and_profile_admit() {
+        let classic = BackendContext::for_profile(StorageBackendProfile::U1ForkRocksFileWal).unwrap();
+        assert!(classic.verify_product_backend(Some(ProductBackend::Classic)).is_ok());
+        // an unset product selection leaves the lane's implied backend alone
+        assert!(classic.verify_product_backend(None).is_ok());
+        let slate = BackendContext::for_profile(StorageBackendProfile::U2SlateLocalFs).unwrap();
+        assert!(slate.verify_product_backend(Some(ProductBackend::SlateDbR2)).is_ok());
+    }
+
+    #[test]
+    fn mutant_a_test_profile_can_never_silently_decide_the_product_backend() {
+        // the exact R5-STOR-02 defect: a deployment configured for the
+        // classic product backend, running under a SlateDB conformance
+        // profile. Neither silently wins — admission refuses, naming both.
+        let slate_lane = BackendContext::for_profile(StorageBackendProfile::U2SlateLocalFs).unwrap();
+        let refused = slate_lane.verify_product_backend(Some(ProductBackend::Classic));
+        assert!(
+            matches!(
+                refused,
+                Err(StorageFactoryError::ProductBackendProfileMismatch {
+                    requested: "classic", profile: "U2", profile_implies: "slatedb-r2"
+                })
+            ),
+            "{refused:?}"
+        );
+        // and symmetrically
+        let classic_lane = BackendContext::for_profile(StorageBackendProfile::U1ForkRocksFileWal).unwrap();
+        let refused = classic_lane.verify_product_backend(Some(ProductBackend::SlateDbR2));
+        assert!(
+            matches!(
+                refused,
+                Err(StorageFactoryError::ProductBackendProfileMismatch {
+                    requested: "slatedb-r2", profile: "U1", profile_implies: "classic"
+                })
+            ),
+            "{refused:?}"
+        );
+    }
+
+    #[test]
+    fn mutant_a_database_created_under_one_product_backend_is_not_openable_under_the_other() {
+        // v17 §26(c): cross-backend movement is an explicit export/import.
+        // The persisted identity refuses the reinterpretation at open,
+        // BEFORE any engine touches the bytes.
+        let classic = BackendIdentity::from_spec(&BackendSpec::Classic);
+        let slate_marker = PersistedBackendMarker::V2(
+            BackendIdentity::from_spec(&BackendSpec::from_profile(StorageBackendProfile::U2SlateLocalFs).unwrap()),
+        );
+        let refused = verify_backend_marker(&classic, Some(&slate_marker));
+        assert!(
+            matches!(
+                refused,
+                Err(StorageFactoryError::BackendMarkerMismatch {
+                    persisted: "slatedb-r2", resolved: "classic"
+                })
+            ),
+            "{refused:?}"
+        );
+    }
+
+    #[test]
+    fn the_controller_fenced_lanes_refuse_so_the_local_epoch_source_cannot_impersonate_them() {
+        // R5-STOR-03: the local wall-clock epoch source exists ONLY to let a
+        // single local writer satisfy the shipped external-epoch fence. The
+        // lanes that would claim real cross-host fencing — U3 (remote WAL)
+        // and U4 (production remote) — refuse at admission, BEFORE any
+        // engine, so no configuration exists in which a process-local clock
+        // is presented as controller-issued authority.
+        for profile in [StorageBackendProfile::U3SlateRemoteSim, StorageBackendProfile::U4ProductionRemote] {
+            let refused = BackendContext::for_profile(profile);
+            assert!(
+                matches!(refused, Err(StorageFactoryError::BackendNotYetAvailable { .. })),
+                "{profile:?} must refuse at admission, got {refused:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn mutant_an_unparseable_product_selection_refuses_rather_than_defaulting() {
+        let refused = StorageFactoryError::InvalidProductBackend { value: "rocksdb".to_owned() };
+        // the message must name both legal spellings and the input that was
+        // refused, so an operator typo is self-diagnosing
+        let rendered = refused.to_string();
+        assert!(rendered.contains("classic") && rendered.contains("slatedb-r2"), "{rendered}");
+        assert!(rendered.contains("rocksdb"), "{rendered}");
+        assert!(rendered.contains(PRODUCT_BACKEND_ENV), "{rendered}");
     }
 }
 

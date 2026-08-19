@@ -61,8 +61,76 @@ rc=3, zero escaped requests), self-test control 7b; 22/22 controls green.
   target / MinIO loopback transition baseline) are recorded owner
   decisions; no gate rests on an undecided default.
 
-## Remaining round-4 findings
+## Storage (R4-STOR-00..11) — CLOSED (action R4-C)
 
-Tracked in `docs/ledger/gates.json` actions R4-C (storage), R4-D
-(evidence/Mode-Q/CI), R4-E (security seam), R4-F (local stack); each
-lands with executed mutants and updates this document.
+- STOR-04/07 (`5aff4ff`): multipart mutation policy enforced at use time;
+  a checkpoint cut refuses to activate without its manifest root.
+- STOR-08/10/11 (`0da6d0b`): recency-aware checkpoint retention,
+  newest→oldest fallback, and remote startup never consumes a fixture.
+- STOR-00/01/02 (`ca1e5cd`): one immutable `BackendContext` per open
+  (mid-process env change = typed refusal, proven by a barrier mutant);
+  `backend-identity v2` persists the FULL identity — kind, durability
+  backend, object-store profile, policies, protocol versions and the
+  non-secret S3 binding — sealed by a SHA-256 digest, with per-field
+  typed mismatches and a one-time sanctioned v1→v2 upgrade; checkpoints
+  embed the identity and a cross-identity restore is a HARD typed
+  refusal, never fallback material; the marker write is no-follow,
+  create_new + fsync + hard-link publication, and cannot delete foreign
+  content. Proof: storage lib 138, test_recovery 11, database suites
+  green (independently re-run).
+
+## Evidence/Mode-Q/CI (R4-EVID-01/01a/03a, R4-MODEQ-01) — CLOSED (action R4-D, `868f617`)
+
+Verifier adjudication split (observation_integrity / policy_adjudicated /
+qualification_pass), source-lock freshness binding, CI v2 enforcement,
+and Mode-Q Bazel cquery semantic validation.
+
+## Security seam (R4-SEC-03..06) — CLOSED for the audited findings (action R4-E)
+
+- SEC-04/05/06 (`56fda81`): the capability method registry is CLOSED with
+  exact per-action methods and REQUIRED restrictions; WAL_READ binds
+  session+generation and is revalidated live (`assertActiveReader`);
+  checkpoint activation takes the material
+  `checkpoint-restore-evidence/v2` manifest validated field-by-field.
+- SEC-03 (`b53fd35`): the Rust L1 client threads the exact generation
+  through every mint as a JSON number — no default, no zero fallback —
+  holds a bound actor for reads, and its contract mock now VALIDATES
+  issuance like the worker does (refusal matrix executed; live workerd
+  24/24 including the issuance-refusal checks).
+- OPEN remainder (tracked as R4-PR1 / R4-SEC-01): production tenant
+  registry, private issuer/provisioner, managed-surface local E2E,
+  keyring/kid rotation.
+
+## Probe harness truth (R4-CF-04, R4-CF-02) — CLOSED (`6301fec`)
+
+- The obligation manifest (`probe-obligations/v1`) classifies all 100
+  assertions of the 14 probes into provider-fact vs product-conformance;
+  three product obligations are honestly OPEN and the VERDICT's
+  `product_conformance` sub-verdict cannot be PASS while they are.
+- The harness the probes call is now a deployable Worker+DO artifact
+  (`probes/harness-worker.ts`, `wrangler.probe-harness.toml`) whose
+  source digest is bound into the bundle. Self-test: 24/24 controls.
+
+## Local realism (R4-STACK/LOCAL, PR2, PR3) — action R4-F
+
+- Stack hardening (`e37f9e8`): semantic readiness, PID identity, atomic
+  manifests, transitive no-cloud guard, hardened downloader, secret
+  hygiene.
+- PR2 EXECUTED (`a3411c8`, `8809f89`): the provider-neutral S3
+  certification corpus (9 semantic tests via `object_store =0.14.1` —
+  conditional-create single winner, If-Match fencing, multipart,
+  pagination, byte-exact readback — plus a REAL kill -9 crash/restart
+  persistence barrier) passes on BOTH the locked MinIO baseline and the
+  now-PINNED RustFS 1.0.0-rc.2 (source-lock node RUSTFS; the runner
+  hard-refuses a digest mismatch). OD-009 progress recorded; the default
+  provider has NOT flipped (timeout/ambiguity lane, SlateDB suite and
+  TypeDB corpus on RustFS remain outstanding).
+- PR3 (partial, `f685d0e` + `stack/native-fidelity.mjs`): deterministic
+  TCP fault proxy (schedule-replayable, self-tested) and the
+  native-fidelity lane: the EXACT `typedb_server_bin` fork build runs
+  over SlateDB-on-S3 through the proxy, driven via the official HTTP
+  surface. Six phases pass on both providers: workload, nonzero-S3-path
+  witness, kill -9 recovery, parallel isolation, injected-reset
+  survival, and a U1-profile mutant proving the S3 witness detects a
+  silent local fallback. OPEN: U3 remote-WAL product integration,
+  driver-level suites in the lane, L2 container parity.

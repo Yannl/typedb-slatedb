@@ -441,7 +441,7 @@
   {
    "id": "R4-B",
    "title": "Posture truth: managed default deploy, explicit local config, per-graph posture invariants, migration ledger (R4-STACK-01/02/08/10)",
-   "status": "IN_PROGRESS",
+   "status": "DONE",
    "items": [
     "cloudflare-real graph emits managed vars; posture invariants validated per graph",
     "wrangler.toml = managed fail-closed default; wrangler.local-dev.toml explicit",
@@ -449,35 +449,70 @@
     "binding diff by stable name; bucketName only on PAYLOADS",
     "append-only migration ledger enforced in both configs"
    ],
-   "commits": []
+   "commits": [
+    "231d719"
+   ]
   },
   {
    "id": "R4-C",
    "title": "Storage: multipart immutability bypass, manifest requirement, checkpoint ordering/fallback, backend identity (R4-STOR-00..11)",
-   "status": "IN_PROGRESS",
-   "items": [],
-   "commits": []
+   "status": "DONE",
+   "items": [
+    "R4-STOR-04/07: multipart mutation policy enforced at use time; checkpoint refuses without a manifest root",
+    "R4-STOR-08/10/11: recency-aware retention, newest-to-oldest checkpoint fallback, no fixture on remote startup",
+    "R4-STOR-00: BackendContext resolved once per open; mid-process env change = typed refusal (barrier mutant)",
+    "R4-STOR-01: backend-identity v2 = FULL identity (incl. non-secret S3 binding) digest-sealed; checkpoints carry BACKEND_IDENTITY, cross-identity restore is a HARD typed refusal",
+    "R4-STOR-02: durable no-follow marker write (create_new tmp + hard_link publication + parent fsync); stray attempt dirs removed only when empty and attempt-owned",
+    "storage lib 138 + test_recovery 11 + database suites green"
+   ],
+   "commits": [
+    "5aff4ff",
+    "0da6d0b",
+    "ca1e5cd"
+   ]
   },
   {
    "id": "R4-D",
    "title": "Evidence adjudication split, source-lock freshness, CI v2 enforcement, Mode-Q semantics (R4-EVID-01/01a/03a, R4-MODEQ-01)",
-   "status": "IN_PROGRESS",
+   "status": "DONE",
    "items": [],
-   "commits": []
+   "commits": [
+    "868f617"
+   ]
   },
   {
    "id": "R4-E",
    "title": "Security seam: exact capability actions, read fencing, Rust finalize generation, checkpoint activation proof (R4-SEC-03..06)",
-   "status": "OPEN",
-   "items": [],
-   "commits": []
+   "status": "DONE",
+   "items": [
+    "R4-SEC-04: closed capability method registry, exact per-action methods with REQUIRED restrictions; unknown method refused (CAPABILITY_METHOD_UNKNOWN)",
+    "R4-SEC-05: assertActiveReader — WAL_READ binds session+generation and is revalidated live at use time",
+    "R4-SEC-03: Rust L1 client threads the exact generation through every mint (no default/zero fallback); bound actor; validating contract mock; live workerd 24/24",
+    "R4-SEC-06: checkpoint activation takes the material checkpoint-restore-evidence/v2 manifest, validated field-by-field",
+    "OPEN remainder tracked as R4-PR1: tenant registry, private issuer/provisioner, managed-surface local E2E, keyring"
+   ],
+   "commits": [
+    "56fda81",
+    "b53fd35"
+   ]
   },
   {
    "id": "R4-F",
    "title": "Local stack: semantic readiness, PID identity, transitive guard, secure downloader/secrets, S3 certification corpus, native-fidelity topology (R4-STACK-03..09, R4-LOCAL-05..07, PR2/PR3)",
    "status": "IN_PROGRESS",
-   "items": [],
-   "commits": []
+   "items": [
+    "R4-STACK-04/05/06/09 + R4-LOCAL-05/06/07: semantic readiness, PID identity, transitive no-cloud guard, hardened downloader, secret hygiene (committed e37f9e8)",
+    "PR2: provider-neutral S3 certification corpus EXECUTED GREEN on both providers (MinIO locked baseline AND pinned RustFS 1.0.0-rc.2): 9 semantic tests + kill -9 crash/restart persistence via object_store =0.14.1",
+    "OD-009: RustFS pinned in source-lock (zip dbe7b718…, binary d286e5f8…, commit e9f53180 cross-checked two ways); corpus runner hard-refuses digest mismatch",
+    "PR3 (partial): deterministic fault proxy (tested, 7 checks) + native-fidelity lane stack/native-fidelity.mjs EXECUTED GREEN on both providers: real typedb_server_bin over SlateDB-on-S3 through the proxy, official HTTP workload, kill -9 recovery, parallel isolation, injected-fault survival, and the U1 local-fallback witness mutant",
+    "OPEN: remote-WAL (U3) product integration and TypeDB-driver-level suites in the lane; L2 container parity"
+   ],
+   "commits": [
+    "e37f9e8",
+    "a3411c8",
+    "f685d0e",
+    "8809f89"
+   ]
   }
  ],
  "q_dispositions": {

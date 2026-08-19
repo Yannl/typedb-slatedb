@@ -227,6 +227,11 @@ fn loading_storage_assigns_next_vertex() {
 
         let check = CheckpointWriter::new(&storage_path).unwrap();
         storage.checkpoint(&check).unwrap();
+        // R5-STOR-10: bind the ambient backend identity, as the product
+        // checkpoint path does — an identity-less cut is a legacy cut that
+        // ordinary recovery refuses.
+        let identity = storage::factory::BackendContext::resolve_from_env().unwrap().identity().clone();
+        check.add_identity(&identity).unwrap();
         checkpoint = Some(check.finish().unwrap());
     }
 

@@ -599,3 +599,363 @@ fn a_checkpoint_bound_to_the_same_backend_identity_restores() {
         "the restored cut must serve the committed data"
     );
 }
+
+// ---------------------------------------------------------------------------
+// R5-STOR-06: scratch-restore kill-point matrix. A restore materialises,
+// digest-verifies, opens, and replays the cut in a SCRATCH directory and only
+// then atomically activates it (rename-swap). Each test below fabricates the
+// exact on-disk state a crash at one boundary leaves behind and proves the
+// restart converges: predecessor intact + active for every pre-activation
+// failure, successor active after activation.
+// ---------------------------------------------------------------------------
+
+/// Recursively copy a directory tree (used to fabricate crash states).
+fn copy_dir_tree(from: &std::path::Path, to: &std::path::Path) {
+    fs::create_dir_all(to).unwrap();
+    for entry in fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_dir_tree(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), &target).unwrap();
+        }
+    }
+}
+
+/// Common fixture: a storage tree with one committed key and a published,
+/// identity-bound checkpoint. Returns the checkpoint reader.
+fn storage_with_checkpoint(
+    storage_path: &std::path::Path,
+    key: &StorageKeyArray<BUFFER_KEY_INLINE>,
+) -> storage::recovery::checkpoint::CheckpointReader {
+    test_keyspace_set! { Keyspace => 0: "keyspace" }
+    let storage = create_storage::<TestKeyspaceSet>(storage_path).unwrap();
+    let mut snapshot = storage.clone().open_snapshot_write();
+    snapshot.put(key.clone());
+    snapshot.commit(&mut CommitProfile::DISABLED).unwrap();
+    checkpoint_storage(&storage)
+}
+
+fn assert_recovers_with_key(
+    storage_path: &std::path::Path,
+    checkpoint: storage::recovery::checkpoint::CheckpointReader,
+    key: &StorageKeyArray<BUFFER_KEY_INLINE>,
+) {
+    test_keyspace_set! { Keyspace => 0: "keyspace" }
+    let storage = load_storage::<TestKeyspaceSet>(
+        storage_path,
+        WAL::load(storage_path, FsyncMetrics::disabled()).unwrap(),
+        Some(checkpoint),
+    )
+    .expect("recovery must converge");
+    let snapshot = storage.open_snapshot_read();
+    assert!(
+        snapshot.get_mapped(StorageKeyReference::from(key), |_| true, StorageCounters::DISABLED).unwrap().is_some(),
+        "the committed key must be present after convergence"
+    );
+}
+
+fn assert_no_restore_residue(storage_path: &std::path::Path) {
+    for entry in fs::read_dir(storage_path).unwrap() {
+        let name = entry.unwrap().file_name().to_string_lossy().into_owned();
+        assert!(
+            !name.starts_with("restore-scratch-") && !name.starts_with("restore-retired-"),
+            "no restore residue may remain after convergence, found: {name}"
+        );
+    }
+}
+
+#[test]
+fn restore_leaves_no_scratch_residue_on_success() {
+    // positive control for the scratch protocol: a normal checkpoint
+    // recovery goes through scratch + activation and leaves a clean tree.
+    test_keyspace_set! { Keyspace => 0: "keyspace" }
+    init_logging();
+    let key = StorageKeyArray::<BUFFER_KEY_INLINE>::from((TestKeyspaceSet::Keyspace, b"hello"));
+    let storage_path = create_tmp_storage_dir();
+    let checkpoint = storage_with_checkpoint(&storage_path, &key);
+    assert_recovers_with_key(&storage_path, checkpoint, &key);
+    assert_no_restore_residue(&storage_path);
+}
+
+#[test]
+fn restart_after_crash_before_activation_converges_with_predecessor_intact() {
+    // Kill points "after copy", "after open", "after replay", "after
+    // digest": every pre-activation crash leaves (only) a scratch directory
+    // — here fabricated as a full copy of the cut, the state right after
+    // replay. Restart must reclaim it and recover normally, with the
+    // predecessor having been intact throughout.
+    test_keyspace_set! { Keyspace => 0: "keyspace" }
+    init_logging();
+    let key = StorageKeyArray::<BUFFER_KEY_INLINE>::from((TestKeyspaceSet::Keyspace, b"hello"));
+    let storage_path = create_tmp_storage_dir();
+    let checkpoint = storage_with_checkpoint(&storage_path, &key);
+
+    // fabricate the mid-restore crash state
+    let scratch = storage_path.join(format!(
+        "restore-scratch-{}",
+        checkpoint.directory.file_name().unwrap().to_str().unwrap()
+    ));
+    copy_dir_tree(&checkpoint.directory, &scratch);
+
+    let storage_dir = storage_path.join(MVCCStorage::<WALClient>::STORAGE_DIR_NAME);
+    let live_before = snapshot_tree(&storage_dir);
+
+    assert_recovers_with_key(&storage_path, checkpoint, &key);
+    assert_no_restore_residue(&storage_path);
+    drop(live_before); // the successful restore legitimately replaces live afterwards
+}
+
+#[test]
+fn restart_after_crash_between_activation_renames_converges() {
+    // Kill point "mid-activation": live -> retired happened, scratch -> live
+    // did not. The predecessor sits under the retired name and the live
+    // directory is missing. Restart must roll the predecessor back and then
+    // recover normally to the successor.
+    test_keyspace_set! { Keyspace => 0: "keyspace" }
+    init_logging();
+    let key = StorageKeyArray::<BUFFER_KEY_INLINE>::from((TestKeyspaceSet::Keyspace, b"hello"));
+    let storage_path = create_tmp_storage_dir();
+    let checkpoint = storage_with_checkpoint(&storage_path, &key);
+
+    let attempt = checkpoint.directory.file_name().unwrap().to_str().unwrap().to_owned();
+    let storage_dir = storage_path.join(MVCCStorage::<WALClient>::STORAGE_DIR_NAME);
+    let scratch = storage_path.join(format!("restore-scratch-{attempt}"));
+    let retired = storage_path.join(format!("restore-retired-{attempt}"));
+
+    // fabricate the torn swap: predecessor renamed away, successor-in-progress in scratch
+    copy_dir_tree(&checkpoint.directory, &scratch);
+    fs::rename(&storage_dir, &retired).unwrap();
+    assert!(!storage_dir.exists(), "precondition: the live directory is missing mid-swap");
+
+    assert_recovers_with_key(&storage_path, checkpoint, &key);
+    assert_no_restore_residue(&storage_path);
+    assert!(storage_dir.exists(), "the live directory is active again after convergence");
+}
+
+#[test]
+fn restart_after_crash_after_activation_converges_with_successor_active() {
+    // Kill point "post-activation": both renames happened; only the retired
+    // predecessor's reclaim was lost. Restart must keep the successor active
+    // and reclaim the residue.
+    test_keyspace_set! { Keyspace => 0: "keyspace" }
+    init_logging();
+    let key = StorageKeyArray::<BUFFER_KEY_INLINE>::from((TestKeyspaceSet::Keyspace, b"hello"));
+    let storage_path = create_tmp_storage_dir();
+    let checkpoint = storage_with_checkpoint(&storage_path, &key);
+
+    let attempt = checkpoint.directory.file_name().unwrap().to_str().unwrap().to_owned();
+    let storage_dir = storage_path.join(MVCCStorage::<WALClient>::STORAGE_DIR_NAME);
+    let retired = storage_path.join(format!("restore-retired-{attempt}"));
+    // fabricate: the predecessor's bytes linger under the retired name
+    copy_dir_tree(&storage_dir, &retired);
+
+    assert_recovers_with_key(&storage_path, checkpoint, &key);
+    assert_no_restore_residue(&storage_path);
+}
+
+#[test]
+fn a_corrupt_cut_fails_in_scratch_and_leaves_the_predecessor_byte_identical() {
+    // R5-STOR-06 core + R5-STOR-09 mutant "nested file byte flip": the cut
+    // passes pre-restore validation (watermark/WAL), but a data byte was
+    // flipped after sealing. The scratch digest verification refuses it with
+    // a typed error BEFORE the live tree is touched — the predecessor is
+    // byte-identical afterwards. Under the pre-R5 protocol this mirrored
+    // over live first and destroyed the predecessor.
+    test_keyspace_set! { Keyspace => 0: "keyspace" }
+    init_logging();
+    let key = StorageKeyArray::<BUFFER_KEY_INLINE>::from((TestKeyspaceSet::Keyspace, b"hello"));
+    let storage_path = create_tmp_storage_dir();
+    let checkpoint = storage_with_checkpoint(&storage_path, &key);
+
+    // flip bytes in one sealed keyspace data file (keep the length)
+    let keyspace_dir = checkpoint.directory.join("keyspace");
+    let victim = fs::read_dir(&keyspace_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.is_file() && fs::metadata(path).unwrap().len() > 0)
+        .expect("the cut contains at least one non-empty keyspace file");
+    let mut bytes = fs::read(&victim).unwrap();
+    bytes[0] ^= 0xff;
+    fs::write(&victim, bytes).unwrap();
+
+    let storage_dir = storage_path.join(MVCCStorage::<WALClient>::STORAGE_DIR_NAME);
+    let live_before = snapshot_tree(&storage_dir);
+
+    let result = load_storage::<TestKeyspaceSet>(
+        &storage_path,
+        WAL::load(&storage_path, FsyncMetrics::disabled()).unwrap(),
+        Some(checkpoint),
+    );
+    match result {
+        Err(StorageOpenError::RecoverFromCheckpoint { typedb_source, .. }) => {
+            assert!(
+                matches!(
+                    typedb_source,
+                    storage::recovery::checkpoint::CheckpointLoadError::RestoreScratchDigestMismatch { .. }
+                ),
+                "expected the typed scratch digest refusal, got: {typedb_source:?}"
+            );
+        }
+        other => panic!("expected the typed RecoverFromCheckpoint(RestoreScratchDigestMismatch), got: {other:?}"),
+    }
+    assert_eq!(
+        snapshot_tree(&storage_dir),
+        live_before,
+        "R5-STOR-06: a cut refused in scratch must leave the predecessor byte-identical"
+    );
+    assert_no_restore_residue(&storage_path);
+}
+
+#[test]
+fn a_hash_consistent_but_unopenable_cut_fails_in_scratch_not_on_live() {
+    // R5-STOR-06 core mutant: the cut is digest-CONSISTENT (sealed over the
+    // garbage it contains) but semantically invalid — the engine cannot open
+    // it. The failure must happen in scratch, with the predecessor
+    // byte-identical and still openable afterwards.
+    test_keyspace_set! { Keyspace => 0: "keyspace" }
+    init_logging();
+    let key = StorageKeyArray::<BUFFER_KEY_INLINE>::from((TestKeyspaceSet::Keyspace, b"hello"));
+    let storage_path = create_tmp_storage_dir();
+    {
+        // a live predecessor tree with one committed key (no checkpoint —
+        // the only candidate will be the garbage cut below)
+        let storage = create_storage::<TestKeyspaceSet>(&storage_path).unwrap();
+        let mut snapshot = storage.clone().open_snapshot_write();
+        snapshot.put(key.clone());
+        snapshot.commit(&mut CommitProfile::DISABLED).unwrap();
+    }
+
+    // seal a semantically invalid cut: a keyspace whose CURRENT file is
+    // garbage (the engine refuses to open it), digest-consistent because the
+    // manifest is computed over exactly these bytes. Watermark 1 == the WAL
+    // head, so pre-restore validation passes.
+    let context = storage::factory::BackendContext::resolve_from_env().unwrap();
+    let writer = storage::recovery::checkpoint::CheckpointWriter::new(&storage_path).unwrap();
+    let temp = writer.temporary_directory.clone();
+    fs::create_dir_all(temp.join("keyspace")).unwrap();
+    fs::write(temp.join("keyspace").join("CURRENT"), b"not-a-real-manifest-pointer\n").unwrap();
+    fs::write(temp.join("STORAGE_METADATA"), b"1").unwrap();
+    writer.add_identity(context.identity()).unwrap();
+    let garbage_cut = writer.finish().unwrap();
+
+    let storage_dir = storage_path.join(MVCCStorage::<WALClient>::STORAGE_DIR_NAME);
+    let live_before = snapshot_tree(&storage_dir);
+
+    let result = load_storage::<TestKeyspaceSet>(
+        &storage_path,
+        WAL::load(&storage_path, FsyncMetrics::disabled()).unwrap(),
+        Some(garbage_cut),
+    );
+    match result {
+        Err(StorageOpenError::RecoverFromCheckpoint { typedb_source, .. }) => {
+            assert!(
+                matches!(typedb_source, storage::recovery::checkpoint::CheckpointLoadError::KeyspaceOpen { .. }),
+                "the semantically invalid cut must fail at the scratch engine open, got: {typedb_source:?}"
+            );
+        }
+        other => panic!("expected the typed RecoverFromCheckpoint(KeyspaceOpen) refusal, got: {other:?}"),
+    }
+    assert_eq!(
+        snapshot_tree(&storage_dir),
+        live_before,
+        "R5-STOR-06: a cut that fails its scratch engine open must leave the predecessor byte-identical"
+    );
+    assert_no_restore_residue(&storage_path);
+
+    // and the predecessor still RECOVERS: it is not just byte-identical, it
+    // is active and serves the committed data (via full WAL replay here).
+    let recovered = load_storage::<TestKeyspaceSet>(
+        &storage_path,
+        WAL::load(&storage_path, FsyncMetrics::disabled()).unwrap(),
+        None,
+    )
+    .expect("the predecessor tree must still recover after the refused cut");
+    let snapshot = recovered.open_snapshot_read();
+    assert!(
+        snapshot.get_mapped(StorageKeyReference::from(&key), |_| true, StorageCounters::DISABLED).unwrap().is_some()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// R5-STOR-10 (checkpoint half): a legacy cut with no bound identity is a
+// typed refusal on ordinary recovery, and the explicit operator import (with
+// provenance) is the only way in.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_legacy_cut_without_identity_refuses_recovery_until_explicitly_imported() {
+    test_keyspace_set! { Keyspace => 0: "keyspace" }
+    init_logging();
+    let key_hello = StorageKeyArray::<BUFFER_KEY_INLINE>::from((TestKeyspaceSet::Keyspace, b"hello"));
+
+    let storage_path = create_tmp_storage_dir();
+    let context = storage::factory::BackendContext::resolve_from_env().unwrap();
+
+    let (legacy_cut, watermark) = {
+        let storage = create_storage::<TestKeyspaceSet>(&storage_path).unwrap();
+        let mut snapshot = storage.clone().open_snapshot_write();
+        snapshot.put(key_hello.clone());
+        snapshot.commit(&mut CommitProfile::DISABLED).unwrap();
+
+        // a cut sealed WITHOUT an identity — the legacy shape
+        let writer = storage::recovery::checkpoint::CheckpointWriter::new(storage.path().parent().unwrap()).unwrap();
+        storage.checkpoint(&writer).unwrap();
+        (writer.finish().unwrap(), storage.snapshot_watermark())
+    };
+
+    let storage_dir = storage_path.join(MVCCStorage::<WALClient>::STORAGE_DIR_NAME);
+    let live_before = snapshot_tree(&storage_dir);
+
+    // 1. ordinary recovery: the typed legacy refusal, live tree untouched
+    let resources = test_utils_storage::create_rocks_resources();
+    let result = MVCCStorage::load_with_recovery_fallback::<TestKeyspaceSet>(
+        "storage",
+        &storage_path,
+        WALClient::new(WAL::load(&storage_path, FsyncMetrics::disabled()).unwrap()),
+        vec![storage::recovery::checkpoint::CheckpointReader { directory: legacy_cut.directory.clone() }],
+        &resources,
+        &context,
+    );
+    let error = result.err().expect("a legacy identity-less cut must refuse ordinary recovery");
+    assert!(
+        matches!(error, StorageOpenError::CheckpointLegacyIdentityRefused { .. }),
+        "expected the typed CheckpointLegacyIdentityRefused, got: {error:?}"
+    );
+    assert_eq!(
+        snapshot_tree(&storage_dir),
+        live_before,
+        "R5-STOR-10: the legacy refusal must leave the live storage tree byte-identical"
+    );
+
+    // 2. the explicit import: operator acknowledgement stamps the identity +
+    //    provenance and reseals the cut
+    let imported = storage::recovery::checkpoint::import_legacy_checkpoint_identity(
+        &legacy_cut.directory,
+        context.identity(),
+        "operator acknowledges: cut exported before identity binding; source inventory verified",
+    )
+    .expect("the explicit import must succeed");
+
+    // 3. recovery from the imported cut now succeeds and serves the data
+    let (recovered, restored) = MVCCStorage::load_with_recovery_fallback::<TestKeyspaceSet>(
+        "storage",
+        &storage_path,
+        WALClient::new(WAL::load(&storage_path, FsyncMetrics::disabled()).unwrap()),
+        vec![imported],
+        &resources,
+        &context,
+    )
+    .expect("recovery from the imported cut must succeed");
+    assert_eq!(restored, Some(watermark), "the imported cut itself must have been restored");
+    let recovered = std::sync::Arc::new(recovered);
+    let snapshot = recovered.open_snapshot_read();
+    assert!(
+        snapshot
+            .get_mapped(StorageKeyReference::from(&key_hello), |_| true, StorageCounters::DISABLED)
+            .unwrap()
+            .is_some(),
+        "the imported cut must serve the committed data"
+    );
+}

@@ -6,4 +6,6 @@
 
 pub mod checkpoint;
 pub mod commit_recovery;
+/// R5-STOR-09: crate-shared streaming SHA-256 for the checkpoint manifest.
+pub(crate) mod sha256;
 pub mod status_resolver;

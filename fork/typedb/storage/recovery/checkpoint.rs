@@ -35,13 +35,38 @@ use crate::{
         KeyspaceCheckpointError, KeyspaceOpenError, KeyspaceSet, Keyspaces, StorageBackend,
         rocks_resources::RocksResources,
     },
-    recovery::commit_recovery::{RecoveryCommitStatus, StorageRecoveryError, apply_recovered, load_commit_data_from},
+    recovery::{
+        commit_recovery::{RecoveryCommitStatus, StorageRecoveryError, apply_recovered, load_commit_data_from},
+        sha256::Sha256,
+    },
     sequence_number::SequenceNumber,
 };
 
 const CHECKPOINT_DIR_NAME: &str = "checkpoint";
 const STORAGE_METADATA_FILE_NAME: &str = "STORAGE_METADATA";
 const TEMP_FILE_EXTENSION: &str = "tmp";
+
+/// R5-STOR-06: prefix (under the database root, a SIBLING of the live
+/// `storage` directory on the same filesystem) of the SCRATCH directory a
+/// restore materialises, opens, replays, and verifies BEFORE the live tree is
+/// touched. A crash at any point before activation leaves only a scratch
+/// directory behind; [`converge_interrupted_restore`] removes it on the next
+/// load with the predecessor byte-identical and still active.
+const RESTORE_SCRATCH_PREFIX: &str = "restore-scratch-";
+/// R5-STOR-06: prefix of the directory the PREDECESSOR live tree is renamed
+/// to during the atomic rename-swap activation (live -> retired, scratch ->
+/// live, fsync parent). A crash between the two renames leaves the retired
+/// directory with the live one missing; [`converge_interrupted_restore`]
+/// rolls the predecessor back into place. A crash after both renames leaves
+/// a fully-activated successor plus the retired predecessor, which the next
+/// load reclaims.
+const RESTORE_RETIRED_PREFIX: &str = "restore-retired-";
+
+/// R5-STOR-10: provenance record written by the EXPLICIT legacy-identity
+/// import ([`import_legacy_checkpoint_identity`]). A regular data file under
+/// the checkpoint root, sealed by the recomputed COMPLETE manifest, so the
+/// operator acknowledgement that bound the identity travels with the cut.
+pub const CHECKPOINT_IDENTITY_PROVENANCE_FILE_NAME: &str = "BACKEND_IDENTITY_PROVENANCE";
 
 /// R-06: the digest-bound completion marker, written LAST inside a checkpoint
 /// attempt (after every data file and directory is fsynced) and made durable
@@ -63,7 +88,13 @@ const CHECKPOINT_COMPLETE_FILE_NAME: &str = "COMPLETE";
 /// resolved identity BEFORE any restore: a cut created under configuration A
 /// refuses restore under configuration B. A checkpoint without this file is a
 /// legacy cut (sealed before identity binding existed, or exported by a
-/// direct storage-level writer) and is accepted for compatibility.
+/// direct storage-level writer). R5-STOR-10: a legacy cut is NOT silently
+/// bound to whatever configuration happens to be current — ordinary recovery
+/// refuses it with the typed
+/// [`CheckpointLoadError::CheckpointLegacyIdentityRequiresImport`], and only
+/// the explicit, operator-acknowledged [`import_legacy_checkpoint_identity`]
+/// (which stamps the acknowledged identity plus a provenance record and
+/// reseals the manifest) makes it recoverable.
 pub const CHECKPOINT_IDENTITY_FILE_NAME: &str = "BACKEND_IDENTITY";
 
 /// R-04: a process-wide monotonic component of the checkpoint attempt id. Two
@@ -161,13 +192,32 @@ impl CheckpointReader {
         Ok(ValidatedCheckpointRecovery { watermark, recovered_commits, next_sequence_number })
     }
 
-    /// R4-STOR-10 phase 2 — RESTORE a candidate [`Self::validate_for_recovery`]
-    /// has already accepted. Destructive from the first statement on: the
-    /// checkpoint tree is mirrored over the live keyspace directories, the
-    /// keyspaces are opened, and the pre-loaded WAL commits are applied. A
-    /// failure here is NOT candidate-fallback material — live state has been
-    /// touched — so the caller must propagate it, never retry an older cut
-    /// over a half-mirrored tree.
+    /// R4-STOR-10 phase 2 / R5-STOR-06 — RESTORE a candidate
+    /// [`Self::validate_for_recovery`] has already accepted, proving its
+    /// SEMANTICS in a scratch materialisation before the live tree is touched:
+    ///
+    /// (a) the checkpoint's keyspace trees are materialised into a SCRATCH
+    ///     directory (a sibling of the live keyspace directory on the same
+    ///     filesystem);
+    /// (b) the scratch copy's bytes are verified against the cut's sealed
+    ///     COMPLETE manifest (per-file SHA-256 + root — copy fidelity AND a
+    ///     late tamper/rot check, since selection-time verification may be
+    ///     arbitrarily far in the past);
+    /// (c) every declared keyspace is OPENED in scratch — a hash-consistent
+    ///     but semantically invalid cut fails here, live untouched;
+    /// (d) the fixed WAL head (the strictly pre-loaded commits) is replayed
+    ///     into scratch, proving the cut accepts its own replay frontier;
+    /// (e) only then is scratch ATOMICALLY activated by rename-swap: live ->
+    ///     retired, scratch -> live, fsync parent; on failure the first
+    ///     rename is rolled back. Every failure BEFORE activation leaves the
+    ///     predecessor byte-identical and still active (the scratch residue
+    ///     is reclaimed, here on the error path and by
+    ///     [`converge_interrupted_restore`] after a crash).
+    ///
+    /// The returned keyspaces are re-opened at the LIVE path after
+    /// activation (the scratch engine is closed first: an engine keeps
+    /// absolute paths internally, so it must never keep running across the
+    /// rename).
     pub(crate) fn restore_validated<KS: KeyspaceSet, Durability: DurabilityClient>(
         &self,
         database_name: &str,
@@ -177,22 +227,79 @@ impl CheckpointReader {
         rocks_resources: &RocksResources,
         backend: StorageBackend,
     ) -> Result<(Keyspaces, SequenceNumber), CheckpointLoadError> {
-        use CheckpointLoadError::{CommitRecoveryFailed, KeyspaceOpen};
+        use CheckpointLoadError::{CheckpointRestore, CommitRecoveryFailed, KeyspaceOpen};
 
         let ValidatedCheckpointRecovery { watermark: _, recovered_commits, next_sequence_number } = validated;
 
-        // validated — now, and only now, mirror the checkpoint over live state
-        // (R-05 ordering: the validation above ran first, so a rejected
-        // candidate never reaches this destructive block).
-        restore_checkpoint_tree::<KS>(&self.directory, keyspaces_dir)?;
+        let (scratch_dir, retired_dir) = self.restore_working_directories(keyspaces_dir)?;
+        let scratch_error = |error: io::Error| CheckpointRestore {
+            dir: self.directory.clone(),
+            source: Arc::new(error),
+        };
+
+        // a leftover scratch directory from an earlier in-process failure is
+        // unproven residue; start from empty.
+        remove_dir_if_exists(&scratch_dir).map_err(scratch_error)?;
+
+        let staged = (|| -> Result<(), CheckpointLoadError> {
+            // (a) materialise into scratch — live state untouched
+            restore_checkpoint_tree::<KS>(&self.directory, &scratch_dir)?;
+
+            // (b) prove the materialised bytes against the sealed manifest
+            verify_scratch_against_manifest::<KS>(&self.directory, &scratch_dir)?;
+
+            // (c) + (d): open every keyspace in scratch and replay the fixed
+            // WAL head there. This is the semantic proof R5-STOR-06 demands:
+            // a cut that is hash-consistent but cannot open or cannot accept
+            // its own replay fails HERE, with the predecessor intact.
+            {
+                let scratch_keyspaces = Keyspaces::open::<KS>(&scratch_dir, rocks_resources, backend)
+                    .map_err(|error| KeyspaceOpen { source: error })?;
+                trace!("Scratch keyspaces opened, replaying the fixed WAL head into scratch");
+                apply_recovered(database_name, recovered_commits, durability_client, &scratch_keyspaces)
+                    .map_err(|err| CommitRecoveryFailed { typedb_source: err })?;
+                // the scratch engine is dropped (closed) here, BEFORE the
+                // rename: engines hold absolute paths internally.
+            }
+            Ok(())
+        })();
+        if let Err(error) = staged {
+            // pre-activation failure: reclaim the scratch residue (best
+            // effort — a crash-interrupted reclaim is finished by
+            // converge_interrupted_restore) and leave the predecessor
+            // byte-identical and active.
+            if let Err(cleanup) = remove_dir_if_exists(&scratch_dir) {
+                trace!("failed to reclaim the restore scratch directory {scratch_dir:?}: {cleanup:?}");
+            }
+            return Err(error);
+        }
+
+        // (e) atomic activation by rename-swap
+        activate_scratch(&scratch_dir, keyspaces_dir, &retired_dir).map_err(|error| {
+            CheckpointLoadError::RestoreActivation { dir: self.directory.clone(), source: Arc::new(error) }
+        })?;
 
         let keyspaces = Keyspaces::open::<KS>(&keyspaces_dir, rocks_resources, backend)
             .map_err(|error| KeyspaceOpen { source: error })?;
-
-        trace!("Finished recovering keyspaces, applying missing commits");
-        apply_recovered(database_name, recovered_commits, durability_client, &keyspaces)
-            .map_err(|err| CommitRecoveryFailed { typedb_source: err })?;
         Ok((keyspaces, next_sequence_number))
+    }
+
+    /// The scratch and retired sibling directories this candidate's restore
+    /// uses, both under the live keyspace directory's parent (same
+    /// filesystem, so activation is two renames).
+    fn restore_working_directories(&self, keyspaces_dir: &Path) -> Result<(PathBuf, PathBuf), CheckpointLoadError> {
+        let root = keyspaces_dir.parent().ok_or_else(|| CheckpointLoadError::CheckpointRestore {
+            dir: self.directory.clone(),
+            source: Arc::new(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "the live keyspace directory has no parent to host the restore scratch directory",
+            )),
+        })?;
+        let attempt = self.directory.file_name().and_then(|name| name.to_str()).unwrap_or("candidate");
+        Ok((
+            root.join(format!("{RESTORE_SCRATCH_PREFIX}{attempt}")),
+            root.join(format!("{RESTORE_RETIRED_PREFIX}{attempt}")),
+        ))
     }
 
     pub fn read_sequence_number(&self) -> Result<SequenceNumber, CheckpointLoadError> {
@@ -204,20 +311,28 @@ impl CheckpointReader {
     ///
     /// - `expected` of `None` (a direct storage-level caller with no database
     ///   identity above it) skips the comparison;
-    /// - an ABSENT identity file is a legacy cut (sealed before identity
-    ///   binding existed) and is accepted for compatibility;
+    /// - an ABSENT identity file is a legacy cut. R5-STOR-10: legacy is NOT
+    ///   fail-open — the old bytes never proved endpoint, bucket, prefix,
+    ///   protocol, or cache/materialisation policy, so binding them to
+    ///   whatever configuration is current would silently launder an
+    ///   unproven cut. Ordinary recovery refuses with the typed
+    ///   [`CheckpointLoadError::CheckpointLegacyIdentityRequiresImport`];
+    ///   the explicit [`import_legacy_checkpoint_identity`] path (operator
+    ///   acknowledgement + provenance) is the only way in;
     /// - a PRESENT identity that is unparseable, non-v2, or whose
     ///   configuration digest differs from the expected identity's is the
     ///   typed [`CheckpointLoadError::CheckpointIdentityMismatch`] refusal.
     ///   The digest comparison covers every canonical field (kind, policies,
     ///   endpoint/bucket/prefix), so no single field can drift silently.
     fn validate_identity(&self, expected: Option<&BackendIdentity>) -> Result<(), CheckpointLoadError> {
-        use CheckpointLoadError::{AdditionalDataIO, CheckpointIdentityMismatch};
+        use CheckpointLoadError::{AdditionalDataIO, CheckpointIdentityMismatch, CheckpointLegacyIdentityRequiresImport};
 
         let Some(expected) = expected else { return Ok(()) };
         let path = self.directory.join(CHECKPOINT_IDENTITY_FILE_NAME);
         let serialised = match fs::read_to_string(&path) {
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                return Err(CheckpointLegacyIdentityRequiresImport { dir: self.directory.clone() });
+            }
             Err(error) => {
                 return Err(AdditionalDataIO {
                     name: CHECKPOINT_IDENTITY_FILE_NAME.to_string(),
@@ -256,6 +371,19 @@ impl CheckpointReader {
             let keyspace_checkpoint_dir = self.directory.join(keyspace.name());
             if !fs::exists(keyspace_checkpoint_dir)? {
                 return Ok(false);
+            }
+        }
+        // R5-STOR-11: an attempt-named directory's leading component is the
+        // checkpoint SEQUENCE (the storage watermark the cut was taken at) —
+        // the recency key selection and retention order by. It must agree
+        // with the sealed watermark inside the cut: a renamed directory could
+        // otherwise reorder selection/retention without touching any sealed
+        // byte. Non-attempt-named directories (unit fixtures, foreign dirs)
+        // skip the check — they are never enumerated as candidates.
+        if let Some(name_sequence) = parse_attempt_sequence(&self.directory) {
+            match read_watermark_at(&self.directory) {
+                Ok(watermark) if watermark.number() == name_sequence => {}
+                _ => return Ok(false),
             }
         }
         // R-06: the digest-bound COMPLETE marker must be present AND verify
@@ -352,18 +480,254 @@ fn restore_checkpoint_tree<KS: KeyspaceSet>(
     Ok(())
 }
 
+fn remove_dir_if_exists(dir: &Path) -> io::Result<()> {
+    match fs::remove_dir_all(dir) {
+        Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
+        _ => Ok(()),
+    }
+}
+
+/// R5-STOR-06 (b): prove the SCRATCH materialisation byte-identical to the
+/// cut's sealed COMPLETE manifest before the engine ever opens it. The
+/// manifest's keyspace-scoped entries (relative path, length, SHA-256) are
+/// compared for EXACT set equality against a fresh walk of the scratch tree —
+/// a missing, extra, changed, or truncated file is the typed
+/// [`CheckpointLoadError::RestoreScratchDigestMismatch`] refusal, with the
+/// live tree untouched. This both proves copy fidelity and re-proves the cut
+/// itself at USE time (selection-time verification may be arbitrarily stale).
+fn verify_scratch_against_manifest<KS: KeyspaceSet>(
+    checkpoint_dir: &Path,
+    scratch_dir: &Path,
+) -> Result<(), CheckpointLoadError> {
+    use CheckpointLoadError::RestoreScratchDigestMismatch;
+
+    let mismatch = |detail: String| RestoreScratchDigestMismatch { dir: checkpoint_dir.to_owned(), detail };
+
+    let serialised = fs::read_to_string(checkpoint_dir.join(CHECKPOINT_COMPLETE_FILE_NAME))
+        .map_err(|error| mismatch(format!("the sealed COMPLETE manifest cannot be read: {error}")))?;
+    let manifest = CheckpointManifest::parse(&serialised)
+        .ok_or_else(|| mismatch("the sealed COMPLETE manifest does not parse as the current version".to_owned()))?;
+
+    // the subset of sealed entries that restore materialises: everything
+    // under a declared keyspace root
+    let mut expected: BTreeMap<Vec<u8>, (u64, [u8; 32])> = BTreeMap::new();
+    for keyspace in KS::iter() {
+        let mut prefix = keyspace.name().as_bytes().to_vec();
+        prefix.push(b'/');
+        for (key, value) in manifest.entries.range(prefix.clone()..) {
+            if !key.starts_with(&prefix) {
+                break;
+            }
+            expected.insert(key.clone(), *value);
+        }
+    }
+
+    let mut recomputed: BTreeMap<Vec<u8>, (u64, [u8; 32])> = BTreeMap::new();
+    for keyspace in KS::iter() {
+        let keyspace_dir = scratch_dir.join(keyspace.name());
+        if !keyspace_dir.exists() {
+            continue; // its absence shows up as missing entries below
+        }
+        CheckpointManifest::walk(scratch_dir, &keyspace_dir, &mut recomputed)
+            .map_err(|error| mismatch(format!("the scratch tree cannot be re-hashed: {error}")))?;
+    }
+
+    if expected != recomputed {
+        return Err(mismatch(format!(
+            "the scratch materialisation does not match the sealed manifest \
+             ({} sealed keyspace entries, {} materialised)",
+            expected.len(),
+            recomputed.len()
+        )));
+    }
+    Ok(())
+}
+
+/// R5-STOR-06 (e): the atomic activation. On one filesystem this is
+/// rename-swap: live -> retired, scratch -> live, fsync the parent. Any
+/// failure of the second rename rolls the first back, so the predecessor is
+/// byte-identical AND still active on every pre-activation failure. The
+/// retired predecessor is reclaimed only after the successor is durably in
+/// place; a reclaim failure is deliberately non-fatal (the successor is
+/// active) and is finished by [`converge_interrupted_restore`].
+fn activate_scratch(scratch_dir: &Path, live_dir: &Path, retired_dir: &Path) -> io::Result<()> {
+    let parent = live_dir.parent().expect("restore_working_directories proved the parent exists");
+    let had_live = live_dir.exists();
+    if had_live {
+        remove_dir_if_exists(retired_dir)?;
+        fs::rename(live_dir, retired_dir)?;
+    }
+    if let Err(error) = fs::rename(scratch_dir, live_dir) {
+        if had_live {
+            // roll back: the predecessor must remain active
+            let _ = fs::rename(retired_dir, live_dir);
+            let _ = crate::fsync_path(parent);
+        }
+        return Err(error);
+    }
+    // the swap must be durable before the successor is reported active
+    crate::fsync_path(parent)?;
+    if had_live {
+        if let Err(error) = remove_dir_if_exists(retired_dir) {
+            trace!("failed to reclaim the retired predecessor {retired_dir:?} (successor active): {error:?}");
+        } else {
+            let _ = crate::fsync_path(parent);
+        }
+    }
+    Ok(())
+}
+
+/// R5-STOR-06 restart convergence, run at the START of every storage load,
+/// BEFORE any candidate is considered. A crash during a previous restore
+/// leaves exactly one of these states, each with a deterministic resolution:
+///
+/// - live present, scratch residue present (crash anywhere before
+///   activation): the predecessor is intact and active; scratch is unproven
+///   residue and is reclaimed;
+/// - live MISSING, retired present (crash between the two activation
+///   renames): the predecessor is rolled back into place (retired -> live) —
+///   pre-activation failures always converge to the predecessor;
+/// - live present, retired present (crash after both renames, before the
+///   retired reclaim): the successor is active; the retired predecessor is
+///   reclaimed.
+///
+/// After convergence the tree holds exactly a live directory (or none, for a
+/// fresh database) and no restore residue, and recovery proceeds normally —
+/// re-validating and re-restoring the candidate if one is selectable, which
+/// converges the "crash after activation" case to the successor.
+pub(crate) fn converge_interrupted_restore(keyspaces_dir: &Path) -> io::Result<()> {
+    let Some(root) = keyspaces_dir.parent() else { return Ok(()) };
+    if !root.exists() {
+        return Ok(());
+    }
+    let mut scratch = Vec::new();
+    let mut retired = Vec::new();
+    for entry in fs::read_dir(root)? {
+        let path = entry?.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else { continue };
+        if name.starts_with(RESTORE_SCRATCH_PREFIX) {
+            scratch.push(path);
+        } else if name.starts_with(RESTORE_RETIRED_PREFIX) {
+            retired.push(path);
+        }
+    }
+    if scratch.is_empty() && retired.is_empty() {
+        return Ok(());
+    }
+    if !keyspaces_dir.exists() {
+        // crash between the activation renames: roll the predecessor back.
+        // At most one retired directory can exist (activation retires one
+        // and convergence runs before every new attempt); if several are
+        // somehow present the lexicographically newest is the most recent
+        // predecessor.
+        retired.sort();
+        if let Some(newest) = retired.pop() {
+            fs::rename(&newest, keyspaces_dir)?;
+        }
+    }
+    for residue in scratch.into_iter().chain(retired) {
+        remove_dir_if_exists(&residue)?;
+    }
+    crate::fsync_path(root)?;
+    Ok(())
+}
+
+/// R5-STOR-10: the EXPLICIT, operator-acknowledged import of a legacy
+/// checkpoint (one sealed before identity binding existed, or exported by a
+/// direct storage-level writer without an identity). Ordinary recovery
+/// refuses such a cut with
+/// [`CheckpointLoadError::CheckpointLegacyIdentityRequiresImport`]; this
+/// function is the only way in, and it:
+///
+/// 1. refuses a cut that already carries an identity (nothing legacy to
+///    import — a mismatched identity is reconfiguration, not import);
+/// 2. stamps the ACKNOWLEDGED identity (the full v2 marker serialisation)
+///    and a provenance record (the operator's acknowledgement text plus
+///    diagnostics) as regular data files under the cut;
+/// 3. reseals the cut: the COMPLETE manifest is recomputed (current format,
+///    SHA-256) over every file including the new identity and provenance,
+///    fsynced bottom-up, and the directory is renamed to the
+///    sequence-keyed attempt name its sealed watermark dictates (legacy
+///    wall-clock-named directories are re-keyed so selection/retention
+///    order them by sequence like every current cut).
+///
+/// Returns the reader for the imported (possibly renamed) cut.
+pub fn import_legacy_checkpoint_identity(
+    checkpoint_dir: &Path,
+    identity: &BackendIdentity,
+    operator_acknowledgement: &str,
+) -> Result<CheckpointReader, CheckpointCreateError> {
+    use CheckpointCreateError::{
+        CheckpointDirCreate, CompleteMarkerWrite, ExtensionDuplicate, ExtensionIO, MetadataUnparseable,
+        MissingStorageData,
+    };
+
+    if !checkpoint_dir.join(STORAGE_METADATA_FILE_NAME).exists() {
+        return Err(MissingStorageData { dir: checkpoint_dir.to_owned() });
+    }
+    let watermark = read_watermark_at(checkpoint_dir).map_err(|_| MetadataUnparseable {
+        dir: checkpoint_dir.to_owned(),
+        content: fs::read_to_string(checkpoint_dir.join(STORAGE_METADATA_FILE_NAME)).unwrap_or_default(),
+    })?;
+    if checkpoint_dir.join(CHECKPOINT_IDENTITY_FILE_NAME).exists() {
+        return Err(ExtensionDuplicate { name: CHECKPOINT_IDENTITY_FILE_NAME.to_string() });
+    }
+
+    // 2. stamp the acknowledged identity and its provenance
+    write_file(&checkpoint_dir.join(CHECKPOINT_IDENTITY_FILE_NAME), identity.serialise_marker().as_bytes())
+        .map_err(|error| ExtensionIO { name: CHECKPOINT_IDENTITY_FILE_NAME.to_string(), source: Arc::new(error) })?;
+    let provenance = format!(
+        "legacy-checkpoint-identity-import v1\nimported-utc {}\nidentity-config-digest {}\nacknowledgement {}\n",
+        Utc::now().to_rfc3339(),
+        identity.config_digest(),
+        operator_acknowledgement.replace('\n', " "),
+    );
+    write_file(&checkpoint_dir.join(CHECKPOINT_IDENTITY_PROVENANCE_FILE_NAME), provenance.as_bytes()).map_err(
+        |error| ExtensionIO { name: CHECKPOINT_IDENTITY_PROVENANCE_FILE_NAME.to_string(), source: Arc::new(error) },
+    )?;
+
+    // 3. reseal: recompute the current-format manifest over the whole cut
+    let manifest = CheckpointManifest::compute(checkpoint_dir)
+        .map_err(|error| CompleteMarkerWrite { dir: checkpoint_dir.to_owned(), source: Arc::new(error) })?;
+    fsync_tree_bottom_up(checkpoint_dir)
+        .map_err(|error| CompleteMarkerWrite { dir: checkpoint_dir.to_owned(), source: Arc::new(error) })?;
+    write_file(&checkpoint_dir.join(CHECKPOINT_COMPLETE_FILE_NAME), manifest.serialise().as_bytes())
+        .map_err(|error| CompleteMarkerWrite { dir: checkpoint_dir.to_owned(), source: Arc::new(error) })?;
+    crate::fsync_path(checkpoint_dir)
+        .map_err(|error| CompleteMarkerWrite { dir: checkpoint_dir.to_owned(), source: Arc::new(error) })?;
+
+    // re-key the directory to the sequence-keyed attempt name (R5-STOR-11)
+    // unless it already carries the right sequence prefix
+    let final_dir = if parse_attempt_sequence(checkpoint_dir) == Some(watermark.number()) {
+        checkpoint_dir.to_owned()
+    } else {
+        let parent = checkpoint_dir.parent().ok_or_else(|| CheckpointDirCreate {
+            dir: checkpoint_dir.to_owned(),
+            source: Arc::new(io::Error::new(io::ErrorKind::InvalidInput, "checkpoint directory has no parent")),
+        })?;
+        let renamed = parent.join(attempt_directory_name(watermark.number(), &new_attempt_suffix()));
+        fs::rename(checkpoint_dir, &renamed)
+            .map_err(|error| CheckpointDirCreate { dir: renamed.clone(), source: Arc::new(error) })?;
+        crate::fsync_path(parent)
+            .map_err(|error| CheckpointDirCreate { dir: parent.to_owned(), source: Arc::new(error) })?;
+        renamed
+    };
+    Ok(CheckpointReader { directory: final_dir })
+}
+
 /// R4-STOR-08/R4-STOR-10: every verified, selectable checkpoint, ordered
 /// newest to oldest.
 ///
 /// Recency is the FULL attempt directory name, compared lexicographically:
-/// the id format `<20-digit-nanos>-<counter>-<nonce>` (see [`new_attempt_id`])
-/// makes lexicographic order equal numeric recency by construction — the
-/// nanos prefix is fixed width, and two attempts whose nanos prefixes are
-/// EXACTLY equal (rapid scheduling, coarse clocks) are still totally ordered
-/// by the fixed-width counter and nonce components. This is the SAME total
-/// order retention ([`siblings_safe_to_delete`]) uses, so the reader's
-/// selection and the writer's cleanup can never disagree about which cut is
-/// newer.
+/// the name format `<20-digit-sequence>-<counter>-<nonce>` (see
+/// [`attempt_directory_name`]) makes lexicographic order equal LOGICAL
+/// recency by construction (R5-STOR-11: the fixed-width prefix is the
+/// checkpoint sequence, never wall time, so clock rollback cannot reorder
+/// it), and two attempts at the EXACT same sequence (equivalent cuts) are
+/// still totally ordered by the fixed-width counter and nonce components.
+/// This is the SAME total order retention ([`siblings_safe_to_delete`])
+/// uses, so the reader's selection and the writer's cleanup can never
+/// disagree about which cut is newer.
 ///
 /// R-05/R-06: only a digest-verified COMPLETE checkpoint is a candidate. A
 /// newer directory that cannot be read or fails verification does NOT shadow
@@ -377,7 +741,7 @@ fn verified_checkpoints_newest_first<KS: KeyspaceSet>(entries: fs::ReadDir) -> i
             // skip an unfinished (in-flight or torn) attempt
             continue;
         }
-        if parse_attempt_nanos(&path).is_none() {
+        if parse_attempt_sequence(&path).is_none() {
             // a directory whose name is not an attempt id — skip it
             continue;
         }
@@ -470,9 +834,18 @@ fn assert_safe_checkpoint_entry(path: &Path) -> io::Result<fs::FileType> {
 /// A checkpoint is a directory, which contains at least the storage checkpointing data: keyspaces + the watermark.
 /// The watermark represents a sequence number that is guaranteed to be in all the keyspaces, and after which we may
 /// have to reapply commits to the keyspaces from the WAL.
+///
+/// R5-STOR-11: the FINAL attempt directory name is derived at [`Self::finish`]
+/// from the cut's sealed WATERMARK (the storage checkpoint sequence), not from
+/// wall time — `<20-digit-sequence>-<counter>-<nonce>`. The sequence is the
+/// authority selection and retention order by; wall time appears only inside
+/// the manifest as diagnostics. The in-flight temporary directory carries a
+/// unique non-attempt name plus the `.tmp` extension, so it is never selected
+/// and never a retention target.
 pub struct CheckpointWriter {
-    pub checkpoint_directory: PathBuf,
     pub temporary_directory: PathBuf,
+    /// `<counter>-<nonce>`: the uniqueness suffix of the final attempt name.
+    attempt_suffix: String,
 }
 
 impl CheckpointWriter {
@@ -485,21 +858,19 @@ impl CheckpointWriter {
                 .map_err(|error| CheckpointDirCreate { dir: checkpoint_dir.clone(), source: Arc::new(error) })?
         }
 
-        // R-04: a cryptographically-unique attempt id, NOT a bare microsecond
-        // timestamp. The id is `<20-digit-nanos>-<counter>-<nonce>`: the nanos
-        // prefix keeps directories recency-ordered (fixed width => lexicographic
-        // == numeric), the process-wide counter guarantees uniqueness within a
-        // process even for same-instant attempts, and the random nonce extends
-        // that across processes. Two concurrent attempts therefore can never
-        // land in the same directory — the collision the old timestamp names
-        // permitted.
-        let attempt_id = new_attempt_id();
-        let temporary_directory = checkpoint_dir.join(format!("{attempt_id}.{TEMP_FILE_EXTENSION}"));
-        let checkpoint_directory = checkpoint_dir.join(attempt_id);
+        // R-04: a unique attempt suffix — the process-wide counter guarantees
+        // uniqueness within a process even for simultaneous attempts, and the
+        // random nonce extends that across processes. Two concurrent attempts
+        // therefore can never land in the same directory — the collision the
+        // old timestamp names permitted. R5-STOR-11: no wall-clock component
+        // anywhere; the recency-ordering prefix (the checkpoint sequence) is
+        // bound at `finish`, when the sealed watermark is known.
+        let attempt_suffix = new_attempt_suffix();
+        let temporary_directory = checkpoint_dir.join(format!("attempt-{attempt_suffix}.{TEMP_FILE_EXTENSION}"));
         fs::create_dir_all(&temporary_directory)
             .map_err(|error| CheckpointDirCreate { dir: checkpoint_dir.clone(), source: Arc::new(error) })?;
 
-        Ok(Self { checkpoint_directory, temporary_directory })
+        Ok(Self { temporary_directory, attempt_suffix })
     }
 
     pub fn add_storage(&self, keyspaces: &Keyspaces, watermark: SequenceNumber) -> Result<(), CheckpointCreateError> {
@@ -556,12 +927,29 @@ impl CheckpointWriter {
 
     pub fn finish(self) -> Result<CheckpointReader, CheckpointCreateError> {
         use CheckpointCreateError::{
-            CheckpointDirCreate, CheckpointDirRead, CompleteMarkerWrite, MissingStorageData, OldCheckpointRemove,
+            CheckpointDirCreate, CheckpointDirRead, CompleteMarkerWrite, MetadataUnparseable, MissingStorageData,
+            OldCheckpointRemove,
         };
 
         if !self.temporary_directory.join(STORAGE_METADATA_FILE_NAME).exists() {
             return Err(MissingStorageData { dir: self.temporary_directory.clone() });
         }
+        // R5-STOR-11: the final attempt name's recency component is the
+        // sealed WATERMARK — the checkpoint sequence, monotonic per store —
+        // never wall time. Wall-clock rollback between attempts therefore
+        // cannot reorder selection or retention.
+        let watermark = read_watermark_at(&self.temporary_directory).map_err(|_| MetadataUnparseable {
+            dir: self.temporary_directory.clone(),
+            content: fs::read_to_string(self.temporary_directory.join(STORAGE_METADATA_FILE_NAME))
+                .unwrap_or_default(),
+        })?;
+        let checkpoint_parent = self
+            .temporary_directory
+            .parent()
+            .expect("the temporary attempt directory is created under the checkpoint directory")
+            .to_owned();
+        let checkpoint_directory =
+            checkpoint_parent.join(attempt_directory_name(watermark.number(), &self.attempt_suffix));
 
         // R-06: bind a machine manifest of every data file (relative path,
         // length, content digest) plus a root digest over them, fsync the whole
@@ -582,14 +970,12 @@ impl CheckpointWriter {
 
         // the atomic publish: the whole verified, COMPLETE-bearing tree appears
         // under its final name in one rename.
-        fs::rename(&self.temporary_directory, &self.checkpoint_directory)
-            .map_err(|error| CheckpointDirCreate { dir: self.checkpoint_directory.clone(), source: Arc::new(error) })?;
+        fs::rename(&self.temporary_directory, &checkpoint_directory)
+            .map_err(|error| CheckpointDirCreate { dir: checkpoint_directory.clone(), source: Arc::new(error) })?;
         // R-06: the rename itself must be durable, or a crash can leave the
         // parent directory pointing at the pre-rename tmp name.
-        if let Some(parent) = self.checkpoint_directory.parent() {
-            crate::fsync_path(parent)
-                .map_err(|error| CheckpointDirCreate { dir: parent.to_owned(), source: Arc::new(error) })?;
-        }
+        crate::fsync_path(&checkpoint_parent)
+            .map_err(|error| CheckpointDirCreate { dir: checkpoint_parent.clone(), source: Arc::new(error) })?;
 
         fail_point!(CHECKPOINT_CLEANUP_FAIL);
 
@@ -604,17 +990,17 @@ impl CheckpointWriter {
         // a cleanup failure is a typed error that leaves the just-published
         // cut fully durable and selectable — retention failures never affect
         // the published cut.
-        let siblings: Vec<PathBuf> = fs::read_dir(self.checkpoint_directory.parent().unwrap())
+        let siblings: Vec<PathBuf> = fs::read_dir(&checkpoint_parent)
             .and_then(|entries| entries.map_ok(|entry| entry.path()).try_collect())
-            .map_err(|error| CheckpointDirRead { dir: self.checkpoint_directory.clone(), source: Arc::new(error) })?;
+            .map_err(|error| CheckpointDirRead { dir: checkpoint_directory.clone(), source: Arc::new(error) })?;
 
-        for previous_checkpoint in siblings_safe_to_delete(&self.checkpoint_directory, &siblings) {
+        for previous_checkpoint in siblings_safe_to_delete(&checkpoint_directory, &siblings) {
             fail_point!(CHECKPOINT_CLEANUP_PARTIAL_FAIL);
             fs::remove_dir_all(&previous_checkpoint)
                 .map_err(|error| OldCheckpointRemove { dir: previous_checkpoint, source: Arc::new(error) })?
         }
 
-        Ok(CheckpointReader { directory: self.checkpoint_directory })
+        Ok(CheckpointReader { directory: checkpoint_directory })
     }
 }
 
@@ -635,12 +1021,15 @@ impl CheckpointWriter {
 ///     defect was exactly an older attempt A finishing last and deleting the
 ///     newer published cut B, regressing selection to the older cut.
 ///
-/// The attempt id format `<20-digit-nanos>-<counter>-<nonce>` makes
-/// lexicographic comparison equal numeric recency (fixed-width nanos prefix);
-/// two ids sharing an EXACTLY equal nanos prefix are still totally ordered by
-/// the fixed-width counter and nonce components. This is the same total order
-/// the reader's selection uses ([`verified_checkpoints_newest_first`]), so
-/// cleanup can never delete the cut selection would pick.
+/// The attempt name format `<20-digit-sequence>-<counter>-<nonce>` makes
+/// lexicographic comparison equal LOGICAL recency (R5-STOR-11: the
+/// fixed-width prefix is the checkpoint sequence, never wall time — a clock
+/// rollback between attempts cannot make a newer cut look older); two names
+/// sharing an EXACTLY equal sequence prefix are equivalent cuts, still
+/// totally ordered by the fixed-width counter and nonce components. This is
+/// the same total order the reader's selection uses
+/// ([`verified_checkpoints_newest_first`]), so cleanup can never delete the
+/// cut selection would pick.
 fn siblings_safe_to_delete(final_dir: &Path, entries: &[PathBuf]) -> Vec<PathBuf> {
     let Some(final_name) = final_dir.file_name() else {
         return Vec::new();
@@ -648,24 +1037,30 @@ fn siblings_safe_to_delete(final_dir: &Path, entries: &[PathBuf]) -> Vec<PathBuf
     entries
         .iter()
         .filter(|path| path.extension() != Some(TEMP_FILE_EXTENSION.as_ref()))
-        .filter(|path| parse_attempt_nanos(path).is_some())
+        .filter(|path| parse_attempt_sequence(path).is_some())
         .filter(|path| path.file_name().is_some_and(|name| name < final_name))
         .cloned()
         .collect()
 }
 
-/// R-04: a unique checkpoint-attempt id. `<20-digit-nanos>-<counter>-<nonce>`:
-/// the fixed-width nanosecond prefix preserves recency ordering
-/// (lexicographic == numeric), the process-wide [`ATTEMPT_COUNTER`] guarantees
-/// two attempts in the same instant differ, and the random nonce extends
-/// uniqueness across processes. Bare microsecond timestamps (the old scheme)
-/// collided under rapid scheduling; a collision let one attempt land in
-/// another's directory.
-fn new_attempt_id() -> String {
-    let nanos = Utc::now().timestamp_nanos_opt().unwrap_or(0).max(0) as u64;
+/// The final attempt directory name: `<20-digit-sequence>-<counter>-<nonce>`.
+/// R5-STOR-11: the fixed-width leading component is the CHECKPOINT SEQUENCE
+/// (the sealed watermark — monotonic per store), so lexicographic order is
+/// LOGICAL recency by construction and a wall-clock rollback between attempts
+/// cannot reorder selection or retention. The suffix (`<counter>-<nonce>`)
+/// only disambiguates attempts at the SAME sequence (equivalent cuts).
+fn attempt_directory_name(sequence: u64, attempt_suffix: &str) -> String {
+    format!("{sequence:020}-{attempt_suffix}")
+}
+
+/// R-04: a unique attempt suffix `<counter>-<nonce>`: the process-wide
+/// [`ATTEMPT_COUNTER`] guarantees two attempts in the same process differ,
+/// and the random nonce extends uniqueness across processes. It carries NO
+/// wall-clock component and is never used for ordering across sequences.
+fn new_attempt_suffix() -> String {
     let counter = ATTEMPT_COUNTER.fetch_add(1, Ordering::Relaxed);
     let nonce = attempt_nonce();
-    format!("{nanos:020}-{counter:016x}-{nonce:016x}")
+    format!("{counter:016x}-{nonce:016x}")
 }
 
 /// A per-call random 64-bit nonce sourced from the standard-library hasher's
@@ -675,10 +1070,11 @@ fn attempt_nonce() -> u64 {
     std::collections::hash_map::RandomState::new().build_hasher().finish()
 }
 
-/// Parse the recency-ordering nanosecond prefix of an attempt directory name.
-/// Returns `None` for a name that does not begin with the fixed-width nanos
-/// component (an unrelated/foreign directory), which the selector skips.
-fn parse_attempt_nanos(path: &Path) -> Option<u64> {
+/// Parse the recency-ordering checkpoint-sequence prefix of an attempt
+/// directory name. Returns `None` for a name that does not begin with the
+/// fixed-width sequence component (an unrelated/foreign directory), which the
+/// selector skips.
+fn parse_attempt_sequence(path: &Path) -> Option<u64> {
     let name = path.file_name()?.to_str()?;
     let prefix = name.split('-').next()?;
     prefix.parse::<u64>().ok()
@@ -704,30 +1100,44 @@ fn fsync_tree_bottom_up(root: &Path) -> io::Result<()> {
     crate::fsync_path(root)
 }
 
-/// R-06: the machine manifest a COMPLETE marker carries. It binds, for every
-/// data file under the checkpoint root (the COMPLETE marker itself excluded),
-/// the file's relative path, byte length, and a content digest, plus a root
-/// digest over the whole sorted set. The reader recomputes this from the bytes
-/// on disk and refuses any checkpoint where a file is missing, extra, changed,
-/// or truncated — so a torn or tampered attempt can never be selected.
+/// R-06/R5-STOR-09: the machine manifest a COMPLETE marker carries. It binds,
+/// for every data file under the checkpoint root (the COMPLETE marker itself
+/// excluded), the file's relative path, byte length, and its SHA-256 digest,
+/// plus a SHA-256 root over the length-prefix-framed sorted entry set. The
+/// reader recomputes this from the bytes on disk and refuses any checkpoint
+/// where a file is missing, extra, changed, or truncated — so a torn or
+/// tampered attempt can never be selected, and (unlike the retired 64-bit
+/// SipHash format) an adversary with storage write access cannot recompute a
+/// colliding digest by brute force.
 ///
-/// The digest is the standard-library content hasher (SipHash): sufficient to
-/// catch truncation and accidental/adversarial content change for integrity,
-/// but NOT a cryptographic commitment — this crate has no cryptographic-hash
-/// dependency, and the backend *identity* is separately bound by the S-01
-/// durable marker verified before any open.
+/// Path identity (R5-STOR-09): entry keys are the RAW relative path bytes
+/// (Unix `OsStrExt::as_bytes` per component, joined with `/`), hex-encoded in
+/// the serialised form and length-prefix-framed in the root digest. Two
+/// distinct invalid-UTF-8 names that would lossy-collapse to one replacement
+/// string therefore remain DISTINCT manifest keys; nothing in the format is
+/// lossy. A serialised manifest carrying two entries with the same key does
+/// not parse (duplicate-key refusal).
+///
+/// Format migration: only the `v2` header below parses. A legacy `v1`
+/// (64-bit SipHash) COMPLETE marker — or any unknown/forged version — is
+/// refused as unverifiable, making the directory unselectable; the explicit
+/// [`import_legacy_checkpoint_identity`] path is the sanctioned way to reseal
+/// an acknowledged legacy cut in the current format.
 struct CheckpointManifest {
-    /// relative path (`/`-joined) -> (length, content digest)
-    entries: BTreeMap<String, (u64, u64)>,
-    root_digest: u64,
+    /// raw relative path bytes (`/`-joined) -> (length, SHA-256 digest)
+    entries: BTreeMap<Vec<u8>, (u64, [u8; 32])>,
+    root_digest: [u8; 32],
     /// Informational only (human-readable marker content). NOT a bound
     /// integrity input: `verify` compares `entries` + `root_digest`, and the
     /// STORAGE_METADATA file this is read from is itself a regular file under
     /// the root, so its bytes are already hashed into `entries`.
     watermark: Option<u64>,
+    /// R5-STOR-11: wall-clock creation time, DIAGNOSTICS ONLY — never an
+    /// ordering or retention input (the attempt name's sequence prefix is).
+    created_utc: Option<String>,
 }
 
-const CHECKPOINT_MANIFEST_HEADER: &str = "CHECKPOINT-COMPLETE v1";
+const CHECKPOINT_MANIFEST_HEADER: &str = "CHECKPOINT-COMPLETE v2";
 
 impl CheckpointManifest {
     /// Walk `root` (no-follow), hashing every regular file except the COMPLETE
@@ -739,10 +1149,10 @@ impl CheckpointManifest {
         let watermark =
             fs::read_to_string(root.join(STORAGE_METADATA_FILE_NAME)).ok().and_then(|s| s.trim().parse().ok());
         let root_digest = Self::root_digest(&entries);
-        Ok(Self { entries, root_digest, watermark })
+        Ok(Self { entries, root_digest, watermark, created_utc: Some(Utc::now().to_rfc3339()) })
     }
 
-    fn walk(root: &Path, dir: &Path, entries: &mut BTreeMap<String, (u64, u64)>) -> io::Result<()> {
+    fn walk(root: &Path, dir: &Path, entries: &mut BTreeMap<Vec<u8>, (u64, [u8; 32])>) -> io::Result<()> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
@@ -752,8 +1162,8 @@ impl CheckpointManifest {
                 Self::walk(root, &path, entries)?;
             } else {
                 let relative = path.strip_prefix(root).expect("walked path is under root");
-                let key = relative.to_string_lossy().replace('\\', "/");
-                if key == CHECKPOINT_COMPLETE_FILE_NAME {
+                let key = manifest_path_key(relative)?;
+                if key == CHECKPOINT_COMPLETE_FILE_NAME.as_bytes() {
                     continue; // the marker never certifies itself
                 }
                 let (len, digest) = hash_file(&path)?;
@@ -763,29 +1173,37 @@ impl CheckpointManifest {
         Ok(())
     }
 
-    fn root_digest(entries: &BTreeMap<String, (u64, u64)>) -> u64 {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    /// SHA-256 over the sorted entry set with unambiguous length-prefixed
+    /// framing: `u64-BE key length | key bytes | u64-BE file length | 32-byte
+    /// digest` per entry. No concatenation of two distinct entry sets can
+    /// produce the same framed byte stream.
+    fn root_digest(entries: &BTreeMap<Vec<u8>, (u64, [u8; 32])>) -> [u8; 32] {
+        let mut hasher = Sha256::new();
         for (key, (len, digest)) in entries {
-            hasher.write(key.as_bytes());
-            hasher.write_u8(0);
-            hasher.write_u64(*len);
-            hasher.write_u64(*digest);
+            hasher.update(&(key.len() as u64).to_be_bytes());
+            hasher.update(key);
+            hasher.update(&len.to_be_bytes());
+            hasher.update(digest);
         }
-        hasher.finish()
+        hasher.finalize()
     }
 
     fn serialise(&self) -> String {
         let mut out = String::new();
         out.push_str(CHECKPOINT_MANIFEST_HEADER);
         out.push('\n');
-        out.push_str(&format!("root {:016x}\n", self.root_digest));
+        out.push_str(&format!("root {}\n", hex_encode(&self.root_digest)));
         if let Some(watermark) = self.watermark {
             out.push_str(&format!("watermark {watermark}\n"));
         }
+        if let Some(created_utc) = &self.created_utc {
+            // diagnostics only (R5-STOR-11): parsed back but never compared
+            out.push_str(&format!("created-utc {created_utc}\n"));
+        }
         for (key, (len, digest)) in &self.entries {
-            // hex-encode the relative path so any byte in a file name round
-            // trips without colliding with the field separators.
-            out.push_str(&format!("{len:016x} {digest:016x} {}\n", hex_encode(key.as_bytes())));
+            // hex-encode the raw relative path bytes so any byte in a file
+            // name round trips without colliding with the field separators.
+            out.push_str(&format!("{len:016x} {} {}\n", hex_encode(digest), hex_encode(key)));
         }
         out
     }
@@ -793,7 +1211,8 @@ impl CheckpointManifest {
     /// Verify the on-disk checkpoint tree against a serialised COMPLETE marker:
     /// recompute the manifest from the bytes and require exact equality of the
     /// entry set (paths, lengths, digests) and the root digest. Any missing,
-    /// extra, changed, or truncated file makes this `false`.
+    /// extra, changed, or truncated file — and any legacy/unknown manifest
+    /// version — makes this `false`.
     fn verify(root: &Path, serialised: &str) -> io::Result<bool> {
         let Some(parsed) = Self::parse(serialised) else {
             return Ok(false);
@@ -805,33 +1224,79 @@ impl CheckpointManifest {
     fn parse(serialised: &str) -> Option<Self> {
         let mut lines = serialised.lines();
         if lines.next()? != CHECKPOINT_MANIFEST_HEADER {
+            // R5-STOR-09: v1 (64-bit) and unknown/forged versions are refused
             return None;
         }
         let mut entries = BTreeMap::new();
         let mut root_digest = None;
         let mut watermark = None;
+        let mut created_utc = None;
         for line in lines {
             if let Some(rest) = line.strip_prefix("root ") {
-                root_digest = u64::from_str_radix(rest.trim(), 16).ok();
+                root_digest = decode_digest(rest.trim());
+                root_digest.as_ref()?;
             } else if let Some(rest) = line.strip_prefix("watermark ") {
                 watermark = rest.trim().parse().ok();
+            } else if let Some(rest) = line.strip_prefix("created-utc ") {
+                created_utc = Some(rest.trim().to_owned());
             } else {
                 let mut parts = line.split(' ');
                 let len = u64::from_str_radix(parts.next()?, 16).ok()?;
-                let digest = u64::from_str_radix(parts.next()?, 16).ok()?;
-                let key_bytes = hex_decode(parts.next()?)?;
-                let key = String::from_utf8(key_bytes).ok()?;
-                entries.insert(key, (len, digest));
+                let digest = decode_digest(parts.next()?)?;
+                let key = hex_decode(parts.next()?)?;
+                if parts.next().is_some() {
+                    return None; // trailing garbage on an entry line
+                }
+                // duplicate normalized keys are an explicit refusal, never a
+                // silent last-writer-wins (R5-STOR-09)
+                if entries.insert(key, (len, digest)).is_some() {
+                    return None;
+                }
             }
         }
-        Some(Self { entries, root_digest: root_digest?, watermark })
+        Some(Self { entries, root_digest: root_digest?, watermark, created_utc })
     }
 }
 
-/// Stream a file through the standard content hasher, returning (length, digest).
-fn hash_file(path: &Path) -> io::Result<(u64, u64)> {
+/// The manifest key for a relative path: the RAW path bytes of every
+/// component, joined with `/`. On Unix this is `OsStrExt::as_bytes`, so
+/// distinct invalid-UTF-8 names stay distinct (no lossy collapse). On
+/// non-Unix targets, where raw path bytes are not exposed, a non-UTF-8 name
+/// is REFUSED at manifest computation (i.e. at checkpoint creation) rather
+/// than serialised lossily.
+fn manifest_path_key(relative: &Path) -> io::Result<Vec<u8>> {
+    let mut key = Vec::new();
+    for component in relative.components() {
+        if !key.is_empty() {
+            key.push(b'/');
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            key.extend_from_slice(component.as_os_str().as_bytes());
+        }
+        #[cfg(not(unix))]
+        {
+            let text = component.as_os_str().to_str().ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("refusing to checkpoint a non-UTF-8 file name on a non-Unix target: {relative:?}"),
+                )
+            })?;
+            key.extend_from_slice(text.as_bytes());
+        }
+    }
+    Ok(key)
+}
+
+fn decode_digest(hex: &str) -> Option<[u8; 32]> {
+    hex_decode(hex)?.try_into().ok()
+}
+
+/// Stream a file through SHA-256, returning (length, digest) — R5-STOR-09.
+fn hash_file(path: &Path) -> io::Result<(u64, [u8; 32])> {
     let mut file = File::open(path)?;
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let mut hasher = Sha256::new();
     let mut buffer = [0u8; 64 * 1024];
     let mut len = 0u64;
     loop {
@@ -839,10 +1304,10 @@ fn hash_file(path: &Path) -> io::Result<(u64, u64)> {
         if read == 0 {
             break;
         }
-        hasher.write(&buffer[..read]);
+        hasher.update(&buffer[..read]);
         len = len.saturating_add(read as u64);
     }
-    Ok((len, hasher.finish()))
+    Ok((len, hasher.finalize()))
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -899,6 +1364,12 @@ pub enum CheckpointCreateError {
     MissingStorageData {
         dir: PathBuf,
     },
+    /// R5-STOR-11: the attempt's sealed watermark does not parse, so no
+    /// sequence-keyed final name can be derived; the attempt is not published.
+    MetadataUnparseable {
+        dir: PathBuf,
+        content: String,
+    },
 
     KeyspaceCheckpoint {
         dir: PathBuf,
@@ -950,6 +1421,7 @@ impl Error for CheckpointCreateError {
             Self::CheckpointDirCreate { source, .. } => Some(source),
             Self::CheckpointDirRead { source, .. } => Some(source),
             Self::MissingStorageData { .. } => None,
+            Self::MetadataUnparseable { .. } => None,
             Self::KeyspaceCheckpoint { source, .. } => Some(source),
             Self::MetadataFileCreate { source, .. } => Some(source),
             Self::MetadataWrite { source, .. } => Some(source),
@@ -978,6 +1450,9 @@ typedb_error! {
         SequenceExhausted(12, "Recovery from the checkpoint in directory '{dir:?}' requires a sequence number beyond the u64 space (watermark {watermark}). The sequence space is exhausted or the recovery inputs are corrupt; refusing rather than wrapping to zero.", dir: PathBuf, watermark: SequenceNumber),
         CheckpointAheadOfDurability(13, "The checkpoint in directory '{dir:?}' has watermark {watermark}, ahead of the durability head {durability_head}. The durability logs may have been truncated or the checkpoint is stale; refusing (was a process abort) so recovery can fall back to an older checkpoint or full WAL replay WITHOUT touching live state.", dir: PathBuf, watermark: SequenceNumber, durability_head: SequenceNumber),
         CheckpointIdentityMismatch(14, "The checkpoint in directory '{dir:?}' is bound to backend identity digest '{persisted}', but this database resolves identity digest '{resolved}' (R4-STOR-01). A cut created under one backend configuration must never be restored under another; refusing BEFORE any touch of live state.", dir: PathBuf, persisted: String, resolved: String),
+        CheckpointLegacyIdentityRequiresImport(15, "The checkpoint in directory '{dir:?}' carries no backend identity: it is a legacy cut whose bytes never proved endpoint, bucket, prefix, or policy (R5-STOR-10). Ordinary recovery refuses to bind it to the current configuration; run the explicit legacy-identity import (operator acknowledgement + provenance) to make it recoverable. Live storage state was left untouched.", dir: PathBuf),
+        RestoreScratchDigestMismatch(16, "The scratch materialisation of the checkpoint in directory '{dir:?}' does not verify against its sealed COMPLETE manifest ({detail}) (R5-STOR-06/R5-STOR-09). The cut is corrupt or tampered; refusing BEFORE any touch of live state.", dir: PathBuf, detail: String),
+        RestoreActivation(17, "Failed to atomically activate the verified scratch restore of the checkpoint in directory '{dir:?}' (R5-STOR-06). The rename-swap was rolled back where possible; restart convergence restores the predecessor if the swap was torn.", dir: PathBuf, source: Arc<io::Error>),
     }
 }
 
@@ -1044,18 +1519,17 @@ mod concurrent_checkpoint_tests {
 
     use test_utils::create_tmp_dir;
 
-    use super::{TEMP_FILE_EXTENSION, new_attempt_id, siblings_safe_to_delete};
+    use super::{TEMP_FILE_EXTENSION, new_attempt_suffix, siblings_safe_to_delete};
 
     #[test]
-    fn attempt_ids_are_unique_even_under_rapid_scheduling() {
+    fn attempt_suffixes_are_unique_even_under_rapid_scheduling() {
         // Barrier for the "cannot share A's directory" half of R-04: a tight
-        // loop schedules attempts far faster than a microsecond clock ticks.
-        // Cryptographically-unique ids are all distinct; the old bare
-        // microsecond-timestamp scheme (the mutant) collides here and the set
-        // is smaller than the sample.
+        // loop schedules attempts far faster than any clock ticks. The
+        // counter+nonce suffixes are all distinct; a bare-timestamp scheme
+        // (the mutant) collides here and the set is smaller than the sample.
         const SAMPLES: usize = 20_000;
-        let ids: HashSet<String> = (0..SAMPLES).map(|_| new_attempt_id()).collect();
-        assert_eq!(ids.len(), SAMPLES, "attempt ids collided: bare timestamps are not unique under rapid scheduling");
+        let ids: HashSet<String> = (0..SAMPLES).map(|_| new_attempt_suffix()).collect();
+        assert_eq!(ids.len(), SAMPLES, "attempt suffixes collided: they must be unique under rapid scheduling");
     }
 
     #[test]
@@ -1103,22 +1577,46 @@ mod concurrent_checkpoint_tests {
     }
 
     #[test]
-    fn equal_nanos_prefix_ids_are_ordered_by_the_counter_component() {
-        // The exact-equal clock prefix case: two attempts in the same instant
-        // share the 20-digit nanos prefix; the fixed-width counter (and nonce)
-        // still totally order them, so recency-aware cleanup stays exact.
-        let base = create_tmp_dir("checkpoint-cleanup-equal-nanos");
+    fn equal_sequence_prefix_ids_are_ordered_by_the_counter_component() {
+        // The exact-equal sequence prefix case: two attempts cut at the same
+        // watermark share the 20-digit sequence prefix (equivalent cuts); the
+        // fixed-width counter (and nonce) still totally order them, so
+        // recency-aware cleanup stays exact.
+        let base = create_tmp_dir("checkpoint-cleanup-equal-seq");
         let older: PathBuf = base.join("00000000000000000100-0000000000000001-aaaa");
         let newer: PathBuf = base.join("00000000000000000100-0000000000000002-bbbb");
 
         let entries = vec![older.clone(), newer.clone()];
         assert!(
             siblings_safe_to_delete(&newer, &entries).contains(&older),
-            "with equal nanos, the smaller counter is the older attempt and is reclaimable"
+            "with equal sequences, the smaller counter is the older attempt and is reclaimable"
         );
         assert!(
             !siblings_safe_to_delete(&older, &entries).contains(&newer),
-            "with equal nanos, the larger counter is the newer attempt and must survive"
+            "with equal sequences, the larger counter is the newer attempt and must survive"
+        );
+    }
+
+    #[test]
+    fn retention_orders_by_checkpoint_sequence_never_by_wall_clock() {
+        // R5-STOR-11 mutant: the clock rolls BACKWARD between attempts —
+        // attempt A is cut at wall time t2 with sequence 1, attempt B at the
+        // earlier wall time t1 with the newer sequence 2. Names carry no
+        // wall-clock component at all, so B (seq 2) is strictly newer than A
+        // (seq 1): B's cleanup may reclaim A, and A must NEVER be able to
+        // reclaim B as "older".
+        let base = create_tmp_dir("checkpoint-cleanup-clock-rollback");
+        let a_seq1_late_wall: PathBuf = base.join("00000000000000000001-0000000000000007-aaaa");
+        let b_seq2_early_wall: PathBuf = base.join("00000000000000000002-0000000000000003-bbbb");
+
+        let entries = vec![a_seq1_late_wall.clone(), b_seq2_early_wall.clone()];
+        assert!(
+            siblings_safe_to_delete(&b_seq2_early_wall, &entries).contains(&a_seq1_late_wall),
+            "the lower-sequence cut is older regardless of when the wall clock said it was taken"
+        );
+        assert!(
+            !siblings_safe_to_delete(&a_seq1_late_wall, &entries).contains(&b_seq2_early_wall),
+            "R5-STOR-11: the higher-sequence cut must never be reclaimed as 'older' after a clock rollback"
         );
     }
 
@@ -1171,15 +1669,17 @@ mod finish_barrier_tests {
         }
     }
 
-    /// An in-flight attempt with a fabricated id: a `.tmp` tree carrying the
-    /// keyspace data and watermark metadata `finish` requires — the state an
-    /// attempt is in right after `add_storage` (captured, not yet sealed).
-    fn captured_attempt(checkpoint_parent: &Path, attempt_id: &str, watermark: &str) -> CheckpointWriter {
-        let temporary_directory = checkpoint_parent.join(format!("{attempt_id}.{TEMP_FILE_EXTENSION}"));
+    /// An in-flight attempt with a fabricated suffix: a `.tmp` tree carrying
+    /// the keyspace data and watermark metadata `finish` requires — the state
+    /// an attempt is in right after `add_storage` (captured, not yet sealed).
+    /// The FINAL name is derived by `finish` from the sealed watermark
+    /// (R5-STOR-11): `<20-digit-watermark>-<suffix>`.
+    fn captured_attempt(checkpoint_parent: &Path, suffix: &str, watermark: &str) -> CheckpointWriter {
+        let temporary_directory = checkpoint_parent.join(format!("attempt-{suffix}.{TEMP_FILE_EXTENSION}"));
         fs::create_dir_all(temporary_directory.join("keyspace")).unwrap();
-        fs::write(temporary_directory.join("keyspace").join("data.sst"), format!("bytes-of-{attempt_id}")).unwrap();
+        fs::write(temporary_directory.join("keyspace").join("data.sst"), format!("bytes-of-{suffix}")).unwrap();
         fs::write(temporary_directory.join(STORAGE_METADATA_FILE_NAME), watermark).unwrap();
-        CheckpointWriter { checkpoint_directory: checkpoint_parent.join(attempt_id), temporary_directory }
+        CheckpointWriter { temporary_directory, attempt_suffix: suffix.to_owned() }
     }
 
     fn selected_name(checkpoint_parent: &Path) -> Option<String> {
@@ -1189,17 +1689,23 @@ mod finish_barrier_tests {
             .map(|c| c.directory.file_name().unwrap().to_str().unwrap().to_owned())
     }
 
-    const A_OLDER: &str = "00000000000000000100-0000000000000001-aaaa";
-    const B_NEWER: &str = "00000000000000000200-0000000000000002-bbbb";
+    const A_SUFFIX: &str = "0000000000000001-aaaa";
+    const B_SUFFIX: &str = "0000000000000002-bbbb";
+    /// A's final name: sealed at watermark 10.
+    const A_OLDER: &str = "00000000000000000010-0000000000000001-aaaa";
+    /// B's final name: sealed at watermark 20 — the logically newer cut.
+    const B_NEWER: &str = "00000000000000000020-0000000000000002-bbbb";
 
     #[test]
     fn reverse_completion_preserves_the_newer_published_cut() {
-        // The audit barrier: A captures first (older id), B captures newer
-        // and publishes, A resumes and finishes LAST. B must remain published
-        // and selected — A cannot remove it.
+        // The audit barrier: A captures first (older watermark), B captures
+        // newer and publishes, A resumes and finishes LAST. B must remain
+        // published and selected — A cannot remove it. R5-STOR-11: this is
+        // ALSO the clock-rollback barrier — completion order (a proxy for
+        // wall time) contradicts sequence order, and sequence wins.
         let base = create_tmp_dir("finish-reverse");
-        let a = captured_attempt(&base, A_OLDER, "10");
-        let b = captured_attempt(&base, B_NEWER, "20");
+        let a = captured_attempt(&base, A_SUFFIX, "10");
+        let b = captured_attempt(&base, B_SUFFIX, "20");
 
         b.finish().expect("B publishes first");
         a.finish().expect("A finishes last and must not fail");
@@ -1218,8 +1724,8 @@ mod finish_barrier_tests {
         // the strictly newer cut — reclaims A. Selection is monotonic either
         // way: the newest published cut wins.
         let base = create_tmp_dir("finish-forward");
-        let a = captured_attempt(&base, A_OLDER, "10");
-        let b = captured_attempt(&base, B_NEWER, "20");
+        let a = captured_attempt(&base, A_SUFFIX, "10");
+        let b = captured_attempt(&base, B_SUFFIX, "20");
 
         a.finish().expect("A publishes first");
         b.finish().expect("B finishes last");
@@ -1229,21 +1735,37 @@ mod finish_barrier_tests {
     }
 
     #[test]
-    fn equal_clock_prefix_reverse_completion_preserves_the_newer_cut() {
-        // equal-nanos mutant: the two attempt ids share the exact 20-digit
-        // nanos prefix and differ only in the counter component; recency is
-        // still total and the newer cut survives reverse completion.
-        const A_EQ: &str = "00000000000000000300-0000000000000003-cccc";
-        const B_EQ: &str = "00000000000000000300-0000000000000004-dddd";
-        let base = create_tmp_dir("finish-equal-nanos");
-        let a = captured_attempt(&base, A_EQ, "10");
-        let b = captured_attempt(&base, B_EQ, "20");
+    fn published_names_are_keyed_by_sequence_not_wall_clock() {
+        // R5-STOR-11: the published directory name's ordering component is
+        // exactly the sealed watermark — reverting to a wall-clock-leading
+        // name (the mutant) changes the published names and fails here.
+        let base = create_tmp_dir("finish-name-key");
+        let published = captured_attempt(&base, A_SUFFIX, "10").finish().expect("publishes");
+        assert_eq!(
+            published.directory.file_name().unwrap().to_str().unwrap(),
+            A_OLDER,
+            "the final attempt name must be <20-digit-watermark>-<suffix>, with no wall-clock component"
+        );
+        assert_eq!(published.read_sequence_number().unwrap().number(), 10);
+    }
 
-        b.finish().expect("B (same nanos, larger counter) publishes first");
+    #[test]
+    fn equal_sequence_reverse_completion_preserves_the_newer_cut() {
+        // equal-sequence mutant: two attempts cut at the SAME watermark
+        // (equivalent cuts) differ only in the counter component; recency is
+        // still total and the counter-newer cut survives reverse completion.
+        const A_EQ_SUFFIX: &str = "0000000000000003-cccc";
+        const B_EQ_SUFFIX: &str = "0000000000000004-dddd";
+        const B_EQ: &str = "00000000000000000020-0000000000000004-dddd";
+        let base = create_tmp_dir("finish-equal-seq");
+        let a = captured_attempt(&base, A_EQ_SUFFIX, "20");
+        let b = captured_attempt(&base, B_EQ_SUFFIX, "20");
+
+        b.finish().expect("B (same sequence, larger counter) publishes first");
         a.finish().expect("A finishes last");
 
-        assert!(base.join(B_EQ).exists(), "the same-instant newer cut must survive the older finisher's cleanup");
-        assert_eq!(selected_name(&base).as_deref(), Some(B_EQ), "selection orders equal-nanos ids by counter");
+        assert!(base.join(B_EQ).exists(), "the same-sequence newer cut must survive the older finisher's cleanup");
+        assert_eq!(selected_name(&base).as_deref(), Some(B_EQ), "selection orders equal-sequence ids by counter");
     }
 
     #[test]
@@ -1253,10 +1775,10 @@ mod finish_barrier_tests {
         // an attempt-id name — `remove_dir_all` on it errors on every
         // platform) and prove the just-published cut is untouched, verified,
         // and selected despite the typed cleanup error.
-        const UNDELETABLE_OLDER: &str = "00000000000000000050-0000000000000000-eeee";
+        const UNDELETABLE_OLDER: &str = "00000000000000000005-0000000000000000-eeee";
         let base = create_tmp_dir("finish-cleanup-failure");
         fs::write(base.join(UNDELETABLE_OLDER), b"not-a-directory").unwrap();
-        let b = captured_attempt(&base, B_NEWER, "20");
+        let b = captured_attempt(&base, B_SUFFIX, "20");
 
         let error = b.finish().err().expect("cleanup failure must surface as a typed error");
         assert!(
@@ -1268,6 +1790,19 @@ mod finish_barrier_tests {
             selected_name(&base).as_deref(),
             Some(B_NEWER),
             "the published cut remains digest-verified and selected despite the cleanup failure"
+        );
+    }
+
+    #[test]
+    fn an_unparseable_watermark_refuses_publication() {
+        // R5-STOR-11: no sequence, no name — the attempt is refused with the
+        // typed error instead of being published under a fallback ordering.
+        let base = create_tmp_dir("finish-unparseable-watermark");
+        let attempt = captured_attempt(&base, A_SUFFIX, "not-a-number");
+        let error = attempt.finish().err().expect("an unparseable watermark must refuse publication");
+        assert!(
+            matches!(error, CheckpointCreateError::MetadataUnparseable { .. }),
+            "expected MetadataUnparseable, got: {error:?}"
         );
     }
 }
@@ -1450,12 +1985,14 @@ mod complete_marker_tests {
         }
     }
 
-    /// Build a checkpoint directory the way `finish` does: data + metadata, then
-    /// a COMPLETE marker bound to the sealed bytes, written last.
-    fn build_complete_checkpoint(dir: &std::path::Path) {
+    /// Build a checkpoint directory the way `finish` does: data + metadata
+    /// (the given watermark — which must agree with an attempt-named
+    /// directory's sequence prefix, R5-STOR-11), then a COMPLETE marker bound
+    /// to the sealed bytes, written last.
+    fn build_complete_checkpoint(dir: &std::path::Path, watermark: &str) {
         fs::create_dir_all(dir.join("keyspace")).unwrap();
         fs::write(dir.join("keyspace").join("data.sst"), b"the-sst-bytes").unwrap();
-        fs::write(dir.join(STORAGE_METADATA_FILE_NAME), b"7").unwrap();
+        fs::write(dir.join(STORAGE_METADATA_FILE_NAME), watermark).unwrap();
         let manifest = CheckpointManifest::compute(dir).unwrap();
         fs::write(dir.join(CHECKPOINT_COMPLETE_FILE_NAME), manifest.serialise().as_bytes()).unwrap();
     }
@@ -1463,7 +2000,7 @@ mod complete_marker_tests {
     #[test]
     fn a_verified_complete_checkpoint_is_selectable() {
         let dir = create_tmp_dir("ckpt-complete");
-        build_complete_checkpoint(&dir);
+        build_complete_checkpoint(&dir, "7");
         let reader = CheckpointReader { directory: dir.to_path_buf() };
         assert!(reader.is_complete::<TestKs>().unwrap(), "a digest-verified COMPLETE checkpoint must be selectable");
     }
@@ -1488,7 +2025,7 @@ mod complete_marker_tests {
         // COMPLETE's mere presence (the mutant), this truncated checkpoint would
         // be accepted; the digest recomputation catches it.
         let dir = create_tmp_dir("ckpt-truncated");
-        build_complete_checkpoint(&dir);
+        build_complete_checkpoint(&dir, "7");
         // corrupt/truncate a data file AFTER the marker was written
         fs::write(dir.join("keyspace").join("data.sst"), b"trunc").unwrap();
         let reader = CheckpointReader { directory: dir.to_path_buf() };
@@ -1501,7 +2038,7 @@ mod complete_marker_tests {
     #[test]
     fn an_added_file_after_complete_is_rejected() {
         let dir = create_tmp_dir("ckpt-extra");
-        build_complete_checkpoint(&dir);
+        build_complete_checkpoint(&dir, "7");
         fs::write(dir.join("keyspace").join("unexpected.sst"), b"extra").unwrap();
         let reader = CheckpointReader { directory: dir.to_path_buf() };
         assert!(!reader.is_complete::<TestKs>().unwrap(), "an extra file not bound by the manifest must be rejected");
@@ -1514,9 +2051,9 @@ mod complete_marker_tests {
         let base = create_tmp_dir("ckpt-select");
         let older = base.join("00000000000000000100-0000000000000000-aaaa");
         let newer = base.join("00000000000000000200-0000000000000001-bbbb");
-        build_complete_checkpoint(&older);
+        build_complete_checkpoint(&older, "100");
         // newer has data + metadata but a corrupted COMPLETE (unverifiable)
-        build_complete_checkpoint(&newer);
+        build_complete_checkpoint(&newer, "200");
         fs::write(newer.join("keyspace").join("data.sst"), b"corrupted-after-complete").unwrap();
 
         let verified = verified_checkpoints_newest_first::<TestKs>(fs::read_dir(&base).unwrap()).unwrap();
@@ -1533,7 +2070,7 @@ mod complete_marker_tests {
     fn an_in_flight_tmp_attempt_is_never_selected() {
         let base = create_tmp_dir("ckpt-tmp-skip");
         let tmp = base.join(format!("00000000000000000300-0000000000000002-cccc.{TEMP_FILE_EXTENSION}"));
-        build_complete_checkpoint(&tmp); // even a fully-built .tmp must be skipped
+        build_complete_checkpoint(&tmp, "300"); // even a fully-built .tmp must be skipped
         let verified = verified_checkpoints_newest_first::<TestKs>(fs::read_dir(&base).unwrap()).unwrap();
         assert!(verified.is_empty(), "a .tmp attempt is in-flight and must never be selected");
     }
@@ -1542,13 +2079,13 @@ mod complete_marker_tests {
     fn candidates_are_enumerated_newest_to_oldest_by_full_attempt_id() {
         // R4-STOR-10: the fallback loop consumes candidates newest-first, in
         // the SAME total order retention uses — full-attempt-id lexicographic.
-        // The two same-nanos entries are ordered by their counter component.
+        // The two same-sequence entries are ordered by their counter component.
         let base = create_tmp_dir("ckpt-enumerate-order");
         let oldest = base.join("00000000000000000100-0000000000000001-aaaa");
         let middle = base.join("00000000000000000200-0000000000000002-bbbb");
-        let newest = base.join("00000000000000000200-0000000000000003-cccc"); // equal nanos, larger counter
-        for dir in [&oldest, &middle, &newest] {
-            build_complete_checkpoint(dir);
+        let newest = base.join("00000000000000000200-0000000000000003-cccc"); // equal sequence, larger counter
+        for (dir, watermark) in [(&oldest, "100"), (&middle, "200"), (&newest, "200")] {
+            build_complete_checkpoint(dir, watermark);
         }
         let verified = verified_checkpoints_newest_first::<TestKs>(fs::read_dir(&base).unwrap()).unwrap();
         let names: Vec<_> =
@@ -1560,7 +2097,237 @@ mod complete_marker_tests {
                 middle.file_name().unwrap().to_str().unwrap(),
                 oldest.file_name().unwrap().to_str().unwrap(),
             ],
-            "candidates must be newest-first by full attempt id (equal nanos disambiguated by counter)"
+            "candidates must be newest-first by full attempt id (equal sequence disambiguated by counter)"
         );
+    }
+
+    #[test]
+    fn a_legacy_or_forged_64bit_manifest_is_refused_as_unknown_version() {
+        // R5-STOR-09 migration mutant: a COMPLETE marker in the retired v1
+        // (64-bit SipHash) format — or any forged/unknown version — must be
+        // refused, never dual-verified. The directory is unselectable.
+        let dir = create_tmp_dir("ckpt-legacy-manifest");
+        fs::create_dir_all(dir.join("keyspace")).unwrap();
+        fs::write(dir.join("keyspace").join("data.sst"), b"the-sst-bytes").unwrap();
+        fs::write(dir.join(STORAGE_METADATA_FILE_NAME), b"7").unwrap();
+        // a plausible v1-format marker with 64-bit digests
+        fs::write(
+            dir.join(CHECKPOINT_COMPLETE_FILE_NAME),
+            b"CHECKPOINT-COMPLETE v1\nroot 0123456789abcdef\n000000000000000d fedcba9876543210 6b657973706163652f646174612e737374\n",
+        )
+        .unwrap();
+        let reader = CheckpointReader { directory: dir.to_path_buf() };
+        assert!(
+            !reader.is_complete::<TestKs>().unwrap(),
+            "a legacy/unknown-version manifest must be refused, not dual-verified"
+        );
+
+        // and an unknown future/forged version equally so
+        fs::write(dir.join(CHECKPOINT_COMPLETE_FILE_NAME), b"CHECKPOINT-COMPLETE v99\nroot 00\n").unwrap();
+        assert!(!reader.is_complete::<TestKs>().unwrap(), "an unknown manifest version must be refused");
+    }
+
+    #[test]
+    fn a_manifest_with_duplicate_normalized_keys_does_not_parse() {
+        // R5-STOR-09: two entries claiming the same path key are an explicit
+        // refusal — never a silent last-writer-wins that could mask a
+        // substituted file.
+        let dir = create_tmp_dir("ckpt-dup-keys");
+        build_complete_checkpoint(&dir, "7");
+        let serialised = fs::read_to_string(dir.join(CHECKPOINT_COMPLETE_FILE_NAME)).unwrap();
+        let entry_line = serialised
+            .lines()
+            .find(|line| !line.starts_with("CHECKPOINT-COMPLETE") && !line.starts_with("root") && !line.starts_with("watermark") && !line.starts_with("created-utc"))
+            .expect("the manifest carries at least one entry line");
+        let forged = format!("{}{entry_line}\n", serialised);
+        assert!(
+            CheckpointManifest::parse(&forged).is_none(),
+            "a manifest with a duplicated path key must be refused at parse"
+        );
+        // control: the unforged manifest parses
+        assert!(CheckpointManifest::parse(&serialised).is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn distinct_invalid_utf8_names_stay_distinct_and_tampering_is_detected() {
+        // R5-STOR-09 path-identity mutant: two file names whose byte
+        // sequences are DISTINCT but lossy-collapse to the same replacement
+        // string. Raw-byte path serialization must keep them distinct
+        // manifest keys, and a byte flip in either file must fail
+        // verification.
+        use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+
+        let name_a = OsString::from_vec(vec![b'f', 0xC3, b'x']); // invalid UTF-8
+        let name_b = OsString::from_vec(vec![b'f', 0xC2, b'x']); // invalid UTF-8, distinct bytes
+        assert_eq!(
+            name_a.to_string_lossy(),
+            name_b.to_string_lossy(),
+            "precondition: the two names must lossy-collapse to the same string"
+        );
+
+        let dir = create_tmp_dir("ckpt-raw-paths");
+        fs::create_dir_all(dir.join("keyspace")).unwrap();
+        fs::write(dir.join("keyspace").join(&name_a), b"bytes-of-a").unwrap();
+        fs::write(dir.join("keyspace").join(&name_b), b"bytes-of-b").unwrap();
+        fs::write(dir.join(STORAGE_METADATA_FILE_NAME), b"7").unwrap();
+        let manifest = CheckpointManifest::compute(&dir).unwrap();
+        assert_eq!(
+            manifest.entries.len(),
+            3, // the two data files + STORAGE_METADATA
+            "distinct invalid-UTF-8 names must be distinct manifest keys, never collapsed"
+        );
+        fs::write(dir.join(CHECKPOINT_COMPLETE_FILE_NAME), manifest.serialise().as_bytes()).unwrap();
+
+        let reader = CheckpointReader { directory: dir.to_path_buf() };
+        assert!(reader.is_complete::<TestKs>().unwrap(), "the sealed cut with raw-byte names verifies");
+
+        // tamper with ONE of the colliding-lossy-name files: under lossy
+        // (collapsed) identity the two files share a key and the flip could
+        // hide; under raw-byte identity it must be detected.
+        fs::write(dir.join("keyspace").join(&name_b), b"bytes-of-B").unwrap();
+        assert!(
+            !reader.is_complete::<TestKs>().unwrap(),
+            "a byte flip in a lossy-colliding-name file must fail verification"
+        );
+    }
+
+    #[test]
+    fn a_renamed_attempt_directory_is_not_selectable() {
+        // R5-STOR-11: the attempt name's sequence prefix must agree with the
+        // sealed watermark — renaming a published cut (to reorder selection
+        // or retention) makes it unselectable rather than silently reordered.
+        let base = create_tmp_dir("ckpt-renamed");
+        let dir = base.join("00000000000000000200-0000000000000000-aaaa");
+        build_complete_checkpoint(&dir, "100"); // sealed watermark 100, name claims 200
+        let reader = CheckpointReader { directory: dir.clone() };
+        assert!(
+            !reader.is_complete::<TestKs>().unwrap(),
+            "an attempt directory whose name sequence disagrees with its sealed watermark must be refused"
+        );
+    }
+}
+
+#[cfg(test)]
+mod scratch_restore_tests {
+    //! R5-STOR-06 unit level: the atomic rename-swap activation and the
+    //! restart convergence of every crash state a restore can leave behind.
+    //! (The full kill-point matrix over real storage runs in
+    //! `tests/test_recovery.rs`.)
+
+    use std::fs;
+
+    use test_utils::create_tmp_dir;
+
+    use super::{RESTORE_RETIRED_PREFIX, RESTORE_SCRATCH_PREFIX, activate_scratch, converge_interrupted_restore};
+
+    #[test]
+    fn activation_swaps_scratch_into_live_and_reclaims_the_retired_predecessor() {
+        let root = create_tmp_dir("activate-swap");
+        let live = root.join("storage");
+        let scratch = root.join(format!("{RESTORE_SCRATCH_PREFIX}a"));
+        let retired = root.join(format!("{RESTORE_RETIRED_PREFIX}a"));
+        fs::create_dir_all(&live).unwrap();
+        fs::write(live.join("SENTINEL"), b"predecessor").unwrap();
+        fs::create_dir_all(&scratch).unwrap();
+        fs::write(scratch.join("SENTINEL"), b"successor").unwrap();
+
+        activate_scratch(&scratch, &live, &retired).expect("activation succeeds");
+
+        assert_eq!(fs::read(live.join("SENTINEL")).unwrap(), b"successor", "the successor is active");
+        assert!(!scratch.exists(), "the scratch directory was renamed away");
+        assert!(!retired.exists(), "the retired predecessor was reclaimed");
+    }
+
+    #[test]
+    fn a_failed_swap_rolls_the_predecessor_back() {
+        // the second rename fails deterministically (the scratch directory
+        // does not exist); the first rename must be rolled back so the
+        // predecessor is byte-identical AND still active.
+        let root = create_tmp_dir("activate-rollback");
+        let live = root.join("storage");
+        let scratch = root.join(format!("{RESTORE_SCRATCH_PREFIX}a")); // never created
+        let retired = root.join(format!("{RESTORE_RETIRED_PREFIX}a"));
+        fs::create_dir_all(&live).unwrap();
+        fs::write(live.join("SENTINEL"), b"predecessor").unwrap();
+
+        activate_scratch(&scratch, &live, &retired).expect_err("a missing scratch directory must fail activation");
+
+        assert_eq!(
+            fs::read(live.join("SENTINEL")).unwrap(),
+            b"predecessor",
+            "R5-STOR-06: a failed activation must leave the predecessor active and byte-identical"
+        );
+        assert!(!retired.exists(), "the roll-back must not leave the predecessor stranded under the retired name");
+    }
+
+    #[test]
+    fn convergence_reclaims_pre_activation_scratch_residue() {
+        // crash after copy / open / replay / digest — all leave only scratch
+        // residue; the predecessor is intact and the residue is reclaimed.
+        let root = create_tmp_dir("converge-scratch");
+        let live = root.join("storage");
+        fs::create_dir_all(&live).unwrap();
+        fs::write(live.join("SENTINEL"), b"predecessor").unwrap();
+        let scratch = root.join(format!("{RESTORE_SCRATCH_PREFIX}a"));
+        fs::create_dir_all(&scratch).unwrap();
+        fs::write(scratch.join("SENTINEL"), b"half-restored").unwrap();
+
+        converge_interrupted_restore(&live).unwrap();
+
+        assert_eq!(fs::read(live.join("SENTINEL")).unwrap(), b"predecessor", "the predecessor is untouched");
+        assert!(!scratch.exists(), "unproven scratch residue is reclaimed");
+    }
+
+    #[test]
+    fn convergence_rolls_back_a_crash_between_the_activation_renames() {
+        // live -> retired happened, scratch -> live did not: the live
+        // directory is missing and the predecessor sits under the retired
+        // name. Convergence must reinstate the predecessor.
+        let root = create_tmp_dir("converge-torn");
+        let live = root.join("storage");
+        let retired = root.join(format!("{RESTORE_RETIRED_PREFIX}a"));
+        let scratch = root.join(format!("{RESTORE_SCRATCH_PREFIX}a"));
+        fs::create_dir_all(&retired).unwrap();
+        fs::write(retired.join("SENTINEL"), b"predecessor").unwrap();
+        fs::create_dir_all(&scratch).unwrap();
+        fs::write(scratch.join("SENTINEL"), b"successor-in-progress").unwrap();
+
+        converge_interrupted_restore(&live).unwrap();
+
+        assert_eq!(
+            fs::read(live.join("SENTINEL")).unwrap(),
+            b"predecessor",
+            "a torn swap must converge to the predecessor being active again"
+        );
+        assert!(!retired.exists() && !scratch.exists(), "all restore residue is reclaimed");
+    }
+
+    #[test]
+    fn convergence_reclaims_the_retired_predecessor_after_a_completed_swap() {
+        // both renames happened, the retired reclaim did not: the successor
+        // is active; the retired predecessor is residue.
+        let root = create_tmp_dir("converge-post");
+        let live = root.join("storage");
+        let retired = root.join(format!("{RESTORE_RETIRED_PREFIX}a"));
+        fs::create_dir_all(&live).unwrap();
+        fs::write(live.join("SENTINEL"), b"successor").unwrap();
+        fs::create_dir_all(&retired).unwrap();
+        fs::write(retired.join("SENTINEL"), b"predecessor").unwrap();
+
+        converge_interrupted_restore(&live).unwrap();
+
+        assert_eq!(fs::read(live.join("SENTINEL")).unwrap(), b"successor", "the successor stays active");
+        assert!(!retired.exists(), "the retired predecessor is reclaimed");
+    }
+
+    #[test]
+    fn convergence_is_a_no_op_on_a_clean_tree() {
+        let root = create_tmp_dir("converge-clean");
+        let live = root.join("storage");
+        fs::create_dir_all(&live).unwrap();
+        fs::write(live.join("SENTINEL"), b"live").unwrap();
+        converge_interrupted_restore(&live).unwrap();
+        assert_eq!(fs::read(live.join("SENTINEL")).unwrap(), b"live");
     }
 }

@@ -273,13 +273,22 @@ impl<Durability> MVCCStorage<Durability> {
     {
         use StorageOpenError::{
             CheckpointIdentityRefused, RecoverFromCheckpoint, RecoverFromDurability, RecoveryFallbackExhausted,
-            StorageDirectoryRecreate,
+            RestoreConvergence, StorageDirectoryRecreate,
         };
 
         let name = name.as_ref();
         let storage_dir = path.join(Self::STORAGE_DIR_NAME);
 
         Self::register_durability_record_types(&mut durability_client);
+        // R5-STOR-06 restart convergence, BEFORE anything else looks at the
+        // tree: a crash during a previous scratch restore leaves residue with
+        // a deterministic resolution — pre-activation residue is reclaimed
+        // with the predecessor intact, a torn activation swap is rolled back
+        // so the predecessor is active again, and a completed swap's retired
+        // predecessor is reclaimed. After this, the tree holds exactly the
+        // active live directory (or none) and recovery proceeds normally.
+        crate::recovery::checkpoint::converge_interrupted_restore(&storage_dir)
+            .map_err(|error| RestoreConvergence { name: name.to_owned(), source: Arc::new(error) })?;
         // S-01/R4-STOR-00: the backend context arrives ALREADY RESOLVED (the
         // one per-open admission resolution); this layer only re-checks the
         // process witness BEFORE any restore or removal, so a refusal leaves
@@ -322,6 +331,18 @@ impl<Durability> MVCCStorage<Durability> {
                     // discard the presented cut; refuse instead, with the
                     // live tree untouched (the check is pre-mutation).
                     return Err(CheckpointIdentityRefused { name: name.to_owned(), typedb_source: error });
+                }
+                Err(error @ CheckpointLoadError::CheckpointLegacyIdentityRequiresImport { .. }) => {
+                    // R5-STOR-10: a legacy cut with NO bound identity is
+                    // equally never fallback material — silently skipping it
+                    // (or, worse, restoring it) would bind an unproven cut to
+                    // whatever configuration is current. Ordinary recovery
+                    // refuses, live tree untouched; the operator runs the
+                    // explicit legacy-identity import to proceed.
+                    return Err(StorageOpenError::CheckpointLegacyIdentityRefused {
+                        name: name.to_owned(),
+                        typedb_source: error,
+                    });
                 }
                 Err(error) => {
                     // typed, pre-mutation: record the reason and try the next
@@ -427,18 +448,32 @@ impl<Durability> MVCCStorage<Durability> {
         WriteSnapshot::new_with_open_sequence_number(self, open_sequence_number)
     }
 
-    pub fn open_snapshot_write_at(self: Arc<Self>, sequence_number: SequenceNumber) -> WriteSnapshot<Durability> {
+    /// Open a committable snapshot at an explicit sequence number.
+    ///
+    /// R5-STOR-12: a request BEHIND the current visibility watermark is the
+    /// typed [`SnapshotOpenError::HistoricalWriteSnapshotUnsupported`]
+    /// refusal, never a panic (this used to be a reachable `todo!()`).
+    /// Opening a committable snapshot at a historical position is genuinely
+    /// unsupported: the commit idempotency check (`commit_record_exists`)
+    /// relies on SnapshotIds being unique for an open sequence number, and
+    /// with the current nature of SnapshotIds a write snapshot in the past
+    /// can collide. No wire/user/recovery input may crash the server through
+    /// this path.
+    pub fn open_snapshot_write_at(
+        self: Arc<Self>,
+        sequence_number: SequenceNumber,
+    ) -> Result<WriteSnapshot<Durability>, SnapshotOpenError> {
         let current_watermark = self.snapshot_watermark();
         if sequence_number < current_watermark {
-            // Opening a committable snapshot at a historical position is not supported.
-            // The commit idempotency check (commit_record_exists) relies
-            // on SnapshotIds to be unique for an open seqnum. With the current nature of
-            // SnapshotIds, opening a write snapshot in the past can lead to SnapshotId collisions.
-            todo!("Opening committable snapshots at historical positions is not supported");
+            return Err(SnapshotOpenError::HistoricalWriteSnapshotUnsupported {
+                name: self.name.clone(),
+                requested: sequence_number,
+                watermark: current_watermark,
+            });
         }
         // guarantee external consistency: await this sequence number to be behind the watermark
         self.wait_for_watermark(sequence_number);
-        WriteSnapshot::new_with_open_sequence_number(self, sequence_number)
+        Ok(WriteSnapshot::new_with_open_sequence_number(self, sequence_number))
     }
 
     pub fn open_snapshot_read(self: Arc<Self>) -> ReadSnapshot<Durability> {
@@ -1005,6 +1040,14 @@ typedb_error! {
         RecoverFromDurability(11, "Failed to recover from durability logs for database '{name}'.", name: String, typedb_source: StorageRecoveryError),
         RecoveryFallbackExhausted(13, "Failed to recover database '{name}': every checkpoint candidate failed pre-restore validation ({candidate_failures}), and full WAL replay could not prove contiguous coverage from the start of the sequence space. Live storage state was left untouched.", name: String, candidate_failures: String, typedb_source: StorageRecoveryError),
         CheckpointIdentityRefused(14, "Refusing to recover database '{name}': a checkpoint in its tree is bound to a DIFFERENT backend identity (R4-STOR-01). A cut created under one backend configuration must not be restored under another; live storage state was left untouched.", name: String, typedb_source: CheckpointLoadError),
+        CheckpointLegacyIdentityRefused(15, "Refusing to recover database '{name}': a checkpoint in its tree carries NO backend identity (a legacy cut, R5-STOR-10). Binding it silently to the current configuration is fail-open; run the explicit legacy-identity import with operator acknowledgement to proceed. Live storage state was left untouched.", name: String, typedb_source: CheckpointLoadError),
+        RestoreConvergence(16, "Failed to converge interrupted-restore residue for database '{name}' before recovery (R5-STOR-06).", name: String, source: Arc<io::Error>),
+    }
+}
+
+typedb_error! {
+    pub SnapshotOpenError(component = "Snapshot open", prefix = "SNO") {
+        HistoricalWriteSnapshotUnsupported(1, "Cannot open a committable (write) snapshot in database '{name}' at sequence number {requested}: it is behind the current visibility watermark {watermark}, and historical write snapshots are unsupported (SnapshotId uniqueness per open sequence number would be violated). This is a typed refusal, never a server crash (R5-STOR-12).", name: Arc<str>, requested: SequenceNumber, watermark: SequenceNumber),
     }
 }
 
@@ -1507,6 +1550,70 @@ mod tests {
         // Legacy records convert to CommitRecord with UNSET snapshot_id
         let converted = CommitRecord::from(legacy_records.into_iter().next().unwrap().1);
         assert_eq!(converted.snapshot_id(), SnapshotId::UNSET);
+    }
+
+    #[test]
+    fn a_historical_write_snapshot_request_is_a_typed_error_not_a_panic() {
+        // R5-STOR-12: `open_snapshot_write_at` behind the watermark used to
+        // execute a reachable `todo!()` — a server crash on recovery/user
+        // input. It must be the typed refusal, and the at-watermark request
+        // (the supported boundary) must still succeed.
+        test_keyspace_set! {
+            TestKeyspace => 0: "test",
+        }
+
+        init_logging();
+        let mut profile = CommitProfile::DISABLED;
+        let storage_path = create_tmp_storage_dir();
+        let mut durability_client =
+            WALClient::new(WAL::create(storage_path.join(WAL::WAL_DIR_NAME), FsyncMetrics::disabled()).unwrap());
+        durability_client.register_record_type::<LegacyCommitRecordV1>();
+        durability_client.register_record_type::<CommitRecord>();
+        let resources = create_rocks_resources();
+        let storage = Arc::new(
+            MVCCStorage::<WALClient>::create::<TestKeyspaceSet>(
+                "storage",
+                &storage_path,
+                durability_client,
+                &resources,
+            )
+            .unwrap(),
+        );
+
+        // advance the watermark past MIN with one committed write
+        let key = StorageKeyArray::from((TestKeyspaceSet::TestKeyspace, b"key"));
+        let mut operations = OperationsBuffer::new();
+        operations.writes_in_mut(key.keyspace_id()).insert(key.byte_array().clone(), ByteArray::empty());
+        let record = CommitRecord::new(
+            operations,
+            storage.durability_client.previous(),
+            CommitType::Data,
+            SnapshotId::new(),
+        );
+        storage
+            .snapshot_commit(WriteSnapshot::new_with_commit_record(storage.clone(), record), &mut profile)
+            .unwrap();
+        let watermark = storage.snapshot_watermark();
+        assert!(watermark > SequenceNumber::MIN, "the commit must have advanced the watermark");
+
+        // behind the watermark: the typed refusal, never a panic
+        let error = storage
+            .clone()
+            .open_snapshot_write_at(SequenceNumber::MIN)
+            .err()
+            .expect("a historical write snapshot must be refused");
+        assert!(
+            matches!(
+                error,
+                crate::SnapshotOpenError::HistoricalWriteSnapshotUnsupported { requested, watermark: at, .. }
+                    if requested == SequenceNumber::MIN && at == watermark
+            ),
+            "expected the typed HistoricalWriteSnapshotUnsupported refusal, got: {error:?}"
+        );
+
+        // at the watermark: the supported boundary still opens
+        let snapshot = storage.clone().open_snapshot_write_at(watermark).expect("at-watermark open is supported");
+        drop(snapshot);
     }
 }
 

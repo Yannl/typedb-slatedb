@@ -591,12 +591,95 @@
   {
    "id": "R5-PR0",
    "title": "Round-5 PR0: truth plane current and fail-closed (R5-REL-01, R5-EVID-01, R5-QUAL-01, R5-CI-01 workflow hardening)",
-   "status": "IN_PROGRESS",
+   "status": "DONE",
    "items": [
     "R5-REL-01: rendered status regenerated; ledger semantic contradictions reconciled (stale G1/U3.0/q_disposition text); linter extended with DONE-without-commit, closed-finding-vs-blocking-finding contradiction, and committed-status-regression checks; tools/ledger/ledger_mutants.py executes and kills each mutant",
     "R5-EVID-01: catalogue + plan v2 regenerated from the pristine pinned tree against the CURRENT source lock (837d52fb...); --require-current-lock is now a HARD CI failure (both || echo fallbacks removed); plan coverage remains honestly RED",
     "R5-QUAL-01: dispatch storage lane split into `cargo test -p storage --tests --lib --locked` + `cargo bench -p storage --no-run --locked` so the bench CLI can no longer panic a qualification command",
     "R5-CI-01 (workflow hardening only): top-level `permissions: contents: read`, persist-credentials: false on every checkout, per-job timeouts, locked local node binaries instead of npx; the release pipeline itself (tested-equals-shipped, SBOM/provenance) remains the recorded PR7 remainder"
+   ],
+   "commits": [
+    "0268b60"
+   ]
+  },
+  {
+   "id": "R5-PR1",
+   "title": "Round-5 PR1: executable managed configuration and asymmetric trust boundaries (R5-SEC-01, R5-SEC-03, R5-SEC-08)",
+   "status": "DONE",
+   "items": [
+    "R5-SEC-03: capability + provision tokens are Ed25519 schema v3; the managed runtime holds ONLY public verification keys (mutant: stealing every managed env var yields no minting ability); minting lives solely in the issuer module; two-slot rotation keyring with explicit retirement; journal MAC deliberately stays symmetric (writer=verifier=same DO), documented",
+    "R5-SEC-01: managed inputs resolved from ONE requirement source consumed verbatim by both the runtime resolver and the pre-deployment graph checker; construction test boots from exactly the graph-declared names; drop-each-input mutants fail before deployment",
+    "R5-SEC-08: docs/security-topology.md — principal/binding/key map, rotation per key, and the explicit statement that TypeDB end-user auth is NOT service auth, every claim citing its enforcing file",
+    "Verified: tsc clean; node 108/108; workerd 27/27; e2e + e2e:managed ALL PASS; stack 64/64; wrangler consistency PASS"
+   ],
+   "commits": [
+    "9d60e53"
+   ]
+  },
+  {
+   "id": "R5-PR2",
+   "title": "Round-5 PR2: control lifecycle, ambiguity resolution and service integration (R5-SEC-02, R5-SEC-04, R5-SEC-06, R5-SEC-07, R5-SEC-09)",
+   "status": "DONE",
+   "items": [
+    "R5-SEC-04: capability uses are a durable operation/effect protocol — each claim records its authoritative effect, a recovery reducer settles AMBIGUOUS from that effect (present->exact original success, absent->re-execute, contradicted->QUARANTINED terminally), the retry path settles instead of answering 409 forever, and restart/alarm sweeps converge without any client retry. 10 mutants executed (7 core + 3 workerd)",
+    "R5-SEC-02: the exact Rust client operates the MANAGED surface as a pure bearer of issuer-granted v3 tokens (no local minting); new managed lane boots wrangler.toml + the private issuer sidecar and proves the dev-route 404 matrix from Rust before any bootstrap. 44 checks on the managed lane, 35 on local-dev, contract 17, lib 14",
+    "R5-SEC-06: ContainerDO is registry-provisioned only (two-tenant race, squat, wrong principal, stale incarnation, unbound observation mutants); R5-SEC-09: observation bytes bounded per field, per request on ACTUAL bytes, and in aggregate",
+    "R5-SEC-07 (locally executable part): the graph marks the container execution facet declared-ahead/advisory, enforced by a stack honesty test; the DO records a typed containerRuntime descriptor so the future real Container resource binds an exact image identity. No actual Container process exists — recorded openly",
+    "Residual recorded: drain/revoke, checkpoint open/activate and the authenticated ambiguous-operation query are not yet in the Rust client"
+   ],
+   "commits": [
+    "7de23b8",
+    "48bf2c3",
+    "197547c"
+   ]
+  },
+  {
+   "id": "R5-PR3",
+   "title": "Round-5 PR3: storage configuration, product seam and fencing as shipped behaviour (R5-STOR-01..05, R5-STOR-08, R5-STOR-10)",
+   "status": "DONE",
+   "items": [
+    "R5-STOR-01: BackendContext owns the complete effective S3 configuration; the static OnceLock and every env read below admission are deleted, with a source-level guard test",
+    "R5-STOR-05: multipart completion is provider-atomic create-only (staging key -> readback verify -> atomic promote); two independent completers yield one winner and no changed-byte overwrite",
+    "R5-STOR-08: journal retires terminal rows to a bounded receipt window with hard attempt/byte admission budgets",
+    "R5-STOR-10: silent legacy rebind is dead on both the marker and checkpoint sides; explicit imports require the acknowledged full identity and write sealed provenance",
+    "R5-STOR-04: the strict external-epoch fence SHIPS (unconditional on the storage crate's slatedb dependency, attested by cargo tree). The honest suite gate asserts that under the shipped posture EVERY failing upstream test fails BECAUSE the fence refused an unauthorized epoch-less open — which caught 3 genuine regressions hidden among 423 expected refusals (patch 0005)",
+    "R5-STOR-02: classic|slatedb-r2 is a product option resolved from server configuration; a conformance profile can never silently decide it (typed ProductBackendProfileMismatch); R5-STOR-03: the local epoch source documents what it is not, and the lanes that would claim cross-host fencing refuse at admission",
+    "Verified: storage lib 180/0, test_recovery 18/0, durability 34/0, database 21/0; strict-epoch suite gate PASS"
+   ],
+   "commits": [
+    "46164cd",
+    "5cbe3dd",
+    "e63a337"
+   ]
+  },
+  {
+   "id": "R5-PR4",
+   "title": "Round-5 PR4: atomic object and recovery safety (R5-STOR-06, R5-STOR-09, R5-STOR-11, R5-STOR-12)",
+   "status": "DONE",
+   "items": [
+    "R5-STOR-06: restore materialises into scratch, re-verifies, opens every keyspace, replays the fixed WAL head, and only then atomically activates; the kill-point matrix (before/during/after activation, unopenable cut) is executed and every pre-activation failure leaves the predecessor byte-identical AND active",
+    "R5-STOR-09: CHECKPOINT-COMPLETE v2 — streaming SHA-256 per file and root over length-prefix-framed raw path bytes; lossy-path collisions impossible; v1/64-bit manifests refused as unverifiable",
+    "R5-STOR-11: attempt ordering and retention keyed by the sealed checkpoint sequence, never wall clock; clock-rollback and renamed-attempt mutants",
+    "R5-STOR-12: the reachable todo!() in open_snapshot_write_at is a typed error"
+   ],
+   "commits": [
+    "3e6ed64"
+   ]
+  },
+  {
+   "id": "R5-PR5",
+   "title": "Round-5 PR5: local production-parity evidence (R5-LOCAL-01, R5-LOCAL-03) and the signed live envelope (R5-CF-01)",
+   "status": "DONE",
+   "items": [
+    "R5-LOCAL-01: the CAS gate can no longer accidentally serialize — barrier-released rounds (100x16 independent-client writers, 1 MiB pairwise-distinct bodies), current-ETag update races with post-race ABA refusal, and a multi-PROCESS lane (8 OS processes per round, start-file barrier, winner self-verifies byte-exact stored bytes). Executed green on BOTH pinned providers",
+    "R5-LOCAL-03: every corpus run seals a structured evidence bundle (provider binary digest, per-phase logs+digests, crash receipt, root seal) verified by an independent verifier",
+    "R5-CF-01: the approval envelope is a SIGNED, run-bound, one-time authorization artifact (Ed25519 over the canonical body, verified against an out-of-band public key, bound to release commit/probes source root/account/bucket/nonce/one run id, validity <=7 days, consumed at authority acquisition). 16 mutants executed + self-test control 7c",
+    "R5-LOCAL-02 remains OPEN: the single-command ladder combining managed Worker/DO + Rust client + TypeDB + RustFS + official drivers is not built"
+   ],
+   "commits": [
+    "f8fa481",
+    "0d111e9",
+    "660c211"
    ]
   }
  ],

@@ -63,9 +63,25 @@ truth: `docs/ledger/gates.json`.
   attempt directories are unselectable.
 - **STOR-12** (`3e6ed64`): the reachable `todo!()` in
   `open_snapshot_write_at` is a typed error.
-- **STOR-04** (strict epoch shipped) and **STOR-02/03** (product seam
-  `classic|slatedb-r2`, epoch-seam honesty): in flight this pass,
-  recorded by their own commits.
+- **STOR-04** — CLOSED (`5cbe3dd`), and worth reading twice. The fence
+  now SHIPS (unconditional on the storage crate's slatedb dependency,
+  attested by `cargo tree`). Shipping it makes "run the whole upstream
+  suite feature-on" a real question with an unflattering answer, so it
+  is answered exactly: feature-OFF full suite 1988/0 (no regression);
+  feature-ON `db::builder` 12/0 (the audit's measured set, was 7/5);
+  feature-ON full suite 1566/420 — those 420 are upstream tests opening
+  databases through the epoch-less builder, which the fence refuses BY
+  DESIGN. A first draft of this work claimed 1940/0; that claim was not
+  reproducible and is retracted in the patch ledger. The invariant now
+  enforced (`tools/fork/check_strict_epoch_suite.py`) is not "all green"
+  but "every failure is the fence doing its job", asserted per failing
+  test by cause — which is how 3 GENUINE regressions were found hiding
+  among the expected refusals (patch 0005).
+- **STOR-02/03** — CLOSED (`e63a337`): `classic|slatedb-r2` is a product
+  option resolved from server configuration, and a conformance profile
+  can never silently decide it (typed refusal naming both sides); the
+  local epoch source documents precisely what it is not, and the lanes
+  that would claim cross-host fencing refuse at admission.
 - **STOR-07** stays a documented U2S3-lane containment (fresh
   materialisation per open is the experimental lane's design; the
   production lifecycle needs the controller pointer — tracked with
@@ -91,12 +107,27 @@ truth: `docs/ledger/gates.json`.
   principal/binding/key map, with the explicit statement that TypeDB
   end-user auth is NOT service auth; every claim cites its enforcing
   file.
-- **SEC-04/05** (ambiguity resolver, read-fence) — in flight this pass.
-- **SEC-02** (Rust client on the managed/issuer path) — in flight; the
-  loopback private-issuer seam (`scripts/issuer.mjs`) landed with
-  SEC-03.
-- **SEC-06/07/09** (ContainerDO provisioning, honest container seam,
-  observation byte caps) — in flight.
+- **SEC-04** — CLOSED (`48bf2c3`): capability uses are a durable
+  operation/effect protocol. Each claim records its authoritative
+  effect; a recovery reducer settles AMBIGUOUS from that effect
+  (present → the exact original success, absent → re-execute,
+  contradicted → QUARANTINED terminally); the retry path settles instead
+  of answering 409 forever; and restart/alarm sweeps converge even if
+  the client never retries. 10 mutants executed.
+- **SEC-02** — CLOSED (`197547c`): the exact Rust client operates the
+  managed surface as a pure bearer of issuer-granted v3 tokens, with a
+  new managed lane that boots the real `wrangler.toml` plus the private
+  issuer sidecar and proves the dev-route 404 matrix from Rust before
+  any bootstrap (44 checks managed, 35 local-dev). Residual recorded:
+  drain/revoke, checkpoint open/activate and the ambiguous-operation
+  query are not yet in the client.
+- **SEC-06/07/09** — CLOSED (`7de23b8`): ContainerDO binds only through
+  the registry provisioning transaction (race/squat/wrong-principal/
+  stale-incarnation mutants); observation bytes are bounded per field,
+  per request on ACTUAL bytes, and in aggregate; the graph marks the
+  container execution facet declared-ahead/advisory, enforced by a stack
+  honesty test. No actual Container process exists — stated openly.
+- **SEC-05** (read-fence TOCTOU) — the last P0 of this pass, in flight.
 - **SEC-10 / OD-008** (confidentiality profile): remains an OPEN owner
   decision on purpose; no profile is silently inferred.
 
@@ -128,7 +159,7 @@ refuses to sign for a tree that differs from the draft's binding.
   partially closed by the managed E2E + native-fidelity lanes; the
   combined single-command topology remains tracked work.
 
-## Performance/robustness (R5-PERF-01/02, R5-SEC-09) — in flight this pass.
+## Performance/robustness (R5-PERF-01/02) — in flight this pass (R5-SEC-09 closed above).
 
 ## CI/packaging (R5-CI-01) — workflow hardening lands with R5-A; the
 package-once/test-the-digest release pipeline, SBOM/provenance and the

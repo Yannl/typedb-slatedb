@@ -446,12 +446,22 @@ impl Database<WALClient> {
         wal_client.register_record_type::<Statistics>();
 
         event!(Level::TRACE, "Loading last database '{}' checkpoint", &name);
-        let checkpoint = CheckpointReader::open_latest::<EncodingKeyspace>(path)
+        // R4-STOR-10: enumerate EVERY digest-verified checkpoint candidate,
+        // newest first, and let storage recovery walk them with typed
+        // fallback (newest ahead/corrupt/uncovered -> next older -> full WAL
+        // replay with proven coverage) instead of pinning recovery to the
+        // single newest cut.
+        let checkpoints = CheckpointReader::enumerate_verified::<EncodingKeyspace>(path)
             .map_err(|err| CheckpointLoad { name: name.to_string(), typedb_source: err })?;
-        let storage = Arc::new(
-            MVCCStorage::load::<EncodingKeyspace>(&name, path, wal_client, &checkpoint, rocks_resources)
-                .map_err(|error| StorageOpen { typedb_source: error })?,
-        );
+        let (storage, restored_checkpoint_watermark) = MVCCStorage::load_with_recovery_fallback::<EncodingKeyspace>(
+            &name,
+            path,
+            wal_client,
+            checkpoints,
+            rocks_resources,
+        )
+        .map_err(|error| StorageOpen { typedb_source: error })?;
+        let storage = Arc::new(storage);
         let definition_key_generator = Arc::new(DefinitionKeyGenerator::new());
         let type_vertex_generator = Arc::new(TypeVertexGenerator::new());
         let thing_vertex_generator =
@@ -495,12 +505,12 @@ impl Database<WALClient> {
         let schema = Arc::new(RwLock::new(Schema { thing_statistics, type_cache, function_cache }));
         let schema_txn_lock = Arc::new(RwLock::default());
 
-        let checkpoint_sequence_number = match checkpoint {
-            None => SequenceNumber::MIN,
-            Some(checkpoint) => checkpoint
-                .read_sequence_number()
-                .map_err(|err| CheckpointLoad { name: name.to_string(), typedb_source: err })?,
-        };
+        // R4-STOR-10: the catch-up decision below reasons about the cut that
+        // was actually RESTORED (which, under fallback, may be older than the
+        // newest on disk), not the newest directory listing entry. A full-WAL
+        // recovery reports MIN — everything since the beginning is uncovered
+        // by any checkpoint.
+        let checkpoint_sequence_number = restored_checkpoint_watermark.unwrap_or(SequenceNumber::MIN);
 
         let query_cache = Arc::new(QueryCache::new());
         let update_statistics = make_update_statistics_fn(
@@ -533,14 +543,35 @@ impl Database<WALClient> {
         };
 
         // startup catch-up checkpoint (an explicit, one-shot cut — not the
-        // automatic interval path) runs while no periodic task is scheduled.
-        if checkpoint_sequence_number < wal_last_sequence_number {
-            database.checkpoint().map_err(|err| CheckpointCreate { name: name.to_string(), source: err })?;
+        // automatic interval path) runs while no periodic task is scheduled —
+        // and ONLY on a lane whose policy permits a local exporter cut
+        // (R4-STOR-11): on the remote-shaped lanes the Slate checkpoint
+        // function is a conformance fixture that must never be wired into a
+        // production path, and cuts are controller-owned.
+        let policy = BackgroundTaskPolicy::for_backend(&backend_spec);
+        let catchup_outcome = run_startup_catchup_checkpoint(
+            &policy,
+            checkpoint_sequence_number < wal_last_sequence_number,
+            || database.checkpoint(),
+        )
+        .map_err(|err| CheckpointCreate { name: name.to_string(), source: err })?;
+        if catchup_outcome == StartupCatchup::DeferredToController {
+            // Correctness-safe: recovery has already replayed the WAL into
+            // the live keyspaces, so skipping the cut loses no durability —
+            // it only leaves recovery time and WAL retention unbounded until
+            // a controller-owned cut lands. Record that loudly.
+            event!(
+                Level::INFO,
+                "Database '{}' started with its WAL ahead of the newest usable checkpoint on a remote-shaped \
+                 backend. The startup catch-up checkpoint was skipped: remote checkpoints are controller-owned \
+                 and the local exporter is a conformance fixture. Recovery replayed the WAL; a controller-owned \
+                 cut is required to bound future recovery time.",
+                &name
+            );
         }
 
         // NOW, after catch-up, start the interval checkpointer if — and only if
         // — the backend policy permits it, and attest the result.
-        let policy = BackgroundTaskPolicy::for_backend(&backend_spec);
         database._checkpointer = policy
             .interval_checkpointer
             .then(|| IntervalRunner::new_with_initial_delay(checkpoint_fn, CHECKPOINT_INTERVAL, CHECKPOINT_INTERVAL));
@@ -665,17 +696,70 @@ impl Database<WALClient> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct BackgroundTaskPolicy {
     pub interval_checkpointer: bool,
+    /// R4-STOR-11: whether STARTUP may take the one-shot catch-up checkpoint
+    /// when the WAL is ahead of the newest usable cut. True only on the local
+    /// conformance lanes (classic RocksDB; SlateDB over local-fs, whose
+    /// exporter is the sanctioned single-actor conformance fixture). False on
+    /// every remote-shaped lane: the Slate checkpoint function documents "Do
+    /// not wire it into any production path", and remote cuts are
+    /// controller-owned — a WAL-ahead remote startup proceeds WITHOUT a
+    /// catch-up cut (recovery has already replayed the WAL, so this is a
+    /// durability no-op; only recovery time/retention are affected) and logs
+    /// that a controller-owned cut is required.
+    pub startup_catchup_checkpointer: bool,
 }
 
 impl BackgroundTaskPolicy {
     pub(crate) fn for_backend(spec: &BackendSpec) -> Self {
         match spec {
-            BackendSpec::Classic => Self { interval_checkpointer: true },
+            BackendSpec::Classic => Self { interval_checkpointer: true, startup_catchup_checkpointer: true },
             // the remote lane's fixture exporter must never be automatically
-            // reachable — controller-frozen cuts only.
-            BackendSpec::SlateDbR2(_) => Self { interval_checkpointer: false },
+            // reachable — controller-frozen cuts only. The interval
+            // checkpointer is forbidden on EVERY Slate lane; the one-shot
+            // startup catch-up remains permitted solely on the local-fs
+            // conformance lane (U2), and is fail-closed for any other object
+            // store profile (s3/U2S3 today, anything remote-shaped tomorrow).
+            BackendSpec::SlateDbR2(spec) => Self {
+                interval_checkpointer: false,
+                startup_catchup_checkpointer: spec.object_store_profile == "local-fs",
+            },
         }
     }
+}
+
+/// R4-STOR-11: outcome of the startup catch-up checkpoint decision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StartupCatchup {
+    /// WAL ahead on a permitted (local conformance) lane: the cut ran.
+    Ran,
+    /// The newest usable checkpoint already covers the WAL head.
+    NotNeeded,
+    /// WAL ahead on a remote-shaped lane: the cut is controller-owned, so
+    /// startup proceeds without one. Recovery already replayed the WAL —
+    /// correctness is unaffected; the caller logs that a controller cut is
+    /// required to bound recovery time.
+    DeferredToController,
+}
+
+/// R4-STOR-11: the ONLY seam through which startup reaches a checkpoint
+/// exporter. The `checkpoint` closure is invoked if and only if the WAL is
+/// ahead AND the backend policy permits a startup catch-up cut — so on a
+/// remote-shaped backend the (conformance-fixture) Slate exporter is
+/// structurally unreachable from startup. The reachability test proves it by
+/// passing a closure that panics if called.
+fn run_startup_catchup_checkpoint<E>(
+    policy: &BackgroundTaskPolicy,
+    wal_ahead_of_checkpoint: bool,
+    checkpoint: impl FnOnce() -> Result<(), E>,
+) -> Result<StartupCatchup, E> {
+    if !wal_ahead_of_checkpoint {
+        return Ok(StartupCatchup::NotNeeded);
+    }
+    if !policy.startup_catchup_checkpointer {
+        return Ok(StartupCatchup::DeferredToController);
+    }
+    checkpoint()?;
+    Ok(StartupCatchup::Ran)
 }
 
 /// R-03: the background workers actually scheduled for a database instance. The
@@ -895,9 +979,18 @@ mod background_task_policy_tests {
 
     use super::{BackgroundTaskPolicy, ForbiddenWorkerError, TaskInventory, attest_task_inventory};
 
-    fn remote_spec() -> BackendSpec {
+    pub(super) fn slate_local_fs_spec() -> BackendSpec {
         BackendSpec::SlateDbR2(SlateDbR2Spec {
             object_store_profile: "local-fs",
+            materialisation_policy: "fresh-per-open-no-inplace",
+            cache_policy: "none",
+            protocol_versions: "fv1",
+        })
+    }
+
+    pub(super) fn slate_s3_spec() -> BackendSpec {
+        BackendSpec::SlateDbR2(SlateDbR2Spec {
+            object_store_profile: "s3",
             materialisation_policy: "fresh-per-open-no-inplace",
             cache_policy: "none",
             protocol_versions: "fv1",
@@ -917,13 +1010,15 @@ mod background_task_policy_tests {
 
     #[test]
     fn the_slatedb_lane_forbids_the_interval_checkpointer_and_attests_when_absent() {
-        let policy = BackgroundTaskPolicy::for_backend(&remote_spec());
-        assert!(!policy.interval_checkpointer, "the remote lane takes controller-frozen cuts only");
-        // the real remote-lane inventory (worker absent) passes the attestation
-        assert!(
-            attest_task_inventory(policy, TaskInventory { interval_checkpointer_scheduled: false }).is_ok(),
-            "the remote lane with no interval checkpointer scheduled attests cleanly"
-        );
+        for spec in [slate_local_fs_spec(), slate_s3_spec()] {
+            let policy = BackgroundTaskPolicy::for_backend(&spec);
+            assert!(!policy.interval_checkpointer, "every Slate lane takes controller-frozen cuts only");
+            // the real remote-lane inventory (worker absent) passes the attestation
+            assert!(
+                attest_task_inventory(policy, TaskInventory { interval_checkpointer_scheduled: false }).is_ok(),
+                "the remote lane with no interval checkpointer scheduled attests cleanly"
+            );
+        }
     }
 
     #[test]
@@ -932,13 +1027,108 @@ mod background_task_policy_tests {
         // controller-frozen lane (re-enabling the automatic remote checkpoint)
         // is a typed attestation failure. The mutant that schedules it in
         // defiance of the policy is caught HERE.
-        let policy = BackgroundTaskPolicy::for_backend(&remote_spec());
+        let policy = BackgroundTaskPolicy::for_backend(&slate_local_fs_spec());
         let result = attest_task_inventory(policy, TaskInventory { interval_checkpointer_scheduled: true });
         assert_eq!(
             result,
             Err(ForbiddenWorkerError::IntervalCheckpointerOnControllerFrozenLane),
             "an interval checkpointer on the remote lane must fail the startup attestation"
         );
+    }
+}
+
+#[cfg(test)]
+mod startup_catchup_policy_tests {
+    //! R4-STOR-11: the startup catch-up checkpoint is part of the backend
+    //! policy. The local conformance lanes (classic RocksDB, SlateDB over
+    //! local-fs) keep the WAL-ahead catch-up cut; every remote-shaped lane
+    //! (s3 today, any non-local-fs object store profile tomorrow) defers to a
+    //! controller-owned cut, so the Slate conformance-fixture exporter is
+    //! structurally unreachable from a production-shaped startup.
+
+    use std::cell::Cell;
+
+    use storage::factory::BackendSpec;
+
+    use super::{
+        BackgroundTaskPolicy, StartupCatchup,
+        background_task_policy_tests::{slate_local_fs_spec, slate_s3_spec},
+        run_startup_catchup_checkpoint,
+    };
+
+    #[test]
+    fn the_local_lanes_permit_the_startup_catchup() {
+        for spec in [BackendSpec::Classic, slate_local_fs_spec()] {
+            let policy = BackgroundTaskPolicy::for_backend(&spec);
+            assert!(
+                policy.startup_catchup_checkpointer,
+                "the local conformance lanes keep the startup catch-up checkpoint: {spec:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_remote_shaped_lane_forbids_the_startup_catchup() {
+        let policy = BackgroundTaskPolicy::for_backend(&slate_s3_spec());
+        assert!(
+            !policy.startup_catchup_checkpointer,
+            "R4-STOR-11: a remote-shaped lane must not take a local startup catch-up cut"
+        );
+    }
+
+    #[test]
+    fn a_remote_shaped_wal_ahead_startup_cannot_reach_the_checkpoint_exporter() {
+        // Reachability proof: the closure below stands in for the checkpoint
+        // exporter (the only startup path to the Slate conformance fixture)
+        // and panics if invoked. On the remote-shaped lane with the WAL ahead,
+        // the seam must return the typed deferral WITHOUT invoking it.
+        let policy = BackgroundTaskPolicy::for_backend(&slate_s3_spec());
+        let outcome = run_startup_catchup_checkpoint(&policy, true, || -> Result<(), ()> {
+            panic!("the checkpoint exporter (conformance fixture) was reached from a remote-shaped startup")
+        })
+        .expect("deferral is not an error");
+        assert_eq!(
+            outcome,
+            StartupCatchup::DeferredToController,
+            "a WAL-ahead remote-shaped startup defers to a controller-owned cut"
+        );
+    }
+
+    #[test]
+    fn the_u2_local_lane_wal_ahead_startup_still_takes_the_catchup_cut() {
+        // positive control for the reachability proof: the same seam DOES run
+        // the exporter on the local conformance lane.
+        let policy = BackgroundTaskPolicy::for_backend(&slate_local_fs_spec());
+        let ran = Cell::new(false);
+        let outcome = run_startup_catchup_checkpoint(&policy, true, || -> Result<(), ()> {
+            ran.set(true);
+            Ok(())
+        })
+        .expect("the catch-up cut succeeds");
+        assert_eq!(outcome, StartupCatchup::Ran, "the U2 local lane runs the startup catch-up");
+        assert!(ran.get(), "the exporter closure must actually have been invoked on the local lane");
+    }
+
+    #[test]
+    fn no_catchup_runs_when_the_wal_is_not_ahead() {
+        // WAL not ahead: no lane runs the exporter, remote or local.
+        for spec in [BackendSpec::Classic, slate_local_fs_spec(), slate_s3_spec()] {
+            let policy = BackgroundTaskPolicy::for_backend(&spec);
+            let outcome = run_startup_catchup_checkpoint(&policy, false, || -> Result<(), ()> {
+                panic!("no catch-up may run when the checkpoint already covers the WAL head")
+            })
+            .expect("not needed is not an error");
+            assert_eq!(outcome, StartupCatchup::NotNeeded);
+        }
+    }
+
+    #[test]
+    fn a_failing_catchup_cut_propagates_its_typed_error() {
+        // the permitted lane still propagates the exporter's typed failure —
+        // the deferral path is not a blanket error swallow.
+        let policy = BackgroundTaskPolicy::for_backend(&BackendSpec::Classic);
+        let result = run_startup_catchup_checkpoint(&policy, true, || Err("disk unplugged"));
+        assert_eq!(result, Err("disk unplugged"), "a failing catch-up cut is a typed error, not a silent skip");
     }
 }
 

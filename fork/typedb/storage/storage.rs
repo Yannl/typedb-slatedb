@@ -194,55 +194,158 @@ impl<Durability> MVCCStorage<Durability> {
     pub fn load<KS: KeyspaceSet>(
         name: impl AsRef<str>,
         path: &Path,
-        mut durability_client: Durability,
+        durability_client: Durability,
         checkpoint: &Option<CheckpointReader>,
         rocks_resources: &RocksResources,
     ) -> Result<Self, StorageOpenError>
     where
         Durability: DurabilityClient,
     {
-        use StorageOpenError::{RecoverFromCheckpoint, RecoverFromDurability, StorageDirectoryRecreate};
+        // a single (or absent) candidate is the degenerate case of the
+        // R4-STOR-10 newest->oldest fallback loop.
+        let candidates: Vec<CheckpointReader> = checkpoint
+            .as_ref()
+            .map(|checkpoint| CheckpointReader { directory: checkpoint.directory.clone() })
+            .into_iter()
+            .collect();
+        Self::load_with_recovery_fallback::<KS>(name, path, durability_client, candidates, rocks_resources)
+            .map(|(storage, _restored_watermark)| storage)
+    }
+
+    /// R4-STOR-10: recover from the verified checkpoint candidates, NEWEST TO
+    /// OLDEST, falling back on typed pre-mutation failures, and to full WAL
+    /// replay only when no candidate validates AND the retained WAL proves
+    /// contiguous coverage from the first allocatable sequence number.
+    ///
+    /// Per candidate the flow is two-phase (see `CheckpointReader`):
+    /// 1. `validate_for_recovery` — watermark parse, ahead-of-durability
+    ///    check, successor proofs, and the strict contiguous load of the WAL
+    ///    commits replay needs. Mutates NOTHING; any failure here leaves the
+    ///    live tree byte-identical and the loop records the typed reason and
+    ///    tries the next older candidate.
+    /// 2. `restore_validated` — the destructive mirror + open + replay. A
+    ///    failure here has touched live state and is propagated, never
+    ///    retried over a half-mirrored tree.
+    ///
+    /// If every candidate fails validation, full WAL replay runs ONLY after
+    /// the strict loader proves coverage from `MIN.next()` — the proof runs
+    /// BEFORE the storage tree is wiped, so an uncoverable WAL also leaves
+    /// live state byte-identical. If that proof fails too, the typed
+    /// [`StorageOpenError::RecoveryFallbackExhausted`] names every candidate's
+    /// failure reason alongside the replay failure.
+    ///
+    /// Returns the storage plus the watermark of the checkpoint actually
+    /// restored (`None` when recovery came from full WAL replay), so the
+    /// caller's catch-up policy reasons about the cut that was USED, not
+    /// merely the newest one on disk.
+    pub fn load_with_recovery_fallback<KS: KeyspaceSet>(
+        name: impl AsRef<str>,
+        path: &Path,
+        mut durability_client: Durability,
+        checkpoints: Vec<CheckpointReader>,
+        rocks_resources: &RocksResources,
+    ) -> Result<(Self, Option<SequenceNumber>), StorageOpenError>
+    where
+        Durability: DurabilityClient,
+    {
+        use StorageOpenError::{
+            RecoverFromCheckpoint, RecoverFromDurability, RecoveryFallbackExhausted, StorageDirectoryRecreate,
+        };
 
         let name = name.as_ref();
         let storage_dir = path.join(Self::STORAGE_DIR_NAME);
 
         Self::register_durability_record_types(&mut durability_client);
-        let (keyspaces, next_sequence_number) = if let Some(checkpoint) = checkpoint {
-            let backend = Self::resolve_storage_backend(name)?;
-            checkpoint
-                .recover_storage::<KS, _>(name, &storage_dir, &durability_client, rocks_resources, backend)
-                .map_err(|error| RecoverFromCheckpoint { name: name.to_owned(), typedb_source: error })?
-        } else {
-            // S-01: resolve the backend BEFORE removing/recreating the storage
-            // directory, so a refusal leaves the existing tree byte-identical
-            // rather than wiping it and then failing.
-            let backend = Self::resolve_storage_backend(name)?;
-            match fs::remove_dir_all(&storage_dir) {
-                Err(err) if err.kind() != io::ErrorKind::NotFound => {
-                    return Err(StorageDirectoryRecreate { name: name.to_owned(), source: Arc::new(err) });
+        // S-01: resolve the backend BEFORE any restore or removal, so a
+        // refusal leaves the existing tree byte-identical.
+        let backend = Self::resolve_storage_backend(name)?;
+
+        let mut candidate_failures: Vec<String> = Vec::new();
+        for candidate in &checkpoints {
+            match candidate.validate_for_recovery(&durability_client) {
+                Ok(validated) => {
+                    let restored_watermark = validated.watermark;
+                    // the candidate is proven: restore is destructive from
+                    // here on, so its failures propagate — no fallback over a
+                    // half-mirrored live tree.
+                    let (keyspaces, next_sequence_number) = candidate
+                        .restore_validated::<KS, _>(
+                            name,
+                            &storage_dir,
+                            validated,
+                            &durability_client,
+                            rocks_resources,
+                            backend,
+                        )
+                        .map_err(|error| RecoverFromCheckpoint { name: name.to_owned(), typedb_source: error })?;
+                    return Ok((
+                        Self::assemble(name, storage_dir, durability_client, keyspaces, next_sequence_number),
+                        Some(restored_watermark),
+                    ));
                 }
-                _ => (),
+                Err(error) => {
+                    // typed, pre-mutation: record the reason and try the next
+                    // older verified candidate (R4-STOR-10).
+                    error!(
+                        "checkpoint candidate {:?} for database '{}' failed pre-restore validation; \
+                         falling back to the next older candidate (live state untouched): {:?}",
+                        candidate.directory, name, error
+                    );
+                    candidate_failures.push(format!("{:?}: {error:?}", candidate.directory));
+                }
             }
-            fail_point!(STORAGE_MISSING_STORAGE_DIR);
-            fs::create_dir_all(&storage_dir)
-                .map_err(|err| StorageDirectoryRecreate { name: name.to_owned(), source: Arc::new(err) })?;
-            fail_point!(STORAGE_EMPTY_STORAGE_DIR);
-            let keyspaces = Self::open_keyspaces::<KS>(name, &storage_dir, rocks_resources, backend)?;
-            trace!("No checkpoint found, loading from WAL");
-            let commits = load_commit_data_from(SequenceNumber::MIN.next(), &durability_client)
-                .map_err(|err| RecoverFromDurability { name: name.to_owned(), typedb_source: err })?;
-            // R-01: the frontier is the WAL's own recovered end. The strict
-            // loader above has PROVEN exactly one commit for every sequence
-            // in start..=head, so this is never a max() over an unproved set.
-            let next_sequence_number = durability_client.current();
-            apply_recovered(name, commits, &durability_client, &keyspaces)
-                .map_err(|err| RecoverFromDurability { name: name.to_owned(), typedb_source: err })?;
-            trace!("Finished applying commits from WAL.");
-            (keyspaces, next_sequence_number)
+        }
+
+        // No candidate validated (or none existed). Full WAL replay — but the
+        // strict loader must PROVE contiguous coverage from the first
+        // allocatable sequence number BEFORE the storage tree is wiped
+        // (R-01/R4-STOR-10): an uncoverable WAL leaves live state
+        // byte-identical and the refusal names every candidate's failure.
+        trace!("No usable checkpoint, loading from WAL");
+        let commits = match load_commit_data_from(SequenceNumber::MIN.next(), &durability_client) {
+            Ok(commits) => commits,
+            Err(replay_error) if candidate_failures.is_empty() => {
+                return Err(RecoverFromDurability { name: name.to_owned(), typedb_source: replay_error });
+            }
+            Err(replay_error) => {
+                return Err(RecoveryFallbackExhausted {
+                    name: name.to_owned(),
+                    candidate_failures: candidate_failures.join("; "),
+                    typedb_source: replay_error,
+                });
+            }
         };
 
+        match fs::remove_dir_all(&storage_dir) {
+            Err(err) if err.kind() != io::ErrorKind::NotFound => {
+                return Err(StorageDirectoryRecreate { name: name.to_owned(), source: Arc::new(err) });
+            }
+            _ => (),
+        }
+        fail_point!(STORAGE_MISSING_STORAGE_DIR);
+        fs::create_dir_all(&storage_dir)
+            .map_err(|err| StorageDirectoryRecreate { name: name.to_owned(), source: Arc::new(err) })?;
+        fail_point!(STORAGE_EMPTY_STORAGE_DIR);
+        let keyspaces = Self::open_keyspaces::<KS>(name, &storage_dir, rocks_resources, backend)?;
+        // R-01: the frontier is the WAL's own recovered end. The strict
+        // loader above has PROVEN exactly one commit for every sequence
+        // in start..=head, so this is never a max() over an unproved set.
+        let next_sequence_number = durability_client.current();
+        apply_recovered(name, commits, &durability_client, &keyspaces)
+            .map_err(|err| RecoverFromDurability { name: name.to_owned(), typedb_source: err })?;
+        trace!("Finished applying commits from WAL.");
+        Ok((Self::assemble(name, storage_dir, durability_client, keyspaces, next_sequence_number), None))
+    }
+
+    fn assemble(
+        name: &str,
+        storage_dir: PathBuf,
+        durability_client: Durability,
+        keyspaces: Keyspaces,
+        next_sequence_number: SequenceNumber,
+    ) -> Self {
         let isolation_manager = IsolationManager::new(next_sequence_number);
-        Ok(Self {
+        Self {
             name: Arc::<str>::from(name),
             path: storage_dir,
             durability_client,
@@ -252,7 +355,7 @@ impl<Durability> MVCCStorage<Durability> {
             // number is MIN.next(), so MIN itself never names a commit and a
             // saturated origin is exact, never a release-mode wrap.
             highest_committed_snapshot: AtomicU64::new(next_sequence_number.number().saturating_sub(1)),
-        })
+        }
     }
 
     fn register_durability_record_types(durability_client: &mut impl DurabilityClient) {
@@ -860,6 +963,7 @@ typedb_error! {
 
         RecoverFromCheckpoint(10, "Failed to recover from checkpoint for database '{name}'.", name: String, typedb_source: CheckpointLoadError),
         RecoverFromDurability(11, "Failed to recover from durability logs for database '{name}'.", name: String, typedb_source: StorageRecoveryError),
+        RecoveryFallbackExhausted(13, "Failed to recover database '{name}': every checkpoint candidate failed pre-restore validation ({candidate_failures}), and full WAL replay could not prove contiguous coverage from the start of the sequence space. Live storage state was left untouched.", name: String, candidate_failures: String, typedb_source: StorageRecoveryError),
     }
 }
 

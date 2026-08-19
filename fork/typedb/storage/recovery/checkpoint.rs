@@ -34,7 +34,7 @@ use crate::{
         KeyspaceCheckpointError, KeyspaceOpenError, KeyspaceSet, Keyspaces, StorageBackend,
         rocks_resources::RocksResources,
     },
-    recovery::commit_recovery::{StorageRecoveryError, apply_recovered, load_commit_data_from},
+    recovery::commit_recovery::{RecoveryCommitStatus, StorageRecoveryError, apply_recovered, load_commit_data_from},
     sequence_number::SequenceNumber,
 };
 
@@ -69,15 +69,27 @@ pub struct CheckpointReader {
 
 impl CheckpointReader {
     pub fn open_latest<KS: KeyspaceSet>(storage_path: &Path) -> Result<Option<Self>, CheckpointLoadError> {
+        Ok(Self::enumerate_verified::<KS>(storage_path)?.into_iter().next())
+    }
+
+    /// R4-STOR-10: EVERY digest-verified checkpoint candidate, ordered newest
+    /// to oldest. The recovery policy iterates this list: a newer candidate
+    /// that later fails pre-mutation validation (corrupt/ahead watermark, WAL
+    /// coverage missing) falls back to the next older one, and only if none
+    /// validates does recovery consider full WAL replay. A directory whose
+    /// COMPLETE marker is absent, unreadable, or fails digest verification is
+    /// not a candidate at all — it is a torn or in-flight attempt (R-06) and
+    /// never shadows an older verified cut.
+    pub fn enumerate_verified<KS: KeyspaceSet>(storage_path: &Path) -> Result<Vec<Self>, CheckpointLoadError> {
         use CheckpointLoadError::CheckpointRead;
 
         let checkpoint_dir = storage_path.join(CHECKPOINT_DIR_NAME);
         if !checkpoint_dir.exists() {
-            return Ok(None);
+            return Ok(Vec::new());
         }
 
         fs::read_dir(&checkpoint_dir)
-            .and_then(latest_complete_checkpoint::<KS>)
+            .and_then(verified_checkpoints_newest_first::<KS>)
             .map_err(|error| CheckpointRead { dir: checkpoint_dir, source: Arc::new(error) })
     }
 
@@ -98,45 +110,68 @@ impl CheckpointReader {
         Ok(deserialised)
     }
 
-    pub(crate) fn recover_storage<KS: KeyspaceSet, Durability: DurabilityClient>(
+    /// R4-STOR-10 phase 1 — VALIDATE this candidate, mutating NOTHING.
+    ///
+    /// Everything recovery must prove about a checkpoint before it may touch
+    /// the live tree happens here: the watermark is read and parsed, checked
+    /// against the durability head (R-05: an ahead checkpoint means truncated
+    /// durability logs or a stale cut), its replay successor is proven to
+    /// exist (S-P0-09), and the WAL commits replay will need are strictly,
+    /// contiguously loaded (R-01 — this also proves the retained WAL actually
+    /// covers `watermark+1..head` for THIS candidate). Every failure is a
+    /// typed pre-mutation refusal: the caller can fall back to an older
+    /// candidate or full WAL replay with the live keyspace directories
+    /// byte-identical.
+    pub(crate) fn validate_for_recovery<Durability: DurabilityClient>(
+        &self,
+        durability_client: &Durability,
+    ) -> Result<ValidatedCheckpointRecovery, CheckpointLoadError> {
+        use CheckpointLoadError::CommitRecoveryFailed;
+
+        let watermark = validate_watermark(&self.directory, durability_client.previous())?;
+
+        // S-P0-09: both `+ 1`s here sit on recovery input (the checkpoint
+        // watermark and WAL commit keys). At u64::MAX the unchecked form
+        // wrapped in release, making replay restart from sequence number
+        // zero; a sequence number that has no successor is typed corruption,
+        // never an arithmetic accident.
+        let recovery_start = replay_successor(&self.directory, watermark)?;
+        let recovered_commits = load_commit_data_from(recovery_start, durability_client)
+            .map_err(|err| CommitRecoveryFailed { typedb_source: err })?;
+        let next_sequence_number =
+            replay_successor(&self.directory, recovered_commits.keys().max().copied().unwrap_or(watermark))?;
+        Ok(ValidatedCheckpointRecovery { watermark, recovered_commits, next_sequence_number })
+    }
+
+    /// R4-STOR-10 phase 2 — RESTORE a candidate [`Self::validate_for_recovery`]
+    /// has already accepted. Destructive from the first statement on: the
+    /// checkpoint tree is mirrored over the live keyspace directories, the
+    /// keyspaces are opened, and the pre-loaded WAL commits are applied. A
+    /// failure here is NOT candidate-fallback material — live state has been
+    /// touched — so the caller must propagate it, never retry an older cut
+    /// over a half-mirrored tree.
+    pub(crate) fn restore_validated<KS: KeyspaceSet, Durability: DurabilityClient>(
         &self,
         database_name: &str,
         keyspaces_dir: &Path,
+        validated: ValidatedCheckpointRecovery,
         durability_client: &Durability,
         rocks_resources: &RocksResources,
         backend: StorageBackend,
     ) -> Result<(Keyspaces, SequenceNumber), CheckpointLoadError> {
         use CheckpointLoadError::{CommitRecoveryFailed, KeyspaceOpen};
 
-        // R-05: VALIDATE before touching live state. The watermark is read and
-        // checked against the durability head FIRST; only if that passes does
-        // the destructive mirror run. A corrupt-metadata or ahead-of-durability
-        // checkpoint therefore leaves every live keyspace directory
-        // byte-identical — the caller can fall back to an older checkpoint or
-        // full WAL replay. The old order mirrored first and validated after
-        // (and the ahead check was a `panic!`), destroying live state on a bad
-        // checkpoint with no recourse: the exact R-05 defect.
-        let checkpoint_sequence_number =
-            validate_then_restore::<KS>(&self.directory, keyspaces_dir, durability_client.previous())?;
+        let ValidatedCheckpointRecovery { watermark: _, recovered_commits, next_sequence_number } = validated;
+
+        // validated — now, and only now, mirror the checkpoint over live state
+        // (R-05 ordering: the validation above ran first, so a rejected
+        // candidate never reaches this destructive block).
+        restore_checkpoint_tree::<KS>(&self.directory, keyspaces_dir)?;
 
         let keyspaces = Keyspaces::open::<KS>(&keyspaces_dir, rocks_resources, backend)
             .map_err(|error| KeyspaceOpen { source: error })?;
 
-        trace!("Finished recovering keyspaces, recovering missing commits");
-
-        // S-P0-09: both `+ 1`s below sit on recovery input (the checkpoint
-        // watermark and WAL commit keys). At u64::MAX the unchecked form
-        // wrapped in release, making replay restart from sequence number
-        // zero; a sequence number that has no successor is typed corruption,
-        // never an arithmetic accident.
-        let recovery_start = replay_successor(&self.directory, checkpoint_sequence_number)?;
-        let recovered_commits = load_commit_data_from(recovery_start, durability_client)
-            .map_err(|err| CommitRecoveryFailed { typedb_source: err })?;
-        let next_sequence_number = replay_successor(
-            &self.directory,
-            recovered_commits.keys().max().copied().unwrap_or(checkpoint_sequence_number),
-        )?;
-        trace!("Applying missing commits");
+        trace!("Finished recovering keyspaces, applying missing commits");
         apply_recovered(database_name, recovered_commits, durability_client, &keyspaces)
             .map_err(|err| CommitRecoveryFailed { typedb_source: err })?;
         Ok((keyspaces, next_sequence_number))
@@ -201,25 +236,31 @@ fn read_watermark_at(directory: &Path) -> Result<SequenceNumber, CheckpointLoadE
     Ok(SequenceNumber::new(number))
 }
 
-/// R-05 step 1-4 ordering: validate the checkpoint's watermark and its position
-/// relative to the durability head, and ONLY on success mirror the checkpoint
-/// tree over the live keyspace directories. Extracted so the "live state
-/// untouched on a bad checkpoint" invariant is a hermetic, deterministic test:
-/// a corrupt or ahead watermark returns before any `restore_storage_from_checkpoint`
-/// call, so the live directories are byte-identical. The R-05 mutant — mirror
-/// first, validate after — reorders these two blocks and the named test fails.
-fn validate_then_restore<KS: KeyspaceSet>(
+/// R4-STOR-10: the result of a checkpoint candidate's PRE-MUTATION validation
+/// — the parsed watermark, the strictly-loaded WAL commits replay needs, and
+/// the proven post-replay successor. Holding this value is the proof that
+/// [`CheckpointReader::restore_validated`] may run; nothing about the live
+/// tree has been touched to produce it.
+pub(crate) struct ValidatedCheckpointRecovery {
+    pub(crate) watermark: SequenceNumber,
+    recovered_commits: BTreeMap<SequenceNumber, RecoveryCommitStatus>,
+    next_sequence_number: SequenceNumber,
+}
+
+/// R-05 validation half: read the sealed watermark ONCE and validate it against
+/// the durability head BEFORE any destructive touch. A corrupt or ahead
+/// watermark is a typed refusal (was a `panic!`), so recovery can fall back to
+/// an older checkpoint or full WAL replay with live state byte-identical.
+fn validate_watermark(
     checkpoint_dir: &Path,
-    keyspaces_dir: &Path,
     durability_previous: SequenceNumber,
 ) -> Result<SequenceNumber, CheckpointLoadError> {
-    use CheckpointLoadError::{CheckpointAheadOfDurability, CheckpointRestore};
+    use CheckpointLoadError::CheckpointAheadOfDurability;
 
-    // read the sealed watermark ONCE and validate BEFORE any destructive touch
     let checkpoint_sequence_number = read_watermark_at(checkpoint_dir)?;
     if checkpoint_sequence_number > durability_previous {
-        // was a `panic!` — an ahead checkpoint (durability logs truncated or a
-        // stale checkpoint) is a typed refusal so recovery can fall back, not a
+        // an ahead checkpoint (durability logs truncated or a stale
+        // checkpoint) is a typed refusal so recovery can fall back, not a
         // process abort with no recourse.
         return Err(CheckpointAheadOfDurability {
             dir: checkpoint_dir.to_owned(),
@@ -227,8 +268,19 @@ fn validate_then_restore<KS: KeyspaceSet>(
             durability_head: durability_previous,
         });
     }
+    Ok(checkpoint_sequence_number)
+}
 
-    // validated — now, and only now, mirror the checkpoint over live state.
+/// R-05 destructive half: mirror the checkpoint tree over the live keyspace
+/// directories. Callers MUST have run validation first — the R-05 mutant
+/// (mirror first, validate after) destroys live state on a bad checkpoint
+/// with no recourse, and the named restore-safety tests catch it.
+fn restore_checkpoint_tree<KS: KeyspaceSet>(
+    checkpoint_dir: &Path,
+    keyspaces_dir: &Path,
+) -> Result<(), CheckpointLoadError> {
+    use CheckpointLoadError::CheckpointRestore;
+
     for keyspace in KS::iter() {
         let keyspace_dir = keyspaces_dir.join(keyspace.name());
         let keyspace_checkpoint_dir = checkpoint_dir.join(keyspace.name());
@@ -236,39 +288,55 @@ fn validate_then_restore<KS: KeyspaceSet>(
         restore_storage_from_checkpoint(keyspace_dir, keyspace_checkpoint_dir)
             .map_err(|error| CheckpointRestore { dir: checkpoint_dir.to_owned(), source: Arc::new(error) })?;
     }
-
-    Ok(checkpoint_sequence_number)
+    Ok(())
 }
 
-fn latest_complete_checkpoint<KS: KeyspaceSet>(mut entries: fs::ReadDir) -> io::Result<Option<CheckpointReader>> {
-    let latest: io::Result<_> = entries.try_fold(None, |cur, entry| {
+/// R4-STOR-08/R4-STOR-10: every verified, selectable checkpoint, ordered
+/// newest to oldest.
+///
+/// Recency is the FULL attempt directory name, compared lexicographically:
+/// the id format `<20-digit-nanos>-<counter>-<nonce>` (see [`new_attempt_id`])
+/// makes lexicographic order equal numeric recency by construction — the
+/// nanos prefix is fixed width, and two attempts whose nanos prefixes are
+/// EXACTLY equal (rapid scheduling, coarse clocks) are still totally ordered
+/// by the fixed-width counter and nonce components. This is the SAME total
+/// order retention ([`siblings_safe_to_delete`]) uses, so the reader's
+/// selection and the writer's cleanup can never disagree about which cut is
+/// newer.
+///
+/// R-05/R-06: only a digest-verified COMPLETE checkpoint is a candidate. A
+/// newer directory that cannot be read or fails verification does NOT shadow
+/// an older one that verifies — it is simply not in the list, which is the
+/// seed of the newest->older fallback the recovery policy runs (R4-STOR-10).
+fn verified_checkpoints_newest_first<KS: KeyspaceSet>(entries: fs::ReadDir) -> io::Result<Vec<CheckpointReader>> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    for entry in entries {
         let path = entry?.path();
         if path.extension() == Some(TEMP_FILE_EXTENSION.as_ref()) {
             // skip an unfinished (in-flight or torn) attempt
-            return Ok(cur);
+            continue;
         }
-
-        let Some(nanos) = parse_attempt_nanos(&path) else {
+        if parse_attempt_nanos(&path).is_none() {
             // a directory whose name is not an attempt id — skip it
-            return Ok(cur);
-        };
-
-        if cur.as_ref().is_some_and(|(cur_nanos, _)| cur_nanos > &nanos) {
-            return Ok(cur);
+            continue;
         }
-
-        // R-05/R-06: only a digest-verified COMPLETE checkpoint is selectable.
-        // A newer directory that fails verification does NOT shadow an older
-        // one that verifies — the fold keeps the older verified candidate, the
-        // seed of the newest->older fallback the recovery policy needs.
-        let checkpoint = CheckpointReader { directory: path };
-        if checkpoint.is_complete::<KS>()? { Ok(Some((nanos, checkpoint))) } else { Ok(cur) }
-    });
-
-    match latest? {
-        Some((_, checkpoint_reader)) => Ok(Some(checkpoint_reader)),
-        None => Ok(None),
+        candidates.push(path);
     }
+    // newest first: full-name lexicographic == recency (docstring above)
+    candidates.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+
+    let mut verified = Vec::new();
+    for path in candidates {
+        let checkpoint = CheckpointReader { directory: path };
+        // a candidate whose verification ERRORS (unreadable tree) is treated
+        // exactly like one that fails verification: unselectable, and unable
+        // to mask an older verified candidate (R4-STOR-10: "newest unreadable
+        // with older valid" must select the older).
+        if checkpoint.is_complete::<KS>().unwrap_or(false) {
+            verified.push(checkpoint);
+        }
+    }
+    Ok(verified)
 }
 
 /// Mirror the checkpoint tree over the live keyspace directory. Recursive
@@ -448,11 +516,17 @@ impl CheckpointWriter {
 
         fail_point!(CHECKPOINT_CLEANUP_FAIL);
 
-        // R-04: reclaim ONLY sibling checkpoints that are provably not active.
-        // A `.tmp` sibling is an in-flight attempt — possibly another checkpoint
-        // mid-write — and is NEVER deleted here; deleting it is the R-04
-        // collision (one checkpoint erasing another's active attempt). The
-        // just-published final directory is likewise never a deletion target.
+        // R-04/R4-STOR-08: reclaim ONLY sibling checkpoints that are provably
+        // both inactive AND OLDER than the cut just published. A `.tmp`
+        // sibling is an in-flight attempt and is NEVER deleted; a finalized
+        // sibling with a NEWER attempt id is a better cut published by an
+        // attempt that finished first (this attempt captured earlier and
+        // resumed later) and is NEVER deleted either — deleting it would
+        // regress the selectable cut to this older one (the R4-STOR-08
+        // defect). Cleanup runs strictly AFTER the durable publish above, so
+        // a cleanup failure is a typed error that leaves the just-published
+        // cut fully durable and selectable — retention failures never affect
+        // the published cut.
         let siblings: Vec<PathBuf> = fs::read_dir(self.checkpoint_directory.parent().unwrap())
             .and_then(|entries| entries.map_ok(|entry| entry.path()).try_collect())
             .map_err(|error| CheckpointDirRead { dir: self.checkpoint_directory.clone(), source: Arc::new(error) })?;
@@ -467,17 +541,38 @@ impl CheckpointWriter {
     }
 }
 
-/// R-04: the subset of `entries` that `finish` may safely delete after
-/// publishing `final_dir`. Excludes (a) the just-published final directory
-/// itself, and (b) EVERY `.tmp` entry — an in-flight attempt another checkpoint
-/// may be actively writing into. Reverting this to "every sibling except the
-/// final directory" (the old `finish`) deletes an active `.tmp`, which is the
-/// R-04 defect a named barrier test catches.
+/// R-04/R4-STOR-08: the subset of `entries` that `finish` may safely delete
+/// after publishing `final_dir`. Retention is RECENCY-AWARE: only a finalized
+/// sibling whose attempt id is LEXICOGRAPHICALLY OLDER than the just-published
+/// attempt's own id is reclaimable.
+///
+/// Excluded, in order of the invariant each protects:
+/// (a) every `.tmp` entry — an in-flight attempt another checkpoint may be
+///     actively writing into (deleting one is the original R-04 collision);
+/// (b) any entry that does not parse as an attempt id — a writer never
+///     decides reachability of a foreign directory from a listing alone;
+/// (c) every sibling whose id is NOT strictly older than `final_dir`'s —
+///     which covers both the just-published directory itself (equal) and any
+///     NEWER finalized sibling. A newer sibling is the better cut, published
+///     by an attempt that captured later but finished first; the R4-STOR-08
+///     defect was exactly an older attempt A finishing last and deleting the
+///     newer published cut B, regressing selection to the older cut.
+///
+/// The attempt id format `<20-digit-nanos>-<counter>-<nonce>` makes
+/// lexicographic comparison equal numeric recency (fixed-width nanos prefix);
+/// two ids sharing an EXACTLY equal nanos prefix are still totally ordered by
+/// the fixed-width counter and nonce components. This is the same total order
+/// the reader's selection uses ([`verified_checkpoints_newest_first`]), so
+/// cleanup can never delete the cut selection would pick.
 fn siblings_safe_to_delete(final_dir: &Path, entries: &[PathBuf]) -> Vec<PathBuf> {
+    let Some(final_name) = final_dir.file_name() else {
+        return Vec::new();
+    };
     entries
         .iter()
-        .filter(|path| path.as_path() != final_dir)
         .filter(|path| path.extension() != Some(TEMP_FILE_EXTENSION.as_ref()))
+        .filter(|path| parse_attempt_nanos(path).is_some())
+        .filter(|path| path.file_name().is_some_and(|name| name < final_name))
         .cloned()
         .collect()
 }
@@ -907,6 +1002,196 @@ mod concurrent_checkpoint_tests {
             "an active .tmp attempt (checkpoint A mid-write) must never be deleted — the R-04 collision"
         );
     }
+
+    #[test]
+    fn a_newer_finalized_sibling_is_never_a_deletion_target() {
+        // R4-STOR-08 core: older attempt A finishes AFTER newer attempt B has
+        // already published. A's cleanup may reclaim cuts older than A, but
+        // NEVER B — B is the better cut and must stay selectable.
+        let base = create_tmp_dir("checkpoint-cleanup-recency");
+        let a_final: PathBuf = base.join("00000000000000000100-0000000000000001-aaaa");
+        let newer_b: PathBuf = base.join("00000000000000000200-0000000000000002-bbbb");
+        let ancient: PathBuf = base.join("00000000000000000050-0000000000000000-cccc");
+
+        let entries = vec![a_final.clone(), newer_b.clone(), ancient.clone()];
+        let to_delete = siblings_safe_to_delete(&a_final, &entries);
+
+        assert!(to_delete.contains(&ancient), "a strictly older completed sibling is reclaimable");
+        assert!(
+            !to_delete.contains(&newer_b),
+            "R4-STOR-08: a NEWER finalized sibling is the better cut and must never be deleted"
+        );
+        assert!(!to_delete.contains(&a_final), "the just-published final directory must never be deleted");
+    }
+
+    #[test]
+    fn equal_nanos_prefix_ids_are_ordered_by_the_counter_component() {
+        // The exact-equal clock prefix case: two attempts in the same instant
+        // share the 20-digit nanos prefix; the fixed-width counter (and nonce)
+        // still totally order them, so recency-aware cleanup stays exact.
+        let base = create_tmp_dir("checkpoint-cleanup-equal-nanos");
+        let older: PathBuf = base.join("00000000000000000100-0000000000000001-aaaa");
+        let newer: PathBuf = base.join("00000000000000000100-0000000000000002-bbbb");
+
+        let entries = vec![older.clone(), newer.clone()];
+        assert!(
+            siblings_safe_to_delete(&newer, &entries).contains(&older),
+            "with equal nanos, the smaller counter is the older attempt and is reclaimable"
+        );
+        assert!(
+            !siblings_safe_to_delete(&older, &entries).contains(&newer),
+            "with equal nanos, the larger counter is the newer attempt and must survive"
+        );
+    }
+
+    #[test]
+    fn a_foreign_directory_is_never_a_deletion_target() {
+        // A writer never decides reachability of a directory it cannot prove
+        // is a checkpoint attempt from a listing alone: an entry that does not
+        // parse as an attempt id is left untouched.
+        let base = create_tmp_dir("checkpoint-cleanup-foreign");
+        let b_final: PathBuf = base.join("00000000000000000200-0000000000000002-aaaa");
+        let foreign: PathBuf = base.join("operator-scratch");
+
+        let to_delete = siblings_safe_to_delete(&b_final, &[b_final.clone(), foreign.clone()]);
+        assert!(!to_delete.contains(&foreign), "a non-attempt (foreign) directory must never be deleted");
+    }
+}
+
+#[cfg(test)]
+mod finish_barrier_tests {
+    //! R4-STOR-08: the audit's deterministic barrier, run through the REAL
+    //! `CheckpointWriter::finish` — capture order and completion order are
+    //! decoupled, and the newer published cut always survives and stays
+    //! selected, whichever attempt finishes last.
+
+    use std::{fs, path::Path};
+
+    use test_utils::create_tmp_dir;
+
+    use super::{
+        CheckpointCreateError, CheckpointWriter, STORAGE_METADATA_FILE_NAME, TEMP_FILE_EXTENSION,
+        verified_checkpoints_newest_first,
+    };
+
+    #[derive(Clone, Copy)]
+    enum TestKs {
+        Main,
+    }
+    impl crate::keyspace::KeyspaceSet for TestKs {
+        fn iter() -> impl Iterator<Item = Self> {
+            [Self::Main].into_iter()
+        }
+        fn id(&self) -> crate::keyspace::KeyspaceId {
+            crate::keyspace::KeyspaceId(0)
+        }
+        fn name(&self) -> &'static str {
+            "keyspace"
+        }
+        fn prefix_length(&self) -> Option<usize> {
+            None
+        }
+    }
+
+    /// An in-flight attempt with a fabricated id: a `.tmp` tree carrying the
+    /// keyspace data and watermark metadata `finish` requires — the state an
+    /// attempt is in right after `add_storage` (captured, not yet sealed).
+    fn captured_attempt(checkpoint_parent: &Path, attempt_id: &str, watermark: &str) -> CheckpointWriter {
+        let temporary_directory = checkpoint_parent.join(format!("{attempt_id}.{TEMP_FILE_EXTENSION}"));
+        fs::create_dir_all(temporary_directory.join("keyspace")).unwrap();
+        fs::write(temporary_directory.join("keyspace").join("data.sst"), format!("bytes-of-{attempt_id}")).unwrap();
+        fs::write(temporary_directory.join(STORAGE_METADATA_FILE_NAME), watermark).unwrap();
+        CheckpointWriter { checkpoint_directory: checkpoint_parent.join(attempt_id), temporary_directory }
+    }
+
+    fn selected_name(checkpoint_parent: &Path) -> Option<String> {
+        verified_checkpoints_newest_first::<TestKs>(fs::read_dir(checkpoint_parent).unwrap())
+            .unwrap()
+            .first()
+            .map(|c| c.directory.file_name().unwrap().to_str().unwrap().to_owned())
+    }
+
+    const A_OLDER: &str = "00000000000000000100-0000000000000001-aaaa";
+    const B_NEWER: &str = "00000000000000000200-0000000000000002-bbbb";
+
+    #[test]
+    fn reverse_completion_preserves_the_newer_published_cut() {
+        // The audit barrier: A captures first (older id), B captures newer
+        // and publishes, A resumes and finishes LAST. B must remain published
+        // and selected — A cannot remove it.
+        let base = create_tmp_dir("finish-reverse");
+        let a = captured_attempt(&base, A_OLDER, "10");
+        let b = captured_attempt(&base, B_NEWER, "20");
+
+        b.finish().expect("B publishes first");
+        a.finish().expect("A finishes last and must not fail");
+
+        assert!(base.join(B_NEWER).exists(), "R4-STOR-08: A's cleanup must not delete the newer published cut B");
+        assert_eq!(
+            selected_name(&base).as_deref(),
+            Some(B_NEWER),
+            "the newer cut B must remain the selected candidate after A finishes"
+        );
+    }
+
+    #[test]
+    fn forward_completion_reclaims_the_older_cut() {
+        // reverse-order control: A publishes first, B finishes last and — as
+        // the strictly newer cut — reclaims A. Selection is monotonic either
+        // way: the newest published cut wins.
+        let base = create_tmp_dir("finish-forward");
+        let a = captured_attempt(&base, A_OLDER, "10");
+        let b = captured_attempt(&base, B_NEWER, "20");
+
+        a.finish().expect("A publishes first");
+        b.finish().expect("B finishes last");
+
+        assert!(!base.join(A_OLDER).exists(), "the strictly older cut A is reclaimed by B's cleanup");
+        assert_eq!(selected_name(&base).as_deref(), Some(B_NEWER), "the newer cut B is selected");
+    }
+
+    #[test]
+    fn equal_clock_prefix_reverse_completion_preserves_the_newer_cut() {
+        // equal-nanos mutant: the two attempt ids share the exact 20-digit
+        // nanos prefix and differ only in the counter component; recency is
+        // still total and the newer cut survives reverse completion.
+        const A_EQ: &str = "00000000000000000300-0000000000000003-cccc";
+        const B_EQ: &str = "00000000000000000300-0000000000000004-dddd";
+        let base = create_tmp_dir("finish-equal-nanos");
+        let a = captured_attempt(&base, A_EQ, "10");
+        let b = captured_attempt(&base, B_EQ, "20");
+
+        b.finish().expect("B (same nanos, larger counter) publishes first");
+        a.finish().expect("A finishes last");
+
+        assert!(base.join(B_EQ).exists(), "the same-instant newer cut must survive the older finisher's cleanup");
+        assert_eq!(selected_name(&base).as_deref(), Some(B_EQ), "selection orders equal-nanos ids by counter");
+    }
+
+    #[test]
+    fn a_cleanup_failure_does_not_affect_the_published_cut() {
+        // Retention runs strictly after the durable publish: force cleanup to
+        // fail deterministically (an older sibling that is a regular FILE with
+        // an attempt-id name — `remove_dir_all` on it errors on every
+        // platform) and prove the just-published cut is untouched, verified,
+        // and selected despite the typed cleanup error.
+        const UNDELETABLE_OLDER: &str = "00000000000000000050-0000000000000000-eeee";
+        let base = create_tmp_dir("finish-cleanup-failure");
+        fs::write(base.join(UNDELETABLE_OLDER), b"not-a-directory").unwrap();
+        let b = captured_attempt(&base, B_NEWER, "20");
+
+        let error = b.finish().err().expect("cleanup failure must surface as a typed error");
+        assert!(
+            matches!(error, CheckpointCreateError::OldCheckpointRemove { .. }),
+            "cleanup failure is the typed OldCheckpointRemove error, got: {error:?}"
+        );
+        assert!(base.join(B_NEWER).exists(), "the published cut survives a cleanup failure");
+        assert_eq!(
+            selected_name(&base).as_deref(),
+            Some(B_NEWER),
+            "the published cut remains digest-verified and selected despite the cleanup failure"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -918,7 +1203,25 @@ mod restore_safety_tests {
 
     use test_utils::create_tmp_dir;
 
-    use super::{CheckpointLoadError, SequenceNumber, restore_storage_from_checkpoint, validate_then_restore};
+    use super::{
+        CheckpointLoadError, SequenceNumber, restore_checkpoint_tree, restore_storage_from_checkpoint,
+        validate_watermark,
+    };
+
+    /// The exact validate-then-restore composition the recovery loop in
+    /// `MVCCStorage::load_with_recovery_fallback` runs per candidate
+    /// (validation phase first, destructive mirror only on success), inlined
+    /// here so the R-05 ordering mutant — mirror first, validate after — is a
+    /// hermetic, deterministic test.
+    fn validate_then_restore<KS: crate::keyspace::KeyspaceSet>(
+        checkpoint_dir: &std::path::Path,
+        keyspaces_dir: &std::path::Path,
+        durability_previous: SequenceNumber,
+    ) -> Result<SequenceNumber, CheckpointLoadError> {
+        let watermark = validate_watermark(checkpoint_dir, durability_previous)?;
+        restore_checkpoint_tree::<KS>(checkpoint_dir, keyspaces_dir)?;
+        Ok(watermark)
+    }
 
     #[derive(Clone, Copy)]
     enum TestKs {
@@ -1047,7 +1350,7 @@ mod complete_marker_tests {
 
     use super::{
         CHECKPOINT_COMPLETE_FILE_NAME, CheckpointManifest, CheckpointReader, STORAGE_METADATA_FILE_NAME,
-        TEMP_FILE_EXTENSION, latest_complete_checkpoint,
+        TEMP_FILE_EXTENSION, verified_checkpoints_newest_first,
     };
 
     #[derive(Clone, Copy)]
@@ -1138,13 +1441,14 @@ mod complete_marker_tests {
         build_complete_checkpoint(&newer);
         fs::write(newer.join("keyspace").join("data.sst"), b"corrupted-after-complete").unwrap();
 
-        let selected = latest_complete_checkpoint::<TestKs>(fs::read_dir(&base).unwrap()).unwrap();
-        let selected = selected.expect("the older verified checkpoint must be selected");
+        let verified = verified_checkpoints_newest_first::<TestKs>(fs::read_dir(&base).unwrap()).unwrap();
+        let selected = verified.first().expect("the older verified checkpoint must be selected");
         assert_eq!(
             selected.directory.file_name().unwrap(),
             older.file_name().unwrap(),
             "the older verified checkpoint must win over the newer unverifiable one"
         );
+        assert_eq!(verified.len(), 1, "the unverifiable newer directory must not be a candidate at all");
     }
 
     #[test]
@@ -1152,7 +1456,33 @@ mod complete_marker_tests {
         let base = create_tmp_dir("ckpt-tmp-skip");
         let tmp = base.join(format!("00000000000000000300-0000000000000002-cccc.{TEMP_FILE_EXTENSION}"));
         build_complete_checkpoint(&tmp); // even a fully-built .tmp must be skipped
-        let selected = latest_complete_checkpoint::<TestKs>(fs::read_dir(&base).unwrap()).unwrap();
-        assert!(selected.is_none(), "a .tmp attempt is in-flight and must never be selected");
+        let verified = verified_checkpoints_newest_first::<TestKs>(fs::read_dir(&base).unwrap()).unwrap();
+        assert!(verified.is_empty(), "a .tmp attempt is in-flight and must never be selected");
+    }
+
+    #[test]
+    fn candidates_are_enumerated_newest_to_oldest_by_full_attempt_id() {
+        // R4-STOR-10: the fallback loop consumes candidates newest-first, in
+        // the SAME total order retention uses — full-attempt-id lexicographic.
+        // The two same-nanos entries are ordered by their counter component.
+        let base = create_tmp_dir("ckpt-enumerate-order");
+        let oldest = base.join("00000000000000000100-0000000000000001-aaaa");
+        let middle = base.join("00000000000000000200-0000000000000002-bbbb");
+        let newest = base.join("00000000000000000200-0000000000000003-cccc"); // equal nanos, larger counter
+        for dir in [&oldest, &middle, &newest] {
+            build_complete_checkpoint(dir);
+        }
+        let verified = verified_checkpoints_newest_first::<TestKs>(fs::read_dir(&base).unwrap()).unwrap();
+        let names: Vec<_> =
+            verified.iter().map(|c| c.directory.file_name().unwrap().to_str().unwrap().to_owned()).collect();
+        assert_eq!(
+            names,
+            vec![
+                newest.file_name().unwrap().to_str().unwrap(),
+                middle.file_name().unwrap().to_str().unwrap(),
+                oldest.file_name().unwrap().to_str().unwrap(),
+            ],
+            "candidates must be newest-first by full attempt id (equal nanos disambiguated by counter)"
+        );
     }
 }

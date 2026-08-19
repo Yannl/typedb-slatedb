@@ -96,11 +96,34 @@ fn splice_out_sequence(storage_path: &std::path::Path, target: u64) {
     assert!(spliced_any, "the target sequence number {target} was not found in the WAL");
 }
 
+/// Byte-exact snapshot of a directory tree: relative path -> content bytes.
+/// Used to prove recovery refusals leave the live storage tree untouched
+/// (R-05/R4-STOR-10).
+fn snapshot_tree(root: &std::path::Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    let mut out = std::collections::BTreeMap::new();
+    fn walk(root: &std::path::Path, dir: &std::path::Path, out: &mut std::collections::BTreeMap<String, Vec<u8>>) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(root, &path, out);
+            } else {
+                let rel = path.strip_prefix(root).unwrap().to_string_lossy().into_owned();
+                out.insert(rel, fs::read(&path).unwrap());
+            }
+        }
+    }
+    walk(root, root, &mut out);
+    out
+}
+
 #[test]
 fn wal_missing_records_for_checkpoint_replay_fails() {
-    // R-01: commit records between the checkpoint watermark and the WAL head
-    // are spliced out; recovery from the checkpoint must refuse with a typed
-    // error instead of silently replaying a WAL with holes.
+    // R-01 + R4-STOR-10: commit records between the checkpoint watermark and
+    // the WAL head are spliced out. The candidate fails pre-restore
+    // validation (the strict loader proves the hole), and the full-WAL-replay
+    // fallback fails its own coverage proof on the SAME hole — so recovery
+    // refuses with the typed exhaustion error that names the candidate's
+    // failure, and the live storage tree is byte-identical.
     test_keyspace_set! { Keyspace => 0: "keyspace" }
 
     init_logging();
@@ -131,16 +154,32 @@ fn wal_missing_records_for_checkpoint_replay_fails() {
     // commit 2 is the first record the checkpoint replay needs: remove it
     splice_out_sequence(&storage_path, 2);
 
+    let storage_dir = storage_path.join(MVCCStorage::<WALClient>::STORAGE_DIR_NAME);
+    let live_before = snapshot_tree(&storage_dir);
+
     let result = load_storage::<TestKeyspaceSet>(
         &storage_path,
         WAL::load(&storage_path, FsyncMetrics::disabled()).unwrap(),
         Some(checkpoint),
     );
     match result {
-        Err(StorageOpenError::RecoverFromCheckpoint { .. }) => (),
-        Err(other) => panic!("expected the typed RecoverFromCheckpoint refusal, got: {other:?}"),
+        Err(StorageOpenError::RecoveryFallbackExhausted { candidate_failures, .. }) => {
+            assert!(
+                !candidate_failures.is_empty(),
+                "the exhaustion error must name the failed candidate's reason, got empty failures"
+            );
+        }
+        Err(other) => panic!("expected the typed RecoveryFallbackExhausted refusal, got: {other:?}"),
         Ok(_) => panic!("recovery over a WAL with missing checkpoint-replay records must fail, not open"),
     }
+
+    // R4-STOR-10: a refused recovery (rejected candidate + unprovable WAL
+    // coverage) must leave the live storage tree byte-identical.
+    assert_eq!(
+        snapshot_tree(&storage_dir),
+        live_before,
+        "the live storage tree must be byte-identical after the typed recovery refusal"
+    );
 }
 
 #[test]
@@ -216,6 +255,148 @@ fn wal_and_no_checkpoint_ok() {
                 .is_some()
         );
     }
+}
+
+#[test]
+fn newest_unverifiable_checkpoint_falls_back_to_the_older_valid_one() {
+    // R4-STOR-10/R4-STOR-08: two published cuts; the newer one is corrupted
+    // after publish (its digest-bound COMPLETE no longer verifies). Selection
+    // must fall back to the older verified cut, and recovery from it (plus
+    // WAL replay) must surface every commit.
+    test_keyspace_set! { Keyspace => 0: "keyspace" }
+
+    init_logging();
+    let key_hello = StorageKeyArray::<BUFFER_KEY_INLINE>::from((TestKeyspaceSet::Keyspace, b"hello"));
+    let key_world = StorageKeyArray::<BUFFER_KEY_INLINE>::from((TestKeyspaceSet::Keyspace, b"world"));
+
+    fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
+        fs::create_dir_all(to).unwrap();
+        for entry in fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let target = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy_tree(&entry.path(), &target);
+            } else {
+                fs::copy(entry.path(), &target).unwrap();
+            }
+        }
+    }
+
+    let storage_path = create_tmp_storage_dir();
+    let (older_checkpoint_dir, newer_checkpoint_dir) = {
+        let storage = create_storage::<TestKeyspaceSet>(&storage_path).unwrap();
+
+        let mut snapshot = storage.clone().open_snapshot_write();
+        snapshot.put(key_hello.clone());
+        snapshot.commit(&mut CommitProfile::DISABLED).unwrap();
+        let older = checkpoint_storage(&storage);
+
+        // recency-aware retention (R4-STOR-08) reclaims the strictly older
+        // cut when the newer one publishes; stash a copy so this test can
+        // model "two published cuts" (e.g. retention kept N > 1, or cleanup
+        // failed benignly) and restore it after the newer cut lands.
+        let stash = storage_path.join("older-cut-stash");
+        copy_tree(&older.directory, &stash);
+
+        let mut snapshot = storage.clone().open_snapshot_write();
+        snapshot.put(key_world.clone());
+        snapshot.commit(&mut CommitProfile::DISABLED).unwrap();
+        let newer = checkpoint_storage(&storage);
+
+        assert!(!older.directory.exists(), "recency-aware retention reclaims the strictly older cut");
+        copy_tree(&stash, &older.directory);
+        fs::remove_dir_all(&stash).unwrap();
+
+        (older.directory, newer.directory)
+    };
+    assert!(newer_checkpoint_dir.exists(), "the newer cut must be published");
+    // corrupt the newer cut AFTER publish: its bytes no longer match the
+    // digest bound into COMPLETE, so it must not be selectable
+    fs::write(newer_checkpoint_dir.join("STORAGE_METADATA"), b"999999").unwrap();
+
+    let selected = storage::recovery::checkpoint::CheckpointReader::open_latest::<TestKeyspaceSet>(&storage_path)
+        .unwrap()
+        .expect("an older verified checkpoint candidate must be selected");
+    assert_eq!(
+        selected.directory, older_checkpoint_dir,
+        "selection must fall back to the older verified cut, not the corrupt newer one"
+    );
+
+    let storage = load_storage::<TestKeyspaceSet>(
+        &storage_path,
+        WAL::load(&storage_path, FsyncMetrics::disabled()).unwrap(),
+        Some(selected),
+    )
+    .unwrap();
+    let snapshot = storage.open_snapshot_read();
+    for key in [&key_hello, &key_world] {
+        assert!(
+            snapshot
+                .get_mapped(StorageKeyReference::from(key), |_| true, StorageCounters::DISABLED)
+                .unwrap()
+                .is_some(),
+            "every commit must be recovered from the older cut + WAL replay"
+        );
+    }
+}
+
+#[test]
+fn ahead_of_durability_checkpoint_falls_back_to_full_wal_replay() {
+    // R4-STOR-10: the only checkpoint's watermark is AHEAD of the retained
+    // WAL (the WAL tail was truncated after the cut). The candidate fails
+    // pre-restore validation with the typed ahead-of-durability refusal, and
+    // recovery falls back to full WAL replay — which the strict loader proves
+    // contiguous — instead of failing the whole open.
+    test_keyspace_set! { Keyspace => 0: "keyspace" }
+
+    init_logging();
+    let key_hello = StorageKeyArray::<BUFFER_KEY_INLINE>::from((TestKeyspaceSet::Keyspace, b"hello"));
+    let key_world = StorageKeyArray::<BUFFER_KEY_INLINE>::from((TestKeyspaceSet::Keyspace, b"world"));
+
+    let storage_path = create_tmp_storage_dir();
+    let checkpoint = {
+        let storage = create_storage::<TestKeyspaceSet>(&storage_path).unwrap();
+
+        let mut snapshot = storage.clone().open_snapshot_write();
+        snapshot.put(key_hello.clone());
+        snapshot.commit(&mut CommitProfile::DISABLED).unwrap();
+        let mut snapshot = storage.clone().open_snapshot_write();
+        snapshot.put(key_world.clone());
+        snapshot.commit(&mut CommitProfile::DISABLED).unwrap();
+
+        // watermark 2: both commits are inside the cut
+        checkpoint_storage(&storage)
+    };
+
+    // truncate the WAL tail: every frame for sequence 2 disappears, so the
+    // durability head regresses to 1 and the checkpoint (watermark 2) is now
+    // ahead of the retained WAL.
+    splice_out_sequence(&storage_path, 2);
+
+    let storage = load_storage::<TestKeyspaceSet>(
+        &storage_path,
+        WAL::load(&storage_path, FsyncMetrics::disabled()).unwrap(),
+        Some(checkpoint),
+    )
+    .expect("an ahead checkpoint with a fully-covering retained WAL must fall back to full WAL replay");
+
+    // full WAL replay recovered exactly the retained history: commit 1 is
+    // present, the truncated commit 2 is not.
+    let snapshot = storage.clone().open_snapshot_read();
+    assert!(
+        snapshot
+            .get_mapped(StorageKeyReference::from(&key_hello), |_| true, StorageCounters::DISABLED)
+            .unwrap()
+            .is_some(),
+        "the retained commit must be recovered by the full WAL replay fallback"
+    );
+    assert!(
+        snapshot
+            .get_mapped(StorageKeyReference::from(&key_world), |_| true, StorageCounters::DISABLED)
+            .unwrap()
+            .is_none(),
+        "the truncated commit is not in the retained WAL and must not resurface from the rejected checkpoint"
+    );
 }
 
 #[test]

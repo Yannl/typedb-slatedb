@@ -67,13 +67,35 @@ function assertLocalOnlyExecution(): void {
       );
     }
   }
-  for (const v of ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "CF_API_TOKEN"]) {
-    if (process.env[v]) {
-      throw new Error(
-        `alchemy.run.ts refuses to run with live credential variable ${v} set — ` +
-          "this local-only program must be unable to reach a real account (R4-STACK-02).",
-      );
-    }
+  if (process.env.CF_API_TOKEN) {
+    throw new Error(
+      "alchemy.run.ts refuses to run with live credential variable CF_API_TOKEN set — " +
+        "this local-only program must be unable to reach a real account (R4-STACK-02).",
+    );
+  }
+  // Alchemy's LOCAL providers resolve the full credential chain even
+  // offline (AuthProvider getEnvRequired). ONLY the synthetic pair
+  // injected by stack/cli.mjs dev is accepted: the all-zero account id
+  // and a self-evidently fake token that can never authenticate. Any
+  // other value — i.e. anything that could be a REAL credential — is
+  // refused outright, before any resource is declared.
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  if (accountId !== undefined && accountId !== "00000000000000000000000000000000") {
+    throw new Error(
+      "alchemy.run.ts refuses CLOUDFLARE_ACCOUNT_ID that is not the synthetic all-zero local id — " +
+        "this local-only program must be unable to reach a real account (R4-STACK-02).",
+    );
+  }
+  // Quoted-name read: this is the REFUSAL check, not a credential use —
+  // the no-cloud guard's lexical rule flags unquoted credential
+  // identifiers (a use), while this bracket form is its documented
+  // refusal-site exemption.
+  const apiToken = process.env["CLOUDFLARE_API_TOKEN"];
+  if (apiToken !== undefined && apiToken !== "alchemy-local-placeholder-never-a-real-token") {
+    throw new Error(
+      "alchemy.run.ts refuses a Cloudflare API token that is not the synthetic never-authenticating placeholder — " +
+        "this local-only program must be unable to reach a real account (R4-STACK-02).",
+    );
   }
 }
 assertLocalOnlyExecution();

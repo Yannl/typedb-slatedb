@@ -16,7 +16,7 @@ npm run probes:selftest         # 24 controls; anything nonzero = STOP.
 ```
 
 The current blockers (ledger `G2.blockers`) are structural, not
-paperwork: there is no owner-approved numeric envelope, and the
+paperwork: there is no owner-SIGNED approval envelope, and the
 production issuer/registry seam (R4-SEC-01) precedes any
 product-labelled run. Two former blockers are now closed in-repo:
 the nine `/do/*`, `/ctr/*`, `/worker/*` probes have a deployable
@@ -59,7 +59,8 @@ anything less:
 | `CF_ACCOUNT_ID` / `CF_API_TOKEN` | ADMIN principal (lock config, credential minting) |
 | `CF_RUNTIME_API_TOKEN` | a genuinely SEPARATE, less-privileged runtime principal; equality with the admin token is refused |
 | `CF_PROBE_HARNESS_URL` / `CF_PROBE_HARNESS_TOKEN` / `CF_PROBE_HARNESS_ALLOWED_HOSTS` | https-only, own token (never the account token), exact hostname allowlist — and the harness itself must be deployed from THIS repository's canonical graph (R4-CF-02: not yet possible) |
-| `docs/probe-run-envelope.json` | owner-approved numeric limits (`max_total_requests`, `max_total_bytes_written`, `max_run_seconds`, `max_probe_seconds`, `max_request_seconds`, `max_cost_usd_cents`) with `approved_by`/`approved_at`; never guessed; `max_run_seconds` must cover the fixed credential ttl (900 s); enforced at dispatch time by the metered provider |
+| `docs/probe-run-envelope.json` | owner-SIGNED approval artifact (`probe-run-envelope/v2`, R5-CF-01): Ed25519 signature verified against the out-of-band `PROBE_ENVELOPE_PUBLIC_KEY`; BOUND to the exact release commit, probes source root, account, bucket, ownership nonce and ONE run id; time-boxed (`valid_from`/`valid_until`, ≤7 days) and one-time (consumed-run journal). Limits (`max_total_requests`, `max_total_bytes_written`, `max_run_seconds`, `max_probe_seconds`, `max_request_seconds`, `max_cost_usd_cents`, `credential_ttl_seconds`=900 exactly) are never guessed and are enforced at dispatch time by the metered provider. The owner signs with `probes/sign-envelope.ts` (`--keygen`, then `--sign` from the exact tree being authorized); an unsigned file grants nothing |
+| `PROBE_ENVELOPE_PUBLIC_KEY` | the owner's Ed25519 verification key (SPKI PEM), delivered with the deployment and never stored inside the envelope file |
 
 Run entry point (the ONLY one): `npm run probes:platform`
 (`control-plane/probes/run-platform-probes.ts`). Evidence lands in a

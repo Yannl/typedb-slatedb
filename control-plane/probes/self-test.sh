@@ -218,6 +218,21 @@ else
   failures=$((failures + 1))
 fi
 
+# --- control 7c: R5-CF-01 signed-approval mutants --------------------------
+# The envelope is a SIGNED, run-BOUND, ONE-TIME authorization artifact:
+# unsigned/foreign-signed/tampered envelopes, copies across
+# account/bucket/commit/source-root, expired windows, replayed run ids and
+# an absent trusted owner key must all leave preflight RED.
+out="$EVIDENCE_ROOT/control7c.log"
+controls=$((controls + 1))
+if "${NODE[@]}" --test approval.test.ts >"$out" 2>&1; then
+  echo "control 7c ok: signed-approval mutants (signature, binding, expiry, one-time use)"
+else
+  echo "CONTROL FAILED: approval.test.ts failed"
+  sed 's/^/    | /' "$out"
+  failures=$((failures + 1))
+fi
+
 # --- control 8: P-06 preflight CLI ----------------------------------------
 out="$EVIDENCE_ROOT/control8.log"
 controls=$((controls + 1))

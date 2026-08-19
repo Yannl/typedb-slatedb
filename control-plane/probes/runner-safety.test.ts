@@ -25,6 +25,13 @@ import { captureLockBaseline, restoreLockBaseline } from "./lock-baseline.ts";
 import { EvidenceBundle, RecordingProvider, SealViolationError } from "./evidence.ts";
 import type { PlatformProvider, SeamRequest, SeamResponse } from "./provider.ts";
 import { utf8 } from "./provider.ts";
+import { execFileSync } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { computeProbesSourceRoot, ENVELOPE_SCHEMA, signEnvelope } from "./approval.ts";
+
+const PROBES_DIR = dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
 // Helpers.
@@ -42,6 +49,7 @@ const PROBE_ENV_KEYS = [
   "CF_PROBE_HARNESS_TOKEN",
   "CF_PROBE_HARNESS_ALLOWED_HOSTS",
   "R2_PROBE_OWNERSHIP_NONCE",
+  "PROBE_ENVELOPE_PUBLIC_KEY",
 ];
 
 let savedEnv: Record<string, string | undefined> = {};
@@ -63,24 +71,50 @@ afterEach(() => {
   rmSync(scratch, { recursive: true, force: true });
 });
 
+// R5-CF-01: envelopes are now SIGNED authorization artifacts bound to the
+// exact run (commit, probes source root, account, bucket, nonce, run id).
+// The test owner keypair signs; PROBE_ENVELOPE_PUBLIC_KEY is set per test.
+const testOwner = generateKeyPairSync("ed25519");
+const TEST_OWNER_PRIVATE = testOwner.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+export const TEST_OWNER_PUBLIC = testOwner.publicKey.export({ type: "spki", format: "pem" }).toString();
+const GIT_HEAD = execFileSync("git", ["-C", join(PROBES_DIR, "..", ".."), "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+const PROBES_SOURCE_ROOT = computeProbesSourceRoot(
+  PROBES_DIR,
+  join(PROBES_DIR, "..", "wrangler.probe-harness.toml"),
+);
+let envelopeSeq = 0;
+
 function envelope(limits: Record<string, number>): string {
-  const path = join(scratch, "envelope.json");
-  writeFileSync(
-    path,
-    JSON.stringify({
-      approved_by: "test-owner",
-      approved_at: new Date().toISOString(),
-      limits: {
-        max_total_requests: 1000,
-        max_total_bytes_written: 10_000_000,
-        max_run_seconds: 900,
-        max_probe_seconds: 60,
-        max_request_seconds: 10,
-        max_cost_usd_cents: 100,
-        ...limits,
-      },
-    }),
-  );
+  envelopeSeq += 1;
+  const path = join(scratch, `envelope-${envelopeSeq}.json`);
+  const now = Date.now();
+  const signed = signEnvelope(TEST_OWNER_PRIVATE, {
+    schema: ENVELOPE_SCHEMA,
+    approved_by: "test-owner",
+    approved_at: new Date(now).toISOString(),
+    valid_from: new Date(now - 60_000).toISOString(),
+    valid_until: new Date(now + 3_600_000).toISOString(),
+    binding: {
+      release_commit: GIT_HEAD,
+      probes_source_root: PROBES_SOURCE_ROOT,
+      cf_account_id: "acct",
+      bucket: "typedb-probe-testnonce1",
+      ownership_nonce: "testnonce1",
+      run_id: `safety-run-${process.pid}-${envelopeSeq}`,
+    },
+    limits: {
+      max_total_requests: 1000,
+      max_total_bytes_written: 10_000_000,
+      max_run_seconds: 900,
+      max_probe_seconds: 60,
+      max_request_seconds: 10,
+      max_cost_usd_cents: 100,
+      credential_ttl_seconds: 900,
+      ...limits,
+    },
+  });
+  writeFileSync(path, JSON.stringify(signed));
+  process.env.PROBE_ENVELOPE_PUBLIC_KEY = TEST_OWNER_PUBLIC;
   return path;
 }
 

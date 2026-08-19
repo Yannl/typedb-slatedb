@@ -53,8 +53,9 @@ import type { ProbeContext, ProbeImpl } from "./probe.ts";
 import { R2_PROBES } from "./probes-r2.ts";
 import { DO_PROBES } from "./probes-do.ts";
 import { CTR_PROBES, WORKER_PROBES } from "./probes-ctr.ts";
-import { runPreflight } from "./preflight.ts";
+import { DEFAULT_ENVELOPE_PATH, runPreflight } from "./preflight.ts";
 import type { PreflightResult } from "./preflight.ts";
+import { markRunIdConsumed } from "./approval.ts";
 import { budgetFromEnvelope, MeteredProvider, RefusedProvider } from "./envelope.ts";
 import { captureLockBaseline, restoreLockBaseline } from "./lock-baseline.ts";
 import type { LockBaseline } from "./lock-baseline.ts";
@@ -632,6 +633,18 @@ export async function main(argv: string[]): Promise<number> {
     // meter (R4-CF-01). A fixed slice of the approved request budget is
     // reserved for cleanup so an exhausted probe budget can still
     // restore state; both meters share the same absolute run deadline.
+    //
+    // R5-CF-01: the signed envelope authorizes exactly ONE run — its run
+    // id is consumed HERE, at the moment real authority is acquired and
+    // before the first possible spend. A crash later in this run still
+    // leaves the envelope spent (re-running requires a fresh owner
+    // signature), which is the safe direction.
+    const envelopeRunId = preflight.envelope?.binding?.run_id;
+    if (typeof envelopeRunId !== "string") {
+      console.error("preflight GREEN without a bound envelope run id — runner bug, refusing");
+      return 3;
+    }
+    markRunIdConsumed(opts.envelopePath ?? DEFAULT_ENVELOPE_PATH, envelopeRunId);
     const cfg = realConfigFromEnv(process.env);
     for (const s of [cfg.r2?.secret, cfg.cfapi?.adminApiToken, cfg.cfapi?.runtimeApiToken, cfg.harness?.apiToken]) {
       if (s !== undefined) knownSecrets.push(s);
@@ -977,6 +990,10 @@ export async function main(argv: string[]): Promise<number> {
       reasons: preflight.reasons,
       bucket: preflight.bucket,
       envelope_present: preflight.envelope !== null,
+      // R5-CF-01: the exact signed authorization this run executed under —
+      // binding + signer fingerprint, never the signature bytes themselves.
+      envelope_binding: preflight.envelope?.binding ?? null,
+      envelope_signer_fingerprint: preflight.envelope?.signature.public_key_fingerprint ?? null,
     },
     // R4-CF-01: the enforced budget actually consumed, and the R4-CF-00
     // zero-authority accounting (attempted calls on a refused run: MUST

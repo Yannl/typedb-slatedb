@@ -12,7 +12,7 @@ use options::byte_size::ByteSize;
 use storage::{
     MVCCStorage, StorageOpenError,
     durability_client::WALClient,
-    factory::StorageFactory,
+    factory::{BackendContext, StorageFactory},
     keyspace::{KeyspaceSet, rocks_resources::RocksResources},
     recovery::checkpoint::{CheckpointReader, CheckpointWriter},
 };
@@ -57,6 +57,11 @@ pub fn create_storage<KS: KeyspaceSet>(path: &Path) -> Result<Arc<MVCCStorage<WA
 pub fn checkpoint_storage(storage: &MVCCStorage<WALClient>) -> CheckpointReader {
     let checkpoint = CheckpointWriter::new(storage.path().parent().unwrap()).unwrap();
     storage.checkpoint(&checkpoint).unwrap();
+    // R5-STOR-10: mirror the product path (database-level checkpoints always
+    // bind the creating backend identity); a cut without an identity is a
+    // legacy cut that ordinary recovery refuses.
+    let identity = BackendContext::resolve_from_env().expect("the ambient backend profile resolves").identity().clone();
+    checkpoint.add_identity(&identity).unwrap();
     checkpoint.finish().unwrap()
 }
 

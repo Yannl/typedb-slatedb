@@ -3,9 +3,69 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { toGraph } from "../graph.data.mjs";
-import { diffGraphs } from "../graph-diff.mjs";
+import { assertPostureInvariants, diffGraphs } from "../graph-diff.mjs";
 
 const clone = (g) => JSON.parse(JSON.stringify(g));
+
+// --- R4-STACK-01: the audit's surviving semantic mutant, now killed ------
+
+test("MUTANT R4-STACK-01: cloudflare-real carrying local-dev vars fails BOTH ways", () => {
+  const real = toGraph("cloudflare-real");
+  // per-graph invariant: the healthy real graph holds its posture
+  assert.deepEqual(assertPostureInvariants(real), []);
+  // the audit's mutant: managed graph with the dev issuer + open surface
+  const mutant = clone(real);
+  mutant.worker.vars = { CONTROLLER_KEY_PROFILE: "local-dev", CONTROLLER_SURFACE: "local-dev" };
+  assert.ok(assertPostureInvariants(mutant).length > 0, "posture invariant must reject dev vars on managed");
+  // and the differential fails even against an IDENTICAL mutant twin —
+  // equality is not safety
+  const r = diffGraphs(mutant, clone(mutant));
+  assert.equal(r.equal, false, "two identical unsafe graphs must still fail the differential");
+});
+
+test("cloudflare-real emits managed vars and omits every forbidden var", () => {
+  const real = toGraph("cloudflare-real");
+  assert.equal(real.securityPosture, "managed");
+  assert.equal(real.worker.vars.CONTROLLER_KEY_PROFILE, "managed");
+  assert.ok(!("CONTROLLER_SURFACE" in real.worker.vars), "forbidden dev var must be absent");
+  assert.equal(real.worker.workersDev, false);
+  assert.equal(real.worker.previewUrls, false);
+});
+
+test("local-parity lane uses the managed posture with local ephemeral secrets", () => {
+  const parity = toGraph("local-parity");
+  assert.equal(parity.securityPosture, "managed");
+  assert.deepEqual(assertPostureInvariants(parity), []);
+  assert.equal(parity.worker.secretSource, "local-ephemeral-managed");
+  const r = diffGraphs(parity, toGraph("cloudflare-real"));
+  assert.equal(r.equal, true, JSON.stringify(r.violations));
+});
+
+test("same-posture graphs disagreeing on vars is a violation, not an allowed diff", () => {
+  const a = toGraph("cloudflare-real");
+  const b = clone(a);
+  b.worker.vars.CONTROLLER_KEY_PROFILE = "local-dev";
+  const r = diffGraphs(a, b);
+  assert.equal(r.equal, false, "vars drift within one posture must fail");
+});
+
+// --- R4-STACK-08: binding allowlist is name-scoped, not positional -------
+
+test("MUTANT R4-STACK-08: bucketName on the CONTROLLER binding is a violation", () => {
+  const a = toGraph("local-native");
+  const b = clone(a);
+  b.worker.bindings.find((x) => x.name === "CONTROLLER").bucketName = "attacker-bucket";
+  const r = diffGraphs(a, b);
+  assert.equal(r.equal, false, "bucketName may vary only on the named PAYLOADS binding");
+});
+
+test("MUTANT R4-STACK-08: PAYLOADS flipped to declared-ahead is a violation", () => {
+  const a = toGraph("local-native");
+  const b = clone(a);
+  b.worker.bindings.find((x) => x.name === "PAYLOADS").declaredAhead = true;
+  const r = diffGraphs(a, b);
+  assert.equal(r.equal, false, "declaredAhead may vary only on the named CONTAINER binding");
+});
 
 test("a graph equals itself", () => {
   const g = toGraph("local-native");

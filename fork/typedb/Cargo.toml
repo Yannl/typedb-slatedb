@@ -715,10 +715,12 @@ features = {}
 # and every keyspace open must go through the fenced/bounded fork. No classic
 # lane consumes a different SlateDB (RocksDB keyspaces don't depend on slatedb
 # at all), so there is no lane this global redirect conflicts with. The
-# `external_epoch_required` fence remains a *feature* (off by default: the U2
-# local conformance lane builds green without it; the R2/remote lane turns it
-# on), so redirecting to the fork does not by itself change open semantics —
-# it only makes the fenced/bounded code the code that actually ships.
+# `external_epoch_required` fence is SHIPPED default behavior (R5-STOR-04):
+# the storage crate enables it unconditionally on its slatedb dependency
+# (fork/typedb/storage/Cargo.toml), so via feature unification every build
+# that links storage carries the fail-closed fence — an epoch-less writer
+# open is refused, never silently fed by internal allocation. Attested by
+# tools/fork/check_strict_epoch.py against `cargo tree -e features`.
 [patch.crates-io]
 	slatedb = { path = "../../sources/slatedb-fork" }
 

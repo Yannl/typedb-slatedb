@@ -1,0 +1,51 @@
+diff -ruN orig/src/db/builder.rs slatedb-0.15.0/src/db/builder.rs
+--- orig/src/db/builder.rs
++++ slatedb-0.15.0/src/db/builder.rs
+@@ -2217,6 +2217,7 @@
+             Arc::new(InMemory::new()),
+         )
+         .with_metrics_recorder(metrics_recorder.clone())
++        .with_external_writer_epoch(1)
+         .build()
+         .await
+         .expect("failed to build db");
+@@ -2241,6 +2242,7 @@
+             ..Settings::default()
+         })
+         .with_metrics_recorder(metrics_recorder.clone())
++        .with_external_writer_epoch(1)
+         .build()
+         .await
+         .expect("failed to build db");
+@@ -2358,6 +2360,7 @@
+                 ..Settings::default()
+             })
+             .with_metrics_recorder(metrics_recorder.clone())
++            .with_external_writer_epoch(1)
+             .build()
+             .await
+             .expect("failed to build db");
+@@ -2438,6 +2441,7 @@
+         let db = crate::Db::builder(path.clone(), cached_store)
+             .with_settings(settings)
+             .with_metrics_recorder(metrics_recorder.clone())
++            .with_external_writer_epoch(1)
+             .build()
+             .await
+             .expect("failed to build db");
+@@ -2461,6 +2465,7 @@
+                 garbage_collector_options: None,
+                 ..Settings::default()
+             })
++            .with_external_writer_epoch(1)
+             .build()
+             .await
+             .expect("failed to build db");
+@@ -2486,6 +2491,7 @@
+ 
+         let db = crate::Db::builder(path.clone(), object_store)
+             .with_settings(settings)
++            .with_external_writer_epoch(2)
+             .build()
+             .await
+             .expect("failed to build db");

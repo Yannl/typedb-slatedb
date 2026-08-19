@@ -8,6 +8,16 @@
  * only ever sees keys/digests, and digest verification happens in the data
  * path BEFORE the DO's synchronous finalisation (inv. 151).
  *
+ * R5-SEC-05: every READ route is ONE authoritative Durable Object hop -
+ * the same call verifies the capability, revalidates that the bound actor
+ * still holds live read authority, and performs the catalogue read, with no
+ * await between the check and the read. Reads that carry payload bytes also
+ * receive a durable ONE-SHOT, short-TTL read lease over the exact object
+ * keys the worker will fetch; the worker REDEEMS it after the fetch and
+ * before serving, and every fence/revoke/expiry/incarnation transition
+ * deletes that actor's leases in its own transaction. A fence that commits
+ * while bytes are in flight therefore refuses the read instead of racing it.
+ *
  * Every endpoint except /health and POST /capability requires a
  * controller-issued capability token (F9) in the `x-capability` header:
  * audience-bound (databaseId), method-bound, expiring, single-use (nonce
@@ -20,15 +30,28 @@
  *
  * Endpoints (JSON unless noted):
  *   GET  /health
- *   POST /capability               {principal, databaseId, method, digest?, maxBytes?, ttlMs?} → {token, key?}
- *   POST /admin/{db}/incarnation/bump  supersede the controller incarnation (SESSION_ADMIN)
+ *   POST /provision                internal provisioning transaction (R4 PR1): binds an
+ *                                  uninitialized controller authority to its registry record
+ *                                  {tenantId, databaseId, budgets?} + x-provision token
+ *   POST /capability               {principal, tenantId?, databaseId, method, digest?, maxBytes?, ttlMs?} → {token, key?}
+ *   POST /admin/{db}/incarnation/bump  supersede the controller incarnation (INCARNATION_BUMP)
  *   PUT  /payload/{key}            raw body → R2; returns {key, sha256hex, length}
+ *                                  (R5-PERF-01: digest-declared STREAMING upload - the
+ *                                  body is streamed to a unique staging attempt while
+ *                                  hashed, verified against the capability's declared
+ *                                  digest+length, then promoted to the content-addressed
+ *                                  key with a create-only conditional put; nothing is
+ *                                  buffered in the isolate)
  *   POST /session/register         {databaseId, generation, startupSessionId}
  *   POST /session/fence            {databaseId, generation, startupSessionId}
  *   POST /budgets                  {databaseId, maxUnpublishedOutbox, maxPayloadLength, maxTailRecords}
  *   POST /wal/finalize             FinalizeRequest → FinalizeResult (verifies R2 object + digest first)
  *   POST /wal/finalize-batch       {requests: FinalizeRequest[]} → all-or-nothing FinalizeResult[]
- *   GET  /wal/{db}/{generation}/{lsn}  exact lookup; returns record metadata + payload bytes (base64)
+ *   GET  /wal/{db}/{generation}/{lsn}  exact lookup; returns record metadata + payload bytes (base64).
+ *                                  R5-PERF-01: with `accept: application/octet-stream` the
+ *                                  payload STREAMS as the response body with a
+ *                                  content-digest header instead; the base64 JSON shape
+ *                                  remains the default and is byte-identical to before.
  *   GET  /wal/{db}/{generation}/audit  contiguity audit
  *   GET  /wal/{db}/{generation}/head   {headLsn, headTypeSequence} (durability current/previous)
  *   POST /wal/{db}/{generation}/iterator  pin a fixed iteration snapshot → {headLsn}
@@ -38,8 +61,8 @@
  *   GET  /wal/{db}/{generation}/last?recordType=N  last record of a type + payload (find_last_type)
  *   GET  /journal/{db}/verify      recompute + verify the authenticated journal (F8)
  *   GET  /journal/{db}/verify-anchored  journal verification against the newest cut anchor (F6r/F8)
- *   POST /checkpoint/{db}/{gen}/cut          open a CheckpointCut {cutId} (SESSION_ADMIN)
- *   POST /checkpoint/{db}/cut/{cutId}/activate  activate with restore evidence (SESSION_ADMIN)
+ *   POST /checkpoint/{db}/{gen}/cut          open a CheckpointCut {cutId} (CHECKPOINT_OPEN)
+ *   POST /checkpoint/{db}/cut/{cutId}/activate  activate with the typed restore-evidence manifest (CHECKPOINT_ACTIVATE)
  *   GET  /checkpoint/{db}/{gen}/active       the ACTIVE cut record
  *   GET  /outbox/{db}?limit=N      peek unpublished control events (no marking)
  *   POST /outbox/{db}/ack          {upToControlSeq} - ack after durable processing
@@ -55,13 +78,16 @@ export { DatabaseControllerDO };
 import { DatabaseContainerDO } from "../container/database-container.ts";
 export { DatabaseContainerDO };
 
-import { MAX_BATCH_BYTES, MAX_BATCH_MEMBERS, u64FromWire, type FinalizeRequest } from "./core/procedures.ts";
+import { MAX_BATCH_BYTES, MAX_BATCH_MEMBERS, u64FromWire, type FinalizeRequest,
+         type ReadLeaseGrant, type ReadOutcome, type ReadRequest } from "./core/procedures.ts";
 import { devOnlyRoute } from "./surface.ts";
 import { canonicalJson } from "./core/journal-crypto.ts";
-import { checkCapability } from "./core/capability.ts";
-import { resolveKeyConfig } from "./core/key-config.ts";
+import { verifyCapabilityToken, type CapabilityPayload } from "./core/capability.ts";
+import type { CapabilityEffect } from "./core/procedures.ts";
+import { resolveKeyConfig, type ResolvedKeys } from "./core/key-config.ts";
+import { checkBinding, verifyProvisionToken, controllerDoName, type ProvisionBinding } from "./core/registry.ts";
 
-interface Env {
+export interface Env {
   CONTROLLER: DurableObjectNamespace<DatabaseControllerDO>;
   /** C-08: the container control-protocol authority binding. Present in every
    *  mode (the control protocol must exist even where the container process is
@@ -69,11 +95,21 @@ interface Env {
    *  through the typed RPC surface (recordObservation/getObservations). */
   CONTAINER: DurableObjectNamespace<DatabaseContainerDO>;
   PAYLOADS: R2Bucket;
-  /** Q-24/Q-02: key posture + issuance credential; see core/key-config.ts. */
+  /** Q-24: key posture; see core/key-config.ts. */
   CONTROLLER_KEY_PROFILE?: string;
   CONTROLLER_JOURNAL_KEY?: string;
-  CONTROLLER_CAPABILITY_KEY?: string;
+  /** R5-SEC-01/03: managed runtime inputs — environment name + the two
+   *  PUBLIC Ed25519 verification keyrings (plain vars; they are not
+   *  secret). The runtime holds NO signing material in any posture other
+   *  than local-dev's committed dev capability keypair. */
+  CONTROLLER_ENVIRONMENT?: string;
+  CONTROLLER_CAPABILITY_PUBLIC_KEYS?: string;
+  CONTROLLER_PROVISION_PUBLIC_KEYS?: string;
+  /** local-dev only: the dev issuance route credential (Q-02). */
   CONTROLLER_ISSUER_SECRET?: string;
+  /** RETIRED v2 HMAC inputs — their PRESENCE refuses managed boot. */
+  CONTROLLER_CAPABILITY_KEY?: string;
+  CONTROLLER_PROVISION_KEY?: string;
   /** Surface posture (audit C-P0-01/03/09, PR0 containment). ONLY the exact
    *  value "local-dev" opens the dev-only routes; anything else - including
    *  unset, which is what a production deployment that lost the variable
@@ -112,38 +148,160 @@ function concatChunks(chunks: Uint8Array[], total: number): Uint8Array {
 }
 
 /**
- * Bounded, streaming read of an UNTRUSTED request body (C-06). The body is
- * consumed chunk-by-chunk: each chunk is folded into an incremental SHA-256
- * `crypto.DigestStream` and appended to a bounded buffer, and the byte cap is
- * enforced PER CHUNK — never trusting the client's `content-length`. A stream
- * that under-declares its length (or omits it, on chunked transfer) is aborted
- * the instant it crosses the cap, not after a full oversized buffer has been
- * materialised in the isolate.
+ * R5-PERF-01: DIGEST-DECLARED STREAMING UPLOAD, stage half.
  *
- * One contiguous copy of the body still remains, by necessity, not oversight:
- * the object must be stored in R2, AND the F9 capability binds the CONTENT
- * digest, so the whole body has to be read (to know the digest) before the
- * write can be authorized. A store-while-streaming path — upload to R2 and
- * authorize concurrently — would have to authorize before the digest is known,
- * which breaks the content-addressed authority model. That is a genuine
- * protocol change (digest-declared-then-verified upload), recorded as a
- * P-WORKER remainder; here the digest is at least computed incrementally with
- * no second full pass over the bytes.
+ * The request body is streamed straight into R2 under a globally unique
+ * STAGING key while an incremental SHA-256 is folded over the same chunks.
+ * Nothing is retained: the isolate holds one chunk at a time, never the
+ * whole object plus a contiguous copy of it (the previous reader hashed
+ * incrementally but kept every chunk and concatenated them, so an 8 MiB
+ * upload materialised 8 MiB — and six concurrent ones, 48 MiB — inside a
+ * 128 MiB isolate).
+ *
+ * PLATFORM CONSTRAINT, stated exactly: `R2Bucket.put` refuses a stream of
+ * unknown length ("Provided readable stream must have a known length
+ * (request/response body or readable half of FixedLengthStream)"). The
+ * declared `content-length` — already mandatory on this route — therefore
+ * becomes the length of a `FixedLengthStream`, which ALSO makes the
+ * platform enforce the declaration: a body that delivers fewer bytes than
+ * it declared ends the fixed-length pipe prematurely and a body that
+ * delivers more is refused mid-write. A reported-size lie cannot be staged,
+ * in either direction.
+ *
+ * The digest is NOT trusted from the caller either: it is recomputed here
+ * and compared against the digest the CAPABILITY bound (which is also the
+ * content-addressed key), by the promote half below.
  */
-async function readBodyStreamingDigest(request: Request, limit: number):
-  Promise<{ bytes: Uint8Array; digest: string } | { errorResponse: Response }> {
-  const body = request.body;
-  if (body === null) {
-    // no readable body: an unbounded/absent stream cannot be admitted against
-    // a byte budget (mirrors refuseOversizedBody's missing-length refusal)
-    return { errorResponse: json({ ok: false, error: "CONTENT_LENGTH_REQUIRED", limit }, 411) };
+async function stageStreamedObject(
+  env: Env, body: ReadableStream<Uint8Array>, stagingKey: string, declaredLength: number,
+): Promise<{ ok: true; digest: string } | { ok: false; refusal: { status: number; body: unknown } }> {
+  const digestStream = new crypto.DigestStream("SHA-256");
+  const hash = digestStream.getWriter();
+  const fixed = new FixedLengthStream(declaredLength);
+  let total = 0;
+  const pump = (async () => {
+    const reader = body.getReader();
+    // a client that disconnects rejects the reader's `closed` promise as
+    // well as the pending read; both must be OBSERVED or the runtime
+    // reports an unhandled rejection long after the request was refused
+    reader.closed.catch(() => {});
+    const sink = fixed.writable.getWriter();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        // the declared length is the cap: refuse the instant it is crossed,
+        // before the extra bytes are handed to the provider
+        if (total > declaredLength) throw new Error("DECLARED_LENGTH_EXCEEDED");
+        await hash.write(value);
+        await sink.write(value);
+      }
+      await hash.close();
+      await sink.close();
+    } catch (error) {
+      digestStream.digest.catch(() => {}); // observe the aborted digest
+      await sink.abort(error).catch(() => {});
+      await hash.abort(error).catch(() => {});
+      throw error;
+    } finally {
+      reader.releaseLock();
+    }
+  })();
+  // both halves are always settled, so a failing pump can never surface as
+  // an unhandled rejection while the put is still in flight. The explicit
+  // `.catch` on each is belt-and-braces: allSettled only observes them once
+  // BOTH have settled, and a client that disconnects rejects one of them
+  // strictly before the other.
+  pump.catch(() => {});
+  const staging = env.PAYLOADS.put(stagingKey, fixed.readable);
+  staging.catch(() => {});
+  const [put, pumped] = await Promise.allSettled([staging, pump]);
+  if (pumped.status === "rejected" || put.status === "rejected" || put.value === null) {
+    if (total !== declaredLength) {
+      // a caller whose body contradicts its own declaration: typed, terminal
+      return { ok: false, refusal: { status: 400, body: {
+        ok: false, error: "REQUEST_BODY_LENGTH_MISMATCH", declared: declaredLength, observed: total } } };
+    }
+    // genuine provider/transport failure: THROW so the wrapping mutation
+    // records AMBIGUOUS (retryable), never a burned terminal rejection
+    throw new Error("PAYLOAD_STAGING_FAILED");
   }
-  const result = await streamCappedDigest(body, limit);
-  if ("overCap" in result) {
-    return { errorResponse: json({ ok: false, error: "REQUEST_BODY_TOO_LARGE",
-                                   observed: result.total, limit }, 413) };
+  return { ok: true, digest: hexOf(await digestStream.digest) };
+}
+
+/**
+ * R5-PERF-01: DIGEST-DECLARED STREAMING UPLOAD, promote half — the same
+ * stage/verify/create-only-promote shape the Rust side uses for multipart
+ * completion (fork/typedb/storage/keyspace/slate.rs `JournaledMultipart`):
+ * a unique attempt key nobody else can contend for, verification of the
+ * staged bytes against the streamed accounting, then an ATOMIC create-only
+ * publish to the target name, with an occupied target settled by content
+ * comparison rather than by overwriting.
+ *
+ * Publishing directly to the content-addressed key and deleting on mismatch
+ * was rejected: between the publish and the delete, a concurrent reader
+ * would observe bytes that do not hash to the key they are stored under —
+ * which is precisely the invariant the content-addressed scheme exists to
+ * guarantee. Staging costs one extra R2 round trip per upload and keeps the
+ * invariant absolute.
+ */
+async function promoteStagedObject(
+  env: Env, stagingKey: string, key: string, digest: string, length: number,
+): Promise<{ status: number; body: unknown }> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const staged = await env.PAYLOADS.get(stagingKey);
+    if (staged === null) throw new Error("PAYLOAD_STAGING_LOST");
+    // atomic create-only publish: two concurrent uploads of different bytes
+    // can never both win a key, and an identical re-upload never overwrites
+    const created = await env.PAYLOADS.put(key, staged.body, {
+      onlyIf: new Headers({ "if-none-match": "*" }),
+    });
+    if (created !== null) return { status: 200, body: { key, sha256hex: digest, length } };
+    // occupied: settle by content, streaming (retain: false) so the dedup
+    // check never materialises the existing object either
+    const existing = await fetchVerified(env, key, digest, undefined, false);
+    if ("bytes" in existing) {
+      return { status: 200, body: { key, sha256hex: digest, length, deduplicated: true } };
+    }
+    if (existing.error === "MISSING") continue; // lost a delete/create race; retry
+    if (existing.error === "OVER_CAP") {
+      return { status: 413, body: { ok: false, error: "PAYLOAD_EXCEEDS_OBJECT_CAP",
+                                    key, size: existing.size, cap: existing.cap } };
+    }
+    return { status: 409, body: { ok: false, error: "PAYLOAD_IMMUTABILITY_VIOLATION",
+                                  key, existing: existing.observed } };
   }
-  return { bytes: result.bytes, digest: result.digest };
+  // exhausted the race retries: surface as retryable, not a burned success -
+  // the wrapping mutation marks a thrown error AMBIGUOUS
+  throw new Error("PAYLOAD_RACE_UNRESOLVED");
+}
+
+/** One streamed upload, end to end (R5-PERF-01): stage under a unique
+ *  attempt key, verify the streamed digest against the DECLARED one (which
+ *  the capability bound and the content-addressed key encodes), then
+ *  promote create-only. The staging object is reclaimed on every path. */
+export async function streamedPayloadPut(
+  env: Env, body: ReadableStream<Uint8Array>, databaseId: string, key: string,
+  declaredDigest: string, declaredLength: number,
+): Promise<{ status: number; body: unknown }> {
+  // a top-level prefix the payload route can never address (its keys must
+  // be `p/<db>/<sha256hex>`), so a staging object is unreachable through
+  // the capability boundary and cannot be mistaken for a published payload
+  const stagingKey = `s/${databaseId}/${crypto.randomUUID()}`;
+  try {
+    const staged = await stageStreamedObject(env, body, stagingKey, declaredLength);
+    if (!staged.ok) return staged.refusal;
+    if (staged.digest !== declaredDigest) {
+      // the bytes are not what the capability authorized; nothing was ever
+      // published under the content-addressed name
+      return { status: 422, body: { ok: false, error: "PAYLOAD_DIGEST_MISMATCH",
+                                    key, declared: declaredDigest, observed: staged.digest } };
+    }
+    return await promoteStagedObject(env, stagingKey, key, declaredDigest, declaredLength);
+  } finally {
+    await env.PAYLOADS.delete(stagingKey).catch(() => {});
+  }
 }
 
 /**
@@ -160,31 +318,65 @@ async function readBodyStreamingDigest(request: Request, limit: number):
 async function streamCappedDigest(
   stream: ReadableStream<Uint8Array>,
   cap: number,
-): Promise<{ bytes: Uint8Array; total: number; digest: string } | { overCap: true; total: number }> {
+  /** R5-PERF-01: retain the chunks (a caller that must return the bytes) or
+   *  discard them as they are hashed (a caller that only needs the verdict:
+   *  finalize receipt verification, upload dedup). Discarding is the memory
+   *  difference between "verify an 8 MiB object" and "hold an 8 MiB
+   *  object". */
+  retain = true,
+): Promise<
+  { bytes: Uint8Array; total: number; digest: string }
+  | { overCap: true; total: number }
+  /** the stream itself failed mid-read (a client that disconnected, a
+   *  truncated fixed-length body, a provider fault). Returned rather than
+   *  thrown so each caller decides: an INBOUND request body error is a
+   *  client fact and gets a typed refusal; an R2 body error is an
+   *  infrastructure fact and is rethrown as retryable. */
+  | { streamError: true; total: number; reason: string }
+> {
   const digestStream = new crypto.DigestStream("SHA-256");
   const writer = digestStream.getWriter();
   const reader = stream.getReader();
+  reader.closed.catch(() => {}); // see stageStreamedObject
   const chunks: Uint8Array[] = [];
   let total = 0;
   try {
     for (;;) {
-      const { done, value } = await reader.read();
+      let step: ReadableStreamReadResult<Uint8Array>;
+      try {
+        step = await reader.read();
+      } catch (error) {
+        digestStream.digest.catch(() => {});
+        await writer.abort().catch(() => {});
+        return { streamError: true, total, reason: error instanceof Error ? error.message : String(error) };
+      }
+      const { done, value } = step;
       if (done) break;
       total += value.byteLength;
       if (total > cap) {
+        // the aborted digest promise must be observed, or the abort surfaces
+        // as an unhandled rejection long after the request was refused
+        digestStream.digest.catch(() => {});
         await writer.abort().catch(() => {});
         await reader.cancel().catch(() => {});
         return { overCap: true, total };
       }
       await writer.write(value);
-      chunks.push(value);
+      if (retain) chunks.push(value);
     }
     await writer.close();
   } finally {
     reader.releaseLock();
   }
-  return { bytes: concatChunks(chunks, total), total, digest: hexOf(await digestStream.digest) };
+  return {
+    bytes: retain ? concatChunks(chunks, total) : EMPTY_BYTES,
+    total,
+    digest: hexOf(await digestStream.digest),
+  };
 }
+
+/** The stand-in for "no bytes were retained" (see streamCappedDigest). */
+const EMPTY_BYTES = new Uint8Array(0);
 
 /**
  * Base64 of a payload buffer, built in bounded chunks: the previous
@@ -213,6 +405,10 @@ async function fetchVerified(
   key: string,
   expectedDigest: string,
   expectedLength?: number,
+  /** R5-PERF-01: retain the verified bytes, or verify and discard. Only the
+   *  legacy base64 read shape needs the bytes; receipt verification and
+   *  upload dedup need only the verdict. */
+  retain = true,
 ): Promise<
   { bytes: Uint8Array }
   | { error: "MISSING" }
@@ -233,18 +429,152 @@ async function fetchVerified(
   }
   // Streaming digest verification: the body is read chunk-by-chunk into an
   // incremental DigestStream (no separate arrayBuffer()+hash pass), and the
-  // cap is re-checked per chunk in case the reported size lied. The bytes are
-  // still buffered because the wire contract returns them base64 inline; the
-  // day that contract is dropped, the digest already flows without a copy.
-  const result = await streamCappedDigest(object.body, MAX_PAYLOAD_OBJECT_BYTES);
+  // cap is re-checked per chunk in case the reported size lied. R5-PERF-01:
+  // `retain` decides whether the bytes are kept. Only the LEGACY base64 read
+  // shape keeps them, and it keeps them because its wire contract embeds
+  // them inline - that shape's buffering is a compatibility obligation, and
+  // the non-buffering path for the same record is the negotiated streaming
+  // variant (`accept: application/octet-stream`). Receipt verification and
+  // upload dedup pass retain=false and hold nothing.
+  const result = await streamCappedDigest(object.body, MAX_PAYLOAD_OBJECT_BYTES, retain);
   if ("overCap" in result) {
     return { error: "OVER_CAP", size: result.total, cap: MAX_PAYLOAD_OBJECT_BYTES };
+  }
+  if ("streamError" in result) {
+    // a stored object whose body cannot be read through is an infrastructure
+    // fault, not a caller error: throw so the wrapping mutation records it
+    // AMBIGUOUS (retryable) rather than burning a terminal rejection
+    throw new Error(`PAYLOAD_STREAM_FAILED: ${key}: ${result.reason}`);
   }
   const observed = result.digest;
   if (observed !== expectedDigest || (expectedLength !== undefined && result.total !== expectedLength)) {
     return { error: "MISMATCH", observed, length: result.total };
   }
   return { bytes: result.bytes };
+}
+
+/** R5-PERF-01: the media type that selects the STREAMING read variant.
+ *  Content negotiation, not a new route: the default (no `accept`, or any
+ *  other accept value) is the historical base64-in-JSON shape, which every
+ *  current consumer — the Rust WAL client, both e2e lanes — keeps reading
+ *  byte for byte unchanged. */
+const PAYLOAD_STREAM_MEDIA_TYPE = "application/octet-stream";
+
+/** True when the caller EXPLICITLY asked for the streaming variant. A
+ *  wildcard accept value does NOT select it: negotiation must never flip
+ *  an existing consumer onto a different response shape by accident. */
+function wantsPayloadStream(request: Request): boolean {
+  const accept = request.headers.get("accept");
+  if (accept === null) return false;
+  return accept.split(",").some((part) => part.trim().split(";")[0].toLowerCase() === PAYLOAD_STREAM_MEDIA_TYPE);
+}
+
+/**
+ * A TransformStream that passes bytes through while folding them into an
+ * incremental SHA-256 and enforcing a byte cap (R5-PERF-01).
+ *
+ * DOCUMENTED LIMITATION, stated plainly: on a STREAMING response the
+ * integrity verdict is only knowable after the last byte, so it cannot
+ * gate the first. This transform therefore ERRORS the response body when
+ * the digest (or the length) does not match, which aborts the HTTP
+ * response mid-transfer: a conforming consumer sees a truncated,
+ * failed transfer and MUST NOT treat the bytes as a complete record. It
+ * does not — and cannot — prevent a consumer from having already observed
+ * earlier bytes. That is exactly why the streaming variant is opt-in and
+ * the DEFAULT read path stays verify-then-serve: the buffered path refuses
+ * before a single byte is emitted, and it remains what unmodified
+ * consumers get.
+ */
+function digestVerifyingPassthrough(
+  expectedDigest: string, expectedLength: number, cap: number,
+): TransformStream<Uint8Array, Uint8Array> {
+  const digestStream = new crypto.DigestStream("SHA-256");
+  const writer = digestStream.getWriter();
+  let total = 0;
+  return new TransformStream<Uint8Array, Uint8Array>({
+    async transform(chunk, controller) {
+      total += chunk.byteLength;
+      if (total > cap) {
+        digestStream.digest.catch(() => {}); // observe the aborted digest
+        await writer.abort(new Error("PAYLOAD_EXCEEDS_OBJECT_CAP")).catch(() => {});
+        controller.error(new Error("PAYLOAD_EXCEEDS_OBJECT_CAP"));
+        return;
+      }
+      await writer.write(chunk);
+      controller.enqueue(chunk);
+    },
+    async flush(controller) {
+      await writer.close();
+      const observed = hexOf(await digestStream.digest);
+      if (observed !== expectedDigest || total !== expectedLength) {
+        controller.error(new Error("PAYLOAD_INTEGRITY_VIOLATION"));
+      }
+    },
+  });
+}
+
+/**
+ * R5-PERF-01 streaming read: the R2 object body becomes the RESPONSE body.
+ * No `arrayBuffer()`, no base64 expansion, no JSON envelope — the isolate
+ * holds one stream chunk at a time instead of the whole payload plus its
+ * ~1.33x base64 copy.
+ *
+ * The lease is redeemed BEFORE the response is handed back (the
+ * authoritative cut point, R5-SEC-05); the catalogued digest travels in
+ * `content-digest` (RFC 9530) and `x-payload-sha256` so a consumer can
+ * verify independently of the in-band abort described above.
+ */
+async function streamedPayloadResponse(
+  env: Env,
+  record: { payloadKey: string; payloadDigest: string; payloadLength: number;
+            typeSequence: bigint; recordType: number },
+  meta: { appendLsn: bigint },
+  redeem: (keys: string[]) => Promise<Response | null>,
+): Promise<Response> {
+  const object = await env.PAYLOADS.get(record.payloadKey);
+  if (object === null) {
+    return json({ ok: false, error: "PAYLOAD_MISSING_FOR_CATALOGUED_RECORD", record }, 500);
+  }
+  // size checks BEFORE any body is read (C-06), against BOTH the hard
+  // per-object ceiling and the catalogued length: a stored object whose size
+  // contradicts the catalogue is an integrity error, not a short read
+  if (object.size > MAX_PAYLOAD_OBJECT_BYTES) {
+    await object.body.cancel().catch(() => {});
+    return json({ ok: false, error: "PAYLOAD_EXCEEDS_OBJECT_CAP", record,
+                  size: object.size, cap: MAX_PAYLOAD_OBJECT_BYTES }, 413);
+  }
+  if (object.size !== record.payloadLength) {
+    await object.body.cancel().catch(() => {});
+    return json({ ok: false, error: "PAYLOAD_INTEGRITY_VIOLATION", record, observed: object.size }, 500);
+  }
+  const revoked = await redeem([record.payloadKey]);
+  if (revoked !== null) {
+    await object.body.cancel().catch(() => {});
+    return revoked;
+  }
+  const verified = object.body.pipeThrough(
+    digestVerifyingPassthrough(record.payloadDigest, record.payloadLength, MAX_PAYLOAD_OBJECT_BYTES));
+  return new Response(verified, {
+    status: 200,
+    headers: {
+      "content-type": PAYLOAD_STREAM_MEDIA_TYPE,
+      "content-length": String(record.payloadLength),
+      // RFC 9530 Content-Digest over the CATALOGUED digest
+      "content-digest": `sha-256=:${base64Of(hexToBytes(record.payloadDigest))}:`,
+      "x-payload-sha256": record.payloadDigest,
+      "x-payload-length": String(record.payloadLength),
+      "x-append-lsn": meta.appendLsn.toString(),
+      "x-type-sequence": record.typeSequence.toString(),
+      "x-record-type": String(record.recordType),
+    },
+  });
+}
+
+/** 64 lowercase hex chars -> the 32 raw bytes they encode. */
+function hexToBytes(hexText: string): Uint8Array {
+  const bytes = new Uint8Array(hexText.length / 2);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hexText.slice(i * 2, i * 2 + 2), 16);
+  return bytes;
 }
 
 /** Read-path wrapper: base64 payload or a typed error Response. A catalogued
@@ -341,7 +671,18 @@ function refuseOversizedBody(request: Request, limit = MAX_REQUEST_BODY_BYTES): 
 
 /** Hard per-response byte budget for scan pages (payload bytes, pre-base64):
  *  a full page must fit working memory in the 128 MiB worker isolate with
- *  headroom for the base64 expansion and JSON envelope. */
+ *  headroom for the base64 expansion and JSON envelope.
+ *
+ *  R5-PERF-01, stated exactly: the SCAN page is the one read shape that
+ *  still buffers. Its wire contract is an array of records with inline
+ *  base64 payloads, so streaming it would be a different protocol, not a
+ *  different encoding — and the compatibility constraint on this pass is
+ *  that current consumers keep their shape. The bound is therefore a
+ *  DOCUMENTED THRESHOLD rather than a stream: the authority cuts the page
+ *  to this budget BEFORE any payload is fetched, so the ceiling is enforced
+ *  by the catalogue rather than discovered by running out of memory. A
+ *  consumer that wants unbuffered bytes reads records individually through
+ *  the negotiated streaming exact-read route. */
 const SCAN_PAGE_BYTE_BUDGET = 8 * 1024 * 1024;
 
 /** C-P1-01: structural JSON bodies (session admin, finalize metadata, acks)
@@ -349,22 +690,135 @@ const SCAN_PAGE_BYTE_BUDGET = 8 * 1024 * 1024;
  *  larger is a malformed client or an attack, refused before parsing. */
 const MAX_STRUCTURAL_BODY_BYTES = 256 * 1024;
 
-/** Bounded, fail-closed JSON body read (C-P1-01): declared-length admission
- *  first, then a parse whose failure is a typed 400 - never an unhandled
- *  exception after a capability was already burned. */
-async function readJson(request: Request, limit = MAX_STRUCTURAL_BODY_BYTES):
-  Promise<{ body: Record<string, unknown> } | { errorResponse: Response }> {
-  const oversized = refuseOversizedBody(request, limit);
-  if (oversized) return { errorResponse: oversized };
-  try {
-    const body = await request.json();
-    if (typeof body !== "object" || body === null || Array.isArray(body)) {
-      return { errorResponse: json({ ok: false, error: "MALFORMED_JSON", hint: "object body required" }, 400) };
+/** R5-PERF-02: structural nesting bound for JSON bodies. Every body this
+ *  surface accepts is a flat-ish record (session admin, finalize metadata,
+ *  acks, a batch of finalize records, a restore-evidence manifest); the
+ *  deepest legitimate shape is a manifest's nested arrays of objects, well
+ *  under ten. 32 is generous headroom and still far below the recursion
+ *  depth at which `JSON.parse` would blow the stack, so a nesting bomb is a
+ *  TYPED refusal computed by a flat scan rather than a RangeError thrown
+ *  from inside the parser. */
+const MAX_JSON_DEPTH = 32;
+
+/** Strict UTF-8: `fatal` makes an invalid or truncated multibyte sequence
+ *  THROW instead of silently becoming U+FFFD. A body that is not valid
+ *  UTF-8 is not a JSON document, and replacing its bad bytes would let two
+ *  different byte strings normalise to one accepted request. */
+const STRICT_UTF8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false });
+
+/** Maximum structural nesting depth of a JSON text, computed by one linear
+ *  scan that tracks string/escape state. Runs BEFORE `JSON.parse`, so a
+ *  nesting bomb never builds a single object. */
+function jsonNestingDepth(text: string): number {
+  let depth = 0;
+  let deepest = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === '"') inString = false;
+      continue;
     }
-    return { body: body as Record<string, unknown> };
+    if (c === '"') inString = true;
+    else if (c === "{" || c === "[") {
+      depth += 1;
+      if (depth > deepest) deepest = depth;
+    } else if (c === "}" || c === "]") depth -= 1;
+  }
+  return deepest;
+}
+
+/** The part of a `Request` a body reader actually uses. Narrowing to this
+ *  is what makes the reader directly exercisable against hand-built
+ *  streams and hand-set headers (an under-declared `content-length` cannot
+ *  be produced through `fetch`, which recomputes it), so the mutants below
+ *  test the SHIPPED code path rather than a copy of it. */
+export interface BodyBearingRequest {
+  headers: Headers;
+  body: ReadableStream<Uint8Array> | null;
+}
+
+/**
+ * Bounded, fail-closed JSON body read (C-P1-01, R5-PERF-02).
+ *
+ * The previous implementation checked `content-length` and then called
+ * `request.json()`. That made the cap a property of a CLIENT-SUPPLIED
+ * HEADER: a chunked body (no length at all, which this surface refuses) or,
+ * more dangerously, a body that under-declares its length on a transport
+ * that does not police the two against each other, could materialise past
+ * the cap inside the isolate before anything refused it. The bound is now
+ * on ACTUAL BYTES:
+ *
+ *   1. the declared length is still required and still pre-refused when it
+ *      exceeds the cap - that refusal costs nothing and rejects the honest
+ *      oversized client before a byte is read;
+ *   2. the body is then read through the same per-chunk capped streaming
+ *      reader the payload path uses, which aborts the stream the instant
+ *      the cumulative count crosses the cap - never trusting the header;
+ *   3. actual bytes must EQUAL the declared length: an under-declared or
+ *      over-declared body is a typed refusal, not a silent acceptance;
+ *   4. the bytes are decoded as STRICT UTF-8 (invalid sequences refuse
+ *      rather than becoming U+FFFD);
+ *   5. the text is depth-bounded by a flat scan BEFORE `JSON.parse` runs.
+ */
+export async function readJson(request: BodyBearingRequest, limit = MAX_STRUCTURAL_BODY_BYTES):
+  Promise<{ body: Record<string, unknown> } | { errorResponse: Response }> {
+  // a refusal releases the unread body stream cleanly rather than leaving
+  // the sender's pipe to be torn down by the runtime
+  const discardBody = async (): Promise<void> => { await request.body?.cancel().catch(() => {}); };
+  const declared = request.headers.get("content-length");
+  if (declared === null || !/^\d+$/.test(declared)) {
+    await discardBody();
+    return { errorResponse: json({ ok: false, error: "CONTENT_LENGTH_REQUIRED", limit }, 411) };
+  }
+  const declaredLength = Number(declared);
+  if (!Number.isSafeInteger(declaredLength) || declaredLength > limit) {
+    await discardBody();
+    return { errorResponse: json({ ok: false, error: "REQUEST_BODY_TOO_LARGE", declared, limit }, 413) };
+  }
+  if (request.body === null) {
+    return { errorResponse: json({ ok: false, error: "CONTENT_LENGTH_REQUIRED", limit }, 411) };
+  }
+  // authoritative bound: actual bytes, enforced per chunk. (The digest this
+  // shares with the payload reader is unused here - one capped reader is
+  // worth more than a second near-copy of the cap logic.)
+  const read = await streamCappedDigest(request.body, limit);
+  if ("overCap" in read) {
+    return { errorResponse: json({ ok: false, error: "REQUEST_BODY_TOO_LARGE",
+                                   observed: read.total, limit }, 413) };
+  }
+  if ("streamError" in read) {
+    // the caller's body ended early or the connection dropped: a typed
+    // refusal, never an exception escaping the route
+    return { errorResponse: json({ ok: false, error: "REQUEST_BODY_INCOMPLETE",
+                                   declared: declaredLength, observed: read.total }, 400) };
+  }
+  if (read.total !== declaredLength) {
+    return { errorResponse: json({ ok: false, error: "CONTENT_LENGTH_MISMATCH",
+                                   declared: declaredLength, observed: read.total }, 400) };
+  }
+  let text: string;
+  try {
+    text = STRICT_UTF8.decode(read.bytes);
+  } catch {
+    return { errorResponse: json({ ok: false, error: "MALFORMED_UTF8" }, 400) };
+  }
+  if (jsonNestingDepth(text) > MAX_JSON_DEPTH) {
+    return { errorResponse: json({ ok: false, error: "JSON_TOO_DEEP", limit: MAX_JSON_DEPTH }, 400) };
+  }
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
   } catch {
     return { errorResponse: json({ ok: false, error: "MALFORMED_JSON" }, 400) };
   }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return { errorResponse: json({ ok: false, error: "MALFORMED_JSON", hint: "object body required" }, 400) };
+  }
+  return { body: body as Record<string, unknown> };
 }
 
 /** Canonical digest of the ONE request a capability use authorizes
@@ -468,62 +922,102 @@ export default {
       return json({ ok: false, error: "NOT_FOUND" }, 404);
     }
 
-    // controller routing: one DO per database. The stub is typed straight
-    // off the DO class (workers-types RPC), so there is exactly ONE method
-    // surface - the class itself - and nothing hand-maintained to drift.
-    const stubFor = (databaseId: string) => env.CONTROLLER.get(env.CONTROLLER.idFromName(databaseId));
+    /** Fail-closed key/environment resolution shared by every route that
+     *  needs it; the typed 500 mirrors the DO's own construction refusal. */
+    const resolveKeysOr500 = (): { keys: ResolvedKeys } | { denied: Response } => {
+      try {
+        return { keys: resolveKeyConfig(env) };
+      } catch (error) {
+        return { denied: json({ ok: false, error: "KEY_CONFIG_INVALID",
+                                detail: error instanceof Error ? error.message : String(error) }, 500) };
+      }
+    };
+
+    /**
+     * Controller routing (R4 PR1): one DO per PROVISIONED database, and the
+     * DO name is derived from the registry binding triple (environment +
+     * tenant + opaque database id, registry.ts controllerDoName) - never
+     * from a caller-supplied database id alone. The map records, per
+     * request, which stub each database id resolved to: it is populated
+     * ONLY from a verified token's binding (frameCheck) or an explicitly
+     * validated provisioning/issuance binding, so every later `stubFor`
+     * lookup inside a route body reuses the registry-derived route. The
+     * stub is typed straight off the DO class (workers-types RPC), so there
+     * is exactly ONE method surface - the class itself - and nothing
+     * hand-maintained to drift.
+     */
+    const routed = new Map<string, DurableObjectStub<DatabaseControllerDO>>();
+    const routeBinding = (binding: ProvisionBinding): DurableObjectStub<DatabaseControllerDO> => {
+      const stub = env.CONTROLLER.get(env.CONTROLLER.idFromName(controllerDoName(binding)));
+      routed.set(binding.databaseId, stub);
+      return stub;
+    };
+    const stubFor = (databaseId: string): DurableObjectStub<DatabaseControllerDO> => {
+      const stub = routed.get(databaseId);
+      if (stub === undefined) {
+        // structurally unreachable: every route verifies a token (which
+        // routes its binding) before touching an authority. Loud, not
+        // silent, if a future route forgets.
+        throw new Error(`UNROUTED_DATABASE: ${databaseId} was never bound to a verified route`);
+      }
+      return stub;
+    };
 
     type CapExpect = { method: string; session?: string; generation?: string;
                        key?: string; bodyDigest?: string; bodyLength?: number };
 
     /**
      * Stateless capability FRAMING pre-check at the outer worker (audit
-     * C-03): verify MAC, expiry, audience, method, key/digest/session/
-     * generation using the worker's own resolved capability key BEFORE any
+     * C-03): verify schema version/alg, kid/env scope, the Ed25519
+     * SIGNATURE (R5-SEC-03 — the worker holds only the public keyring),
+     * expiry, audience, method, key/digest/session/generation BEFORE any
      * Durable Object is contacted. A junk, forged, expired, wrong-audience
      * or wrong-method token is refused here, so it never instantiates,
-     * migrates or binds a DO. The authoritative incarnation check and the
-     * single-request nonce claim then run inside the DO. Returns the token
-     * on success, or the typed denial Response.
+     * migrates or binds a DO. On success the token's verified binding
+     * triple decides the DO route (routeBinding); the authoritative
+     * incarnation/binding checks and the single-request nonce claim then
+     * run inside the DO. Returns the token + verified payload, or the
+     * typed denial Response.
      */
-    const frameCheck = (databaseId: string, expect: CapExpect): { token: string } | { denied: Response } => {
+    const frameCheck = async (databaseId: string, expect: CapExpect):
+      Promise<{ token: string; payload: CapabilityPayload } | { denied: Response }> => {
       const token = request.headers.get("x-capability");
       if (token === null) return { denied: json({ ok: false, error: "CAPABILITY_REQUIRED" }, 401) };
-      let capabilityKey: Uint8Array;
-      try {
-        capabilityKey = resolveKeyConfig(env).capabilityKey;
-      } catch (error) {
-        return { denied: json({ ok: false, error: "KEY_CONFIG_INVALID",
-                                detail: error instanceof Error ? error.message : String(error) }, 500) };
-      }
+      const resolved = resolveKeysOr500();
+      if ("denied" in resolved) return resolved;
       // currentIncarnation omitted: the DO owns the authoritative check
-      const framed = checkCapability(capabilityKey, token, { databaseId, ...expect, nowMs: Date.now() });
+      const framed = await verifyCapabilityToken(resolved.keys.capabilityKeyring, token, {
+        databaseId, env: resolved.keys.environment, ...expect, nowMs: Date.now(),
+      });
       if (!framed.ok) return { denied: json(framed, framed.error === "CAPABILITY_MALFORMED" ? 400 : 403) };
-      return { token };
+      // the routing triple comes from the VERIFIED token, and its ids must
+      // be normalized bounded identifiers before they name a DO
+      const binding = checkBinding({
+        environment: framed.payload.env, tenantId: framed.payload.tenantId, databaseId,
+      });
+      if (!binding.ok) return { denied: json(binding, 400) };
+      routeBinding(binding.binding);
+      return { token, payload: framed.payload };
     };
 
     /** Mutating routes: frame-check (no DO on failure), then verify-and-CLAIM
      *  at the authority. `useDigest` is the canonical digest of the ONE
      *  request authorized (C-02): the claim binds the nonce to it, and a
      *  terminal use replays its stored response instead of re-executing. */
-    const verifyCapability = async (databaseId: string, expect: CapExpect, useDigest: string) => {
-      const framed = frameCheck(databaseId, expect);
+    const verifyCapability = async (
+      databaseId: string, expect: CapExpect, useDigest: string,
+      // R5-SEC-04: bound with the claim so an unresolved use is settleable
+      effect: CapabilityEffect = { kind: "IDEMPOTENT_REEXECUTE" },
+    ) => {
+      const framed = await frameCheck(databaseId, expect);
       if ("denied" in framed) return { authorized: false as const, denied: framed.denied };
-      const verdict = await stubFor(databaseId).useCapability(framed.token, { databaseId, ...expect }, useDigest);
+      // the DO call carries the full expected binding (tenant from the
+      // verified token), so the authority can verify it was addressed as
+      // the database it is provisioned to be (R4 PR1)
+      const verdict = await stubFor(databaseId).useCapability(
+        framed.token, { databaseId, tenantId: framed.payload.tenantId, ...expect }, useDigest, effect);
       if (!verdict.ok) return { authorized: false as const, denied: json(verdict, 403) };
       return { authorized: true as const, verdict };
-    };
-
-    /** Read routes: frame-check then verify WITHOUT claiming a durable use
-     *  row (audit C-07) - reads are side-effect-free, so they must not write
-     *  to the control tables. Incarnation and session are still enforced. */
-    const verifyRead = async (databaseId: string, expect: CapExpect):
-      Promise<{ authorized: true; payload: { session?: string } } | { authorized: false; denied: Response }> => {
-      const framed = frameCheck(databaseId, expect);
-      if ("denied" in framed) return { authorized: false as const, denied: framed.denied };
-      const verdict = await stubFor(databaseId).checkCapabilityOnly(framed.token, { databaseId, ...expect });
-      if (!verdict.ok) return { authorized: false as const, denied: json(verdict, 403) };
-      return { authorized: true as const, payload: verdict.payload };
     };
 
     /** C-02 terminal replay: when a claim is a non-fresh, terminal use, the
@@ -531,8 +1025,11 @@ export default {
      *  A non-fresh, non-terminal use (a crash between effect and resolve)
      *  is a bounded typed retry, never a blind re-execution. Returns a
      *  Response to short-circuit with, or null to proceed and execute. */
-    const replayTerminal = (verdict: { claim?: { fresh: boolean; terminal: boolean; response: string | null } }):
-      Response | null => {
+    const replayTerminal = async (
+      databaseId: string,
+      verdict: { claim?: { fresh: boolean; terminal: boolean; response: string | null } },
+      nonce?: string,
+    ): Promise<Response | null> => {
       const claim = verdict.claim;
       if (claim === undefined || claim.fresh) return null;
       if (claim.terminal && claim.response !== null) {
@@ -540,6 +1037,33 @@ export default {
         return json(stored.body, stored.status);
       }
       if (claim.terminal) return json({ ok: true, replayed: true }, 200);
+      // R5-SEC-04: an UNRESOLVED prior use no longer answers a permanent
+      // 409. The authority re-derives the outcome from the effect the use
+      // was bound to at claim time:
+      //   SETTLED     -> replay the exact original outcome (the timeout
+      //                  happened AFTER the effect);
+      //   RE_EXECUTE  -> no effect exists (timeout BEFORE it, or the
+      //                  procedure is idempotent by identity): fall
+      //                  through and execute the identical request again;
+      //   QUARANTINED -> durable evidence contradicts the recorded
+      //                  operation: fail closed, terminally;
+      //   otherwise   -> the bounded legacy 409 (pre-effect rows), which
+      //                  token expiry prunes.
+      const claimNonce = nonce ?? (verdict as { payload?: { nonce?: string } }).payload?.nonce;
+      if (typeof claimNonce !== "string") {
+        return json({ ok: false, error: "CAPABILITY_IN_FLIGHT",
+                      hint: "a prior use of this token has not resolved; retry" }, 409);
+      }
+      const settled = await stubFor(databaseId).resolveAmbiguousUse(claimNonce);
+      if (settled.ok && settled.disposition === "SETTLED") {
+        if (settled.response === null) return json({ ok: true, replayed: true }, 200);
+        const stored = JSON.parse(settled.response) as { status: number; body: unknown };
+        return json(stored.body, stored.status);
+      }
+      if (settled.ok && settled.disposition === "RE_EXECUTE") return null;
+      if (!settled.ok && settled.error === "CAPABILITY_USE_QUARANTINED") {
+        return json({ ok: false, error: "CAPABILITY_USE_QUARANTINED", reason: settled.reason }, 409);
+      }
       return json({ ok: false, error: "CAPABILITY_IN_FLIGHT",
                     hint: "a prior use of this token has not resolved; retry" }, 409);
     };
@@ -563,11 +1087,17 @@ export default {
      *  {status, body} to send; the wrapper stores it as the use outcome. */
     const withMutation = async (
       databaseId: string, expect: CapExpect, useDigest: string,
-      execute: (payload: { session?: string }) => Promise<{ status: number; body: unknown }>,
+      execute: (payload: { session?: string; generation?: string }) => Promise<{ status: number; body: unknown }>,
+      // R5-SEC-04: the AUTHORITATIVE EFFECT this use is bound to. Recorded
+      // durably with the claim, so a use left unresolved by a lost response
+      // can be settled later by querying the effect instead of wedging at
+      // 409 forever. Methods that are idempotent by their own operation
+      // identity declare IDEMPOTENT_REEXECUTE (the default).
+      effect: CapabilityEffect = { kind: "IDEMPOTENT_REEXECUTE" },
     ): Promise<Response> => {
-      const auth = await verifyCapability(databaseId, expect, useDigest);
+      const auth = await verifyCapability(databaseId, expect, useDigest, effect);
       if (!auth.authorized) return auth.denied;
-      const replay = replayTerminal(auth.verdict);
+      const replay = await replayTerminal(databaseId, auth.verdict);
       if (replay !== null) return replay;
       const nonce = auth.verdict.payload?.nonce;
       try {
@@ -589,32 +1119,97 @@ export default {
     };
 
     /** Bind a mutating use to the request line (method + path + query) when the
-     *  route carries no body of its own (e.g. SESSION_ADMIN). Read routes claim
+     *  route carries no body of its own (e.g. INCARNATION_BUMP). Read routes claim
      *  no use (C-07) and do not call this. */
     const routeUseDigest = () =>
       useDigestOf({ method: request.method, path, search: url.search });
 
-    /** null = authorized; otherwise the typed 401/403. Read helper (no claim):
-     *  reads never claim a use (C-07), so no request-line digest is bound. */
-    const requireCapability = async (
-      databaseId: string, expect: CapExpect,
-    ): Promise<Response | null> => {
-      const auth = await verifyRead(databaseId, expect);
-      return auth.authorized ? null : auth.denied;
+    /** R5-SEC-05, session-independent reads (OUTBOX consumers and the
+     *  JOURNAL_VERIFY recovery/forensics role, neither of which carries a
+     *  startup session). Same rule as the WAL_READ path: frame-check at the
+     *  worker, then ONE authoritative hop that verifies and reads — never a
+     *  check followed by a separate read. No durable use is claimed (C-07). */
+    type ControlRead =
+      | { kind: "OUTBOX_PEEK"; limit: number }
+      | { kind: "JOURNAL_VERIFY" }
+      | { kind: "JOURNAL_VERIFY_ANCHORED" };
+    type ControlOutcome =
+      | { ok: true; kind: "OUTBOX_PEEK"; events: { controlSeq: bigint; kind: string; body: string }[] }
+      | { ok: true; kind: "JOURNAL_VERIFY"; verified: boolean; verdict: Record<string, unknown> }
+      | { ok: true; kind: "JOURNAL_VERIFY_ANCHORED"; verified: boolean; verdict: Record<string, unknown> };
+    const authorizedControlRead = async <R extends ControlRead>(
+      databaseId: string, expect: CapExpect, read: R,
+    ): Promise<{ outcome: Extract<ControlOutcome, { kind: R["kind"] }> } | { denied: Response }> => {
+      const framed = await frameCheck(databaseId, expect);
+      if ("denied" in framed) return { denied: framed.denied };
+      const outcome = await stubFor(databaseId).authorizedControlRead(
+        framed.token, { databaseId, tenantId: framed.payload.tenantId, ...expect }, read);
+      if (!outcome.ok) return { denied: json(outcome, readRefusalStatus(outcome.error)) };
+      return { outcome: outcome as unknown as Extract<ControlOutcome, { kind: R["kind"] }> };
     };
 
-    /** Read helper that also hands back the session (WAL_READ operation
-     *  query). No durable claim (C-07). */
-    const requireCapabilityWithSession = async (
-      databaseId: string, expect: CapExpect,
-    ): Promise<{ denied: Response } | { session: string }> => {
-      const auth = await verifyRead(databaseId, expect);
-      if (!auth.authorized) return { denied: auth.denied };
-      const session = auth.payload?.session;
-      if (typeof session !== "string" || session.length === 0) {
-        return { denied: json({ ok: false, error: "CAPABILITY_RESTRICTION_MISSING", restriction: "session" }, 403) };
+    /**
+     * R5-SEC-05: map an authoritative read refusal to its protocol status.
+     * SESSION_* and READ_LEASE_* are both 409 CONFLICT: the caller is not
+     * (or is no longer) the actor entitled to this read.
+     */
+    const readRefusalStatus = (error: string): number => {
+      if (error === "NOT_FOUND") return 404;
+      if (error === "RECORD_EXCEEDS_PAGE_BUDGET") return 413;
+      if (error === "INVALID_SNAPSHOT_ID" || error === "CONTINUATION_OUTSIDE_SNAPSHOT"
+          || error === "CAPABILITY_MALFORMED") return 400;
+      if (error.startsWith("CAPABILITY_") || error === "DATABASE_UNPROVISIONED"
+          || error === "DO_BINDING_MISMATCH") return 403;
+      return 409;
+    };
+
+    /**
+     * R5-SEC-05: THE session-bound read path — one authoritative hop.
+     *
+     * The worker still frame-checks the token statelessly (a junk or forged
+     * token must not reach a Durable Object at all, audit C-03), and then
+     * makes exactly ONE call in which the authority verifies the token
+     * again, revalidates that the bound actor still holds live read
+     * authority, and performs the catalogue read — with no await between
+     * the check and the read. Reads that carry payload bytes come back with
+     * a durable one-shot LEASE over the exact object keys the worker will
+     * fetch; `redeemRead` below is the second half.
+     */
+    const authorizedRead = async <R extends ReadRequest>(
+      databaseId: string, expect: CapExpect, read: R,
+      /** per-error extra wire fields (client remedies), by error name */
+      hints: Record<string, Record<string, unknown>> = {},
+    ): Promise<{ outcome: Extract<ReadOutcome, { ok: true; kind: R["kind"] }> } | { denied: Response }> => {
+      const framed = await frameCheck(databaseId, expect);
+      if ("denied" in framed) return { denied: framed.denied };
+      const outcome = await stubFor(databaseId).authorizedRead(
+        framed.token, { databaseId, tenantId: framed.payload.tenantId, ...expect }, read);
+      if (!outcome.ok) {
+        const extra = hints[outcome.error];
+        return { denied: json(extra === undefined ? outcome : { ...outcome, ...extra },
+                              readRefusalStatus(outcome.error)) };
       }
-      return { session };
+      // the RPC return type is the outcome union intersected with the
+      // platform's Disposable stub wrapper; the kind was fixed by the
+      // request, so narrow it explicitly here rather than at every call site
+      return { outcome: outcome as unknown as Extract<ReadOutcome, { ok: true; kind: R["kind"] }> };
+    };
+
+    /**
+     * R5-SEC-05: redeem the one-shot read lease AFTER the payload bytes have
+     * been fetched and BEFORE they are served. The authority re-checks, at
+     * this instant, that the lease still exists (a fence deletes it in the
+     * fence's own transaction), is unexpired, unconsumed, covers exactly the
+     * keys fetched, and that its actor is still a live reader. Returns null
+     * when the read may be served, otherwise the typed refusal — the bytes
+     * already in hand are DISCARDED, never served.
+     */
+    const redeemRead = async (
+      databaseId: string, lease: ReadLeaseGrant, keys: string[],
+    ): Promise<Response | null> => {
+      const redeemed = await stubFor(databaseId).redeemReadLease(lease.leaseId, keys);
+      if (redeemed.ok) return null;
+      return json(redeemed, readRefusalStatus(redeemed.error));
     };
 
     /** Exact generation or the typed 400 (donor A5): the one refusal every
@@ -626,11 +1221,44 @@ export default {
         : gen;
     };
 
-    /** Core-level authority outcomes surfaced as protocol shapes. */
-    const sessionRefusal = (result: { ok: false; error: string }): Response | null =>
-      result.error === "SESSION_FENCED" || result.error === "SESSION_UNKNOWN"
-        ? json({ ok: false, error: result.error }, 409)
-        : null;
+    if (request.method === "POST" && path === "/provision") {
+      // R4 PR1: the internal provisioning transaction - the ONLY path that
+      // binds an uninitialized controller authority, and the production
+      // bootstrap route (it is NOT dev-only; its authorization is the
+      // PROVISION capability, mintable only from the private issuer's
+      // provisioning-scope key). The worker frame-checks the token against
+      // the exact binding BEFORE any DO is contacted, then the DO
+      // re-verifies authoritatively and binds transactionally.
+      const resolved = resolveKeysOr500();
+      if ("denied" in resolved) return resolved.denied;
+      const parsed = await readJson(request);
+      if ("errorResponse" in parsed) return parsed.errorResponse;
+      const body = parsed.body as { tenantId?: unknown; databaseId?: unknown; budgets?: unknown };
+      const binding = checkBinding({
+        environment: resolved.keys.environment, tenantId: body.tenantId, databaseId: body.databaseId,
+      });
+      if (!binding.ok) return json(binding, 400);
+      const token = request.headers.get("x-provision");
+      if (token === null) return json({ ok: false, error: "PROVISION_TOKEN_REQUIRED" }, 401);
+      const framed = await verifyProvisionToken(resolved.keys.provisionKeyring, token, {
+        binding: binding.binding, nowMs: Date.now(),
+      });
+      if (!framed.ok) return json(framed, framed.error === "CAPABILITY_MALFORMED" ? 400 : 403);
+      // budgets ride the provisioning transaction because the production
+      // surface has no budget-admin route; shape validation is the core's
+      const budgets = body.budgets;
+      if (budgets !== undefined && (typeof budgets !== "object" || budgets === null || Array.isArray(budgets))) {
+        return json({ ok: false, error: "MALFORMED_JSON", hint: "budgets must be an object" }, 400);
+      }
+      const stub = routeBinding(binding.binding);
+      const result = await stub.provision(token, binding.binding,
+        budgets as { maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number } | undefined);
+      const status = result.ok ? 200
+        : result.error === "PROVISION_CONFLICT" ? 409
+        : result.error === "INVALID_BUDGET" || result.error === "INVALID_BINDING" ? 400
+        : 403;
+      return json(result, status);
+    }
 
     if (request.method === "POST" && path === "/capability") {
       // Q-02: issuance is CREDENTIALED in every posture. The audit's finding
@@ -639,32 +1267,53 @@ export default {
       // in which an anonymous caller can mint authority. Resolution is
       // fail-closed: a worker whose key config cannot resolve refuses
       // issuance outright rather than falling back to open issuance.
-      let issuerSecret: string;
-      try {
-        issuerSecret = resolveKeyConfig(env).issuerSecret;
-      } catch (error) {
-        return json({ ok: false, error: "KEY_CONFIG_INVALID",
-                      detail: error instanceof Error ? error.message : String(error) }, 500);
-      }
+      const resolved = resolveKeysOr500();
+      if ("denied" in resolved) return resolved.denied;
+      // the issuance credential exists ONLY under local-dev (the route
+      // itself is dev-only); a posture with no credential issues nothing
+      const issuerSecret = resolved.keys.issuerSecret;
       const presented = request.headers.get("x-issuer-authorization");
-      if (presented === null || !credentialsEqual(presented, issuerSecret)) {
+      if (issuerSecret === undefined || presented === null || !credentialsEqual(presented, issuerSecret)) {
         return json({ ok: false, error: "ISSUER_UNAUTHORIZED" }, 401);
       }
       const parsed = await readJson(request);
       if ("errorResponse" in parsed) return parsed.errorResponse;
       const spec = parsed.body as unknown as {
-        principal: string; databaseId: string; method: string; digest?: string; maxBytes?: number; ttlMs?: number;
+        principal: string; tenantId?: string; databaseId: string; method: string;
+        digest?: string; maxBytes?: number; ttlMs?: number;
       };
-      return json({ ok: true, ...(await stubFor(spec.databaseId).issueCapability(spec)) });
+      // dev-lane routing follows the same registry-derived DO name as the
+      // data path (default local tenant), so the dev issuer addresses the
+      // SAME authority the tokens it mints will be used against. Issuance
+      // to an unprovisioned authority is refused by the DO.
+      const binding = checkBinding({
+        environment: resolved.keys.environment, tenantId: spec.tenantId ?? "local", databaseId: spec.databaseId,
+      });
+      if (!binding.ok) return json(binding, 400);
+      const stub = routeBinding(binding.binding);
+      try {
+        return json({ ok: true, ...(await stub.issueCapability(spec)) });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes("DATABASE_UNPROVISIONED")) {
+          return json({ ok: false, error: "DATABASE_UNPROVISIONED" }, 409);
+        }
+        throw error;
+      }
     }
 
     const adminBump = path.match(/^\/admin\/([^/]+)\/incarnation\/bump$/);
     if (request.method === "POST" && adminBump) {
       // incarnation bump is NOT idempotent (each call increments), so it is a
       // single-request mutation: a replayed token returns the stored result
-      return withMutation(adminBump[1], { method: "SESSION_ADMIN" }, await routeUseDigest(), async () => ({
+      return withMutation(adminBump[1], { method: "INCARNATION_BUMP" }, await routeUseDigest(), async () => ({
         status: 200, body: { ok: true, incarnation: await stubFor(adminBump[1]).bumpIncarnation() },
-      }));
+      }),
+      // R5-SEC-04: a bump is NOT idempotent (each call increments), so its
+      // effect is the journaled CONTROLLER_INCARNATION_BUMPED command
+      // carrying this use's nonce — a lost response settles from that row
+      // instead of double-bumping on retry.
+      { kind: "INCARNATION_BUMP" });
     }
 
     if (request.method === "PUT" && path.startsWith("/payload/")) {
@@ -683,54 +1332,40 @@ export default {
       }
       const tooLarge = refuseOversizedBody(request);
       if (tooLarge) return tooLarge;
-      // the digest binding genuinely needs the body hashed before the
-      // capability verdict; the null-token refusal does not - answer it
-      // before reading anything
       if (request.headers.get("x-capability") === null) {
         return json({ ok: false, error: "CAPABILITY_REQUIRED" }, 401);
       }
-      // Bounded streaming read (C-06): the body is consumed chunk-by-chunk into
-      // an incremental digest with a per-chunk byte cap that does NOT trust the
-      // declared content-length. The content-length pre-check above is kept as
-      // the fast, pre-read refusal; this is the authoritative bound.
-      const streamed = await readBodyStreamingDigest(request, MAX_REQUEST_BODY_BYTES);
-      if ("errorResponse" in streamed) return streamed.errorResponse;
-      const { bytes, digest } = streamed;
-      // payload immutability: puts are create-or-identical, never overwrite.
-      // The create is a CONDITIONAL put (If-None-Match: *), not get-then-put:
-      // two concurrent puts of different bytes must never both succeed, and a
-      // read-then-write window would allow exactly that. Under the capability
-      // boundary a different-bytes put at this key cannot even reach here
-      // (digest binding); the conditional create remains as defense in depth.
+      const body = request.body;
+      if (body === null) {
+        return json({ ok: false, error: "CONTENT_LENGTH_REQUIRED", limit: MAX_REQUEST_BODY_BYTES }, 411);
+      }
+      // R5-PERF-01, the DIGEST-DECLARED protocol. The upload no longer has
+      // to read the whole body before it can be authorized: the object key
+      // IS the declared content digest (`p/<db>/<sha256hex>`, issuer-derived
+      // and bound into the capability), and `content-length` is already
+      // mandatory here. So the authority decision is made from the
+      // DECLARATION — digest + length — before a single byte is read, and
+      // the bytes are then streamed and VERIFIED against that same
+      // declaration. The conjunction is exactly what it was before
+      // (capability digest == actual content digest); only the order
+      // changed, and with it the memory profile: an over-budget or
+      // wrong-key upload is now refused having buffered nothing at all.
+      // ONE wire-visible consequence, stated so it is not a surprise: a body
+      // whose bytes do not hash to the digest its own capability declares can
+      // only be detected AFTER the stream, so it answers 422
+      // PAYLOAD_DIGEST_MISMATCH instead of the old pre-stream 403
+      // CAPABILITY_DIGEST_MISMATCH. Both refuse; nothing is ever published.
+      const declaredDigest = parts[2];
+      const declaredLength = Number(request.headers.get("content-length"));
+      // payload immutability is unchanged: publication is an ATOMIC
+      // create-only put after the streamed digest is verified, so two
+      // concurrent uploads of different bytes can never both win a key.
       // withMutation records the terminal outcome so an identical retry
       // replays it, and a thrown provider error is recorded AMBIGUOUS.
       return withMutation(parts[1], {
-        method: "PUT_PAYLOAD", key, bodyDigest: digest, bodyLength: bytes.byteLength,
-      }, await useDigestOf({ method: "PUT_PAYLOAD", key, digest, length: bytes.byteLength }), async () => {
-        for (let attempt = 0; attempt < 3; attempt++) {
-          const created = await env.PAYLOADS.put(key, bytes, {
-            onlyIf: new Headers({ "if-none-match": "*" }),
-          });
-          if (created !== null) return { status: 200, body: { key, sha256hex: digest, length: bytes.byteLength } };
-          // lost the conditional create: verify the existing object streaming
-          // against our digest (no arrayBuffer()+hash pass, per-object cap
-          // enforced) to decide dedup vs immutability violation.
-          const existing = await fetchVerified(env, key, digest);
-          if ("bytes" in existing) {
-            return { status: 200, body: { key, sha256hex: digest, length: bytes.byteLength, deduplicated: true } };
-          }
-          if (existing.error === "MISSING") continue; // lost a delete/create race; retry the conditional create
-          if (existing.error === "OVER_CAP") {
-            return { status: 413, body: { ok: false, error: "PAYLOAD_EXCEEDS_OBJECT_CAP",
-                                          key, size: existing.size, cap: existing.cap } };
-          }
-          return { status: 409, body: { ok: false, error: "PAYLOAD_IMMUTABILITY_VIOLATION",
-                                        key, existing: existing.observed } };
-        }
-        // exhausted the race retries: surface as retryable, not a burned
-        // success - withMutation marks a thrown error AMBIGUOUS
-        throw new Error("PAYLOAD_RACE_UNRESOLVED");
-      });
+        method: "PUT_PAYLOAD", key, bodyDigest: declaredDigest, bodyLength: declaredLength,
+      }, await useDigestOf({ method: "PUT_PAYLOAD", key, digest: declaredDigest, length: declaredLength }),
+      async () => streamedPayloadPut(env, body, parts[1], key, declaredDigest, declaredLength));
     }
 
     if (request.method === "POST" && path === "/session/register") {
@@ -739,14 +1374,16 @@ export default {
       const b = parsed.body as unknown as { databaseId: string; generation: number; startupSessionId: string };
       const gen = generationOr(b.generation);
       if (gen instanceof Response) return gen;
-      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+      return withMutation(b.databaseId,
+        { method: "SESSION_REGISTER", session: b.startupSessionId, generation: String(gen) },
         await useDigestOf({ path, body: parsed.body }), async () => {
           await stubFor(b.databaseId).registerSession(b.databaseId, gen, b.startupSessionId);
           return { status: 200, body: { ok: true } };
         });
     }
 
-    // ---- Q-03 / 12.4 lifecycle routes (SESSION_ADMIN-gated) -------------
+    // ---- Q-03 / 12.4 lifecycle routes (exact per-action capabilities, ----
+    //      R4-SEC-04: each token names its action AND its exact target actor)
     // Registration is the legacy macro over these; the real flow is
     // reserve -> attest -> activate, and ONLY activation fences.
     if (request.method === "POST" && path === "/session/reserve") {
@@ -757,7 +1394,8 @@ export default {
       };
       const gen = generationOr(b.generation);
       if (gen instanceof Response) return gen;
-      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+      return withMutation(b.databaseId,
+        { method: "SESSION_RESERVE", session: b.startupSessionId, generation: String(gen) },
         await useDigestOf({ path, body: parsed.body }), async () => {
           const result = await stubFor(b.databaseId)
             .reserveSession(b.databaseId, gen, b.startupSessionId, b.holder);
@@ -769,7 +1407,7 @@ export default {
       const parsed = await readJson(request);
       if ("errorResponse" in parsed) return parsed.errorResponse;
       const b = parsed.body as unknown as { databaseId: string; startupSessionId: string; processNonce: string };
-      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+      return withMutation(b.databaseId, { method: "SESSION_ATTEST", session: b.startupSessionId },
         await useDigestOf({ path, body: parsed.body }), async () => {
           const result = await stubFor(b.databaseId)
             .attestSession(b.databaseId, b.startupSessionId, b.processNonce);
@@ -785,7 +1423,8 @@ export default {
       };
       const gen = generationOr(b.generation);
       if (gen instanceof Response) return gen;
-      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+      return withMutation(b.databaseId,
+        { method: "SESSION_ACTIVATE", session: b.startupSessionId, generation: String(gen) },
         await useDigestOf({ path, body: parsed.body }), async () => {
           const result = await stubFor(b.databaseId).activateSession(b.databaseId, b.startupSessionId, {
             processNonce: b.processNonce, generation: gen, leaseMs: b.leaseMs,
@@ -798,7 +1437,7 @@ export default {
       const parsed = await readJson(request);
       if ("errorResponse" in parsed) return parsed.errorResponse;
       const b = parsed.body as unknown as { databaseId: string; startupSessionId: string; leaseMs: number };
-      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+      return withMutation(b.databaseId, { method: "SESSION_RENEW", session: b.startupSessionId },
         await useDigestOf({ path, body: parsed.body }), async () => {
           const result = await stubFor(b.databaseId).renewLease(b.databaseId, b.startupSessionId, b.leaseMs);
           return { status: result.ok ? 200 : 409, body: result };
@@ -809,7 +1448,7 @@ export default {
       const parsed = await readJson(request);
       if ("errorResponse" in parsed) return parsed.errorResponse;
       const b = parsed.body as unknown as { databaseId: string; startupSessionId: string };
-      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+      return withMutation(b.databaseId, { method: "SESSION_DRAIN", session: b.startupSessionId },
         await useDigestOf({ path, body: parsed.body }), async () => {
           const result = await stubFor(b.databaseId).beginDrain(b.databaseId, b.startupSessionId);
           return { status: result.ok ? 200 : 409, body: result };
@@ -820,7 +1459,9 @@ export default {
       const parsed = await readJson(request);
       if ("errorResponse" in parsed) return parsed.errorResponse;
       const b = parsed.body as unknown as { databaseId: string; startupSessionId: string };
-      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+      // The token names the TARGET session (its minter decides which actor
+      // may be revoked); the revocation power is not a generic bearer right.
+      return withMutation(b.databaseId, { method: "SESSION_REVOKE", session: b.startupSessionId },
         await useDigestOf({ path, body: parsed.body }), async () => {
           const result = await stubFor(b.databaseId).revokeSession(b.databaseId, b.startupSessionId);
           return { status: result.ok ? 200 : 409, body: result };
@@ -835,7 +1476,7 @@ export default {
       if (gen instanceof Response) return gen;
       // the fence is actor-wide: any `generation` in the body is accepted for
       // wire compatibility but does not scope the revocation
-      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+      return withMutation(b.databaseId, { method: "SESSION_FENCE", session: b.startupSessionId },
         await useDigestOf({ path, body: parsed.body }), async () => {
           await stubFor(b.databaseId).fenceSession(b.databaseId, b.startupSessionId);
           return { status: 200, body: { ok: true } };
@@ -851,7 +1492,7 @@ export default {
       // BUDGETS_SET appends a journal row per call, so budgets is a
       // single-request mutation: the audit's "reuse one token twice -> two
       // BUDGETS_SET rows" mutant is killed by the terminal replay (C-02).
-      return withMutation(b.databaseId, { method: "SESSION_ADMIN" },
+      return withMutation(b.databaseId, { method: "BUDGETS_SET" },
         await useDigestOf({ path, body: parsed.body }), async (payload) => {
           const session = payload.session;
           if (typeof session !== "string" || session.length === 0) {
@@ -863,14 +1504,20 @@ export default {
             maxTailRecords: b.maxTailRecords,
           }, session);
           return { status: result.ok ? 200 : 409, body: result.ok ? { ok: true } : result };
-        });
+        },
+        // R5-SEC-04: the effect is the journaled BUDGETS_SET command
+        // carrying this use's nonce as its operation identity.
+        { kind: "BUDGETS_SET", databaseId: b.databaseId });
     }
 
     // data-path receipt verification BEFORE the DO's synchronous
     // finalisation: the object must exist and match digest + length
     const verifyReceipt = async (req: { payloadKey: string; payloadDigest: string; payloadLength: number }):
       Promise<{ status: number; body: unknown } | null> => {
-      const result = await fetchVerified(env, req.payloadKey, req.payloadDigest, req.payloadLength);
+      // R5-PERF-01: receipt verification needs the VERDICT, not the bytes -
+      // a batch of 64 members no longer materialises 64 payloads to prove
+      // they hash to what the caller catalogued.
+      const result = await fetchVerified(env, req.payloadKey, req.payloadDigest, req.payloadLength, false);
       if ("bytes" in result) return null;
       if (result.error === "MISSING") return { status: 422, body: { ok: false, error: "PAYLOAD_MISSING", key: req.payloadKey } };
       if (result.error === "OVER_CAP") {
@@ -939,7 +1586,16 @@ export default {
         const result = await stubFor(req.databaseId)
           .finalizeWalRecord({ ...req, requestDigest: computedDigest } as unknown as FinalizeRequest);
         return { status: result.ok ? 200 : 409, body: result };
-      });
+      },
+      // R5-SEC-04: the authoritative effect of a finalize is its wal_tail
+      // row under this operation identity. If the response is lost, the
+      // resolver finds that row (or its status-singleton alias) and
+      // replays the exact original receipt; a row under the same operation
+      // id but a DIFFERENT request digest is contradictory evidence and
+      // quarantines the use.
+      { kind: "WAL_FINALIZE", databaseId: req.databaseId, generation: gen,
+        operationId: String((req as { operationId?: unknown }).operationId ?? ""),
+        requestDigest: computedDigest });
     }
 
     if (request.method === "POST" && path === "/wal/finalize-batch") {
@@ -1045,17 +1701,35 @@ export default {
       // after the caller's single-use capability was already burned
       const lsnValue = nonNegativeU64(lsn, 0n);
       if (lsnValue === null) return json({ ok: false, error: "INVALID_PARAMETER", field: "lsn" }, 400);
-      const denied = await requireCapability(db, { method: "WAL_READ" });
-      if (denied) return denied;
-      const record = await stubFor(db).exactLookup(db, gen, lsnValue);
-      if (!record.ok) return json(record, 404);
+      // R5-SEC-05: ONE authoritative hop — verify, revalidate the actor,
+      // read the catalogue row, and take a one-shot lease over the exact
+      // object the byte fetch below will touch.
+      const auth = await authorizedRead(db, { method: "WAL_READ" },
+        { kind: "EXACT", generation: gen, appendLsn: lsnValue });
+      if ("denied" in auth) return auth.denied;
+      const record = auth.outcome.record;
+      // R5-PERF-01 content negotiation: the DEFAULT is unchanged (the
+      // verify-then-serve base64 JSON shape every current consumer reads);
+      // an explicit `accept: application/octet-stream` selects the
+      // streaming variant.
+      if (wantsPayloadStream(request)) {
+        return streamedPayloadResponse(env, record, { appendLsn: lsnValue },
+          (keys: string[]) => redeemRead(db, auth.outcome.lease, keys));
+      }
       // exact reads re-verify bytes against the catalogued digest: serving
       // corrupted payload under valid metadata is worse than failing; a
       // catalogued record whose payload is missing is a hard integrity
       // error - never EOF (§exact-index rules)
-      const payload = await verifiedPayloadBase64(env, record as { payloadKey: string; payloadDigest: string });
+      const payload = await verifiedPayloadBase64(env, record);
       if ("errorResponse" in payload) return payload.errorResponse;
-      return json({ ...record, payloadBase64: payload.payloadBase64 });
+      // the bytes are in hand but NOT yet authorized to leave: redemption is
+      // the authoritative cut point (a fence that committed while they were
+      // in flight has already revoked this lease)
+      const revoked = await redeemRead(db, auth.outcome.lease, [record.payloadKey]);
+      if (revoked !== null) return revoked;
+      return json({ ok: true, payloadKey: record.payloadKey, payloadDigest: record.payloadDigest,
+                    typeSequence: record.typeSequence, recordType: record.recordType,
+                    payloadBase64: payload.payloadBase64 });
     }
 
     const walHead = path.match(/^\/wal\/([^/]+)\/(\d+)\/head$/);
@@ -1063,9 +1737,10 @@ export default {
       const [, db, generation] = walHead;
       const gen = generationOr(generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(db, { method: "WAL_READ" });
-      if (denied) return denied;
-      return json({ ok: true, ...(await stubFor(db).head(db, gen)) });
+      const auth = await authorizedRead(db, { method: "WAL_READ" }, { kind: "HEAD", generation: gen });
+      if ("denied" in auth) return auth.denied;
+      return json({ ok: true, headLsn: auth.outcome.headLsn,
+                    headTypeSequence: auth.outcome.headTypeSequence });
     }
 
     const walIterator = path.match(/^\/wal\/([^/]+)\/(\d+)\/iterator$/);
@@ -1073,9 +1748,9 @@ export default {
       const [, db, generation] = walIterator;
       const gen = generationOr(generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(db, { method: "WAL_READ" });
-      if (denied) return denied;
-      return json({ ok: true, ...(await stubFor(db).openIterator(db, gen)) });
+      const auth = await authorizedRead(db, { method: "WAL_READ" }, { kind: "ITERATOR", generation: gen });
+      if ("denied" in auth) return auth.denied;
+      return json({ ok: true, headLsn: auth.outcome.headLsn, snapshotId: auth.outcome.snapshotId });
     }
 
     const walScan = path.match(/^\/wal\/([^/]+)\/(\d+)\/scan$/);
@@ -1083,8 +1758,6 @@ export default {
       const [, db, generation] = walScan;
       const gen = generationOr(generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(db, { method: "WAL_READ" });
-      if (denied) return denied;
       const recordTypeParam = url.searchParams.get("recordType");
       const recordType = recordTypeParam === null ? null : Number(recordTypeParam);
       if (recordType !== null && invalidRecordType(recordType)) {
@@ -1105,9 +1778,6 @@ export default {
         return json({ ok: false, error: "CALLER_SUPPLIED_SNAPSHOT_BOUND",
                       hint: "the cut is carried by snapshotId; throughLsn is not accepted" }, 400);
       }
-      const resolved = await stubFor(db).resolveSnapshot(db, gen, snapshotIdParam);
-      if (!resolved.ok) return json(resolved, 400);
-      const throughLsn = resolved.headLsn;
       const fromTypeSequence = nonNegativeU64(url.searchParams.get("fromTs"), 0n);
       const fromLsn = nonNegativeU64(url.searchParams.get("fromLsn"), 0n);
       const rawLimit = nonNegativeInt(url.searchParams.get("limit"), 100);
@@ -1116,64 +1786,35 @@ export default {
           || rawMaxBytes === null) {
         return json({ ok: false, error: "INVALID_PARAMETER" }, 400);
       }
-      if (fromLsn > throughLsn) {
-        // a continuation outside its own snapshot is a client defect, not an
-        // empty page: answering "no records" would look like a completed
-        // replay
-        return json({ ok: false, error: "CONTINUATION_OUTSIDE_SNAPSHOT",
-                      fromLsn, throughLsn }, 400);
-      }
       const limit = Math.min(Math.max(rawLimit, 1), 1000);
       const maxBytes = Math.min(Math.max(rawMaxBytes, 1), SCAN_PAGE_BYTE_BUDGET);
-      const page = await stubFor(db).scan(db, gen, {
-        fromTypeSequence, fromLsn, throughLsn, recordType, limit,
-      });
-      // Bounded response memory (V16 boundedness rules): the catalogue knows
-      // every payload's length, so the page is cut to the byte budget BEFORE
-      // any payload is fetched - a worker never materialises an unbounded
-      // multi-payload response. Always at least one record makes progress;
-      // the cut is reported through nextFromLsn exactly like a limit cut.
-      // A descriptor whose declared payload exceeds the whole page budget is
-      // REFUSED before any fetch - "record zero" is not an exception
-      // (directive §12.6). Admitting it was the one path by which a single
-      // oversized object could still be materialised and base64-expanded in
-      // a 128 MiB isolate, and it made the byte bound advisory for exactly
-      // the record that needed it most. The record stays reachable through
-      // the exact-lookup route, so refusing here wedges nothing.
-      const first = page.records[0] as { payloadLength: number; appendLsn: unknown } | undefined;
-      if (first !== undefined && Number(first.payloadLength) > maxBytes) {
-        return json({
-          ok: false,
-          error: "RECORD_EXCEEDS_PAGE_BUDGET",
-          appendLsn: first.appendLsn,
-          payloadLength: Number(first.payloadLength),
-          maxBytes,
-          hint: "fetch this record through /wal/{db}/{generation}/{lsn}",
-        }, 413);
-      }
-      let cut = page.records.length;
-      let budget = maxBytes;
-      for (const [index, record] of page.records.entries()) {
-        const length = Number((record as { payloadLength: number }).payloadLength);
-        if (index > 0 && length > budget) {
-          cut = index;
-          break;
-        }
-        budget -= length;
-      }
-      const included = page.records.slice(0, cut);
-      const nextFromLsn = cut < page.records.length
-        ? (included[included.length - 1] as { appendLsn: bigint }).appendLsn + 1n
-        : page.nextFromLsn;
+      // R5-SEC-05: snapshot resolution, the continuation bound, the page
+      // read and its RESPONSE BYTE CUT all happen inside the one
+      // authoritative hop, so the lease can cover exactly the keys this
+      // page will fetch — not the keys of a page that was cut afterwards.
+      // The byte cut itself is unchanged (V16 boundedness rules): the
+      // catalogue knows every payload's length, so the page is trimmed
+      // BEFORE any payload is fetched, at least one record always makes
+      // progress, and a first record larger than the whole budget is
+      // REFUSED rather than admitted as an exception (directive §12.6) —
+      // it stays reachable through the exact-lookup route.
+      const auth = await authorizedRead(db, { method: "WAL_READ" }, {
+        kind: "SCAN", generation: gen, snapshotId: snapshotIdParam,
+        fromTypeSequence, fromLsn, recordType, limit, maxBytes,
+      }, { RECORD_EXCEEDS_PAGE_BUDGET: { hint: "fetch this record through /wal/{db}/{generation}/{lsn}" } });
+      if ("denied" in auth) return auth.denied;
+      const included = auth.outcome.records;
       const payloads = await mapBounded(included, PAYLOAD_FETCH_CONCURRENCY, (record) =>
-        verifiedPayloadBase64(env, record as { payloadKey: string; payloadDigest: string }),
+        verifiedPayloadBase64(env, record),
       );
       const records: Record<string, unknown>[] = [];
       for (const [index, payload] of payloads.entries()) {
         if ("errorResponse" in payload) return payload.errorResponse;
         records.push({ ...included[index], payloadBase64: payload.payloadBase64 });
       }
-      return json({ ok: true, records, nextFromLsn });
+      const revoked = await redeemRead(db, auth.outcome.lease, included.map((r) => r.payloadKey));
+      if (revoked !== null) return revoked;
+      return json({ ok: true, records, nextFromLsn: auth.outcome.nextFromLsn });
     }
 
     const walOperation = path.match(/^\/wal\/([^/]+)\/(\d+)\/operation\/([^/]+)$/);
@@ -1185,21 +1826,16 @@ export default {
       // typed 400, never a 500 from an unhandled URIError (C-06)
       const decodedOp = safeDecodeComponent(operationId);
       if ("errorResponse" in decodedOp) return decodedOp.errorResponse;
-      const auth = await requireCapabilityWithSession(db, { method: "WAL_READ" });
-      if ("denied" in auth) return auth.denied;
       // Read surface: immutable durable history stays queryable by operation
       // identity across a fence of some OTHER actor (V16; the finalize-RETRY
       // path still answers SESSION_FENCED per inv. 38). "By the current
-      // actor" is load-bearing, so the core revalidates the caller's own
-      // session (donor A4): a fenced actor holding an unexpired WAL_READ
-      // capability reads nothing.
-      const result = await stubFor(db).queryOperation(
-        db, gen, decodedOp.value, auth.session);
-      if (!result.ok) {
-        const refusal = sessionRefusal(result as { ok: false; error: string });
-        return refusal ?? json(result, 404);
-      }
-      return json(result);
+      // actor" is load-bearing, so the authority revalidates the caller's
+      // own session in the same hop (donor A4 + R5-SEC-05): a fenced actor
+      // holding an unexpired WAL_READ capability reads nothing.
+      const auth = await authorizedRead(db, { method: "WAL_READ" },
+        { kind: "OPERATION", generation: gen, operationId: decodedOp.value });
+      if ("denied" in auth) return auth.denied;
+      return json(auth.outcome.inner);
     }
 
     const walLast = path.match(/^\/wal\/([^/]+)\/(\d+)\/last$/);
@@ -1207,31 +1843,33 @@ export default {
       const [, db, generation] = walLast;
       const gen = generationOr(generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(db, { method: "WAL_READ" });
-      if (denied) return denied;
       const recordType = Number(url.searchParams.get("recordType") ?? "NaN");
       if (invalidRecordType(recordType)) {
         return json({ ok: false, error: "INVALID_RECORD_TYPE", observed: url.searchParams.get("recordType") }, 400);
       }
-      const result = await stubFor(db).lastByType(db, gen, recordType);
-      if (!result.ok) return json(result, 404);
-      const record = result.record as { payloadKey: string; payloadDigest: string };
+      const auth = await authorizedRead(db, { method: "WAL_READ" },
+        { kind: "LAST_BY_TYPE", generation: gen, recordType });
+      if ("denied" in auth) return auth.denied;
+      const record = auth.outcome.record;
       const payload = await verifiedPayloadBase64(env, record);
       if ("errorResponse" in payload) return payload.errorResponse;
+      const revoked = await redeemRead(db, auth.outcome.lease, [record.payloadKey]);
+      if (revoked !== null) return revoked;
       return json({ ok: true, record: { ...record, payloadBase64: payload.payloadBase64 } });
     }
 
     const outboxPeek = path.match(/^\/outbox\/([^/]+)$/);
     if (request.method === "GET" && outboxPeek) {
-      const denied = await requireCapability(outboxPeek[1], { method: "OUTBOX" });
-      if (denied) return denied;
       // validated and clamped like scan's: a negative LIMIT is documented by
       // SQLite as "no upper bound", so an unchecked value here was the one
       // route where a caller could request an unbounded page
       const rawPeek = nonNegativeInt(url.searchParams.get("limit"), 100);
       if (rawPeek === null) return json({ ok: false, error: "INVALID_PARAMETER", field: "limit" }, 400);
       const limit = Math.min(Math.max(rawPeek, 1), 1000);
-      return json({ ok: true, events: await stubFor(outboxPeek[1]).outboxPeek(limit) });
+      const auth = await authorizedControlRead(outboxPeek[1], { method: "OUTBOX" },
+        { kind: "OUTBOX_PEEK", limit });
+      if ("denied" in auth) return auth.denied;
+      return json({ ok: true, events: auth.outcome.events });
     }
 
     const outboxAck = path.match(/^\/outbox\/([^/]+)\/ack$/);
@@ -1270,8 +1908,14 @@ export default {
       const parsedCut = await readJson(request);
       if ("errorResponse" in parsedCut) return parsedCut.errorResponse;
       const b = parsedCut.body as unknown as { cutId: string };
-      return withMutation(cutOpen[1], { method: "SESSION_ADMIN" },
-        await useDigestOf({ path, body: parsedCut.body }), async () => {
+      return withMutation(cutOpen[1], { method: "CHECKPOINT_OPEN", generation: String(cutGen) },
+        await useDigestOf({ path, body: parsedCut.body }), async (payload) => {
+          // R4-SEC-04/06: the acting session must hold LIVE authority in
+          // this generation at use time - a fenced/stale actor cannot open
+          // a cut with a still-valid token.
+          const actor = typeof payload.session === "string" ? payload.session : "";
+          const live = await stubFor(cutOpen[1]).assertActiveReader(cutOpen[1], actor, cutGen);
+          if (!live.ok) return { status: 409, body: live };
           const result = await stubFor(cutOpen[1]).openCheckpointCut(cutOpen[1], cutGen, b.cutId);
           return { status: result.ok ? 200 : 409, body: result };
         });
@@ -1285,11 +1929,21 @@ export default {
       if ("errorResponse" in decodedCut) return decodedCut.errorResponse;
       const parsedEvidence = await readJson(request);
       if ("errorResponse" in parsedEvidence) return parsedEvidence.errorResponse;
-      const b = parsedEvidence.body as unknown as { materializations: string[]; logicalDigest: string };
-      return withMutation(cutActivate[1], { method: "SESSION_ADMIN" },
-        await useDigestOf({ path, body: parsedEvidence.body }), async () => {
+      // R4-SEC-06: the body is the versioned restore-evidence manifest,
+      // validated MATERIALLY by the core (schema, cut id, recorded WAL
+      // head, 64-hex digests, scratch-restore verifier) - never cast.
+      return withMutation(cutActivate[1], { method: "CHECKPOINT_ACTIVATE" },
+        await useDigestOf({ path, body: parsedEvidence.body }), async (payload) => {
+          const actor = typeof payload.session === "string" ? payload.session : "";
+          const gen = exactGeneration(
+            typeof payload.generation === "string" ? Number(payload.generation) : undefined);
+          if (gen === null) {
+            return { status: 403, body: { ok: false, error: "CAPABILITY_RESTRICTION_MISSING", restriction: "generation" } };
+          }
+          const live = await stubFor(cutActivate[1]).assertActiveReader(cutActivate[1], actor, gen);
+          if (!live.ok) return { status: 409, body: live };
           const result = await stubFor(cutActivate[1])
-            .activateCheckpointCut(cutActivate[1], decodedCut.value, b);
+            .activateCheckpointCut(cutActivate[1], decodedCut.value, parsedEvidence.body);
           return { status: result.ok ? 200 : 409, body: result };
         });
     }
@@ -1298,18 +1952,18 @@ export default {
     if (request.method === "GET" && cutActive) {
       const activeGen = generationOr(cutActive[2]);
       if (activeGen instanceof Response) return activeGen;
-      const denied = await requireCapability(cutActive[1], { method: "WAL_READ" });
-      if (denied) return denied;
-      const result = await stubFor(cutActive[1]).activeCheckpointCut(cutActive[1], activeGen);
-      return json(result, result.ok ? 200 : 404);
+      const auth = await authorizedRead(cutActive[1], { method: "WAL_READ" },
+        { kind: "ACTIVE_CUT", generation: activeGen });
+      if ("denied" in auth) return auth.denied;
+      return json(auth.outcome.inner, 200);
     }
 
     const journalVerifyAnchored = path.match(/^\/journal\/([^/]+)\/verify-anchored$/);
     if (request.method === "GET" && journalVerifyAnchored) {
-      const denied = await requireCapability(journalVerifyAnchored[1], { method: "JOURNAL_VERIFY" });
-      if (denied) return denied;
-      const verdict = await stubFor(journalVerifyAnchored[1]).verifyJournalAnchored();
-      return json(verdict, verdict.ok ? 200 : 409);
+      const auth = await authorizedControlRead(journalVerifyAnchored[1], { method: "JOURNAL_VERIFY" },
+        { kind: "JOURNAL_VERIFY_ANCHORED" });
+      if ("denied" in auth) return auth.denied;
+      return json(auth.outcome.verdict, auth.outcome.verified ? 200 : 409);
     }
 
     const journalVerify = path.match(/^\/journal\/([^/]+)\/verify$/);
@@ -1317,10 +1971,10 @@ export default {
       // F8 read surface: recompute the whole chain + MACs server-side.
       // Routed by databaseId like every DO method (the journal is the DO's
       // global outbox; the id names the authority instance to audit).
-      const denied = await requireCapability(journalVerify[1], { method: "JOURNAL_VERIFY" });
-      if (denied) return denied;
-      const verdict = await stubFor(journalVerify[1]).verifyJournal();
-      return json(verdict, verdict.ok ? 200 : 409);
+      const auth = await authorizedControlRead(journalVerify[1], { method: "JOURNAL_VERIFY" },
+        { kind: "JOURNAL_VERIFY" });
+      if ("denied" in auth) return auth.denied;
+      return json(auth.outcome.verdict, auth.outcome.verified ? 200 : 409);
     }
 
     const walAudit = path.match(/^\/wal\/([^/]+)\/(\d+)\/audit$/);
@@ -1328,9 +1982,10 @@ export default {
       const [, db, generation] = walAudit;
       const gen = generationOr(generation);
       if (gen instanceof Response) return gen;
-      const denied = await requireCapability(db, { method: "WAL_READ" });
-      if (denied) return denied;
-      return json({ ok: true, ...(await stubFor(db).auditContiguity(db, gen)) });
+      const auth = await authorizedRead(db, { method: "WAL_READ" }, { kind: "AUDIT", generation: gen });
+      if ("denied" in auth) return auth.denied;
+      return json({ ok: true, contiguous: auth.outcome.contiguous,
+                    count: auth.outcome.count, maxLsn: auth.outcome.maxLsn });
     }
 
     return json({ ok: false, error: "NOT_FOUND" }, 404);

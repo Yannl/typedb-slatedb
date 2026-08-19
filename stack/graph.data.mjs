@@ -48,27 +48,103 @@ export const PAYLOADS_BINDING = "PAYLOADS";
 export const PAYLOADS_BUCKET_LOCAL = "typedb-payloads-local";
 export const PAYLOADS_BUCKET_PRODUCTION = "typedb-payloads";
 
-// Plain-text vars of the LOCAL posture (wrangler.toml [vars]).
+// Plain-text vars of the LOCAL developer-convenience posture. This posture
+// (dev issuer, dev-only admin routes) is explicitly NON-PARITY: it exists
+// for fast local iteration only, and no graph carrying it may ever be
+// deployed or compared as production truth (R4-STACK-01).
 export const LOCAL_VARS = Object.freeze({
   CONTROLLER_KEY_PROFILE: "local-dev",
   // ONLY this exact value opens dev-only routes (PR0 containment); the
-  // production env deliberately does not set it — unset closes routes.
+  // managed posture deliberately does not set it — unset closes routes.
   CONTROLLER_SURFACE: "local-dev",
 });
 
-// Production posture invariants (wrangler.toml [env.production]).
+// Managed posture invariants (wrangler.toml top-level / production).
 export const PRODUCTION_VARS = Object.freeze({
   CONTROLLER_KEY_PROFILE: "managed",
 });
-// Vars that MUST NOT appear in the production env: their absence is the
-// fail-closed posture (losing the var closes routes, never opens them).
+// R5-SEC-01/03: managed DEPLOYMENT vars — names declared here, values
+// supplied per deployment (`wrangler deploy --var` / the managed E2E boot
+// script), never baked into the committed wrangler.toml. They are PUBLIC
+// runtime inputs (the environment name and the two Ed25519 verification
+// keyrings), not secrets: the managed runtime verifies tokens but holds no
+// signing material. stack/wrangler-check.mjs cross-validates this list
+// against the runtime's own requirement declaration
+// (control-plane/src/controller/core/key-requirements.mjs), so the graph
+// and resolveKeyConfig cannot skew — that skew is exactly how the round-5
+// audit's "managed graph cannot boot" defect happened.
+export const PRODUCTION_DEPLOYMENT_VARS = Object.freeze([
+  "CONTROLLER_ENVIRONMENT",
+  "CONTROLLER_CAPABILITY_PUBLIC_KEYS",
+  "CONTROLLER_PROVISION_PUBLIC_KEYS",
+]);
+// Vars that MUST NOT appear in any managed-posture graph: their absence is
+// the fail-closed posture (losing the var closes routes, never opens them).
 export const PRODUCTION_FORBIDDEN_VARS = Object.freeze(["CONTROLLER_SURFACE"]);
+
+// R5-SEC-07 HONESTY: what each `execution` value actually means TODAY.
+// The graph's `execution: "container"` used to read as if a Cloudflare
+// Container process were exercised; it never has been — no lane in this
+// repository has ever started a real Container resource (no Docker in the
+// local sandbox, and Alchemy local cannot run one). This table is emitted
+// into EVERY graph (identical across variants, so the graph differential
+// is unaffected) and is the same declared-ahead convention the CONTAINER
+// DO binding uses: a reader resolving a graph's `execution` mode through
+// EXECUTION_FACETS can never mistake a declared container topology for an
+// exercised one. The facet flips to exercised only when a Docker-capable
+// lane actually starts the pinned image and the ContainerDO control
+// protocol binds to it (the provisioned containerRuntime descriptor in
+// control-plane/src/container/database-container.ts is that seam).
+export const EXECUTION_FACETS = Object.freeze({
+  native: Object.freeze({
+    status: "exercised",
+    declaredAhead: false,
+    note: "native process execution is what local lanes actually run",
+  }),
+  container: Object.freeze({
+    status: "declared-ahead",
+    declaredAhead: true,
+    advisory: true,
+    note:
+      "DECLARED topology only: no real Cloudflare Container process has ever "
+      + "been started or exercised by any lane; the ContainerDO holds a "
+      + "provisioned identity and ADVISORY observations, not a container "
+      + "lifecycle. Requires a Docker-capable lane / the real Container "
+      + "resource (matrix CF-02).",
+  }),
+});
+
+// The two declared security postures. Every graph variant names its
+// posture explicitly; the graph differential validates each graph's vars
+// against its DECLARED posture independently, so two graphs can never
+// pass merely by sharing the same unsafe values (the round-4 audit's
+// surviving semantic mutant: cloudflare-real carrying local-dev vars).
+export const SECURITY_POSTURES = Object.freeze({
+  // Non-parity local iteration: dev issuer + dev admin routes. No
+  // deployment vars: the committed dev keypairs need no provisioning.
+  "developer-convenience": Object.freeze({
+    vars: LOCAL_VARS,
+    deploymentVars: Object.freeze([]),
+    forbiddenVars: Object.freeze([]),
+  }),
+  // Production-shaped: managed keys, closed surface, no dev vars. Used by
+  // cloudflare-real AND by the local parity lane (which supplies local
+  // ephemeral managed material rather than dev constants).
+  managed: Object.freeze({
+    vars: PRODUCTION_VARS,
+    deploymentVars: PRODUCTION_DEPLOYMENT_VARS,
+    forbiddenVars: PRODUCTION_FORBIDDEN_VARS,
+  }),
+});
 
 // Secret schema (managed posture provisions these via `wrangler secret put`;
 // local-dev falls back to loud dev constants — core/key-config.ts).
+// R5-SEC-03: exactly ONE secret remains. The capability/provision material
+// became PUBLIC Ed25519 verification keys (deployment vars above); the
+// issuer credential left the runtime entirely (issuance is issuer-side);
+// the journal MAC key stays a symmetric secret BY DESIGN — its writer and
+// verifier are the same DatabaseControllerDO (R5-SEC-08).
 export const SECRET_SCHEMA = Object.freeze([
-  "CONTROLLER_CAPABILITY_KEY",
-  "CONTROLLER_ISSUER_SECRET",
   "CONTROLLER_JOURNAL_KEY",
 ]);
 
@@ -121,6 +197,21 @@ export function toGraph(variant = "local-native", repoRoot = REPO_ROOT) {
       doProvider: "alchemy-workerd-local",
       routeClass: "local-loopback",
       secretSource: "dev-constants",
+      securityPosture: "developer-convenience",
+    },
+    // Local PARITY lane: identical local providers, but the MANAGED
+    // security posture — local ephemeral managed secrets, closed surface,
+    // no dev routes. This is the lane whose green may be compared with
+    // cloudflare-real; local-native's convenience posture may not.
+    "local-parity": {
+      execution: "native",
+      s3Provider: "minio",
+      s3Endpoint: "http://127.0.0.1:${run.minio.port}",
+      r2Provider: "alchemy-local-r2",
+      doProvider: "alchemy-workerd-local",
+      routeClass: "local-loopback",
+      secretSource: "local-ephemeral-managed",
+      securityPosture: "managed",
     },
     "local-container": {
       execution: "container",
@@ -130,6 +221,7 @@ export function toGraph(variant = "local-native", repoRoot = REPO_ROOT) {
       doProvider: "alchemy-workerd-local",
       routeClass: "local-loopback",
       secretSource: "dev-constants",
+      securityPosture: "developer-convenience",
     },
     "cloudflare-real": {
       execution: "container",
@@ -139,11 +231,17 @@ export function toGraph(variant = "local-native", repoRoot = REPO_ROOT) {
       doProvider: "cloudflare-workerd",
       routeClass: "local-loopback", // no public routes are declared in any variant
       secretSource: "provisioned-secrets",
+      securityPosture: "managed",
     },
   };
   const v = variants[variant];
   if (!v) throw new Error(`unknown graph variant: ${variant}`);
   const containerActive = containerDoExported(repoRoot);
+  // R4-STACK-01: a graph's vars come from its DECLARED posture — the
+  // cloudflare-real graph carries the managed vars and structurally cannot
+  // carry a forbidden dev var. The posture invariant is additionally
+  // re-validated per graph by graph-diff.mjs assertPostureInvariants.
+  const posture = SECURITY_POSTURES[v.securityPosture];
 
   const bindings = [
     {
@@ -178,6 +276,11 @@ export function toGraph(variant = "local-native", repoRoot = REPO_ROOT) {
     app: "typedb-r2",
     variant,
     execution: v.execution,
+    // R5-SEC-07: the honesty table rides in every graph so `execution` can
+    // never be read without its facet status (identical across variants —
+    // the differential sees no new paths).
+    executionFacets: EXECUTION_FACETS,
+    securityPosture: v.securityPosture,
     worker: {
       name: WORKER_NAME,
       entry: WORKER_ENTRY,
@@ -185,7 +288,13 @@ export function toGraph(variant = "local-native", repoRoot = REPO_ROOT) {
       routeClass: v.routeClass,
       provider: v.doProvider,
       bindings,
-      vars: { ...LOCAL_VARS },
+      vars: { ...posture.vars },
+      deploymentVars: [...posture.deploymentVars],
+      forbiddenVars: [...posture.forbiddenVars],
+      // Public workers.dev / preview URLs are disabled in EVERY variant:
+      // an implicit public route is an unsafe default, not a convenience.
+      workersDev: false,
+      previewUrls: false,
       secretSchema: [...SECRET_SCHEMA],
       secretSource: v.secretSource,
       // budget/limit class: none declared — a variant that declares limits
@@ -204,38 +313,63 @@ export function toGraph(variant = "local-native", repoRoot = REPO_ROOT) {
   };
 }
 
+// MIGRATION LEDGER (R4-STACK-10): the append-only, order- and
+// tag-immutable Durable Object migration history. wrangler-check.mjs
+// requires the EXACT ordered sequence in every wrangler config; removing,
+// reordering or retagging a historical entry fails the check. New
+// migrations are APPENDED here (and to both config files) only.
+export const MIGRATION_LEDGER = Object.freeze([
+  Object.freeze({ tag: "v1", new_sqlite_classes: Object.freeze(["DatabaseControllerDO"]) }),
+  Object.freeze({ tag: "v2", new_sqlite_classes: Object.freeze(["DatabaseContainerDO"]) }),
+]);
+
 /**
- * Wrangler-equivalent view of the graph: what control-plane/wrangler.toml
- * must say for the same topology. declaredAhead bindings are reported
- * separately — absent from the strict comparison until activated.
+ * Wrangler-equivalent view of the graph: what the two wrangler configs
+ * must say for the same topology (R4-STACK-01 split):
+ *   - wrangler.toml            => the MANAGED posture (default deploy);
+ *   - wrangler.local-dev.toml  => the developer-convenience posture,
+ *                                 selected only by explicit -c.
+ * declaredAhead bindings are reported separately — absent from the strict
+ * comparison until activated.
  */
 export function toWranglerView(repoRoot = REPO_ROOT) {
   const g = toGraph("local-native", repoRoot);
   const active = g.worker.bindings.filter((b) => !b.declaredAhead);
   const ahead = g.worker.bindings.filter((b) => b.declaredAhead);
-  return {
+  const doBindings = active
+    .filter((b) => b.type === "durable_object_namespace")
+    .map((b) => ({ name: b.name, class_name: b.className }));
+  const sqliteClasses = active
+    .filter((b) => b.type === "durable_object_namespace" && b.sqlite)
+    .map((b) => b.className);
+  const shared = {
     name: g.worker.name,
     main: path.posix.relative("control-plane", WORKER_ENTRY),
     compatibility_date: g.worker.compatibilityDate,
-    durable_objects: active
-      .filter((b) => b.type === "durable_object_namespace")
-      .map((b) => ({ name: b.name, class_name: b.className })),
-    new_sqlite_classes: active
-      .filter((b) => b.type === "durable_object_namespace" && b.sqlite)
-      .map((b) => b.className),
-    r2_buckets: active
-      .filter((b) => b.type === "r2_bucket")
-      .map((b) => ({ binding: b.name, bucket_name: b.bucketName })),
-    vars: { ...g.worker.vars },
-    production: {
+    workers_dev: false,
+    preview_urls: false,
+    durable_objects: doBindings,
+    new_sqlite_classes: sqliteClasses,
+    migration_ledger: MIGRATION_LEDGER.map((m) => ({ tag: m.tag, new_sqlite_classes: [...m.new_sqlite_classes] })),
+  };
+  return {
+    managed: {
+      ...shared,
       vars: { ...PRODUCTION_VARS },
+      deployment_vars: [...PRODUCTION_DEPLOYMENT_VARS],
       forbidden_vars: [...PRODUCTION_FORBIDDEN_VARS],
-      durable_objects: active
-        .filter((b) => b.type === "durable_object_namespace")
-        .map((b) => ({ name: b.name, class_name: b.className })),
       r2_buckets: active
         .filter((b) => b.type === "r2_bucket")
         .map((b) => ({ binding: b.name, bucket_name: PAYLOADS_BUCKET_PRODUCTION })),
+    },
+    local_dev: {
+      ...shared,
+      vars: { ...LOCAL_VARS },
+      deployment_vars: [],
+      forbidden_vars: [],
+      r2_buckets: active
+        .filter((b) => b.type === "r2_bucket")
+        .map((b) => ({ binding: b.name, bucket_name: b.bucketName })),
     },
     declared_ahead: ahead.map((b) => ({
       name: b.name,

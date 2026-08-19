@@ -42,7 +42,7 @@ use tracing::trace;
 use crate::{
     durability_client::{DurabilityClient, DurabilityClientError},
     error::{MVCCStorageError, MVCCStorageErrorKind},
-    factory::{StorageFactoryError, resolved_backend_profile},
+    factory::{BackendContext, StorageFactoryError},
     isolation_manager::{IsolationManager, ValidatedCommit},
     iterator::MVCCRangeIterator,
     key_range::KeyRange,
@@ -127,8 +127,34 @@ impl<Durability> MVCCStorage<Durability> {
     pub fn create<KS: KeyspaceSet>(
         name: impl AsRef<str>,
         path: &Path,
+        durability_client: Durability,
+        rocks_resources: &RocksResources,
+    ) -> Result<Self, StorageOpenError>
+    where
+        Durability: DurabilityClient,
+    {
+        // R4-STOR-00: a direct storage construction (tests/benches, no
+        // database above it) is its own admission point — resolve the ONE
+        // immutable backend context here and delegate. The database layer
+        // resolves its context at `Database::open` and calls
+        // `create_with_context` instead, so per open the environment is read
+        // exactly once, at exactly one layer.
+        let context = BackendContext::resolve_from_env()
+            .map_err(|source| StorageOpenError::BackendResolution { name: name.as_ref().to_owned(), source })?;
+        Self::create_with_context::<KS>(name, path, durability_client, rocks_resources, &context)
+    }
+
+    /// Create the storage with an ALREADY-RESOLVED immutable backend context
+    /// (R4-STOR-00). This layer never consults the environment; it only
+    /// re-checks the process profile witness, so a context resolved before a
+    /// mid-process environment change is a typed refusal here — BEFORE the
+    /// storage directory is created — never a silent half-old/half-new open.
+    pub fn create_with_context<KS: KeyspaceSet>(
+        name: impl AsRef<str>,
+        path: &Path,
         mut durability_client: Durability,
         rocks_resources: &RocksResources,
+        context: &BackendContext,
     ) -> Result<Self, StorageOpenError>
     where
         Durability: DurabilityClient,
@@ -138,10 +164,13 @@ impl<Durability> MVCCStorage<Durability> {
         if storage_dir.exists() {
             return Err(StorageOpenError::StorageDirectoryExists { name: name.as_ref().to_owned(), path: storage_dir });
         }
-        // S-01: resolve the backend BEFORE creating the storage directory, so a
-        // refusal (unknown profile / not-yet-available lane) leaves the storage
-        // tree byte-identical — no directory created before the refusal.
-        let backend = Self::resolve_storage_backend(name.as_ref())?;
+        // S-01/R4-STOR-00: check the context BEFORE creating the storage
+        // directory, so a refusal leaves the storage tree byte-identical —
+        // no directory created before the refusal.
+        context
+            .verify_process_consistency()
+            .map_err(|source| StorageOpenError::BackendResolution { name: name.as_ref().to_owned(), source })?;
+        let backend = context.backend();
         fs::create_dir_all(&storage_dir).map_err(|error| StorageOpenError::StorageDirectoryCreate {
             name: name.as_ref().to_owned(),
             source: Arc::new(error),
@@ -165,18 +194,6 @@ impl<Durability> MVCCStorage<Durability> {
         })
     }
 
-    /// Resolve this database's storage backend at open (S-P0-06): the
-    /// process profile becomes a typed [`StorageBackend`] exactly once, here,
-    /// and is passed down as an explicit constructor argument. Resolution
-    /// failure — unknown profile value, or a profile whose backend is not
-    /// yet available — is a typed open refusal before any engine or
-    /// namespace is touched; there is no fallback.
-    fn resolve_storage_backend(name: &str) -> Result<StorageBackend, StorageOpenError> {
-        resolved_backend_profile()
-            .and_then(|profile| profile.storage_backend())
-            .map_err(|source| StorageOpenError::BackendResolution { name: name.to_owned(), source })
-    }
-
     /// Open the keyspaces with an already-resolved backend (S-01): the backend
     /// is resolved by the caller BEFORE any directory is created, then passed
     /// in here as an explicit argument.
@@ -194,55 +211,202 @@ impl<Durability> MVCCStorage<Durability> {
     pub fn load<KS: KeyspaceSet>(
         name: impl AsRef<str>,
         path: &Path,
-        mut durability_client: Durability,
+        durability_client: Durability,
         checkpoint: &Option<CheckpointReader>,
         rocks_resources: &RocksResources,
     ) -> Result<Self, StorageOpenError>
     where
         Durability: DurabilityClient,
     {
-        use StorageOpenError::{RecoverFromCheckpoint, RecoverFromDurability, StorageDirectoryRecreate};
+        // R4-STOR-00: direct load (tests/benches) is its own admission point
+        // — resolve the ONE immutable backend context here; the database
+        // layer resolves its own at `Database::open` and passes it down.
+        let context = BackendContext::resolve_from_env()
+            .map_err(|source| StorageOpenError::BackendResolution { name: name.as_ref().to_owned(), source })?;
+        // a single (or absent) candidate is the degenerate case of the
+        // R4-STOR-10 newest->oldest fallback loop.
+        let candidates: Vec<CheckpointReader> = checkpoint
+            .as_ref()
+            .map(|checkpoint| CheckpointReader { directory: checkpoint.directory.clone() })
+            .into_iter()
+            .collect();
+        Self::load_with_recovery_fallback::<KS>(name, path, durability_client, candidates, rocks_resources, &context)
+            .map(|(storage, _restored_watermark)| storage)
+    }
+
+    /// R4-STOR-10: recover from the verified checkpoint candidates, NEWEST TO
+    /// OLDEST, falling back on typed pre-mutation failures, and to full WAL
+    /// replay only when no candidate validates AND the retained WAL proves
+    /// contiguous coverage from the first allocatable sequence number.
+    ///
+    /// Per candidate the flow is two-phase (see `CheckpointReader`):
+    /// 1. `validate_for_recovery` — watermark parse, ahead-of-durability
+    ///    check, successor proofs, and the strict contiguous load of the WAL
+    ///    commits replay needs. Mutates NOTHING; any failure here leaves the
+    ///    live tree byte-identical and the loop records the typed reason and
+    ///    tries the next older candidate.
+    /// 2. `restore_validated` — the destructive mirror + open + replay. A
+    ///    failure here has touched live state and is propagated, never
+    ///    retried over a half-mirrored tree.
+    ///
+    /// If every candidate fails validation, full WAL replay runs ONLY after
+    /// the strict loader proves coverage from `MIN.next()` — the proof runs
+    /// BEFORE the storage tree is wiped, so an uncoverable WAL also leaves
+    /// live state byte-identical. If that proof fails too, the typed
+    /// [`StorageOpenError::RecoveryFallbackExhausted`] names every candidate's
+    /// failure reason alongside the replay failure.
+    ///
+    /// Returns the storage plus the watermark of the checkpoint actually
+    /// restored (`None` when recovery came from full WAL replay), so the
+    /// caller's catch-up policy reasons about the cut that was USED, not
+    /// merely the newest one on disk.
+    pub fn load_with_recovery_fallback<KS: KeyspaceSet>(
+        name: impl AsRef<str>,
+        path: &Path,
+        mut durability_client: Durability,
+        checkpoints: Vec<CheckpointReader>,
+        rocks_resources: &RocksResources,
+        context: &BackendContext,
+    ) -> Result<(Self, Option<SequenceNumber>), StorageOpenError>
+    where
+        Durability: DurabilityClient,
+    {
+        use StorageOpenError::{
+            CheckpointIdentityRefused, RecoverFromCheckpoint, RecoverFromDurability, RecoveryFallbackExhausted,
+            RestoreConvergence, StorageDirectoryRecreate,
+        };
 
         let name = name.as_ref();
         let storage_dir = path.join(Self::STORAGE_DIR_NAME);
 
         Self::register_durability_record_types(&mut durability_client);
-        let (keyspaces, next_sequence_number) = if let Some(checkpoint) = checkpoint {
-            let backend = Self::resolve_storage_backend(name)?;
-            checkpoint
-                .recover_storage::<KS, _>(name, &storage_dir, &durability_client, rocks_resources, backend)
-                .map_err(|error| RecoverFromCheckpoint { name: name.to_owned(), typedb_source: error })?
-        } else {
-            // S-01: resolve the backend BEFORE removing/recreating the storage
-            // directory, so a refusal leaves the existing tree byte-identical
-            // rather than wiping it and then failing.
-            let backend = Self::resolve_storage_backend(name)?;
-            match fs::remove_dir_all(&storage_dir) {
-                Err(err) if err.kind() != io::ErrorKind::NotFound => {
-                    return Err(StorageDirectoryRecreate { name: name.to_owned(), source: Arc::new(err) });
+        // R5-STOR-06 restart convergence, BEFORE anything else looks at the
+        // tree: a crash during a previous scratch restore leaves residue with
+        // a deterministic resolution — pre-activation residue is reclaimed
+        // with the predecessor intact, a torn activation swap is rolled back
+        // so the predecessor is active again, and a completed swap's retired
+        // predecessor is reclaimed. After this, the tree holds exactly the
+        // active live directory (or none) and recovery proceeds normally.
+        crate::recovery::checkpoint::converge_interrupted_restore(&storage_dir)
+            .map_err(|error| RestoreConvergence { name: name.to_owned(), source: Arc::new(error) })?;
+        // S-01/R4-STOR-00: the backend context arrives ALREADY RESOLVED (the
+        // one per-open admission resolution); this layer only re-checks the
+        // process witness BEFORE any restore or removal, so a refusal leaves
+        // the existing tree byte-identical. No environment read happens here.
+        context
+            .verify_process_consistency()
+            .map_err(|source| StorageOpenError::BackendResolution { name: name.to_owned(), source })?;
+        let backend = context.backend();
+        let expected_identity = context.identity();
+
+        let mut candidate_failures: Vec<String> = Vec::new();
+        for candidate in &checkpoints {
+            match candidate.validate_for_recovery(&durability_client, Some(expected_identity)) {
+                Ok(validated) => {
+                    let restored_watermark = validated.watermark;
+                    // the candidate is proven: restore is destructive from
+                    // here on, so its failures propagate — no fallback over a
+                    // half-mirrored live tree.
+                    let (keyspaces, next_sequence_number) = candidate
+                        .restore_validated::<KS, _>(
+                            name,
+                            &storage_dir,
+                            validated,
+                            &durability_client,
+                            rocks_resources,
+                            backend,
+                        )
+                        .map_err(|error| RecoverFromCheckpoint { name: name.to_owned(), typedb_source: error })?;
+                    return Ok((
+                        Self::assemble(name, storage_dir, durability_client, keyspaces, next_sequence_number),
+                        Some(restored_watermark),
+                    ));
                 }
-                _ => (),
+                Err(error @ CheckpointLoadError::CheckpointIdentityMismatch { .. }) => {
+                    // R4-STOR-01: a cut whose bound backend identity differs
+                    // from this database's is NEVER fallback material — it is
+                    // evidence the tree holds a checkpoint from a DIFFERENT
+                    // configuration (a cut from A presented under B). Falling
+                    // back (to an older cut or full WAL replay) would silently
+                    // discard the presented cut; refuse instead, with the
+                    // live tree untouched (the check is pre-mutation).
+                    return Err(CheckpointIdentityRefused { name: name.to_owned(), typedb_source: error });
+                }
+                Err(error @ CheckpointLoadError::CheckpointLegacyIdentityRequiresImport { .. }) => {
+                    // R5-STOR-10: a legacy cut with NO bound identity is
+                    // equally never fallback material — silently skipping it
+                    // (or, worse, restoring it) would bind an unproven cut to
+                    // whatever configuration is current. Ordinary recovery
+                    // refuses, live tree untouched; the operator runs the
+                    // explicit legacy-identity import to proceed.
+                    return Err(StorageOpenError::CheckpointLegacyIdentityRefused {
+                        name: name.to_owned(),
+                        typedb_source: error,
+                    });
+                }
+                Err(error) => {
+                    // typed, pre-mutation: record the reason and try the next
+                    // older verified candidate (R4-STOR-10).
+                    error!(
+                        "checkpoint candidate {:?} for database '{}' failed pre-restore validation; \
+                         falling back to the next older candidate (live state untouched): {:?}",
+                        candidate.directory, name, error
+                    );
+                    candidate_failures.push(format!("{:?}: {error:?}", candidate.directory));
+                }
             }
-            fail_point!(STORAGE_MISSING_STORAGE_DIR);
-            fs::create_dir_all(&storage_dir)
-                .map_err(|err| StorageDirectoryRecreate { name: name.to_owned(), source: Arc::new(err) })?;
-            fail_point!(STORAGE_EMPTY_STORAGE_DIR);
-            let keyspaces = Self::open_keyspaces::<KS>(name, &storage_dir, rocks_resources, backend)?;
-            trace!("No checkpoint found, loading from WAL");
-            let commits = load_commit_data_from(SequenceNumber::MIN.next(), &durability_client)
-                .map_err(|err| RecoverFromDurability { name: name.to_owned(), typedb_source: err })?;
-            // R-01: the frontier is the WAL's own recovered end. The strict
-            // loader above has PROVEN exactly one commit for every sequence
-            // in start..=head, so this is never a max() over an unproved set.
-            let next_sequence_number = durability_client.current();
-            apply_recovered(name, commits, &durability_client, &keyspaces)
-                .map_err(|err| RecoverFromDurability { name: name.to_owned(), typedb_source: err })?;
-            trace!("Finished applying commits from WAL.");
-            (keyspaces, next_sequence_number)
+        }
+
+        // No candidate validated (or none existed). Full WAL replay — but the
+        // strict loader must PROVE contiguous coverage from the first
+        // allocatable sequence number BEFORE the storage tree is wiped
+        // (R-01/R4-STOR-10): an uncoverable WAL leaves live state
+        // byte-identical and the refusal names every candidate's failure.
+        trace!("No usable checkpoint, loading from WAL");
+        let commits = match load_commit_data_from(SequenceNumber::MIN.next(), &durability_client) {
+            Ok(commits) => commits,
+            Err(replay_error) if candidate_failures.is_empty() => {
+                return Err(RecoverFromDurability { name: name.to_owned(), typedb_source: replay_error });
+            }
+            Err(replay_error) => {
+                return Err(RecoveryFallbackExhausted {
+                    name: name.to_owned(),
+                    candidate_failures: candidate_failures.join("; "),
+                    typedb_source: replay_error,
+                });
+            }
         };
 
+        match fs::remove_dir_all(&storage_dir) {
+            Err(err) if err.kind() != io::ErrorKind::NotFound => {
+                return Err(StorageDirectoryRecreate { name: name.to_owned(), source: Arc::new(err) });
+            }
+            _ => (),
+        }
+        fail_point!(STORAGE_MISSING_STORAGE_DIR);
+        fs::create_dir_all(&storage_dir)
+            .map_err(|err| StorageDirectoryRecreate { name: name.to_owned(), source: Arc::new(err) })?;
+        fail_point!(STORAGE_EMPTY_STORAGE_DIR);
+        let keyspaces = Self::open_keyspaces::<KS>(name, &storage_dir, rocks_resources, backend)?;
+        // R-01: the frontier is the WAL's own recovered end. The strict
+        // loader above has PROVEN exactly one commit for every sequence
+        // in start..=head, so this is never a max() over an unproved set.
+        let next_sequence_number = durability_client.current();
+        apply_recovered(name, commits, &durability_client, &keyspaces)
+            .map_err(|err| RecoverFromDurability { name: name.to_owned(), typedb_source: err })?;
+        trace!("Finished applying commits from WAL.");
+        Ok((Self::assemble(name, storage_dir, durability_client, keyspaces, next_sequence_number), None))
+    }
+
+    fn assemble(
+        name: &str,
+        storage_dir: PathBuf,
+        durability_client: Durability,
+        keyspaces: Keyspaces,
+        next_sequence_number: SequenceNumber,
+    ) -> Self {
         let isolation_manager = IsolationManager::new(next_sequence_number);
-        Ok(Self {
+        Self {
             name: Arc::<str>::from(name),
             path: storage_dir,
             durability_client,
@@ -252,7 +416,7 @@ impl<Durability> MVCCStorage<Durability> {
             // number is MIN.next(), so MIN itself never names a commit and a
             // saturated origin is exact, never a release-mode wrap.
             highest_committed_snapshot: AtomicU64::new(next_sequence_number.number().saturating_sub(1)),
-        })
+        }
     }
 
     fn register_durability_record_types(durability_client: &mut impl DurabilityClient) {
@@ -284,18 +448,32 @@ impl<Durability> MVCCStorage<Durability> {
         WriteSnapshot::new_with_open_sequence_number(self, open_sequence_number)
     }
 
-    pub fn open_snapshot_write_at(self: Arc<Self>, sequence_number: SequenceNumber) -> WriteSnapshot<Durability> {
+    /// Open a committable snapshot at an explicit sequence number.
+    ///
+    /// R5-STOR-12: a request BEHIND the current visibility watermark is the
+    /// typed [`SnapshotOpenError::HistoricalWriteSnapshotUnsupported`]
+    /// refusal, never a panic (this used to be a reachable `todo!()`).
+    /// Opening a committable snapshot at a historical position is genuinely
+    /// unsupported: the commit idempotency check (`commit_record_exists`)
+    /// relies on SnapshotIds being unique for an open sequence number, and
+    /// with the current nature of SnapshotIds a write snapshot in the past
+    /// can collide. No wire/user/recovery input may crash the server through
+    /// this path.
+    pub fn open_snapshot_write_at(
+        self: Arc<Self>,
+        sequence_number: SequenceNumber,
+    ) -> Result<WriteSnapshot<Durability>, SnapshotOpenError> {
         let current_watermark = self.snapshot_watermark();
         if sequence_number < current_watermark {
-            // Opening a committable snapshot at a historical position is not supported.
-            // The commit idempotency check (commit_record_exists) relies
-            // on SnapshotIds to be unique for an open seqnum. With the current nature of
-            // SnapshotIds, opening a write snapshot in the past can lead to SnapshotId collisions.
-            todo!("Opening committable snapshots at historical positions is not supported");
+            return Err(SnapshotOpenError::HistoricalWriteSnapshotUnsupported {
+                name: self.name.clone(),
+                requested: sequence_number,
+                watermark: current_watermark,
+            });
         }
         // guarantee external consistency: await this sequence number to be behind the watermark
         self.wait_for_watermark(sequence_number);
-        WriteSnapshot::new_with_open_sequence_number(self, sequence_number)
+        Ok(WriteSnapshot::new_with_open_sequence_number(self, sequence_number))
     }
 
     pub fn open_snapshot_read(self: Arc<Self>) -> ReadSnapshot<Durability> {
@@ -860,6 +1038,16 @@ typedb_error! {
 
         RecoverFromCheckpoint(10, "Failed to recover from checkpoint for database '{name}'.", name: String, typedb_source: CheckpointLoadError),
         RecoverFromDurability(11, "Failed to recover from durability logs for database '{name}'.", name: String, typedb_source: StorageRecoveryError),
+        RecoveryFallbackExhausted(13, "Failed to recover database '{name}': every checkpoint candidate failed pre-restore validation ({candidate_failures}), and full WAL replay could not prove contiguous coverage from the start of the sequence space. Live storage state was left untouched.", name: String, candidate_failures: String, typedb_source: StorageRecoveryError),
+        CheckpointIdentityRefused(14, "Refusing to recover database '{name}': a checkpoint in its tree is bound to a DIFFERENT backend identity (R4-STOR-01). A cut created under one backend configuration must not be restored under another; live storage state was left untouched.", name: String, typedb_source: CheckpointLoadError),
+        CheckpointLegacyIdentityRefused(15, "Refusing to recover database '{name}': a checkpoint in its tree carries NO backend identity (a legacy cut, R5-STOR-10). Binding it silently to the current configuration is fail-open; run the explicit legacy-identity import with operator acknowledgement to proceed. Live storage state was left untouched.", name: String, typedb_source: CheckpointLoadError),
+        RestoreConvergence(16, "Failed to converge interrupted-restore residue for database '{name}' before recovery (R5-STOR-06).", name: String, source: Arc<io::Error>),
+    }
+}
+
+typedb_error! {
+    pub SnapshotOpenError(component = "Snapshot open", prefix = "SNO") {
+        HistoricalWriteSnapshotUnsupported(1, "Cannot open a committable (write) snapshot in database '{name}' at sequence number {requested}: it is behind the current visibility watermark {watermark}, and historical write snapshots are unsupported (SnapshotId uniqueness per open sequence number would be violated). This is a typed refusal, never a server crash (R5-STOR-12).", name: Arc<str>, requested: SequenceNumber, watermark: SequenceNumber),
     }
 }
 
@@ -1362,5 +1550,165 @@ mod tests {
         // Legacy records convert to CommitRecord with UNSET snapshot_id
         let converted = CommitRecord::from(legacy_records.into_iter().next().unwrap().1);
         assert_eq!(converted.snapshot_id(), SnapshotId::UNSET);
+    }
+
+    #[test]
+    fn a_historical_write_snapshot_request_is_a_typed_error_not_a_panic() {
+        // R5-STOR-12: `open_snapshot_write_at` behind the watermark used to
+        // execute a reachable `todo!()` — a server crash on recovery/user
+        // input. It must be the typed refusal, and the at-watermark request
+        // (the supported boundary) must still succeed.
+        test_keyspace_set! {
+            TestKeyspace => 0: "test",
+        }
+
+        init_logging();
+        let mut profile = CommitProfile::DISABLED;
+        let storage_path = create_tmp_storage_dir();
+        let mut durability_client =
+            WALClient::new(WAL::create(storage_path.join(WAL::WAL_DIR_NAME), FsyncMetrics::disabled()).unwrap());
+        durability_client.register_record_type::<LegacyCommitRecordV1>();
+        durability_client.register_record_type::<CommitRecord>();
+        let resources = create_rocks_resources();
+        let storage = Arc::new(
+            MVCCStorage::<WALClient>::create::<TestKeyspaceSet>(
+                "storage",
+                &storage_path,
+                durability_client,
+                &resources,
+            )
+            .unwrap(),
+        );
+
+        // advance the watermark past MIN with one committed write
+        let key = StorageKeyArray::from((TestKeyspaceSet::TestKeyspace, b"key"));
+        let mut operations = OperationsBuffer::new();
+        operations.writes_in_mut(key.keyspace_id()).insert(key.byte_array().clone(), ByteArray::empty());
+        let record = CommitRecord::new(
+            operations,
+            storage.durability_client.previous(),
+            CommitType::Data,
+            SnapshotId::new(),
+        );
+        storage
+            .snapshot_commit(WriteSnapshot::new_with_commit_record(storage.clone(), record), &mut profile)
+            .unwrap();
+        let watermark = storage.snapshot_watermark();
+        assert!(watermark > SequenceNumber::MIN, "the commit must have advanced the watermark");
+
+        // behind the watermark: the typed refusal, never a panic
+        let error = storage
+            .clone()
+            .open_snapshot_write_at(SequenceNumber::MIN)
+            .err()
+            .expect("a historical write snapshot must be refused");
+        assert!(
+            matches!(
+                error,
+                crate::SnapshotOpenError::HistoricalWriteSnapshotUnsupported { requested, watermark: at, .. }
+                    if requested == SequenceNumber::MIN && at == watermark
+            ),
+            "expected the typed HistoricalWriteSnapshotUnsupported refusal, got: {error:?}"
+        );
+
+        // at the watermark: the supported boundary still opens
+        let snapshot = storage.clone().open_snapshot_write_at(watermark).expect("at-watermark open is supported");
+        drop(snapshot);
+    }
+}
+
+#[cfg(test)]
+mod backend_context_barrier_tests {
+    //! R4-STOR-00 barrier: the environment changes between the admission
+    //! resolution (where a database would resolve its context and write its
+    //! marker) and the MVCC open. The open must be a TYPED context-mismatch
+    //! refusal that leaves the storage tree untouched — never a silent open
+    //! under either the old or the new profile.
+    //!
+    //! This test is the only one in the storage lib binary that mutates
+    //! `TYPEDB_STORAGE_PROFILE` or touches the process profile witness; it
+    //! restores the variable before asserting, so the rest of the binary
+    //! observes the ambient environment throughout.
+
+    use diagnostics::metrics::FsyncMetrics;
+    use durability::wal::WAL;
+    use options::byte_size::ByteSize;
+    use test_utils::create_tmp_dir;
+
+    use crate::{
+        MVCCStorage, StorageOpenError,
+        durability_client::WALClient,
+        factory::{BackendContext, STORAGE_PROFILE_ENV, StorageBackendProfile, StorageFactoryError},
+        keyspace::{KeyspaceId, KeyspaceSet, rocks_resources::RocksResources},
+    };
+
+    #[derive(Clone, Copy)]
+    enum TestKs {
+        Main,
+    }
+    impl KeyspaceSet for TestKs {
+        fn iter() -> impl Iterator<Item = Self> {
+            [Self::Main].into_iter()
+        }
+        fn id(&self) -> KeyspaceId {
+            KeyspaceId(0)
+        }
+        fn name(&self) -> &'static str {
+            "keyspace"
+        }
+        fn prefix_length(&self) -> Option<usize> {
+            None
+        }
+    }
+
+    #[test]
+    fn a_mid_process_profile_change_is_a_typed_refusal_that_leaves_the_tree_untouched() {
+        // 1. admission: the first resolution seeds the process witness — this
+        //    is the moment a database open would bind its marker and context.
+        let admitted = BackendContext::resolve_from_env().expect("the ambient profile must resolve");
+
+        // 2. the barrier mutant: the environment changes to a DIFFERENT
+        //    profile before the MVCC open runs.
+        let mutated_profile =
+            if admitted.profile() == StorageBackendProfile::U2SlateLocalFs { "U1" } else { "U2" };
+        let original = std::env::var(STORAGE_PROFILE_ENV).ok();
+        // SAFETY: single-threaded with respect to this variable — no other
+        // test in this binary reads TYPEDB_STORAGE_PROFILE, and it is
+        // restored below before any assertion can fail.
+        unsafe { std::env::set_var(STORAGE_PROFILE_ENV, mutated_profile) };
+
+        // 3. the open under the changed environment.
+        let path = create_tmp_dir("r4-stor-00-barrier");
+        let wal = WAL::create(&path, FsyncMetrics::disabled()).expect("wal creates");
+        let resources = RocksResources::new(ByteSize::mb(64), ByteSize::mb(64));
+        let result = MVCCStorage::create::<TestKs>("barrier", &path, WALClient::new(wal), &resources);
+
+        // restore the environment before asserting anything.
+        match original {
+            Some(value) => unsafe { std::env::set_var(STORAGE_PROFILE_ENV, value) },
+            None => unsafe { std::env::remove_var(STORAGE_PROFILE_ENV) },
+        }
+
+        // typed mismatch, not a silent open under either profile...
+        assert!(
+            matches!(
+                &result,
+                Err(StorageOpenError::BackendResolution {
+                    source: StorageFactoryError::BackendContextChanged { .. },
+                    ..
+                })
+            ),
+            "a mid-process profile change must be the typed BackendContextChanged refusal, got: {result:?}",
+        );
+        // ...and the storage tree is untouched: no storage directory exists.
+        assert!(
+            !path.join(MVCCStorage::<WALClient>::STORAGE_DIR_NAME).exists(),
+            "R4-STOR-00: the refused open must not have created the storage directory",
+        );
+
+        // control: with the environment restored, the SAME profile resolves
+        // and agrees with the witness again.
+        let restored = BackendContext::resolve_from_env().expect("the restored profile must resolve");
+        assert_eq!(restored.profile(), admitted.profile(), "the restored environment matches the witness");
     }
 }

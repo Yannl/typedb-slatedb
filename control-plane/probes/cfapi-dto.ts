@@ -198,3 +198,22 @@ export function validateBucketLockGetResponse(v: unknown): CloudflareEnvelope<Bu
   const result = validateBucketLockRulesBody(o.result);
   return { ...(o as object), result } as CloudflareEnvelope<BucketLockRulesBody>;
 }
+
+/**
+ * Key-order-independent canonical form of a lock-rule list. The single
+ * definition shared by the P-R2-03 probe assertions and the runner's
+ * lock-baseline capture/restore (R4-CF-00), so "same policy" cannot mean
+ * two different things in the probe and in cleanup.
+ */
+export function canonicalRules(rules: ReadonlyArray<BucketLockRule>): string {
+  return JSON.stringify(
+    rules.map((r) => ({
+      id: r.id,
+      enabled: r.enabled,
+      prefix: r.prefix ?? null,
+      condition_type: r.condition.type,
+      condition_max_age: r.condition.type === "Age" ? r.condition.maxAgeSeconds : null,
+      condition_date: r.condition.type === "Date" ? r.condition.date : null,
+    })),
+  );
+}

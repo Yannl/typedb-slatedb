@@ -7,6 +7,13 @@
  * both, so the assertions below are the normative semantics, not mock
  * conveniences. Every assertion is declared with its required modes
  * (round-3 P-05).
+ *
+ * R4-CF-04 classification: every assertion here is class "provider-fact".
+ * The harness (probes/harness-worker.ts in real mode, the in-process fake
+ * in mock mode) is a purpose-built reference implementation of the
+ * DO-controller patterns — it demonstrates the platform behaviors the
+ * product design relies on, but it is NOT the product adapter, so passing
+ * these can never satisfy a product-conformance obligation on its own.
  */
 
 import type { ProbeContext, ProbeImpl } from "./probe.ts";
@@ -22,13 +29,13 @@ const pDO_01: ProbeImpl = {
     "a controller procedure paused at a non-storage await never commits " +
     "stale post-await validation; exactly one legal reducer trace",
   assertions: [
-    { id: "reset-ok", title: "interleave state reset", required_in: BOTH },
-    { id: "conflict-lands", title: "conflicting commit lands while first op is parked", required_in: BOTH },
-    { id: "gate-released", title: "gate released", required_in: BOTH },
-    { id: "stale-commit-rejected", title: "resumed operation must NOT commit its stale validation", required_in: BOTH },
-    { id: "single-commit", title: "exactly one commit in the reducer trace", required_in: BOTH },
-    { id: "winner-value", title: "committed value is the winner's", required_in: BOTH },
-    { id: "legal-trace", title: "trace is the one legal interleaving", required_in: BOTH },
+    { id: "reset-ok", title: "interleave state reset", class: "provider-fact", required_in: BOTH },
+    { id: "conflict-lands", title: "conflicting commit lands while first op is parked", class: "provider-fact", required_in: BOTH },
+    { id: "gate-released", title: "gate released", class: "provider-fact", required_in: BOTH },
+    { id: "stale-commit-rejected", title: "resumed operation must NOT commit its stale validation", class: "provider-fact", required_in: BOTH },
+    { id: "single-commit", title: "exactly one commit in the reducer trace", class: "provider-fact", required_in: BOTH },
+    { id: "winner-value", title: "committed value is the winner's", class: "provider-fact", required_in: BOTH },
+    { id: "legal-trace", title: "trace is the one legal interleaving", class: "provider-fact", required_in: BOTH },
   ],
   async run(ctx: ProbeContext): Promise<void> {
     const reset = await harnessPost(ctx, "/do/interleave/reset");
@@ -72,16 +79,16 @@ const pDO_02: ProbeImpl = {
     "reset the required work is reconstructed from durable intent and " +
     "eventually rescheduled — no transition relies on retry counts",
   assertions: [
-    { id: "reset-ok", title: "alarm state reset", required_in: BOTH },
-    { id: "not-delivered-early", title: "alarm not delivered early", required_in: BOTH },
-    { id: "throw-retries", title: "first delivery throws, platform retries", required_in: BOTH },
-    { id: "duplicate-idempotent", title: "duplicate delivery is idempotent", required_in: BOTH },
-    { id: "work-once", title: "work-1 applied exactly once", required_in: BOTH },
-    { id: "do-reset-accepted", title: "DO reset accepted", required_in: BOTH },
-    { id: "rescheduled-from-intent", title: "outstanding work rescheduled from durable intent after reset", required_in: BOTH },
-    { id: "reschedule-respects-time", title: "rescheduled alarm respects its time", required_in: BOTH },
-    { id: "rescheduled-completes", title: "rescheduled work completes", required_in: BOTH },
-    { id: "all-work-done", title: "both required work items eventually done", required_in: BOTH },
+    { id: "reset-ok", title: "alarm state reset", class: "provider-fact", required_in: BOTH },
+    { id: "not-delivered-early", title: "alarm not delivered early", class: "provider-fact", required_in: BOTH },
+    { id: "throw-retries", title: "first delivery throws, platform retries", class: "provider-fact", required_in: BOTH },
+    { id: "duplicate-idempotent", title: "duplicate delivery is idempotent", class: "provider-fact", required_in: BOTH },
+    { id: "work-once", title: "work-1 applied exactly once", class: "provider-fact", required_in: BOTH },
+    { id: "do-reset-accepted", title: "DO reset accepted", class: "provider-fact", required_in: BOTH },
+    { id: "rescheduled-from-intent", title: "outstanding work rescheduled from durable intent after reset", class: "provider-fact", required_in: BOTH },
+    { id: "reschedule-respects-time", title: "rescheduled alarm respects its time", class: "provider-fact", required_in: BOTH },
+    { id: "rescheduled-completes", title: "rescheduled work completes", class: "provider-fact", required_in: BOTH },
+    { id: "all-work-done", title: "both required work items eventually done", class: "provider-fact", required_in: BOTH },
   ],
   async run(ctx: ProbeContext): Promise<void> {
     const reset = await harnessPost(ctx, "/do/alarm/reset-all");
@@ -134,13 +141,13 @@ const pDO_03: ProbeImpl = {
     "hard limit; shedding is explicit (reason header, metrics, alert), " +
     "never a blind acceptance",
   assertions: [
-    { id: "reset-ok", title: "overload state reset", required_in: BOTH },
-    { id: "accepted-or-shed", title: "every mutation is either accepted or explicitly shed", required_in: BOTH },
-    { id: "soft-budget-exact", title: "acceptance stops exactly at the soft budget", required_in: BOTH },
-    { id: "shed-reason-explicit", title: "every shed response carries an explicit shed reason", required_in: BOTH },
-    { id: "rows-held-at-soft", title: "stored rows held at the soft budget, far from the hard limit", required_in: BOTH },
-    { id: "shed-count-metrics", title: "metrics count every shed mutation", required_in: BOTH },
-    { id: "alert-fired", title: "overload alert fired", required_in: BOTH },
+    { id: "reset-ok", title: "overload state reset", class: "provider-fact", required_in: BOTH },
+    { id: "accepted-or-shed", title: "every mutation is either accepted or explicitly shed", class: "provider-fact", required_in: BOTH },
+    { id: "soft-budget-exact", title: "acceptance stops exactly at the soft budget", class: "provider-fact", required_in: BOTH },
+    { id: "shed-reason-explicit", title: "every shed response carries an explicit shed reason", class: "provider-fact", required_in: BOTH },
+    { id: "rows-held-at-soft", title: "stored rows held at the soft budget, far from the hard limit", class: "provider-fact", required_in: BOTH },
+    { id: "shed-count-metrics", title: "metrics count every shed mutation", class: "provider-fact", required_in: BOTH },
+    { id: "alert-fired", title: "overload alert fired", class: "provider-fact", required_in: BOTH },
   ],
   async run(ctx: ProbeContext): Promise<void> {
     const SOFT = 8;
@@ -182,12 +189,12 @@ const pDO_04: ProbeImpl = {
     "every privileged action attempted with a superseded incarnation's " +
     "authority is rejected; current incarnation is unaffected",
   assertions: [
-    { id: "reset-ok", title: "authority state reset", required_in: BOTH },
-    { id: "current-authority-works", title: "current-incarnation authority works before rotation", required_in: BOTH },
-    { id: "rotation-applied", title: "incarnation rotated", required_in: BOTH },
-    { id: "old-authority-rejected", title: "every old-authority privileged action rejected", required_in: BOTH },
-    { id: "new-authority-unaffected", title: "new-incarnation authority unaffected", required_in: BOTH },
-    { id: "no-old-authority-effect", title: "no old-authority action produced an effect", required_in: BOTH },
+    { id: "reset-ok", title: "authority state reset", class: "provider-fact", required_in: BOTH },
+    { id: "current-authority-works", title: "current-incarnation authority works before rotation", class: "provider-fact", required_in: BOTH },
+    { id: "rotation-applied", title: "incarnation rotated", class: "provider-fact", required_in: BOTH },
+    { id: "old-authority-rejected", title: "every old-authority privileged action rejected", class: "provider-fact", required_in: BOTH },
+    { id: "new-authority-unaffected", title: "new-incarnation authority unaffected", class: "provider-fact", required_in: BOTH },
+    { id: "no-old-authority-effect", title: "no old-authority action produced an effect", class: "provider-fact", required_in: BOTH },
   ],
   async run(ctx: ProbeContext): Promise<void> {
     const reset = await harnessPost(ctx, "/do/authority/reset");

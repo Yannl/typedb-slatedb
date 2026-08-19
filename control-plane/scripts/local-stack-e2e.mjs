@@ -16,9 +16,21 @@
  */
 
 import { createHash } from "node:crypto";
+// The script speaks the REAL token/provisioning protocol, so it imports the
+// exact core modules the worker runs (node strips types; see package.json).
+// R5-SEC-03: minting is ISSUER-SIDE - the dev-insecure Ed25519 SIGNING
+// seeds live here (and in tests), while the local-dev runtime verifies
+// under the committed dev PUBLIC keys.
+import { mintCapabilityToken, mintProvisionToken } from "../src/controller/core/issuer.ts";
+import {
+  DEV_CAPABILITY_KID, DEV_ENVIRONMENT, DEV_PROVISION_KID,
+  devCapabilitySigningKey, devProvisionSigningKey,
+} from "../src/controller/core/key-config.ts";
 
 const BASE = process.argv[2] ?? "http://127.0.0.1:8787";
 const DB = `e2e-db-${process.pid}-${Date.now()}`;
+/** R4 PR1: the local tenant every dev-issued token binds (worker default). */
+const TENANT = "local";
 const GEN = 1;
 const SESSION = "sess-e2e";
 /** The actor the script is currently acting AS. Donor A4 revalidates the
@@ -67,11 +79,27 @@ function capSpecFor(method, rawPath, body) {
   if (path === "/budgets") {
     // donor A4: budgets are an authority mutation, so the capability names
     // the actor and the CORE revalidates that the actor is still live
-    return { databaseId: body.databaseId, method: "SESSION_ADMIN", session: CURRENT_SESSION };
+    return { databaseId: body.databaseId, method: "BUDGETS_SET", session: CURRENT_SESSION };
   }
   if (path.startsWith("/session/")) {
-    // registration ESTABLISHES the actor: it cannot be session-revalidated
-    return { databaseId: body.databaseId, method: "SESSION_ADMIN" };
+    // R4-SEC-04: each lifecycle transition is its own exact action, bound
+    // to the exact TARGET actor (token.session === body.startupSessionId)
+    const action = {
+      "/session/register": "SESSION_REGISTER",
+      "/session/reserve": "SESSION_RESERVE",
+      "/session/attest": "SESSION_ATTEST",
+      "/session/activate": "SESSION_ACTIVATE",
+      "/session/renew": "SESSION_RENEW",
+      "/session/drain": "SESSION_DRAIN",
+      "/session/revoke": "SESSION_REVOKE",
+      "/session/fence": "SESSION_FENCE",
+    }[path];
+    if (!action) throw new Error(`no capability mapping for ${path}`);
+    const spec = { databaseId: body.databaseId, method: action, session: body.startupSessionId };
+    if (["SESSION_REGISTER", "SESSION_RESERVE", "SESSION_ACTIVATE"].includes(action)) {
+      spec.generation = body.generation;
+    }
+    return spec;
   }
   // finalize capabilities are SESSION-bound (donor A3): the token carries
   // the actor identity, so a disclosed session id is not itself write authority
@@ -85,9 +113,10 @@ function capSpecFor(method, rawPath, body) {
              session: body.requests[0].startupSessionId, generation: body.requests[0].generation };
   }
   let m = path.match(/^\/wal\/([^/]+)\/\d+\/operation\//);
-  if (m) return { databaseId: m[1], method: "WAL_READ", session: CURRENT_SESSION };
+  if (m) return { databaseId: m[1], method: "WAL_READ", session: CURRENT_SESSION, generation: GEN };
   m = path.match(/^\/wal\/([^/]+)\//);
-  if (m) return { databaseId: m[1], method: "WAL_READ" };
+  // R4-SEC-05: every runtime read token is actor-bound
+  if (m) return { databaseId: m[1], method: "WAL_READ", session: CURRENT_SESSION, generation: GEN };
   m = path.match(/^\/outbox\/([^/]+)\/ack$/);
   if (m) return { databaseId: m[1], method: "OUTBOX", session: CURRENT_SESSION };
   m = path.match(/^\/outbox\/([^/]+)/);
@@ -95,11 +124,13 @@ function capSpecFor(method, rawPath, body) {
   m = path.match(/^\/journal\/([^/]+)\/verify(-anchored)?$/);
   if (m) return { databaseId: m[1], method: "JOURNAL_VERIFY" };
   m = path.match(/^\/checkpoint\/([^/]+)\/\d+\/active$/);
-  if (m) return { databaseId: m[1], method: "WAL_READ" };
+  if (m) return { databaseId: m[1], method: "WAL_READ", session: CURRENT_SESSION, generation: GEN };
+  m = path.match(/^\/checkpoint\/([^/]+)\/cut\/[^/]+\/activate$/);
+  if (m) return { databaseId: m[1], method: "CHECKPOINT_ACTIVATE", session: CURRENT_SESSION, generation: GEN };
   m = path.match(/^\/checkpoint\/([^/]+)\//);
-  if (m) return { databaseId: m[1], method: "SESSION_ADMIN" };
+  if (m) return { databaseId: m[1], method: "CHECKPOINT_OPEN", session: CURRENT_SESSION, generation: GEN };
   m = path.match(/^\/admin\/([^/]+)\//);
-  if (m) return { databaseId: m[1], method: "SESSION_ADMIN" };
+  if (m) return { databaseId: m[1], method: "INCARNATION_BUMP" };
   throw new Error(`no capability mapping for ${method} ${path}`);
 }
 
@@ -139,16 +170,65 @@ check("health", health.body.ok === true, JSON.stringify(health.body));
 // audit's Q-02 finding, and the refusal must hold in every posture,
 // including this local one.
 const anonIssue = await rawApi("POST", "/capability",
-  { principal: PRINCIPAL, databaseId: DB, method: "WAL_READ" });
+  { principal: PRINCIPAL, databaseId: DB, method: "WAL_READ", session: CURRENT_SESSION, generation: GEN });
 check("anonymous capability issuance is refused",
   anonIssue.status === 401 && anonIssue.body.error === "ISSUER_UNAUTHORIZED",
   JSON.stringify(anonIssue.body));
 const wrongIssuer = await rawApi("POST", "/capability",
-  { principal: PRINCIPAL, databaseId: DB, method: "WAL_READ" },
+  { principal: PRINCIPAL, databaseId: DB, method: "WAL_READ", session: CURRENT_SESSION, generation: GEN },
   false, { "x-issuer-authorization": "not-the-issuer-secret-at-all" });
 check("a wrong issuer credential is refused",
   wrongIssuer.status === 401 && wrongIssuer.body.error === "ISSUER_UNAUTHORIZED",
   JSON.stringify(wrongIssuer.body));
+
+// ---- R4 PR1: the registry provisioning transaction gates EVERYTHING ----
+// Before provisioning, the authority is unbound: issuance refuses, and an
+// ordinary authenticated call (a directly minted, fully valid dev-key
+// token) fails closed with no binding side effect (the squat mutant).
+const preProvisionIssue = await rawApi("POST", "/capability",
+  { principal: PRINCIPAL, databaseId: DB, method: "WAL_READ", session: SESSION, generation: GEN },
+  false, { "x-issuer-authorization": ISSUER_SECRET });
+check("issuance to an unprovisioned database is refused",
+  preProvisionIssue.status === 409 && preProvisionIssue.body.error === "DATABASE_UNPROVISIONED",
+  JSON.stringify(preProvisionIssue.body));
+const squatToken = await mintCapabilityToken(devCapabilitySigningKey(), {
+  v: 3, alg: "Ed25519", kid: DEV_CAPABILITY_KID, env: DEV_ENVIRONMENT, tenantId: TENANT,
+  principal: PRINCIPAL, databaseId: DB, method: "WAL_READ", session: SESSION, generation: String(GEN),
+  incarnation: 1, nonce: `n-squat-${Date.now()}`, expiresAtMs: Date.now() + 60_000,
+});
+const squat = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { "x-capability": squatToken });
+check("an ordinary authenticated call to an unprovisioned authority fails closed (squat mutant)",
+  squat.status === 403 && squat.body.error === "DATABASE_UNPROVISIONED", JSON.stringify(squat.body));
+
+const provisionTokenFor = (databaseId) => mintProvisionToken(devProvisionSigningKey(),
+  { environment: DEV_ENVIRONMENT, tenantId: TENANT, databaseId },
+  { nonce: `n-prov-${databaseId}-${Date.now()}`, expiresAtMs: Date.now() + 60_000, kid: DEV_PROVISION_KID });
+// cross-scope mutant at the wire (R5-SEC-03): a provision token SIGNED
+// with the ordinary CAPABILITY keypair must not bind anything - the
+// signature cannot verify under the provisioning scope's public key
+const forgedProvision = await mintProvisionToken(devCapabilitySigningKey(),
+  { environment: DEV_ENVIRONMENT, tenantId: TENANT, databaseId: DB },
+  { nonce: "n-forged", expiresAtMs: Date.now() + 60_000, kid: DEV_PROVISION_KID });
+const forgedBind = await rawApi("POST", "/provision", { tenantId: TENANT, databaseId: DB },
+  false, { "x-provision": forgedProvision });
+check("capability-scope material cannot provision (mint/verify separation)",
+  forgedBind.status === 403 && forgedBind.body.error === "CAPABILITY_SIGNATURE_INVALID",
+  JSON.stringify(forgedBind.body));
+const provisioned = await rawApi("POST", "/provision", { tenantId: TENANT, databaseId: DB },
+  false, { "x-provision": await provisionTokenFor(DB) });
+check("the internal PROVISION capability binds the authority exactly once",
+  provisioned.status === 200 && provisioned.body.ok === true && provisioned.body.created === true,
+  JSON.stringify(provisioned.body));
+const reProvisioned = await rawApi("POST", "/provision", { tenantId: TENANT, databaseId: DB },
+  false, { "x-provision": await provisionTokenFor(DB) });
+check("an identical re-provision is idempotent, never a second binding",
+  reProvisioned.status === 200 && reProvisioned.body.created === false,
+  JSON.stringify(reProvisioned.body));
+// the capability refusal-matrix section below issues a token for other-db
+// (audience mutant), so that authority must exist too
+const otherDb = await rawApi("POST", "/provision", { tenantId: TENANT, databaseId: "other-db" },
+  false, { "x-provision": await provisionTokenFor("other-db") });
+check("second database provisions independently", otherDb.status === 200, JSON.stringify(otherDb.body));
 
 await api("POST", "/session/register", { databaseId: DB, generation: GEN, startupSessionId: SESSION });
 
@@ -280,13 +360,13 @@ check("identical re-upload is idempotent", idempotentPut.response.status === 200
 
 // 9. outbox consumer loop: at-least-once peek/ack with redelivery
 const peek1 = await api("GET", `/outbox/${DB}?limit=10`);
-// the bus carries the COMMAND LEDGER too (F7r): the SESSION_REGISTERED
-// command rides alongside the two WAL_RECORD_FINALIZED events (the fence
-// command lands after this section - the outbox must be drained by a LIVE
-// actor, donor A4)
+// the bus carries the COMMAND LEDGER too (F7r): the DATABASE_PROVISIONED
+// and session/budget commands ride alongside the two WAL_RECORD_FINALIZED
+// events (the fence command lands after this section - the outbox must be
+// drained by a LIVE actor, donor A4)
 const walEvents = peek1.body.events.filter((e) => e.kind === "WAL_RECORD_FINALIZED");
 check("outbox peek returns finalized + command events",
-  peek1.body.ok && walEvents.length === 2 && peek1.body.events.length === 4,
+  peek1.body.ok && walEvents.length === 2 && peek1.body.events.length === 5,
   `events=${peek1.body.events?.length} wal=${walEvents.length}`);
 const peek2 = await api("GET", `/outbox/${DB}?limit=10`);
 check("unacked events are redelivered", peek2.body.events.length === peek1.body.events.length);
@@ -296,7 +376,7 @@ check("events carry canonical bodies", kinds.has("WAL_RECORD_FINALIZED") && kind
 // controlSeq is a decimal-string u64 on the wire (F7): compare as bigint
 const maxSeq = peek1.body.events.map((e) => BigInt(e.controlSeq)).reduce((a, b) => (a > b ? a : b)).toString();
 const ack = await api("POST", `/outbox/${DB}/ack`, { upToControlSeq: maxSeq });
-check("ack marks events", ack.body.ok && ack.body.acked === 4, JSON.stringify(ack.body));
+check("ack marks events", ack.body.ok && ack.body.acked === 5, JSON.stringify(ack.body));
 const peek3 = await api("GET", `/outbox/${DB}?limit=10`);
 check("acked events are not redelivered", peek3.body.events.length === 0);
 const ackAgain = await api("POST", `/outbox/${DB}/ack`, { upToControlSeq: maxSeq });
@@ -474,11 +554,13 @@ check("finalized operation queryable after fencing",
 const opMiss = await api("GET", `/wal/${DB}/${GEN}/operation/op-ghost-never`);
 check("operation query miss is typed NOT_FOUND", opMiss.status === 404 && opMiss.body.error === "NOT_FOUND");
 // donor A4: a superseded actor reads nothing, capability or not
-const staleReadToken = (await issueCap({ databaseId: DB, method: "WAL_READ", session: SESSION })).token;
+const staleReadToken = (await issueCap({ databaseId: DB, method: "WAL_READ", session: SESSION, generation: GEN })).token;
 const staleRead = await rawApi("GET", `/wal/${DB}/${GEN}/operation/op-1`, undefined, false,
   { "x-capability": staleReadToken });
 check("a fenced actor cannot read the operation surface",
-  staleRead.status === 409 && staleRead.body.error === "SESSION_FENCED", JSON.stringify(staleRead.body));
+  staleRead.status === 409
+  && (staleRead.body.error === "SESSION_NOT_ACTIVE" || staleRead.body.error === "SESSION_FENCED"),
+  JSON.stringify(staleRead.body));
 
 // 13. last-by-type
 const last = await api("GET", `/wal/${DB}/${GEN}/last?recordType=1`);
@@ -539,10 +621,10 @@ check("the same batch id with different members is a permanent conflict",
 const noToken = await rawApi("GET", `/wal/${DB}/${GEN}/head`);
 check("missing capability is a typed 401", noToken.status === 401 && noToken.body.error === "CAPABILITY_REQUIRED");
 
-const readCap = await issueCap({ databaseId: DB, method: "WAL_READ" });
+const readCap = await issueCap({ databaseId: DB, method: "WAL_READ", session: CURRENT_SESSION, generation: GEN });
 const flipped = readCap.token.slice(0, -1) + (readCap.token.endsWith("0") ? "1" : "0");
 const badMac = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { "x-capability": flipped });
-check("tampered MAC is refused", badMac.status === 403 && badMac.body.error === "CAPABILITY_MAC_INVALID");
+check("tampered signature is refused", badMac.status === 403 && badMac.body.error === "CAPABILITY_SIGNATURE_INVALID");
 
 // C-07: reads are STATELESS - side-effect-free, so a read token records no
 // durable use row and is freely replayable across different read requests.
@@ -552,7 +634,7 @@ check("C-07: a read token is stateless and replayable (no durable use row)",
   once.status === 200 && readReplay.status === 200,
   JSON.stringify({ once: once.status, readReplay: readReplay.status }));
 
-// C-02: a MUTATING token is single-REQUEST. Reusing one SESSION_ADMIN token
+// C-02: a MUTATING token is single-REQUEST. Reusing one BUDGETS_SET token
 // for the SAME budgets request twice must NOT apply budgets twice - the
 // terminal use replays its stored response (the audit's double-BUDGETS_SET
 // mutant). A DIFFERENT request under the same token is a replay refusal.
@@ -562,7 +644,7 @@ check("C-07: a read token is stateless and replayable (no durable use row)",
 // (same status + body) and a DIFFERENT request under the same token is a
 // replay refusal. That is the double-BUDGETS_SET mutant killed.
 const budgetsBody = { databaseId: DB, maxUnpublishedOutbox: 500, maxPayloadLength: 4096, maxTailRecords: 500 };
-const budgetToken = (await issueCap({ databaseId: DB, method: "SESSION_ADMIN", session: SESSION })).token;
+const budgetToken = (await issueCap({ databaseId: DB, method: "BUDGETS_SET", session: CURRENT_SESSION })).token;
 const budgetOnce = await rawApi("POST", "/budgets", budgetsBody, false, { "x-capability": budgetToken });
 const budgetRetry = await rawApi("POST", "/budgets", budgetsBody, false, { "x-capability": budgetToken });
 const budgetDifferent = await rawApi("POST", "/budgets",
@@ -573,7 +655,7 @@ check("C-02: a mutating token is single-request; identical retry replays, differ
     && budgetDifferent.status === 403 && budgetDifferent.body.error === "CAPABILITY_REPLAYED",
   JSON.stringify({ once: budgetOnce.status, retry: budgetRetry.status, different: budgetDifferent.body }));
 
-const readCap2 = await issueCap({ databaseId: DB, method: "WAL_READ" });
+const readCap2 = await issueCap({ databaseId: DB, method: "WAL_READ", session: CURRENT_SESSION, generation: GEN });
 // no caller-supplied requestDigest: a mismatching one is a 400 BEFORE the
 // capability is consulted (invalid input must not burn a token), and this
 // check is about the method binding refusal
@@ -594,7 +676,7 @@ check("session binding: a token bound to another session cannot finalize as sess
   impersonate.status === 403 && impersonate.body.error === "CAPABILITY_SESSION_MISMATCH",
   JSON.stringify(impersonate.body));
 
-const foreignCap = await issueCap({ databaseId: "other-db", method: "WAL_READ" });
+const foreignCap = await issueCap({ databaseId: "other-db", method: "WAL_READ", session: CURRENT_SESSION, generation: GEN });
 const wrongAudience = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { "x-capability": foreignCap.token });
 check("audience binding: another database's token is refused",
   wrongAudience.status === 403 && wrongAudience.body.error === "CAPABILITY_AUDIENCE_MISMATCH");
@@ -606,12 +688,12 @@ check("audience binding: another database's token is refused",
 const hugeGenPath = await api("GET", `/wal/${DB}/999999999999999999999999999999/head`);
 check("generation guard: 30-digit path generation is a typed 400",
   hugeGenPath.status === 400 && hugeGenPath.body.error === "INVALID_GENERATION", JSON.stringify(hugeGenPath.body));
-const hugeGenBody = await api("POST", "/session/register",
+const hugeGenBody = await rawApi("POST", "/session/register",
   { databaseId: DB, generation: 1e300, startupSessionId: "sess-a5" });
 check("generation guard: overflowing body generation is a typed 400",
   hugeGenBody.status === 400 && hugeGenBody.body.error === "INVALID_GENERATION", JSON.stringify(hugeGenBody.body));
 
-const shortCap = await issueCap({ databaseId: DB, method: "WAL_READ", ttlMs: 1 });
+const shortCap = await issueCap({ databaseId: DB, method: "WAL_READ", session: CURRENT_SESSION, generation: GEN, ttlMs: 1 });
 await new Promise((resolve) => setTimeout(resolve, 25));
 const expired = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { "x-capability": shortCap.token });
 check("expiry is enforced", expired.status === 403 && expired.body.error === "CAPABILITY_EXPIRED");
@@ -624,7 +706,7 @@ const overBudget = await rawApi("PUT", `/payload/${budgetCap.key}`, budgetBytes,
 check("byte budget is enforced on payload writes",
   overBudget.status === 403 && overBudget.body.error === "CAPABILITY_BUDGET_EXCEEDED");
 
-const preBump = await issueCap({ databaseId: DB, method: "WAL_READ" });
+const preBump = await issueCap({ databaseId: DB, method: "WAL_READ", session: CURRENT_SESSION, generation: GEN });
 const bump = await api("POST", `/admin/${DB}/incarnation/bump`);
 check("incarnation bump is a journaled admin operation", bump.body.ok === true && bump.body.incarnation === 2,
   JSON.stringify(bump.body));
@@ -632,29 +714,56 @@ const stale = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { 
 check("stale-incarnation tokens die with their controller",
   stale.status === 403 && stale.body.error === "CAPABILITY_STALE_INCARNATION");
 
-// 16. F6r CheckpointCut lifecycle over HTTP
+// 16. F6r CheckpointCut lifecycle over HTTP. The incarnation bump above
+// transactionally revoked EVERY live actor (audit C-P0-04), and checkpoint
+// transitions revalidate the acting session's LIVE authority at use time
+// (R4-SEC-04/06) - so a fresh checkpoint operator is admitted first.
+await api("POST", "/session/register", { databaseId: DB, generation: GEN, startupSessionId: "sess-cp" });
+CURRENT_SESSION = "sess-cp";
 const cutOpen = await api("POST", `/checkpoint/${DB}/${GEN}/cut`, { cutId: "e2e-cut-1" });
 check("checkpoint cut opens with head + journal anchor",
   cutOpen.body.ok === true && cutOpen.body.headLsn === "5" && Number(cutOpen.body.journalLength) > 0,
   JSON.stringify(cutOpen.body));
 const cutDup = await api("POST", `/checkpoint/${DB}/${GEN}/cut`, { cutId: "e2e-cut-1" });
 check("duplicate cut id is refused", cutDup.status === 409 && cutDup.body.error === "CUT_EXISTS");
+const HEX64 = "e".repeat(64);
+const restoreManifest = (cutId, walHead, over = {}) => ({
+  schema: "checkpoint-restore-evidence/v2",
+  cutId,
+  walHead,
+  keyspaceRoots: [{ keyspace: "default", rootDigest: HEX64 }],
+  logicalDigest: HEX64,
+  scratchRestore: { verifier: "e2e-scratch-restore", verifiedAtMs: 1 },
+  materializations: ["m-e2e-1"],
+  ...over,
+});
 const noEvidence = await api("POST", `/checkpoint/${DB}/cut/e2e-cut-1/activate`, { materializations: [], logicalDigest: "" });
 check("activation without restore evidence fails closed",
-  noEvidence.status === 409 && noEvidence.body.error === "CUT_EVIDENCE_MISSING");
+  noEvidence.status === 409 && noEvidence.body.error === "CUT_EVIDENCE_INVALID",
+  JSON.stringify(noEvidence.body));
+// R4-SEC-06 negative controls: wrong cut id / wrong WAL head inside a
+// well-formed manifest must refuse and leave no active cut behind
+const wrongCut = await api("POST", `/checkpoint/${DB}/cut/e2e-cut-1/activate`,
+  restoreManifest("cut-other", cutOpen.body.headLsn));
+check("activation manifest naming another cut is refused",
+  wrongCut.status === 409 && wrongCut.body.error === "CUT_EVIDENCE_INVALID", JSON.stringify(wrongCut.body));
+const wrongHead = await api("POST", `/checkpoint/${DB}/cut/e2e-cut-1/activate`,
+  restoreManifest("e2e-cut-1", "999999"));
+check("activation manifest with a wrong WAL head is refused",
+  wrongHead.status === 409 && wrongHead.body.error === "CUT_EVIDENCE_INVALID", JSON.stringify(wrongHead.body));
 const activate = await api("POST", `/checkpoint/${DB}/cut/e2e-cut-1/activate`,
-  { materializations: ["m-e2e-1"], logicalDigest: "ld-e2e" });
+  restoreManifest("e2e-cut-1", cutOpen.body.headLsn));
 check("activation with evidence succeeds", activate.body.ok === true && activate.body.superseded === null);
 const activeCut = await api("GET", `/checkpoint/${DB}/${GEN}/active`);
 check("active cut is readable", activeCut.body.ok === true && activeCut.body.cutId === "e2e-cut-1"
-  && activeCut.body.logicalDigest === "ld-e2e");
+  && activeCut.body.logicalDigest === HEX64, JSON.stringify(activeCut.body));
 
 // F8+F6r: the authenticated journal verifies end-to-end, INCLUDING the
 // command ledger (sessions, budgets-free run: 4 session commands), the
 // incarnation bump, and the cut events, against the newest cut anchor
 const journal = await api("GET", `/journal/${DB}/verify`);
 check("authenticated journal verifies (chain + MACs)",
-  journal.body.ok === true && journal.body.length === 15 && /^[0-9a-f]{64}$/.test(journal.body.headHash),
+  journal.body.ok === true && journal.body.length === 18 && /^[0-9a-f]{64}$/.test(journal.body.headHash),
   JSON.stringify(journal.body));
 const anchored = await api("GET", `/journal/${DB}/verify-anchored`);
 check("journal verifies against the cut anchor",

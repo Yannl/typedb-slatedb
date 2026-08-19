@@ -11,8 +11,8 @@ and platform operational behavior cannot be reproduced locally.
 
 | Lane | What runs | Backend | Fidelity | Status |
 |---|---|---|---|---|
-| **L0** | TypeDB server, native process | `StorageFactory` profile **U1** (RocksDB + file WAL), **U2** (SlateDB LocalFS), or **U2S3** (SlateDB over a local MinIO speaking the S3 API R2 serves — TB-P8) | Storage semantics exact; U2S3 additionally exercises the real S3 data-path protocol (conditional puts included); no distribution | U1/U2/U2S3 all live (TB-P7/TB-P8; storage crate baseline-equal on all three, corpus evidence under `docs/evidence/G3/u2-full/` and `u2s3-full/`) |
-| **L1** | Gateway Worker + `DatabaseControllerDO` under **workerd** (`wrangler dev --local`), payloads through the **local R2 binding**; TypeDB (or the Rust spike client) as native process | Remote WAL protocol against the real DO runtime | DO/Worker semantics = production engine; R2 = API-faithful simulator | **RUNNING — 35/35 E2E green** (`control-plane/scripts/local-stack-e2e.mjs`), incl. the complete U3.0 replay/head/scan/fence surface |
+| **L0** | TypeDB server, native process | `StorageFactory` profile **U1** (RocksDB + file WAL), **U2** (SlateDB LocalFS), or **U2S3** (SlateDB over a local MinIO speaking the S3 API R2 serves — TB-P8) | Storage semantics exact; U2S3 additionally exercises the real S3 data-path protocol (conditional puts included); no distribution | U1/U2 adapter lanes run locally (TB-P7/TB-P8). Honesty (R4-EVID-02): the archived U2S3 run is a HISTORICAL dirty-tree target-aggregate smoke (`docs/evidence/G3/u2s3-full-3/CLASSIFICATION.json`), not qualification; leaf-level plan coverage is 0/23,138 (`docs/evidence/G1/plan-coverage-v2.json`) |
+| **L1** | Gateway Worker + `DatabaseControllerDO` under **workerd** (`wrangler dev --local -c wrangler.local-dev.toml`), payloads through the **local R2 binding**; TypeDB (or the Rust spike client) as native process | Remote WAL protocol against the real DO runtime | DO/Worker semantics = production engine; R2 = API-faithful simulator; **security posture = developer-convenience (dev issuer/admin routes), explicitly NON-PARITY (R4-STACK-01/R4-SEC-01)** | E2E green on the dev-issuer surface (`control-plane/scripts/local-stack-e2e.mjs`); it proves refusal mechanics and protocol shape, NOT the production authorization topology — the managed-posture parity lane lands with the private issuer/registry (R4-PR1) |
 | **L2** | Full topology: TypeDB in the production container image next to workerd, orchestrated by `wrangler dev` container support | Same as production wiring | Adds container lifecycle | Needs a Docker daemon — available on dev machines; absent in this CI sandbox |
 | **L3** | Real Cloudflare staging account | Real R2/DO/Containers/Bucket Lock | Platform facts, cost/latency envelopes | Blocked on credentials (SI-G0-3); the only lane that can close gate G2 |
 
@@ -39,7 +39,10 @@ source of truth. Everything lives in the top-level `stack/` package:
   is exported from the worker entry), `PAYLOADS` R2 binding, `[vars]`
   posture, `CONTROLLER_*` secret schema, and the production-env invariants
   (`CONTROLLER_KEY_PROFILE=managed`; `CONTROLLER_SURFACE` **must be
-  absent** — fail-closed).
+  absent** — fail-closed). R4-STACK-01: the DEFAULT `wrangler.toml` is
+  now the managed posture; the developer-convenience posture lives in the
+  explicit `wrangler.local-dev.toml`, and every graph carries a declared
+  `securityPosture` that `graph-diff` validates per graph.
 - **`stack/alchemy.run.ts`** — the canonical Alchemy program (local file
   state only). `alchemy dev` runs the real worker-entry bundle on the
   Alchemy-pinned workerd and emulates the R2 binding locally.
@@ -84,9 +87,17 @@ source of truth. Everything lives in the top-level `stack/` package:
   facade over local R2 is explicitly rejected.
 - **Known limits here**: `alchemy dev` serves on its default port 1337
   (one stack instance at a time); the ContainerDO execution lane (L2)
-  still needs a Docker daemon and stays blocked in this sandbox; wiring
-  the exact TypeDB release binary + fault proxy into `stack dev` is the
-  next PR on this path.
+  still needs a Docker daemon and stays blocked in this sandbox.
+- **Native-fidelity lane (landed)**: `stack/native-fidelity.mjs` runs the
+  EXACT `typedb_server_bin` fork build over SlateDB-on-S3 through the
+  deterministic fault proxy (`stack/fault-proxy.mjs`), driven via the
+  official HTTP surface. Six phases, executed green on BOTH pinned
+  providers (MinIO baseline, RustFS 1.0.0-rc.2): product workload,
+  nonzero-S3-path witness (proxy connection report), kill -9 recovery,
+  two-stack parallel isolation, injected-reset survival, and a U1-profile
+  mutant proving the S3 witness detects a silent local fallback. Still
+  open on this path: U3 remote-WAL product integration and driver-level
+  suites inside the lane.
 
 ## Should local dev use a "local dev TypeDB stack" (plain TypeDB), or the production backend?
 
@@ -95,11 +106,13 @@ exists precisely so this choice has no consequences:
 
 - **Application developers** (people building on TypeDB's query API): use
   the cheapest lane, L0/U1 — plain TypeDB semantics with local RocksDB +
-  file WAL. The backend is invisible at the TypeQL/driver surface, and that
-  invisibility is not an assumption: it is the measured gate criterion.
-  U0–U4 structural equality (result sets, errors, transaction outcomes,
-  visibility, recovery frontiers) is what G3/G5/G6 certify. When those
-  gates are green, "swap the backend" is a proven no-op for applications —
+  file WAL. Backend invisibility at the TypeQL/driver surface is the
+  INTENDED gate criterion, and today it is NOT yet measured: leaf-level
+  plan coverage is 0/23,138 and the official-driver lanes are
+  NOT_IMPLEMENTED (R4-EVID-02). U0–U4 structural equality (result sets,
+  errors, transaction outcomes, visibility, recovery frontiers) is what
+  G3/G5/G6 will certify. Only when those gates are green does
+  "swap the backend" become a proven no-op for applications —
   so app dev on the light stack and production on R2 are in parity **by
   construction, continuously re-verified**, not by hope.
 - **System developers** (us, building the backend itself): must run the

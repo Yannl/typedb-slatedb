@@ -1,6 +1,27 @@
+# MANAGED (production-shaped) posture — the DEFAULT config (R4-STACK-01).
+#
+# `wrangler deploy` with no flags selects THIS file, so the default deploy
+# is fail-closed: managed key profile (resolveKeyConfig refuses DO
+# construction unless every real secret is provisioned via
+# `wrangler secret put`), no CONTROLLER_SURFACE (unset closes every
+# dev-only route — worker-entry.ts devOnlyRoute), the production bucket,
+# and no public workers.dev/preview exposure.
+#
+# Local development NEVER runs on this file. It uses the explicit
+# generated local config wrangler.local-dev.toml:
+#     wrangler dev --local -c wrangler.local-dev.toml
+# Selecting the unsafe posture requires naming it; copying or defaulting
+# can only produce the managed posture. stack/wrangler-check.mjs verifies
+# BOTH files against the canonical graph (stack/graph.data.mjs) and fails
+# on any drift, including the migration ledger below.
+
 name = "typedb-r2-control-plane"
 main = "src/controller/worker-entry.ts"
 compatibility_date = "2025-11-01"
+
+# No implicit public route: workers.dev and preview URLs are disabled.
+workers_dev = false
+preview_urls = false
 
 [[durable_objects.bindings]]
 name = "CONTROLLER"
@@ -13,57 +34,39 @@ class_name = "DatabaseControllerDO"
 name = "CONTAINER"
 class_name = "DatabaseContainerDO"
 
+# MIGRATION LEDGER (R4-STACK-10): append-only, order- and tag-immutable.
+# wrangler-check.mjs compares the exact ordered (tag, classes) sequence in
+# BOTH config files against the canonical ledger in stack/graph.data.mjs;
+# removing, reordering or retagging a historical migration fails the check.
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["DatabaseControllerDO"]
 
-# C-08: SEPARATE migration tag so the v1 DatabaseControllerDO migration is
-# untouched — v2 only introduces the new SQLite-backed container authority.
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["DatabaseContainerDO"]
 
 [[r2_buckets]]
 binding = "PAYLOADS"
-bucket_name = "typedb-payloads-local"
-
-# Q-24: this top-level config IS the L1 local-dev posture, and it says so.
-# The managed posture is selected by [env.production]: no keys are configured
-# there - they are provisioned as secrets (`wrangler secret put`, env
-# production) - and resolveKeyConfig fails DO construction if any of them is
-# absent, malformed, a dev constant, or below policy. A production deploy
-# that lost its secrets refuses every request; it never runs on dev keys.
-[vars]
-CONTROLLER_KEY_PROFILE = "local-dev"
-# PR0 containment (audit C-P0-01/03/09): ONLY this exact value opens the
-# dev-only routes (local issuance, register/fence, budgets, batch, admin,
-# raw outbox/audit). [env.production] deliberately does not set it - unset
-# means the production surface, so losing the variable closes routes,
-# never opens them (worker-entry.ts devOnlyRoute).
-CONTROLLER_SURFACE = "local-dev"
-
-[env.production]
-[env.production.vars]
-CONTROLLER_KEY_PROFILE = "managed"
-
-[[env.production.durable_objects.bindings]]
-name = "CONTROLLER"
-class_name = "DatabaseControllerDO"
-
-[[env.production.durable_objects.bindings]]
-name = "CONTAINER"
-class_name = "DatabaseContainerDO"
-
-# Migrations are shared across environments by tag; the production surface
-# binds the same v1+v2 SQLite classes.
-[[env.production.migrations]]
-tag = "v1"
-new_sqlite_classes = ["DatabaseControllerDO"]
-
-[[env.production.migrations]]
-tag = "v2"
-new_sqlite_classes = ["DatabaseContainerDO"]
-
-[[env.production.r2_buckets]]
-binding = "PAYLOADS"
 bucket_name = "typedb-payloads"
+
+# Managed posture vars — an EXACT allowlist (wrangler-check refuses
+# extras). CONTROLLER_SURFACE is deliberately absent: unset means the
+# production surface, so losing the variable closes routes, never opens
+# them.
+#
+# R5-SEC-01/03 managed runtime inputs (canonical declaration:
+# stack/graph.data.mjs + core/key-requirements.mjs, cross-checked by
+# stack/wrangler-check.mjs):
+#   deployment vars (PUBLIC, per deployment, supplied via --var — never
+#   baked into this file):
+#     CONTROLLER_ENVIRONMENT              this deployment's environment name
+#     CONTROLLER_CAPABILITY_PUBLIC_KEYS   Ed25519 verification keyring (cap scope)
+#     CONTROLLER_PROVISION_PUBLIC_KEYS    Ed25519 verification keyring (prov scope)
+#   secrets (`wrangler secret put`):
+#     CONTROLLER_JOURNAL_KEY              journal MAC key (symmetric BY DESIGN:
+#                                         writer = verifier = the same DO)
+# The runtime holds NO signing material: capability/provision PRIVATE keys
+# stay with the issuer side (core/issuer.ts / scripts/issuer.mjs).
+[vars]
+CONTROLLER_KEY_PROFILE = "managed"

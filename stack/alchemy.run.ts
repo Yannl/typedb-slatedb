@@ -26,6 +26,79 @@ import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import path from "node:path";
+
+// ---------------------------------------------------------------------------
+// R4-STACK-02: EXECUTION-MODE ASSERTION — this program is mechanically
+// dev-only, before any resource is declared. A comment or wrapper
+// convention is not an enforcement boundary; this throw is. The round-4
+// audit proved a direct `alchemy deploy` of this file would use deploy
+// providers while the program contains local bucket names and local-dev
+// vars. Three independent refusals, all evaluated at module load, before
+// the first Cloudflare.* declaration below can exist:
+//
+//   1. the local-only acknowledgement variable is set EXCLUSIVELY by
+//      stack/cli.mjs dev; any other invocation (alchemy deploy, alchemy
+//      dev run directly, CI misuse) lacks it and fails here;
+//   2. a deploy/destroy-shaped CLI invocation fails even WITH the ack —
+//      the ack authorizes local dev, nothing else;
+//   3. live Cloudflare credentials in the environment fail outright:
+//      this program must never run where it could reach a real account.
+//
+// The deployable production stack is a SEPARATE generated program derived
+// from the same typed graph (stack/graph.data.mjs, posture "managed") —
+// it does not exist yet by design (ledger: Cloudflare NOT READY), and
+// when it lands it will refuse local names/vars symmetrically.
+// ---------------------------------------------------------------------------
+function assertLocalOnlyExecution(): void {
+  if (process.env.ALCHEMY_LOCAL_ONLY_ACK !== "stack-cli-dev") {
+    throw new Error(
+      "alchemy.run.ts is LOCAL-ONLY and must be started through `node stack/cli.mjs dev` " +
+        "(missing ALCHEMY_LOCAL_ONLY_ACK). Direct `alchemy deploy`/`alchemy dev` of this " +
+        "program is refused: it declares local bucket names and the developer-convenience " +
+        "posture, which must never reach a deploy provider (R4-STACK-02).",
+    );
+  }
+  const argv = process.argv.map((a) => a.toLowerCase());
+  for (const forbidden of ["deploy", "destroy", "apply", "push"]) {
+    if (argv.includes(forbidden)) {
+      throw new Error(
+        `alchemy.run.ts refuses a '${forbidden}'-shaped invocation even with the local ack — ` +
+          "the ack authorizes local dev only (R4-STACK-02).",
+      );
+    }
+  }
+  if (process.env.CF_API_TOKEN) {
+    throw new Error(
+      "alchemy.run.ts refuses to run with live credential variable CF_API_TOKEN set — " +
+        "this local-only program must be unable to reach a real account (R4-STACK-02).",
+    );
+  }
+  // Alchemy's LOCAL providers resolve the full credential chain even
+  // offline (AuthProvider getEnvRequired). ONLY the synthetic pair
+  // injected by stack/cli.mjs dev is accepted: the all-zero account id
+  // and a self-evidently fake token that can never authenticate. Any
+  // other value — i.e. anything that could be a REAL credential — is
+  // refused outright, before any resource is declared.
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  if (accountId !== undefined && accountId !== "00000000000000000000000000000000") {
+    throw new Error(
+      "alchemy.run.ts refuses CLOUDFLARE_ACCOUNT_ID that is not the synthetic all-zero local id — " +
+        "this local-only program must be unable to reach a real account (R4-STACK-02).",
+    );
+  }
+  // Quoted-name read: this is the REFUSAL check, not a credential use —
+  // the no-cloud guard's lexical rule flags unquoted credential
+  // identifiers (a use), while this bracket form is its documented
+  // refusal-site exemption.
+  const apiToken = process.env["CLOUDFLARE_API_TOKEN"];
+  if (apiToken !== undefined && apiToken !== "alchemy-local-placeholder-never-a-real-token") {
+    throw new Error(
+      "alchemy.run.ts refuses a Cloudflare API token that is not the synthetic never-authenticating placeholder — " +
+        "this local-only program must be unable to reach a real account (R4-STACK-02).",
+    );
+  }
+}
+assertLocalOnlyExecution();
 import {
   COMPATIBILITY_DATE,
   CONTAINER_BINDING,

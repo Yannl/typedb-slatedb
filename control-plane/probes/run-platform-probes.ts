@@ -53,8 +53,15 @@ import type { ProbeContext, ProbeImpl } from "./probe.ts";
 import { R2_PROBES } from "./probes-r2.ts";
 import { DO_PROBES } from "./probes-do.ts";
 import { CTR_PROBES, WORKER_PROBES } from "./probes-ctr.ts";
-import { runPreflight } from "./preflight.ts";
+import { DEFAULT_ENVELOPE_PATH, runPreflight } from "./preflight.ts";
 import type { PreflightResult } from "./preflight.ts";
+import { markRunIdConsumed } from "./approval.ts";
+import { budgetFromEnvelope, MeteredProvider, RefusedProvider } from "./envelope.ts";
+import { captureLockBaseline, restoreLockBaseline } from "./lock-baseline.ts";
+import type { LockBaseline } from "./lock-baseline.ts";
+import { SealViolationError } from "./evidence.ts";
+import { computeObligationStatuses, OBLIGATION_MANIFEST, obligationViolations } from "./obligations.ts";
+import type { ObligationManifest, ObligationRunRecord } from "./obligations.ts";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const DEFAULT_EVIDENCE_ROOT = join(REPO_ROOT, "docs/evidence/G1-platform/runs");
@@ -79,6 +86,8 @@ interface CliOptions {
   listFaultControls: boolean;
   probeDeadlineMs: number;
   runDeadlineMs: number;
+  /** Envelope path override (mutant tests only; default is the owner file). */
+  envelopePath: string | undefined;
 }
 
 function usageError(msg: string): never {
@@ -103,6 +112,7 @@ function parseArgs(argv: string[]): CliOptions {
     listFaultControls: false,
     probeDeadlineMs: 120_000,
     runDeadlineMs: 900_000,
+    envelopePath: undefined,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -139,6 +149,9 @@ function parseArgs(argv: string[]): CliOptions {
       case "--evidence-root":
         opts.evidenceRoot = argv[++i] ?? usageError("--evidence-root requires a directory");
         break;
+      case "--envelope":
+        opts.envelopePath = argv[++i] ?? usageError("--envelope requires a path");
+        break;
       case "--probe-deadline-ms":
         opts.probeDeadlineMs = parsePositiveInt(argv[++i], "--probe-deadline-ms");
         break;
@@ -165,10 +178,16 @@ function parseArgs(argv: string[]): CliOptions {
  * the list of violations; any violation makes the whole run invalid
  * (exit 1) — a shrunken manifest or an unimplemented probe must never
  * produce a green gate.
+ *
+ * R4-CF-04: additionally exact-set reconciles the versioned obligation
+ * manifest (obligations.ts) against the registry — dangling references,
+ * unclaimed assertions, product obligations whose evidence is not
+ * real-required, and silent (non-OPEN) gaps all invalidate the run.
  */
 export function manifestViolations(
   manifest: ReadonlyArray<ManifestEntry>,
   registry: ReadonlyArray<ProbeImpl>,
+  obligations: ObligationManifest = OBLIGATION_MANIFEST,
 ): string[] {
   const violations: string[] = [];
   if (manifest.length !== NORMATIVE_PROBE_COUNT) {
@@ -189,7 +208,55 @@ export function manifestViolations(
     if (ids.size !== p.assertions.length) violations.push(`probe ${p.id} declares duplicate assertion ids`);
     if (p.assertions.length === 0) violations.push(`probe ${p.id} declares no assertions (an empty plan proves nothing)`);
   }
+  violations.push(...obligationViolations(obligations, registry));
   return violations;
+}
+
+// ---------------------------------------------------------------------------
+// R4-CF-04: provider_facts / product_conformance sub-verdicts.
+// ---------------------------------------------------------------------------
+
+export interface SubVerdict {
+  status: "PASS" | "FAIL" | "OPEN" | "NOT-RUN";
+  open_obligations: string[];
+  failed_obligations: string[];
+  not_exercised_this_run: string[];
+  satisfied: string[];
+}
+
+/**
+ * Aggregate the per-run obligation statuses of ONE class into a
+ * sub-verdict. Fail-closed and honesty-first:
+ *
+ *   - any FAILED obligation                  => FAIL
+ *   - else any OPEN obligation               => OPEN (this is the state
+ *     today for product_conformance: the OPEN list is printed, and OPEN
+ *     is NEVER PASS — a 14/14 probe run must not read as contract proof)
+ *   - else any NOT-EXERCISED-THIS-RUN        => NOT-RUN (refused/skipped)
+ *   - else                                   => PASS
+ *
+ * NOT-EXERCISED-THIS-MODE does not block PASS: the obligation says itself
+ * which modes it applies to, and obligations.json records the exclusion.
+ */
+export function subVerdictFor(
+  records: ReadonlyArray<ObligationRunRecord>,
+  cls: "provider-fact" | "product-conformance",
+): SubVerdict {
+  const own = records.filter((r) => r.class === cls);
+  const pick = (status: ObligationRunRecord["status"]): string[] =>
+    own.filter((r) => r.status === status).map((r) => r.id);
+  const open = pick("OPEN");
+  const failed = pick("FAILED");
+  const notRun = pick("NOT-EXERCISED-THIS-RUN");
+  const status: SubVerdict["status"] =
+    failed.length > 0 ? "FAIL" : open.length > 0 ? "OPEN" : notRun.length > 0 ? "NOT-RUN" : "PASS";
+  return {
+    status,
+    open_obligations: open,
+    failed_obligations: failed,
+    not_exercised_this_run: notRun,
+    satisfied: pick("SATISFIED"),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -276,6 +343,12 @@ async function runOneProbe(
       ok: false,
       detail: `unhandled probe error: ${err instanceof Error ? err.message : String(err)}`,
     });
+    if (err instanceof Error && err.message.startsWith("probe deadline")) {
+      // R4-CF-01: Promise.race does not cancel the losing task — closing
+      // the recorder does. The raced-out probe's leftover async work gets
+      // typed refusals instead of continuing to reach the provider.
+      recording.close(`probe ${entry.id} deadline exceeded`);
+    }
   } finally {
     if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
   }
@@ -345,40 +418,74 @@ function skippedEvidence(
 }
 
 // ---------------------------------------------------------------------------
-// Cleanup (P-04/P-06): executes in the runner's finally, with evidence.
+// Cleanup (P-04/P-06/R4-CF-00/R4-CF-01): executes in the runner's finally,
+// with evidence. Never `rules:[]`; never a call on a refused run.
 // ---------------------------------------------------------------------------
 
 interface CleanupActionRecord {
   obligation_id: string;
   action: string;
-  status: "executed" | "virtual" | "planned-not-executed" | "failed";
+  status: "executed" | "virtual" | "planned-not-executed" | "failed" | "conflict" | "refused-zero-authority";
   detail: string;
+}
+
+/** Cleanup record for a refused run: zero authority, zero calls, by design. */
+function refusedCleanup(preflight: PreflightResult, attempts: number): { actions: CleanupActionRecord[]; exchanges: unknown[] } {
+  const detail =
+    `preflight ${preflight.verdict}: a refusal path holds zero authority and makes zero external ` +
+    `calls, cleanup included (provider attempt count: ${attempts}; anything nonzero fails the run)`;
+  return {
+    actions: preflight.cleanup_obligations.map((o) => ({
+      obligation_id: o.id,
+      action: "none",
+      status: "refused-zero-authority" as const,
+      detail,
+    })),
+    exchanges: [],
+  };
 }
 
 async function executeCleanup(
   provider: PlatformProvider,
   bucket: string,
   createdKeys: ReadonlySet<string>,
+  attemptedWrites: ReadonlySet<string>,
   preflight: PreflightResult,
+  runNonce: string,
+  lockBaseline: LockBaseline | null,
+  emptyListRecord: CleanupActionRecord,
+  mintedCredentialCount: number,
 ): Promise<{ actions: CleanupActionRecord[]; exchanges: unknown[] }> {
   const recording = new RecordingProvider(provider);
   const actions: CleanupActionRecord[] = [];
-  // 1. remove probe lock rules (before object deletion, or the lock
-  //    itself blocks the deletes).
+  // 1. restore the captured lock baseline (before object deletion, or a
+  //    still-active run-owned lock rule blocks the deletes). NEVER
+  //    `rules:[]` — the exact pre-run policy is restored, and a
+  //    concurrent operator change is a CONFLICT that refuses to write.
   try {
-    if (provider.capabilities.cfapi) {
-      const res = await recording.fetch({
-        service: "cfapi",
-        method: "PUT",
-        path: `/r2/buckets/${bucket}/lock`,
-        principal: "admin",
-        body: utf8(JSON.stringify({ rules: [] })),
-      });
+    if (provider.capabilities.cfapi && lockBaseline !== null) {
+      const restore = await restoreLockBaseline((req) => recording.fetch(req), lockBaseline, runNonce);
       actions.push({
         obligation_id: "remove-probe-lock-rules",
-        action: `PUT /r2/buckets/${bucket}/lock rules:[]`,
-        status: res.status === 200 ? "executed" : "failed",
-        detail: `status ${res.status}`,
+        action: `restore captured lock baseline on ${bucket} (conservative, run-owned rules only)`,
+        status:
+          restore.status === "noop"
+            ? provider.mode === "mock"
+              ? "virtual"
+              : "executed"
+            : restore.status === "executed" && provider.mode === "mock"
+              ? "virtual"
+              : restore.status,
+        detail: restore.detail,
+      });
+    } else if (provider.capabilities.cfapi && lockBaseline === null) {
+      // Capability existed but no baseline was captured: the run must
+      // not guess. This is a failed obligation, never a blind reset.
+      actions.push({
+        obligation_id: "remove-probe-lock-rules",
+        action: "none",
+        status: "failed",
+        detail: "no lock baseline was captured before the run; refusing to write any lock policy blind",
       });
     } else {
       actions.push({
@@ -391,15 +498,48 @@ async function executeCleanup(
   } catch (err) {
     actions.push({
       obligation_id: "remove-probe-lock-rules",
-      action: "lock reset",
+      action: "lock baseline restore",
       status: "failed",
       detail: err instanceof Error ? err.message : String(err),
     });
   }
-  // 2. delete every object this run created.
+  // 2. delete every object this run may have created: the union of
+  //    observed committed keys, journaled write INTENTS (R4-CF-01:
+  //    a timeout-after-commit object is in the journal even though its
+  //    200 was never observed), and — real mode — a LIST reconciliation
+  //    of the run prefix so provider-side state is the authority.
+  const runPrefix = `/${bucket}/probes/${runNonce}/`;
+  const toDelete = new Set<string>([...createdKeys, ...[...attemptedWrites].filter((k) => k.startsWith(runPrefix))]);
+  if (provider.mode === "real" && provider.capabilities.r2) {
+    try {
+      const listed = await recording.fetch({
+        service: "r2",
+        method: "GET",
+        path: `/${bucket}?list-type=2&prefix=${encodeURIComponent(`probes/${runNonce}/`)}&max-keys=1000`,
+      });
+      if (listed.status === 200) {
+        const xml = new TextDecoder().decode(listed.body);
+        for (const m of xml.matchAll(/<Key>([^<]+)<\/Key>/g)) toDelete.add(`/${bucket}/${m[1]}`);
+      } else {
+        actions.push({
+          obligation_id: "delete-run-objects",
+          action: "LIST run prefix for reconciliation",
+          status: "failed",
+          detail: `prefix LIST returned ${listed.status}; deletion proceeds over journaled keys only`,
+        });
+      }
+    } catch (err) {
+      actions.push({
+        obligation_id: "delete-run-objects",
+        action: "LIST run prefix for reconciliation",
+        status: "failed",
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
   let deleted = 0;
   let failures = 0;
-  for (const key of [...createdKeys].sort()) {
+  for (const key of [...toDelete].sort()) {
     try {
       const res = await recording.fetch({ service: "r2", method: "DELETE", path: key });
       if (res.status === 204 || res.status === 404) deleted += 1;
@@ -410,26 +550,23 @@ async function executeCleanup(
   }
   actions.push({
     obligation_id: "delete-run-objects",
-    action: `DELETE ${createdKeys.size} run-created objects`,
+    action: `DELETE ${toDelete.size} run-owned objects (observed ∪ journaled intents ∪ prefix list)`,
     status: failures === 0 ? (provider.mode === "mock" ? "virtual" : "executed") : "failed",
     detail: `deleted ${deleted}, failed ${failures}`,
   });
-  // 3./4. obligations that only apply to a live run are recorded, not
-  //       silently dropped.
-  actions.push({
-    obligation_id: "verify-bucket-empty",
-    action: "LIST before first write",
-    status: provider.mode === "mock" ? "virtual" : "planned-not-executed",
-    detail:
-      provider.mode === "mock"
-        ? "in-process fake starts empty by construction"
-        : "no live run occurred (preflight verdict: " + preflight.verdict + ")",
-  });
+  // 3. the empty-bucket LIST record (executed BEFORE the first write in
+  //    real mode; virtual in mock) is recorded here so cleanup.json
+  //    carries the actual result, never a planned-not-executed stub.
+  actions.push(emptyListRecord);
+  // 4. credential expiry: the actual mint count from this run's recorded
+  //    exchanges, with expiry bounded by ttl.
   actions.push({
     obligation_id: "credential-expiry",
-    action: "record ttlSeconds of minted temporary credentials",
-    status: provider.mode === "mock" ? "virtual" : "planned-not-executed",
-    detail: "mints use ttlSeconds=900; there is no revocation API — expiry is the bound",
+    action: "record minted temporary credentials and their ttl bound",
+    status: provider.mode === "mock" ? "virtual" : mintedCredentialCount === 0 ? "executed" : "executed",
+    detail:
+      `${mintedCredentialCount} temporary credential(s) minted this run; each used ttlSeconds=900 — ` +
+      "there is no revocation API, expiry is the bound and it is clamped by preflight to the approved envelope",
   });
   return { actions, exchanges: recording.exchanges };
 }
@@ -457,31 +594,82 @@ export async function main(argv: string[]): Promise<number> {
   const implById = new Map(REGISTRY.map((p) => [p.id, p]));
 
   // --- preflight (P-06): real mode must prove a disposable, approved run ---
-  const preflight = runPreflight({ mode: opts.mock ? "mock" : "real", env: process.env });
+  const preflight = runPreflight({
+    mode: opts.mock ? "mock" : "real",
+    env: process.env,
+    envelopePath: opts.envelopePath,
+  });
 
-  // --- provider construction ---
+  // --- provider construction (R4-CF-00: RED preflight => ZERO authority) ---
   let provider: PlatformProvider;
+  let refused: RefusedProvider | null = null;
+  let metered: MeteredProvider | null = null;
+  let cleanupProvider: PlatformProvider | null = null;
   let bucket: string;
   let parentAccessKeyId: string;
+  const knownSecrets: string[] = [];
+  let probeDeadlineMs = opts.probeDeadlineMs;
+  let runDeadlineMs = opts.runDeadlineMs;
   if (opts.mock) {
     provider = new MockPlatformProvider({ faults: opts.faults, force500: opts.mock500 });
+    cleanupProvider = provider;
     bucket = "mock-bucket";
     parentAccessKeyId = "mock-parent-access-key";
+  } else if (preflight.verdict === "RED") {
+    // R4-CF-00 (dynamically reproduced by the round-4 audit): a refusal
+    // path holds ZERO authority. No real provider is ever constructed on
+    // a RED preflight; probes AND cleanup see only this refusing stub,
+    // which counts (and rejects) every attempted call. The count must be
+    // zero at the end of the run or the run itself fails.
+    refused = new RefusedProvider(
+      "preflight RED: " + preflight.reasons.map((r) => r.code).join(","),
+    );
+    provider = refused;
+    cleanupProvider = refused;
+    bucket = preflight.bucket ?? "";
+    parentAccessKeyId = "";
   } else {
-    // A dangerous configuration (token reuse, unapproved harness host) was
-    // already recorded by preflight as RED/REFUSED; construct a
-    // zero-capability provider so the run records PREREQUISITE_MISSING
-    // evidence instead of crashing without a bundle.
-    let cfg;
-    try {
-      cfg = realConfigFromEnv(process.env);
-    } catch {
-      cfg = {};
+    // GREEN: the real provider runs ONLY under the enforcing envelope
+    // meter (R4-CF-01). A fixed slice of the approved request budget is
+    // reserved for cleanup so an exhausted probe budget can still
+    // restore state; both meters share the same absolute run deadline.
+    //
+    // R5-CF-01: the signed envelope authorizes exactly ONE run — its run
+    // id is consumed HERE, at the moment real authority is acquired and
+    // before the first possible spend. A crash later in this run still
+    // leaves the envelope spent (re-running requires a fresh owner
+    // signature), which is the safe direction.
+    const envelopeRunId = preflight.envelope?.binding?.run_id;
+    if (typeof envelopeRunId !== "string") {
+      console.error("preflight GREEN without a bound envelope run id — runner bug, refusing");
+      return 3;
+    }
+    markRunIdConsumed(opts.envelopePath ?? DEFAULT_ENVELOPE_PATH, envelopeRunId);
+    const cfg = realConfigFromEnv(process.env);
+    for (const s of [cfg.r2?.secret, cfg.cfapi?.adminApiToken, cfg.cfapi?.runtimeApiToken, cfg.harness?.apiToken]) {
+      if (s !== undefined) knownSecrets.push(s);
     }
     const real = new RealPlatformProvider(cfg);
-    provider = real;
+    const limits = (preflight.envelope?.limits ?? {}) as Record<string, unknown>;
+    const budget = budgetFromEnvelope(limits, Date.now());
+    const cleanupRequestReserve = Math.min(64, Math.max(1, Math.ceil(budget.maxTotalRequests / 5)));
+    metered = new MeteredProvider(real, {
+      ...budget,
+      maxTotalRequests: Math.max(0, budget.maxTotalRequests - cleanupRequestReserve),
+    });
+    cleanupProvider = new MeteredProvider(real, {
+      ...budget,
+      maxTotalRequests: cleanupRequestReserve,
+      maxTotalBytesWritten: Math.min(65_536, budget.maxTotalBytesWritten),
+    });
+    provider = metered;
     bucket = real.bucket ?? "";
     parentAccessKeyId = real.parentAccessKeyId ?? "";
+    // CLI deadlines may only NARROW the approved envelope, never widen it.
+    const maxProbeSeconds = limits.max_probe_seconds;
+    const maxRunSeconds = limits.max_run_seconds;
+    if (typeof maxProbeSeconds === "number") probeDeadlineMs = Math.min(probeDeadlineMs, maxProbeSeconds * 1000);
+    if (typeof maxRunSeconds === "number") runDeadlineMs = Math.min(runDeadlineMs, maxRunSeconds * 1000);
   }
   const runNonce = `${Date.now().toString(36)}-${randomHex(4)}`;
 
@@ -510,16 +698,63 @@ export async function main(argv: string[]): Promise<number> {
         assertions: (impl?.assertions ?? []).map((a) => ({
           id: a.id,
           title: a.title,
+          class: a.class,
           required_in: a.required_in,
         })),
       };
     }),
   });
 
+  // --- real-mode GREEN pre-run gates: empty-bucket LIST before any write,
+  //     then the lock-policy baseline snapshot (R4-CF-00) ---
+  let lockBaseline: LockBaseline | null = null;
+  let runRefusalReason: string | null = null;
+  let emptyListRecord: CleanupActionRecord = {
+    obligation_id: "verify-bucket-empty",
+    action: "LIST before first write",
+    status: opts.mock ? "virtual" : "planned-not-executed",
+    detail: opts.mock ? "in-process fake starts empty by construction" : "no live run occurred",
+  };
+  if (!opts.mock && preflight.verdict === "GREEN" && provider.capabilities.r2) {
+    try {
+      const listed = await provider.fetch({ service: "r2", method: "GET", path: `/${bucket}?list-type=2&max-keys=2` });
+      if (listed.status !== 200) {
+        runRefusalReason = `pre-run empty-bucket LIST returned ${listed.status}; refusing to write to an unverified bucket`;
+        emptyListRecord = { ...emptyListRecord, status: "failed", detail: runRefusalReason };
+      } else {
+        const keyCount = [...new TextDecoder().decode(listed.body).matchAll(/<Key>/g)].length;
+        if (keyCount > 0) {
+          runRefusalReason = `target bucket '${bucket}' is NOT empty (${keyCount}+ objects listed); a probe run only ever writes to a fresh disposable bucket`;
+          emptyListRecord = { ...emptyListRecord, status: "executed", detail: runRefusalReason };
+        } else {
+          emptyListRecord = { ...emptyListRecord, status: "executed", detail: "bucket listed empty before the first write" };
+        }
+      }
+    } catch (err) {
+      runRefusalReason = `pre-run empty-bucket LIST failed: ${err instanceof Error ? err.message : String(err)}`;
+      emptyListRecord = { ...emptyListRecord, status: "failed", detail: runRefusalReason };
+    }
+    if (runRefusalReason === null && provider.capabilities.cfapi) {
+      try {
+        lockBaseline = await captureLockBaseline((req) => provider.fetch(req), bucket);
+      } catch (err) {
+        runRefusalReason = `lock baseline capture failed: ${err instanceof Error ? err.message : String(err)}; a run that cannot prove the pre-run lock policy must not mutate it`;
+      }
+    }
+  } else if (opts.mock) {
+    // Mock lane exercises the same baseline machinery (empty by default).
+    try {
+      lockBaseline = await captureLockBaseline((req) => provider.fetch(req), bucket);
+    } catch {
+      lockBaseline = null;
+    }
+  }
+
   const verdicts = new Map<string, ProbeVerdict>();
   const probeEvidence: ProbeEvidence[] = [];
   const createdKeys = new Set<string>();
   let cleanupRecord: { actions: CleanupActionRecord[]; exchanges: unknown[] } = { actions: [], exchanges: [] };
+  let cleanupMutationsRan = false;
   let exitCode = 1; // fail-closed default; only aggregateExitCode may change it
   try {
     if (!opts.mock && preflight.verdict === "RED") {
@@ -539,6 +774,23 @@ export async function main(argv: string[]): Promise<number> {
         bundle.writeProbeEvidence(evidence);
         console.log(`${entry.id}: ${evidence.verdict} — preflight RED`);
       }
+    } else if (runRefusalReason !== null) {
+      // Pre-run gate refused (non-empty bucket / unprovable baseline):
+      // zero probes execute, zero mutations happen.
+      console.error(`PRE-RUN REFUSAL: ${runRefusalReason}`);
+      for (const entry of PROBE_MANIFEST) {
+        const evidence = skippedEvidence(
+          entry,
+          implById.get(entry.id),
+          provider.mode,
+          "PREREQUISITE_MISSING",
+          `pre-run gate refused: ${runRefusalReason}`,
+        );
+        verdicts.set(entry.id, evidence.verdict);
+        probeEvidence.push(evidence);
+        bundle.writeProbeEvidence(evidence);
+        console.log(`${entry.id}: ${evidence.verdict} — pre-run refusal`);
+      }
     } else {
       for (const entry of PROBE_MANIFEST) {
         const impl = implById.get(entry.id);
@@ -548,9 +800,9 @@ export async function main(argv: string[]): Promise<number> {
           evidence = skippedEvidence(entry, impl, provider.mode, "NOT_RUN", "no implementation registered");
         } else if (opts.only !== null && !opts.only.has(entry.id)) {
           evidence = skippedEvidence(entry, impl, provider.mode, "NOT_RUN", "excluded by --only (subset runs never pass the gate)");
-        } else if (Date.now() - startedMs > opts.runDeadlineMs) {
+        } else if (Date.now() - startedMs > runDeadlineMs) {
           // Per-run deadline (P-04): remaining probes are recorded, not run.
-          evidence = skippedEvidence(entry, impl, provider.mode, "NOT_RUN", `run deadline ${opts.runDeadlineMs}ms exceeded before this probe`);
+          evidence = skippedEvidence(entry, impl, provider.mode, "NOT_RUN", `run deadline ${runDeadlineMs}ms exceeded before this probe`);
         } else {
           const missing = entry.requires.filter((r) => !provider.capabilities[r]);
           if (missing.length > 0) {
@@ -571,7 +823,7 @@ export async function main(argv: string[]): Promise<number> {
               runNonce,
               parentAccessKeyId,
               opts.faults.get(entry.id) ?? null,
-              opts.probeDeadlineMs,
+              probeDeadlineMs,
             );
             // Track run-created objects for the cleanup pass.
             for (const ex of evidence.exchanges) {
@@ -596,11 +848,41 @@ export async function main(argv: string[]): Promise<number> {
     exitCode = aggregateExitCode(verdicts);
   } finally {
     // -----------------------------------------------------------------------
-    // Cleanup ALWAYS runs and ALWAYS leaves evidence (P-04): even a crashed
-    // run records what it created and what was disposed.
+    // Cleanup ALWAYS leaves evidence (P-04) — but on a refused run it makes
+    // ZERO calls (R4-CF-00): refusal means no authority, cleanup included.
     // -----------------------------------------------------------------------
+    metered?.close("run moved to cleanup"); // probe stragglers lose their provider
     try {
-      cleanupRecord = await executeCleanup(provider, bucket, createdKeys, preflight);
+      if (!opts.mock && preflight.verdict === "RED") {
+        cleanupRecord = refusedCleanup(preflight, refused?.attempts ?? 0);
+      } else if (runRefusalReason !== null) {
+        cleanupRecord = refusedCleanup(preflight, 0);
+        // the pre-run LIST result is still factual evidence
+        cleanupRecord.actions = cleanupRecord.actions.map((a) =>
+          a.obligation_id === "verify-bucket-empty" ? emptyListRecord : a,
+        );
+      } else {
+        cleanupMutationsRan = true;
+        const mintedCredentialCount = probeEvidence
+          .flatMap((ev) => ev.exchanges)
+          .filter(
+            (ex) =>
+              ex.request.method === "POST" &&
+              ex.request.path.includes("temp-access-credentials") &&
+              ex.outcome.type === "success",
+          ).length;
+        cleanupRecord = await executeCleanup(
+          cleanupProvider ?? provider,
+          bucket,
+          createdKeys,
+          metered?.attemptedWrites ?? new Set(),
+          preflight,
+          runNonce,
+          lockBaseline,
+          emptyListRecord,
+          mintedCredentialCount,
+        );
+      }
     } catch (err) {
       cleanupRecord = {
         actions: [
@@ -619,7 +901,55 @@ export async function main(argv: string[]): Promise<number> {
       obligations: preflight.cleanup_obligations,
       actions: cleanupRecord.actions,
       exchanges: cleanupRecord.exchanges,
+      // Non-secret recovery scope: everything a failed cleanup could have
+      // left behind is addressable under these run-owned identifiers.
+      recovery_scope: {
+        bucket,
+        run_prefix: `probes/${runNonce}/`,
+        lock_baseline_rule_count: lockBaseline?.rules.length ?? null,
+        run_owned_lock_rule_id_prefix: `probe-lock-${runNonce}`,
+      },
     });
+  }
+
+  // --- R4-CF-01: the verdict is computed AFTER cleanup. A failed or
+  //     conflicted cleanup action makes the run red — an exit 0 with
+  //     unrestored state is exactly the false-green the audit named. A
+  //     zero-authority violation (any attempted call on a refused run)
+  //     is likewise fatal to the run, not merely logged.
+  const cleanupFailed = cleanupRecord.actions.some((a) => a.status === "failed" || a.status === "conflict");
+  const zeroAuthorityViolated = refused !== null && refused.attempts > 0;
+  if (cleanupMutationsRan && cleanupFailed) exitCode = 1;
+  if (zeroAuthorityViolated) {
+    console.error(
+      `ZERO-AUTHORITY VIOLATION: ${refused?.attempts} provider call(s) attempted on a refused run — runner bug, run fails`,
+    );
+    exitCode = 1;
+  }
+
+  // --- R4-CF-04: per-run obligation statuses and class sub-verdicts ---
+  // Computed strictly from the checks the probes recorded; written as its
+  // own artifact (obligations.json) so the bundle carries the obligation
+  // view alongside the probe view, and mirrored into the VERDICT as
+  // provider_facts / product_conformance. product_conformance is OPEN
+  // whenever any product obligation is OPEN — the run's exit code stays
+  // fail-closed as before, but no reader can mistake a green probe run for
+  // contract proof.
+  const checksByProbe = new Map(probeEvidence.map((ev) => [ev.probe_id, ev.checks]));
+  const obligationRecords = computeObligationStatuses(OBLIGATION_MANIFEST, provider.mode, checksByProbe);
+  const providerFacts = subVerdictFor(obligationRecords, "provider-fact");
+  const productConformance = subVerdictFor(obligationRecords, "product-conformance");
+  bundle.writeObligations({
+    schema: "platform-probe-obligations/v1",
+    contract: OBLIGATION_MANIFEST.contract,
+    obligation_manifest_schema: OBLIGATION_MANIFEST.schema,
+    mode: provider.mode,
+    obligations: obligationRecords,
+    provider_facts: providerFacts,
+    product_conformance: productConformance,
+  });
+  for (const id of productConformance.open_obligations) {
+    console.log(`platform-probes: product obligation OPEN: ${id}`);
   }
 
   // --- run record, verdict, sealed bundle root ---
@@ -638,11 +968,21 @@ export async function main(argv: string[]): Promise<number> {
       source_lock_sha256: fileSha256(join(REPO_ROOT, "source-lock", "source-lock.json")),
       workspace_lock_sha256: fileSha256(join(REPO_ROOT, "source-lock", "workspace-lock.json")),
     },
+    // R4-CF-02: the disposable probe-harness the real-mode /do|/ctr|/worker
+    // probes call is built from THIS repository; the run binds the exact
+    // source + wrangler config identity it advertised, so a supplied
+    // CF_PROBE_HARNESS_URL is reproducible from the run bundle.
+    harness_source: {
+      entry: "control-plane/probes/harness-worker.ts",
+      sha256: fileSha256(join(REPO_ROOT, "control-plane", "probes", "harness-worker.ts")),
+      wrangler_config: "control-plane/wrangler.probe-harness.toml",
+      wrangler_config_sha256: fileSha256(join(REPO_ROOT, "control-plane", "wrangler.probe-harness.toml")),
+    },
     toolchain: { node_version: process.version },
     argv,
     // The deterministic "seed" of a mock run is its fault schedule.
     fault_schedule: { injected_faults: Object.fromEntries(opts.faults), mock_500: opts.mock500 },
-    deadlines_ms: { request: 30_000, probe: opts.probeDeadlineMs, run: opts.runDeadlineMs },
+    deadlines_ms: { request: 30_000, probe: probeDeadlineMs, run: runDeadlineMs },
     normative_probe_count: NORMATIVE_PROBE_COUNT,
     capabilities: provider.capabilities,
     preflight: {
@@ -650,13 +990,41 @@ export async function main(argv: string[]): Promise<number> {
       reasons: preflight.reasons,
       bucket: preflight.bucket,
       envelope_present: preflight.envelope !== null,
+      // R5-CF-01: the exact signed authorization this run executed under —
+      // binding + signer fingerprint, never the signature bytes themselves.
+      envelope_binding: preflight.envelope?.binding ?? null,
+      envelope_signer_fingerprint: preflight.envelope?.signature.public_key_fingerprint ?? null,
     },
+    // R4-CF-01: the enforced budget actually consumed, and the R4-CF-00
+    // zero-authority accounting (attempted calls on a refused run: MUST
+    // be zero; nonzero already forced exit 1 above).
+    envelope_enforcement:
+      metered !== null
+        ? {
+            requests_used: metered.requestsUsed,
+            bytes_written: metered.bytesWritten,
+            journaled_write_intents: metered.attemptedWrites.size,
+            meter_closed: metered.closed,
+          }
+        : null,
+    zero_authority: refused !== null ? { attempted_calls: refused.attempts } : null,
+    pre_run_refusal: runRefusalReason,
+    cleanup_failed: cleanupRecord.actions.some((a) => a.status === "failed" || a.status === "conflict"),
     observed_verdicts: observedVerdicts,
     policy_verdict: exitCode === 0 ? "PASS" : exitCode === 3 ? "PREREQUISITE_MISSING" : "FAIL",
   });
   bundle.writeVerdict({
     schema: "platform-probe-verdict/v2",
     policy: `exit 0 only when every one of the ${NORMATIVE_PROBE_COUNT} manifest probes is PASS with full required-assertion coverage; PREREQUISITE_MISSING => 3; anything else => 1`,
+    // R4-CF-04: the two questions are answered SEPARATELY. provider_facts
+    // says what the platform (or its labeled harness) demonstrably did;
+    // product_conformance lists the contract obligations and CANNOT be
+    // PASS while any product obligation is OPEN or failed — today it is
+    // OPEN (runtime-cannot-delete, ambiguity-resolution-real,
+    // attempt-identity-changed-bytes-real), and that honesty is asserted
+    // by the self-test.
+    provider_facts: providerFacts,
+    product_conformance: productConformance,
     observed_verdicts: observedVerdicts,
     required_assertion_coverage: Object.fromEntries(
       probeEvidence.map((ev) => [
@@ -671,7 +1039,20 @@ export async function main(argv: string[]): Promise<number> {
     exit_code: exitCode,
     verdict: exitCode === 0 ? "PASS" : exitCode === 3 ? "PREREQUISITE_MISSING" : "FAIL",
   });
-  const root = bundle.seal();
+  // R4-CF-03: seal scans every artifact byte for secret leaks (the run's
+  // actual configured secrets included); a hit refuses COMPLETE and the
+  // run fails — a leaking bundle is never sealed evidence.
+  let root: string;
+  try {
+    root = bundle.seal(knownSecrets);
+  } catch (err) {
+    if (err instanceof SealViolationError) {
+      console.error(`platform-probes: ${err.message}`);
+      console.error("platform-probes: bundle left UN-SEALED (no COMPLETE); run fails");
+      return 1;
+    }
+    throw err;
+  }
   console.log(`platform-probes: evidence bundle ${bundle.runDir}`);
   console.log(`platform-probes: bundle root sha256 ${root}`);
 

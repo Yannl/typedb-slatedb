@@ -2,11 +2,11 @@
   "document": "workspace release binding (brief v16 \u00a70.2.1; generated, never hand-edited)",
   "generated_by": "tools/source-lock/generate_workspace_lock.py",
   "commit_binding": "external: post-checkout attestation of (HEAD, sha256 of this file)",
-  "source_lock_sha256": "50f5bf42e1a9894b05c57ff2af0c54e39ee386693e2c993bfeadc8eea83c9a1b",
+  "source_lock_sha256": "837d52fbac8f47ab7a72a6d8921cd7e2d8509e01243a7dc92c73132b7178b8c4",
   "workspaces": {
     "fork/typedb": {
       "manifest": "fork/typedb/Cargo.toml",
-      "manifest_sha256": "b0b597ef42f9ba4f8fa6a36a34fa55edd89afbf4dedaa087713ce30f7f0005d5",
+      "manifest_sha256": "81e6a9c06508cdbbeeb404f7417bbb67dab5ddaff8acc063e2da9ab6534a1eb8",
       "lockfile": "fork/typedb/Cargo.lock",
       "lockfile_sha256": "c47ee7dcb22aff3719b954777351a9beaf5bdb89e3f00673ff0e1fac2ac88eb2"
     },
@@ -18,15 +18,15 @@
     },
     "control-plane": {
       "manifest": "control-plane/package.json",
-      "manifest_sha256": "230dddb8b1e099695b67a4d9a7dd253e4b7e7eb31cfa3dc770946238b67e81f9",
+      "manifest_sha256": "9e9b1d69181f583fd2ca4ecfa9b6df67dae07e9e5fe83001ec6fa441ae012fa7",
       "lockfile": "control-plane/package-lock.json",
       "lockfile_sha256": "5a6476047a4a68ae604dcec17adda832fb7b7868adf49cf7bcb17449af473fce"
     }
   },
   "fork_staging": {
     "fork_root": "fork/typedb",
-    "staged_file_count": 777,
-    "staged_tree_sha256": "f18f9065cd4662ce0e7c4cef4e8f62c980cb94e6db99ee26b5b2f7f45e1eac14",
+    "staged_file_count": 778,
+    "staged_tree_sha256": "9cdc967eaeb403e6fd4e00223846caffca19a864edf0e23c427a25b60eb6e11d",
     "note": "sources/typedb under test == locked TB revision + this patch set"
   },
   "slatedb_consumption": {

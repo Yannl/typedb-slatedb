@@ -31,6 +31,10 @@ test("production physically excludes issuance, register/fence, budgets, batch, a
 test("the production protocol surface stays reachable", () => {
   const production = [
     "/health",
+    // R4 PR1: the internal provisioning transaction is the PRODUCTION
+    // bootstrap route - its authorization is the PROVISION capability
+    // (private-issuer scope key), not surface gating
+    "/provision",
     "/session/reserve",
     "/session/attest",
     "/session/activate",

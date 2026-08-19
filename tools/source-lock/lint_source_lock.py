@@ -103,10 +103,12 @@ STACK_LOCK_PINS = {
 # artifacts materialized into an uncommitted cache under sources/ (which is
 # gitignored) instead of committed fixtures: verified against the locked
 # sha256 whenever the file is present. Absence is NOT a failure - they are
-# fetched on demand by their consumers (stack/minio.mjs), which re-verify
-# the digest on every use and refuse mismatches.
+# fetched on demand by their consumers (stack/minio.mjs,
+# tools/s3-cert-corpus/run-corpus.sh), which re-verify the digest on every
+# use and refuse mismatches.
 CACHED_ARTIFACTS = {
     "MINIO": "minio/minio-RELEASE.2025-09-07T16-13-09Z",
+    "RUSTFS": "rustfs/rustfs-1.0.0-rc.2",
 }
 
 HEX40 = re.compile(r"^[0-9a-f]{40}$")

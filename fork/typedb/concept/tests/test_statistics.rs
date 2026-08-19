@@ -394,7 +394,7 @@ fn put_plays() {
     thing_manager.finalise(&mut snapshot, StorageCounters::DISABLED).unwrap();
     let create_commit_seq = snapshot.commit(&mut CommitProfile::DISABLED).unwrap().unwrap();
 
-    let mut snapshot = storage.clone().open_snapshot_write_at(create_commit_seq);
+    let mut snapshot = storage.clone().open_snapshot_write_at(create_commit_seq).unwrap();
     let person_2 = thing_manager.create_entity(&mut snapshot, person_type).unwrap();
     friendship
         .add_player(&mut snapshot, &thing_manager, friend_role, person_2.into_object(), StorageCounters::DISABLED)
@@ -437,7 +437,7 @@ fn unset_has() {
     thing_manager.finalise(&mut snapshot, StorageCounters::DISABLED).unwrap();
     let create_commit_seq = snapshot.commit(&mut CommitProfile::DISABLED).unwrap().unwrap();
 
-    let mut snapshot = storage.clone().open_snapshot_write_at(create_commit_seq);
+    let mut snapshot = storage.clone().open_snapshot_write_at(create_commit_seq).unwrap();
     person.unset_has_unordered(&mut snapshot, &thing_manager, &name, StorageCounters::DISABLED).unwrap();
     thing_manager.finalise(&mut snapshot, StorageCounters::DISABLED).unwrap();
     snapshot.commit(&mut CommitProfile::DISABLED).unwrap().unwrap();
@@ -472,7 +472,7 @@ fn delete_attribute() {
     thing_manager.finalise(&mut snapshot, StorageCounters::DISABLED).unwrap();
     let create_commit_seq = snapshot.commit(&mut CommitProfile::DISABLED).unwrap().unwrap();
 
-    let mut snapshot = storage.clone().open_snapshot_write_at(create_commit_seq);
+    let mut snapshot = storage.clone().open_snapshot_write_at(create_commit_seq).unwrap();
     name.delete(&mut snapshot, &thing_manager, StorageCounters::DISABLED).unwrap();
     thing_manager.finalise(&mut snapshot, StorageCounters::DISABLED).unwrap();
     snapshot.commit(&mut CommitProfile::DISABLED).unwrap().unwrap();
@@ -518,7 +518,7 @@ fn delete_relation() {
     thing_manager.finalise(&mut snapshot, StorageCounters::DISABLED).unwrap();
     let create_commit_seq = snapshot.commit(&mut CommitProfile::DISABLED).unwrap().unwrap();
 
-    let mut snapshot = storage.clone().open_snapshot_write_at(create_commit_seq);
+    let mut snapshot = storage.clone().open_snapshot_write_at(create_commit_seq).unwrap();
     friendship.delete(&mut snapshot, &thing_manager, StorageCounters::DISABLED).unwrap();
     thing_manager.finalise(&mut snapshot, StorageCounters::DISABLED).unwrap();
     snapshot.commit(&mut CommitProfile::DISABLED).unwrap().unwrap();
@@ -564,7 +564,7 @@ fn remove_player() {
     thing_manager.finalise(&mut snapshot, StorageCounters::DISABLED).unwrap();
     let create_commit_seq = snapshot.commit(&mut CommitProfile::DISABLED).unwrap().unwrap();
 
-    let mut snapshot = storage.clone().open_snapshot_write_at(create_commit_seq);
+    let mut snapshot = storage.clone().open_snapshot_write_at(create_commit_seq).unwrap();
     friendship
         .remove_player_single(
             &mut snapshot,
@@ -628,7 +628,7 @@ fn relation_index_counts() {
     thing_manager.finalise(&mut snapshot, StorageCounters::DISABLED).unwrap();
     let schema_commit_seq = snapshot.commit(&mut CommitProfile::DISABLED).unwrap().unwrap();
 
-    let mut snapshot = storage.clone().open_snapshot_write_at(schema_commit_seq);
+    let mut snapshot = storage.clone().open_snapshot_write_at(schema_commit_seq).unwrap();
     let alice = thing_manager.create_entity(&mut snapshot, person_type).unwrap();
     let bob = thing_manager.create_entity(&mut snapshot, person_type).unwrap();
     let mentorship = thing_manager.create_relation(&mut snapshot, mentorship_type).unwrap();

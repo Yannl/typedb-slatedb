@@ -7,6 +7,7 @@
 import { env, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { DatabaseControllerDO } from "./database-controller.ts";
+import { provisionInstance } from "./workerd-test-support.ts";
 
 interface TestEnv {
   CONTROLLER: DurableObjectNamespace<DatabaseControllerDO>;
@@ -34,6 +35,7 @@ describe("DatabaseControllerDO on workerd", () => {
   it("finalises, replays idempotently, and rejects digest conflicts", async () => {
     const stub = testEnv.CONTROLLER.get(testEnv.CONTROLLER.idFromName("t1"));
     await runInDurableObject(stub, async (instance: DatabaseControllerDO) => {
+      await provisionInstance(instance, "db1");
       instance.registerSession("db1", 1, "sess-1");
       instance.setBudgets("db1",
         { maxUnpublishedOutbox: 1000, maxPayloadLength: 100_000, maxTailRecords: 100_000 }, "sess-1");
@@ -49,7 +51,8 @@ describe("DatabaseControllerDO on workerd", () => {
   it("binds the database identity durably: a cross-database call fails closed (C-P0-02)", async () => {
     const stub = testEnv.CONTROLLER.get(testEnv.CONTROLLER.idFromName("t-binding"));
     await runInDurableObject(stub, async (instance: DatabaseControllerDO) => {
-      instance.registerSession("db1", 1, "sess-1"); // first call binds db1
+      await provisionInstance(instance, "db1"); // ONLY provisioning binds (R4 PR1)
+      instance.registerSession("db1", 1, "sess-1");
       expect(() => instance.registerSession("db-OTHER", 1, "sess-x"))
         .toThrowError(/DO_DATABASE_BINDING_VIOLATION/);
       expect(() => instance.finalizeWalRecord(finalizeReq("op-x", { databaseId: "db-OTHER" })))
@@ -57,6 +60,92 @@ describe("DatabaseControllerDO on workerd", () => {
       expect(() => instance.head("db-OTHER", 1)).toThrowError(/DO_DATABASE_BINDING_VIOLATION/);
       // the bound identity keeps working
       instance.registerSession("db1", 1, "sess-2");
+    });
+  });
+
+  it("R5-SEC-04: a lost response CONVERGES on the exact original outcome (no permanent 409)", async () => {
+    const stub = testEnv.CONTROLLER.get(testEnv.CONTROLLER.idFromName("t-ambiguous"));
+    await runInDurableObject(stub, async (instance: DatabaseControllerDO) => {
+      await provisionInstance(instance, "db1");
+      instance.registerSession("db1", 1, "sess-1");
+      instance.setBudgets("db1",
+        { maxUnpublishedOutbox: 1000, maxPayloadLength: 100_000, maxTailRecords: 100_000 }, "sess-1");
+
+      // the use is claimed and bound to its authoritative effect, the effect
+      // COMMITS, and then the response is lost — recorded AMBIGUOUS
+      const core = (instance as unknown as { controllerCore: {
+        claimCapability: (n: string, d: string, e: number, w: number, eff?: unknown) => { ok: boolean };
+        resolveCapabilityUse: (n: string, s: string, r: string) => unknown;
+      } }).controllerCore;
+      const req = finalizeReq("op-lost");
+      core.claimCapability("nonce-lost", "usedigest-lost", Date.now() + 600_000, Date.now() - 120_000,
+        { kind: "WAL_FINALIZE", databaseId: "db1", generation: 1,
+          operationId: "op-lost", requestDigest: req.requestDigest });
+      const receipt = instance.finalizeWalRecord(req);
+      expect(receipt).toMatchObject({ ok: true });
+      core.resolveCapabilityUse("nonce-lost", "AMBIGUOUS", JSON.stringify({ error: "socket hang up" }));
+
+      // the retry path asks the authority to settle it: SETTLED with the
+      // exact original receipt, not CAPABILITY_IN_FLIGHT forever
+      const settled = await instance.resolveAmbiguousUse("nonce-lost");
+      expect(settled).toMatchObject({ ok: true, disposition: "SETTLED", state: "RESOLVED_SUCCESS" });
+      const body = JSON.parse((settled as { response: string }).response) as
+        { status: number; body: Record<string, unknown> };
+      expect(body.status).toBe(200);
+      expect(String(body.body.appendLsn)).toBe(String((receipt as { appendLsn: bigint }).appendLsn));
+    });
+  });
+
+  it("R5-SEC-04: contradictory durable evidence quarantines the use terminally", async () => {
+    const stub = testEnv.CONTROLLER.get(testEnv.CONTROLLER.idFromName("t-quarantine"));
+    await runInDurableObject(stub, async (instance: DatabaseControllerDO) => {
+      await provisionInstance(instance, "db1");
+      instance.registerSession("db1", 1, "sess-1");
+      instance.setBudgets("db1",
+        { maxUnpublishedOutbox: 1000, maxPayloadLength: 100_000, maxTailRecords: 100_000 }, "sess-1");
+      const core = (instance as unknown as { controllerCore: {
+        claimCapability: (n: string, d: string, e: number, w: number, eff?: unknown) => { ok: boolean };
+        resolveCapabilityUse: (n: string, s: string, r: string) => unknown;
+      } }).controllerCore;
+
+      instance.finalizeWalRecord(finalizeReq("op-contra"));
+      // same operation identity recorded under a DIFFERENT request digest
+      core.claimCapability("nonce-contra", "usedigest-contra", Date.now() + 600_000, Date.now() - 120_000,
+        { kind: "WAL_FINALIZE", databaseId: "db1", generation: 1,
+          operationId: "op-contra", requestDigest: "f".repeat(64) });
+      core.resolveCapabilityUse("nonce-contra", "AMBIGUOUS", JSON.stringify({ error: "lost" }));
+
+      const settled = await instance.resolveAmbiguousUse("nonce-contra");
+      expect(settled).toMatchObject({ ok: false, error: "CAPABILITY_USE_QUARANTINED" });
+      // and it stays refused — the quarantine is terminal
+      expect(await instance.resolveAmbiguousUse("nonce-contra"))
+        .toMatchObject({ ok: false, error: "CAPABILITY_USE_QUARANTINED" });
+    });
+  });
+
+  it("R5-SEC-04: the alarm reducer settles aged unresolved uses without any retry", async () => {
+    const stub = testEnv.CONTROLLER.get(testEnv.CONTROLLER.idFromName("t-sweep"));
+    await runInDurableObject(stub, async (instance: DatabaseControllerDO) => {
+      await provisionInstance(instance, "db1");
+      instance.registerSession("db1", 1, "sess-1");
+      instance.setBudgets("db1",
+        { maxUnpublishedOutbox: 1000, maxPayloadLength: 100_000, maxTailRecords: 100_000 }, "sess-1");
+      const core = (instance as unknown as { controllerCore: {
+        claimCapability: (n: string, d: string, e: number, w: number, eff?: unknown) => { ok: boolean };
+        resolveCapabilityUse: (n: string, s: string, r: string) => unknown;
+      } }).controllerCore;
+
+      const req = finalizeReq("op-swept");
+      core.claimCapability("nonce-swept", "usedigest-swept", Date.now() + 600_000, Date.now() - 300_000,
+        { kind: "WAL_FINALIZE", databaseId: "db1", generation: 1,
+          operationId: "op-swept", requestDigest: req.requestDigest });
+      instance.finalizeWalRecord(req);
+      core.resolveCapabilityUse("nonce-swept", "AMBIGUOUS", JSON.stringify({ error: "lost" }));
+
+      // nobody retries; the scheduled reducer converges it anyway
+      await instance.alarm();
+      const after = await instance.resolveAmbiguousUse("nonce-swept");
+      expect(after).toMatchObject({ ok: true, disposition: "SETTLED", state: "RESOLVED_SUCCESS" });
     });
   });
 
@@ -81,6 +170,7 @@ describe("DatabaseControllerDO on workerd", () => {
   it("enforces the status singleton inside real transactionSync", async () => {
     const stub = testEnv.CONTROLLER.get(testEnv.CONTROLLER.idFromName("t2"));
     await runInDurableObject(stub, async (instance: DatabaseControllerDO) => {
+      await provisionInstance(instance, "db1");
       instance.registerSession("db1", 1, "sess-1");
       instance.setBudgets("db1",
         { maxUnpublishedOutbox: 1000, maxPayloadLength: 100_000, maxTailRecords: 100_000 }, "sess-1");
@@ -98,6 +188,7 @@ describe("DatabaseControllerDO on workerd", () => {
   it("register fences the predecessor and serves the U3 read surface on real SqlStorage", async () => {
     const stub = testEnv.CONTROLLER.get(testEnv.CONTROLLER.idFromName("t3"));
     await runInDurableObject(stub, async (instance: DatabaseControllerDO) => {
+      await provisionInstance(instance, "db1");
       instance.registerSession("db1", 1, "sess-1");
       instance.setBudgets("db1",
         { maxUnpublishedOutbox: 1000, maxPayloadLength: 100_000, maxTailRecords: 100_000 }, "sess-1");

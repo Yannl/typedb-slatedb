@@ -14,3 +14,4 @@ control-plane/.wrangler/
 **/.alchemy/
 __pycache__/
 *.pyc
+tools/s3-cert-corpus/evidence/

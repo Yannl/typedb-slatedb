@@ -18,25 +18,11 @@ import type { ProbeContext, ProbeImpl } from "./probe.ts";
 import { asJson, BOTH, MOCK_ONLY, patternBytes, r2Delete, r2Get, r2Key, r2Put } from "./probe.ts";
 import type { SeamCredentials } from "./provider.ts";
 import { sha256hex, utf8 } from "./provider.ts";
-import { validateBucketLockGetResponse, validateTempCredentialsResponse } from "./cfapi-dto.ts";
+import { canonicalRules, validateBucketLockGetResponse, validateTempCredentialsResponse } from "./cfapi-dto.ts";
 import type { BucketLockRule } from "./cfapi-dto.ts";
 
 function b64sha256(body: Uint8Array): string {
   return Buffer.from(sha256hex(body), "hex").toString("base64");
-}
-
-/** Key-order-independent canonical form of a lock-rule list. */
-function canonicalRules(rules: ReadonlyArray<BucketLockRule>): string {
-  return JSON.stringify(
-    rules.map((r) => ({
-      id: r.id,
-      enabled: r.enabled,
-      prefix: r.prefix ?? null,
-      condition_type: r.condition.type,
-      condition_max_age: r.condition.type === "Age" ? r.condition.maxAgeSeconds : null,
-      condition_date: r.condition.type === "Date" ? r.condition.date : null,
-    })),
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -50,17 +36,21 @@ const pR2_01: ProbeImpl = {
     "PUTs produce exactly one winner; no unconditional downgrade; " +
     "byte/hash-exact readback",
   assertions: [
-    { id: "create-if-absent-succeeds", title: "initial PUT if-none-match:* succeeds", required_in: BOTH },
-    { id: "duplicate-create-412", title: "duplicate conditional create is 412, not a downgrade", required_in: BOTH },
-    { id: "if-match-current-succeeds", title: "PUT if-match with current etag succeeds", required_in: BOTH },
-    { id: "if-match-wrong-412", title: "PUT if-match with wrong expected version is 412", required_in: BOTH },
-    { id: "readback-200", title: "readback GET succeeds", required_in: BOTH },
-    { id: "readback-byte-exact", title: "readback is byte- and sha256-exact", required_in: BOTH },
-    { id: "race-single-winner", title: "exactly one concurrent conditional writer wins", required_in: BOTH },
-    { id: "race-winner-bytes", title: "stored bytes are exactly the single winner's bytes", required_in: BOTH },
-    { id: "ambiguous-observed", title: "client observes network failure after server commit", required_in: MOCK_ONLY },
-    { id: "ambiguous-retry-classified", title: "conditional retry classifies ambiguity as already-committed", required_in: MOCK_ONLY },
-    { id: "ambiguous-committed-once", title: "readback proves the ambiguous operation committed exactly once", required_in: MOCK_ONLY },
+    { id: "create-if-absent-succeeds", title: "initial PUT if-none-match:* succeeds", class: "provider-fact", required_in: BOTH },
+    { id: "duplicate-create-412", title: "duplicate conditional create is 412, not a downgrade", class: "provider-fact", required_in: BOTH },
+    { id: "if-match-current-succeeds", title: "PUT if-match with current etag succeeds", class: "provider-fact", required_in: BOTH },
+    { id: "if-match-wrong-412", title: "PUT if-match with wrong expected version is 412", class: "provider-fact", required_in: BOTH },
+    { id: "readback-200", title: "readback GET succeeds", class: "provider-fact", required_in: BOTH },
+    { id: "readback-byte-exact", title: "readback is byte- and sha256-exact", class: "provider-fact", required_in: BOTH },
+    { id: "race-single-winner", title: "exactly one concurrent conditional writer wins", class: "provider-fact", required_in: BOTH },
+    { id: "race-winner-bytes", title: "stored bytes are exactly the single winner's bytes", class: "provider-fact", required_in: BOTH },
+    // The three ambiguity assertions PROVE the product's typed-ambiguity
+    // contract, but only under mock timing control — the obligation
+    // manifest therefore records ambiguity-resolution-real as OPEN
+    // (R4-CF-04): these are mock evidence, never real-mode contract proof.
+    { id: "ambiguous-observed", title: "client observes network failure after server commit", class: "product-conformance", required_in: MOCK_ONLY },
+    { id: "ambiguous-retry-classified", title: "conditional retry classifies ambiguity as already-committed", class: "product-conformance", required_in: MOCK_ONLY },
+    { id: "ambiguous-committed-once", title: "readback proves the ambiguous operation committed exactly once", class: "product-conformance", required_in: MOCK_ONLY },
   ],
   async run(ctx: ProbeContext): Promise<void> {
     // --- create-if-absent, then duplicate conditional create ---
@@ -149,22 +139,27 @@ const pR2_02: ProbeImpl = {
     "refused; the permission presets cannot express put+get-without-delete " +
     "(no-delete must come from bucket locks or a mediating gateway)",
   assertions: [
-    { id: "mint-malformed-refused", title: "mint without parentAccessKeyId/singular permission is refused", required_in: BOTH },
-    { id: "mint-envelope-valid", title: "mint response validates against the official result envelope", required_in: BOTH },
-    { id: "rw-put-in-scope", title: "object-read-write PUT inside the prefix allowed", required_in: BOTH },
-    { id: "rw-get-in-scope", title: "object-read-write GET inside the prefix allowed and byte-exact", required_in: BOTH },
-    { id: "rw-put-outside-denied", title: "PUT outside credential prefix denied", required_in: BOTH },
-    { id: "seed-outside-with-parent", title: "parent credential seeds an outside object", required_in: BOTH },
-    { id: "rw-get-outside-denied", title: "GET outside credential prefix denied", required_in: BOTH },
-    { id: "ro-envelope-valid", title: "read-only mint response validates", required_in: BOTH },
-    { id: "ro-get-allowed", title: "object-read-only GET inside the prefix allowed", required_in: BOTH },
-    { id: "ro-put-denied", title: "object-read-only PUT denied (forbidden action)", required_in: BOTH },
+    { id: "mint-malformed-refused", title: "mint without parentAccessKeyId/singular permission is refused", class: "provider-fact", required_in: BOTH },
+    { id: "mint-envelope-valid", title: "mint response validates against the official result envelope", class: "provider-fact", required_in: BOTH },
+    { id: "rw-put-in-scope", title: "object-read-write PUT inside the prefix allowed", class: "provider-fact", required_in: BOTH },
+    { id: "rw-get-in-scope", title: "object-read-write GET inside the prefix allowed and byte-exact", class: "provider-fact", required_in: BOTH },
+    { id: "rw-put-outside-denied", title: "PUT outside credential prefix denied", class: "provider-fact", required_in: BOTH },
+    { id: "seed-outside-with-parent", title: "parent credential seeds an outside object", class: "provider-fact", required_in: BOTH },
+    { id: "rw-get-outside-denied", title: "GET outside credential prefix denied", class: "provider-fact", required_in: BOTH },
+    { id: "ro-envelope-valid", title: "read-only mint response validates", class: "provider-fact", required_in: BOTH },
+    { id: "ro-get-allowed", title: "object-read-only GET inside the prefix allowed", class: "provider-fact", required_in: BOTH },
+    { id: "ro-put-denied", title: "object-read-only PUT denied (forbidden action)", class: "provider-fact", required_in: BOTH },
     {
       id: "rw-delete-in-scope-allowed",
       title:
-        "object-read-write DELETE inside the prefix is ALLOWED by the platform — " +
-        "the preset enum cannot express put+get-without-delete, so no-delete must " +
-        "be enforced above the credential layer (bucket locks / gateway)",
+        "PROVIDER FACT (not a product pass condition): Cloudflare's permission " +
+        "preset enum CANNOT express put+get-without-delete, so an " +
+        "object-read-write credential's DELETE inside its prefix succeeds. The " +
+        "product obligation runtime-cannot-delete is therefore NOT satisfied " +
+        "here — it is OPEN in the obligation manifest until a tested " +
+        "gateway/lock boundary above the credential layer denies the runtime " +
+        "principal's delete",
+      class: "provider-fact",
       required_in: BOTH,
     },
   ],
@@ -280,33 +275,52 @@ const pR2_03: ProbeImpl = {
     "locked mutations fail as documented; lock policy machine-verifiable via " +
     "the result envelope; the runtime principal cannot alter policy",
   assertions: [
-    { id: "seed-created", title: "seed object created before the lock", required_in: BOTH },
-    { id: "legacy-rule-shape-refused", title: "the pre-fix {prefix,allowOverwrite,allowDelete} rule shape is refused", required_in: BOTH },
-    { id: "admin-lock-accepted", title: "admin-principal lock configuration accepted", required_in: BOTH },
-    { id: "locked-overwrite-denied", title: "overwrite of locked object denied", required_in: BOTH },
-    { id: "locked-delete-denied", title: "delete of locked object denied", required_in: BOTH },
-    { id: "locked-bytes-survive", title: "locked bytes unchanged after denied mutations", required_in: BOTH },
-    { id: "new-under-lock-creatable", title: "new object under locked prefix creatable", required_in: BOTH },
-    { id: "new-under-lock-covered", title: "new object immediately covered by the lock", required_in: BOTH },
-    { id: "outside-rules-normal", title: "delete outside lock rules allowed", required_in: BOTH },
-    { id: "policy-readback-exact", title: "retrieved lock policy (result envelope) is exactly the configured policy", required_in: BOTH },
-    { id: "runtime-mutation-denied", title: "runtime principal lock mutation denied", required_in: BOTH },
-    { id: "policy-unchanged-after-denial", title: "lock policy unchanged after denied mutation attempt", required_in: BOTH },
+    { id: "seed-created", title: "seed object created before the lock", class: "provider-fact", required_in: BOTH },
+    { id: "legacy-rule-shape-refused", title: "the pre-fix {prefix,allowOverwrite,allowDelete} rule shape is refused", class: "provider-fact", required_in: BOTH },
+    { id: "admin-lock-accepted", title: "admin-principal lock configuration accepted", class: "provider-fact", required_in: BOTH },
+    // Locked-mutation denial IS the product's enforcement boundary above
+    // the credential layer (the joined verdict R4-CF-04 demands for
+    // immutability), and it executes for real in real mode.
+    { id: "locked-overwrite-denied", title: "overwrite of locked object denied (enforced above the credential layer)", class: "product-conformance", required_in: BOTH },
+    { id: "locked-delete-denied", title: "delete of locked object denied (enforced above the credential layer)", class: "product-conformance", required_in: BOTH },
+    { id: "locked-bytes-survive", title: "locked bytes unchanged after denied mutations", class: "product-conformance", required_in: BOTH },
+    { id: "new-under-lock-creatable", title: "new object under locked prefix creatable", class: "provider-fact", required_in: BOTH },
+    { id: "new-under-lock-covered", title: "new object immediately covered by the lock", class: "product-conformance", required_in: BOTH },
+    { id: "outside-rules-normal", title: "delete outside lock rules allowed", class: "provider-fact", required_in: BOTH },
+    { id: "policy-readback-exact", title: "retrieved lock policy (result envelope) is exactly the configured policy", class: "provider-fact", required_in: BOTH },
+    // Runtime-principal denial is a genuine authority-path check: in real
+    // mode the runtime principal is a separate, less-privileged credential.
+    { id: "runtime-mutation-denied", title: "runtime principal lock mutation denied", class: "product-conformance", required_in: BOTH },
+    { id: "policy-unchanged-after-denial", title: "lock policy unchanged after denied mutation attempt", class: "product-conformance", required_in: BOTH },
   ],
   async run(ctx: ProbeContext): Promise<void> {
     const lockedPrefix = `probes/${ctx.runNonce}/p-r2-03/locked/`;
     const lockedKey = `/${ctx.bucket}/${lockedPrefix}a`;
     const freeKey = r2Key(ctx, "p-r2-03/free/b");
+
+    // R4-CF-00: read-modify-write, never replace. The probe first reads
+    // the CURRENT policy and appends its one run-owned rule to it, so a
+    // pre-existing operator rule is preserved through the whole probe.
+    // The runner's cleanup restores the captured baseline exactly.
+    let baselineRules: BucketLockRule[] = [];
+    const pre = await ctx.fetch({ service: "cfapi", method: "GET", path: `/r2/buckets/${ctx.bucket}/lock` });
+    try {
+      baselineRules = validateBucketLockGetResponse(asJson(pre)).result.rules;
+    } catch {
+      // A malformed pre-policy is caught below by admin-lock-accepted /
+      // policy-readback-exact failing; never guess a baseline.
+      baselineRules = [];
+    }
+
     // Official rule shape: {id, enabled, prefix, condition} — condition
     // Indefinite locks matching objects until the rule is removed.
-    const rules: BucketLockRule[] = [
-      {
-        id: `probe-lock-${ctx.runNonce}`,
-        enabled: true,
-        prefix: lockedPrefix,
-        condition: { type: "Indefinite" },
-      },
-    ];
+    const ownRule: BucketLockRule = {
+      id: `probe-lock-${ctx.runNonce}`,
+      enabled: true,
+      prefix: lockedPrefix,
+      condition: { type: "Indefinite" },
+    };
+    const rules: BucketLockRule[] = [...baselineRules, ownRule];
 
     // Seed an object, then lock its prefix from the admin plane.
     const seed = await r2Put(ctx, lockedKey, utf8("locked-object-v1"));
@@ -402,20 +416,23 @@ const pR2_04: ProbeImpl = {
     "SHA-256; identical-byte part retry idempotent; changed bytes require a " +
     "new UploadAttemptId; completed bytes match the application manifest",
   assertions: [
-    { id: "checksummed-put-accepted", title: "checksummed PUT accepted", required_in: BOTH },
-    { id: "checksum-echoed", title: "provider echoes the stored sha256 checksum on read", required_in: BOTH },
-    { id: "app-sha256-authoritative", title: "application SHA-256 over readback matches the manifest value", required_in: BOTH },
-    { id: "mp-create-accepted", title: "multipart create accepted", required_in: BOTH },
-    { id: "mp-upload-id", title: "uploadId extracted", required_in: BOTH },
-    { id: "mp-part1-accepted", title: "part 1 upload accepted", required_in: BOTH },
-    { id: "mp-identical-retry-idempotent", title: "byte-identical retry under the same UploadAttemptId is idempotent", required_in: BOTH },
-    { id: "mp-changed-bytes-refused", title: "changed bytes under same UploadAttemptId refused (adapter contract)", required_in: MOCK_ONLY },
-    { id: "mp-new-attempt-accepted", title: "changed bytes under a NEW UploadAttemptId accepted", required_in: BOTH },
-    { id: "mp-part2-accepted", title: "part 2 upload accepted", required_in: BOTH },
-    { id: "mp-complete-accepted", title: "multipart completion accepted", required_in: BOTH },
-    { id: "mp-final-bytes-match-manifest", title: "completed object application SHA-256 matches the part manifest", required_in: BOTH },
-    { id: "mp-abort-accepted", title: "multipart abort accepted", required_in: BOTH },
-    { id: "mp-after-abort-refused", title: "part upload after abort refused", required_in: BOTH },
+    { id: "checksummed-put-accepted", title: "checksummed PUT accepted", class: "provider-fact", required_in: BOTH },
+    { id: "checksum-echoed", title: "provider echoes the stored sha256 checksum on read", class: "provider-fact", required_in: BOTH },
+    { id: "app-sha256-authoritative", title: "application SHA-256 over readback matches the manifest value", class: "provider-fact", required_in: BOTH },
+    { id: "mp-create-accepted", title: "multipart create accepted", class: "provider-fact", required_in: BOTH },
+    { id: "mp-upload-id", title: "uploadId extracted", class: "provider-fact", required_in: BOTH },
+    { id: "mp-part1-accepted", title: "part 1 upload accepted", class: "provider-fact", required_in: BOTH },
+    { id: "mp-identical-retry-idempotent", title: "byte-identical retry under the same UploadAttemptId is idempotent", class: "provider-fact", required_in: BOTH },
+    // Application-level attempt identity is a PRODUCT contract; raw R2
+    // does not enforce it, so this proof is mock-only and the obligation
+    // manifest records attempt-identity-changed-bytes-real as OPEN.
+    { id: "mp-changed-bytes-refused", title: "changed bytes under same UploadAttemptId refused (adapter contract)", class: "product-conformance", required_in: MOCK_ONLY },
+    { id: "mp-new-attempt-accepted", title: "changed bytes under a NEW UploadAttemptId accepted", class: "provider-fact", required_in: BOTH },
+    { id: "mp-part2-accepted", title: "part 2 upload accepted", class: "provider-fact", required_in: BOTH },
+    { id: "mp-complete-accepted", title: "multipart completion accepted", class: "provider-fact", required_in: BOTH },
+    { id: "mp-final-bytes-match-manifest", title: "completed object application SHA-256 matches the part manifest", class: "provider-fact", required_in: BOTH },
+    { id: "mp-abort-accepted", title: "multipart abort accepted", class: "provider-fact", required_in: BOTH },
+    { id: "mp-after-abort-refused", title: "part upload after abort refused", class: "provider-fact", required_in: BOTH },
   ],
   async run(ctx: ProbeContext): Promise<void> {
     // --- single-part checksum echo ---
@@ -547,18 +564,34 @@ const pR2_05: ProbeImpl = {
     "writers resolve by completion order to one winner; 429 pressure is " +
     "bounded, retried with bounded backoff, and never an incorrect success",
   assertions: [
-    { id: "write-accepted", title: "write accepted", required_in: BOTH },
-    { id: "read-after-write", title: "immediate readback returns the committed bytes", required_in: BOTH },
-    { id: "burst-statuses-exact", title: "every burst response is exactly 200 or 429", required_in: BOTH },
-    { id: "burst-some-accepted", title: "at least one burst writer is accepted", required_in: BOTH },
-    { id: "burst-shed-exact", title: "mock rate limit sheds exactly the excess writers", required_in: MOCK_ONLY },
-    { id: "visible-bytes-acknowledged", title: "visible bytes after burst belong to an acknowledged (200) writer", required_in: BOTH },
-    { id: "winner-last-committed", title: "winner is exactly the last-completed acknowledged write", required_in: MOCK_ONLY },
-    { id: "retry-statuses-exact", title: "every retry-round response is exactly 200 or 429", required_in: BOTH },
-    { id: "shed-writers-complete", title: "all shed writers complete within the backoff bound", required_in: BOTH },
-    { id: "backoff-bounded", title: "backoff attempts stayed within the bound", required_in: BOTH },
-    { id: "mock-single-retry-round", title: "mock retries complete in exactly one bounded round", required_in: MOCK_ONLY },
-    { id: "final-winner-complete", title: "final visible bytes are a complete single writer's bytes", required_in: BOTH },
+    { id: "write-accepted", title: "write accepted", class: "provider-fact", required_in: BOTH },
+    { id: "read-after-write", title: "immediate readback returns the committed bytes", class: "provider-fact", required_in: BOTH },
+    { id: "burst-statuses-exact", title: "every burst response is exactly 200 or 429", class: "provider-fact", required_in: BOTH },
+    { id: "burst-some-accepted", title: "at least one burst writer is accepted", class: "provider-fact", required_in: BOTH },
+    { id: "burst-shed-exact", title: "mock rate limit sheds exactly the excess writers", class: "provider-fact", required_in: MOCK_ONLY },
+    { id: "visible-bytes-acknowledged", title: "visible bytes after burst belong to an acknowledged (200) writer", class: "provider-fact", required_in: BOTH },
+    { id: "winner-last-committed", title: "winner is exactly the last-completed acknowledged write", class: "provider-fact", required_in: MOCK_ONLY },
+    // R4-CF-04: retry-statuses-exact is only structurally guaranteed to be
+    // recorded when a retry round actually runs — deterministic under the
+    // mock's rate-limit model, NOT under real R2 (which may never 429 an
+    // 8-write burst). It is therefore mock-only; real runs are made
+    // structurally consistent by pressure-outcome-typed below, which
+    // records a TYPED outcome whether or not throttling was observed.
+    { id: "retry-statuses-exact", title: "every retry-round response is exactly 200 or 429 (mock's deterministic pressure model)", class: "provider-fact", required_in: MOCK_ONLY },
+    { id: "shed-writers-complete", title: "all shed writers complete within the backoff bound", class: "provider-fact", required_in: BOTH },
+    { id: "backoff-bounded", title: "backoff attempts stayed within the bound", class: "provider-fact", required_in: BOTH },
+    { id: "mock-single-retry-round", title: "mock retries complete in exactly one bounded round", class: "provider-fact", required_in: MOCK_ONLY },
+    { id: "final-winner-complete", title: "final visible bytes are a complete single writer's bytes", class: "provider-fact", required_in: BOTH },
+    {
+      id: "pressure-outcome-typed",
+      title:
+        "the bounded pressure schedule ends in a TYPED outcome either way: " +
+        "{classified:'throttled', statuses:[...]} when 429s occurred, " +
+        "{classified:'no-throttle-observed', writes:8} when none did — a real " +
+        "run with zero 429s is a recorded fact, not a structural gap",
+      class: "provider-fact",
+      required_in: BOTH,
+    },
   ],
   async run(ctx: ProbeContext): Promise<void> {
     // --- read-after-write on the S3 endpoint (no CDN involved) ---
@@ -620,6 +653,7 @@ const pR2_05: ProbeImpl = {
 
     // --- bounded-backoff retry of the shed writers ---
     const MAX_ATTEMPTS = 3; // bound; exceeding it is a probe failure
+    const allStatuses: number[] = burst.map((r) => r.status);
     let outstanding = rejected.map(({ i }) => i);
     let attempts = 0;
     while (outstanding.length > 0 && attempts < MAX_ATTEMPTS) {
@@ -635,12 +669,26 @@ const pR2_05: ProbeImpl = {
         outstanding.map((i) => r2Put(ctx, key, bodies[i], { "x-mock-rate-limited": "1" })),
       );
       outstanding = outstanding.filter((_, k) => retries[k].status !== 200);
+      for (const r of retries) allStatuses.push(r.status);
       ctx.check(
         "retry-statuses-exact",
         retries.every((r) => r.status === 200 || r.status === 429),
         `round ${attempts}: ${retries.map((r) => r.status).join(",")}`,
       );
     }
+    // R4-CF-04: a TYPED pressure outcome is recorded in EVERY mode — a real
+    // run where R2 never throttled is structurally consistent evidence
+    // ("no-throttle-observed"), not a silently absent retry assertion.
+    const throttled = allStatuses.filter((s) => s === 429);
+    const pressureOutcome =
+      throttled.length > 0
+        ? { classified: "throttled", statuses: allStatuses }
+        : { classified: "no-throttle-observed", writes: N };
+    ctx.check(
+      "pressure-outcome-typed",
+      allStatuses.length >= N && allStatuses.every((s) => s === 200 || s === 429),
+      JSON.stringify(pressureOutcome),
+    );
     ctx.check(
       "shed-writers-complete",
       outstanding.length === 0,

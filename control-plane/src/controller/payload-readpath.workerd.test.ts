@@ -13,6 +13,7 @@
 import { SELF, env } from "cloudflare:test";
 import { DEV_ISSUER_SECRET } from "./core/key-config.ts";
 import { describe, expect, it } from "vitest";
+import { provisionViaSelf } from "./workerd-test-support.ts";
 
 interface TestEnv {
   PAYLOADS: R2Bucket;
@@ -46,13 +47,15 @@ async function postJson(path: string, token: string, body: unknown): Promise<Res
 /** Catalogue one WAL record end-to-end (register → budget → put → finalize),
  *  returning the content-addressed key it was catalogued under. */
 async function catalogueRecord(db: string, session: string, gen: number, bytes: Uint8Array): Promise<string> {
-  const adminCap = async () =>
-    (await issue({ databaseId: db, method: "SESSION_ADMIN", session })).token;
-
-  const reg = await postJson("/session/register", await adminCap(),
+  // R4 PR1: provision the registry binding before anything may bind the DO
+  expect((await provisionViaSelf(db)).status).toBe(200);
+  // R4-SEC-04: exact per-action capabilities bound to the exact actor
+  const reg = await postJson("/session/register",
+    (await issue({ databaseId: db, method: "SESSION_REGISTER", session, generation: gen })).token,
     { databaseId: db, generation: gen, startupSessionId: session });
   expect(reg.status).toBe(200);
-  const budget = await postJson("/budgets", await adminCap(),
+  const budget = await postJson("/budgets",
+    (await issue({ databaseId: db, method: "BUDGETS_SET", session })).token,
     { databaseId: db, maxUnpublishedOutbox: 10_000, maxPayloadLength: 1_000_000, maxTailRecords: 1_000_000 });
   expect(budget.status).toBe(200);
 
@@ -74,8 +77,11 @@ async function catalogueRecord(db: string, session: string, gen: number, bytes: 
   return putCap.key as string;
 }
 
-async function readExact(db: string, gen: number, lsn: number): Promise<Response> {
-  const readCap = await issue({ databaseId: db, method: "WAL_READ" });
+async function readExact(db: string, session: string, gen: number, lsn: number): Promise<Response> {
+  // R4-SEC-05: read tokens are actor-bound (session + generation), and the
+  // DO revalidates that THIS session holds live authority at use time -
+  // reading under an unregistered session is a typed 409
+  const readCap = await issue({ databaseId: db, method: "WAL_READ", session, generation: gen });
   return SELF.fetch(`https://facade.local/wal/${db}/${gen}/${lsn}`, {
     method: "GET", headers: { "x-capability": readCap.token },
   });
@@ -86,7 +92,7 @@ describe("C-06 read-path streaming integrity (workerd)", () => {
     const db = "readpath-ok";
     const bytes = new TextEncoder().encode("commit-record-readpath");
     await catalogueRecord(db, "sess-ok", 1, bytes);
-    const read = await readExact(db, 1, 0);
+    const read = await readExact(db, "sess-ok", 1, 0);
     expect(read.status).toBe(200);
     const body = (await read.json()) as { ok: boolean; payloadBase64: string };
     expect(body.ok).toBe(true);
@@ -104,7 +110,7 @@ describe("C-06 read-path streaming integrity (workerd)", () => {
     // precheck exists to refuse before reading the body).
     const oversized = new Uint8Array(MAX_PAYLOAD_OBJECT_BYTES + 1);
     await testEnv.PAYLOADS.put(key, oversized);
-    const read = await readExact(db, 1, 0);
+    const read = await readExact(db, "sess-oc", 1, 0);
     expect(read.status).toBe(413);
     const body = (await read.json()) as { error: string; cap: number };
     expect(body.error).toBe("PAYLOAD_EXCEEDS_OBJECT_CAP");
@@ -121,7 +127,7 @@ describe("C-06 read-path streaming integrity (workerd)", () => {
     const corrupted = new Uint8Array(bytes.byteLength).fill(0x41);
     expect(corrupted.byteLength).toBe(bytes.byteLength);
     await testEnv.PAYLOADS.put(key, corrupted);
-    const read = await readExact(db, 1, 0);
+    const read = await readExact(db, "sess-cr", 1, 0);
     expect(read.status).toBe(500);
     const body = (await read.json()) as { error: string };
     expect(body.error).toBe("PAYLOAD_INTEGRITY_VIOLATION");

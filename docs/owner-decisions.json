@@ -1,76 +1,120 @@
 {
-  "document": "owner-decision and limits registry (consolidated directive §5.4)",
-  "rule": "A value in this file is a product, security or SLO choice the implementation must NOT invent. Each entry records the safe default in force, why that default is safe rather than correct, and what an owner decision would change. An entry stays OPEN until an owner records a decision; while OPEN, no gate may be claimed on the strength of the default.",
-  "entries": [
-    {
-      "id": "OD-001",
-      "status": "OPEN",
-      "title": "Soak duration and long-run thresholds",
-      "question": "How long is the release soak, and what are its pass thresholds?",
-      "default_in_force": "None. No soak is claimed anywhere in this repository.",
-      "why_safe": "Claiming a soak that was not run is the failure mode; claiming none is merely incomplete. G12 names the long release soak; anything shorter is reconnaissance and is labelled as such.",
-      "owner_decision_changes": "The G12 gate definition and the evidence schema for soak runs.",
-      "referenced_by": ["docs/operations.md gate table"]
-    },
-    {
-      "id": "OD-002",
-      "status": "OPEN",
-      "title": "Snapshot-admission watermark wait deadline",
-      "question": "How long may snapshot admission wait for the visibility watermark before the database is declared unavailable?",
-      "default_in_force": "600 seconds, then fail-stop with diagnostics naming the target and current watermark (fork/typedb/storage/storage.rs, WATERMARK_WAIT_DEADLINE).",
-      "why_safe": "The previous behaviour was an unbounded spin: an unresolved commit obligation presented as every later snapshot open hanging with no diagnostic. Any finite bound is safer than none, and 600s is far beyond any healthy wait, so the bound fires only when a slot is genuinely stuck. It is deliberately NOT tuned for throughput.",
-      "owner_decision_changes": "The value, and whether the terminal action is a fail-stop or a typed unavailable response (the latter requires changing open_snapshot_* to fallible signatures across the concept/database/query layers).",
-      "referenced_by": ["fork/typedb/storage/storage.rs", "fork/typedb/storage/post_wal_guard.rs"]
-    },
-    {
-      "id": "OD-003",
-      "status": "OPEN",
-      "title": "Data-path object size ceiling",
-      "question": "What is the maximum single data-path object the control plane admits?",
-      "default_in_force": "8 MiB (control-plane/src/controller/core/capability.ts MAX_CAPABILITY_BYTES, worker-entry.ts MAX_REQUEST_BODY_BYTES), enforced before the body is read and again after.",
-      "why_safe": "It is the figure the F9 contract clause names, and it is enforced as a CEILING that a capability may narrow but never widen - so an over-permissive issuer cannot raise it.",
-      "owner_decision_changes": "The ceiling, and whether oversized payloads get a chunked/streamed path instead of a refusal.",
-      "referenced_by": ["control-plane/src/controller/core/capability.ts"]
-    },
-    {
-      "id": "OD-004",
-      "status": "OPEN",
-      "title": "Concurrent R2 subrequests per worker invocation",
-      "question": "How many concurrent R2 reads may one invocation issue?",
-      "default_in_force": "6 (control-plane/src/controller/worker-entry.ts R2_SUBREQUEST_CEILING), taken from the Cloudflare contract lock's 'simultaneous outgoing connections per invocation is six'.",
-      "why_safe": "It is the platform's stated hard ceiling rather than a tuned number; the previous value of 8 was a request the platform cannot serve. Reserving headroom below 6 for control connections is a plausible refinement, but lowering it is a performance decision, not a safety one.",
-      "owner_decision_changes": "Whether to reserve headroom below the platform ceiling, and how the reservation is accounted when a route makes both DO and R2 calls.",
-      "referenced_by": ["contract/typedb-r2-v16-cloudflare-contract-lock.json"]
-    },
-    {
-      "id": "OD-005",
-      "status": "OPEN",
-      "title": "Flake-ledger expiry policy",
-      "question": "How long may a tolerated anomaly stay in docs/evidence/flake-ledger.json before it must be fixed or re-justified?",
-      "default_in_force": "Per-entry expiry dates, currently 2027-06-30 for the two live entries; an expired entry is reported and stops tolerating, it does not silently keep excluding.",
-      "why_safe": "Both live entries are upstream defects (todo!() stubs and a declared #[ignore]) that fail identically on the RocksDB oracle, so they are baseline-equal rather than port debt. The dates are placeholders chosen to be finite.",
-      "owner_decision_changes": "The maximum permitted exclusion lifetime and who may extend one.",
-      "referenced_by": ["tools/catalog/verdict.py", "docs/evidence/flake-ledger.json"]
-    },
-    {
-      "id": "OD-006",
-      "status": "OPEN",
-      "title": "Storage async-bridge deadline and object-store retry bound",
-      "question": "How long may a single storage operation wait on the async->sync bridge before fail-stop, and how many times may SlateDB retry a failing object-store call?",
-      "default_in_force": "Bridge: report every 30 s (ERROR log naming the pending operation), abort the process at 600 s (fork/typedb/storage/keyspace/slate.rs, bridge()). Object store: object_store_max_retries = Some(8) in SlateKeyspace::settings(), replacing the upstream unbounded default.",
-      "why_safe": "The previous behaviour was an unbounded recv() over an unbounded retry loop: a persistent R2/S3 fault presented as a silent forever-hang holding storage locks. Fail-stop with a named operation is the same doctrine as Q-01's guard, and 600 s / 8 retries are far beyond any healthy operation, so the bounds fire only on genuine faults. Neither value is tuned for availability.",
-      "owner_decision_changes": "Both values, the report cadence, and whether the terminal action stays a process abort or becomes a typed storage-unavailable error surfaced through fallible read/write signatures.",
-      "referenced_by": ["fork/typedb/storage/keyspace/slate.rs", "docs/evidence/G3/controls/storage-containment-controls.txt"]
-    },
-    {
-      "id": "OD-007",
-      "status": "OPEN",
-      "title": "No-compactor lane L0 admission envelope",
-      "question": "With compaction and GC deliberately disabled (the pre-G13 containment posture), what is the maximum L0 SST count the remote/experimental lane may accumulate before it must refuse NEW writes with a typed error rather than degrade without bound?",
-      "default_in_force": "EXPERIMENTAL_NO_COMPACTOR_MAX_L0_SSTS = 50_000 (fork/typedb/storage/keyspace/slate.rs). At or above this observed L0 SST count (read from the in-memory manifest), put/write refuse with a typed ErrorKind::Invalid admission error; below it they succeed. SlateDB's own backpressure ceiling (settings.l0_max_ssts) is kept far higher so the TypeDB admission bound, not an opaque memtable stall, is what fires first.",
-      "why_safe": "A no-compactor lane whose L0 only ever grows will otherwise accumulate SSTs, read amplification, LIST/GET cost, memory and recovery time without any ceiling (S-05). The bound converts that unbounded degradation into an explicit, typed, non-transient refusal a caller/controller can observe and act on. 50_000 is a containment default chosen far above any healthy short-lived workload while still bounding the envelope; it is NOT a ratified capacity SLO.",
-      "owner_decision_changes": "The exact ceiling, whether the envelope is expressed as L0 SST count and/or total object count and/or total bytes, and whether reaching it triggers a controller-authorized fenced compaction instead of a hard write refusal.",
-      "referenced_by": ["fork/typedb/storage/keyspace/slate.rs"]
-    }
-  ]
+ "document": "owner-decision and limits registry (consolidated directive §5.4)",
+ "rule": "A value in this file is a product, security or SLO choice the implementation must NOT invent. Each entry records the safe default in force, why that default is safe rather than correct, and what an owner decision would change. An entry stays OPEN until an owner records a decision; while OPEN, no gate may be claimed on the strength of the default.",
+ "entries": [
+  {
+   "id": "OD-001",
+   "status": "OPEN",
+   "title": "Soak duration and long-run thresholds",
+   "question": "How long is the release soak, and what are its pass thresholds?",
+   "default_in_force": "None. No soak is claimed anywhere in this repository.",
+   "why_safe": "Claiming a soak that was not run is the failure mode; claiming none is merely incomplete. G12 names the long release soak; anything shorter is reconnaissance and is labelled as such.",
+   "owner_decision_changes": "The G12 gate definition and the evidence schema for soak runs.",
+   "referenced_by": [
+    "docs/operations.md gate table"
+   ]
+  },
+  {
+   "id": "OD-002",
+   "status": "OPEN",
+   "title": "Snapshot-admission watermark wait deadline",
+   "question": "How long may snapshot admission wait for the visibility watermark before the database is declared unavailable?",
+   "default_in_force": "600 seconds, then fail-stop with diagnostics naming the target and current watermark (fork/typedb/storage/storage.rs, WATERMARK_WAIT_DEADLINE).",
+   "why_safe": "The previous behaviour was an unbounded spin: an unresolved commit obligation presented as every later snapshot open hanging with no diagnostic. Any finite bound is safer than none, and 600s is far beyond any healthy wait, so the bound fires only when a slot is genuinely stuck. It is deliberately NOT tuned for throughput.",
+   "owner_decision_changes": "The value, and whether the terminal action is a fail-stop or a typed unavailable response (the latter requires changing open_snapshot_* to fallible signatures across the concept/database/query layers).",
+   "referenced_by": [
+    "fork/typedb/storage/storage.rs",
+    "fork/typedb/storage/post_wal_guard.rs"
+   ]
+  },
+  {
+   "id": "OD-003",
+   "status": "OPEN",
+   "title": "Data-path object size ceiling",
+   "question": "What is the maximum single data-path object the control plane admits?",
+   "default_in_force": "8 MiB (control-plane/src/controller/core/capability.ts MAX_CAPABILITY_BYTES, worker-entry.ts MAX_REQUEST_BODY_BYTES), enforced before the body is read and again after.",
+   "why_safe": "It is the figure the F9 contract clause names, and it is enforced as a CEILING that a capability may narrow but never widen - so an over-permissive issuer cannot raise it.",
+   "owner_decision_changes": "The ceiling, and whether oversized payloads get a chunked/streamed path instead of a refusal.",
+   "referenced_by": [
+    "control-plane/src/controller/core/capability.ts"
+   ]
+  },
+  {
+   "id": "OD-004",
+   "status": "OPEN",
+   "title": "Concurrent R2 subrequests per worker invocation",
+   "question": "How many concurrent R2 reads may one invocation issue?",
+   "default_in_force": "6 (control-plane/src/controller/worker-entry.ts R2_SUBREQUEST_CEILING), taken from the Cloudflare contract lock's 'simultaneous outgoing connections per invocation is six'.",
+   "why_safe": "It is the platform's stated hard ceiling rather than a tuned number; the previous value of 8 was a request the platform cannot serve. Reserving headroom below 6 for control connections is a plausible refinement, but lowering it is a performance decision, not a safety one.",
+   "owner_decision_changes": "Whether to reserve headroom below the platform ceiling, and how the reservation is accounted when a route makes both DO and R2 calls.",
+   "referenced_by": [
+    "contract/typedb-r2-v16-cloudflare-contract-lock.json"
+   ]
+  },
+  {
+   "id": "OD-005",
+   "status": "OPEN",
+   "title": "Flake-ledger expiry policy",
+   "question": "How long may a tolerated anomaly stay in docs/evidence/flake-ledger.json before it must be fixed or re-justified?",
+   "default_in_force": "Per-entry expiry dates, currently 2027-06-30 for the two live entries; an expired entry is reported and stops tolerating, it does not silently keep excluding.",
+   "why_safe": "Both live entries are upstream defects (todo!() stubs and a declared #[ignore]) that fail identically on the RocksDB oracle, so they are baseline-equal rather than port debt. The dates are placeholders chosen to be finite.",
+   "owner_decision_changes": "The maximum permitted exclusion lifetime and who may extend one.",
+   "referenced_by": [
+    "tools/catalog/verdict.py",
+    "docs/evidence/flake-ledger.json"
+   ]
+  },
+  {
+   "id": "OD-006",
+   "status": "OPEN",
+   "title": "Storage async-bridge deadline and object-store retry bound",
+   "question": "How long may a single storage operation wait on the async->sync bridge before fail-stop, and how many times may SlateDB retry a failing object-store call?",
+   "default_in_force": "Bridge: report every 30 s (ERROR log naming the pending operation), abort the process at 600 s (fork/typedb/storage/keyspace/slate.rs, bridge()). Object store: object_store_max_retries = Some(8) in SlateKeyspace::settings(), replacing the upstream unbounded default.",
+   "why_safe": "The previous behaviour was an unbounded recv() over an unbounded retry loop: a persistent R2/S3 fault presented as a silent forever-hang holding storage locks. Fail-stop with a named operation is the same doctrine as Q-01's guard, and 600 s / 8 retries are far beyond any healthy operation, so the bounds fire only on genuine faults. Neither value is tuned for availability.",
+   "owner_decision_changes": "Both values, the report cadence, and whether the terminal action stays a process abort or becomes a typed storage-unavailable error surfaced through fallible read/write signatures.",
+   "referenced_by": [
+    "fork/typedb/storage/keyspace/slate.rs",
+    "docs/evidence/G3/controls/storage-containment-controls.txt"
+   ]
+  },
+  {
+   "id": "OD-007",
+   "status": "OPEN",
+   "title": "No-compactor lane L0 admission envelope",
+   "question": "With compaction and GC deliberately disabled (the pre-G13 containment posture), what is the maximum L0 SST count the remote/experimental lane may accumulate before it must refuse NEW writes with a typed error rather than degrade without bound?",
+   "default_in_force": "EXPERIMENTAL_NO_COMPACTOR_MAX_L0_SSTS = 50_000 (fork/typedb/storage/keyspace/slate.rs). At or above this observed L0 SST count (read from the in-memory manifest), put/write refuse with a typed ErrorKind::Invalid admission error; below it they succeed. SlateDB's own backpressure ceiling (settings.l0_max_ssts) is kept far higher so the TypeDB admission bound, not an opaque memtable stall, is what fires first.",
+   "why_safe": "A no-compactor lane whose L0 only ever grows will otherwise accumulate SSTs, read amplification, LIST/GET cost, memory and recovery time without any ceiling (S-05). The bound converts that unbounded degradation into an explicit, typed, non-transient refusal a caller/controller can observe and act on. 50_000 is a containment default chosen far above any healthy short-lived workload while still bounding the envelope; it is NOT a ratified capacity SLO.",
+   "owner_decision_changes": "The exact ceiling, whether the envelope is expressed as L0 SST count and/or total object count and/or total bytes, and whether reaching it triggers a controller-authorized fenced compaction instead of a hard write refusal.",
+   "referenced_by": [
+    "fork/typedb/storage/keyspace/slate.rs"
+   ]
+  },
+  {
+   "id": "OD-008",
+   "status": "OPEN",
+   "title": "Confidentiality profile (v16 §19.6)",
+   "question": "Is provider-managed confidentiality (Profile P: TLS everywhere, R2 managed at-rest encryption, private service bindings, opaque keys, encrypted secret storage) sufficient, or must the application envelope-encrypt WAL bodies, prepared results and checkpoint/data objects before R2 (Profile E: vetted AEAD, per-database/per-generation DEK wrapped by a KMS/HSM KEK, associated data binding environment/tenant/database/generation/materialisation/key/type/format-version, independent backup keys)?",
+   "default_in_force": "NONE DECIDED (round-4 R4-SEC-02). Current controls are integrity-only: content SHA-256, authenticated journal entries, HMAC-signed capabilities. Nothing in this repository encrypts WAL payloads, result bytes, checkpoints or local S3 blobs at the application layer, and no gate may treat §19.6 as closed.",
+   "why_safe": "Refusing to guess is the safe default: silently choosing Profile P would bake in the assumption that Cloudflare-managed keys and plaintext-capable runtime principals satisfy the product's regulatory envelope; silently choosing Profile E would change caching, deduplication, checksums, recovery and performance without a measured decision. Both are owner calls (threat model + compliance), not implementation defaults.",
+   "owner_decision_changes": "Which encryption acceptance matrix (§5.4 of the round-4 directive) becomes mandatory; the key hierarchy (distinct capability-signing / journal-MAC / data-encryption / bootstrap roots, kid + rotation overlap); the backup-key administration boundary; and whether local caches/temp/checkpoint files require wipe policies.",
+   "referenced_by": [
+    "contract/typedb-r2-implementation-brief-v16.md §19.6",
+    "docs/reviews round-4 audit R4-SEC-02"
+   ]
+  },
+  {
+   "id": "OD-009",
+   "status": "RECORDED_DIRECTION_PENDING_GATE",
+   "title": "Local native S3 provider: RustFS strategic target, MinIO transition baseline",
+   "question": "Which native S3 server backs the local TypeDB/SlateDB object_store lane, given that the locked MinIO community binary (RELEASE.2025-09-07) is archived upstream and in the affected range of CVE-2026-41145 / GHSA-hv4r-mvr4-25vw with no patched community release?",
+   "default_in_force": "MinIO stays ONLY as a loopback-confined transition baseline (random per-run credentials, synthetic data, never exposed beyond 127.0.0.1). RustFS 1.0.0-rc.2 (signed release commit e9f5318, Apache-2.0, active security line, CAS-eligible write-path architecture) is the strategic replacement target. The default does NOT flip until one exact RustFS platform digest passes the full provider-neutral certification corpus (round-4 §6.4: SigV4, If-None-Match:* two-writer race with exactly one winner, If-Match update, timeout/ambiguity, multipart lifecycle, list pagination, crash/restart, the patched SlateDB suite and TypeDB corpus) plus readiness-by-authenticated-S3-operation. Versity v1.7.0 is REJECTED as a qualifying backend (dynamically reproduced conditional-create race: twelve concurrent If-None-Match:* PUTs all returned 200); Garage is rejected by its own documentation (conditional writes structurally unsupported).",
+   "why_safe": "Neither keeping a known-vulnerable unmaintained binary indefinitely nor flipping to an uncertified pre-GA server is safe; the recorded direction bounds MinIO's exposure (loopback, ephemeral credentials, synthetic data) while making promotion strictly conditional on executed semantics, not vendor claims.",
+   "owner_decision_changes": "If RustFS fails a mandatory semantic: either an upstream fix is awaited or the owner explicitly signs a time-bounded MinIO security-fork/waiver. Passing the gate makes RustFS the ordinary native-fidelity default and removes MinIO from the supported path.",
+   "referenced_by": [
+    "round-4 audit R4-LOCAL-01 / §6.2-6.4",
+    "source-lock/source-lock.json node MINIO"
+   ],
+   "progress_2026_08_19": "RustFS 1.0.0-rc.2 is now PINNED (source-lock node RUSTFS: release-zip sha256 dbe7b718…, binary sha256 d286e5f8…, tag commit e9f53180 verified against both git ls-remote and the binary's own --version attestation). Against exactly that binary, tools/s3-cert-corpus PASSED on 2026-08-19: SigV4 auth, byte-exact put/get/head, ranged reads, If-None-Match:* two-writer race with exactly one winner, If-Match update fencing, list pagination, multipart complete/abort, and kill -9 crash/restart byte-exact persistence — via object_store =0.14.1, the exact crate the storage engine uses. STILL OUTSTANDING before the default may flip: the timeout/ambiguity lane (fault-proxy schedules), the patched SlateDB suite, and the TypeDB corpus run on a RustFS backend. The corpus runner hard-refuses any rustfs binary whose digest differs from the lock. ROUND-5 HARDENING (R5-LOCAL-01/03): the CAS gate can no longer accidentally serialize — 100 barrier-released rounds x 16 independent-client writers with 1 MiB pairwise-distinct bodies, 50 current-ETag update-race rounds with post-race ABA refusal, and 20 rounds of 8 independent OS PROCESSES racing conditional create (start-file barrier, winner self-verifies byte-exact stored bytes). RustFS 1.0.0-rc.2 PASSED all of it on 2026-08-19, as did the MinIO baseline; each run now emits a SEALED evidence bundle (provider binary digest, per-phase logs+digests, crash receipt, root seal) verified by an independent verifier. Outstanding before the default flips: the timeout/ambiguity fault-proxy lane, the patched SlateDB suite and the TypeDB corpus on a RustFS backend."
+  }
+ ]
 }

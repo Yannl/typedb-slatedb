@@ -185,3 +185,79 @@ default posture; the 4 epoch tests also pass under
 Still not done here (unchanged from 0001's honest list): compactor
 orchestrator wiring, fenced Admin/clone/checkpoint operations, controller
 epoch issuance, production-lane activation.
+
+## Patch 0004 — ordinary builder tests supply external epochs (R5-STOR-04)
+
+Test-only (`src/db/builder.rs`), six one-line hunks. The round-5 audit found
+the fork's own suite was not green under `external_epoch_required`: five
+UPSTREAM builder tests (`test_db_builder_starts_gc_by_default`,
+`…disables_gc_when_gc_options_are_none`,
+`test_shared_recorder_registers_object_store_metrics_…`,
+`test_object_store_cache_does_not_cache_metadata_store_reads`,
+`test_settings_configured_object_store_cache`) open real databases without
+an epoch, so the fence — correctly — refused them (7/12 feature-on). Each
+now presents epoch 1 for its fresh database; the sixth hunk is the reopen
+inside `test_settings_configured_object_store_cache`, which must present
+the successor epoch 2 because replaying the spent 1 is exactly what the
+fence refuses. No assertion changed: the tests verify GC/metrics/cache
+behavior as before, now as an authorized actor.
+
+This matters beyond hygiene: the feature is being promoted from opt-in to
+SHIPPED (the TypeDB `storage` crate now enables
+`slatedb/external_epoch_required` unconditionally on its dependency —
+`fork/typedb/storage/Cargo.toml` — attested by
+`tools/fork/check_strict_epoch.py`), so feature-on is the configuration
+that ships and its suite must be the green one.
+
+Executed evidence (`rustc 1.93.0`, in the materialised fork):
+
+```
+cargo test --lib --features test-util,external_epoch_required db::builder
+  test result: ok. 12 passed; 0 failed          (was 7 passed; 5 failed)
+```
+
+An earlier draft of this entry claimed the FULL feature-on suite was
+`1940 passed; 0 failed`. That claim was wrong and is retracted here: the
+full feature-on suite is **1566 passed / 420 failed**, and those failures
+are correct behaviour, not breakage — see patch 0005 and the gate below.
+
+## Patch 0005 — internal-epoch tests are unfenced-posture only (R5-STOR-04)
+
+Test-only (`src/db.rs`), three `#[cfg(not(feature = "external_epoch_required"))]`
+gates. Once the fence SHIPS, "run the whole upstream suite feature-on" has
+an exact and unflattering answer, and it needs stating plainly:
+
+  * **feature OFF, full suite: 1988 passed / 0 failed.** The fork does not
+    change upstream semantics outside its patch series. This is the
+    no-regression gate.
+  * **feature ON, `db::builder`: 12 passed / 0 failed** (was 7/5). This is
+    the exact set the round-5 audit measured; patch 0004 closes it.
+  * **feature ON, full suite: 1566 passed / 420 failed.** Upstream opens
+    databases through the epoch-less builder in hundreds of tests; under
+    the shipped posture the fence refuses precisely those opens. Making
+    them "pass" would mean rewriting upstream's suite into a different
+    suite, which is not what a thin fork should do.
+
+Three of the original 423 failures were NOT the fence refusing:
+`test_writer_paused_in_replay_wal_should_be_fenced_by_concurrent_open`,
+`wal_replay_not_found_should_be_fenced_when_writer_epoch_advanced`,
+`wal_replay_not_found_should_remain_not_found_when_writer_epoch_unchanged`.
+They assert INTERNAL writer-epoch allocation semantics — a second writer
+auto-advancing the manifest epoch and fencing the first — and they failed
+by TIMEOUT (a spawned writer was refused, so the WAL SST they waited for
+never appeared), which is why the refusal text never reached their output.
+Under the shipped posture internal allocation does not exist, so the
+behaviour they describe is absent by design; they are now compiled only
+for the unfenced posture, where they still guard upstream semantics.
+
+The gate that keeps this honest is `tools/fork/check_strict_epoch_suite.py`:
+it runs all three clauses and asserts that under the shipped posture EVERY
+failing upstream test fails *because the fence refused an unauthorized
+epoch-less open*, and for no other reason. One failure with a different
+cause fails the gate — which is exactly how the three tests above were
+found. Executed: `STRICT-EPOCH SUITE GATE: PASS` (1988/0 off, 12/0 builder
+on, 420/420 failures accounted for as fence refusals).
+
+(The feature-off suite has one fewer fenced test: `a_missing_external_epoch_
+is_refused_not_defaulted` is `cfg(external_epoch_required)`. The one ignored
+test is upstream's `g0_dirty_writes`, unchanged by this series.)

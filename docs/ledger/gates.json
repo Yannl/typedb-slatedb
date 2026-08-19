@@ -9,6 +9,11 @@
   "reviews, evidence summaries, operations notes, handoff prose"
  ],
  "adopted_audit": {
+  "directive": "TypeDB × SlateDB × Cloudflare R2 round-5 deep audit and implementation directive, 2026-08-19",
+  "audited_commit": "29fd0038c0fe1b3ddb6c9baebd6fadf2226c345c",
+  "decision": "NO-GO for a live qualification run and NO-GO for a production claim; continue local implementation (R5 program adopted)"
+ },
+ "adopted_audit_round2": {
   "directive": "typedb-r2 main-branch deep audit and total-quality implementation directive, 2026-08-18",
   "audited_commit": "640c7d465fa83670f938d97b55d0d5f827adf946",
   "decision": "NO-GO for a product-labelled live Cloudflare qualification run"
@@ -20,6 +25,9 @@
    "state": "OPEN_RED",
    "authority": "v16 brief G0; v17 addendum Mode Q selection",
    "why": "Mandatory Mode-Q Bazel cquery evidence is ABSENT (SI-G0-1 reopened; the static avoidance proof is a lower-authority substitution and cannot amend v17). The source-lock validator previously accepted forged metadata and carried a real OBJECT_STORE version mismatch (repaired; validators + mutants added). Raw source/tool evidence is not yet durably retrievable by digest.",
+   "blocking_findings": [
+    "SI-G0-1"
+   ],
    "blockers": [
     "SI-G0-1 Mode-Q evidence or explicit owner amendment to v17",
     "raw artifact retrievability archive"
@@ -30,12 +38,15 @@
    "title": "Models, catalogue as qualification denominator, platform contracts, budgets, controller/container separation",
    "state": "OPEN",
    "authority": "v16 brief G1",
-   "why": "Catalogue v1 is a repaired census, not a leaf/profile/fixture qualification denominator (E-P0-03/04): identity collapses catalogue ids onto runner row ids, only Cargo targets are execution-reconciled, composite suites are opaque, and no immutable qualification plan artifact exists. Pure models (37) and local suites are useful groundwork only. ContainerDO remains a stub (C-P0-11).",
+   "why": "The DENOMINATOR exists: catalogue v2 with canonical shared identity and the immutable leaf/profile/fixture qualification plan v2 (23,132 rows + 6 driver rows) landed with R3-H, and the leaf-level evidence producer/validator chain landed with PR3/R4-D. What keeps G1 open is EXECUTION and the remaining models: plan coverage is honestly RED (0 rows fully covered), the Mode-Q crosswalk side of the plan is Bazel-blocked (SI-G0-1), the six official driver rows are NOT_IMPLEMENTED (E-P0-08), and the ContainerDO is advisory-only - no real Container resource/process or controller lifecycle integration exists (R3-F remainder; round-5 R5-SEC-06/07).",
+   "blocking_findings": [
+    "E-P0-08"
+   ],
    "blockers": [
-    "catalogue v2 + immutable plan (PR2)",
-    "leaf-level evidence producer (PR3)",
+    "plan execution coverage (0 of 23,138 obligations fully covered; the denominator is not a pass)",
+    "Mode-Q crosswalk (Bazel-blocked, SI-G0-1)",
     "official driver suites (E-P0-08)",
-    "ContainerDO lifecycle model"
+    "real Container resource/lifecycle + registry-provisioned ContainerDO (advisory-only today)"
    ]
   },
   {
@@ -43,12 +54,14 @@
    "title": "Real-platform probe run under an owner-approved envelope",
    "state": "NOT_READY_TO_EXECUTE",
    "authority": "v16 brief G2; platform-probe spec (14 probe IDs)",
-   "why": "Probe harness now implements all 14 IDs with fail-closed verdict aggregation and mock/fault self-tests (C-P0-10 repaired locally), but there is no owner-approved latency/throughput/cost/amplification envelope, no live credentials (SI-G0-3), and the control-plane authority boundary (C-P0-02..09) and product seam are prerequisites for anything beyond disposable platform probes.",
+   "why": "Round-4: the runner's destructive RED-preflight cleanup (R4-CF-00) is repaired with zero-authority refusal, lock-baseline restore and an enforced envelope meter (R4-CF-01), redaction is a serialization invariant (R4-CF-03), the nine /do|/ctr|/worker probes now have a deployable in-repo harness whose source digest is bound into the bundle (R4-CF-02, probes/harness-worker.ts + wrangler.probe-harness.toml), and every assertion is classified provider-fact vs product-conformance by the obligation manifest with three product obligations honestly OPEN so the product_conformance sub-verdict cannot overclaim (R4-CF-04) — all mutant-proved locally (24 self-test controls). Still blocking: no owner-approved envelope; no credentials; the production issuer/registry seam (R4-SEC-01) is now implemented and proven locally (R4-PR1: opaque registry, provisioning transaction, mint/verify separation, managed-surface E2E) - what remains for live is provisioning real managed keys, under the credentials blocker; the three OPEN product obligations (ambiguity-resolution-real, runtime-cannot-delete, attempt-identity-changed-bytes-real).",
+   "blocking_findings": [
+    "SI-G0-3"
+   ],
    "blockers": [
-    "SI-G0-3 credentials",
-    "owner-approved G2 envelope",
-    "PR4 authority repairs",
-    "disposable resource plan"
+    "owner-approved G2 numeric envelope file (absent by design until the owner signs one)",
+    "SI-G0-3 credentials (including real managed key provisioning for the R4-PR1 issuer hierarchy)",
+    "three OPEN product-conformance obligations in probes/obligations.ts"
    ]
   },
   {
@@ -100,7 +113,7 @@
   {
    "id": "U3.0",
    "state": "RED",
-   "why": "The Rust remote-WAL client is incompatible with the current Worker protocol (C-P0-01): no capabilities, numeric u64 parsing, caller-supplied throughLsn, no batch envelope, legacy fencedBy expectations. Any prior U3.0 green claim is stale."
+   "why": "C-P0-01 is CLOSED: the Rust remote-WAL client was rewritten to the current protocol (PR4b 99038fc), threads the exact generation through every mint (R4-SEC-03 b53fd35) and speaks the R4-PR1 v2 provisioning protocol (e434761; live workerd suite 28/28). The lane stays RED because it is still a spike-level client lane: no product (TypeDB) integration consumes it (R4-F open item), the managed-surface lifecycle (reserve/attest/activate) is unimplemented (round-5 R5-SEC-02), and no current-tree U3.0 evidence bundle exists. Any prior U3.0 pass claim is stale."
   },
   {
    "id": "U3_U4_PRODUCT",
@@ -206,6 +219,9 @@
    "id": "PR4b",
    "title": "Rust L1 client rewritten to the current protocol",
    "status": "DONE",
+   "closes": [
+    "C-P0-01"
+   ],
    "items": [
     "capabilities + decimal u64 + snapshotId + batch envelope client",
     "workerd integration test"
@@ -401,7 +417,7 @@
    "status": "DONE",
    "items": [
     "round-3 response document",
-    "ADR-0009/spec-delivery/handoff \u00a718 corrections",
+    "ADR-0009/spec-delivery/handoff §18 corrections",
     "ledger round-3 adoption",
     "source-lock truth for the shipped fork (CD-007)",
     "evidence reconciliation after R3-B flake-ledger change (bundle root re-sealed, all 5 evidence checks green)",
@@ -421,6 +437,250 @@
     "4397747",
     "92573cb"
    ]
+  },
+  {
+   "id": "R4-A",
+   "title": "Destructive-stop safety: zero-authority refusal, lock baseline restore, enforced envelope, redaction invariant (R4-CF-00/01/03)",
+   "status": "DONE",
+   "closes": [
+    "R4-CF-00",
+    "R4-CF-01",
+    "R4-CF-03"
+   ],
+   "items": [
+    "RefusedProvider + zero-call assertion",
+    "lock snapshot/conservative restore, never rules:[]",
+    "MeteredProvider budget-before-dispatch + intent journal + verdict-after-cleanup",
+    "write-time deep redaction + seal-time secret scanner",
+    "runner-safety.test.ts 14 mutants incl. the audit's reproduced counterexample; self-test control 7b"
+   ],
+   "commits": [
+    "d89b01d"
+   ]
+  },
+  {
+   "id": "R4-B",
+   "title": "Posture truth: managed default deploy, explicit local config, per-graph posture invariants, migration ledger (R4-STACK-01/02/08/10)",
+   "status": "DONE",
+   "closes": [
+    "R4-STACK-01",
+    "R4-STACK-02",
+    "R4-STACK-08",
+    "R4-STACK-10"
+   ],
+   "items": [
+    "cloudflare-real graph emits managed vars; posture invariants validated per graph",
+    "wrangler.toml = managed fail-closed default; wrangler.local-dev.toml explicit",
+    "alchemy.run.ts execution-mode assertion (dev-only mechanically)",
+    "binding diff by stable name; bucketName only on PAYLOADS",
+    "append-only migration ledger enforced in both configs"
+   ],
+   "commits": [
+    "231d719"
+   ]
+  },
+  {
+   "id": "R4-C",
+   "title": "Storage: multipart immutability bypass, manifest requirement, checkpoint ordering/fallback, backend identity (R4-STOR-00..11)",
+   "status": "DONE",
+   "closes": [
+    "R4-STOR-00",
+    "R4-STOR-01",
+    "R4-STOR-02",
+    "R4-STOR-04",
+    "R4-STOR-07",
+    "R4-STOR-08",
+    "R4-STOR-10",
+    "R4-STOR-11"
+   ],
+   "items": [
+    "R4-STOR-04/07: multipart mutation policy enforced at use time; checkpoint refuses without a manifest root",
+    "R4-STOR-08/10/11: recency-aware retention, newest-to-oldest checkpoint fallback, no fixture on remote startup",
+    "R4-STOR-00: BackendContext resolved once per open; mid-process env change = typed refusal (barrier mutant)",
+    "R4-STOR-01: backend-identity v2 = FULL identity (incl. non-secret S3 binding) digest-sealed; checkpoints carry BACKEND_IDENTITY, cross-identity restore is a HARD typed refusal",
+    "R4-STOR-02: durable no-follow marker write (create_new tmp + hard_link publication + parent fsync); stray attempt dirs removed only when empty and attempt-owned",
+    "storage lib 138 + test_recovery 11 + database suites green"
+   ],
+   "commits": [
+    "5aff4ff",
+    "0da6d0b",
+    "ca1e5cd"
+   ]
+  },
+  {
+   "id": "R4-D",
+   "title": "Evidence adjudication split, source-lock freshness, CI v2 enforcement, Mode-Q semantics (R4-EVID-01/01a/03a, R4-MODEQ-01)",
+   "status": "DONE",
+   "closes": [
+    "R4-EVID-01",
+    "R4-EVID-03a",
+    "R4-MODEQ-01"
+   ],
+   "items": [
+    "R4-EVID-03a: verify_all.py separates observation_integrity_verified / policy_adjudicated / qualification_pass; exact verdict enum, plan root recomputed from canonical bytes; six diligent-forger mutants added (15/15)",
+    "R4-EVID-01a: validate_catalog.py + build_plan_v2.py --check always compare against the CURRENT source lock; --require-current-lock is the hard form (the finding ITSELF - the stale committed catalogue/plan digest - stayed OPEN at this commit and is closed by the round-5 regeneration, R5-PR0)",
+    "R4-EVID-01: CI truth-plane runs the full v2 chain incl. plan_coverage as an EXPECTED-RED gate (must exit 1 and regenerate byte-identically)",
+    "R4-MODEQ-01: validate_modeq.py enforces argv grammar, cquery stdout grammar, current workspace-lock equality, crosswalk bijection, safe basenames; 11/11 mutants killed"
+   ],
+   "commits": [
+    "868f617"
+   ]
+  },
+  {
+   "id": "R4-E",
+   "title": "Security seam: exact capability actions, read fencing, Rust finalize generation, checkpoint activation proof (R4-SEC-03..06)",
+   "status": "DONE",
+   "closes": [
+    "R4-SEC-03",
+    "R4-SEC-04",
+    "R4-SEC-05",
+    "R4-SEC-06"
+   ],
+   "items": [
+    "R4-SEC-04: closed capability method registry, exact per-action methods with REQUIRED restrictions; unknown method refused (CAPABILITY_METHOD_UNKNOWN)",
+    "R4-SEC-05: assertActiveReader — WAL_READ binds session+generation and is revalidated live at use time",
+    "R4-SEC-03: Rust L1 client threads the exact generation through every mint (no default/zero fallback); bound actor; validating contract mock; live workerd 24/24",
+    "R4-SEC-06: checkpoint activation takes the material checkpoint-restore-evidence/v2 manifest, validated field-by-field",
+    "R4-PR1 / R4-SEC-01 (locally executable): opaque tenant registry + PROVISION transaction (first-call squat dead, race loser typed PROVISION_CONFLICT), registry-derived DO routing (idFromName from the VERIFIED token binding), private-issuer key hierarchy (root never reaches runtime; per-scope derived keys; capability-scope material cannot mint PROVISION), token schema v2 (v/kid/env/tenantId, closed field set), per-run ephemeral managed keys, managed-surface E2E (dev-route 404 matrix with zero side effects + full internal bootstrap). Node 96/96, workerd 25/25, e2e 94 PASS, e2e:managed 23 PASS.",
+    "Rust client speaks the provisioning protocol: byte-exact v2 PROVISION mint pinned to the TS implementation by a cross-implementation vector; live workerd suite 28/28.",
+    "Still live-blocking (not locally provable): real managed key provisioning/rotation drills at deploy time; asymmetric upgrade seam recorded in registry.ts."
+   ],
+   "commits": [
+    "56fda81",
+    "b53fd35",
+    "a8adfff",
+    "e434761"
+   ]
+  },
+  {
+   "id": "R4-G",
+   "title": "Probe obligation manifest + deployable harness (R4-CF-02/04)",
+   "status": "DONE",
+   "closes": [
+    "R4-CF-02",
+    "R4-CF-04"
+   ],
+   "items": [
+    "R4-CF-02: deployable in-repo probe harness (probes/harness-worker.ts + wrangler.probe-harness.toml) for the nine /do|/ctr|/worker probes; harness source digest bound into the bundle",
+    "R4-CF-04: versioned obligation manifest (probe-obligations/v1) classifies all 100 assertions provider-fact vs product-conformance; three product obligations recorded honestly OPEN; exact-set reconciliation is RUN-INVALID on dangling refs/unclaimed assertions; VERDICT.json carries sub-verdicts so mock evidence can never satisfy a product obligation"
+   ],
+   "commits": [
+    "6301fec"
+   ]
+  },
+  {
+   "id": "R4-F",
+   "title": "Local stack: semantic readiness, PID identity, transitive guard, secure downloader/secrets, S3 certification corpus, native-fidelity topology (R4-STACK-03..09, R4-LOCAL-05..07, PR2/PR3)",
+   "status": "IN_PROGRESS",
+   "items": [
+    "R4-STACK-04/05/06/09 + R4-LOCAL-05/06/07: semantic readiness, PID identity, transitive no-cloud guard, hardened downloader, secret hygiene (committed e37f9e8)",
+    "PR2: provider-neutral S3 certification corpus EXECUTED GREEN on both providers (MinIO locked baseline AND pinned RustFS 1.0.0-rc.2): 9 semantic tests + kill -9 crash/restart persistence via object_store =0.14.1",
+    "OD-009: RustFS pinned in source-lock (zip dbe7b718…, binary d286e5f8…, commit e9f53180 cross-checked two ways); corpus runner hard-refuses digest mismatch",
+    "PR3 (partial): deterministic fault proxy (tested, 7 checks) + native-fidelity lane stack/native-fidelity.mjs EXECUTED GREEN on both providers: real typedb_server_bin over SlateDB-on-S3 through the proxy, official HTTP workload, kill -9 recovery, parallel isolation, injected-fault survival, and the U1 local-fallback witness mutant",
+    "OPEN: remote-WAL (U3) product integration and TypeDB-driver-level suites in the lane; L2 container parity"
+   ],
+   "commits": [
+    "e37f9e8",
+    "a3411c8",
+    "f685d0e",
+    "8809f89",
+    "f856791",
+    "b170481"
+   ]
+  },
+  {
+   "id": "R5-PR0",
+   "title": "Round-5 PR0: truth plane current and fail-closed (R5-REL-01, R5-EVID-01, R5-QUAL-01, R5-CI-01 workflow hardening)",
+   "status": "DONE",
+   "items": [
+    "R5-REL-01: rendered status regenerated; ledger semantic contradictions reconciled (stale G1/U3.0/q_disposition text); linter extended with DONE-without-commit, closed-finding-vs-blocking-finding contradiction, and committed-status-regression checks; tools/ledger/ledger_mutants.py executes and kills each mutant",
+    "R5-EVID-01: catalogue + plan v2 regenerated from the pristine pinned tree against the CURRENT source lock (837d52fb...); --require-current-lock is now a HARD CI failure (both || echo fallbacks removed); plan coverage remains honestly RED",
+    "R5-QUAL-01: dispatch storage lane split into `cargo test -p storage --tests --lib --locked` + `cargo bench -p storage --no-run --locked` so the bench CLI can no longer panic a qualification command",
+    "R5-CI-01 (workflow hardening only): top-level `permissions: contents: read`, persist-credentials: false on every checkout, per-job timeouts, locked local node binaries instead of npx; the release pipeline itself (tested-equals-shipped, SBOM/provenance) remains the recorded PR7 remainder"
+   ],
+   "commits": [
+    "0268b60"
+   ]
+  },
+  {
+   "id": "R5-PR1",
+   "title": "Round-5 PR1: executable managed configuration and asymmetric trust boundaries (R5-SEC-01, R5-SEC-03, R5-SEC-08)",
+   "status": "DONE",
+   "items": [
+    "R5-SEC-03: capability + provision tokens are Ed25519 schema v3; the managed runtime holds ONLY public verification keys (mutant: stealing every managed env var yields no minting ability); minting lives solely in the issuer module; two-slot rotation keyring with explicit retirement; journal MAC deliberately stays symmetric (writer=verifier=same DO), documented",
+    "R5-SEC-01: managed inputs resolved from ONE requirement source consumed verbatim by both the runtime resolver and the pre-deployment graph checker; construction test boots from exactly the graph-declared names; drop-each-input mutants fail before deployment",
+    "R5-SEC-08: docs/security-topology.md — principal/binding/key map, rotation per key, and the explicit statement that TypeDB end-user auth is NOT service auth, every claim citing its enforcing file",
+    "Verified: tsc clean; node 108/108; workerd 27/27; e2e + e2e:managed ALL PASS; stack 64/64; wrangler consistency PASS"
+   ],
+   "commits": [
+    "9d60e53"
+   ]
+  },
+  {
+   "id": "R5-PR2",
+   "title": "Round-5 PR2: control lifecycle, ambiguity resolution and service integration (R5-SEC-02, R5-SEC-04, R5-SEC-06, R5-SEC-07, R5-SEC-09)",
+   "status": "DONE",
+   "items": [
+    "R5-SEC-04: capability uses are a durable operation/effect protocol — each claim records its authoritative effect, a recovery reducer settles AMBIGUOUS from that effect (present->exact original success, absent->re-execute, contradicted->QUARANTINED terminally), the retry path settles instead of answering 409 forever, and restart/alarm sweeps converge without any client retry. 10 mutants executed (7 core + 3 workerd)",
+    "R5-SEC-02: the exact Rust client operates the MANAGED surface as a pure bearer of issuer-granted v3 tokens (no local minting); new managed lane boots wrangler.toml + the private issuer sidecar and proves the dev-route 404 matrix from Rust before any bootstrap. 44 checks on the managed lane, 35 on local-dev, contract 17, lib 14",
+    "R5-SEC-06: ContainerDO is registry-provisioned only (two-tenant race, squat, wrong principal, stale incarnation, unbound observation mutants); R5-SEC-09: observation bytes bounded per field, per request on ACTUAL bytes, and in aggregate",
+    "R5-SEC-07 (locally executable part): the graph marks the container execution facet declared-ahead/advisory, enforced by a stack honesty test; the DO records a typed containerRuntime descriptor so the future real Container resource binds an exact image identity. No actual Container process exists — recorded openly",
+    "Residual recorded: drain/revoke, checkpoint open/activate and the authenticated ambiguous-operation query are not yet in the Rust client"
+   ],
+   "commits": [
+    "7de23b8",
+    "48bf2c3",
+    "197547c"
+   ]
+  },
+  {
+   "id": "R5-PR3",
+   "title": "Round-5 PR3: storage configuration, product seam and fencing as shipped behaviour (R5-STOR-01..05, R5-STOR-08, R5-STOR-10)",
+   "status": "DONE",
+   "items": [
+    "R5-STOR-01: BackendContext owns the complete effective S3 configuration; the static OnceLock and every env read below admission are deleted, with a source-level guard test",
+    "R5-STOR-05: multipart completion is provider-atomic create-only (staging key -> readback verify -> atomic promote); two independent completers yield one winner and no changed-byte overwrite",
+    "R5-STOR-08: journal retires terminal rows to a bounded receipt window with hard attempt/byte admission budgets",
+    "R5-STOR-10: silent legacy rebind is dead on both the marker and checkpoint sides; explicit imports require the acknowledged full identity and write sealed provenance",
+    "R5-STOR-04: the strict external-epoch fence SHIPS (unconditional on the storage crate's slatedb dependency, attested by cargo tree). The honest suite gate asserts that under the shipped posture EVERY failing upstream test fails BECAUSE the fence refused an unauthorized epoch-less open — which caught 3 genuine regressions hidden among 423 expected refusals (patch 0005)",
+    "R5-STOR-02: classic|slatedb-r2 is a product option resolved from server configuration; a conformance profile can never silently decide it (typed ProductBackendProfileMismatch); R5-STOR-03: the local epoch source documents what it is not, and the lanes that would claim cross-host fencing refuse at admission",
+    "Verified: storage lib 180/0, test_recovery 18/0, durability 34/0, database 21/0; strict-epoch suite gate PASS"
+   ],
+   "commits": [
+    "46164cd",
+    "5cbe3dd",
+    "e63a337"
+   ]
+  },
+  {
+   "id": "R5-PR4",
+   "title": "Round-5 PR4: atomic object and recovery safety (R5-STOR-06, R5-STOR-09, R5-STOR-11, R5-STOR-12)",
+   "status": "DONE",
+   "items": [
+    "R5-STOR-06: restore materialises into scratch, re-verifies, opens every keyspace, replays the fixed WAL head, and only then atomically activates; the kill-point matrix (before/during/after activation, unopenable cut) is executed and every pre-activation failure leaves the predecessor byte-identical AND active",
+    "R5-STOR-09: CHECKPOINT-COMPLETE v2 — streaming SHA-256 per file and root over length-prefix-framed raw path bytes; lossy-path collisions impossible; v1/64-bit manifests refused as unverifiable",
+    "R5-STOR-11: attempt ordering and retention keyed by the sealed checkpoint sequence, never wall clock; clock-rollback and renamed-attempt mutants",
+    "R5-STOR-12: the reachable todo!() in open_snapshot_write_at is a typed error"
+   ],
+   "commits": [
+    "3e6ed64"
+   ]
+  },
+  {
+   "id": "R5-PR5",
+   "title": "Round-5 PR5: local production-parity evidence (R5-LOCAL-01, R5-LOCAL-03) and the signed live envelope (R5-CF-01)",
+   "status": "DONE",
+   "items": [
+    "R5-LOCAL-01: the CAS gate can no longer accidentally serialize — barrier-released rounds (100x16 independent-client writers, 1 MiB pairwise-distinct bodies), current-ETag update races with post-race ABA refusal, and a multi-PROCESS lane (8 OS processes per round, start-file barrier, winner self-verifies byte-exact stored bytes). Executed green on BOTH pinned providers",
+    "R5-LOCAL-03: every corpus run seals a structured evidence bundle (provider binary digest, per-phase logs+digests, crash receipt, root seal) verified by an independent verifier",
+    "R5-CF-01: the approval envelope is a SIGNED, run-bound, one-time authorization artifact (Ed25519 over the canonical body, verified against an out-of-band public key, bound to release commit/probes source root/account/bucket/nonce/one run id, validity <=7 days, consumed at authority acquisition). 16 mutants executed + self-test control 7c",
+    "R5-LOCAL-02 remains OPEN: the single-command ladder combining managed Worker/DO + Rust client + TypeDB + RustFS + official drivers is not built"
+   ],
+   "commits": [
+    "f8fa481",
+    "0d111e9",
+    "660c211"
+   ]
   }
  ],
  "q_dispositions": {
@@ -434,13 +694,13 @@
   "get_prev_retry_policy": "PARTIAL; terminal branch fail-stops, typed boundary + uploader budget under PR5",
   "post_wal_containment": "PARTIAL; waits bounded this commit, validation-I/O semantics under J.5",
   "session_takeover": "CONTAINED; legacy register excluded from production surface, refusal for unmigrated sessions",
-  "production_auth_tenant_boundary": "OPEN_P0; DO binding landed, full tenant registry OPEN",
+  "production_auth_tenant_boundary": "LOCALLY_CLOSED by R4-PR1 (a8adfff): opaque tenant registry + PROVISION transaction, registry-derived DO routing, private-issuer key hierarchy, managed-surface E2E; live remainder is real managed key provisioning/rotation at deploy time (under SI-G0-3) and the asymmetric-key upgrade (round-5 R5-SEC-03)",
   "historical_migration": "REPAIRED_WITH_FIXTURES this commit (C-P0-06)",
   "batch": "DISABLED_IN_PRODUCTION until G2 authorizes; pre-I/O bounds added",
   "checkpoint": "PARTIAL; enumeration/fsync integrity landed, global-cut protocol OPEN",
   "external_epochs": "PRIMITIVE_PROVED; full candidate integration OPEN (post-G2)",
   "no_fork_firewall": "HYPOTHESIS_WITH_SPIKE; TOCTOU noted, contract revision required for adoption",
-  "evidence_denominator": "OPEN_P0; log-reparse/bundle binding landed, leaf-level plan OPEN",
+  "evidence_denominator": "DENOMINATOR_LANDED by R3-H (7f2ba55): immutable 23,132-row leaf/profile plan + independent verifier chain (R4-D); EXECUTION coverage remains honestly RED (0 rows fully covered) and is a G1 blocker",
   "u2_u2s3_verdict": "HISTORICAL_NON_QUALIFYING",
   "official_driver_parity": "NOT_IMPLEMENTED",
   "G0": "OPEN_RED",
@@ -458,7 +718,7 @@
   },
   {
    "pattern": "U3\\.0.*\\bgreen\\b",
-   "reason": "the Rust client is incompatible with the current Worker (C-P0-01)"
+   "reason": "no current-tree U3.0 evidence bundle exists; the lane is RED pending product integration (C-P0-01 itself is closed by PR4b/R4-E)"
   },
   {
    "pattern": "105 green",
@@ -470,5 +730,13 @@
   "audited_commit": "05886cf1dde17b5e07c80684a691e83fb0401a64",
   "decision": "NO-GO for a live Cloudflare run today; continue local implementation",
   "response": "docs/reviews/deep-audit-2026-08-18-round3-response.md"
+ },
+ "adopted_audit_round4": {
+  "directive": "TypeDB on SlateDB/R2 round-4 deep audit and pre-Cloudflare total-quality directive, 2026-08-19",
+  "audited_commit": "e1f88a0ee6cd6d43f1fa6eeaa067161f58c2fc2a",
+  "decision": "NO-GO for a product-labelled Cloudflare live qualification; continue local implementation. The credentialed probe runner was additionally under a DESTRUCTIVE STOP (R4-CF-00: RED preflight issued a lock-policy reset) until the zero-authority repair landed; the stop is lifted for the repaired runner but the run remains NOT READY pending the R4 program (deployable harness, obligation-manifest assertions, owner envelope, credentials).",
+  "local_s3_decision": "OD-009: RustFS strategic target / MinIO loopback-confined transition baseline; promotion gated on the provider-neutral certification corpus",
+  "confidentiality_decision": "OD-008 OPEN: no confidentiality profile is decided; v16 §19.6 is NOT closed",
+  "response": "docs/reviews/deep-audit-2026-08-19-round4-response.md"
  }
 }

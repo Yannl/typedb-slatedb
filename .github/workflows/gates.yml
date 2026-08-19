@@ -15,12 +15,25 @@ name: gates
 #     lock checker's own behavioral mutants;
 #   - Mode-Q: the SEMANTIC bundle validator (round-3 E-01) - absence keeps
 #     G0 open, presence must validate (schema, raw-byte hashes, source pin,
-#     crosswalk, content root), and the validator's own six mutants (junk
-#     file, truncated raw output, wrong pin, omitted/duplicate target,
-#     nonzero exit) are executed on every push; two-directional ledger
-#     consistency is enforced by the same validator;
+#     approved argv grammar, cquery stdout line grammar, current workspace-
+#     lock equality, bijective crosswalk, safe filenames, content root -
+#     R4-MODEQ-01), and the validator's own eleven mutants are executed on
+#     every push; two-directional ledger consistency is enforced by the
+#     same validator;
 #   - evidence producers kill their own mutants; the ARCHIVED corpus bundle
-#     re-verifies from raw logs (reparse + hash binding + bundle root);
+#     re-verifies from raw logs (reparse + hash binding + bundle root), and
+#     the INDEPENDENT verifier (tools/evidence/verify_all.py, R4-EVID-03a:
+#     verdict enum, policy re-derivation, canonical plan-root recompute)
+#     re-verifies it too and kills its own mutants (R4-EVID-01);
+#   - the v2 qualification plan has not drifted from the catalogue
+#     (build_plan_v2 --check), and plan coverage is EXPECTED-RED: the
+#     committed plan-coverage-v2.json must regenerate byte-identically and
+#     the tool must exit 1 (the plan is NOT satisfied; a green or drifted
+#     coverage result fails CI) - R4-EVID-01;
+#   - R5-EVID-01 (closes R4-EVID-01a): the catalogue/plan are regenerated
+#     against the CURRENT source lock, and the --require-current-lock steps
+#     are HARD failures - a source-lock change without catalogue/plan
+#     regeneration turns CI red instead of emitting a warning;
 #   - catalogue schema validation and negative controls;
 #   - control plane: typecheck, node suites (incl. the era-A migration
 #     fixtures and crash matrix), standing mutant, workerd lane, the full
@@ -52,6 +65,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# R5-CI-01: minimal token authority for every job - nothing here publishes,
+# comments, or writes; a compromised step must not be able to either.
+permissions:
+  contents: read
+
 concurrency:
   group: gates-${{ github.ref }}
   cancel-in-progress: true
@@ -68,6 +86,7 @@ jobs:
     # committed evidence - validated from a clean checkout with no source
     # materialisation.
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -75,11 +94,21 @@ jobs:
           # commit the ledger cites exists and is an ancestor of HEAD -
           # a shallow clone cannot answer that and the check fails closed
           fetch-depth: 0
+          # R5-CI-01: no step after checkout needs the repo token
+          persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11.9"
       - name: gate ledger is well-formed, rendered status matches, no forbidden claims
         run: python3 tools/ledger/lint_ledger.py
+      - name: the ledger linter kills its own mutants (R5-REL-01)
+        # duplicate ids, out-of-enum states, closed action without commits /
+        # with a nonexistent or non-ancestor commit, blocking-finding
+        # contradiction against a closed action's `closes`, silent reopen /
+        # erased row vs the last committed ledger, rendered-table drift,
+        # missing evidence path, forbidden claim - all EXECUTED in a
+        # disposable worktree, each killed by its intended diagnostic
+        run: python3 tools/ledger/ledger_mutants.py
       - name: Mode-Q semantic validation + ledger consistency (round-3 E-01)
         # Replaces the pre-fix any-file check (a junk file used to pass).
         # ABSENT -> the ledger must hold G0 open; VALID -> the ledger must
@@ -88,7 +117,10 @@ jobs:
         run: python3 tools/modeq/validate_modeq.py --ledger docs/ledger/gates.json
       - name: the Mode-Q validator kills its own mutants
         # junk file, truncated raw output, wrong source pin, omitted
-        # target, duplicate target, nonzero recorded exit - all executed
+        # target, duplicate target, nonzero recorded exit, plus the
+        # R4-MODEQ-01 five (junk stdout, argv ['echo','cquery'], well-shaped
+        # wrong workspace hash, 2:1 crosswalk, '../' path reference) -
+        # all executed
         run: python3 tools/modeq/modeq_mutants.py
       - name: evidence producers kill their own mutants
         run: python3 tools/catalog/evidence_mutants.py
@@ -98,6 +130,13 @@ jobs:
         run: python3 tools/catalog/validate_catalog.py --self-test
       - name: catalogue conforms to the normative v14 contract schema
         run: python3 tools/catalog/validate_catalog.py
+      - name: catalogue lock digest equals the CURRENT source lock (R5-EVID-01, blocking)
+        # HARD failure (R5-EVID-01 closed the R4-EVID-01a warning era): the
+        # catalogue was regenerated against the current source-lock.json, so
+        # any source-lock change without catalogue regeneration must turn CI
+        # red here - a stale denominator identity is a false-green release
+        # gate, never a warning.
+        run: python3 tools/catalog/validate_catalog.py --require-current-lock
       - name: materialise the pinned source graph
         # completeness (--results) cross-checks the catalogue's failpoint
         # leaves against the fail_point registry in the typedb source tree, so
@@ -112,6 +151,47 @@ jobs:
         run: |
           python3 tools/catalog/run_u0.py --verdict-only --out docs/evidence/G3/u2s3-full-3
           python3 tools/catalog/completeness.py --results docs/evidence/G3/u2s3-full-3
+      - name: qualification plan v2 has not drifted from the catalogue (R4-EVID-01)
+        # committed plan body must recompute to its own plan_root AND match
+        # a fresh rebuild from the committed catalogue; needs the pinned
+        # behaviour checkout (materialised above) for the cucumber anchors
+        run: python3 tools/catalog/build_plan_v2.py --check
+      - name: plan lock digest equals the CURRENT source lock (R5-EVID-01, blocking)
+        # HARD failure, same rule as the catalogue step above: the plan
+        # copies the catalogue's lock digest, so a regenerated catalogue
+        # with an un-regenerated plan (or a lock change with neither) fails
+        # here instead of warning.
+        run: python3 tools/catalog/build_plan_v2.py --check --require-current-lock
+      - name: independent evidence verifier over the archived bundle (R4-EVID-03a)
+        # tools/evidence/verify_all.py shares no code with the producers:
+        # own reparse, own bundle root, exact verdict enum, independent
+        # policy re-derivation from rows + flake ledger, plan root
+        # recomputed from the plan's canonical body. Default mode: byte
+        # integrity of the historical archive must hold (its legacy
+        # COMPLETE keeps qualification_pass false, loudly reported).
+        run: python3 tools/evidence/verify_all.py docs/evidence/G3/u2s3-full-3
+      - name: the independent verifier kills its own mutants (R4-EVID-03a)
+        # deleted log, edited count, duplicated row, tampered COMPLETE,
+        # policy edit without re-run, stale cached verdict, forged
+        # policy-enum, forged plan body, absent verdict/COMPLETE (strict),
+        # missing row, recorded-GREEN-over-unledgered-failure - all
+        # executed as real subprocesses over mutated archive copies
+        run: python3 tools/evidence/evidence_v2_mutants.py
+      - name: plan coverage is RED exactly as committed (expected-red, R4-EVID-01)
+        # plan_coverage.py must exit 1 (the plan is NOT satisfied - E-02's
+        # machine-readable honesty) AND regenerate the committed report
+        # byte-identically: a green result OR a drifted report fails CI.
+        run: |
+          rc=0
+          python3 tools/catalog/plan_coverage.py --out docs/evidence/G1/plan-coverage-v2.json || rc=$?
+          if [ "$rc" -ne 1 ]; then
+            echo "plan_coverage.py exited $rc but the committed plan is NOT satisfied - expected exit 1" >&2
+            exit 1
+          fi
+          git diff --exit-code -- docs/evidence/G1/plan-coverage-v2.json || {
+            echo "regenerated plan-coverage-v2.json differs from the committed report - review the drift" >&2
+            exit 1
+          }
       - name: no delete authority before G13
         # the refusal is the assertion: this MUST exit nonzero
         run: |
@@ -124,8 +204,11 @@ jobs:
     # The locks, against a real materialisation of the pinned source graph,
     # plus the lock checker's own behavioral forgery controls.
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false # R5-CI-01
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11.9"
@@ -142,11 +225,14 @@ jobs:
 
   control-plane:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: control-plane
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false # R5-CI-01
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           # 22.22.2, not the older 22.12.0: the better-sqlite3 native addon the
@@ -156,7 +242,9 @@ jobs:
           node-version: "22.22.2"
       - run: npm ci
       - name: typecheck
-        run: npx tsc --noEmit
+        # R5-CI-01: the LOCKED local binary from npm ci, never `npx` (which
+        # can silently install an unpinned package when resolution changes)
+        run: node_modules/.bin/tsc --noEmit
       - name: the controller core suites (one list, owned by package.json)
         # includes the era-A migration fixtures, the crash-after-every-
         # statement matrix, and the production-surface refusal matrix
@@ -170,7 +258,7 @@ jobs:
             exit 1
           fi
       - name: workerd lane
-        run: npx vitest run
+        run: node_modules/.bin/vitest run # locked local binary (R5-CI-01)
       - name: probe harness self-test (21 fail-closed controls, no credentials)
         # PROBE_SELFTEST_EVIDENCE_DIR keeps every evidence bundle the
         # controls produced so the canary scanner below can sweep it
@@ -187,7 +275,10 @@ jobs:
         # the full 85-check protocol matrix against wrangler dev - the same
         # workerd runtime production uses, local-dev surface
         run: |
-          npx wrangler dev --port 8787 > /tmp/wrangler-dev.log 2>&1 &
+          # R4-STACK-01: the DEFAULT wrangler.toml is the managed fail-closed
+          # posture; the E2E exercises the EXPLICIT local-dev config.
+          # locked local binary, never npx (R5-CI-01)
+          node_modules/.bin/wrangler dev -c wrangler.local-dev.toml --port 8787 > /tmp/wrangler-dev.log 2>&1 &
           WRANGLER_PID=$!
           for i in $(seq 1 90); do
             curl -s -m 2 http://127.0.0.1:8787/health > /dev/null 2>&1 && break
@@ -208,13 +299,16 @@ jobs:
     #
     # Round-3 E-06 choice, stated not hidden: the always-on push job keeps
     # `--lib` (the storage build alone is the bulk of this job's budget);
-    # the INTEGRATION tests - `cargo test -p storage --all-targets`, which
+    # the INTEGRATION tests - `cargo test -p storage --tests --lib`, which
     # picks up tests/ (including test_recovery as it becomes real) - run in
     # the dispatch-only compile-and-catalogue-drift job below, so they are
     # part of the same recorded qualification commands rather than skipped.
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false # R5-CI-01
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11.9"
@@ -255,6 +349,8 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false # R5-CI-01
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11.9"
@@ -286,9 +382,16 @@ jobs:
           python3 tools/fork/materialize_slatedb.py
           python3 tools/fork/stage.py
       - name: storage integration tests (E-06 - includes tests/, e.g. test_recovery)
-        # --all-targets compiles and runs unit + integration + doc-test
-        # binaries for the storage crate over the staged fork; kept here
-        # (dispatch) rather than on push because of the build cost - see
-        # the storage job comment.
+        # R5-QUAL-01: NOT --all-targets. That flag also EXECUTES bench
+        # targets, and benches/bench_rocks.rs is a CLI that panics without a
+        # database argument - the previous command was deterministically red
+        # after every real test had passed. `--tests --lib` runs every unit
+        # and integration test binary; the bench targets are compile-checked
+        # separately below (never executed). Kept here (dispatch) rather
+        # than on push because of the build cost - see the storage job
+        # comment.
         working-directory: sources/typedb
-        run: cargo +1.93.0 test -p storage --all-targets --locked
+        run: cargo +1.93.0 test -p storage --tests --lib --locked
+      - name: storage benches still compile (R5-QUAL-01 - compile check only, never executed)
+        working-directory: sources/typedb
+        run: cargo +1.93.0 bench -p storage --no-run --locked

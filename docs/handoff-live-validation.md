@@ -1,231 +1,98 @@
-# Live-validation handoff — Cloudflare setup and pickup guide
+# Live-validation handoff — Cloudflare probe run (HARD STOP in force)
 
-> **Status correction (2026-08-18, deep audit).** The claim this document
-> used to open with — that everything local is complete and credentials are
-> the only blocker — is FALSE. The authoritative state lives in
-> `docs/ledger/gates.json` (rendered into docs/operations.md): G0 is
-> OPEN_RED (Mode-Q evidence absent), G1 is OPEN (catalogue is a census,
-> not a qualification denominator), and G2 is NOT_READY_TO_EXECUTE (owner
-> envelope and authority-boundary prerequisites outstanding). Credentials
-> (SI-G0-3) are ONE blocker among several. The setup instructions below
-> remain useful for the eventual disposable `G2_PLATFORM_PROBE` run — which
-> is a platform-fact probe, never product qualification.
->
-> **Round-3 update (2026-08-18).** The old "copy `wrangler.toml`, change only
-> the bucket, `wrangler deploy`" flow is superseded: the canonical staging
-> path is the Alchemy graph in `stack/` (one `alchemy.run.ts` owning Worker /
-> ControllerDO / ContainerDO / R2, generated from — or checked against — the
-> committed `wrangler.toml`), and no live run may start until
-> `probes:preflight` is machine-green (disposable target + owner numeric
-> envelope `docs/probe-run-envelope.json`). The probe adapter now separates
-> admin/runtime principals and redacts secrets; see the round-3 response for
-> the full P-01..P-06 changes.
+## ⛔ 0. EXECUTABLE HARD STOP — read before touching any credential
 
-Written so that a **fresh session with empty context** can take the
-program from its current state toward a disposable platform-probe run on
-Cloudflare, once the ledger's prerequisites are met.
-
-## 0. Orientation (60 seconds)
-
-- **What this repo is**: TypeDB with its keyspace storage ported to
-  SlateDB-on-object-store, plus a Durable-Object control plane for the
-  remote WAL protocol. Read [README.md](../README.md) then
-  [architecture.md](architecture.md).
-- **Branch**: `claude/review-continue-previous-zv4wmi` (continues and
-  contains `claude/typedb-r2-implementation-5o64sh`; push to the branch
-  you are on — the session assignment names it).
-- **State**: U2 (SlateDB local) passes the full upstream corpus
-  structurally equal to the RocksDB oracle (106 executables, 0 timeouts;
-  2 documented upstream defects —
-  [u2-vs-oracle-comparison.json](evidence/G3/u2-vs-oracle-comparison.json)).
-  Control plane green on real workerd (L1: 20/20 E2E). Locks +
-  workspace binding lint-verified. Spec reconciliation:
-  [spec-delivery-comparison.md](spec-delivery-comparison.md).
-- **What's left**: platform facts + G2 measurements on a real account —
-  this document; then the G2-gated phases (U3/U4).
-
-Sanity check before starting (all must pass, no credentials needed).
-On a fresh machine `sources/` does not exist yet — materialise it from
-the lock first (docs/development.md §"Bootstrapping a fresh machine"):
-
-```sh
-python3 tools/dev/doctor.py                            # env preflight + fixes
-python3 tools/source-lock/materialize_sources.py       # sources/ from the lock
-python3 tools/source-lock/lint_source_lock.py          # LINT: PASS
-cd control-plane && npm ci && npm run typecheck && npm run test:controller && npm run test:workerd
-```
-
-(The Rust corpus needs the fork staged plus a one-time cold build,
-~40 min: `python3 tools/fork/stage.py &&
-cd sources/typedb && cargo +1.93.0 test --workspace --no-run`.)
-
-## 1. Cloudflare account prerequisites
-
-| Requirement | Why | Where |
-|---|---|---|
-| **Workers Paid plan** (~$5/mo) | SQLite-backed Durable Objects require it; Containers (later, L2/L3 topology) require it too | Dashboard → Workers & Pages → Plans |
-| **R2 enabled** (billing card on file) | payload bucket + probe bucket; free tier covers the probe volumes | Dashboard → R2 |
-| **Account ID** | every API call / env var below | Dashboard, right sidebar ("Account ID") |
-
-Use a **dedicated staging account/sub-account** if possible — nothing in
-this plan touches production data, but blast-radius isolation is cheap.
-
-## 2. Credentials — two tokens, minimal scopes
-
-### 2.1 R2 S3 credentials (for the platform probes)
-
-The probe runner (`control-plane/probes/run-r2-probes.ts`) speaks the S3
-API directly (SigV4) and reads **exactly these env vars** (it exits with
-code 3 and the SI-G0-3 marker if any is missing):
-
-```
-R2_ACCOUNT_ID            # the account id
-R2_ACCESS_KEY_ID         # minted by the R2 API token below
-R2_SECRET_ACCESS_KEY     # minted by the R2 API token below
-R2_PROBE_BUCKET          # a dedicated empty bucket, e.g. typedb-probe-staging
-```
-
-Setup:
-1. Dashboard → **R2 → Create bucket** → `typedb-probe-staging`
-   (automatic location, no public access).
-2. Dashboard → **R2 → Manage R2 API Tokens → Create API Token**:
-   - Permissions: **Object Read & Write** (NOT admin — the probes never
-     create or delete buckets);
-   - Scope: **Apply to specific buckets only** → `typedb-probe-staging`;
-   - TTL: cover the session only (e.g. 7 days);
-   - copy the minted Access Key ID / Secret Access Key.
-
-Probe P-R2-02 (credential scoping/revocation) additionally needs a
-*second*, deliberately narrower prefix-scoped token minted the same way —
-create it when running that probe and revoke it as part of the probe.
-
-### 2.2 API token for wrangler (deploying the control plane)
-
-Dashboard → **My Profile → API Tokens → Create Token → Custom token**
-with exactly:
-
-| Scope | Permission | Needed for |
-|---|---|---|
-| Account → **Workers Scripts** | **Edit** | deploy Worker + `DatabaseControllerDO` (SQLite class migration `v1` is in `wrangler.toml`) |
-| Account → **Workers R2 Storage** | **Edit** | `wrangler r2 bucket create` + the `PAYLOADS` binding |
-| Account → **Account Settings** | **Read** | wrangler account resolution (`whoami`) |
-
-- Account Resources: **only** the staging account.
-- Optional: Workers Observability/Logs **Read** (live tail);
-  **Containers Edit** only when the container topology is exercised —
-  not needed for the Worker+DO+R2 validation below.
-- No zone scopes, no user scopes, no DNS. Client-IP filter and short TTL
-  recommended.
-
-```
-export CLOUDFLARE_API_TOKEN=...     # the custom token
-export CLOUDFLARE_ACCOUNT_ID=...
-```
-
-**Custody rules**: env vars only — never committed, never echoed into
-logs or evidence (the probe runner writes raw request logs; credentials
-must stay redacted). Rotate/revoke both tokens when the session ends.
-
-## 3. Execution plan
-
-### Step 1 — Platform probes (closes the "platform fact" caveats)
-
-```sh
-cd control-plane && npm ci
-npm run probes:r2         # needs the four R2_* env vars
-```
-
-Evidence lands in `docs/evidence/G1-platform/<probe_id>/` (structured
-JSON + raw logs). What they establish: real R2 conditional-write
-semantics (`If-None-Match:*` → 412 for the loser, exactly one winner
-under concurrency), checksum echo, same-key-pressure behavior,
-credential scoping/revocation latency. These replace every
-"simulator, not evidence-grade" caveat in
-[local-dev-parity-plan.md](local-dev-parity-plan.md) — especially the
-payload-immutability contract (ADR-0007), whose local test ran against
-miniflare's re-implementation.
-
-### Step 2 — Staging deploy of the control plane
+**A live Cloudflare run is NOT READY and MUST NOT be attempted from this
+document alone.** The machine truth is `docs/ledger/gates.json`
+(`adopted_audit_round4`, gate `G2: NOT_READY_TO_EXECUTE`) rendered into
+[operations.md](operations.md). Before ANY step below, run the two
+commands that enforce the stop and believe their exit codes, not this
+prose:
 
 ```sh
 cd control-plane
-npx wrangler r2 bucket create typedb-payloads-staging
-# staging config: copy wrangler.toml -> wrangler.staging.toml, change ONLY
-#   bucket_name = "typedb-payloads-staging"
-npx wrangler deploy --config wrangler.staging.toml
+npm run probes:preflight        # exit 3 = RED = STOP. No credential goes near the runner.
+npm run probes:selftest         # 24 controls; anything nonzero = STOP.
 ```
 
-Then run the full protocol E2E **against the real platform**:
+The current blockers (ledger `G2.blockers`) are structural, not
+paperwork: there is no owner-SIGNED approval envelope, and the
+production issuer/registry seam (R4-SEC-01) precedes any
+product-labelled run. Two former blockers are now closed in-repo:
+the nine `/do/*`, `/ctr/*`, `/worker/*` probes have a deployable
+harness implementation (`control-plane/probes/harness-worker.ts` +
+`wrangler.probe-harness.toml`, source-digest-bound into the bundle;
+R4-CF-02), and every assertion is classified provider-fact vs
+product-conformance by the obligation manifest with the three
+product obligations honestly OPEN (`probes/obligations.ts`;
+R4-CF-04) — the VERDICT's `product_conformance` sub-verdict stays
+OPEN until they are discharged, so a run cannot overclaim.
 
-```sh
-node scripts/local-stack-e2e.mjs https://typedb-r2-control-plane.<subdomain>.workers.dev
-```
+What IS true after round-4: the runner's formerly destructive refusal
+path is repaired and mutant-proved — a RED preflight makes **zero**
+external calls (cleanup included), cleanup restores the captured
+bucket-lock baseline instead of erasing the ruleset, the owner envelope
+is an enforced request/byte/time budget, and evidence redaction is a
+serialization invariant with a seal-time secret scanner
+(`docs/reviews/deep-audit-2026-08-19-round4-response.md`).
 
-Expected: **ALL PASS (20 checks)** — payload digest path,
-finalize/replay/digest-conflict, status singleton + conflict, fenced
-session, exact reads, tail contiguity, outbox
-peek/redeliver/ack/idempotent-ack. Any deviation from the local L1 run
-is by definition a platform fact: record it under `docs/evidence/G2/`
-**before** touching any code (ADR-0009: L3 is never for debugging
-logic — reproduce locally instead).
+Historical note: the pre-round-4 version of this document described a
+four-variable setup against a bucket named `typedb-probe-staging`, the
+deprecated `probes:r2` entry point, and a copy-and-deploy Wrangler flow.
+Following it with real credentials would have produced a RED preflight
+followed by a destructive lock-policy reset (R4-DOC-01/R4-CF-00). Every
+such instruction is superseded by this file; the deprecated
+`probes:r2` wrapper only forwards to the current runner.
 
-### Step 3 — The G2 measurement matrix (the kill gate)
+## 1. What an eventual disposable probe run requires (informational)
 
-Measure (brief §9.10 in [inception/](inception/ARCHIVE-NOTE.md); the
-probes sidecar has detailed protocols):
+Nothing here may be executed until the ledger's G2 blockers are cleared
+and `probes:preflight` is GREEN. The runner reads EXACTLY these inputs
+(`control-plane/probes/preflight.ts`, `provider.ts`) and refuses
+anything less:
 
-1. **Append + sync latency** p50/p95/p99 — loop the
-   upload→finalize→receipt path at 1 KiB / 64 KiB / 1 MiB payloads; the
-   Rust client (`tools/remote-wal-spike/src/l1_client.rs`) drives the
-   identical protocol against the staging URL for tight timing.
-2. **DO transaction throughput** — sustained finalize/s on one
-   `DatabaseControllerDO` (the single-writer ceiling) and
-   batch-finalize scaling (`finalizeBatch`).
-3. **Outbox lag** — finalize→peek latency under load; redelivery under a
-   deliberately slow consumer.
-4. **Amplification** — objects, requests, and $ per logical commit
-   (R2 class-A/B ops + DO duration billing) vs. the per-record and batch
-   shapes the brief models.
+| Input | Rule enforced by preflight (fail-closed) |
+|---|---|
+| `R2_PROBE_OWNERSHIP_NONCE` | ≥8 chars of `[a-z0-9]`; the run must own its target by name |
+| `R2_PROBE_BUCKET` | must match `typedb-probe-<nonce>[-suffix]`; forbidden fragments (`prod`, `live`, `main`, `backup`, `primary`, `customer`, `data`) are refused; the bucket must be FRESH — the first real act is a LIST that must return empty |
+| `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | scoped Object Read & Write on the probe bucket only; never an admin key |
+| `CF_ACCOUNT_ID` / `CF_API_TOKEN` | ADMIN principal (lock config, credential minting) |
+| `CF_RUNTIME_API_TOKEN` | a genuinely SEPARATE, less-privileged runtime principal; equality with the admin token is refused |
+| `CF_PROBE_HARNESS_URL` / `CF_PROBE_HARNESS_TOKEN` / `CF_PROBE_HARNESS_ALLOWED_HOSTS` | https-only, own token (never the account token), exact hostname allowlist — and the harness itself must be deployed from THIS repository's canonical graph (R4-CF-02: not yet possible) |
+| `docs/probe-run-envelope.json` | owner-SIGNED approval artifact (`probe-run-envelope/v2`, R5-CF-01): Ed25519 signature verified against the out-of-band `PROBE_ENVELOPE_PUBLIC_KEY`; BOUND to the exact release commit, probes source root, account, bucket, ownership nonce and ONE run id; time-boxed (`valid_from`/`valid_until`, ≤7 days) and one-time (consumed-run journal). Limits (`max_total_requests`, `max_total_bytes_written`, `max_run_seconds`, `max_probe_seconds`, `max_request_seconds`, `max_cost_usd_cents`, `credential_ttl_seconds`=900 exactly) are never guessed and are enforced at dispatch time by the metered provider. The owner signs with `probes/sign-envelope.ts` (`--keygen`, then `--sign` from the exact tree being authorized); an unsigned file grants nothing |
+| `PROBE_ENVELOPE_PUBLIC_KEY` | the owner's Ed25519 verification key (SPKI PEM), delivered with the deployment and never stored inside the envelope file |
 
-Record to `docs/evidence/G2/` (JSON-per-measurement, like the rest of
-the evidence tree). **Gate semantics**: G2 red triggers protocol
-redesign (batch shape, sync cadence) *before* any U3/U4 build-out — a
-kill gate, not a soft target.
+Run entry point (the ONLY one): `npm run probes:platform`
+(`control-plane/probes/run-platform-probes.ts`). Evidence lands in a
+sealed `PlatformRunBundle v2` under `docs/evidence/G1-platform/runs/`;
+a bundle without `COMPLETE` is an aborted run, and a run whose cleanup
+failed exits nonzero regardless of probe verdicts.
 
-### Step 4 — After G2 green
+## 2. Deployment posture (informational)
 
-In order (details:
-[spec-delivery-comparison.md](spec-delivery-comparison.md) WP8):
-productionise the remote-WAL client behind `StorageFactory` (U3; the
-TB-P4 spike is the reference implementation), add the fencing
-`ObjectStore` wrapper (ADR-0001's SL-P1 obligation) plus `aws`/`foyer`
-features for R2 (the allowlist ceiling), then run the corpus on U3 and
-finally U4 against real R2. The L2 container rung
-(`npm run stack:local`) needs any Docker-equipped machine and can
-proceed in parallel.
+- The canonical IaC is the typed graph in `stack/graph.data.mjs`.
+  `stack/alchemy.run.ts` is mechanically LOCAL-ONLY (execution-mode
+  assertion; it cannot be deployed). A deployable production stack is a
+  future generated program from the same graph — it intentionally does
+  not exist yet.
+- `control-plane/wrangler.toml` is the MANAGED fail-closed default
+  (managed key profile, closed surface, production bucket, no
+  workers.dev). Local development uses the explicit
+  `wrangler.local-dev.toml`. There is no copy-and-edit staging flow:
+  when a staging deploy becomes legitimate it will be generated from the
+  graph and checked by `stack check-wrangler`, never hand-copied.
+- Custody rules: credentials live in env vars only for the duration of a
+  run; the evidence pipeline redacts at serialization and refuses to
+  seal on any detected secret byte; rotate/revoke both tokens when the
+  session ends. Nothing is committed.
 
-## 4. Hard rules for the live session
+## 3. Orientation for a fresh session
 
-- **No logic debugging on L3** (ADR-0009); capture evidence, reproduce
-  locally.
-- **No real data**; staging buckets only; delete them after if cost
-  matters.
-- **Never edit** upstream tests, `docs/inception/`, or historical
-  evidence — new facts get new files.
-- Push to the session's designated branch (currently
-  `claude/review-continue-previous-zv4wmi`); keep
-  `python3 tools/source-lock/lint_source_lock.py` green before each
-  commit.
-
-## 5. Empty-context pickup checklist
-
-1. Read [README.md](../README.md) → [architecture.md](architecture.md) →
-   [operations.md](operations.md) → this file.
-2. Run the §0 sanity block.
-3. Export the seven env vars per §2.
-4. Execute §3 step by step, committing evidence as you go.
-5. Ground-truth chain when anything surprises you:
-   `git log --oneline` → the evidence tree → the ADR index
-   ([architecture/ADR/](architecture/ADR/README.md)) → the
-   reconciliation
-   ([spec-delivery-comparison.md](spec-delivery-comparison.md)).
+- **State machine**: `docs/ledger/gates.json` → rendered
+  [operations.md](operations.md). G0 OPEN_RED, G1 OPEN, G2
+  NOT_READY_TO_EXECUTE.
+- **Round-4 program**: `docs/reviews/deep-audit-2026-08-19-round4-response.md`
+  (per-finding accounting, actions R4-A..R4-F).
+- **Local stack**: `node stack/cli.mjs dev` (loopback MinIO + Alchemy
+  workerd; zero cloud risk by construction).
+- **Probe harness self-test** (no credentials): `npm run probes:selftest`.

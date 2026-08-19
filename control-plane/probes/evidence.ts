@@ -47,7 +47,14 @@ import type { ProbeVerdict } from "./manifest.ts";
 import type { PlatformProvider, SeamRequest, SeamResponse } from "./provider.ts";
 import { randomHex, sha256hex } from "./provider.ts";
 import type { RedactionClass } from "./redact.ts";
-import { classifyRoute, redactedBodyPreview, redactHeaders, redactText } from "./redact.ts";
+import {
+  classifyRoute,
+  findSecretLeaks,
+  redactedBodyPreview,
+  redactEvidenceValue,
+  redactHeaders,
+  redactText,
+} from "./redact.ts";
 
 // ---------------------------------------------------------------------------
 // Exchange records (P-01 + P-04).
@@ -135,6 +142,7 @@ export class RecordingProvider {
   readonly exchanges: ExchangeRecord[] = [];
   private readonly inner: PlatformProvider;
   private readonly requestDeadlineMs: number;
+  private closedReason: string | null = null;
 
   constructor(inner: PlatformProvider, requestDeadlineMs = 30_000) {
     this.inner = inner;
@@ -145,7 +153,22 @@ export class RecordingProvider {
     return this.inner.mode;
   }
 
+  /**
+   * R4-CF-01: after close(), every further fetch is a typed refusal
+   * recorded as an exchange. The runner closes the recorder the moment a
+   * probe's deadline fires, so the raced-out async task cannot keep
+   * making provider calls while the runner moves on to cleanup.
+   */
+  close(reason: string): void {
+    if (this.closedReason === null) this.closedReason = reason;
+  }
+
   async fetch(req: SeamRequest): Promise<SeamResponse> {
+    if (this.closedReason !== null) {
+      throw new ExchangeDeadlineError(
+        `provider closed (${this.closedReason}); post-deadline probe calls are refused before dispatch`,
+      );
+    }
     const cls = classifyRoute(req.service, req.path);
     const reqBody = req.body ?? new Uint8Array(0);
     const reqHeaders = redactHeaders(req.headers ?? {});
@@ -288,7 +311,12 @@ export class EvidenceBundle {
 
   private write(rel: string, value: unknown): void {
     if (this.sealed) throw new Error("evidence bundle already sealed");
-    writeFileSync(join(this.runDir, rel), JSON.stringify(value, null, 2) + "\n");
+    // R4-CF-03: the redactor is a SERIALIZATION invariant — every value
+    // (assertion detail, notes, thrown errors, preflight reasons, cleanup
+    // detail, run record, verdict) passes the deep redactor here, at the
+    // single point where evidence becomes bytes. Nothing is written that
+    // did not pass it.
+    writeFileSync(join(this.runDir, rel), JSON.stringify(redactEvidenceValue(value), null, 2) + "\n");
   }
 
   writeProbeEvidence(ev: ProbeEvidence): void {
@@ -305,6 +333,11 @@ export class EvidenceBundle {
 
   writeCleanupRecord(record: Record<string, unknown>): void {
     this.write("cleanup.json", record);
+  }
+
+  /** R4-CF-04: per-run obligation statuses (obligations.json). */
+  writeObligations(record: Record<string, unknown>): void {
+    this.write("obligations.json", record);
   }
 
   writeVerdict(record: Record<string, unknown>): void {
@@ -326,13 +359,31 @@ export class EvidenceBundle {
   }
 
   /**
-   * Seal the bundle: write artifacts.json (manifest of every artifact,
-   * excluding itself and COMPLETE), then compute the root hash over the
-   * sorted (path, sha256) list of EVERY file — artifacts.json included —
-   * and write COMPLETE last. Returns the bundle root.
+   * Seal the bundle: FIRST scan every artifact byte (filenames included)
+   * for secret leaks — a hit throws SealViolationError and COMPLETE is
+   * never written (R4-CF-03: the scanner is the second gate behind the
+   * write-time redactor, and it also catches files placed in the bundle
+   * directory outside the writer). Then write artifacts.json (manifest
+   * of every artifact, excluding itself and COMPLETE), compute the root
+   * hash over the sorted (path, sha256) list of EVERY file —
+   * artifacts.json included — and write COMPLETE last. Returns the root.
+   *
+   * `knownSecrets` are the run's actual configured credential values;
+   * their exact bytes must appear nowhere in the bundle.
    */
-  seal(): string {
+  seal(knownSecrets: ReadonlyArray<string> = []): string {
     if (this.sealed) throw new Error("evidence bundle already sealed");
+    const leaks: string[] = [];
+    for (const rel of this.files()) {
+      const nameLeaks = findSecretLeaks(rel, knownSecrets);
+      for (const l of nameLeaks) leaks.push(`${rel} (filename): ${l}`);
+      const content = readFileSync(join(this.runDir, rel), "utf8");
+      for (const l of findSecretLeaks(content, knownSecrets)) leaks.push(`${rel}: ${l}`);
+    }
+    if (leaks.length > 0) {
+      // No COMPLETE, no root: a leaking bundle is an aborted run.
+      throw new SealViolationError(leaks);
+    }
     const manifest: ArtifactEntry[] = this.files()
       .filter((rel) => rel !== "COMPLETE" && rel !== "artifacts.json")
       .map((rel) => {
@@ -354,5 +405,17 @@ export class EvidenceBundle {
     writeFileSync(join(this.runDir, "COMPLETE"), root + "\n");
     this.sealed = true;
     return root;
+  }
+}
+
+/** Thrown by seal() on any secret leak; the bundle stays un-COMPLETE. */
+export class SealViolationError extends Error {
+  readonly leaks: ReadonlyArray<string>;
+  constructor(leaks: ReadonlyArray<string>) {
+    // The leak list names files and leak CLASSES only — never the
+    // leaking content itself (that would move the leak into logs).
+    super(`evidence seal refused: ${leaks.length} secret leak(s) detected: ${leaks.join("; ")}`);
+    this.name = "SealViolationError";
+    this.leaks = leaks;
   }
 }

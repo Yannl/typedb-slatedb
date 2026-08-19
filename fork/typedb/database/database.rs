@@ -49,8 +49,8 @@ use storage::{
     MVCCStorage, StorageDeleteError, StorageOpenError, StorageResetError,
     durability_client::{DurabilityClient, DurabilityClientError, WALClient},
     factory::{
-        BackendSpec, StorageFactory, StorageFactoryError, read_backend_marker, verify_backend_marker,
-        write_backend_marker,
+        BackendContext, BackendIdentity, BackendSpec, MarkerVerification, StorageFactoryError, read_backend_marker,
+        upgrade_backend_marker_to_v2, verify_backend_marker, write_backend_marker,
     },
     keyspace::rocks_resources::RocksResources,
     recovery::checkpoint::{CheckpointCreateError, CheckpointLoadError, CheckpointReader, CheckpointWriter},
@@ -106,6 +106,11 @@ pub struct Database<D> {
     /// A metrics scrape that fails (object-store outage) serves this typed stale
     /// value rather than panicking or fabricating a fresh count.
     metrics_last_good: Mutex<Option<(u64, u64)>>,
+    /// R4-STOR-01: the immutable backend identity this database was opened
+    /// under (from the per-open [`BackendContext`], verified against the
+    /// persisted marker). Bound into every checkpoint this database exports,
+    /// so a cut can never be restored under a different configuration.
+    backend_identity: BackendIdentity,
 }
 
 impl<D> fmt::Debug for Database<D> {
@@ -280,10 +285,20 @@ impl Database<WALClient> {
         let name = file_name.to_str().ok_or_else(|| InvalidUnicodeName { name: file_name.to_owned() })?;
         let wal_metrics = diagnostics_manager.wal_metrics(name, DatabaseManager::is_internal_database(name));
 
+        // R4-STOR-00: ONE immutable backend context per database open,
+        // resolved here — the single admission point — and passed explicitly
+        // through marker verification, WAL construction, MVCC/keyspace open,
+        // background-task policy, and checkpoint identity binding. No lower
+        // layer re-reads the environment; the factory's process witness turns
+        // a mid-process environment change into a typed refusal (with the
+        // tree untouched), never a half-old/half-new open.
+        let context =
+            BackendContext::resolve_from_env().map_err(|source| DatabaseOpenError::StorageFactory { source })?;
+
         if path.exists() {
-            Self::load(path, name, wal_metrics, rocks_resources)
+            Self::load(path, name, wal_metrics, rocks_resources, &context)
         } else {
-            Self::create(path, name, wal_metrics, rocks_resources)
+            Self::create(path, name, wal_metrics, rocks_resources, &context)
         }
     }
 
@@ -292,22 +307,20 @@ impl Database<WALClient> {
         name: impl AsRef<str>,
         wal_metrics: FsyncMetrics,
         rocks_resources: &RocksResources,
+        context: &BackendContext,
     ) -> Result<Database<WALClient>, DatabaseOpenError> {
-        use DatabaseOpenError::{
-            DirectoryCreate, Encoding, FunctionCacheInitialise, StorageOpen, TypeCacheInitialise, WALOpen,
-        };
+        use DatabaseOpenError::{Encoding, FunctionCacheInitialise, StorageOpen, TypeCacheInitialise, WALOpen};
 
         let name = name.as_ref();
 
-        // S-01: resolve the typed backend identity BEFORE any filesystem, WAL,
-        // or object-namespace touch. A not-yet-available lane (U3/U4) or an
-        // unknown profile refuses HERE, leaving the database tree non-existent
-        // — no directory is created before the refusal. `factory` is still
-        // needed below for the WAL, so it is resolved separately (side-effect
-        // free) and the identity mapping is fed into the ordered prelude.
-        let factory =
-            StorageFactory::resolve_from_env().map_err(|source| DatabaseOpenError::StorageFactory { source })?;
-        let backend_spec = create_backend_bound_directory(path, name, BackendSpec::from_profile(factory.profile()))?;
+        // S-01/R4-STOR-00: the backend identity was resolved ONCE by the
+        // caller (`Database::open`) BEFORE any filesystem, WAL, or
+        // object-namespace touch — a not-yet-available lane (U3/U4) or an
+        // unknown profile refused there, leaving the database tree
+        // non-existent. Here the SAME context binds the directory (marker),
+        // WAL, MVCC storage, task policy, and checkpoint identity.
+        let factory = context.factory();
+        create_backend_bound_directory(path, name, Ok(context.identity().clone()))?;
 
         let wal = factory.create_wal(path, wal_metrics).map_err(|error| match error {
             StorageFactoryError::WalOpen { source } => WALOpen { source },
@@ -317,7 +330,7 @@ impl Database<WALClient> {
         wal_client.register_record_type::<Statistics>();
 
         let storage = Arc::new(
-            MVCCStorage::create::<EncodingKeyspace>(name, path, wal_client, rocks_resources)
+            MVCCStorage::create_with_context::<EncodingKeyspace>(name, path, wal_client, rocks_resources, context)
                 .map_err(|error| StorageOpen { typedb_source: error })?,
         );
         let definition_key_generator = Arc::new(DefinitionKeyGenerator::new());
@@ -351,12 +364,18 @@ impl Database<WALClient> {
             schema_txn_lock.clone(),
             query_cache.clone(),
         );
-        let checkpoint_fn = make_checkpoint_fn(name.to_owned(), path.to_owned(), SequenceNumber::MIN, storage.clone());
+        let checkpoint_fn = make_checkpoint_fn(
+            name.to_owned(),
+            path.to_owned(),
+            SequenceNumber::MIN,
+            storage.clone(),
+            context.identity().clone(),
+        );
 
         // R-03: schedule the interval checkpointer ONLY if the backend policy
         // permits it (the classic lane). On the remote lane it is not scheduled
         // — controller-frozen cuts only — and the startup attestation proves it.
-        let policy = BackgroundTaskPolicy::for_backend(&backend_spec);
+        let policy = BackgroundTaskPolicy::for_backend(context.spec());
         let checkpointer =
             policy.interval_checkpointer.then(|| IntervalRunner::new(checkpoint_fn, CHECKPOINT_INTERVAL));
         attest_task_inventory(policy, TaskInventory { interval_checkpointer_scheduled: checkpointer.is_some() })
@@ -375,6 +394,7 @@ impl Database<WALClient> {
             _statistics_updater: IntervalRunner::new(update_statistics, STATISTICS_UPDATE_INTERVAL),
             _checkpointer: checkpointer,
             metrics_last_good: Mutex::new(None),
+            backend_identity: context.identity().clone(),
         })
     }
 
@@ -383,6 +403,7 @@ impl Database<WALClient> {
         name: impl AsRef<str>,
         wal_metrics: FsyncMetrics,
         rocks_resources: &RocksResources,
+        context: &BackendContext,
     ) -> Result<Database<WALClient>, DatabaseOpenError> {
         use DatabaseOpenError::{
             CheckpointCreate, CheckpointLoad, DurabilityClientRead, Encoding, NotADatabase, StatisticsInitialise,
@@ -397,24 +418,34 @@ impl Database<WALClient> {
             std::path::absolute(path)
         );
 
-        // S-01: resolve the backend identity and VERIFY it against the
-        // database's persisted marker BEFORE touching the WAL or storage tree.
-        // A missing marker (ambiguous/unmarked database) demands an explicit
-        // migration; a mismatch (this open's backend differs from the one the
-        // database was created with) is a typed refusal that leaves the tree,
-        // WAL, and object namespace byte-identical — never a silent
-        // cross-engine open that constructs a fresh engine beside the other
-        // backend's files.
-        let factory =
-            StorageFactory::resolve_from_env().map_err(|source| DatabaseOpenError::StorageFactory { source })?;
-        let backend_spec = BackendSpec::from_profile(factory.profile())
-            .map_err(|source| DatabaseOpenError::StorageFactory { source })?;
+        // S-01/R4-STOR-01: the backend identity was resolved ONCE by the
+        // caller (`Database::open`); VERIFY it — every field, not just the
+        // kind — against the database's persisted marker BEFORE touching the
+        // WAL or storage tree. A missing marker (ambiguous/unmarked database)
+        // demands an explicit migration; ANY mismatch (kind, endpoint,
+        // bucket, prefix, policy, protocol) is a typed refusal that leaves
+        // the tree, WAL, and object namespace byte-identical — never a
+        // silent cross-engine or cross-configuration open.
+        let resolved_identity = context.identity();
         let persisted_marker =
             read_backend_marker(path).map_err(|source| DatabaseOpenError::StorageFactory { source })?;
-        match persisted_marker {
-            // a marked database: verify the backend matches BEFORE any touch.
-            Some(_) => verify_backend_marker(&backend_spec, persisted_marker)
-                .map_err(|source| DatabaseOpenError::StorageFactory { source })?,
+        match &persisted_marker {
+            // a marked database: verify the full identity BEFORE any touch.
+            Some(marker) => {
+                let verification = verify_backend_marker(resolved_identity, Some(marker))
+                    .map_err(|source| DatabaseOpenError::StorageFactory { source })?;
+                if verification == MarkerVerification::LegacyV1Verified {
+                    // R4-STOR-01: the documented ONE-TIME upgrade — a legacy
+                    // v1 (kind-only) marker whose kind verified against the
+                    // resolved identity is rewritten in place, atomically, as
+                    // the full v2 identity. This is the single sanctioned
+                    // marker replacement; every subsequent open verifies the
+                    // full v2 identity.
+                    upgrade_backend_marker_to_v2(path, resolved_identity).map_err(|source| {
+                        DatabaseOpenError::DirectoryCreate { name: name.to_owned(), source: Arc::new(source) }
+                    })?;
+                }
+            }
             // no marker: distinguish a real-but-unmarked database (a migration
             // case — refuse) from a stray non-database directory (NotADatabase,
             // so the manager's scan skips it as before). The WAL directory's
@@ -427,6 +458,7 @@ impl Database<WALClient> {
                 }
             }
         }
+        let factory = context.factory();
 
         event!(Level::TRACE, "Loading database '{}' WAL.", &name);
         let wal = match factory.load_wal(path, wal_metrics) {
@@ -446,12 +478,23 @@ impl Database<WALClient> {
         wal_client.register_record_type::<Statistics>();
 
         event!(Level::TRACE, "Loading last database '{}' checkpoint", &name);
-        let checkpoint = CheckpointReader::open_latest::<EncodingKeyspace>(path)
+        // R4-STOR-10: enumerate EVERY digest-verified checkpoint candidate,
+        // newest first, and let storage recovery walk them with typed
+        // fallback (newest ahead/corrupt/uncovered -> next older -> full WAL
+        // replay with proven coverage) instead of pinning recovery to the
+        // single newest cut.
+        let checkpoints = CheckpointReader::enumerate_verified::<EncodingKeyspace>(path)
             .map_err(|err| CheckpointLoad { name: name.to_string(), typedb_source: err })?;
-        let storage = Arc::new(
-            MVCCStorage::load::<EncodingKeyspace>(&name, path, wal_client, &checkpoint, rocks_resources)
-                .map_err(|error| StorageOpen { typedb_source: error })?,
-        );
+        let (storage, restored_checkpoint_watermark) = MVCCStorage::load_with_recovery_fallback::<EncodingKeyspace>(
+            &name,
+            path,
+            wal_client,
+            checkpoints,
+            rocks_resources,
+            context,
+        )
+        .map_err(|error| StorageOpen { typedb_source: error })?;
+        let storage = Arc::new(storage);
         let definition_key_generator = Arc::new(DefinitionKeyGenerator::new());
         let type_vertex_generator = Arc::new(TypeVertexGenerator::new());
         let thing_vertex_generator =
@@ -495,12 +538,12 @@ impl Database<WALClient> {
         let schema = Arc::new(RwLock::new(Schema { thing_statistics, type_cache, function_cache }));
         let schema_txn_lock = Arc::new(RwLock::default());
 
-        let checkpoint_sequence_number = match checkpoint {
-            None => SequenceNumber::MIN,
-            Some(checkpoint) => checkpoint
-                .read_sequence_number()
-                .map_err(|err| CheckpointLoad { name: name.to_string(), typedb_source: err })?,
-        };
+        // R4-STOR-10: the catch-up decision below reasons about the cut that
+        // was actually RESTORED (which, under fallback, may be older than the
+        // newest on disk), not the newest directory listing entry. A full-WAL
+        // recovery reports MIN — everything since the beginning is uncovered
+        // by any checkpoint.
+        let checkpoint_sequence_number = restored_checkpoint_watermark.unwrap_or(SequenceNumber::MIN);
 
         let query_cache = Arc::new(QueryCache::new());
         let update_statistics = make_update_statistics_fn(
@@ -510,8 +553,13 @@ impl Database<WALClient> {
             schema_txn_lock.clone(),
             query_cache.clone(),
         );
-        let checkpoint_fn =
-            make_checkpoint_fn(name.to_owned(), path.to_owned(), checkpoint_sequence_number, storage.clone());
+        let checkpoint_fn = make_checkpoint_fn(
+            name.to_owned(),
+            path.to_owned(),
+            checkpoint_sequence_number,
+            storage.clone(),
+            context.identity().clone(),
+        );
 
         // R-03/R-04: construct with NO periodic checkpointer yet, so the
         // synchronous startup catch-up below runs BEFORE any periodic task —
@@ -530,17 +578,39 @@ impl Database<WALClient> {
             _statistics_updater: IntervalRunner::new(update_statistics, STATISTICS_UPDATE_INTERVAL),
             _checkpointer: None,
             metrics_last_good: Mutex::new(None),
+            backend_identity: context.identity().clone(),
         };
 
         // startup catch-up checkpoint (an explicit, one-shot cut — not the
-        // automatic interval path) runs while no periodic task is scheduled.
-        if checkpoint_sequence_number < wal_last_sequence_number {
-            database.checkpoint().map_err(|err| CheckpointCreate { name: name.to_string(), source: err })?;
+        // automatic interval path) runs while no periodic task is scheduled —
+        // and ONLY on a lane whose policy permits a local exporter cut
+        // (R4-STOR-11): on the remote-shaped lanes the Slate checkpoint
+        // function is a conformance fixture that must never be wired into a
+        // production path, and cuts are controller-owned.
+        let policy = BackgroundTaskPolicy::for_backend(context.spec());
+        let catchup_outcome = run_startup_catchup_checkpoint(
+            &policy,
+            checkpoint_sequence_number < wal_last_sequence_number,
+            || database.checkpoint(),
+        )
+        .map_err(|err| CheckpointCreate { name: name.to_string(), source: err })?;
+        if catchup_outcome == StartupCatchup::DeferredToController {
+            // Correctness-safe: recovery has already replayed the WAL into
+            // the live keyspaces, so skipping the cut loses no durability —
+            // it only leaves recovery time and WAL retention unbounded until
+            // a controller-owned cut lands. Record that loudly.
+            event!(
+                Level::INFO,
+                "Database '{}' started with its WAL ahead of the newest usable checkpoint on a remote-shaped \
+                 backend. The startup catch-up checkpoint was skipped: remote checkpoints are controller-owned \
+                 and the local exporter is a conformance fixture. Recovery replayed the WAL; a controller-owned \
+                 cut is required to bound future recovery time.",
+                &name
+            );
         }
 
         // NOW, after catch-up, start the interval checkpointer if — and only if
         // — the backend policy permits it, and attest the result.
-        let policy = BackgroundTaskPolicy::for_backend(&backend_spec);
         database._checkpointer = policy
             .interval_checkpointer
             .then(|| IntervalRunner::new_with_initial_delay(checkpoint_fn, CHECKPOINT_INTERVAL, CHECKPOINT_INTERVAL));
@@ -556,7 +626,7 @@ impl Database<WALClient> {
     }
 
     fn checkpoint(&self) -> Result<(), CheckpointCreateError> {
-        checkpoint_storage(&self.name, &self.path, &self.storage)
+        checkpoint_storage(&self.name, &self.path, &self.storage, &self.backend_identity)
     }
 
     #[allow(clippy::drop_non_drop)]
@@ -665,17 +735,70 @@ impl Database<WALClient> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct BackgroundTaskPolicy {
     pub interval_checkpointer: bool,
+    /// R4-STOR-11: whether STARTUP may take the one-shot catch-up checkpoint
+    /// when the WAL is ahead of the newest usable cut. True only on the local
+    /// conformance lanes (classic RocksDB; SlateDB over local-fs, whose
+    /// exporter is the sanctioned single-actor conformance fixture). False on
+    /// every remote-shaped lane: the Slate checkpoint function documents "Do
+    /// not wire it into any production path", and remote cuts are
+    /// controller-owned — a WAL-ahead remote startup proceeds WITHOUT a
+    /// catch-up cut (recovery has already replayed the WAL, so this is a
+    /// durability no-op; only recovery time/retention are affected) and logs
+    /// that a controller-owned cut is required.
+    pub startup_catchup_checkpointer: bool,
 }
 
 impl BackgroundTaskPolicy {
     pub(crate) fn for_backend(spec: &BackendSpec) -> Self {
         match spec {
-            BackendSpec::Classic => Self { interval_checkpointer: true },
+            BackendSpec::Classic => Self { interval_checkpointer: true, startup_catchup_checkpointer: true },
             // the remote lane's fixture exporter must never be automatically
-            // reachable — controller-frozen cuts only.
-            BackendSpec::SlateDbR2(_) => Self { interval_checkpointer: false },
+            // reachable — controller-frozen cuts only. The interval
+            // checkpointer is forbidden on EVERY Slate lane; the one-shot
+            // startup catch-up remains permitted solely on the local-fs
+            // conformance lane (U2), and is fail-closed for any other object
+            // store profile (s3/U2S3 today, anything remote-shaped tomorrow).
+            BackendSpec::SlateDbR2(spec) => Self {
+                interval_checkpointer: false,
+                startup_catchup_checkpointer: spec.object_store_profile == "local-fs",
+            },
         }
     }
+}
+
+/// R4-STOR-11: outcome of the startup catch-up checkpoint decision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StartupCatchup {
+    /// WAL ahead on a permitted (local conformance) lane: the cut ran.
+    Ran,
+    /// The newest usable checkpoint already covers the WAL head.
+    NotNeeded,
+    /// WAL ahead on a remote-shaped lane: the cut is controller-owned, so
+    /// startup proceeds without one. Recovery already replayed the WAL —
+    /// correctness is unaffected; the caller logs that a controller cut is
+    /// required to bound recovery time.
+    DeferredToController,
+}
+
+/// R4-STOR-11: the ONLY seam through which startup reaches a checkpoint
+/// exporter. The `checkpoint` closure is invoked if and only if the WAL is
+/// ahead AND the backend policy permits a startup catch-up cut — so on a
+/// remote-shaped backend the (conformance-fixture) Slate exporter is
+/// structurally unreachable from startup. The reachability test proves it by
+/// passing a closure that panics if called.
+fn run_startup_catchup_checkpoint<E>(
+    policy: &BackgroundTaskPolicy,
+    wal_ahead_of_checkpoint: bool,
+    checkpoint: impl FnOnce() -> Result<(), E>,
+) -> Result<StartupCatchup, E> {
+    if !wal_ahead_of_checkpoint {
+        return Ok(StartupCatchup::NotNeeded);
+    }
+    if !policy.startup_catchup_checkpointer {
+        return Ok(StartupCatchup::DeferredToController);
+    }
+    checkpoint()?;
+    Ok(StartupCatchup::Ran)
 }
 
 /// R-03: the background workers actually scheduled for a database instance. The
@@ -748,11 +871,12 @@ fn make_checkpoint_fn(
     path: PathBuf,
     mut prev_checkpoint: SequenceNumber,
     storage: Arc<MVCCStorage<WALClient>>,
+    backend_identity: BackendIdentity,
 ) -> impl FnMut() {
     move || {
         let watermark = storage.snapshot_watermark();
         if prev_checkpoint < watermark {
-            if let Err(error) = checkpoint_storage(&database_name, &path, &storage) {
+            if let Err(error) = checkpoint_storage(&database_name, &path, &storage, &backend_identity) {
                 // Fail-stop, not unwind: this closure runs on a detached
                 // interval thread, where a panic kills only the checkpointer
                 // and the server keeps serving with checkpoints silently
@@ -782,18 +906,46 @@ fn make_checkpoint_fn(
 fn create_backend_bound_directory(
     path: &Path,
     name: &str,
-    resolved: Result<BackendSpec, StorageFactoryError>,
-) -> Result<BackendSpec, DatabaseOpenError> {
+    resolved: Result<BackendIdentity, StorageFactoryError>,
+) -> Result<(), DatabaseOpenError> {
+    create_backend_bound_directory_with(path, name, resolved, write_backend_marker)
+}
+
+/// The parameterised body of [`create_backend_bound_directory`] (the marker
+/// writer is injected so the failure-cleanup contract is hermetically
+/// testable). R4-STOR-02 ownership rule: `fs::create_dir` fails with
+/// `AlreadyExists` unless THIS call created the directory, so its success is
+/// the proof of ownership — and on a marker-write failure the directory is
+/// removed if and only if this attempt owns it AND it is still empty
+/// (`fs::remove_dir` refuses a non-empty directory atomically, so nothing
+/// another actor put there can ever be deleted). A pre-existing directory is
+/// never touched by the failure path.
+fn create_backend_bound_directory_with(
+    path: &Path,
+    name: &str,
+    resolved: Result<BackendIdentity, StorageFactoryError>,
+    write_marker: impl FnOnce(&Path, &BackendIdentity) -> io::Result<()>,
+) -> Result<(), DatabaseOpenError> {
     use DatabaseOpenError::DirectoryCreate;
     // resolve FIRST — refuse before any filesystem touch.
-    let spec = resolved.map_err(|source| DatabaseOpenError::StorageFactory { source })?;
-    // only now touch the filesystem...
+    let identity = resolved.map_err(|source| DatabaseOpenError::StorageFactory { source })?;
+    // only now touch the filesystem... (success == this attempt owns the dir)
     fs::create_dir(path).map_err(|source| DirectoryCreate { name: name.to_string(), source: Arc::new(source) })?;
-    // ...and bind the database to its backend before any keyspace/WAL data
-    // lands, so a later open can detect a cross-engine mismatch.
-    write_backend_marker(path, &spec)
-        .map_err(|source| DirectoryCreate { name: name.to_string(), source: Arc::new(source) })?;
-    Ok(spec)
+    // ...and bind the database to its backend identity before any
+    // keyspace/WAL data lands, so a later open can detect a cross-engine or
+    // cross-configuration mismatch.
+    if let Err(source) = write_marker(path, &identity) {
+        // R4-STOR-02: no stray directory on a pre-WAL failure. This attempt
+        // created `path` (ownership proven above) and nothing else has been
+        // written into it (a failed marker write cleans its own temp file),
+        // so remove it — `remove_dir` is the atomic emptiness check: it
+        // refuses a non-empty directory, so anything that raced content into
+        // the directory survives. Best-effort: the marker error is the one
+        // reported either way.
+        let _ = fs::remove_dir(path);
+        return Err(DirectoryCreate { name: name.to_string(), source: Arc::new(source) });
+    }
+    Ok(())
 }
 
 fn checkpoint_failure_fatal_message(database_name: &str, error: &impl fmt::Debug) -> String {
@@ -817,10 +969,16 @@ fn checkpoint_storage(
     database_name: &str,
     path: &Path,
     storage: &MVCCStorage<WALClient>,
+    backend_identity: &BackendIdentity,
 ) -> Result<(), CheckpointCreateError> {
     debug!("Starting checkpoint for database {database_name}");
     let checkpoint = CheckpointWriter::new(path)?;
     storage.checkpoint(&checkpoint)?;
+    // R4-STOR-01: bind this database's backend identity into the cut BEFORE
+    // finish() seals the tree — the digest-bound COMPLETE manifest then
+    // covers the identity file, and restore refuses this cut under any other
+    // backend configuration.
+    checkpoint.add_identity(backend_identity)?;
     fail_point!(UNFINISHED_CHECKPOINT);
     checkpoint.finish()?;
     debug!("Finished checkpoint for database {database_name}");
@@ -895,9 +1053,18 @@ mod background_task_policy_tests {
 
     use super::{BackgroundTaskPolicy, ForbiddenWorkerError, TaskInventory, attest_task_inventory};
 
-    fn remote_spec() -> BackendSpec {
+    pub(super) fn slate_local_fs_spec() -> BackendSpec {
         BackendSpec::SlateDbR2(SlateDbR2Spec {
             object_store_profile: "local-fs",
+            materialisation_policy: "fresh-per-open-no-inplace",
+            cache_policy: "none",
+            protocol_versions: "fv1",
+        })
+    }
+
+    pub(super) fn slate_s3_spec() -> BackendSpec {
+        BackendSpec::SlateDbR2(SlateDbR2Spec {
+            object_store_profile: "s3",
             materialisation_policy: "fresh-per-open-no-inplace",
             cache_policy: "none",
             protocol_versions: "fv1",
@@ -917,13 +1084,15 @@ mod background_task_policy_tests {
 
     #[test]
     fn the_slatedb_lane_forbids_the_interval_checkpointer_and_attests_when_absent() {
-        let policy = BackgroundTaskPolicy::for_backend(&remote_spec());
-        assert!(!policy.interval_checkpointer, "the remote lane takes controller-frozen cuts only");
-        // the real remote-lane inventory (worker absent) passes the attestation
-        assert!(
-            attest_task_inventory(policy, TaskInventory { interval_checkpointer_scheduled: false }).is_ok(),
-            "the remote lane with no interval checkpointer scheduled attests cleanly"
-        );
+        for spec in [slate_local_fs_spec(), slate_s3_spec()] {
+            let policy = BackgroundTaskPolicy::for_backend(&spec);
+            assert!(!policy.interval_checkpointer, "every Slate lane takes controller-frozen cuts only");
+            // the real remote-lane inventory (worker absent) passes the attestation
+            assert!(
+                attest_task_inventory(policy, TaskInventory { interval_checkpointer_scheduled: false }).is_ok(),
+                "the remote lane with no interval checkpointer scheduled attests cleanly"
+            );
+        }
     }
 
     #[test]
@@ -932,13 +1101,108 @@ mod background_task_policy_tests {
         // controller-frozen lane (re-enabling the automatic remote checkpoint)
         // is a typed attestation failure. The mutant that schedules it in
         // defiance of the policy is caught HERE.
-        let policy = BackgroundTaskPolicy::for_backend(&remote_spec());
+        let policy = BackgroundTaskPolicy::for_backend(&slate_local_fs_spec());
         let result = attest_task_inventory(policy, TaskInventory { interval_checkpointer_scheduled: true });
         assert_eq!(
             result,
             Err(ForbiddenWorkerError::IntervalCheckpointerOnControllerFrozenLane),
             "an interval checkpointer on the remote lane must fail the startup attestation"
         );
+    }
+}
+
+#[cfg(test)]
+mod startup_catchup_policy_tests {
+    //! R4-STOR-11: the startup catch-up checkpoint is part of the backend
+    //! policy. The local conformance lanes (classic RocksDB, SlateDB over
+    //! local-fs) keep the WAL-ahead catch-up cut; every remote-shaped lane
+    //! (s3 today, any non-local-fs object store profile tomorrow) defers to a
+    //! controller-owned cut, so the Slate conformance-fixture exporter is
+    //! structurally unreachable from a production-shaped startup.
+
+    use std::cell::Cell;
+
+    use storage::factory::BackendSpec;
+
+    use super::{
+        BackgroundTaskPolicy, StartupCatchup,
+        background_task_policy_tests::{slate_local_fs_spec, slate_s3_spec},
+        run_startup_catchup_checkpoint,
+    };
+
+    #[test]
+    fn the_local_lanes_permit_the_startup_catchup() {
+        for spec in [BackendSpec::Classic, slate_local_fs_spec()] {
+            let policy = BackgroundTaskPolicy::for_backend(&spec);
+            assert!(
+                policy.startup_catchup_checkpointer,
+                "the local conformance lanes keep the startup catch-up checkpoint: {spec:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_remote_shaped_lane_forbids_the_startup_catchup() {
+        let policy = BackgroundTaskPolicy::for_backend(&slate_s3_spec());
+        assert!(
+            !policy.startup_catchup_checkpointer,
+            "R4-STOR-11: a remote-shaped lane must not take a local startup catch-up cut"
+        );
+    }
+
+    #[test]
+    fn a_remote_shaped_wal_ahead_startup_cannot_reach_the_checkpoint_exporter() {
+        // Reachability proof: the closure below stands in for the checkpoint
+        // exporter (the only startup path to the Slate conformance fixture)
+        // and panics if invoked. On the remote-shaped lane with the WAL ahead,
+        // the seam must return the typed deferral WITHOUT invoking it.
+        let policy = BackgroundTaskPolicy::for_backend(&slate_s3_spec());
+        let outcome = run_startup_catchup_checkpoint(&policy, true, || -> Result<(), ()> {
+            panic!("the checkpoint exporter (conformance fixture) was reached from a remote-shaped startup")
+        })
+        .expect("deferral is not an error");
+        assert_eq!(
+            outcome,
+            StartupCatchup::DeferredToController,
+            "a WAL-ahead remote-shaped startup defers to a controller-owned cut"
+        );
+    }
+
+    #[test]
+    fn the_u2_local_lane_wal_ahead_startup_still_takes_the_catchup_cut() {
+        // positive control for the reachability proof: the same seam DOES run
+        // the exporter on the local conformance lane.
+        let policy = BackgroundTaskPolicy::for_backend(&slate_local_fs_spec());
+        let ran = Cell::new(false);
+        let outcome = run_startup_catchup_checkpoint(&policy, true, || -> Result<(), ()> {
+            ran.set(true);
+            Ok(())
+        })
+        .expect("the catch-up cut succeeds");
+        assert_eq!(outcome, StartupCatchup::Ran, "the U2 local lane runs the startup catch-up");
+        assert!(ran.get(), "the exporter closure must actually have been invoked on the local lane");
+    }
+
+    #[test]
+    fn no_catchup_runs_when_the_wal_is_not_ahead() {
+        // WAL not ahead: no lane runs the exporter, remote or local.
+        for spec in [BackendSpec::Classic, slate_local_fs_spec(), slate_s3_spec()] {
+            let policy = BackgroundTaskPolicy::for_backend(&spec);
+            let outcome = run_startup_catchup_checkpoint(&policy, false, || -> Result<(), ()> {
+                panic!("no catch-up may run when the checkpoint already covers the WAL head")
+            })
+            .expect("not needed is not an error");
+            assert_eq!(outcome, StartupCatchup::NotNeeded);
+        }
+    }
+
+    #[test]
+    fn a_failing_catchup_cut_propagates_its_typed_error() {
+        // the permitted lane still propagates the exporter's typed failure —
+        // the deferral path is not a blanket error swallow.
+        let policy = BackgroundTaskPolicy::for_backend(&BackendSpec::Classic);
+        let result = run_startup_catchup_checkpoint(&policy, true, || Err("disk unplugged"));
+        assert_eq!(result, Err("disk unplugged"), "a failing catch-up cut is a typed error, not a silent skip");
     }
 }
 
@@ -994,11 +1258,17 @@ mod backend_seam_ordering_tests {
     //! the create path, and persisted atomically. The ordering is the
     //! invariant a cross-engine open depends on — its mutant (create the
     //! directory before the refusal) fails `no_directory_is_created_before_a_backend_refusal`.
+    //! R4-STOR-02: a marker-write failure removes the just-created directory
+    //! if and only if this attempt owns it and it is empty — no stray
+    //! directory a later open could misclassify, and never someone else's
+    //! directory or contents.
 
-    use storage::factory::{BackendMarker, BackendSpec, StorageFactoryError, read_backend_marker};
+    use storage::factory::{
+        BackendIdentity, BackendMarker, BackendSpec, PersistedBackendMarker, StorageFactoryError, read_backend_marker,
+    };
     use test_utils::create_tmp_dir;
 
-    use super::create_backend_bound_directory;
+    use super::{create_backend_bound_directory, create_backend_bound_directory_with};
 
     #[test]
     fn no_directory_is_created_before_a_backend_refusal() {
@@ -1023,18 +1293,79 @@ mod backend_seam_ordering_tests {
     #[test]
     fn a_resolved_backend_creates_the_directory_and_persists_the_marker_atomically() {
         // positive: a resolved backend creates the directory and binds it with
-        // a durable, readable marker.
+        // a durable, readable full-identity marker.
         let base = create_tmp_dir("dbo-s01-create");
         let path = base.join("orders-db");
-        let spec = create_backend_bound_directory(&path, "orders-db", Ok(BackendSpec::Classic))
+        let identity = BackendIdentity::from_spec(&BackendSpec::Classic);
+        create_backend_bound_directory(&path, "orders-db", Ok(identity.clone()))
             .expect("a resolved backend must create the directory");
-        assert_eq!(spec, BackendSpec::Classic);
         assert!(path.exists(), "the database directory must be created");
-        assert_eq!(
-            read_backend_marker(&path).unwrap(),
-            Some(BackendMarker::Classic),
-            "the backend marker must be persisted and readable",
+        let persisted = read_backend_marker(&path).unwrap().expect("the marker must be persisted and readable");
+        assert_eq!(persisted, PersistedBackendMarker::V2(identity), "the marker persists the FULL v2 identity");
+    }
+
+    #[test]
+    fn a_marker_write_failure_leaves_no_stray_directory() {
+        // R4-STOR-02: this attempt created the directory, the marker write
+        // failed, nothing else was written -> the directory is removed, so
+        // the next Database::open cannot classify a half-created tree.
+        let base = create_tmp_dir("dbo-r4stor02-cleanup");
+        let path = base.join("orders-db");
+        let identity = BackendIdentity::from_spec(&BackendSpec::Classic);
+        let failed = create_backend_bound_directory_with(&path, "orders-db", Ok(identity), |_, _| {
+            Err(std::io::Error::other("injected marker-write failure"))
+        });
+        assert!(failed.is_err(), "the marker failure must surface as the typed open error");
+        assert!(
+            !path.exists(),
+            "R4-STOR-02: a pre-WAL marker failure must remove the directory this attempt created",
         );
+    }
+
+    #[test]
+    fn a_marker_failure_never_removes_a_directory_this_attempt_did_not_create() {
+        // ownership guard: the path already exists (with content), so
+        // fs::create_dir fails, ownership is NOT established, and neither the
+        // directory nor its contents are touched.
+        let base = create_tmp_dir("dbo-r4stor02-foreign");
+        let path = base.join("existing");
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join("precious"), b"do-not-delete").unwrap();
+        let identity = BackendIdentity::from_spec(&BackendSpec::Classic);
+        let failed = create_backend_bound_directory_with(&path, "existing", Ok(identity), |_, _| {
+            unreachable!("the marker writer must not run when the directory could not be created")
+        });
+        assert!(failed.is_err(), "an already-existing path must refuse the create");
+        assert!(path.exists(), "the pre-existing directory must survive");
+        assert_eq!(
+            std::fs::read(path.join("precious")).unwrap(),
+            b"do-not-delete",
+            "the pre-existing directory's contents must be untouched",
+        );
+    }
+
+    #[test]
+    fn a_marker_failure_never_removes_a_directory_that_gained_content() {
+        // emptiness guard: this attempt owns the directory, but by the time
+        // the marker write fails another actor has placed a file inside —
+        // `remove_dir` (the atomic emptiness check) must leave it standing.
+        let base = create_tmp_dir("dbo-r4stor02-nonempty");
+        let path = base.join("orders-db");
+        let path_for_writer = path.to_owned();
+        let identity = BackendIdentity::from_spec(&BackendSpec::Classic);
+        let failed = create_backend_bound_directory_with(&path, "orders-db", Ok(identity), move |_, _| {
+            std::fs::write(path_for_writer.join("racer"), b"raced-in").unwrap();
+            Err(std::io::Error::other("injected marker-write failure"))
+        });
+        assert!(failed.is_err());
+        assert!(path.exists(), "a directory that gained content must never be removed by cleanup");
+        assert_eq!(std::fs::read(path.join("racer")).unwrap(), b"raced-in");
+    }
+
+    #[test]
+    fn the_marker_discriminant_still_maps_kinds_exactly() {
+        // the kind mapping the ordering invariant depends on
+        assert_eq!(BackendIdentity::from_spec(&BackendSpec::Classic).kind, BackendMarker::Classic);
     }
 }
 

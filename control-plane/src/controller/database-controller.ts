@@ -21,32 +21,63 @@ import { DurableObject } from "cloudflare:workers";
 
 import {
   ControllerCore,
+  type AmbiguityResolution,
+  type CapabilityEffect,
   type FinalizeRequest,
   type FinalizeResult,
+  type ReadLeaseRedemption,
+  type ReadOutcome,
+  type ReadRequest,
   type SqlRow,
   type SyncSql,
 } from "./core/procedures.ts";
 import { resolveKeyConfig } from "./core/key-config.ts";
 import {
-  checkCapability, mintCapability, MAX_CAPABILITY_BYTES, REQUIRED_RESTRICTIONS,
-  type CapabilityCheck, type CapabilityPayload,
+  isKnownCapabilityMethod, verifyCapabilityToken, MAX_CAPABILITY_BYTES, REQUIRED_RESTRICTIONS,
+  CAPABILITY_TOKEN_ALG, CAPABILITY_TOKEN_VERSION,
+  type CapabilityCheck, type CapabilityPayload, type VerificationKeyring,
 } from "./core/capability.ts";
+import { mintCapabilityToken } from "./core/issuer.ts";
+import {
+  bindingsEqual, checkBinding, verifyProvisionToken, type ProvisionBinding,
+} from "./core/registry.ts";
+
+/** Typed refusals of the registry-binding gate (R4 PR1): every ordinary
+ *  call to an authority that has not been provisioned - or that is
+ *  provisioned as a DIFFERENT tenant/database/environment than the caller's
+ *  verified token names - fails closed with one of these. */
+export type BindingRefusal =
+  | { ok: false; error: "DATABASE_UNPROVISIONED" }
+  | { ok: false; error: "DO_BINDING_MISMATCH" };
 
 export interface Env {
   /** Q-24: key posture. "managed" (the default when unset - a lost variable
-   *  refuses, it never downgrades) requires provisioned hex keys via the
-   *  variables below; "local-dev" is the L1 scaffolding posture with loud
-   *  dev constants. Resolution and policy: core/key-config.ts. */
+   *  refuses, it never downgrades) requires the provisioned asymmetric
+   *  inputs below; "local-dev" is the L1 scaffolding posture with loud
+   *  committed dev keypairs. Resolution and policy: core/key-config.ts. */
   CONTROLLER_KEY_PROFILE?: string;
   CONTROLLER_JOURNAL_KEY?: string;
-  CONTROLLER_CAPABILITY_KEY?: string;
+  /** R5-SEC-01/03: managed runtime inputs - environment name + the two
+   *  PUBLIC Ed25519 verification keyrings (vars, not secrets). */
+  CONTROLLER_ENVIRONMENT?: string;
+  CONTROLLER_CAPABILITY_PUBLIC_KEYS?: string;
+  CONTROLLER_PROVISION_PUBLIC_KEYS?: string;
+  /** local-dev only: the dev issuance route credential (Q-02). */
   CONTROLLER_ISSUER_SECRET?: string;
+  /** RETIRED v2 HMAC inputs - their PRESENCE refuses managed boot. */
+  CONTROLLER_CAPABILITY_KEY?: string;
+  CONTROLLER_PROVISION_KEY?: string;
 }
 
 export class DatabaseControllerDO extends DurableObject {
   private sql: SqlStorage;
   private readonly controllerCore: ControllerCore;
-  private readonly capabilityKey: Uint8Array;
+  private readonly capabilityKeyring: VerificationKeyring;
+  private readonly provisionKeyring: VerificationKeyring;
+  private readonly environment: string;
+  /** R5-SEC-03: present ONLY under the local-dev profile (dev issuance);
+   *  a managed authority resolves no signing material at all. */
+  private readonly capabilitySigningKey: Uint8Array | undefined;
 
   constructor(state: DurableObjectState, env: Env) {
     super(state, env);
@@ -80,7 +111,10 @@ export class DatabaseControllerDO extends DurableObject {
     // process, and no route that serves before the check runs.
     const keys = resolveKeyConfig(env);
     this.controllerCore = new ControllerCore(adapter, { journalKey: keys.journalKey });
-    this.capabilityKey = keys.capabilityKey;
+    this.capabilityKeyring = keys.capabilityKeyring;
+    this.provisionKeyring = keys.provisionKeyring;
+    this.environment = keys.environment;
+    this.capabilitySigningKey = keys.capabilitySigningKey;
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS databases(
         database_id TEXT PRIMARY KEY,
@@ -97,33 +131,123 @@ export class DatabaseControllerDO extends DurableObject {
         attempts INTEGER NOT NULL DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS do_binding(
-        key TEXT PRIMARY KEY CHECK(key='database_id'),
+        key TEXT PRIMARY KEY CHECK(key IN ('environment','tenant_id','database_id')),
         value TEXT NOT NULL
       );
     `);
   }
 
+  /** The provisioned registry record of this authority, or null before
+   *  provisioning. Three rows so the binding is one durable fact per
+   *  field, written only inside the provisioning transaction. */
+  private boundBinding(): ProvisionBinding | null {
+    const rows = this.sql.exec(`SELECT key, value FROM do_binding`).toArray();
+    if (!rows.length) return null;
+    const byKey = new Map(rows.map((row) => [String(row.key), String(row.value)]));
+    const environment = byKey.get("environment");
+    const tenantId = byKey.get("tenant_id");
+    const databaseId = byKey.get("database_id");
+    if (environment === undefined || tenantId === undefined || databaseId === undefined) {
+      // a partial binding must be impossible (single provisioning
+      // transaction); observing one is a consistency violation, not a state
+      throw new Error("DO_BINDING_CORRUPT: partial provisioning record");
+    }
+    return { environment, tenantId, databaseId };
+  }
+
   /**
-   * Immutable database binding (audit C-P0-02): this DO durably binds the
-   * first database identity it serves and every later call must present
-   * exactly that identity - a mis-routed or forged cross-database call
-   * fails closed here, BEFORE any SQL/R2 authority work, even though the
-   * worker's idFromName routing should make it unreachable. workerd does
-   * not let an object read its own name, so first-authenticated-call
-   * binding is the strongest locally available form of "bound at
-   * initialization"; the full tenant/environment binding registry is a
-   * platform-blocked PR4 remainder recorded in the ledger.
+   * R4 PR1: the provisioning transaction - the ONLY path that binds this
+   * uninitialized authority to a registry record, and it binds exactly
+   * once. The caller (worker /provision route) has already frame-checked
+   * the PROVISION token; this re-verifies it AUTHORITATIVELY under the
+   * DO's own provisioning-scope key and environment, then writes the
+   * binding + initial budgets + the DATABASE_PROVISIONED journal row in
+   * one synchronous transaction. Two racing provisioners are serialized by
+   * the DO: the first writes the record, the second gets the idempotent
+   * replay (identical binding) or the typed conflict (different binding) -
+   * never a partial or overwritten binding.
+   */
+  async provision(
+    token: string,
+    wireBinding: { environment?: unknown; tenantId?: unknown; databaseId?: unknown },
+    budgets?: { maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number },
+  ): Promise<
+    | { ok: true; created: boolean; binding: ProvisionBinding }
+    | { ok: false; error: string; field?: string }
+  > {
+    const checked = checkBinding(wireBinding);
+    if (!checked.ok) return checked;
+    const binding = checked.binding;
+    if (binding.environment !== this.environment) {
+      return { ok: false, error: "PROVISION_ENVIRONMENT_MISMATCH" };
+    }
+    // async signature verification FIRST (R5-SEC-03); the binding write
+    // below stays one synchronous transaction with no await inside it
+    const verdict = await verifyProvisionToken(this.provisionKeyring, token, {
+      binding, nowMs: this.controllerCore.controllerNow(),
+    });
+    if (!verdict.ok) return verdict;
+    return this.ctx.storage.transactionSync(() => {
+      const bound = this.boundBinding();
+      if (bound !== null) {
+        if (bindingsEqual(bound, binding)) return { ok: true as const, created: false, binding: bound };
+        // the race loser (or a later conflicting provisioner): typed
+        // refusal, the standing record is never overwritten
+        return { ok: false as const, error: "PROVISION_CONFLICT" };
+      }
+      const provisioned = this.controllerCore.provisionDatabase(binding, budgets);
+      if (!provisioned.ok) return provisioned;
+      this.sql.exec(`INSERT INTO do_binding(key, value) VALUES ('environment', ?)`, binding.environment);
+      this.sql.exec(`INSERT INTO do_binding(key, value) VALUES ('tenant_id', ?)`, binding.tenantId);
+      this.sql.exec(`INSERT INTO do_binding(key, value) VALUES ('database_id', ?)`, binding.databaseId);
+      return { ok: true as const, created: true, binding };
+    });
+  }
+
+  /** Read the provisioned registry record (worker bootstrap verification /
+   *  tests). Null means unprovisioned - and unprovisioned serves nothing. */
+  getBinding(): ProvisionBinding | null {
+    return this.boundBinding();
+  }
+
+  /**
+   * The registry-binding gate for the capability entry points (R4 PR1,
+   * audit 4.4 items 1-2): an authority with NO provisioned record refuses
+   * every ordinary call with a typed error and NO binding side effect
+   * (first-call squatting is dead - only `provision` writes the record),
+   * and a provisioned authority refuses any call whose verified token
+   * names a different tenant/database/environment than the record.
+   */
+  private requireBinding(expect: { databaseId: string; tenantId?: string }): BindingRefusal | null {
+    const bound = this.boundBinding();
+    if (bound === null) return { ok: false, error: "DATABASE_UNPROVISIONED" };
+    if (bound.environment !== this.environment || bound.databaseId !== expect.databaseId
+        || (expect.tenantId !== undefined && bound.tenantId !== expect.tenantId)) {
+      return { ok: false, error: "DO_BINDING_MISMATCH" };
+    }
+    return null;
+  }
+
+  /**
+   * Immutable database binding (audit C-P0-02), now backed by the
+   * provisioned registry record: every direct authority procedure asserts
+   * the presented identity is exactly the provisioned one. These RPCs sit
+   * BEHIND the worker's capability verification (which already answers the
+   * typed requireBinding refusals), so a violation here is a mis-routed or
+   * forged internal call - it throws as a hard defense-in-depth failure
+   * rather than a wire shape. Unlike the pre-PR1 first-authenticated-call
+   * binding, this NEVER writes: an unprovisioned authority cannot be bound
+   * by any amount of calling.
    */
   private bind(databaseId: string): void {
     if (typeof databaseId !== "string" || databaseId.length === 0) {
       throw new Error("DO_DATABASE_BINDING_VIOLATION: empty database identity");
     }
-    const bound = this.sql.exec(`SELECT value FROM do_binding WHERE key='database_id'`).toArray();
-    if (!bound.length) {
-      this.sql.exec(`INSERT INTO do_binding(key, value) VALUES ('database_id', ?)`, databaseId);
-      return;
+    const bound = this.boundBinding();
+    if (bound === null) {
+      throw new Error("DO_DATABASE_BINDING_VIOLATION: authority is not provisioned");
     }
-    if (String(bound[0].value) !== databaseId) {
+    if (bound.databaseId !== databaseId) {
       throw new Error(
         `DO_DATABASE_BINDING_VIOLATION: this authority is bound to another database; ` +
           `presented ${JSON.stringify(databaseId)}`,
@@ -195,6 +319,13 @@ export class DatabaseControllerDO extends DurableObject {
   fenceSession(databaseId: string, startupSessionId: string): void {
     this.bind(databaseId);
     this.controllerCore.fenceSession(databaseId, startupSessionId);
+  }
+
+  /** R4-SEC-05: use-time revalidation for read authority (see core). */
+  assertActiveReader(databaseId: string, startupSessionId: string, generation: number):
+    ReturnType<ControllerCore["assertActiveReader"]> {
+    this.bind(databaseId);
+    return this.controllerCore.assertActiveReader(databaseId, startupSessionId, generation);
   }
 
   setBudgets(
@@ -269,15 +400,17 @@ export class DatabaseControllerDO extends DurableObject {
   }
 
   /**
-   * Mint a capability (F9). In production this surface is controller-
-   * internal (issued to authenticated principals during session admission);
-   * on the L1 lane the facade exposes it openly - the local Worker is
-   * scaffolding, not a security boundary (parity plan), and the contract
-   * under proof is the DATA PATH's refusal matrix, not local issuance.
-   * PUT_PAYLOAD capabilities derive the object key from the CONTENT DIGEST
-   * (`p/<databaseId>/<sha256hex>`): the caller never selects an R2 key.
+   * Mint a capability (F9) - the DEV-LANE issuance path only (R5-SEC-03).
+   * Production issuance belongs to the private issuer (core/issuer.ts on
+   * the issuer side); a managed authority resolves NO signing key, so this
+   * method is structurally inert there: it throws before touching the
+   * issuer module, and nothing in the managed configuration could make the
+   * signature succeed anyway. Under local-dev the committed INSECURE dev
+   * capability keypair signs. PUT_PAYLOAD capabilities derive the object
+   * key from the CONTENT DIGEST (`p/<databaseId>/<sha256hex>`): the caller
+   * never selects an R2 key.
    */
-  issueCapability(spec: {
+  async issueCapability(spec: {
     principal: string;
     databaseId: string;
     method: string;
@@ -286,8 +419,24 @@ export class DatabaseControllerDO extends DurableObject {
     digest?: string;
     maxBytes?: number;
     ttlMs?: number;
-  }): { token: string; key?: string; expiresAtMs: number; incarnation: number } {
+  }): Promise<{ token: string; key?: string; expiresAtMs: number; incarnation: number }> {
+    if (this.capabilitySigningKey === undefined) {
+      // managed posture: verification-only material - minting is impossible
+      // here BY CONSTRUCTION, not by route gating (R5-SEC-03)
+      throw new Error("CAPABILITY_ISSUANCE_UNAVAILABLE: this runtime holds no signing key (verification-only posture)");
+    }
+    // R4 PR1: issuance embeds the PROVISIONED binding (env + tenant), so it
+    // is impossible before provisioning - the dev issuer cannot be used to
+    // squat an unbound authority either.
+    const binding = this.boundBinding();
+    if (binding === null) throw new Error("DATABASE_UNPROVISIONED: cannot issue before provisioning");
     this.bind(spec.databaseId);
+    // R4-SEC-04: the method space is a CLOSED registry; an unknown method
+    // would fall through the restriction table as a restriction-free
+    // bearer token, so issuance refuses it outright.
+    if (!isKnownCapabilityMethod(spec.method)) {
+      throw new Error(`CAPABILITY_METHOD_UNKNOWN: ${spec.method}`);
+    }
     const incarnation = this.controllerCore.currentIncarnation();
     // audit C-05: expiry is measured on the persisted nondecreasing
     // controller clock, not Date.now() - a backward wall-clock jump cannot
@@ -299,7 +448,7 @@ export class DatabaseControllerDO extends DurableObject {
       ? `p/${spec.databaseId}/${spec.digest}`
       : undefined;
     // audit C-05: finalize tokens bind the generation as a canonical decimal
-    // string so a rollover invalidates them (checked in checkCapability)
+    // string so a rollover invalidates them (checked in verifyCapabilityToken)
     const generation = spec.generation !== undefined ? String(spec.generation) : undefined;
     // Issuance is fail-closed on the same restriction table verification
     // enforces. Minting a PUT_PAYLOAD token with no digest/budget used to
@@ -324,6 +473,12 @@ export class DatabaseControllerDO extends DurableObject {
         `CAPABILITY_BUDGET_ABOVE_CEILING: ${spec.maxBytes} exceeds the ${MAX_CAPABILITY_BYTES}-byte data-path ceiling`);
     }
     const payload: CapabilityPayload = {
+      v: CAPABILITY_TOKEN_VERSION,
+      alg: CAPABILITY_TOKEN_ALG,
+      // new tokens are always minted under the CURRENT keyring slot's kid
+      kid: this.capabilityKeyring.keys[0].kid,
+      env: binding.environment,
+      tenantId: binding.tenantId,
       principal: spec.principal,
       databaseId: spec.databaseId,
       method: spec.method,
@@ -336,37 +491,55 @@ export class DatabaseControllerDO extends DurableObject {
       nonce: crypto.randomUUID(),
       expiresAtMs,
     };
-    return { token: mintCapability(this.capabilityKey, payload), key, expiresAtMs, incarnation };
+    return { token: await mintCapabilityToken(this.capabilitySigningKey, payload), key, expiresAtMs, incarnation };
   }
 
   /**
-   * Verify-and-claim a capability for one request (F9, audit C-P0-08). MAC,
-   * expiry, incarnation, method, audience, key, digest and budget are
-   * checked synchronously; the claim is the transactional single-REQUEST
-   * rule - the nonce is durably bound to `useDigest` (the canonical digest
-   * of the one request being authorized), so an IDENTICAL retry after a
-   * lost response is admitted again (every authorized procedure is
-   * idempotent by operation identity and reproduces its original outcome),
-   * while a DIFFERENT request under a used token is CAPABILITY_REPLAYED.
+   * Verify-and-claim a capability for one request (F9, audit C-P0-08).
+   * Signature (async, WebCrypto - R5-SEC-03), expiry, incarnation, method,
+   * audience, key, digest and budget are checked first; the claim is then
+   * the transactional single-REQUEST rule - the nonce is durably bound to
+   * `useDigest` (the canonical digest of the one request being authorized),
+   * so an IDENTICAL retry after a lost response is admitted again (every
+   * authorized procedure is idempotent by operation identity and reproduces
+   * its original outcome), while a DIFFERENT request under a used token is
+   * CAPABILITY_REPLAYED. The sync core only ever sees the pre-verified
+   * payload; the claim itself runs with no await inside it.
    */
-  useCapability(
+  async useCapability(
     token: string,
-    expect: { method: string; databaseId: string; session?: string; generation?: string;
+    expect: { method: string; databaseId: string; tenantId?: string; session?: string; generation?: string;
               key?: string; bodyDigest?: string; bodyLength?: number },
     useDigest: string,
-  ): (CapabilityCheck & { claim?: { fresh: boolean; terminal: boolean; response: string | null } })
-    | { ok: false; error: "CAPABILITY_REPLAYED" } {
-    this.bind(expect.databaseId);
+    // R5-SEC-04: the authoritative effect this use is bound to, recorded
+    // durably with the claim so a lost response can be settled later by
+    // querying the effect rather than wedging the nonce at 409 forever.
+    effect: CapabilityEffect = { kind: "IDEMPOTENT_REEXECUTE" },
+  ): Promise<
+    (CapabilityCheck & { claim?: { fresh: boolean; terminal: boolean; response: string | null } })
+    // R5-SEC-04: a use whose durable evidence contradicts its recorded
+    // operation settles QUARANTINED and stays fail-closed forever after —
+    // it is a terminal refusal, never a retryable in-flight state.
+    | { ok: false; error: "CAPABILITY_REPLAYED" | "CAPABILITY_USE_QUARANTINED" }
+    | BindingRefusal
+  > {
+    // R4 PR1: the registry-binding gate FIRST, as a typed refusal with no
+    // side effect - an unprovisioned authority cannot be bound (or even
+    // touched) by an ordinary authenticated call, and a provisioned one
+    // refuses a token naming another tenant/database than its record.
+    const unbound = this.requireBinding(expect);
+    if (unbound !== null) return unbound;
     // audit C-05: verification reads the same controller clock issuance used
     const nowMs = this.controllerCore.controllerNow();
-    const checked = checkCapability(this.capabilityKey, token, {
+    const checked = await verifyCapabilityToken(this.capabilityKeyring, token, {
       ...expect,
+      env: this.environment,
       currentIncarnation: this.controllerCore.currentIncarnation(),
       nowMs,
     });
     if (!checked.ok) return checked;
     const claimed = this.controllerCore.claimCapability(
-      checked.payload.nonce, useDigest, checked.payload.expiresAtMs, nowMs);
+      checked.payload.nonce, useDigest, checked.payload.expiresAtMs, nowMs, effect);
     if (!claimed.ok) return claimed;
     // audit C-02: hand the claim outcome back so the worker replays a
     // terminal use's stored response instead of re-executing the effect
@@ -374,21 +547,184 @@ export class DatabaseControllerDO extends DurableObject {
   }
 
   /**
+   * R5-SEC-04: settle ONE unresolved capability use from durable state.
+   * The worker calls this when a retry meets a nonfresh, nonterminal claim
+   * — the case that previously answered 409 forever. The core re-derives
+   * the outcome by querying the authoritative effect the use was bound to
+   * at claim time (all of it lives in this DO's SQLite, so it is a local
+   * read inside one transaction, not a distributed query).
+   */
+  async resolveAmbiguousUse(nonce: string): Promise<AmbiguityResolution> {
+    this.sweepOnce();
+    return this.controllerCore.resolveAmbiguousUse(nonce);
+  }
+
+  /**
+   * R5-SEC-04 restart resumption: the FIRST call this DO instance serves
+   * runs one bounded recovery sweep. A DO evicted or restarted mid-flight
+   * would otherwise leave aged uses unresolved until someone happened to
+   * retry them; this makes "process/DO restart resumes resolution" a
+   * property of the authority rather than of client behaviour. Bounded and
+   * once per instance, so it can never dominate a request.
+   */
+  private sweptThisInstance = false;
+  private sweepOnce(): void {
+    if (this.sweptThisInstance) return;
+    this.sweptThisInstance = true;
+    this.controllerCore.sweepAmbiguousUses({ limit: 64 });
+  }
+
+  /**
+   * R5-SEC-04: bounded recovery sweep over aged unresolved uses. Runs on
+   * the first request this instance serves (DO restart resumes resolution
+   * — an eviction mid-flight must not strand a nonce) and from the alarm
+   * reducer. Bounded per pass so it can never dominate a request.
+   */
+  async sweepAmbiguousUses(opts: { limit?: number; minAgeMs?: number } = {}):
+    Promise<{ scanned: number; settled: number; quarantined: number; deferred: number }> {
+    return this.controllerCore.sweepAmbiguousUses(opts);
+  }
+
+  /**
+   * R5-SEC-05: THE authoritative read hop.
+   *
+   * Verify the capability, revalidate that the bound actor still holds LIVE
+   * read authority, and perform the catalogue read - all inside this one
+   * RPC, with the liveness check and the read inside a single synchronous
+   * SQLite transaction. Payload-bearing reads additionally leave a durable
+   * ONE-SHOT lease over the exact object keys the worker is about to fetch
+   * (`redeemReadLease` below is its second half).
+   *
+   * DESIGN NOTE - why a lease and not "the DO performs the read itself":
+   * the alternative the audit offers is for this RPC to fetch the R2 bytes
+   * too. It was rejected for three reasons, none cosmetic. (1) It puts the
+   * payload byte path through the Durable Object, which the topology
+   * forbids by construction - the controller sees keys and digests, never
+   * bytes (inv. 151, brief S4.1.2). (2) A DO is single-threaded and
+   * serialized per object: every payload read of every actor would queue
+   * behind every control-plane mutation of that database, converting a
+   * parallel R2 fetch path into a global serial one. (3) It directly
+   * contradicts R5-PERF-01 - the DO would have to buffer each payload in
+   * its isolate to hand it back over RPC, which is the exact full-buffering
+   * the contract's P-WORKER rule forbids, and it would forfeit the
+   * streaming read path entirely. The lease keeps the authority decision
+   * where authority lives and makes the byte hop revocable, which is what
+   * the race actually needed.
+   *
+   * No durable USE row is claimed (audit C-07): reads remain replayable and
+   * side-effect-free in the capability sense. The lease is not a use claim -
+   * it is a revocable, seconds-long grant, pruned by expiry.
+   */
+  async authorizedRead(
+    token: string,
+    expect: { method: string; databaseId: string; tenantId?: string },
+    read: ReadRequest,
+  ): Promise<
+    ReadOutcome
+    | { ok: false; error: "CAPABILITY_RESTRICTION_MISSING"; restriction: string }
+    | Exclude<Awaited<ReturnType<typeof verifyCapabilityToken>>, { ok: true }>
+    | BindingRefusal
+  > {
+    const unbound = this.requireBinding(expect);
+    if (unbound !== null) return unbound;
+    const checked = await verifyCapabilityToken(this.capabilityKeyring, token, {
+      ...expect,
+      env: this.environment,
+      currentIncarnation: this.controllerCore.currentIncarnation(),
+      nowMs: this.controllerCore.controllerNow(),
+    });
+    if (!checked.ok) return checked;
+    // R4-SEC-05 restrictions, enforced HERE rather than at the worker: the
+    // authority must never be asked to authorize a read whose actor or
+    // generation binding is absent. (verifyCapabilityToken already requires
+    // both for WAL_READ; this is the second, independent enforcement point.)
+    const session = checked.payload.session;
+    if (typeof session !== "string" || session.length === 0) {
+      return { ok: false as const, error: "CAPABILITY_RESTRICTION_MISSING" as const, restriction: "session" };
+    }
+    const generationText = checked.payload.generation;
+    const readerGeneration = typeof generationText === "string" ? Number(generationText) : NaN;
+    if (!Number.isSafeInteger(readerGeneration) || readerGeneration < 0) {
+      return { ok: false as const, error: "CAPABILITY_RESTRICTION_MISSING" as const, restriction: "generation" };
+    }
+    // ONE hop from here: liveness + catalogue read + lease, no await between
+    return this.controllerCore.authorizeRead(expect.databaseId, session, readerGeneration, read);
+  }
+
+  /**
+   * R5-SEC-05, the SESSION-INDEPENDENT half: the outbox and journal read
+   * roles carry no startup session (downstream consumers and the
+   * recovery/forensics role), so there is no fence to race — but the
+   * INCARNATION bound is still authority, and answering it in one hop
+   * rather than two removes the same class of window. Verify and read
+   * happen inside this single RPC, with no await between them.
+   */
+  async authorizedControlRead(
+    token: string,
+    expect: { method: string; databaseId: string; tenantId?: string },
+    read: { kind: "OUTBOX_PEEK"; limit: number } | { kind: "JOURNAL_VERIFY" } | { kind: "JOURNAL_VERIFY_ANCHORED" },
+  ): Promise<
+    { ok: true; kind: "OUTBOX_PEEK"; events: { controlSeq: bigint; kind: string; body: string }[] }
+    | { ok: true; kind: "JOURNAL_VERIFY"; verified: boolean; verdict: Record<string, unknown> }
+    | { ok: true; kind: "JOURNAL_VERIFY_ANCHORED"; verified: boolean; verdict: Record<string, unknown> }
+    | Exclude<Awaited<ReturnType<typeof verifyCapabilityToken>>, { ok: true }>
+    | BindingRefusal
+  > {
+    const unbound = this.requireBinding(expect);
+    if (unbound !== null) return unbound;
+    const checked = await verifyCapabilityToken(this.capabilityKeyring, token, {
+      ...expect,
+      env: this.environment,
+      currentIncarnation: this.controllerCore.currentIncarnation(),
+      nowMs: this.controllerCore.controllerNow(),
+    });
+    if (!checked.ok) return checked;
+    if (read.kind === "OUTBOX_PEEK") {
+      return { ok: true as const, kind: "OUTBOX_PEEK" as const,
+               events: this.controllerCore.outboxPeek(read.limit) };
+    }
+    const verdict = read.kind === "JOURNAL_VERIFY"
+      ? this.controllerCore.verifyJournal()
+      : this.controllerCore.verifyJournalAnchored();
+    return { ok: true as const, kind: read.kind,
+             verified: verdict.ok, verdict: verdict as unknown as Record<string, unknown> };
+  }
+
+  /**
+   * R5-SEC-05: redeem a one-shot read lease AFTER the payload bytes were
+   * fetched and BEFORE the worker serves them. Re-checks existence (a fence
+   * deletes the row), expiry, single use, the exact key set, and the actor's
+   * live authority AT REDEMPTION TIME. Any refusal means the bytes in the
+   * worker's hand must be discarded, not served.
+   */
+  redeemReadLease(leaseId: string, keys: string[]): ReadLeaseRedemption {
+    return this.controllerCore.redeemReadLease(leaseId, keys);
+  }
+
+  /** Test/diagnostic: unconsumed read grants outstanding for one actor. */
+  countReadLeases(databaseId: string, startupSessionId: string): number {
+    return this.controllerCore.countReadLeases(databaseId, startupSessionId);
+  }
+
+  /**
    * Verify a capability WITHOUT claiming a durable use row (audit C-07).
    * Read routes are side-effect-free, so recording a durable IN_FLIGHT row
    * per read made reads write to SQLite and grow the control tables. This
-   * still enforces MAC, expiry, incarnation, method, audience and session -
-   * a stale-incarnation or fenced-session read is refused - it simply does
-   * not consume the single-request replay slot that only mutations need.
+   * still enforces signature, expiry, incarnation, method, audience and
+   * session - a stale-incarnation or fenced-session read is refused - it
+   * simply does not consume the single-request replay slot that only
+   * mutations need.
    */
-  checkCapabilityOnly(
+  async checkCapabilityOnly(
     token: string,
-    expect: { method: string; databaseId: string; session?: string; generation?: string;
+    expect: { method: string; databaseId: string; tenantId?: string; session?: string; generation?: string;
               key?: string; bodyDigest?: string; bodyLength?: number },
-  ): CapabilityCheck {
-    this.bind(expect.databaseId);
-    return checkCapability(this.capabilityKey, token, {
+  ): Promise<CapabilityCheck | BindingRefusal> {
+    const unbound = this.requireBinding(expect);
+    if (unbound !== null) return unbound;
+    return verifyCapabilityToken(this.capabilityKeyring, token, {
       ...expect,
+      env: this.environment,
       currentIncarnation: this.controllerCore.currentIncarnation(),
       nowMs: this.controllerCore.controllerNow(),
     });
@@ -449,6 +785,10 @@ export class DatabaseControllerDO extends DurableObject {
    */
   async alarm(): Promise<void> {
     const now = Date.now();
+    // R5-SEC-04: the alarm reducer also settles aged unresolved uses, so a
+    // lost response converges even if the client never retries. Bounded per
+    // pass and idempotent, like every other scheduled task here.
+    this.controllerCore.sweepAmbiguousUses({ limit: 64 });
     const due = this.sql
       .exec(`SELECT task, interval_ms, attempts FROM alarm_schedule WHERE next_due_at <= ?`, now)
       .toArray();

@@ -385,6 +385,24 @@
     "local_s3_backend"
    ],
    "status": "locked"
+  },
+  {
+   "id": "RUSTFS",
+   "kind": "artifact",
+   "name": "rustfs-linux-x86_64-musl",
+   "version": "1.0.0-rc.2",
+   "url": "https://github.com/rustfs/rustfs/releases/download/1.0.0-rc.2/rustfs-linux-x86_64-musl-v1.0.0-rc.2.zip",
+   "url_provenance": "asset name derived from rustfs/rustfs .github/workflows/build.yml packaging rules at tag 1.0.0-rc.2; tag resolves to commit e9f53180273b32a9c2b0aa8b5a384047bc7e875c per git ls-remote --tags on 2026-08-19, and the downloaded binary self-attests exactly that commit and tag via `rustfs --version`",
+   "sha256": "d286e5f8939b6d444e50b94ae2994fe5a707a33a4ed075136c9ba0e4a5975a94",
+   "sha256_provenance": "computed locally from the extracted `rustfs` binary; enclosing release zip sha256 recorded in archive_sha256 (both computed from the same 2026-08-19 download; RustFS publishes no independent checksum manifest, so the lock digest IS the pin)",
+   "archive_sha256": "dbe7b71892b7bcc7e24174321554b4cb39df450a6dcfbc2561ef59f7ab89e20e",
+   "license": "Apache-2.0 (rustfs/rustfs; used as an unmodified local dev/test server binary, not linked or distributed)",
+   "cache_path": "sources/rustfs/rustfs-1.0.0-rc.2",
+   "note": "OD-009 promotion candidate for the native local S3 backend (MinIO stays the locked transition baseline). Uncommitted cache like MINIO; consumers must verify the sha256 before use. Certification status: tools/s3-cert-corpus PASSED against this exact binary on 2026-08-19 (9 semantic tests incl. conditional create/update, list pagination, multipart, plus kill -9 crash/restart byte-exact persistence). Promotion remains an owner decision (OD-009): this lock records identity + corpus evidence, it does not itself flip the default provider.",
+   "role": [
+    "candidate_local_s3_backend"
+   ],
+   "status": "locked"
   }
  ],
  "policies": {

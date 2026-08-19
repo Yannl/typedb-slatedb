@@ -16,6 +16,10 @@ pub use keyspace::{
 /// identity can both derive the object namespace from opaque controller
 /// identifiers rather than a host-local path.
 pub use slate::MaterialisationNamespace;
+// R4-STOR-01: the factory's backend-identity resolution records the NON-SECRET
+// S3 binding (endpoint/bucket/prefix) from the same variables the keyspace
+// layer binds to — one set of names, re-exported crate-internally.
+pub(crate) use slate::{S3_BUCKET_ENV, S3_ENDPOINT_ENV, S3_PREFIX_ENV};
 
 use crate::{
     keyspace::cursor::RawCursor,

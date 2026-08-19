@@ -42,7 +42,7 @@ use tracing::trace;
 use crate::{
     durability_client::{DurabilityClient, DurabilityClientError},
     error::{MVCCStorageError, MVCCStorageErrorKind},
-    factory::{StorageFactoryError, resolved_backend_profile},
+    factory::{BackendContext, StorageFactoryError},
     isolation_manager::{IsolationManager, ValidatedCommit},
     iterator::MVCCRangeIterator,
     key_range::KeyRange,
@@ -127,8 +127,34 @@ impl<Durability> MVCCStorage<Durability> {
     pub fn create<KS: KeyspaceSet>(
         name: impl AsRef<str>,
         path: &Path,
+        durability_client: Durability,
+        rocks_resources: &RocksResources,
+    ) -> Result<Self, StorageOpenError>
+    where
+        Durability: DurabilityClient,
+    {
+        // R4-STOR-00: a direct storage construction (tests/benches, no
+        // database above it) is its own admission point — resolve the ONE
+        // immutable backend context here and delegate. The database layer
+        // resolves its context at `Database::open` and calls
+        // `create_with_context` instead, so per open the environment is read
+        // exactly once, at exactly one layer.
+        let context = BackendContext::resolve_from_env()
+            .map_err(|source| StorageOpenError::BackendResolution { name: name.as_ref().to_owned(), source })?;
+        Self::create_with_context::<KS>(name, path, durability_client, rocks_resources, &context)
+    }
+
+    /// Create the storage with an ALREADY-RESOLVED immutable backend context
+    /// (R4-STOR-00). This layer never consults the environment; it only
+    /// re-checks the process profile witness, so a context resolved before a
+    /// mid-process environment change is a typed refusal here — BEFORE the
+    /// storage directory is created — never a silent half-old/half-new open.
+    pub fn create_with_context<KS: KeyspaceSet>(
+        name: impl AsRef<str>,
+        path: &Path,
         mut durability_client: Durability,
         rocks_resources: &RocksResources,
+        context: &BackendContext,
     ) -> Result<Self, StorageOpenError>
     where
         Durability: DurabilityClient,
@@ -138,10 +164,13 @@ impl<Durability> MVCCStorage<Durability> {
         if storage_dir.exists() {
             return Err(StorageOpenError::StorageDirectoryExists { name: name.as_ref().to_owned(), path: storage_dir });
         }
-        // S-01: resolve the backend BEFORE creating the storage directory, so a
-        // refusal (unknown profile / not-yet-available lane) leaves the storage
-        // tree byte-identical — no directory created before the refusal.
-        let backend = Self::resolve_storage_backend(name.as_ref())?;
+        // S-01/R4-STOR-00: check the context BEFORE creating the storage
+        // directory, so a refusal leaves the storage tree byte-identical —
+        // no directory created before the refusal.
+        context
+            .verify_process_consistency()
+            .map_err(|source| StorageOpenError::BackendResolution { name: name.as_ref().to_owned(), source })?;
+        let backend = context.backend();
         fs::create_dir_all(&storage_dir).map_err(|error| StorageOpenError::StorageDirectoryCreate {
             name: name.as_ref().to_owned(),
             source: Arc::new(error),
@@ -163,18 +192,6 @@ impl<Durability> MVCCStorage<Durability> {
             // saturated origin is exact, never a release-mode wrap.
             highest_committed_snapshot: AtomicU64::new(next_sequence_number.number().saturating_sub(1)),
         })
-    }
-
-    /// Resolve this database's storage backend at open (S-P0-06): the
-    /// process profile becomes a typed [`StorageBackend`] exactly once, here,
-    /// and is passed down as an explicit constructor argument. Resolution
-    /// failure — unknown profile value, or a profile whose backend is not
-    /// yet available — is a typed open refusal before any engine or
-    /// namespace is touched; there is no fallback.
-    fn resolve_storage_backend(name: &str) -> Result<StorageBackend, StorageOpenError> {
-        resolved_backend_profile()
-            .and_then(|profile| profile.storage_backend())
-            .map_err(|source| StorageOpenError::BackendResolution { name: name.to_owned(), source })
     }
 
     /// Open the keyspaces with an already-resolved backend (S-01): the backend
@@ -201,6 +218,11 @@ impl<Durability> MVCCStorage<Durability> {
     where
         Durability: DurabilityClient,
     {
+        // R4-STOR-00: direct load (tests/benches) is its own admission point
+        // — resolve the ONE immutable backend context here; the database
+        // layer resolves its own at `Database::open` and passes it down.
+        let context = BackendContext::resolve_from_env()
+            .map_err(|source| StorageOpenError::BackendResolution { name: name.as_ref().to_owned(), source })?;
         // a single (or absent) candidate is the degenerate case of the
         // R4-STOR-10 newest->oldest fallback loop.
         let candidates: Vec<CheckpointReader> = checkpoint
@@ -208,7 +230,7 @@ impl<Durability> MVCCStorage<Durability> {
             .map(|checkpoint| CheckpointReader { directory: checkpoint.directory.clone() })
             .into_iter()
             .collect();
-        Self::load_with_recovery_fallback::<KS>(name, path, durability_client, candidates, rocks_resources)
+        Self::load_with_recovery_fallback::<KS>(name, path, durability_client, candidates, rocks_resources, &context)
             .map(|(storage, _restored_watermark)| storage)
     }
 
@@ -244,25 +266,33 @@ impl<Durability> MVCCStorage<Durability> {
         mut durability_client: Durability,
         checkpoints: Vec<CheckpointReader>,
         rocks_resources: &RocksResources,
+        context: &BackendContext,
     ) -> Result<(Self, Option<SequenceNumber>), StorageOpenError>
     where
         Durability: DurabilityClient,
     {
         use StorageOpenError::{
-            RecoverFromCheckpoint, RecoverFromDurability, RecoveryFallbackExhausted, StorageDirectoryRecreate,
+            CheckpointIdentityRefused, RecoverFromCheckpoint, RecoverFromDurability, RecoveryFallbackExhausted,
+            StorageDirectoryRecreate,
         };
 
         let name = name.as_ref();
         let storage_dir = path.join(Self::STORAGE_DIR_NAME);
 
         Self::register_durability_record_types(&mut durability_client);
-        // S-01: resolve the backend BEFORE any restore or removal, so a
-        // refusal leaves the existing tree byte-identical.
-        let backend = Self::resolve_storage_backend(name)?;
+        // S-01/R4-STOR-00: the backend context arrives ALREADY RESOLVED (the
+        // one per-open admission resolution); this layer only re-checks the
+        // process witness BEFORE any restore or removal, so a refusal leaves
+        // the existing tree byte-identical. No environment read happens here.
+        context
+            .verify_process_consistency()
+            .map_err(|source| StorageOpenError::BackendResolution { name: name.to_owned(), source })?;
+        let backend = context.backend();
+        let expected_identity = context.identity();
 
         let mut candidate_failures: Vec<String> = Vec::new();
         for candidate in &checkpoints {
-            match candidate.validate_for_recovery(&durability_client) {
+            match candidate.validate_for_recovery(&durability_client, Some(expected_identity)) {
                 Ok(validated) => {
                     let restored_watermark = validated.watermark;
                     // the candidate is proven: restore is destructive from
@@ -282,6 +312,16 @@ impl<Durability> MVCCStorage<Durability> {
                         Self::assemble(name, storage_dir, durability_client, keyspaces, next_sequence_number),
                         Some(restored_watermark),
                     ));
+                }
+                Err(error @ CheckpointLoadError::CheckpointIdentityMismatch { .. }) => {
+                    // R4-STOR-01: a cut whose bound backend identity differs
+                    // from this database's is NEVER fallback material — it is
+                    // evidence the tree holds a checkpoint from a DIFFERENT
+                    // configuration (a cut from A presented under B). Falling
+                    // back (to an older cut or full WAL replay) would silently
+                    // discard the presented cut; refuse instead, with the
+                    // live tree untouched (the check is pre-mutation).
+                    return Err(CheckpointIdentityRefused { name: name.to_owned(), typedb_source: error });
                 }
                 Err(error) => {
                     // typed, pre-mutation: record the reason and try the next
@@ -964,6 +1004,7 @@ typedb_error! {
         RecoverFromCheckpoint(10, "Failed to recover from checkpoint for database '{name}'.", name: String, typedb_source: CheckpointLoadError),
         RecoverFromDurability(11, "Failed to recover from durability logs for database '{name}'.", name: String, typedb_source: StorageRecoveryError),
         RecoveryFallbackExhausted(13, "Failed to recover database '{name}': every checkpoint candidate failed pre-restore validation ({candidate_failures}), and full WAL replay could not prove contiguous coverage from the start of the sequence space. Live storage state was left untouched.", name: String, candidate_failures: String, typedb_source: StorageRecoveryError),
+        CheckpointIdentityRefused(14, "Refusing to recover database '{name}': a checkpoint in its tree is bound to a DIFFERENT backend identity (R4-STOR-01). A cut created under one backend configuration must not be restored under another; live storage state was left untouched.", name: String, typedb_source: CheckpointLoadError),
     }
 }
 
@@ -1466,5 +1507,101 @@ mod tests {
         // Legacy records convert to CommitRecord with UNSET snapshot_id
         let converted = CommitRecord::from(legacy_records.into_iter().next().unwrap().1);
         assert_eq!(converted.snapshot_id(), SnapshotId::UNSET);
+    }
+}
+
+#[cfg(test)]
+mod backend_context_barrier_tests {
+    //! R4-STOR-00 barrier: the environment changes between the admission
+    //! resolution (where a database would resolve its context and write its
+    //! marker) and the MVCC open. The open must be a TYPED context-mismatch
+    //! refusal that leaves the storage tree untouched — never a silent open
+    //! under either the old or the new profile.
+    //!
+    //! This test is the only one in the storage lib binary that mutates
+    //! `TYPEDB_STORAGE_PROFILE` or touches the process profile witness; it
+    //! restores the variable before asserting, so the rest of the binary
+    //! observes the ambient environment throughout.
+
+    use diagnostics::metrics::FsyncMetrics;
+    use durability::wal::WAL;
+    use options::byte_size::ByteSize;
+    use test_utils::create_tmp_dir;
+
+    use crate::{
+        MVCCStorage, StorageOpenError,
+        durability_client::WALClient,
+        factory::{BackendContext, STORAGE_PROFILE_ENV, StorageBackendProfile, StorageFactoryError},
+        keyspace::{KeyspaceId, KeyspaceSet, rocks_resources::RocksResources},
+    };
+
+    #[derive(Clone, Copy)]
+    enum TestKs {
+        Main,
+    }
+    impl KeyspaceSet for TestKs {
+        fn iter() -> impl Iterator<Item = Self> {
+            [Self::Main].into_iter()
+        }
+        fn id(&self) -> KeyspaceId {
+            KeyspaceId(0)
+        }
+        fn name(&self) -> &'static str {
+            "keyspace"
+        }
+        fn prefix_length(&self) -> Option<usize> {
+            None
+        }
+    }
+
+    #[test]
+    fn a_mid_process_profile_change_is_a_typed_refusal_that_leaves_the_tree_untouched() {
+        // 1. admission: the first resolution seeds the process witness — this
+        //    is the moment a database open would bind its marker and context.
+        let admitted = BackendContext::resolve_from_env().expect("the ambient profile must resolve");
+
+        // 2. the barrier mutant: the environment changes to a DIFFERENT
+        //    profile before the MVCC open runs.
+        let mutated_profile =
+            if admitted.profile() == StorageBackendProfile::U2SlateLocalFs { "U1" } else { "U2" };
+        let original = std::env::var(STORAGE_PROFILE_ENV).ok();
+        // SAFETY: single-threaded with respect to this variable — no other
+        // test in this binary reads TYPEDB_STORAGE_PROFILE, and it is
+        // restored below before any assertion can fail.
+        unsafe { std::env::set_var(STORAGE_PROFILE_ENV, mutated_profile) };
+
+        // 3. the open under the changed environment.
+        let path = create_tmp_dir("r4-stor-00-barrier");
+        let wal = WAL::create(&path, FsyncMetrics::disabled()).expect("wal creates");
+        let resources = RocksResources::new(ByteSize::mb(64), ByteSize::mb(64));
+        let result = MVCCStorage::create::<TestKs>("barrier", &path, WALClient::new(wal), &resources);
+
+        // restore the environment before asserting anything.
+        match original {
+            Some(value) => unsafe { std::env::set_var(STORAGE_PROFILE_ENV, value) },
+            None => unsafe { std::env::remove_var(STORAGE_PROFILE_ENV) },
+        }
+
+        // typed mismatch, not a silent open under either profile...
+        assert!(
+            matches!(
+                &result,
+                Err(StorageOpenError::BackendResolution {
+                    source: StorageFactoryError::BackendContextChanged { .. },
+                    ..
+                })
+            ),
+            "a mid-process profile change must be the typed BackendContextChanged refusal, got: {result:?}",
+        );
+        // ...and the storage tree is untouched: no storage directory exists.
+        assert!(
+            !path.join(MVCCStorage::<WALClient>::STORAGE_DIR_NAME).exists(),
+            "R4-STOR-00: the refused open must not have created the storage directory",
+        );
+
+        // control: with the environment restored, the SAME profile resolves
+        // and agrees with the witness again.
+        let restored = BackendContext::resolve_from_env().expect("the restored profile must resolve");
+        assert_eq!(restored.profile(), admitted.profile(), "the restored environment matches the witness");
     }
 }

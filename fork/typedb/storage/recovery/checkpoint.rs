@@ -30,6 +30,7 @@ use tracing::trace;
 
 use crate::{
     durability_client::DurabilityClient,
+    factory::{BackendIdentity, PersistedBackendMarker},
     keyspace::{
         KeyspaceCheckpointError, KeyspaceOpenError, KeyspaceSet, Keyspaces, StorageBackend,
         rocks_resources::RocksResources,
@@ -52,6 +53,18 @@ const TEMP_FILE_EXTENSION: &str = "tmp";
 /// incomplete/truncated checkpoint be accepted — the exact R-06 mutant a named
 /// test kills.
 const CHECKPOINT_COMPLETE_FILE_NAME: &str = "COMPLETE";
+
+/// R4-STOR-01: the file, inside a checkpoint, that binds the creating
+/// database's full backend identity (the same v2 serialisation the database
+/// directory's marker persists, configuration digest included). It is a
+/// regular data file under the checkpoint root, so the digest-bound COMPLETE
+/// manifest seals it like every other file — a cut cannot have its identity
+/// swapped after sealing. Recovery compares it against the opening database's
+/// resolved identity BEFORE any restore: a cut created under configuration A
+/// refuses restore under configuration B. A checkpoint without this file is a
+/// legacy cut (sealed before identity binding existed, or exported by a
+/// direct storage-level writer) and is accepted for compatibility.
+pub const CHECKPOINT_IDENTITY_FILE_NAME: &str = "BACKEND_IDENTITY";
 
 /// R-04: a process-wide monotonic component of the checkpoint attempt id. Two
 /// attempts scheduled in the same wall-clock instant (the microsecond-timestamp
@@ -125,8 +138,13 @@ impl CheckpointReader {
     pub(crate) fn validate_for_recovery<Durability: DurabilityClient>(
         &self,
         durability_client: &Durability,
+        expected_identity: Option<&BackendIdentity>,
     ) -> Result<ValidatedCheckpointRecovery, CheckpointLoadError> {
         use CheckpointLoadError::CommitRecoveryFailed;
+
+        // R4-STOR-01: identity first — a cut bound to a different backend
+        // identity is refused before anything else is even parsed.
+        self.validate_identity(expected_identity)?;
 
         let watermark = validate_watermark(&self.directory, durability_client.previous())?;
 
@@ -179,6 +197,49 @@ impl CheckpointReader {
 
     pub fn read_sequence_number(&self) -> Result<SequenceNumber, CheckpointLoadError> {
         read_watermark_at(&self.directory)
+    }
+
+    /// R4-STOR-01: compare the identity bound into this checkpoint against
+    /// the opening database's resolved identity, PRE-MUTATION.
+    ///
+    /// - `expected` of `None` (a direct storage-level caller with no database
+    ///   identity above it) skips the comparison;
+    /// - an ABSENT identity file is a legacy cut (sealed before identity
+    ///   binding existed) and is accepted for compatibility;
+    /// - a PRESENT identity that is unparseable, non-v2, or whose
+    ///   configuration digest differs from the expected identity's is the
+    ///   typed [`CheckpointLoadError::CheckpointIdentityMismatch`] refusal.
+    ///   The digest comparison covers every canonical field (kind, policies,
+    ///   endpoint/bucket/prefix), so no single field can drift silently.
+    fn validate_identity(&self, expected: Option<&BackendIdentity>) -> Result<(), CheckpointLoadError> {
+        use CheckpointLoadError::{AdditionalDataIO, CheckpointIdentityMismatch};
+
+        let Some(expected) = expected else { return Ok(()) };
+        let path = self.directory.join(CHECKPOINT_IDENTITY_FILE_NAME);
+        let serialised = match fs::read_to_string(&path) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => {
+                return Err(AdditionalDataIO {
+                    name: CHECKPOINT_IDENTITY_FILE_NAME.to_string(),
+                    source: Arc::new(error),
+                });
+            }
+            Ok(serialised) => serialised,
+        };
+        let persisted_digest = match BackendIdentity::parse_marker(&serialised) {
+            Ok(PersistedBackendMarker::V2(identity)) => identity.config_digest(),
+            // an unparseable or kind-only identity file is never silently a
+            // legacy cut: something wrote it, so its meaning must verify.
+            Ok(PersistedBackendMarker::V1 { .. }) | Err(_) => "<unparseable>".to_owned(),
+        };
+        if persisted_digest != expected.config_digest() {
+            return Err(CheckpointIdentityMismatch {
+                dir: self.directory.clone(),
+                persisted: persisted_digest,
+                resolved: expected.config_digest(),
+            });
+        }
+        Ok(())
     }
 
     fn is_complete<KS: KeyspaceSet>(&self) -> io::Result<bool> {
@@ -475,6 +536,22 @@ impl CheckpointWriter {
         fs::rename(&tmp, &path).map_err(|err| ExtensionIO { name: T::NAME.to_string(), source: Arc::new(err) })?;
 
         Ok(())
+    }
+
+    /// R4-STOR-01: bind the creating database's backend identity into this
+    /// cut. Must be called BEFORE [`Self::finish`] — the identity lands as a
+    /// regular data file under the attempt root, so the digest-bound COMPLETE
+    /// manifest computed by `finish` seals it with everything else. Restore
+    /// then refuses this cut under any other backend identity.
+    pub fn add_identity(&self, identity: &BackendIdentity) -> Result<(), CheckpointCreateError> {
+        use CheckpointCreateError::{ExtensionDuplicate, ExtensionIO};
+
+        let path = self.temporary_directory.join(CHECKPOINT_IDENTITY_FILE_NAME);
+        if path.exists() {
+            return Err(ExtensionDuplicate { name: CHECKPOINT_IDENTITY_FILE_NAME.to_string() });
+        }
+        write_file(&path, identity.serialise_marker().as_bytes())
+            .map_err(|error| ExtensionIO { name: CHECKPOINT_IDENTITY_FILE_NAME.to_string(), source: Arc::new(error) })
     }
 
     pub fn finish(self) -> Result<CheckpointReader, CheckpointCreateError> {
@@ -900,6 +977,7 @@ typedb_error! {
         MetadataCorrupt(11, "Checkpoint metadata file in directory '{dir:?}' does not hold a parseable watermark (found '{content}'). The checkpoint is corrupt; an older checkpoint or a full WAL replay may still recover the database.", dir: PathBuf, content: String),
         SequenceExhausted(12, "Recovery from the checkpoint in directory '{dir:?}' requires a sequence number beyond the u64 space (watermark {watermark}). The sequence space is exhausted or the recovery inputs are corrupt; refusing rather than wrapping to zero.", dir: PathBuf, watermark: SequenceNumber),
         CheckpointAheadOfDurability(13, "The checkpoint in directory '{dir:?}' has watermark {watermark}, ahead of the durability head {durability_head}. The durability logs may have been truncated or the checkpoint is stale; refusing (was a process abort) so recovery can fall back to an older checkpoint or full WAL replay WITHOUT touching live state.", dir: PathBuf, watermark: SequenceNumber, durability_head: SequenceNumber),
+        CheckpointIdentityMismatch(14, "The checkpoint in directory '{dir:?}' is bound to backend identity digest '{persisted}', but this database resolves identity digest '{resolved}' (R4-STOR-01). A cut created under one backend configuration must never be restored under another; refusing BEFORE any touch of live state.", dir: PathBuf, persisted: String, resolved: String),
     }
 }
 

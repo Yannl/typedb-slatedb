@@ -483,3 +483,119 @@ fn no_wal_and_no_checkpoint_and_no_keyspaces_illegal() {
         assert!(wal_result.is_err());
     }
 }
+
+#[test]
+fn a_checkpoint_bound_to_a_different_backend_identity_refuses_restore() {
+    // R4-STOR-01: a cut created under backend identity A must refuse restore
+    // under identity B — a checkpoint-level refusal, pre-mutation, never a
+    // silent fallback that rebuilds under B and discards the presented cut.
+    test_keyspace_set! { Keyspace => 0: "keyspace" }
+
+    init_logging();
+    let key_hello = StorageKeyArray::<BUFFER_KEY_INLINE>::from((TestKeyspaceSet::Keyspace, b"hello"));
+
+    let storage_path = create_tmp_storage_dir();
+    // the identity THIS test environment resolves (identity B, the opener)...
+    let context = storage::factory::BackendContext::resolve_from_env().unwrap();
+    // ...and a FOREIGN identity A: same cut format, different backend config.
+    let foreign_spec = match context.spec() {
+        storage::factory::BackendSpec::Classic => storage::factory::BackendSpec::from_profile(
+            storage::factory::StorageBackendProfile::U2S3SlateS3FileWal,
+        )
+        .unwrap(),
+        storage::factory::BackendSpec::SlateDbR2(_) => storage::factory::BackendSpec::Classic,
+    };
+    let foreign_identity = storage::factory::BackendIdentity::from_spec(&foreign_spec);
+    assert_ne!(
+        foreign_identity.config_digest(),
+        context.identity().config_digest(),
+        "the two identities must genuinely differ"
+    );
+
+    let checkpoint = {
+        let storage = create_storage::<TestKeyspaceSet>(&storage_path).unwrap();
+        let mut snapshot = storage.clone().open_snapshot_write();
+        snapshot.put(key_hello.clone());
+        snapshot.commit(&mut CommitProfile::DISABLED).unwrap();
+
+        // a cut sealed under the FOREIGN identity A (as if copied in from a
+        // database bound to another configuration)
+        let writer =
+            storage::recovery::checkpoint::CheckpointWriter::new(storage.path().parent().unwrap()).unwrap();
+        storage.checkpoint(&writer).unwrap();
+        writer.add_identity(&foreign_identity).unwrap();
+        writer.finish().unwrap()
+    };
+
+    let storage_dir = storage_path.join(MVCCStorage::<WALClient>::STORAGE_DIR_NAME);
+    let live_before = snapshot_tree(&storage_dir);
+
+    let wal = WAL::load(&storage_path, FsyncMetrics::disabled()).unwrap();
+    let resources = test_utils_storage::create_rocks_resources();
+    let result = MVCCStorage::load_with_recovery_fallback::<TestKeyspaceSet>(
+        "storage",
+        &storage_path,
+        WALClient::new(wal),
+        vec![checkpoint],
+        &resources,
+        &context,
+    );
+    let error = result.err().expect("a cross-identity cut must refuse the load");
+    assert!(
+        matches!(error, StorageOpenError::CheckpointIdentityRefused { .. }),
+        "a cross-identity cut must be the typed CheckpointIdentityRefused, got: {error:?}",
+    );
+    assert_eq!(
+        live_before,
+        snapshot_tree(&storage_dir),
+        "the identity refusal must leave the live storage tree byte-identical"
+    );
+}
+
+#[test]
+fn a_checkpoint_bound_to_the_same_backend_identity_restores() {
+    // positive control for the R4-STOR-01 binding: a cut sealed under the SAME
+    // identity the opener resolves restores exactly like an unbound cut.
+    test_keyspace_set! { Keyspace => 0: "keyspace" }
+
+    init_logging();
+    let key_hello = StorageKeyArray::<BUFFER_KEY_INLINE>::from((TestKeyspaceSet::Keyspace, b"hello"));
+
+    let storage_path = create_tmp_storage_dir();
+    let context = storage::factory::BackendContext::resolve_from_env().unwrap();
+
+    let (checkpoint, watermark) = {
+        let storage = create_storage::<TestKeyspaceSet>(&storage_path).unwrap();
+        let mut snapshot = storage.clone().open_snapshot_write();
+        snapshot.put(key_hello.clone());
+        snapshot.commit(&mut CommitProfile::DISABLED).unwrap();
+
+        let writer =
+            storage::recovery::checkpoint::CheckpointWriter::new(storage.path().parent().unwrap()).unwrap();
+        storage.checkpoint(&writer).unwrap();
+        writer.add_identity(context.identity()).unwrap();
+        (writer.finish().unwrap(), storage.snapshot_watermark())
+    };
+
+    let wal = WAL::load(&storage_path, FsyncMetrics::disabled()).unwrap();
+    let resources = test_utils_storage::create_rocks_resources();
+    let (storage, restored) = MVCCStorage::load_with_recovery_fallback::<TestKeyspaceSet>(
+        "storage",
+        &storage_path,
+        WALClient::new(wal),
+        vec![checkpoint],
+        &resources,
+        &context,
+    )
+    .expect("a same-identity cut must restore");
+    assert_eq!(restored, Some(watermark), "the identity-bound cut itself must have been restored");
+    let storage = std::sync::Arc::new(storage);
+    let snapshot = storage.open_snapshot_read();
+    assert!(
+        snapshot
+            .get_mapped(StorageKeyReference::from(&key_hello), |_| true, StorageCounters::DISABLED)
+            .unwrap()
+            .is_some(),
+        "the restored cut must serve the committed data"
+    );
+}

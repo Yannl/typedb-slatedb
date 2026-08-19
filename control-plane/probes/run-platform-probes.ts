@@ -59,6 +59,8 @@ import { budgetFromEnvelope, MeteredProvider, RefusedProvider } from "./envelope
 import { captureLockBaseline, restoreLockBaseline } from "./lock-baseline.ts";
 import type { LockBaseline } from "./lock-baseline.ts";
 import { SealViolationError } from "./evidence.ts";
+import { computeObligationStatuses, OBLIGATION_MANIFEST, obligationViolations } from "./obligations.ts";
+import type { ObligationManifest, ObligationRunRecord } from "./obligations.ts";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const DEFAULT_EVIDENCE_ROOT = join(REPO_ROOT, "docs/evidence/G1-platform/runs");
@@ -175,10 +177,16 @@ function parseArgs(argv: string[]): CliOptions {
  * the list of violations; any violation makes the whole run invalid
  * (exit 1) — a shrunken manifest or an unimplemented probe must never
  * produce a green gate.
+ *
+ * R4-CF-04: additionally exact-set reconciles the versioned obligation
+ * manifest (obligations.ts) against the registry — dangling references,
+ * unclaimed assertions, product obligations whose evidence is not
+ * real-required, and silent (non-OPEN) gaps all invalidate the run.
  */
 export function manifestViolations(
   manifest: ReadonlyArray<ManifestEntry>,
   registry: ReadonlyArray<ProbeImpl>,
+  obligations: ObligationManifest = OBLIGATION_MANIFEST,
 ): string[] {
   const violations: string[] = [];
   if (manifest.length !== NORMATIVE_PROBE_COUNT) {
@@ -199,7 +207,55 @@ export function manifestViolations(
     if (ids.size !== p.assertions.length) violations.push(`probe ${p.id} declares duplicate assertion ids`);
     if (p.assertions.length === 0) violations.push(`probe ${p.id} declares no assertions (an empty plan proves nothing)`);
   }
+  violations.push(...obligationViolations(obligations, registry));
   return violations;
+}
+
+// ---------------------------------------------------------------------------
+// R4-CF-04: provider_facts / product_conformance sub-verdicts.
+// ---------------------------------------------------------------------------
+
+export interface SubVerdict {
+  status: "PASS" | "FAIL" | "OPEN" | "NOT-RUN";
+  open_obligations: string[];
+  failed_obligations: string[];
+  not_exercised_this_run: string[];
+  satisfied: string[];
+}
+
+/**
+ * Aggregate the per-run obligation statuses of ONE class into a
+ * sub-verdict. Fail-closed and honesty-first:
+ *
+ *   - any FAILED obligation                  => FAIL
+ *   - else any OPEN obligation               => OPEN (this is the state
+ *     today for product_conformance: the OPEN list is printed, and OPEN
+ *     is NEVER PASS — a 14/14 probe run must not read as contract proof)
+ *   - else any NOT-EXERCISED-THIS-RUN        => NOT-RUN (refused/skipped)
+ *   - else                                   => PASS
+ *
+ * NOT-EXERCISED-THIS-MODE does not block PASS: the obligation says itself
+ * which modes it applies to, and obligations.json records the exclusion.
+ */
+export function subVerdictFor(
+  records: ReadonlyArray<ObligationRunRecord>,
+  cls: "provider-fact" | "product-conformance",
+): SubVerdict {
+  const own = records.filter((r) => r.class === cls);
+  const pick = (status: ObligationRunRecord["status"]): string[] =>
+    own.filter((r) => r.status === status).map((r) => r.id);
+  const open = pick("OPEN");
+  const failed = pick("FAILED");
+  const notRun = pick("NOT-EXERCISED-THIS-RUN");
+  const status: SubVerdict["status"] =
+    failed.length > 0 ? "FAIL" : open.length > 0 ? "OPEN" : notRun.length > 0 ? "NOT-RUN" : "PASS";
+  return {
+    status,
+    open_obligations: open,
+    failed_obligations: failed,
+    not_exercised_this_run: notRun,
+    satisfied: pick("SATISFIED"),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -629,6 +685,7 @@ export async function main(argv: string[]): Promise<number> {
         assertions: (impl?.assertions ?? []).map((a) => ({
           id: a.id,
           title: a.title,
+          class: a.class,
           required_in: a.required_in,
         })),
       };
@@ -857,6 +914,31 @@ export async function main(argv: string[]): Promise<number> {
     exitCode = 1;
   }
 
+  // --- R4-CF-04: per-run obligation statuses and class sub-verdicts ---
+  // Computed strictly from the checks the probes recorded; written as its
+  // own artifact (obligations.json) so the bundle carries the obligation
+  // view alongside the probe view, and mirrored into the VERDICT as
+  // provider_facts / product_conformance. product_conformance is OPEN
+  // whenever any product obligation is OPEN — the run's exit code stays
+  // fail-closed as before, but no reader can mistake a green probe run for
+  // contract proof.
+  const checksByProbe = new Map(probeEvidence.map((ev) => [ev.probe_id, ev.checks]));
+  const obligationRecords = computeObligationStatuses(OBLIGATION_MANIFEST, provider.mode, checksByProbe);
+  const providerFacts = subVerdictFor(obligationRecords, "provider-fact");
+  const productConformance = subVerdictFor(obligationRecords, "product-conformance");
+  bundle.writeObligations({
+    schema: "platform-probe-obligations/v1",
+    contract: OBLIGATION_MANIFEST.contract,
+    obligation_manifest_schema: OBLIGATION_MANIFEST.schema,
+    mode: provider.mode,
+    obligations: obligationRecords,
+    provider_facts: providerFacts,
+    product_conformance: productConformance,
+  });
+  for (const id of productConformance.open_obligations) {
+    console.log(`platform-probes: product obligation OPEN: ${id}`);
+  }
+
   // --- run record, verdict, sealed bundle root ---
   const observedVerdicts = Object.fromEntries(verdicts);
   bundle.writeRunRecord({
@@ -872,6 +954,16 @@ export async function main(argv: string[]): Promise<number> {
     locks: {
       source_lock_sha256: fileSha256(join(REPO_ROOT, "source-lock", "source-lock.json")),
       workspace_lock_sha256: fileSha256(join(REPO_ROOT, "source-lock", "workspace-lock.json")),
+    },
+    // R4-CF-02: the disposable probe-harness the real-mode /do|/ctr|/worker
+    // probes call is built from THIS repository; the run binds the exact
+    // source + wrangler config identity it advertised, so a supplied
+    // CF_PROBE_HARNESS_URL is reproducible from the run bundle.
+    harness_source: {
+      entry: "control-plane/probes/harness-worker.ts",
+      sha256: fileSha256(join(REPO_ROOT, "control-plane", "probes", "harness-worker.ts")),
+      wrangler_config: "control-plane/wrangler.probe-harness.toml",
+      wrangler_config_sha256: fileSha256(join(REPO_ROOT, "control-plane", "wrangler.probe-harness.toml")),
     },
     toolchain: { node_version: process.version },
     argv,
@@ -907,6 +999,15 @@ export async function main(argv: string[]): Promise<number> {
   bundle.writeVerdict({
     schema: "platform-probe-verdict/v2",
     policy: `exit 0 only when every one of the ${NORMATIVE_PROBE_COUNT} manifest probes is PASS with full required-assertion coverage; PREREQUISITE_MISSING => 3; anything else => 1`,
+    // R4-CF-04: the two questions are answered SEPARATELY. provider_facts
+    // says what the platform (or its labeled harness) demonstrably did;
+    // product_conformance lists the contract obligations and CANNOT be
+    // PASS while any product obligation is OPEN or failed — today it is
+    // OPEN (runtime-cannot-delete, ambiguity-resolution-real,
+    // attempt-identity-changed-bytes-real), and that honesty is asserted
+    // by the self-test.
+    provider_facts: providerFacts,
+    product_conformance: productConformance,
     observed_verdicts: observedVerdicts,
     required_assertion_coverage: Object.fromEntries(
       probeEvidence.map((ev) => [

@@ -24,6 +24,21 @@
 #              typed outcome in finally for throw/reject/never-resolving)
 #   control 8: P-06 preflight CLI — mock preflight exits 0; real preflight
 #              without prerequisites exits 3
+#   control 9: R4-CF-04 obligation manifest — obligations.ts exact-set
+#              reconciles against the probe registry, the mock bundle
+#              carries obligations.json with every obligation resolved,
+#              and VERDICT.json states the HONEST product_conformance
+#              sub-verdict: status OPEN with exactly the three open
+#              product obligations (runtime-cannot-delete,
+#              ambiguity-resolution-real,
+#              attempt-identity-changed-bytes-real) — a 14/14 probe PASS
+#              must never read as contract proof
+#   control 10: R4-CF-02 probe-harness Worker suite — the in-repo
+#              deployable harness (harness-worker.ts) refuses missing/
+#              wrong bearer tokens, serves build identity on
+#              /harness/health, answers the P-DO-01/P-CTR-01 path
+#              contracts, persists its durable slices, and labels
+#              simulated behavior
 #
 # Exits nonzero if ANY control fails. Evidence bundles for these control
 # runs are written to a throwaway directory (or, when
@@ -83,8 +98,9 @@ if run_control 0 "$out" --mock; then
     # The v2 bundle must be complete: every schema file present, 14 probe
     # records under probes/, and the COMPLETE seal written last.
     run_dir=$(sed -n 's/^platform-probes: evidence bundle //p' "$out" | head -1)
+    CONTROL1_RUN_DIR="$run_dir"
     bundle_ok=1
-    for f in run.json plan.json cleanup.json artifacts.json VERDICT.json COMPLETE; do
+    for f in run.json plan.json cleanup.json obligations.json artifacts.json VERDICT.json COMPLETE; do
       if [ ! -f "$run_dir/$f" ]; then
         echo "CONTROL FAILED: --mock bundle is missing $f"
         bundle_ok=0
@@ -219,6 +235,78 @@ if [ "$mock_pf" -ne 0 ] || [ "$real_pf" -ne 3 ]; then
   failures=$((failures + 1))
 else
   echo "control 8 ok: preflight => mock GREEN (0), real without prerequisites RED (3)"
+fi
+
+# --- control 9: R4-CF-04 obligation manifest + honest OPEN sub-verdict ----
+# The obligation manifest must exact-set reconcile against the registry,
+# the mock bundle must carry obligations.json with every obligation
+# resolved, and VERDICT.json must state product_conformance OPEN with
+# exactly today's three open product obligations — the honest state.
+out="$EVIDENCE_ROOT/control9.log"
+controls=$((controls + 1))
+if [ -z "${CONTROL1_RUN_DIR:-}" ] || [ ! -f "$CONTROL1_RUN_DIR/obligations.json" ]; then
+  echo "CONTROL FAILED: the --mock bundle carries no obligations.json"
+  failures=$((failures + 1))
+elif RUN_DIR="$CONTROL1_RUN_DIR" "${NODE[@]}" --input-type=module -e '
+  import { readFileSync } from "node:fs";
+  import { join } from "node:path";
+  import { OBLIGATION_MANIFEST, obligationViolations } from "./obligations.ts";
+  import { R2_PROBES } from "./probes-r2.ts";
+  import { DO_PROBES } from "./probes-do.ts";
+  import { CTR_PROBES, WORKER_PROBES } from "./probes-ctr.ts";
+  const registry = [...R2_PROBES, ...DO_PROBES, ...CTR_PROBES, ...WORKER_PROBES];
+  const violations = obligationViolations(OBLIGATION_MANIFEST, registry);
+  if (violations.length > 0) {
+    console.error("obligation manifest violations:", violations);
+    process.exit(1);
+  }
+  const dir = process.env.RUN_DIR;
+  const obligations = JSON.parse(readFileSync(join(dir, "obligations.json"), "utf8"));
+  const verdict = JSON.parse(readFileSync(join(dir, "VERDICT.json"), "utf8"));
+  if (obligations.obligations.length !== OBLIGATION_MANIFEST.obligations.length) {
+    console.error("obligations.json does not cover the whole manifest");
+    process.exit(1);
+  }
+  const unresolved = obligations.obligations.filter(
+    (o) => !["SATISFIED", "OPEN", "NOT-EXERCISED-THIS-MODE"].includes(o.status),
+  );
+  if (unresolved.length > 0) {
+    console.error("unresolved obligation statuses in a green mock run:", unresolved.map((o) => `${o.id}:${o.status}`));
+    process.exit(1);
+  }
+  const pc = verdict.product_conformance;
+  if (!pc || pc.status !== "OPEN") {
+    console.error("VERDICT.json product_conformance.status must be OPEN today, got:", JSON.stringify(pc));
+    process.exit(1);
+  }
+  const open = [...pc.open_obligations].sort();
+  const expected = ["ambiguity-resolution-real", "attempt-identity-changed-bytes-real", "runtime-cannot-delete"];
+  if (JSON.stringify(open) !== JSON.stringify(expected)) {
+    console.error("open product obligations mismatch:", open, "expected:", expected);
+    process.exit(1);
+  }
+  if (!verdict.provider_facts || verdict.provider_facts.status !== "PASS") {
+    console.error("provider_facts should be PASS in a green mock run, got:", JSON.stringify(verdict.provider_facts));
+    process.exit(1);
+  }
+  console.log("obligations reconcile; product_conformance is honestly OPEN:", expected.join(", "));
+' >"$out" 2>&1; then
+  echo "control 9 ok: obligation manifest reconciles; VERDICT product_conformance=OPEN (runtime-cannot-delete, ambiguity-resolution-real, attempt-identity-changed-bytes-real)"
+else
+  echo "CONTROL FAILED: obligation manifest / product_conformance honesty check"
+  sed 's/^/    | /' "$out"
+  failures=$((failures + 1))
+fi
+
+# --- control 10: R4-CF-02 probe-harness Worker suite ----------------------
+out="$EVIDENCE_ROOT/control10.log"
+controls=$((controls + 1))
+if "${NODE[@]}" --test harness-worker.test.ts >"$out" 2>&1; then
+  echo "control 10 ok: probe-harness Worker (auth refusals, health identity, P-DO-01/P-CTR-01 contracts, durable slices, simulated labels)"
+else
+  echo "CONTROL FAILED: harness-worker.test.ts failed"
+  sed 's/^/    | /' "$out"
+  failures=$((failures + 1))
 fi
 
 echo

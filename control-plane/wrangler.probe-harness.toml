@@ -1,0 +1,46 @@
+# DISPOSABLE, SEPARATELY-AUTHENTICATED PROBE HARNESS (R4-CF-02).
+#
+# This config deploys control-plane/probes/harness-worker.ts — the
+# in-repo implementation of the /do/*, /ctr/* and /worker/* endpoint
+# surface the real-mode platform probes (probes-do.ts, probes-ctr.ts)
+# call via CF_PROBE_HARNESS_URL. It exists so that a G2 real run's
+# harness is reproducible from THIS repository's source/package/config
+# graph; run-platform-probes.ts binds the sha256 of both the entry file
+# and this config into every run record (harness_source).
+#
+# Lifecycle: deployed ONLY for a G2 probe run, deleted afterwards
+# (`wrangler delete -c wrangler.probe-harness.toml`). It is never part of
+# the product deployment and shares no bindings, buckets or secrets with
+# the product Worker (wrangler.toml).
+#
+# Authentication: every request must carry
+# `Authorization: Bearer <PROBE_HARNESS_TOKEN>`; the token is the
+# harness's OWN secret (provisioned with
+# `wrangler secret put PROBE_HARNESS_TOKEN -c wrangler.probe-harness.toml`,
+# NEVER a [vars] entry, and never the Cloudflare account API token —
+# provider.ts hard-refuses that reuse). The only unauthenticated route is
+# GET /harness/health, which returns build identity only.
+
+name = "typedb-r2-probe-harness"
+main = "probes/harness-worker.ts"
+# Same compatibility date as the product worker (wrangler.toml).
+compatibility_date = "2025-11-01"
+
+# No implicit public exposure beyond the deploy route the operator binds:
+# workers.dev and preview URLs are disabled, like the product posture.
+workers_dev = false
+preview_urls = false
+
+# The single harness Durable Object: consistent probe state across
+# requests; SQLite-backed storage for the slices whose protocol claims
+# durability (alarm intent, acked writes, committed ops, authority).
+[[durable_objects.bindings]]
+name = "PROBE_HARNESS_DO"
+class_name = "ProbeHarnessDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ProbeHarnessDO"]
+
+# No [vars]: the bearer token is a secret (see header comment), and the
+# harness has no other configuration surface.

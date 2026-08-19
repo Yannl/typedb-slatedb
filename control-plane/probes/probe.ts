@@ -22,12 +22,36 @@ import { text, utf8 } from "./provider.ts";
 
 export type ProbeMode = "real" | "mock";
 
+/**
+ * What KIND of claim an assertion makes (R4-CF-04). The two classes must
+ * never be mixed inside one green gate:
+ *
+ *   "provider-fact"        — an observation of what the raw platform (or
+ *                            the deterministic mock / disposable harness
+ *                            standing in for it) actually does. Useful
+ *                            evidence, but NOT proof that the product
+ *                            enforces its contract.
+ *   "product-conformance"  — proof that the PRODUCT contract holds on the
+ *                            actual enforcement path (immutability above
+ *                            the credential layer, no runtime delete
+ *                            authority, attempt identity, typed ambiguity).
+ *
+ * The versioned obligation manifest (obligations.ts) joins assertions to
+ * contract obligations and the runner reconciles the two exact-set; the
+ * VERDICT carries separate provider_facts / product_conformance
+ * sub-verdicts so a wall of provider facts can never read as contract
+ * proof.
+ */
+export type AssertionClass = "provider-fact" | "product-conformance";
+
 /** One planned assertion. The plan exists before any result does. */
 export interface AssertionSpec {
   /** Stable id, unique within the probe (e.g. "cond-create-412"). */
   id: string;
   /** What the assertion claims when it passes. */
   title: string;
+  /** provider-fact vs product-conformance (R4-CF-04, see AssertionClass). */
+  class: AssertionClass;
   /**
    * Modes in which this assertion MUST produce a result. An assertion
    * only exercisable under mock controllability declares ["mock"]; the

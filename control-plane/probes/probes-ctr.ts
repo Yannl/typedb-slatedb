@@ -5,6 +5,14 @@
  * Same endpoint contract in real mode (deployed probe-harness Worker) and
  * mock mode (deterministic fake): /ctr/* and /worker/*. Every assertion
  * is declared with its required modes (round-3 P-05).
+ *
+ * R4-CF-04 classification: every assertion here is class "provider-fact".
+ * The harness (probes/harness-worker.ts in real mode, the in-process fake
+ * in mock mode) simulates container lifecycle / rollout / sleep /
+ * networking and gateway bounds as a labeled reference protocol
+ * ({harness:true, simulated:true} where a Worker cannot faithfully run
+ * the real platform behavior) — evidence of the pattern, never product
+ * conformance by itself.
  */
 
 import type { ProbeContext, ProbeImpl } from "./probe.ts";
@@ -21,15 +29,15 @@ const pCTR_01: ProbeImpl = {
     "stop-while-starting converges, duplicate stop is a no-op, stale " +
     "callbacks are rejected and never corrupt state",
   assertions: [
-    { id: "reset-ok", title: "lifecycle reset", required_in: BOTH },
-    { id: "cold-start", title: "cold start enters starting@gen1", required_in: BOTH },
-    { id: "concurrent-start-idempotent", title: "concurrent start is idempotent, no second instance", required_in: BOTH },
-    { id: "stop-while-starting-converges", title: "stop while starting converges", required_in: BOTH },
-    { id: "duplicate-stop-noop", title: "duplicate stop is an explicit no-op", required_in: BOTH },
-    { id: "restart-advances-generation", title: "restart advances the generation", required_in: BOTH },
-    { id: "current-callback-completes", title: "current-generation callback completes startup", required_in: BOTH },
-    { id: "stale-callback-rejected", title: "stale lifecycle callback rejected", required_in: BOTH },
-    { id: "truth-intact", title: "platform truth intact after stale callback", required_in: BOTH },
+    { id: "reset-ok", title: "lifecycle reset", class: "provider-fact", required_in: BOTH },
+    { id: "cold-start", title: "cold start enters starting@gen1", class: "provider-fact", required_in: BOTH },
+    { id: "concurrent-start-idempotent", title: "concurrent start is idempotent, no second instance", class: "provider-fact", required_in: BOTH },
+    { id: "stop-while-starting-converges", title: "stop while starting converges", class: "provider-fact", required_in: BOTH },
+    { id: "duplicate-stop-noop", title: "duplicate stop is an explicit no-op", class: "provider-fact", required_in: BOTH },
+    { id: "restart-advances-generation", title: "restart advances the generation", class: "provider-fact", required_in: BOTH },
+    { id: "current-callback-completes", title: "current-generation callback completes startup", class: "provider-fact", required_in: BOTH },
+    { id: "stale-callback-rejected", title: "stale lifecycle callback rejected", class: "provider-fact", required_in: BOTH },
+    { id: "truth-intact", title: "platform truth intact after stale callback", class: "provider-fact", required_in: BOTH },
   ],
   async run(ctx: ProbeContext): Promise<void> {
     const reset = await harnessPost(ctx, "/ctr/lifecycle/reset");
@@ -80,13 +88,13 @@ const pCTR_02: ProbeImpl = {
     "image never becomes database-ready; completion requires observed " +
     "convergence",
   assertions: [
-    { id: "reset-ok", title: "rollout reset", required_in: BOTH },
-    { id: "declared-tuple-admitted", title: "declared tuple (worker 2, image 1) admitted", required_in: BOTH },
-    { id: "not-ready-before-convergence", title: "deployment is not complete before observed convergence", required_in: BOTH },
-    { id: "convergence-observed", title: "convergence observed", required_in: BOTH },
-    { id: "ready-after-convergence", title: "declared tuple becomes ready only after convergence", required_in: BOTH },
-    { id: "undeclared-tuple-refused", title: "undeclared tuple (worker 2, image 0) refused", required_in: BOTH },
-    { id: "unsupported-never-ready", title: "unsupported image never database-ready", required_in: BOTH },
+    { id: "reset-ok", title: "rollout reset", class: "provider-fact", required_in: BOTH },
+    { id: "declared-tuple-admitted", title: "declared tuple (worker 2, image 1) admitted", class: "provider-fact", required_in: BOTH },
+    { id: "not-ready-before-convergence", title: "deployment is not complete before observed convergence", class: "provider-fact", required_in: BOTH },
+    { id: "convergence-observed", title: "convergence observed", class: "provider-fact", required_in: BOTH },
+    { id: "ready-after-convergence", title: "declared tuple becomes ready only after convergence", class: "provider-fact", required_in: BOTH },
+    { id: "undeclared-tuple-refused", title: "undeclared tuple (worker 2, image 0) refused", class: "provider-fact", required_in: BOTH },
+    { id: "unsupported-never-ready", title: "unsupported image never database-ready", class: "provider-fact", required_in: BOTH },
   ],
   async run(ctx: ProbeContext): Promise<void> {
     // Worker N=2 declares compatibility with images N-1=1 and N=2.
@@ -132,14 +140,14 @@ const pCTR_03: ProbeImpl = {
     "hibernation); safe inactivity stop otherwise; acknowledged state " +
     "survives SIGKILL",
   assertions: [
-    { id: "reset-ok", title: "sleep state reset", required_in: BOTH },
-    { id: "w1-acked", title: "write w1 acknowledged", required_in: BOTH },
-    { id: "no-stop-with-open-txn", title: "no inactivity stop while a transaction is open", required_in: BOTH },
-    { id: "hibernation-denied", title: "hibernation was actively denied", required_in: BOTH },
-    { id: "safe-stop-when-idle", title: "safe inactivity stop occurs once no work is open", required_in: BOTH },
-    { id: "w2-acked", title: "write w2 acknowledged", required_in: BOTH },
-    { id: "kill-applied", title: "SIGKILL applied", required_in: BOTH },
-    { id: "acked-survives-kill", title: "acknowledged state recovered intact after kill", required_in: BOTH },
+    { id: "reset-ok", title: "sleep state reset", class: "provider-fact", required_in: BOTH },
+    { id: "w1-acked", title: "write w1 acknowledged", class: "provider-fact", required_in: BOTH },
+    { id: "no-stop-with-open-txn", title: "no inactivity stop while a transaction is open", class: "provider-fact", required_in: BOTH },
+    { id: "hibernation-denied", title: "hibernation was actively denied", class: "provider-fact", required_in: BOTH },
+    { id: "safe-stop-when-idle", title: "safe inactivity stop occurs once no work is open", class: "provider-fact", required_in: BOTH },
+    { id: "w2-acked", title: "write w2 acknowledged", class: "provider-fact", required_in: BOTH },
+    { id: "kill-applied", title: "SIGKILL applied", class: "provider-fact", required_in: BOTH },
+    { id: "acked-survives-kill", title: "acknowledged state recovered intact after kill", class: "provider-fact", required_in: BOTH },
   ],
   async run(ctx: ProbeContext): Promise<void> {
     const reset = await harnessPost(ctx, "/ctr/sleep/reset", { sleepAfter: 3 });
@@ -189,14 +197,14 @@ const pCTR_04: ProbeImpl = {
     "enableInternet=false denies all egress; possibly-committed operations " +
     "remain queryable after client disconnect",
   assertions: [
-    { id: "reset-ok", title: "network state reset", required_in: BOTH },
-    { id: "not-colocated", title: "DO and container are NOT colocated", required_in: BOTH },
-    { id: "internal-http-ok", title: "internal HTTP works across locations", required_in: BOTH },
-    { id: "allowlisted-egress-ok", title: "allowlisted egress permitted", required_in: BOTH },
-    { id: "unauthorized-egress-denied", title: "unauthorized egress denied", required_in: BOTH },
-    { id: "internet-off-denies-all", title: "enableInternet=false denies all egress", required_in: BOTH },
-    { id: "disconnect-observed", title: "client observes the disconnect", required_in: BOTH },
-    { id: "committed-still-queryable", title: "possibly-committed operation remains queryable", required_in: BOTH },
+    { id: "reset-ok", title: "network state reset", class: "provider-fact", required_in: BOTH },
+    { id: "not-colocated", title: "DO and container are NOT colocated", class: "provider-fact", required_in: BOTH },
+    { id: "internal-http-ok", title: "internal HTTP works across locations", class: "provider-fact", required_in: BOTH },
+    { id: "allowlisted-egress-ok", title: "allowlisted egress permitted", class: "provider-fact", required_in: BOTH },
+    { id: "unauthorized-egress-denied", title: "unauthorized egress denied", class: "provider-fact", required_in: BOTH },
+    { id: "internet-off-denies-all", title: "enableInternet=false denies all egress", class: "provider-fact", required_in: BOTH },
+    { id: "disconnect-observed", title: "client observes the disconnect", class: "provider-fact", required_in: BOTH },
+    { id: "committed-still-queryable", title: "possibly-committed operation remains queryable", class: "provider-fact", required_in: BOTH },
   ],
   async run(ctx: ProbeContext): Promise<void> {
     const reset = await harnessPost(ctx, "/ctr/net/reset", {
@@ -244,15 +252,15 @@ const pWORKER_01: ProbeImpl = {
     "success receipt before exact remote resolution; six-connection " +
     "saturation queues instead of failing incorrectly",
   assertions: [
-    { id: "reset-ok", title: "gateway reset", required_in: BOTH },
-    { id: "stream-complete", title: "streamed object is complete", required_in: BOTH },
-    { id: "stream-pattern-exact", title: "streamed bytes match the deterministic pattern", required_in: BOTH },
-    { id: "buffer-bounded", title: "gateway held at most the buffer bound in memory (no full buffering)", required_in: BOTH },
-    { id: "upstream-5xx-surfaces", title: "upstream 5xx surfaces as gateway failure", required_in: BOTH },
-    { id: "no-premature-receipt", title: "no success receipt issued for an unresolved remote operation", required_in: BOTH },
-    { id: "permits-capped-at-six", title: "connection permits capped at six", required_in: BOTH },
-    { id: "excess-queued", title: "excess connection queued, not dropped", required_in: BOTH },
-    { id: "no-incorrect-success", title: "saturation produced no incorrect success", required_in: BOTH },
+    { id: "reset-ok", title: "gateway reset", class: "provider-fact", required_in: BOTH },
+    { id: "stream-complete", title: "streamed object is complete", class: "provider-fact", required_in: BOTH },
+    { id: "stream-pattern-exact", title: "streamed bytes match the deterministic pattern", class: "provider-fact", required_in: BOTH },
+    { id: "buffer-bounded", title: "gateway held at most the buffer bound in memory (no full buffering)", class: "provider-fact", required_in: BOTH },
+    { id: "upstream-5xx-surfaces", title: "upstream 5xx surfaces as gateway failure", class: "provider-fact", required_in: BOTH },
+    { id: "no-premature-receipt", title: "no success receipt issued for an unresolved remote operation", class: "provider-fact", required_in: BOTH },
+    { id: "permits-capped-at-six", title: "connection permits capped at six", class: "provider-fact", required_in: BOTH },
+    { id: "excess-queued", title: "excess connection queued, not dropped", class: "provider-fact", required_in: BOTH },
+    { id: "no-incorrect-success", title: "saturation produced no incorrect success", class: "provider-fact", required_in: BOTH },
   ],
   async run(ctx: ProbeContext): Promise<void> {
     const BOUND = 65536;

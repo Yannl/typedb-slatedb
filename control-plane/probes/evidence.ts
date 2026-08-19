@@ -335,6 +335,11 @@ export class EvidenceBundle {
     this.write("cleanup.json", record);
   }
 
+  /** R4-CF-04: per-run obligation statuses (obligations.json). */
+  writeObligations(record: Record<string, unknown>): void {
+    this.write("obligations.json", record);
+  }
+
   writeVerdict(record: Record<string, unknown>): void {
     this.write("VERDICT.json", record);
   }

@@ -297,8 +297,79 @@ const GENESIS_HASH = new Uint8Array(32);
 
 /** Terminal capability-use states (audit C-02): once a use reaches one of
  *  these, its stored response is replayed verbatim and it never re-executes
- *  or transitions to a different terminal. */
+ *  or transitions to a different terminal. QUARANTINED (R5-SEC-04) is a
+ *  separate FAIL-CLOSED terminal: it has no replayable response - the
+ *  physical evidence contradicted the recorded operation, so the use
+ *  refuses forever and a human resolves the contradiction. */
 const TERMINAL_USE_STATES = new Set(["RESOLVED_SUCCESS", "RESOLVED_REJECTED"]);
+
+/**
+ * R5-SEC-04: the durable EFFECT BINDING of one capability use.
+ *
+ * A use row used to record only {nonce, use digest, state}: when the worker
+ * crashed (or the provider hung) between the claim and the resolution, the
+ * row wedged IN_FLIGHT/AMBIGUOUS and every identical retry answered 409
+ * forever - authority became a permanent, unexplained loss. The effect
+ * binding names the AUTHORITATIVE QUERY that decides what the one
+ * authorized request physically did, so a recovery reducer
+ * (resolveAmbiguousUse) can settle the outcome from durable state instead
+ * of guessing. Per mutating method the authoritative effect is:
+ *
+ *   WAL_FINALIZE        the wal_tail row (or operation alias) keyed by the
+ *                       operation identity; its request_digest is the
+ *                       receipt binding;
+ *   WAL_FINALIZE_BATCH  the batch_operations envelope row + each member's
+ *                       wal_tail receipt;
+ *   CHECKPOINT_OPEN     the checkpoint_cuts row keyed by cutId;
+ *   CHECKPOINT_ACTIVATE the cut row's ACTIVE/SUPERSEDED transition + the
+ *                       journaled CHECKPOINT_CUT_ACTIVATED command;
+ *   BUDGETS_SET         the journaled BUDGETS_SET command carrying this
+ *                       use's nonce as its operationId;
+ *   INCARNATION_BUMP    the journaled CONTROLLER_INCARNATION_BUMPED
+ *                       command carrying this use's nonce;
+ *   IDEMPOTENT_REEXECUTE  the procedure is idempotent BY ITS OWN identity
+ *                       (session lifecycle transitions, outbox ack,
+ *                       content-addressed PUT_PAYLOAD): re-executing the
+ *                       identical request converges on the original
+ *                       physical outcome, so the reducer's answer is
+ *                       "execute again", not an effect query.
+ */
+export type CapabilityEffect =
+  | { kind: "WAL_FINALIZE"; databaseId: string; generation: number; operationId: string; requestDigest: string }
+  | { kind: "WAL_FINALIZE_BATCH"; databaseId: string; generation: number;
+      batchOperationId: string; memberDigests: string[] }
+  | { kind: "CHECKPOINT_OPEN"; databaseId: string; generation: number; cutId: string }
+  | { kind: "CHECKPOINT_ACTIVATE"; databaseId: string; cutId: string; logicalDigest: string }
+  | { kind: "BUDGETS_SET"; databaseId: string }
+  | { kind: "INCARNATION_BUMP" }
+  | { kind: "IDEMPOTENT_REEXECUTE" };
+
+/** The recovery reducer's verdict for one unresolved use (R5-SEC-04). */
+export type AmbiguityResolution =
+  /** the authoritative effect exists and matches: the use is settled to the
+   *  exact original success and the stored response replays */
+  | { ok: true; disposition: "SETTLED"; state: "RESOLVED_SUCCESS" | "RESOLVED_REJECTED"; response: string | null }
+  /** no effect was found (timeout BEFORE the effect, or an idempotent
+   *  procedure): the identical request may execute again and resolve */
+  | { ok: true; disposition: "RE_EXECUTE" }
+  /** contradictory physical evidence (an effect exists under this operation
+   *  identity with a DIFFERENT binding): fail closed, terminally */
+  | { ok: false; error: "CAPABILITY_USE_QUARANTINED"; reason: string }
+  /** the row was pruned (token expiry) between claim and resolution */
+  | { ok: false; error: "USE_UNKNOWN" }
+  /** a pre-effect-binding row (no recorded effect): the legacy 409 path */
+  | { ok: false; error: "USE_UNRESOLVABLE" };
+
+/** Read-lease TTL (R5-SEC-05): the window between the DO authorizing a read
+ *  and the worker redeeming it after fetching the payload bytes - seconds,
+ *  not a token lifetime. An unredeemed lease expires; a fence revokes it. */
+export const READ_LEASE_TTL_MS = 5_000;
+
+/** Escape a LIKE pattern fragment so %, _ and \ in caller-influenced values
+ *  cannot widen the match; used with `ESCAPE '\'`. */
+function likePattern(fragment: string): string {
+  return `%${fragment.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
 
 /**
  * The v2 journal-entry preimage (audit C-P1-04): domain-separated and
@@ -748,6 +819,63 @@ export class ControllerCore {
           const present = sql.exec(`PRAGMA table_info(capability_uses)`).some((r) => String(r.name) === name);
           if (!present) sql.exec(`ALTER TABLE capability_uses ADD COLUMN ${column}`);
         }
+      },
+    },
+    {
+      version: 14,
+      up: (sql) => {
+        // R5-SEC-04: capability use becomes a durable OPERATION/EFFECT
+        // protocol. The row gains the canonical effect binding (the
+        // authoritative query that decides what the one authorized request
+        // physically did) and the QUARANTINED terminal state for
+        // contradictory physical evidence. Rebuilt copy/swap because the
+        // state CHECK constraint must widen. Pre-existing rows keep a NULL
+        // effect: they resolve through the legacy 409 path until token
+        // expiry prunes them (bounded by the live-token window).
+        sql.exec(`CREATE TABLE capability_uses_v14(
+          nonce TEXT PRIMARY KEY,
+          use_digest TEXT NOT NULL,
+          state TEXT NOT NULL CHECK(state IN
+            ('IN_FLIGHT','RESOLVED_SUCCESS','RESOLVED_REJECTED','AMBIGUOUS','QUARANTINED')),
+          outcome TEXT,
+          expires_at INTEGER NOT NULL,
+          used_at_ms INTEGER NOT NULL,
+          response TEXT,
+          effect TEXT
+        )`);
+        sql.exec(`INSERT INTO capability_uses_v14(nonce, use_digest, state, outcome, expires_at, used_at_ms, response)
+                  SELECT nonce, use_digest, state, outcome, expires_at, used_at_ms, response FROM capability_uses`);
+        sql.exec(`DROP TABLE capability_uses`);
+        sql.exec(`ALTER TABLE capability_uses_v14 RENAME TO capability_uses`);
+        sql.exec(`CREATE INDEX IF NOT EXISTS capability_use_expiry ON capability_uses(expires_at)`);
+        // the sweep walks aged unresolved rows only
+        sql.exec(`CREATE INDEX IF NOT EXISTS capability_use_unresolved
+                  ON capability_uses(used_at_ms) WHERE state IN ('IN_FLIGHT','AMBIGUOUS')`);
+      },
+    },
+    {
+      version: 15,
+      up: (sql) => {
+        // R5-SEC-05: one-shot read leases. A WAL read is authorized and its
+        // metadata read in ONE DO hop (readVerified), which durably records
+        // a short-TTL single-use lease over the exact payload keys BEFORE
+        // the worker fetches the bytes; the worker REDEEMS the lease after
+        // the fetch, and redemption re-checks session liveness at that
+        // moment. Every fence transition deletes the fenced actor's leases
+        // in the same transaction, so a fence between authorization and the
+        // byte fetch refuses the read instead of racing it.
+        sql.exec(`CREATE TABLE IF NOT EXISTS read_leases(
+          lease_id TEXT PRIMARY KEY,
+          database_id TEXT NOT NULL,
+          startup_session_id TEXT NOT NULL,
+          generation INTEGER NOT NULL,
+          keys TEXT NOT NULL,
+          expires_at INTEGER NOT NULL,
+          consumed INTEGER NOT NULL DEFAULT 0
+        )`);
+        sql.exec(`CREATE INDEX IF NOT EXISTS read_lease_session
+                  ON read_leases(database_id, startup_session_id)`);
+        sql.exec(`CREATE INDEX IF NOT EXISTS read_lease_expiry ON read_leases(expires_at)`);
       },
     },
   ];
@@ -1305,6 +1433,10 @@ export class ControllerCore {
     databaseId: string,
     b: { maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number },
     startupSessionId: string,
+    /** R5-SEC-04: the capability-use nonce, journaled into the BUDGETS_SET
+     *  command as its operation identity so the recovery reducer can query
+     *  whether THIS use's effect committed. Optional for direct/test calls. */
+    operationId?: string,
   ): { ok: true } | TypedErr {
     // the whole procedure is one transaction: requireLeasedAuthority can
     // expire a session (an UPDATE plus a journaled command), and that
@@ -1326,7 +1458,10 @@ export class ControllerCore {
          VALUES (?,?,?,?)`,
         databaseId, b.maxUnpublishedOutbox, b.maxPayloadLength, b.maxTailRecords,
       );
-      this.appendCommand(databaseId, "BUDGETS_SET", { databaseId, ...b, startupSessionId });
+      this.appendCommand(databaseId, "BUDGETS_SET", {
+        databaseId, ...b, startupSessionId,
+        ...(operationId !== undefined ? { operationId } : {}),
+      });
       return { ok: true as const };
     });
   }
@@ -1422,10 +1557,16 @@ export class ControllerCore {
    *  digests under the batch id, in a domain-separated envelope. Reordering
    *  the members is a DIFFERENT batch - order is part of the contract. */
   private batchDigest(batchOperationId: string, reqs: FinalizeRequest[]): string {
+    return ControllerCore.batchDigestOf(batchOperationId, reqs.map((r) => r.requestDigest));
+  }
+
+  /** The same envelope digest from the member digests alone - shared with
+   *  the R5-SEC-04 effect reducer so the two computations cannot drift. */
+  private static batchDigestOf(batchOperationId: string, memberDigests: string[]): string {
     return hex(sha256(utf8(canonicalJson({
       domain: "wal-finalize-batch/v1",
       batchOperationId,
-      members: reqs.map((r) => r.requestDigest),
+      members: memberDigests,
     }))));
   }
 
@@ -1671,9 +1812,10 @@ export class ControllerCore {
    * Expired uses are pruned by token-expiry so the table stays bounded by
    * the live-token window.
    */
-  claimCapability(nonce: string, useDigest: string, expiresAtMs: number, nowMs: number):
+  claimCapability(nonce: string, useDigest: string, expiresAtMs: number, nowMs: number,
+                  effect?: CapabilityEffect):
     { ok: true; fresh: boolean; state: string; terminal: boolean; response: string | null }
-    | { ok: false; error: "CAPABILITY_REPLAYED" } {
+    | { ok: false; error: "CAPABILITY_REPLAYED" | "CAPABILITY_USE_QUARANTINED" } {
     return this.sql.transaction(() => {
       this.sql.exec(`DELETE FROM capability_uses WHERE expires_at <= ?`, nowMs);
       const prior = this.sql.exec(
@@ -1683,14 +1825,20 @@ export class ControllerCore {
           return { ok: false as const, error: "CAPABILITY_REPLAYED" as const };
         }
         const state = String(prior[0].state);
+        if (state === "QUARANTINED") {
+          // R5-SEC-04: physical evidence contradicted this operation's
+          // recorded binding - the use fails closed at the earliest gate
+          return { ok: false as const, error: "CAPABILITY_USE_QUARANTINED" as const };
+        }
         return {
           ok: true as const, fresh: false, state, terminal: TERMINAL_USE_STATES.has(state),
           response: prior[0].response === null ? null : String(prior[0].response),
         };
       }
       this.sql.exec(
-        `INSERT INTO capability_uses(nonce, use_digest, state, expires_at, used_at_ms)
-         VALUES (?,?,'IN_FLIGHT',?,?)`, nonce, useDigest, expiresAtMs, nowMs);
+        `INSERT INTO capability_uses(nonce, use_digest, state, expires_at, used_at_ms, effect)
+         VALUES (?,?,'IN_FLIGHT',?,?,?)`, nonce, useDigest, expiresAtMs, nowMs,
+        effect === undefined ? null : canonicalJson(effect as unknown as Record<string, unknown>));
       return { ok: true as const, fresh: true, state: "IN_FLIGHT", terminal: false, response: null };
     });
   }
@@ -1717,9 +1865,25 @@ export class ControllerCore {
     const rows = this.sql.exec(`SELECT state, response FROM capability_uses WHERE nonce=?`, nonce);
     if (!rows.length) return;
     const current = String(rows[0].state);
+    if (current === "QUARANTINED") {
+      // R5-SEC-04: a per-use quarantine is final. A late execution finishing
+      // after the reducer quarantined the use must not overwrite the
+      // fail-closed verdict; the quarantine stands until a human clears it.
+      return;
+    }
     if (TERMINAL_USE_STATES.has(current)) {
       const sameResponse = (rows[0].response === null ? null : String(rows[0].response)) === (response ?? null);
       if (current === state && sameResponse) return; // idempotent re-resolution
+      if (current === state) {
+        // R5-SEC-04 first-writer-wins: two concurrent identical retries of
+        // an unresolved use may BOTH re-execute (the procedures are
+        // idempotent by operation identity) and race to record the same
+        // terminal state with cosmetically different envelopes (e.g. the
+        // second run's `replayed: true`). The physical outcome is one and
+        // the same; the stored (first) response is what replays. Only a
+        // STATE FLIP (reject -> success) remains a consistency violation.
+        return;
+      }
       this.quarantineNow("CAPABILITY_OUTCOME_MUTATION",
         `nonce ${nonce}: attempted ${current} -> ${state}; a settled outcome is final`);
     }
@@ -1728,6 +1892,269 @@ export class ControllerCore {
     }
     this.sql.exec(
       `UPDATE capability_uses SET state=?, response=? WHERE nonce=?`, state, response ?? null, nonce);
+  }
+
+  /**
+   * R5-SEC-04: the RECOVERY REDUCER. Settles an unresolved capability use
+   * (IN_FLIGHT after a crash, or AMBIGUOUS after an infrastructure
+   * exception/timeout) by querying the AUTHORITATIVE EFFECT the use was
+   * bound to at claim time - a local read, since every effect this core
+   * owns lives in the same SQLite the claim does:
+   *
+   *   - effect present and matching  -> the timeout happened AFTER the
+   *     effect: settle RESOLVED_SUCCESS with the reconstructed original
+   *     receipt; the retry replays it;
+   *   - effect absent                -> the timeout happened BEFORE the
+   *     effect: the identical request may re-execute and resolve cleanly;
+   *   - effect present but CONTRADICTING the recorded binding -> the
+   *     durable state disagrees with the recorded operation: QUARANTINED,
+   *     terminally, fail-closed;
+   *   - idempotent-by-identity methods -> re-execution converges by the
+   *     procedure's own replay semantics, so the verdict is RE_EXECUTE.
+   *
+   * Called on any retry that hits an unresolved claim (worker withMutation)
+   * and by the bounded startup/alarm sweep (sweepAmbiguousUses).
+   */
+  resolveAmbiguousUse(nonce: string): AmbiguityResolution {
+    return this.sql.transaction(() => {
+      const rows = this.sql.exec(
+        `SELECT state, response, effect, outcome FROM capability_uses WHERE nonce=?`, nonce);
+      if (!rows.length) return { ok: false as const, error: "USE_UNKNOWN" as const };
+      return this.settleUnresolvedRow(nonce, rows[0]);
+    });
+  }
+
+  /**
+   * Bounded recovery sweep (R5-SEC-04): settle aged unresolved uses from
+   * durable state. Run at DO startup (restart resumes resolution) and from
+   * the alarm reducer. Only rows older than `minAgeMs` are touched (a
+   * genuinely in-flight use must not be raced), only `limit` per pass, and
+   * rows whose verdict is "no effect / re-execute" are left for the retry
+   * path (settling them as rejections would make the SAME token replay a
+   * rejection instead of retrying cleanly); they are pruned at token expiry.
+   */
+  sweepAmbiguousUses(opts: { limit?: number; minAgeMs?: number } = {}):
+    { scanned: number; settled: number; quarantined: number; deferred: number } {
+    const limit = Math.max(1, Math.min(opts.limit ?? 64, 1024));
+    const minAgeMs = opts.minAgeMs ?? 60_000;
+    return this.sql.transaction(() => {
+      const now = this.controllerNow();
+      this.sql.exec(`DELETE FROM capability_uses WHERE expires_at <= ?`, now);
+      const rows = this.sql.exec(
+        `SELECT nonce, state, response, effect, outcome FROM capability_uses
+         WHERE state IN ('IN_FLIGHT','AMBIGUOUS') AND used_at_ms <= ?
+         ORDER BY used_at_ms LIMIT ?`, now - minAgeMs, limit);
+      let settled = 0, quarantined = 0, deferred = 0;
+      for (const row of rows) {
+        const verdict = this.settleUnresolvedRow(String(row.nonce), row);
+        if (verdict.ok && verdict.disposition === "SETTLED") settled += 1;
+        else if (!verdict.ok && verdict.error === "CAPABILITY_USE_QUARANTINED") quarantined += 1;
+        else deferred += 1;
+      }
+      return { scanned: rows.length, settled, quarantined, deferred };
+    });
+  }
+
+  /** One row's resolution step; caller holds the transaction. */
+  private settleUnresolvedRow(nonce: string, row: SqlRow): AmbiguityResolution {
+    const state = String(row.state);
+    if (state === "QUARANTINED") {
+      return { ok: false as const, error: "CAPABILITY_USE_QUARANTINED" as const,
+               reason: row.outcome === null ? "quarantined" : String(row.outcome) };
+    }
+    if (TERMINAL_USE_STATES.has(state)) {
+      return { ok: true as const, disposition: "SETTLED" as const,
+               state: state as "RESOLVED_SUCCESS" | "RESOLVED_REJECTED",
+               response: row.response === null ? null : String(row.response) };
+    }
+    if (row.effect === null || row.effect === undefined) {
+      // pre-effect-binding row: nothing authoritative to query; the legacy
+      // bounded-409 answer stands until expiry prunes it
+      return { ok: false as const, error: "USE_UNRESOLVABLE" as const };
+    }
+    let effect: CapabilityEffect;
+    try {
+      effect = JSON.parse(String(row.effect)) as CapabilityEffect;
+    } catch {
+      return { ok: false as const, error: "USE_UNRESOLVABLE" as const };
+    }
+    const outcome = this.deriveEffectOutcome(nonce, effect);
+    if (outcome.kind === "present") {
+      const response = JSON.stringify({ status: 200, body: outcome.body });
+      this.sql.exec(`UPDATE capability_uses SET state='RESOLVED_SUCCESS', response=? WHERE nonce=?`,
+        response, nonce);
+      return { ok: true as const, disposition: "SETTLED" as const,
+               state: "RESOLVED_SUCCESS" as const, response };
+    }
+    if (outcome.kind === "contradicted") {
+      this.sql.exec(`UPDATE capability_uses SET state='QUARANTINED', outcome=? WHERE nonce=?`,
+        outcome.reason, nonce);
+      return { ok: false as const, error: "CAPABILITY_USE_QUARANTINED" as const, reason: outcome.reason };
+    }
+    // absent effect / idempotent method: the identical request may execute
+    // again; normalize AMBIGUOUS back to IN_FLIGHT so the row reflects a
+    // pending (re-)execution rather than a stuck ambiguity
+    if (state === "AMBIGUOUS") {
+      this.sql.exec(`UPDATE capability_uses SET state='IN_FLIGHT' WHERE nonce=?`, nonce);
+    }
+    return { ok: true as const, disposition: "RE_EXECUTE" as const };
+  }
+
+  /** One finalize receipt body, reconstructed from the durable row exactly
+   *  as the wire serializes it (sequence values as canonical decimal
+   *  strings; `replayed: true` marks a receipt recovered from durable
+   *  state, which is what a lost-response retry would also have seen). */
+  private static finalizeReceiptBody(row: SqlRow): Record<string, unknown> {
+    return {
+      ok: true,
+      appendLsn: u64FromSql(row.append_lsn, "append_lsn").toString(),
+      typeSequence: u64FromSql(row.type_sequence, "type_sequence").toString(),
+      controlSeq: u64FromSql(row.control_seq, "control_seq").toString(),
+      replayed: true,
+    };
+  }
+
+  /**
+   * The authoritative effect query per bound method (R5-SEC-04). Pure reads
+   * over this core's own durable tables; caller holds the transaction.
+   */
+  private deriveEffectOutcome(nonce: string, effect: CapabilityEffect):
+    | { kind: "present"; body: Record<string, unknown> }
+    | { kind: "absent" }
+    | { kind: "reexecute" }
+    | { kind: "contradicted"; reason: string } {
+    switch (effect.kind) {
+      case "WAL_FINALIZE": {
+        const direct = this.sql.exec(
+          `SELECT append_lsn, type_sequence, control_seq, request_digest FROM wal_tail
+           WHERE database_id=? AND generation=? AND finalization_operation_id=?`,
+          effect.databaseId, effect.generation, effect.operationId);
+        if (direct.length) {
+          if (String(direct[0].request_digest) !== effect.requestDigest) {
+            return { kind: "contradicted",
+                     reason: `wal_tail holds operation ${effect.operationId} under a different request digest` };
+          }
+          return { kind: "present", body: ControllerCore.finalizeReceiptBody(direct[0]) };
+        }
+        // a status-singleton dedupe answered under an alias
+        const alias = this.sql.exec(
+          `SELECT append_lsn, request_digest FROM operation_aliases
+           WHERE database_id=? AND generation=? AND operation_id=?`,
+          effect.databaseId, effect.generation, effect.operationId);
+        if (!alias.length) return { kind: "absent" };
+        if (String(alias[0].request_digest) !== effect.requestDigest) {
+          return { kind: "contradicted",
+                   reason: `operation alias ${effect.operationId} holds a different request digest` };
+        }
+        const target = this.sql.exec(
+          `SELECT append_lsn, type_sequence, control_seq FROM wal_tail
+           WHERE database_id=? AND generation=? AND append_lsn=?`,
+          effect.databaseId, effect.generation, alias[0].append_lsn);
+        if (!target.length) {
+          return { kind: "contradicted",
+                   reason: `alias ${effect.operationId} points at a wal_tail row that does not exist` };
+        }
+        return { kind: "present", body: ControllerCore.finalizeReceiptBody(target[0]) };
+      }
+      case "WAL_FINALIZE_BATCH": {
+        const computed = ControllerCore.batchDigestOf(effect.batchOperationId, effect.memberDigests);
+        const envelope = this.sql.exec(
+          `SELECT batch_digest, member_operation_ids FROM batch_operations
+           WHERE database_id=? AND generation=? AND batch_operation_id=?`,
+          effect.databaseId, effect.generation, effect.batchOperationId);
+        if (!envelope.length) return { kind: "absent" };
+        if (String(envelope[0].batch_digest) !== computed) {
+          return { kind: "contradicted",
+                   reason: `batch ${effect.batchOperationId} committed under a different batch digest` };
+        }
+        const memberIds = JSON.parse(String(envelope[0].member_operation_ids)) as string[];
+        const results: Record<string, unknown>[] = [];
+        for (const operationId of memberIds) {
+          const member = this.sql.exec(
+            `SELECT append_lsn, type_sequence, control_seq FROM wal_tail
+             WHERE database_id=? AND generation=? AND finalization_operation_id=?`,
+            effect.databaseId, effect.generation, operationId);
+          if (!member.length) {
+            return { kind: "contradicted",
+                     reason: `batch ${effect.batchOperationId} member ${operationId} has no wal_tail row` };
+          }
+          results.push(ControllerCore.finalizeReceiptBody(member[0]));
+        }
+        return { kind: "present", body: { ok: true, results } };
+      }
+      case "CHECKPOINT_OPEN": {
+        const cut = this.sql.exec(
+          `SELECT database_id, generation, head_lsn, head_type_sequence, cut_control_seq,
+                  journal_length, journal_head_hash FROM checkpoint_cuts WHERE cut_id=?`, effect.cutId);
+        if (!cut.length) return { kind: "absent" };
+        if (String(cut[0].database_id) !== effect.databaseId
+            || Number(cut[0].generation) !== effect.generation) {
+          return { kind: "contradicted",
+                   reason: `cut ${effect.cutId} exists under a different database/generation` };
+        }
+        return {
+          kind: "present",
+          body: {
+            ok: true,
+            cutId: effect.cutId,
+            headLsn: cut[0].head_lsn === null ? "-1" : u64FromSql(cut[0].head_lsn, "head_lsn").toString(),
+            headTypeSequence: u64FromSql(cut[0].head_type_sequence, "head_type_sequence").toString(),
+            cutControlSeq: u64FromSql(cut[0].cut_control_seq, "cut_control_seq").toString(),
+            journalLength: Number(cut[0].journal_length),
+            journalHeadHash: hex(asHash(cut[0].journal_head_hash, "journal_head_hash")),
+          },
+        };
+      }
+      case "CHECKPOINT_ACTIVATE": {
+        const cut = this.sql.exec(
+          `SELECT state, logical_digest FROM checkpoint_cuts WHERE cut_id=? AND database_id=?`,
+          effect.cutId, effect.databaseId);
+        // no cut / still PENDING: the activation never committed - the
+        // retry re-executes and receives its typed verdict cleanly
+        if (!cut.length || String(cut[0].state) === "PENDING") return { kind: "absent" };
+        if (String(cut[0].logical_digest ?? "") !== effect.logicalDigest) {
+          return { kind: "contradicted",
+                   reason: `cut ${effect.cutId} activated under a different logical digest` };
+        }
+        const journaled = this.sql.exec(
+          `SELECT canonical_body FROM control_outbox
+           WHERE kind='CHECKPOINT_CUT_ACTIVATED' AND database_id=?
+             AND canonical_body LIKE ? ESCAPE '\\'
+           ORDER BY control_seq LIMIT 1`,
+          effect.databaseId, likePattern(`"cutId":${JSON.stringify(effect.cutId)}`));
+        if (!journaled.length) {
+          return { kind: "contradicted",
+                   reason: `cut ${effect.cutId} is active but no CHECKPOINT_CUT_ACTIVATED command was journaled` };
+        }
+        const body = JSON.parse(String(journaled[0].canonical_body)) as { superseded: string | null };
+        return { kind: "present", body: { ok: true, cutId: effect.cutId, superseded: body.superseded ?? null } };
+      }
+      case "BUDGETS_SET": {
+        // the journaled BUDGETS_SET command carries this use's nonce as its
+        // operationId (setBudgets threads it through); canonical JSON makes
+        // the fragment byte-stable
+        const journaled = this.sql.exec(
+          `SELECT 1 FROM control_outbox
+           WHERE kind='BUDGETS_SET' AND database_id=? AND canonical_body LIKE ? ESCAPE '\\' LIMIT 1`,
+          effect.databaseId, likePattern(`"operationId":${JSON.stringify(nonce)}`));
+        if (!journaled.length) return { kind: "absent" };
+        return { kind: "present", body: { ok: true } };
+      }
+      case "INCARNATION_BUMP": {
+        const journaled = this.sql.exec(
+          `SELECT canonical_body FROM control_outbox
+           WHERE kind='CONTROLLER_INCARNATION_BUMPED' AND database_id='@controller'
+             AND canonical_body LIKE ? ESCAPE '\\' LIMIT 1`,
+          likePattern(`"operationId":${JSON.stringify(nonce)}`));
+        if (!journaled.length) return { kind: "absent" };
+        const body = JSON.parse(String(journaled[0].canonical_body)) as { incarnation: number };
+        return { kind: "present", body: { ok: true, incarnation: body.incarnation } };
+      }
+      case "IDEMPOTENT_REEXECUTE":
+        return { kind: "reexecute" };
+      default:
+        return { kind: "reexecute" };
+    }
   }
 
   /**

@@ -21,6 +21,8 @@ import { DurableObject } from "cloudflare:workers";
 
 import {
   ControllerCore,
+  type AmbiguityResolution,
+  type CapabilityEffect,
   type FinalizeRequest,
   type FinalizeResult,
   type SqlRow,
@@ -506,9 +508,16 @@ export class DatabaseControllerDO extends DurableObject {
     expect: { method: string; databaseId: string; tenantId?: string; session?: string; generation?: string;
               key?: string; bodyDigest?: string; bodyLength?: number },
     useDigest: string,
+    // R5-SEC-04: the authoritative effect this use is bound to, recorded
+    // durably with the claim so a lost response can be settled later by
+    // querying the effect rather than wedging the nonce at 409 forever.
+    effect: CapabilityEffect = { kind: "IDEMPOTENT_REEXECUTE" },
   ): Promise<
     (CapabilityCheck & { claim?: { fresh: boolean; terminal: boolean; response: string | null } })
-    | { ok: false; error: "CAPABILITY_REPLAYED" }
+    // R5-SEC-04: a use whose durable evidence contradicts its recorded
+    // operation settles QUARANTINED and stays fail-closed forever after —
+    // it is a terminal refusal, never a retryable in-flight state.
+    | { ok: false; error: "CAPABILITY_REPLAYED" | "CAPABILITY_USE_QUARANTINED" }
     | BindingRefusal
   > {
     // R4 PR1: the registry-binding gate FIRST, as a typed refusal with no
@@ -527,11 +536,50 @@ export class DatabaseControllerDO extends DurableObject {
     });
     if (!checked.ok) return checked;
     const claimed = this.controllerCore.claimCapability(
-      checked.payload.nonce, useDigest, checked.payload.expiresAtMs, nowMs);
+      checked.payload.nonce, useDigest, checked.payload.expiresAtMs, nowMs, effect);
     if (!claimed.ok) return claimed;
     // audit C-02: hand the claim outcome back so the worker replays a
     // terminal use's stored response instead of re-executing the effect
     return { ...checked, claim: { fresh: claimed.fresh, terminal: claimed.terminal, response: claimed.response } };
+  }
+
+  /**
+   * R5-SEC-04: settle ONE unresolved capability use from durable state.
+   * The worker calls this when a retry meets a nonfresh, nonterminal claim
+   * — the case that previously answered 409 forever. The core re-derives
+   * the outcome by querying the authoritative effect the use was bound to
+   * at claim time (all of it lives in this DO's SQLite, so it is a local
+   * read inside one transaction, not a distributed query).
+   */
+  async resolveAmbiguousUse(nonce: string): Promise<AmbiguityResolution> {
+    this.sweepOnce();
+    return this.controllerCore.resolveAmbiguousUse(nonce);
+  }
+
+  /**
+   * R5-SEC-04 restart resumption: the FIRST call this DO instance serves
+   * runs one bounded recovery sweep. A DO evicted or restarted mid-flight
+   * would otherwise leave aged uses unresolved until someone happened to
+   * retry them; this makes "process/DO restart resumes resolution" a
+   * property of the authority rather than of client behaviour. Bounded and
+   * once per instance, so it can never dominate a request.
+   */
+  private sweptThisInstance = false;
+  private sweepOnce(): void {
+    if (this.sweptThisInstance) return;
+    this.sweptThisInstance = true;
+    this.controllerCore.sweepAmbiguousUses({ limit: 64 });
+  }
+
+  /**
+   * R5-SEC-04: bounded recovery sweep over aged unresolved uses. Runs on
+   * the first request this instance serves (DO restart resumes resolution
+   * — an eviction mid-flight must not strand a nonce) and from the alarm
+   * reducer. Bounded per pass so it can never dominate a request.
+   */
+  async sweepAmbiguousUses(opts: { limit?: number; minAgeMs?: number } = {}):
+    Promise<{ scanned: number; settled: number; quarantined: number; deferred: number }> {
+    return this.controllerCore.sweepAmbiguousUses(opts);
   }
 
   /**
@@ -613,6 +661,10 @@ export class DatabaseControllerDO extends DurableObject {
    */
   async alarm(): Promise<void> {
     const now = Date.now();
+    // R5-SEC-04: the alarm reducer also settles aged unresolved uses, so a
+    // lost response converges even if the client never retries. Bounded per
+    // pass and idempotent, like every other scheduled task here.
+    this.controllerCore.sweepAmbiguousUses({ limit: 64 });
     const due = this.sql
       .exec(`SELECT task, interval_ms, attempts FROM alarm_schedule WHERE next_due_at <= ?`, now)
       .toArray();

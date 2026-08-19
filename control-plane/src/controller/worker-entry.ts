@@ -62,6 +62,7 @@ import { MAX_BATCH_BYTES, MAX_BATCH_MEMBERS, u64FromWire, type FinalizeRequest }
 import { devOnlyRoute } from "./surface.ts";
 import { canonicalJson } from "./core/journal-crypto.ts";
 import { verifyCapabilityToken, type CapabilityPayload } from "./core/capability.ts";
+import type { CapabilityEffect } from "./core/procedures.ts";
 import { resolveKeyConfig, type ResolvedKeys } from "./core/key-config.ts";
 import { checkBinding, verifyProvisionToken, controllerDoName, type ProvisionBinding } from "./core/registry.ts";
 
@@ -564,14 +565,18 @@ export default {
      *  at the authority. `useDigest` is the canonical digest of the ONE
      *  request authorized (C-02): the claim binds the nonce to it, and a
      *  terminal use replays its stored response instead of re-executing. */
-    const verifyCapability = async (databaseId: string, expect: CapExpect, useDigest: string) => {
+    const verifyCapability = async (
+      databaseId: string, expect: CapExpect, useDigest: string,
+      // R5-SEC-04: bound with the claim so an unresolved use is settleable
+      effect: CapabilityEffect = { kind: "IDEMPOTENT_REEXECUTE" },
+    ) => {
       const framed = await frameCheck(databaseId, expect);
       if ("denied" in framed) return { authorized: false as const, denied: framed.denied };
       // the DO call carries the full expected binding (tenant from the
       // verified token), so the authority can verify it was addressed as
       // the database it is provisioned to be (R4 PR1)
       const verdict = await stubFor(databaseId).useCapability(
-        framed.token, { databaseId, tenantId: framed.payload.tenantId, ...expect }, useDigest);
+        framed.token, { databaseId, tenantId: framed.payload.tenantId, ...expect }, useDigest, effect);
       if (!verdict.ok) return { authorized: false as const, denied: json(verdict, 403) };
       return { authorized: true as const, verdict };
     };
@@ -594,8 +599,11 @@ export default {
      *  A non-fresh, non-terminal use (a crash between effect and resolve)
      *  is a bounded typed retry, never a blind re-execution. Returns a
      *  Response to short-circuit with, or null to proceed and execute. */
-    const replayTerminal = (verdict: { claim?: { fresh: boolean; terminal: boolean; response: string | null } }):
-      Response | null => {
+    const replayTerminal = async (
+      databaseId: string,
+      verdict: { claim?: { fresh: boolean; terminal: boolean; response: string | null } },
+      nonce?: string,
+    ): Promise<Response | null> => {
       const claim = verdict.claim;
       if (claim === undefined || claim.fresh) return null;
       if (claim.terminal && claim.response !== null) {
@@ -603,6 +611,33 @@ export default {
         return json(stored.body, stored.status);
       }
       if (claim.terminal) return json({ ok: true, replayed: true }, 200);
+      // R5-SEC-04: an UNRESOLVED prior use no longer answers a permanent
+      // 409. The authority re-derives the outcome from the effect the use
+      // was bound to at claim time:
+      //   SETTLED     -> replay the exact original outcome (the timeout
+      //                  happened AFTER the effect);
+      //   RE_EXECUTE  -> no effect exists (timeout BEFORE it, or the
+      //                  procedure is idempotent by identity): fall
+      //                  through and execute the identical request again;
+      //   QUARANTINED -> durable evidence contradicts the recorded
+      //                  operation: fail closed, terminally;
+      //   otherwise   -> the bounded legacy 409 (pre-effect rows), which
+      //                  token expiry prunes.
+      const claimNonce = nonce ?? (verdict as { payload?: { nonce?: string } }).payload?.nonce;
+      if (typeof claimNonce !== "string") {
+        return json({ ok: false, error: "CAPABILITY_IN_FLIGHT",
+                      hint: "a prior use of this token has not resolved; retry" }, 409);
+      }
+      const settled = await stubFor(databaseId).resolveAmbiguousUse(claimNonce);
+      if (settled.ok && settled.disposition === "SETTLED") {
+        if (settled.response === null) return json({ ok: true, replayed: true }, 200);
+        const stored = JSON.parse(settled.response) as { status: number; body: unknown };
+        return json(stored.body, stored.status);
+      }
+      if (settled.ok && settled.disposition === "RE_EXECUTE") return null;
+      if (!settled.ok && settled.error === "CAPABILITY_USE_QUARANTINED") {
+        return json({ ok: false, error: "CAPABILITY_USE_QUARANTINED", reason: settled.reason }, 409);
+      }
       return json({ ok: false, error: "CAPABILITY_IN_FLIGHT",
                     hint: "a prior use of this token has not resolved; retry" }, 409);
     };
@@ -627,10 +662,16 @@ export default {
     const withMutation = async (
       databaseId: string, expect: CapExpect, useDigest: string,
       execute: (payload: { session?: string; generation?: string }) => Promise<{ status: number; body: unknown }>,
+      // R5-SEC-04: the AUTHORITATIVE EFFECT this use is bound to. Recorded
+      // durably with the claim, so a use left unresolved by a lost response
+      // can be settled later by querying the effect instead of wedging at
+      // 409 forever. Methods that are idempotent by their own operation
+      // identity declare IDEMPOTENT_REEXECUTE (the default).
+      effect: CapabilityEffect = { kind: "IDEMPOTENT_REEXECUTE" },
     ): Promise<Response> => {
-      const auth = await verifyCapability(databaseId, expect, useDigest);
+      const auth = await verifyCapability(databaseId, expect, useDigest, effect);
       if (!auth.authorized) return auth.denied;
-      const replay = replayTerminal(auth.verdict);
+      const replay = await replayTerminal(databaseId, auth.verdict);
       if (replay !== null) return replay;
       const nonce = auth.verdict.payload?.nonce;
       try {
@@ -817,7 +858,12 @@ export default {
       // single-request mutation: a replayed token returns the stored result
       return withMutation(adminBump[1], { method: "INCARNATION_BUMP" }, await routeUseDigest(), async () => ({
         status: 200, body: { ok: true, incarnation: await stubFor(adminBump[1]).bumpIncarnation() },
-      }));
+      }),
+      // R5-SEC-04: a bump is NOT idempotent (each call increments), so its
+      // effect is the journaled CONTROLLER_INCARNATION_BUMPED command
+      // carrying this use's nonce — a lost response settles from that row
+      // instead of double-bumping on retry.
+      { kind: "INCARNATION_BUMP" });
     }
 
     if (request.method === "PUT" && path.startsWith("/payload/")) {
@@ -1022,7 +1068,10 @@ export default {
             maxTailRecords: b.maxTailRecords,
           }, session);
           return { status: result.ok ? 200 : 409, body: result.ok ? { ok: true } : result };
-        });
+        },
+        // R5-SEC-04: the effect is the journaled BUDGETS_SET command
+        // carrying this use's nonce as its operation identity.
+        { kind: "BUDGETS_SET", databaseId: b.databaseId });
     }
 
     // data-path receipt verification BEFORE the DO's synchronous
@@ -1098,7 +1147,16 @@ export default {
         const result = await stubFor(req.databaseId)
           .finalizeWalRecord({ ...req, requestDigest: computedDigest } as unknown as FinalizeRequest);
         return { status: result.ok ? 200 : 409, body: result };
-      });
+      },
+      // R5-SEC-04: the authoritative effect of a finalize is its wal_tail
+      // row under this operation identity. If the response is lost, the
+      // resolver finds that row (or its status-singleton alias) and
+      // replays the exact original receipt; a row under the same operation
+      // id but a DIFFERENT request digest is contradictory evidence and
+      // quarantines the use.
+      { kind: "WAL_FINALIZE", databaseId: req.databaseId, generation: gen,
+        operationId: String((req as { operationId?: unknown }).operationId ?? ""),
+        requestDigest: computedDigest });
     }
 
     if (request.method === "POST" && path === "/wal/finalize-batch") {

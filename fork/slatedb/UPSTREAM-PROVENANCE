@@ -6,8 +6,10 @@
   "patches": [
     "0001-external-controller-issued-epochs.patch",
     "0002-bounded-l0-sst-upload-retry.patch",
-    "0003-external-epoch-enforced-path-tests.patch"
+    "0003-external-epoch-enforced-path-tests.patch",
+    "0004-builder-tests-supply-external-epochs.patch",
+    "0005-internal-epoch-tests-are-unfenced-posture-only.patch"
   ],
-  "patched_tree_sha256": "d75714318af74d77065ef4da107c144c64d10c428f17cbaeeb20645f70456122",
+  "patched_tree_sha256": "3aec6c21f21b5dc8d6dadb610a12224ca3d0507a2ff51bde42823d3b3c28f7f8",
   "note": "reconstruct with tools/fork/materialize_slatedb.py; the patch series is the fork, the crate is the base"
 }

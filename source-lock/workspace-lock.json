@@ -6,7 +6,7 @@
   "workspaces": {
     "fork/typedb": {
       "manifest": "fork/typedb/Cargo.toml",
-      "manifest_sha256": "b0b597ef42f9ba4f8fa6a36a34fa55edd89afbf4dedaa087713ce30f7f0005d5",
+      "manifest_sha256": "81e6a9c06508cdbbeeb404f7417bbb67dab5ddaff8acc063e2da9ab6534a1eb8",
       "lockfile": "fork/typedb/Cargo.lock",
       "lockfile_sha256": "c47ee7dcb22aff3719b954777351a9beaf5bdb89e3f00673ff0e1fac2ac88eb2"
     },
@@ -26,7 +26,7 @@
   "fork_staging": {
     "fork_root": "fork/typedb",
     "staged_file_count": 778,
-    "staged_tree_sha256": "38815ddd2545395eb0bc815e478ce9715ca1136037aec47f1325c16e02af65a0",
+    "staged_tree_sha256": "32a753b2c93148821259bd31abf7f50a17941dbe377b25e0bea046db6a4e1c0e",
     "note": "sources/typedb under test == locked TB revision + this patch set"
   },
   "slatedb_consumption": {

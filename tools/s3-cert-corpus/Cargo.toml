@@ -1,0 +1,39 @@
+# Provider-neutral native-S3 certification corpus (round-4 §6.4, OD-009).
+#
+# Runs the EXACT object_store crate/version the SlateDB data path consumes
+# (=0.14.1, the pin in sources/typedb/Cargo.lock) against a candidate
+# native S3 server named by environment, and demands the semantics SlateDB
+# actually relies on: conditional create (If-None-Match:*) with exactly
+# one winner under concurrency, conditional update (If-Match) with typed
+# precondition failures, exact-byte readback, range GET, typed 404,
+# ListObjectsV2 prefix/pagination with no missing/duplicate keys,
+# multipart create/complete/abort, and object identity across a server
+# crash/restart (phase 2, orchestrated by run-corpus.sh).
+#
+# The corpus is PROVIDER-NEUTRAL: the same binary certifies the MinIO
+# transition baseline today and the RustFS promotion candidate when its
+# exact artifact is pinned (OD-009 — promotion is gated on this corpus
+# passing, never on vendor claims). Real R2 later runs the same corpus as
+# the only source of provider facts.
+#
+# Deliberately OUTSIDE every workspace (like spikes/publication-firewall):
+# nothing production links it, and its lockfile cannot perturb the locked
+# tools/ workspace builds. Recorded workspace-lock coverage remainder:
+# add this crate to generate_workspace_lock.py when it stabilises.
+[package]
+name = "s3-cert-corpus"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+object_store = { version = "=0.14.1", features = ["aws"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+futures = "0.3"
+bytes = "1"
+rand = "0.8"
+
+[lib]
+path = "src/lib.rs"

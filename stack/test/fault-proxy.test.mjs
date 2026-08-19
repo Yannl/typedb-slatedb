@@ -2,7 +2,7 @@
 // deterministically against a loopback echo-ish HTTP server.
 import net from "node:net";
 import http from "node:http";
-import { startFaultProxy } from "./fault-proxy.mjs";
+import { startFaultProxy } from "../fault-proxy.mjs";
 
 const results = [];
 function check(name, ok, detail = "") {

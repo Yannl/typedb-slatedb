@@ -647,7 +647,8 @@ fn content_checksum(bytes: &[u8]) -> u64 {
 /// One journaled multipart upload attempt (S-04): completion is gated to the
 /// still-active, uncommitted attempt for a location; a stale attempt (one a
 /// newer attempt for the same location superseded) can neither complete nor
-/// commit.
+/// commit — but it remains individually addressable, so its own
+/// still-uncommitted provider upload can be aborted even after supersession.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AttemptState {
     /// Recorded, parts may still be uploaded, completion still permitted.
@@ -656,6 +657,26 @@ enum AttemptState {
     Committed,
     /// Aborted; terminal.
     Aborted,
+}
+
+/// The multipart attempt journal (S-04, R4-STOR-04): every attempt carries a
+/// unique id and its own state row, and each location additionally records
+/// which attempt is the ACTIVE (most recently initiated) one. Completion
+/// requires being the active, uncommitted attempt; abort requires only being
+/// uncommitted — a superseded attempt must still be able to reclaim its exact
+/// provider upload, or its parts would be unreclaimable through this guard.
+///
+/// Honest scope: this journal is process-local — neither controller-durable
+/// nor shared across restarts/incarnations. Cross-process and cross-restart
+/// safety rests on the completion-time revalidation against the STORE
+/// (quarantine re-check + create-only existence check), never on this map.
+#[derive(Debug, Default)]
+struct MultipartJournal {
+    /// location → the attempt id most recently initiated for it.
+    active: HashMap<String, u64>,
+    /// attempt id → its state. Rows are never removed: a superseded attempt
+    /// keeps its addressability so a cleanup actor can abort it.
+    attempts: HashMap<u64, AttemptState>,
 }
 
 /// The runtime storage principal and immutability boundary (V16 inv. 81–84,
@@ -669,11 +690,18 @@ enum AttemptState {
 ///   stored (idempotent retry), and a DIFFERENT-bytes put at an existing
 ///   immutable key is a typed [`Error::Precondition`] refusal that also raises
 ///   the materialisation's quarantine flag;
-/// - the **manifest** path is exempt and passes through unchanged — it is the
-///   sole typed conditional-CAS publication path;
-/// - every **multipart** upload carries a journaled `UploadAttemptId` with
-///   gated completion (completion only for the recorded uncommitted attempt;
-///   abort only for that attempt; a stale attempt's completion is refused);
+/// - the **manifest** single-put path is exempt and passes through unchanged —
+///   it is the sole typed conditional-CAS publication path (its own `PutMode`
+///   carries the precondition);
+/// - every **multipart** upload — the manifest included — is refused at
+///   initiation while quarantined, journaled with a unique attempt id, and
+///   revalidated AT COMPLETION: quarantine is re-checked, completion is
+///   create-only against the store (onto an existing immutable key it is
+///   refused + quarantined; onto an existing manifest key it is refused,
+///   because the multipart API cannot carry the manifest's CAS precondition),
+///   and only the still-active uncommitted attempt may commit. Abort is
+///   allowed for ANY still-uncommitted attempt — superseded included — so
+///   every provider upload stays individually reclaimable;
 /// - `delete_stream` (the trait's only delete primitive: `delete`, and
 ///   `rename`'s copy-then-delete both funnel through it), overwrite-mode
 ///   `copy`, and `rename` are all typed refusals.
@@ -688,9 +716,10 @@ struct NoDeleteStore {
     /// supervisor should quarantine it (S-04). Shared so wrappers derived from
     /// this store observe the same flag.
     quarantined: Arc<AtomicBool>,
-    /// Per-location multipart attempt journal: the active attempt id and its
-    /// state. A completion is gated to the still-active, uncommitted attempt.
-    multipart_journal: Arc<Mutex<HashMap<String, (u64, AttemptState)>>>,
+    /// Per-attempt multipart journal (see [`MultipartJournal`]): completion is
+    /// gated to the still-active, uncommitted attempt; abort to any
+    /// still-uncommitted attempt, superseded included.
+    multipart_journal: Arc<Mutex<MultipartJournal>>,
     next_attempt_id: Arc<AtomicU64>,
     /// Immutability ledger (S-04 instrumentation): the recorded checksum of
     /// every immutable key this principal has admitted. Re-admitting a key
@@ -704,7 +733,7 @@ impl NoDeleteStore {
         Self {
             inner,
             quarantined: Arc::new(AtomicBool::new(false)),
-            multipart_journal: Arc::new(Mutex::new(HashMap::new())),
+            multipart_journal: Arc::new(Mutex::new(MultipartJournal::default())),
             next_attempt_id: Arc::new(AtomicU64::new(1)),
             immutable_ledger: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -824,14 +853,37 @@ impl ObjectStore for NoDeleteStore {
         location: &ObjectPath,
         opts: PutMultipartOptions,
     ) -> slatedb::object_store::Result<Box<dyn MultipartUpload>> {
+        // Fail-closed once quarantined (S-04, R4-STOR-04): initiation is
+        // refused for EVERY key class — the manifest included — BEFORE the
+        // inner store opens a provider upload; a quarantined materialisation
+        // admits no new mutation attempt of any kind.
+        if self.is_quarantined() {
+            return Err(slatedb::object_store::Error::Precondition {
+                path: location.to_string(),
+                source: "materialisation is quarantined (S-04): a prior immutable-key overwrite was refused; \
+                         refusing multipart initiation"
+                    .into(),
+            });
+        }
+        // Initiation at an occupied immutable key is admitted: until
+        // completion the provider holds only uncommitted parts, and the
+        // mutation decision is create-only AT COMPLETION, where the key's
+        // existence is revalidated against the store.
         let inner = self.inner.put_multipart_opts(location, opts).await?;
         // Journal a fresh attempt id and record it as the active attempt for
         // this location; any earlier attempt for the same location is thereby
-        // superseded and can no longer complete (S-04 stale-completion guard).
+        // superseded and can no longer complete (S-04 stale-completion guard),
+        // though its own row keeps it addressable for abort.
         let attempt_id = self.next_attempt_id.fetch_add(1, Ordering::SeqCst);
-        self.multipart_journal.lock().unwrap().insert(location.to_string(), (attempt_id, AttemptState::Uncommitted));
+        {
+            let mut journal = self.multipart_journal.lock().unwrap();
+            journal.attempts.insert(attempt_id, AttemptState::Uncommitted);
+            journal.active.insert(location.to_string(), attempt_id);
+        }
         Ok(Box::new(JournaledMultipart {
             inner,
+            store: self.inner.clone(),
+            quarantined: self.quarantined.clone(),
             location: location.clone(),
             attempt_id,
             journal: self.multipart_journal.clone(),
@@ -923,22 +975,52 @@ impl ObjectStore for NoDeleteStore {
     }
 }
 
-/// A multipart upload gated by the [`NoDeleteStore`] journal (S-04). Parts
-/// stream straight through, but completion is admitted only for the still-
-/// active, uncommitted attempt recorded for this location: a stale attempt
-/// (one superseded by a newer `put_multipart_opts` on the same location) and
-/// an already-committed attempt are both typed refusals, so a delayed or
-/// duplicate actor can never complete a multipart that would replace bytes a
-/// newer attempt already published. Abort is likewise allowed only for the
-/// still-active, uncommitted attempt.
+/// A multipart upload gated by the [`NoDeleteStore`] journal (S-04,
+/// R4-STOR-04). Parts stream straight through, but completion REVALIDATES at
+/// use time:
+///
+/// - **quarantine re-check**: a namespace quarantined since initiation refuses
+///   the completion and aborts the provider upload, so its parts are
+///   reclaimed rather than layered on top of a detected violation;
+/// - **journal gate**: only the still-active, uncommitted attempt recorded for
+///   this location may complete — a stale attempt (one superseded by a newer
+///   `put_multipart_opts` on the same location) and an already-committed
+///   attempt are both typed refusals;
+/// - **create-only against the store**: completion onto an existing immutable
+///   key is refused and quarantines the materialisation — the fail-closed
+///   analogue of `put_opts`'s changed-bytes branch. The parts have already
+///   streamed to the provider, so byte-identity with the existing object
+///   cannot be proved here, and fail-closed is correct because byte-identical
+///   multipart re-publication is not a path SlateDB needs: SSTs are
+///   content-unique, ULID-named objects that are written exactly once.
+///   Completion onto an existing MANIFEST key is refused WITHOUT quarantine:
+///   an existing manifest is the normal CAS-republished state (not tamper
+///   evidence), but the multipart API carries no CAS precondition, so
+///   manifest republication is only ever admitted through the typed
+///   conditional single-put path.
+///
+/// Abort is allowed for ANY still-uncommitted attempt — superseded and
+/// quarantined included — so an authorized cleanup actor can always reclaim
+/// an attempt's exact provider upload; only the committed attempt (whose
+/// object is published) and an already-aborted one refuse.
+///
+/// Honest scope: the journal is process-local (see [`MultipartJournal`]); the
+/// store-level revalidation above — not the journal — is what holds across a
+/// restart, where a replayed completion onto the previously published key is
+/// refused by the create-only check.
 #[derive(Debug)]
 struct JournaledMultipart {
     inner: Box<dyn MultipartUpload>,
+    /// The wrapped store, for completion-time revalidation (existence check).
+    store: Arc<dyn ObjectStore>,
+    /// The materialisation's shared quarantine flag, re-checked at completion.
+    quarantined: Arc<AtomicBool>,
     location: ObjectPath,
     attempt_id: u64,
-    journal: Arc<Mutex<HashMap<String, (u64, AttemptState)>>>,
+    journal: Arc<Mutex<MultipartJournal>>,
     /// Manifest multipart (should not occur — manifests are small single
-    /// puts — but if one ever did, it is the CAS path and is not gated).
+    /// puts): gated exactly like data, except an existing-key completion
+    /// refusal does not quarantine (see the type-level policy above).
     manifest_key: bool,
 }
 
@@ -946,29 +1028,40 @@ impl JournaledMultipart {
     /// Is this attempt still the active, uncommitted one for its location?
     /// Returns the reason it is not, for a precise typed refusal.
     fn active_uncommitted(&self) -> Result<(), String> {
-        if self.manifest_key {
-            return Ok(());
-        }
         let journal = self.journal.lock().unwrap();
-        match journal.get(self.location.as_ref()) {
-            Some((active_id, state)) if *active_id == self.attempt_id => match state {
-                AttemptState::Uncommitted => Ok(()),
-                AttemptState::Committed => Err("this attempt is already committed".to_owned()),
-                AttemptState::Aborted => Err("this attempt was aborted".to_owned()),
-            },
-            Some((active_id, _)) => {
+        Self::own_state_uncommitted(&journal, self.attempt_id)?;
+        match journal.active.get(self.location.as_ref()) {
+            Some(active_id) if *active_id == self.attempt_id => Ok(()),
+            Some(active_id) => {
                 Err(format!("attempt {} is stale; attempt {active_id} superseded it", self.attempt_id))
             }
             None => Err("no journal entry for this location".to_owned()),
         }
     }
 
-    fn mark(&self, state: AttemptState) {
-        if let Some(entry) = self.journal.lock().unwrap().get_mut(self.location.as_ref()) {
-            if entry.0 == self.attempt_id {
-                entry.1 = state;
-            }
+    /// Is this attempt itself still uncommitted? Supersession is deliberately
+    /// NOT checked: a superseded attempt must remain abortable so its provider
+    /// upload stays reclaimable (R4-STOR-04).
+    fn own_uncommitted(&self) -> Result<(), String> {
+        Self::own_state_uncommitted(&self.journal.lock().unwrap(), self.attempt_id)
+    }
+
+    fn own_state_uncommitted(journal: &MultipartJournal, attempt_id: u64) -> Result<(), String> {
+        match journal.attempts.get(&attempt_id) {
+            Some(AttemptState::Uncommitted) => Ok(()),
+            Some(AttemptState::Committed) => Err("this attempt is already committed".to_owned()),
+            Some(AttemptState::Aborted) => Err("this attempt was aborted".to_owned()),
+            None => Err("no journal entry for this attempt".to_owned()),
         }
+    }
+
+    /// Mark exactly THIS attempt's journal row — never another attempt's.
+    fn mark(&self, state: AttemptState) {
+        self.journal.lock().unwrap().attempts.insert(self.attempt_id, state);
+    }
+
+    fn refusal(&self, message: String) -> slatedb::object_store::Error {
+        slatedb::object_store::Error::Precondition { path: self.location.to_string(), source: message.into() }
     }
 }
 
@@ -979,16 +1072,58 @@ impl MultipartUpload for JournaledMultipart {
     }
 
     async fn complete(&mut self) -> slatedb::object_store::Result<PutResult> {
+        // Quarantine, revalidated AT USE TIME (R4-STOR-04): a namespace
+        // quarantined since initiation admits no completion. The provider
+        // upload is aborted so its parts are reclaimed — and marked Aborted
+        // only when that abort succeeds, so a failed abort stays retryable.
+        if self.quarantined.load(Ordering::SeqCst) {
+            if self.inner.abort().await.is_ok() {
+                self.mark(AttemptState::Aborted);
+            }
+            return Err(self.refusal(format!(
+                "multipart completion refused for {} (S-04): the materialisation was quarantined after \
+                 this attempt was initiated; the upload has been aborted",
+                self.location
+            )));
+        }
+        // Journal gate: only the still-active, uncommitted attempt.
         if let Err(reason) = self.active_uncommitted() {
-            return Err(slatedb::object_store::Error::Precondition {
-                path: self.location.to_string(),
-                source: format!(
-                    "multipart completion refused for {} (S-04): {reason}; completion is gated to the \
-                     recorded uncommitted upload attempt so a stale actor cannot replace published bytes",
+            return Err(self.refusal(format!(
+                "multipart completion refused for {} (S-04): {reason}; completion is gated to the \
+                 recorded uncommitted upload attempt so a stale actor cannot replace published bytes",
+                self.location
+            )));
+        }
+        // Create-only, revalidated against the STORE — not the journal. This
+        // clause is what holds across a process restart, where the journal is
+        // gone: completion onto an existing key never silently overwrites.
+        match self.store.head(&self.location).await {
+            Err(slatedb::object_store::Error::NotFound { .. }) => {}
+            Ok(_) if self.manifest_key => {
+                // manifest republication is legitimate, but ONLY through the
+                // conditional single-put path — the multipart API carries no
+                // CAS precondition, so this is a refusal, not tamper evidence.
+                return Err(self.refusal(format!(
+                    "multipart completion refused for manifest key {} (S-04): the multipart API carries \
+                     no CAS precondition; manifest republication must use the typed conditional \
+                     single-put path",
                     self.location
-                )
-                .into(),
-            });
+                )));
+            }
+            Ok(_) => {
+                // the fail-closed analogue of put_opts's changed-bytes branch:
+                // byte-identity with the published object cannot be proved
+                // (the parts already streamed through), and SlateDB never
+                // re-publishes an SST/blob key — refuse + quarantine.
+                self.quarantined.store(true, Ordering::SeqCst);
+                return Err(self.refusal(format!(
+                    "immutable key multipart overwrite refused (S-04, V16 inv. 81-83): completing this \
+                     upload would replace already-written immutable key {}; the materialisation is \
+                     quarantined",
+                    self.location
+                )));
+            }
+            Err(other) => return Err(other),
         }
         let result = self.inner.complete().await?;
         self.mark(AttemptState::Committed);
@@ -996,20 +1131,21 @@ impl MultipartUpload for JournaledMultipart {
     }
 
     async fn abort(&mut self) -> slatedb::object_store::Result<()> {
-        if let Err(reason) = self.active_uncommitted() {
-            return Err(slatedb::object_store::Error::Precondition {
-                path: self.location.to_string(),
-                source: format!(
-                    "multipart abort refused for {} (S-04): {reason}; abort is allowed only for the \
-                     still-uncommitted active attempt",
-                    self.location
-                )
-                .into(),
-            });
+        // Abort is allowed for ANY still-uncommitted attempt — superseded and
+        // quarantined included (R4-STOR-04): cleanup must always be able to
+        // reclaim an uncommitted provider upload. Only the committed attempt
+        // (whose object is published) and an already-aborted one refuse.
+        if let Err(reason) = self.own_uncommitted() {
+            return Err(self.refusal(format!(
+                "multipart abort refused for {} (S-04): {reason}; abort is allowed for any \
+                 still-uncommitted attempt",
+                self.location
+            )));
         }
-        let result = self.inner.abort().await;
+        self.inner.abort().await?;
+        // marked only on provider success, so a failed abort stays retryable
         self.mark(AttemptState::Aborted);
-        result
+        Ok(())
     }
 }
 
@@ -1414,27 +1550,32 @@ impl SlateKeyspace {
     }
 
     fn checkpoint_local(&self, checkpoint_keyspace_dir: &Path) -> Result<(), Arc<slatedb::Error>> {
-        let manifest_dir = find_manifest_dir(&self.path).map_err(|error| Arc::new(io_error(error)))?;
+        // R4-STOR-07: this method runs on a LIVE keyspace handle, and a live
+        // store always has a published manifest root (open itself writes the
+        // initial manifest before any data lands) — so "no manifest" is never
+        // inferred as emptiness: it is missing or corrupt live root state, and
+        // the checkpoint is refused BEFORE any file is copied, leaving the
+        // checkpoint target (and any predecessor state) untouched.
+        let manifest_dir = find_manifest_dir(&self.path).map_err(|error| Arc::new(io_error(error)))?.ok_or_else(
+            || Arc::new(missing_manifest_root_error(format!("no manifest directory under {:?}", self.path))),
+        )?;
         // lexicographic max = newest manifest, same pin as checkpoint_remote
-        let pinned_manifest = match &manifest_dir {
-            Some(dir) => pin_newest_manifest(dir).map_err(|error| Arc::new(io_error(error)))?,
-            None => None,
-        };
+        let pinned = pin_newest_manifest(&manifest_dir)
+            .map_err(|error| Arc::new(io_error(error)))?
+            .ok_or_else(|| Arc::new(missing_manifest_root_error(format!("empty manifest directory {manifest_dir:?}"))))?;
 
-        copy_dir_recursive_excluding(&self.path, checkpoint_keyspace_dir, manifest_dir.as_deref())
+        copy_dir_recursive_excluding(&self.path, checkpoint_keyspace_dir, Some(&manifest_dir))
             .map_err(|error| Arc::new(io_error(error)))?;
 
-        if let (Some(dir), Some(pinned)) = (&manifest_dir, &pinned_manifest) {
-            let relative = dir.strip_prefix(&self.path).expect("manifest dir is under the keyspace path");
-            let target_dir = checkpoint_keyspace_dir.join(relative);
-            fs::create_dir_all(&target_dir).map_err(|error| Arc::new(io_error(error)))?;
-            let target = target_dir.join(pinned.file_name().expect("manifest file name"));
-            fs::copy(pinned, &target).map_err(|error| Arc::new(io_error(error)))?;
-            // the pinned manifest is what restore opens: its bytes and its
-            // directory entry must be durable, not just in the page cache
-            crate::fsync_path(&target).map_err(|error| Arc::new(io_error(error)))?;
-            crate::fsync_path(&target_dir).map_err(|error| Arc::new(io_error(error)))?;
-        }
+        let relative = manifest_dir.strip_prefix(&self.path).expect("manifest dir is under the keyspace path");
+        let target_dir = checkpoint_keyspace_dir.join(relative);
+        fs::create_dir_all(&target_dir).map_err(|error| Arc::new(io_error(error)))?;
+        let target = target_dir.join(pinned.file_name().expect("manifest file name"));
+        fs::copy(&pinned, &target).map_err(|error| Arc::new(io_error(error)))?;
+        // the pinned manifest is what restore opens: its bytes and its
+        // directory entry must be durable, not just in the page cache
+        crate::fsync_path(&target).map_err(|error| Arc::new(io_error(error)))?;
+        crate::fsync_path(&target_dir).map_err(|error| Arc::new(io_error(error)))?;
         // completion boundary: the checkpoint tree's root entry itself — a
         // checkpoint the caller goes on to declare finished must not lose
         // files to a crash that empties the page cache
@@ -1467,13 +1608,18 @@ impl SlateKeyspace {
             // this algorithm can never produce.
             let manifests = list_remote_prefix(store.as_ref(), &manifest_dir).await?;
             // lexicographically last manifest object — the same ordering the
-            // LocalFS path applies to manifest file names
-            let pinned = manifests.iter().map(|meta| &meta.location).max().cloned();
+            // LocalFS path applies to manifest file names. R4-STOR-07: a LIVE
+            // keyspace always has a published manifest, so an empty manifest
+            // listing is missing or corrupt root state, never emptiness — the
+            // checkpoint is refused before anything is downloaded.
+            let pinned = manifests.iter().map(|meta| &meta.location).max().cloned().ok_or_else(|| {
+                missing_manifest_root_error(format!("empty remote manifest listing under {manifest_dir}"))
+            })?;
             let objects = list_remote_prefix(store.as_ref(), &prefix).await?;
             let is_manifest = |location: &ObjectPath| location.as_ref().starts_with(&manifest_prefix);
             let mut to_copy: Vec<ObjectPath> =
                 objects.iter().map(|meta| meta.location.clone()).filter(|location| !is_manifest(location)).collect();
-            to_copy.extend(pinned);
+            to_copy.push(pinned);
             download_remote_objects(store.as_ref(), &prefix, &to_copy, &dir).await
         })
         .map_err(Arc::new)
@@ -1830,10 +1976,28 @@ fn copy_dir_recursive_excluding(from: &Path, to: &Path, exclude_dir: Option<&Pat
 /// Locate the SlateDB manifest directory under the keyspace path (the store
 /// lives at `<path>/keyspace/`, manifests at `<path>/keyspace/manifest/`).
 /// Discovered rather than hardcoded so a layout change fails loudly in
-/// tests, not silently: no manifest dir means nothing to pin.
+/// tests, not silently. For a LIVE keyspace `None` is a typed checkpoint
+/// refusal (R4-STOR-07), never an empty root.
 fn find_manifest_dir(keyspace_path: &Path) -> io::Result<Option<PathBuf>> {
     let candidate = keyspace_path.join(DB_SUBDIR).join(MANIFEST_SUBDIR);
     if candidate.is_dir() { Ok(Some(candidate)) } else { Ok(None) }
+}
+
+/// The typed refusal for a LIVE keyspace whose manifest root cannot be found
+/// (R4-STOR-07). Checkpointing is only reachable through an open
+/// [`SlateKeyspace`], and an open `Db` always has a published manifest root —
+/// open itself writes the initial manifest before any data lands — so there
+/// is no representable "never-initialized" keyspace state at this layer: a
+/// truly empty keyspace is still represented BY a manifest, and absence of
+/// the physical manifest is always missing or corrupt live store state, never
+/// emptiness. `Data` (not `Unavailable`): the condition is integrity damage
+/// to correct, never a transient blip to retry through.
+fn missing_manifest_root_error(context: String) -> slatedb::Error {
+    slatedb::Error::data(format!(
+        "checkpoint refused (R4-STOR-07): no SlateDB manifest root to pin for a live keyspace \
+         ({context}); an open keyspace always has a published manifest, so its absence is missing \
+         or corrupt store state, never an empty keyspace"
+    ))
 }
 
 #[cfg(test)]
@@ -1901,6 +2065,115 @@ mod checkpoint_pin_tests {
         let refused = keyspace.checkpoint_local(&broken_checkpoint);
         assert!(refused.is_err(), "an erroring manifest entry must fail the checkpoint: {refused:?}");
         fs::remove_file(manifest_dir.join("zzzz-dangling")).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod checkpoint_root_tests {
+    //! R4-STOR-07 controls: "no manifest" is never inferred as emptiness.
+    //! Checkpointing runs only through a LIVE keyspace handle, and an open Db
+    //! always has a published manifest root, so a missing manifest dir / empty
+    //! manifest listing is a typed refusal that copies nothing — never a
+    //! silent empty checkpoint. The mutant (treat `None` as an optional root
+    //! and keep copying) fails the refusal tests below.
+
+    use std::{fs, sync::Arc};
+
+    use slatedb::object_store::{ObjectStore, ObjectStoreExt, local::LocalFileSystem, path::Path as ObjectPath};
+    use test_utils::create_tmp_dir;
+
+    use super::{DB_SUBDIR, MANIFEST_SUBDIR, SlateKeyspace, bridge, find_manifest_dir, list_remote_prefix};
+
+    #[test]
+    fn a_fresh_empty_keyspace_checkpoints_through_its_manifest_root_not_through_silence() {
+        // an open keyspace with NO data still has a typed root: SlateDB
+        // publishes the initial manifest at open, and the checkpoint pins and
+        // records it — emptiness is represented BY a manifest, never by the
+        // absence of one.
+        let keyspace_dir = create_tmp_dir("slate-r7-fresh");
+        let keyspace = SlateKeyspace::open(&keyspace_dir).unwrap();
+        let checkpoint_dir = create_tmp_dir("slate-r7-fresh-out");
+        keyspace.checkpoint(&checkpoint_dir).unwrap();
+        let manifest_dir = checkpoint_dir.join(DB_SUBDIR).join(MANIFEST_SUBDIR);
+        assert!(manifest_dir.is_dir(), "the checkpoint must carry the manifest root");
+        assert!(
+            fs::read_dir(&manifest_dir).unwrap().next().is_some(),
+            "the pinned manifest must be recorded in the checkpoint",
+        );
+    }
+
+    #[test]
+    fn a_live_keyspace_with_a_removed_manifest_dir_refuses_the_checkpoint_and_copies_nothing() {
+        let keyspace_dir = create_tmp_dir("slate-r7-missing");
+        let keyspace = SlateKeyspace::open(&keyspace_dir).unwrap();
+        keyspace.put(b"k", b"v").unwrap();
+        let manifest_dir = find_manifest_dir(&keyspace_dir).unwrap().expect("open keyspace has a manifest dir");
+        fs::remove_dir_all(&manifest_dir).unwrap();
+
+        let checkpoint_dir = create_tmp_dir("slate-r7-missing-out");
+        let refused = keyspace.checkpoint_local(&checkpoint_dir);
+        let error = refused.expect_err("a live keyspace without a manifest root must refuse to checkpoint");
+        assert!(error.to_string().contains("manifest root"), "the refusal names the missing root: {error}");
+        // the refusal happened BEFORE any copy: the target is untouched
+        assert!(
+            fs::read_dir(&checkpoint_dir).unwrap().next().is_none(),
+            "a refused checkpoint must not have copied anything",
+        );
+    }
+
+    #[test]
+    fn a_live_keyspace_with_an_emptied_manifest_dir_refuses_the_checkpoint() {
+        // the dir exists but holds nothing to pin: the same missing-root
+        // refusal — pin_newest_manifest's Ok(None) is never a silent
+        // no-manifest checkpoint for a live keyspace.
+        let keyspace_dir = create_tmp_dir("slate-r7-empty");
+        let keyspace = SlateKeyspace::open(&keyspace_dir).unwrap();
+        keyspace.put(b"k", b"v").unwrap();
+        let manifest_dir = find_manifest_dir(&keyspace_dir).unwrap().expect("open keyspace has a manifest dir");
+        for entry in fs::read_dir(&manifest_dir).unwrap() {
+            fs::remove_file(entry.unwrap().path()).unwrap();
+        }
+
+        let checkpoint_dir = create_tmp_dir("slate-r7-empty-out");
+        let refused = keyspace.checkpoint_local(&checkpoint_dir);
+        let error = refused.expect_err("an empty manifest dir on a live keyspace must refuse the checkpoint");
+        assert!(error.to_string().contains("manifest root"), "the refusal names the missing root: {error}");
+        assert!(fs::read_dir(&checkpoint_dir).unwrap().next().is_none(), "nothing was copied");
+    }
+
+    #[test]
+    fn an_empty_remote_manifest_listing_refuses_the_checkpoint_and_downloads_nothing() {
+        // the RAW inner store deletes the manifest objects, simulating a
+        // missing/corrupt remote root (the runtime principal itself cannot
+        // delete); the remote checkpoint path must then refuse rather than
+        // download a rootless tree the outer checkpoint would hash and seal.
+        let store_dir = create_tmp_dir("slate-r7-remote-store");
+        let inner: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*store_dir).unwrap());
+        let keyspace_dir = create_tmp_dir("slate-r7-remote-ks");
+        let keyspace =
+            SlateKeyspace::open_remote(inner.clone(), ObjectPath::from("r7-base"), &keyspace_dir, None).unwrap();
+        keyspace.put(b"k", b"v").unwrap();
+        {
+            let db = keyspace.shared_db();
+            bridge(async move { db.flush().await }).unwrap();
+        }
+
+        let remote = keyspace.remote.as_ref().expect("remote lane");
+        let manifest_prefix = remote.prefix.clone().join(DB_SUBDIR).join(MANIFEST_SUBDIR);
+        bridge({
+            let (inner, manifest_prefix) = (inner.clone(), manifest_prefix.clone());
+            async move {
+                for meta in list_remote_prefix(inner.as_ref(), &manifest_prefix).await.unwrap() {
+                    inner.delete(&meta.location).await.unwrap();
+                }
+            }
+        });
+
+        let checkpoint_dir = create_tmp_dir("slate-r7-remote-out");
+        let refused = SlateKeyspace::checkpoint_remote(remote, &checkpoint_dir);
+        let error = refused.expect_err("an empty manifest listing on a live keyspace must refuse the checkpoint");
+        assert!(error.to_string().contains("manifest root"), "the refusal names the missing root: {error}");
+        assert!(fs::read_dir(&checkpoint_dir).unwrap().next().is_none(), "nothing was downloaded");
     }
 }
 
@@ -2991,8 +3264,9 @@ mod immutability_boundary_tests {
     #[test]
     fn the_attempt_journal_supersedes_the_earlier_attempt() {
         // white-box: opening a second multipart on a location records it as
-        // the active attempt and marks the first stale (the mechanism the
-        // stale-completion refusal rests on).
+        // the active attempt and makes the first stale (the mechanism the
+        // stale-completion refusal rests on) — while the first attempt's own
+        // journal row survives, keeping it addressable for abort.
         let (_dir, store) = wrapped_store();
         let location = ObjectPath::from("base/fv1/m1/keyspace/04JKL.sst");
         bridge({
@@ -3003,9 +3277,246 @@ mod immutability_boundary_tests {
             }
         });
         let journal = store.multipart_journal.lock().unwrap();
-        let (active_id, state) = journal.get(location.as_ref()).copied().expect("a journal entry exists");
+        let active_id = journal.active.get(location.as_ref()).copied().expect("an active attempt is recorded");
         assert_eq!(active_id, 2, "the second attempt is the active one");
-        assert_eq!(state, AttemptState::Uncommitted);
+        assert_eq!(journal.attempts.get(&active_id), Some(&AttemptState::Uncommitted));
+        assert_eq!(
+            journal.attempts.get(&1),
+            Some(&AttemptState::Uncommitted),
+            "the superseded attempt keeps its own row — individually addressable for abort",
+        );
+    }
+
+    #[test]
+    fn a_quarantined_namespace_refuses_multipart_initiation() {
+        // R4-STOR-04: initiation while quarantined is a typed refusal BEFORE
+        // the inner store opens a provider upload — for data keys AND the
+        // manifest (the manifest has no initiation exemption).
+        let (_dir, store) = wrapped_store();
+        let key = ObjectPath::from("base/fv1/m1/keyspace/01ABC.sst");
+        bridge({
+            let (store, key) = (store.clone(), key.clone());
+            async move {
+                store.put(&key, PutPayload::from_static(b"authoritative")).await.unwrap();
+                let _ = store.put(&key, PutPayload::from_static(b"tampered!!!!!")).await;
+            }
+        });
+        assert!(store.is_quarantined(), "fixture: the namespace is quarantined");
+
+        let data_init = bridge({
+            let store = store.clone();
+            async move { store.put_multipart(&ObjectPath::from("base/fv1/m1/keyspace/05MNO.sst")).await.map(|_| ()) }
+        });
+        assert!(
+            matches!(data_init, Err(slatedb::object_store::Error::Precondition { .. })),
+            "a quarantined namespace must refuse multipart initiation, got: {data_init:?}",
+        );
+        let manifest_init = bridge({
+            let store = store.clone();
+            let manifest = ObjectPath::from(format!("base/fv1/m1/keyspace/{MANIFEST_SUBDIR}/0009.manifest"));
+            async move { store.put_multipart(&manifest).await.map(|_| ()) }
+        });
+        assert!(
+            matches!(manifest_init, Err(slatedb::object_store::Error::Precondition { .. })),
+            "the manifest is not exempt from the initiation quarantine gate, got: {manifest_init:?}",
+        );
+    }
+
+    #[test]
+    fn a_multipart_completion_onto_an_existing_immutable_key_is_refused_and_quarantines() {
+        // R4-STOR-04 fail-closed completion policy: multipart parts stream to
+        // the provider, so byte-identity with the published object cannot be
+        // proved at completion — completion onto an EXISTING immutable key is
+        // therefore refused + quarantined (the analogue of put_opts's
+        // changed-bytes branch), and the refused attempt's provider upload
+        // remains abortable.
+        let (_dir, store) = wrapped_store();
+        let key = ObjectPath::from("base/fv1/m1/keyspace/01ABC.sst");
+        let (completion, abort) = bridge({
+            let (store, key) = (store.clone(), key.clone());
+            async move {
+                store.put(&key, PutPayload::from_static(b"authoritative")).await.unwrap();
+                let mut upload = store.put_multipart(&key).await.unwrap();
+                upload.put_part(PutPayload::from_static(b"replacement bytes")).await.unwrap();
+                let completion = upload.complete().await;
+                // the refused attempt can still reclaim its own upload
+                let abort = upload.abort().await;
+                (completion, abort)
+            }
+        });
+        assert!(
+            matches!(completion, Err(slatedb::object_store::Error::Precondition { .. })),
+            "completing a multipart onto an existing immutable key must be a typed refusal, got: {completion:?}",
+        );
+        assert!(store.is_quarantined(), "the refused completion must quarantine the materialisation");
+        assert!(abort.is_ok(), "the refused attempt must still be able to abort its own upload, got: {abort:?}");
+        let bytes = bridge({
+            let (store, key) = (store.clone(), key.clone());
+            async move { store.get(&key).await.unwrap().bytes().await.unwrap() }
+        });
+        assert_eq!(&bytes[..], b"authoritative", "the published object's bytes must never change");
+    }
+
+    #[test]
+    fn when_the_active_attempt_commits_first_the_superseded_attempt_is_refused_but_can_abort() {
+        // R4-STOR-04 two-attempts, order B (order A — stale completes first —
+        // is a_stale_multipart_completion_is_refused_but_the_active_attempt_completes):
+        // the active attempt commits, the superseded attempt's completion is a
+        // typed refusal, and its abort still succeeds so its provider upload
+        // is reclaimed rather than stranded.
+        let (_dir, store) = wrapped_store();
+        let location = ObjectPath::from("base/fv1/m1/keyspace/06PQR.sst");
+        let (active_completion, stale_completion, stale_abort) = bridge({
+            let (store, location) = (store.clone(), location.clone());
+            async move {
+                let mut superseded = store.put_multipart(&location).await.unwrap();
+                let mut active = store.put_multipart(&location).await.unwrap();
+                superseded.put_part(PutPayload::from_static(b"superseded part")).await.unwrap();
+                active.put_part(PutPayload::from_static(b"active part")).await.unwrap();
+                let active_completion = active.complete().await;
+                let stale_completion = superseded.complete().await;
+                let stale_abort = superseded.abort().await;
+                (active_completion, stale_completion, stale_abort)
+            }
+        });
+        assert!(active_completion.is_ok(), "exactly one attempt commits — the active one: {active_completion:?}");
+        assert!(
+            matches!(stale_completion, Err(slatedb::object_store::Error::Precondition { .. })),
+            "the superseded attempt's completion must be a typed refusal, got: {stale_completion:?}",
+        );
+        assert!(
+            stale_abort.is_ok(),
+            "a superseded-but-uncommitted attempt must be able to abort its own upload, got: {stale_abort:?}",
+        );
+        assert!(!store.is_quarantined(), "a refused stale completion is a gate refusal, not tamper evidence");
+        let bytes = bridge({
+            let (store, location) = (store.clone(), location.clone());
+            async move { store.get(&location).await.unwrap().bytes().await.unwrap() }
+        });
+        assert_eq!(&bytes[..], b"active part", "the committed attempt's bytes are what is published");
+    }
+
+    #[test]
+    fn a_completion_after_the_namespace_is_quarantined_is_refused_and_the_upload_is_reclaimed() {
+        // R4-STOR-04: quarantine is revalidated at completion time. An attempt
+        // initiated BEFORE the quarantine must not complete after it — the
+        // completion is refused and the provider upload aborted.
+        let (_dir, store) = wrapped_store();
+        let location = ObjectPath::from("base/fv1/m1/keyspace/07STU.sst");
+        let other = ObjectPath::from("base/fv1/m1/keyspace/01ABC.sst");
+        let (completion, second_abort) = bridge({
+            let (store, location, other) = (store.clone(), location.clone(), other.clone());
+            async move {
+                let mut upload = store.put_multipart(&location).await.unwrap();
+                upload.put_part(PutPayload::from_static(b"pending part")).await.unwrap();
+                // the quarantine lands AFTER this attempt was initiated
+                store.put(&other, PutPayload::from_static(b"authoritative")).await.unwrap();
+                let _ = store.put(&other, PutPayload::from_static(b"tampered!!!!!")).await;
+                let completion = upload.complete().await;
+                // the completion already aborted the upload: a second abort is
+                // the "was aborted" refusal — proof the reclamation happened
+                let second_abort = upload.abort().await;
+                (completion, second_abort)
+            }
+        });
+        assert!(store.is_quarantined());
+        assert!(
+            matches!(completion, Err(slatedb::object_store::Error::Precondition { .. })),
+            "completion after quarantine must be a typed refusal, got: {completion:?}",
+        );
+        assert!(
+            matches!(second_abort, Err(slatedb::object_store::Error::Precondition { .. })),
+            "the refused completion must already have aborted the upload, got: {second_abort:?}",
+        );
+        // nothing was published at the pending location
+        let head = bridge({
+            let (store, location) = (store.clone(), location.clone());
+            async move { store.head(&location).await }
+        });
+        assert!(
+            matches!(head, Err(slatedb::object_store::Error::NotFound { .. })),
+            "the refused completion must not have published an object, got: {head:?}",
+        );
+    }
+
+    #[test]
+    fn a_restart_between_publication_and_a_replayed_completion_cannot_overwrite() {
+        // R4-STOR-04 restart / response-loss: incarnation ONE publishes a key
+        // via multipart; incarnation TWO (a fresh wrapper over the same inner
+        // store — the process-local journal is gone) replays initiation and
+        // completion of the same key. The journal cannot help here; the
+        // create-only completion check against the STORE is what refuses.
+        let dir = create_tmp_dir("slate-s04-restart");
+        let inner: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
+        let key = ObjectPath::from("base/fv1/m1/keyspace/08VWX.sst");
+
+        let first = Arc::new(NoDeleteStore::new(inner.clone()));
+        bridge({
+            let (first, key) = (first.clone(), key.clone());
+            async move {
+                let mut upload = first.put_multipart(&key).await.unwrap();
+                upload.put_part(PutPayload::from_static(b"published bytes")).await.unwrap();
+                upload.complete().await.unwrap();
+            }
+        });
+
+        let second = Arc::new(NoDeleteStore::new(inner)); // the "restarted" incarnation
+        let replayed = bridge({
+            let (second, key) = (second.clone(), key.clone());
+            async move {
+                let mut upload = second.put_multipart(&key).await.unwrap();
+                upload.put_part(PutPayload::from_static(b"replayed bytes")).await.unwrap();
+                upload.complete().await
+            }
+        });
+        assert!(
+            matches!(replayed, Err(slatedb::object_store::Error::Precondition { .. })),
+            "a replayed completion after restart must be refused by the store-level check, got: {replayed:?}",
+        );
+        assert!(second.is_quarantined(), "the replayed overwrite attempt quarantines the new incarnation");
+        let bytes = bridge({
+            let (second, key) = (second.clone(), key.clone());
+            async move { second.get(&key).await.unwrap().bytes().await.unwrap() }
+        });
+        assert_eq!(&bytes[..], b"published bytes", "the originally published bytes survive");
+    }
+
+    #[test]
+    fn a_manifest_multipart_completion_cannot_silently_overwrite_the_manifest() {
+        // R4-STOR-04: manifest republication is legitimate ONLY through the
+        // conditional single-put CAS path; the multipart API carries no
+        // precondition, so completion onto an existing manifest key is a typed
+        // refusal (no silent overwrite) — but NOT a quarantine event, because
+        // an existing manifest is the normal published state, not tamper
+        // evidence. Completion onto an ABSENT manifest key still succeeds.
+        let (_dir, store) = wrapped_store();
+        let manifest = ObjectPath::from(format!("base/fv1/m1/keyspace/{MANIFEST_SUBDIR}/0001.manifest"));
+        let (overwrite, fresh) = bridge({
+            let (store, manifest) = (store.clone(), manifest.clone());
+            async move {
+                store.put(&manifest, PutPayload::from_static(b"manifest v1")).await.unwrap();
+                let mut onto_existing = store.put_multipart(&manifest).await.unwrap();
+                onto_existing.put_part(PutPayload::from_static(b"manifest v2 via multipart")).await.unwrap();
+                let overwrite = onto_existing.complete().await;
+                let fresh_key =
+                    ObjectPath::from(format!("base/fv1/m1/keyspace/{MANIFEST_SUBDIR}/0002.manifest"));
+                let mut onto_absent = store.put_multipart(&fresh_key).await.unwrap();
+                onto_absent.put_part(PutPayload::from_static(b"manifest v2")).await.unwrap();
+                let fresh = onto_absent.complete().await;
+                (overwrite, fresh)
+            }
+        });
+        assert!(
+            matches!(overwrite, Err(slatedb::object_store::Error::Precondition { .. })),
+            "a multipart completion onto an existing manifest key must be refused, got: {overwrite:?}",
+        );
+        assert!(!store.is_quarantined(), "an existing manifest is not tamper evidence — no quarantine");
+        assert!(fresh.is_ok(), "a multipart completion onto an absent manifest key creates, got: {fresh:?}");
+        let bytes = bridge({
+            let (store, manifest) = (store.clone(), manifest.clone());
+            async move { store.get(&manifest).await.unwrap().bytes().await.unwrap() }
+        });
+        assert_eq!(&bytes[..], b"manifest v1", "the published manifest bytes are untouched");
     }
 }
 

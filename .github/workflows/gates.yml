@@ -15,12 +15,26 @@ name: gates
 #     lock checker's own behavioral mutants;
 #   - Mode-Q: the SEMANTIC bundle validator (round-3 E-01) - absence keeps
 #     G0 open, presence must validate (schema, raw-byte hashes, source pin,
-#     crosswalk, content root), and the validator's own six mutants (junk
-#     file, truncated raw output, wrong pin, omitted/duplicate target,
-#     nonzero exit) are executed on every push; two-directional ledger
-#     consistency is enforced by the same validator;
+#     approved argv grammar, cquery stdout line grammar, current workspace-
+#     lock equality, bijective crosswalk, safe filenames, content root -
+#     R4-MODEQ-01), and the validator's own eleven mutants are executed on
+#     every push; two-directional ledger consistency is enforced by the
+#     same validator;
 #   - evidence producers kill their own mutants; the ARCHIVED corpus bundle
-#     re-verifies from raw logs (reparse + hash binding + bundle root);
+#     re-verifies from raw logs (reparse + hash binding + bundle root), and
+#     the INDEPENDENT verifier (tools/evidence/verify_all.py, R4-EVID-03a:
+#     verdict enum, policy re-derivation, canonical plan-root recompute)
+#     re-verifies it too and kills its own mutants (R4-EVID-01);
+#   - the v2 qualification plan has not drifted from the catalogue
+#     (build_plan_v2 --check), and plan coverage is EXPECTED-RED: the
+#     committed plan-coverage-v2.json must regenerate byte-identically and
+#     the tool must exit 1 (the plan is NOT satisfied; a green or drifted
+#     coverage result fails CI) - R4-EVID-01;
+#   - R4-EVID-01a (recorded OPEN finding): the catalogue/plan pin a STALE
+#     source_lock_digest (9cf330d8... vs the current 50f5bf42...);
+#     --require-current-lock steps run NON-blocking (informational
+#     ::warning::) until the catalogue is regenerated - regeneration needs
+#     a full cargo build and is scheduled, not silently done;
 #   - catalogue schema validation and negative controls;
 #   - control plane: typecheck, node suites (incl. the era-A migration
 #     fixtures and crash matrix), standing mutant, workerd lane, the full
@@ -88,7 +102,10 @@ jobs:
         run: python3 tools/modeq/validate_modeq.py --ledger docs/ledger/gates.json
       - name: the Mode-Q validator kills its own mutants
         # junk file, truncated raw output, wrong source pin, omitted
-        # target, duplicate target, nonzero recorded exit - all executed
+        # target, duplicate target, nonzero recorded exit, plus the
+        # R4-MODEQ-01 five (junk stdout, argv ['echo','cquery'], well-shaped
+        # wrong workspace hash, 2:1 crosswalk, '../' path reference) -
+        # all executed
         run: python3 tools/modeq/modeq_mutants.py
       - name: evidence producers kill their own mutants
         run: python3 tools/catalog/evidence_mutants.py
@@ -98,6 +115,16 @@ jobs:
         run: python3 tools/catalog/validate_catalog.py --self-test
       - name: catalogue conforms to the normative v14 contract schema
         run: python3 tools/catalog/validate_catalog.py
+      - name: "[informational] catalogue lock digest vs the CURRENT source lock (R4-EVID-01a)"
+        # NON-blocking on purpose: the committed catalogue is KNOWN-stale
+        # against the current source-lock.json (recorded open finding
+        # R4-EVID-01a). This step surfaces the mismatch on every run
+        # without turning CI red until the catalogue is regenerated
+        # (which needs a full cargo build). It becomes a hard failure by
+        # dropping the `|| echo` fallback once regeneration lands.
+        run: |
+          python3 tools/catalog/validate_catalog.py --require-current-lock \
+            || echo "::warning:: catalogue stale vs current lock (known R4-EVID-01a, regeneration scheduled)"
       - name: materialise the pinned source graph
         # completeness (--results) cross-checks the catalogue's failpoint
         # leaves against the fail_point registry in the typedb source tree, so
@@ -112,6 +139,48 @@ jobs:
         run: |
           python3 tools/catalog/run_u0.py --verdict-only --out docs/evidence/G3/u2s3-full-3
           python3 tools/catalog/completeness.py --results docs/evidence/G3/u2s3-full-3
+      - name: qualification plan v2 has not drifted from the catalogue (R4-EVID-01)
+        # committed plan body must recompute to its own plan_root AND match
+        # a fresh rebuild from the committed catalogue; needs the pinned
+        # behaviour checkout (materialised above) for the cucumber anchors
+        run: python3 tools/catalog/build_plan_v2.py --check
+      - name: "[informational] plan lock digest vs the CURRENT source lock (R4-EVID-01a)"
+        # same recorded open finding as the catalogue step above; the plan
+        # faithfully copies the catalogue's stale digest, so this too is
+        # NON-blocking until regeneration
+        run: |
+          python3 tools/catalog/build_plan_v2.py --check --require-current-lock \
+            || echo "::warning:: catalogue stale vs current lock (known R4-EVID-01a, regeneration scheduled)"
+      - name: independent evidence verifier over the archived bundle (R4-EVID-03a)
+        # tools/evidence/verify_all.py shares no code with the producers:
+        # own reparse, own bundle root, exact verdict enum, independent
+        # policy re-derivation from rows + flake ledger, plan root
+        # recomputed from the plan's canonical body. Default mode: byte
+        # integrity of the historical archive must hold (its legacy
+        # COMPLETE keeps qualification_pass false, loudly reported).
+        run: python3 tools/evidence/verify_all.py docs/evidence/G3/u2s3-full-3
+      - name: the independent verifier kills its own mutants (R4-EVID-03a)
+        # deleted log, edited count, duplicated row, tampered COMPLETE,
+        # policy edit without re-run, stale cached verdict, forged
+        # policy-enum, forged plan body, absent verdict/COMPLETE (strict),
+        # missing row, recorded-GREEN-over-unledgered-failure - all
+        # executed as real subprocesses over mutated archive copies
+        run: python3 tools/evidence/evidence_v2_mutants.py
+      - name: plan coverage is RED exactly as committed (expected-red, R4-EVID-01)
+        # plan_coverage.py must exit 1 (the plan is NOT satisfied - E-02's
+        # machine-readable honesty) AND regenerate the committed report
+        # byte-identically: a green result OR a drifted report fails CI.
+        run: |
+          rc=0
+          python3 tools/catalog/plan_coverage.py --out docs/evidence/G1/plan-coverage-v2.json || rc=$?
+          if [ "$rc" -ne 1 ]; then
+            echo "plan_coverage.py exited $rc but the committed plan is NOT satisfied - expected exit 1" >&2
+            exit 1
+          fi
+          git diff --exit-code -- docs/evidence/G1/plan-coverage-v2.json || {
+            echo "regenerated plan-coverage-v2.json differs from the committed report - review the drift" >&2
+            exit 1
+          }
       - name: no delete authority before G13
         # the refusal is the assertion: this MUST exit nonzero
         run: |
@@ -187,7 +256,9 @@ jobs:
         # the full 85-check protocol matrix against wrangler dev - the same
         # workerd runtime production uses, local-dev surface
         run: |
-          npx wrangler dev --port 8787 > /tmp/wrangler-dev.log 2>&1 &
+          # R4-STACK-01: the DEFAULT wrangler.toml is the managed fail-closed
+          # posture; the E2E exercises the EXPLICIT local-dev config.
+          npx wrangler dev -c wrangler.local-dev.toml --port 8787 > /tmp/wrangler-dev.log 2>&1 &
           WRANGLER_PID=$!
           for i in $(seq 1 90); do
             curl -s -m 2 http://127.0.0.1:8787/health > /dev/null 2>&1 && break

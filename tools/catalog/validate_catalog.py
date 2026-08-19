@@ -21,9 +21,22 @@ Two layers, both fail-closed:
      required pair's profile declared, every exclusion subject resolvable,
      no unexpired-exclusion/leaf contradiction.
 
+R4-EVID-01a (recorded OPEN finding): the committed catalogue pins
+source_lock_digest 9cf330d8... while the CURRENT source-lock/source-lock.json
+hashes 50f5bf42... - the catalogue's source binding is STALE. Regenerating
+the catalogue requires a full cargo build and is scheduled, not silently
+done here. This tool therefore ALWAYS compares the catalogue's
+source_lock_digest against the sha256 of the current lock file and reports
+the result (JSON fields `current_source_lock_sha256` /
+`source_lock_current`, plus a stderr line on mismatch); with
+--require-current-lock the mismatch becomes a hard ERROR (nonzero exit).
+CI runs the flagged form as a NON-blocking informational step until the
+catalogue is regenerated.
+
 Usage:
   python3 tools/catalog/validate_catalog.py                # the committed catalogue
   python3 tools/catalog/validate_catalog.py --catalog X.json
+  python3 tools/catalog/validate_catalog.py --require-current-lock
   python3 tools/catalog/validate_catalog.py --self-test    # negative controls
 """
 import argparse
@@ -37,6 +50,16 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SCHEMA = REPO / "contract" / "typedb-r2-v14-upstream-test-catalog.schema.json"
 CATALOG = REPO / "docs" / "evidence" / "G1" / "upstream-test-catalog.json"
+SOURCE_LOCK = REPO / "source-lock" / "source-lock.json"
+
+
+def sha256_file(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 TYPES = {
     "object": dict, "array": list, "string": str, "boolean": bool,
@@ -226,6 +249,13 @@ def self_test():
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--catalog", type=pathlib.Path, default=CATALOG)
+    ap.add_argument("--require-current-lock", action="store_true",
+                    help="FAIL if the catalogue's source_lock_digest is not "
+                         "the sha256 of the current source-lock/"
+                         "source-lock.json (R4-EVID-01a: the committed "
+                         "catalogue is currently stale, so CI runs this as a "
+                         "non-blocking informational step until it is "
+                         "regenerated)")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
     if args.self_test:
@@ -237,8 +267,28 @@ def main():
     validate(cat, schema, schema, "$", errors)
     sem, pair_profiles = semantic_checks(cat)
     errors += sem
+
+    # R4-EVID-01a: compare the catalogue's pinned lock digest against the
+    # CURRENT lock file, always report, fail only under --require-current-lock
+    current_lock = sha256_file(SOURCE_LOCK) if SOURCE_LOCK.is_file() else None
+    lock_current = current_lock is not None \
+        and cat.get("source_lock_digest") == current_lock
+    if not lock_current:
+        msg = (f"catalogue pins source_lock_digest "
+               f"{cat.get('source_lock_digest')} but the current "
+               f"{SOURCE_LOCK.relative_to(REPO)} hashes {current_lock} - the "
+               f"catalogue's source binding is STALE (recorded open finding "
+               f"R4-EVID-01a; regenerate the catalogue against the current "
+               f"lock)")
+        if args.require_current_lock:
+            errors.append(msg)
+        else:
+            print(f"STALE-LOCK: {msg}", file=sys.stderr)
     print(json.dumps({
         "catalog": str(args.catalog.relative_to(REPO)),
+        "catalog_source_lock_digest": cat.get("source_lock_digest"),
+        "current_source_lock_sha256": current_lock,
+        "source_lock_current": lock_current,
         "targets": len(cat["targets"]),
         "leaf_cases": len(cat["leaf_cases"]),
         "unique_leaf_cases": len({l["leaf_case_id"] for l in cat["leaf_cases"]}),

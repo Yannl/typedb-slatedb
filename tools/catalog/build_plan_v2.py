@@ -35,9 +35,20 @@ The plan is a DENOMINATOR, never a pass: emitting it proves nothing ran.
 tools/catalog/plan_coverage.py joins execution evidence onto these rows and
 must report the plan NOT satisfied until every row is covered or excluded.
 
+R4-EVID-01a (recorded OPEN finding): the committed catalogue - and therefore
+the plan's generated_from.source_lock_digest, which this tool faithfully
+copies from it - pins the OLDER lock digest 9cf330d8..., while the current
+source-lock/source-lock.json hashes 50f5bf42... . The stale binding is a
+recorded open finding, not silently repaired here (regeneration needs a full
+cargo build). `--check --require-current-lock` turns the staleness into a
+hard failure; plain `--check` reports it informationally. CI runs the
+flagged form as a NON-blocking informational step until the catalogue and
+plan are regenerated.
+
 Usage:
   python3 tools/catalog/build_plan_v2.py            # (re)build + write + print root
   python3 tools/catalog/build_plan_v2.py --check    # committed plan vs catalogue; drift = nonzero
+  python3 tools/catalog/build_plan_v2.py --check --require-current-lock
 """
 import argparse
 import hashlib
@@ -343,8 +354,13 @@ def write_plan(body, path):
     return doc["plan_root"]
 
 
-def check(catalog, catalog_sha):
-    """Committed plan vs the catalogue: any drift is nonzero."""
+SOURCE_LOCK = REPO / "source-lock" / "source-lock.json"
+
+
+def check(catalog, catalog_sha, require_current_lock=False):
+    """Committed plan vs the catalogue: any drift is nonzero. With
+    require_current_lock, a plan/catalogue whose source_lock_digest is not
+    the sha256 of the CURRENT source-lock.json also fails (R4-EVID-01a)."""
     if not PLAN.exists():
         print(f"CHECK FAIL: {PLAN} does not exist", file=sys.stderr)
         return 1
@@ -352,6 +368,22 @@ def check(catalog, catalog_sha):
     committed_root = committed.pop("plan_root", None)
     recomputed_committed_root = plan_root_of(committed)
     problems = []
+    # R4-EVID-01a: the plan copies the catalogue's lock digest; compare it
+    # to the CURRENT lock file, always report, fail only when required to
+    current_lock = common.sha256_file(SOURCE_LOCK) if SOURCE_LOCK.is_file() \
+        else None
+    pinned_lock = (committed.get("generated_from") or {}).get(
+        "source_lock_digest")
+    if pinned_lock != current_lock:
+        msg = (f"plan pins source_lock_digest {pinned_lock} (copied from the "
+               f"catalogue) but the current "
+               f"{SOURCE_LOCK.relative_to(REPO)} hashes {current_lock} - the "
+               f"source binding is STALE (recorded open finding R4-EVID-01a; "
+               f"regenerate catalogue + plan against the current lock)")
+        if require_current_lock:
+            problems.append(msg)
+        else:
+            print(f"STALE-LOCK: {msg}", file=sys.stderr)
     if committed_root != recomputed_committed_root:
         problems.append(
             f"committed plan_root {committed_root} != root of the committed "
@@ -384,12 +416,19 @@ def main():
     ap.add_argument("--check", action="store_true",
                     help="revalidate the committed plan against the catalogue; "
                          "drift is a nonzero exit")
+    ap.add_argument("--require-current-lock", action="store_true",
+                    help="with --check: FAIL if the plan's pinned "
+                         "source_lock_digest is not the sha256 of the current "
+                         "source-lock/source-lock.json (R4-EVID-01a: currently "
+                         "stale; CI runs this as a non-blocking informational "
+                         "step until regeneration)")
     args = ap.parse_args()
     catalog = json.loads(args.catalog.read_text())
     catalog_sha = common.sha256_file(args.catalog)
 
     if args.check:
-        return check(catalog, catalog_sha)
+        return check(catalog, catalog_sha,
+                     require_current_lock=args.require_current_lock)
 
     body = build_body(catalog, catalog_sha)
     for e in errors:

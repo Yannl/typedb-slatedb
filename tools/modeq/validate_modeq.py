@@ -9,23 +9,48 @@ the Mode-Q bundle the v17 addendum actually requires:
   docs/evidence/G0/mode-q/
     modeq.json          the bundle manifest (schema modeq-bundle/v1):
       bazel:            {binary_sha256 (64-hex), version (non-empty)}
-      invocation:       {argv (must invoke cquery), env, toolchain,
+      invocation:       {argv, env, toolchain,
                          source_commit (must EQUAL the TB revision pinned
                          in source-lock/source-lock.json), source_tree
-                         (must equal the pinned tree), workspace_lock_sha256}
+                         (must equal the pinned tree), workspace_lock_sha256
+                         (must EQUAL the sha256 of the CURRENT
+                         source-lock/workspace-lock.json - a well-shaped
+                         but wrong or forged hash fails; strict equality is
+                         safe because no committed bundle exists today and
+                         absence keeps G0 open anyway)}
+                        R4-MODEQ-01: argv must match the approved command
+                        grammar - argv[0]'s basename must be an approved
+                        Bazel executable (bazel/bazelisk; 'echo' fails),
+                        followed by optional startup options (-...), the
+                        literal 'cquery', exactly one query expression, and
+                        optional --flags. A list merely CONTAINING the
+                        string 'cquery' is not an invocation.
       cquery:           {stdout_file, stderr_file, stdout_sha256,
                          stderr_sha256, exit_code} — the raw byte files
-                         must exist, hash-match, and exit_code MUST be 0
+                         must exist, hash-match, and exit_code MUST be 0.
+                         R4-MODEQ-01: stdout is PARSED with the real cquery
+                         line grammar - every non-empty line must be a
+                         Bazel label, optionally followed by a
+                         configuration hash "(hex)" or "(null)"; arbitrary
+                         junk ("THIS IS NOT BAZEL OUTPUT") fails.
       targets:          non-empty, unique Bazel labels
       crosswalk_file:   file of [{bazel_target, catalog_target_id}]:
                          every bundle target appears EXACTLY once, no
                          unknown bazel targets, and every catalog id
-                         exists in the canonical catalogue
+                         exists in the canonical catalogue.
+                         R4-MODEQ-01: the mapping must be a BIJECTION -
+                         each catalogue id maps to at most one Bazel label
+                         unless a versioned n:1 allowlist entry with a
+                         reason exists below (N_TO_ONE_ALLOWLIST, default
+                         empty); two labels onto one id is rejected.
       root:             sha256 over the sorted "relpath\\nsha256\\n" lines
                          of every OTHER file in the bundle directory
     <raw files>         every file must be accounted for (manifest,
                          stdout, stderr, crosswalk) — an unaccounted junk
-                         file fails the bundle
+                         file fails the bundle. R4-MODEQ-01: every
+                         referenced filename must be a SAFE BASENAME inside
+                         the bundle dir - path separators, '..', and
+                         absolute paths are rejected before any resolution.
 
 Exit codes:
   0  directory absent            -> prints "MODEQ: ABSENT"  (the ledger
@@ -51,8 +76,99 @@ DEFAULT_DIR = REPO / "docs" / "evidence" / "G0" / "mode-q"
 SOURCE_LOCK = REPO / "source-lock" / "source-lock.json"
 CATALOG = REPO / "docs" / "evidence" / "G1" / "upstream-test-catalog.json"
 
+WORKSPACE_LOCK = REPO / "source-lock" / "workspace-lock.json"
+
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
+
+# R4-MODEQ-01: the only executables that may claim to have produced a
+# cquery snapshot (basename of argv[0])
+APPROVED_BAZEL_BASENAMES = {"bazel", "bazelisk"}
+
+# R4-MODEQ-01: one cquery result line — a Bazel label, optionally followed
+# by a configuration checksum "(hex)" or "(null)" (bazel cquery's default
+# --output=label form). Anything else on stdout is not cquery output.
+CQUERY_LINE = re.compile(
+    r"^(@[\w.-]*)?//[\w./-]*(:[\w./+=,@~-]+)?( \(([0-9a-f]+|null)\))?$")
+
+# R4-MODEQ-01: a referenced file must be a safe basename inside the bundle
+SAFE_BASENAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+# R4-MODEQ-01: versioned n:1 crosswalk allowlist. The bijection policy is
+# the default: each catalogue id maps to at most one Bazel label. An entry
+# here — {"catalog_target_id": {"labels": [...], "reason": "..."}} — is the
+# ONLY way more than one label may land on one id, and each entry must name
+# its reason. Deliberately empty (v1): no approved n:1 mapping exists.
+N_TO_ONE_ALLOWLIST_VERSION = 1
+N_TO_ONE_ALLOWLIST: dict = {}
+
+
+def safe_bundle_file(bundle_dir: pathlib.Path, name: str,
+                     field: str, errors: list[str]) -> pathlib.Path | None:
+    """Resolve a manifest-referenced filename strictly as a basename under
+    the bundle dir; reject path separators, '..' and absolute paths BEFORE
+    touching the filesystem."""
+    if ("/" in name or "\\" in name or name in (".", "..")
+            or pathlib.PurePosixPath(name).is_absolute()
+            or pathlib.PureWindowsPath(name).is_absolute()
+            or not SAFE_BASENAME.match(name)):
+        errors.append(f"{field} {name!r} is not a safe basename — referenced "
+                      "files must live directly inside the bundle directory")
+        return None
+    return bundle_dir / name
+
+
+def check_argv_grammar(argv: list[str], errors: list[str]) -> None:
+    """The approved command grammar (R4-MODEQ-01):
+    <bazel|bazelisk> [startup options...] cquery <expr> [--flags...]
+    Merely containing the string 'cquery' somewhere is NOT an invocation
+    (the audit's counterexample: ['echo', 'cquery'])."""
+    base = pathlib.PurePosixPath(argv[0]).name
+    if base not in APPROVED_BAZEL_BASENAMES:
+        errors.append(
+            f"invocation.argv[0] {argv[0]!r} is not an approved Bazel "
+            f"executable ({', '.join(sorted(APPROVED_BAZEL_BASENAMES))}) — "
+            "whatever ran, it was not Bazel")
+        return
+    rest = argv[1:]
+    i = 0
+    while i < len(rest) and rest[i].startswith("-"):
+        i += 1  # bazel startup options
+    if i >= len(rest) or rest[i] != "cquery":
+        errors.append(
+            "invocation.argv does not match the approved grammar "
+            "'bazel [startup opts] cquery <expr> [--flags]' — the command "
+            "after the startup options must be cquery")
+        return
+    tail = rest[i + 1:]
+    positional = [a for a in tail if not a.startswith("-")]
+    flags = [a for a in tail if a.startswith("-")]
+    if len(positional) != 1 or not positional[0].strip():
+        errors.append(
+            f"invocation.argv must carry exactly one cquery expression, got "
+            f"{positional!r}")
+    if any(not f.startswith("--") for f in flags):
+        errors.append(
+            f"invocation.argv carries malformed cquery flags: "
+            f"{[f for f in flags if not f.startswith('--')]!r}")
+
+
+def check_cquery_stdout(path: pathlib.Path, errors: list[str]) -> None:
+    """Parse the raw stdout with the real cquery line grammar: every
+    non-empty line must be a Bazel label (optionally '(confighash)' or
+    '(null)'). Junk bytes are not a query snapshot."""
+    try:
+        text = path.read_text(errors="replace")
+    except OSError as error:
+        errors.append(f"cquery stdout is unreadable: {error}")
+        return
+    bad = [line for line in text.splitlines()
+           if line.strip() and not CQUERY_LINE.match(line.strip())]
+    if bad:
+        errors.append(
+            f"cquery stdout contains {len(bad)} line(s) that are not Bazel "
+            f"cquery output (first: {bad[0][:80]!r}) — junk bytes are not a "
+            "query snapshot")
 
 
 def sha256_file(path: pathlib.Path) -> str:
@@ -116,8 +232,8 @@ def validate_bundle(bundle_dir: pathlib.Path) -> list[str]:
         argv = inv.get("argv")
         if not (isinstance(argv, list) and argv and all(isinstance(a, str) for a in argv)):
             errors.append("invocation.argv must be a non-empty string list")
-        elif "cquery" not in argv:
-            errors.append("invocation.argv does not invoke cquery — Mode Q is the cquery snapshot")
+        else:
+            check_argv_grammar(argv, errors)
         if not isinstance(inv.get("env"), dict):
             errors.append("invocation.env must be an object")
         if not (isinstance(inv.get("toolchain"), str) and inv["toolchain"].strip()):
@@ -139,6 +255,14 @@ def validate_bundle(bundle_dir: pathlib.Path) -> list[str]:
         wl = inv.get("workspace_lock_sha256")
         if not (isinstance(wl, str) and HEX64.match(wl)):
             errors.append("invocation.workspace_lock_sha256 must be a 64-hex sha256")
+        elif not WORKSPACE_LOCK.is_file():
+            errors.append(f"cannot verify workspace_lock_sha256: {WORKSPACE_LOCK} does not exist")
+        elif wl != sha256_file(WORKSPACE_LOCK):
+            errors.append(
+                f"invocation.workspace_lock_sha256 {wl} is not the sha256 of the CURRENT "
+                f"{WORKSPACE_LOCK.relative_to(REPO)} ({sha256_file(WORKSPACE_LOCK)}) — "
+                "a well-shaped hash that matches nothing pins nothing (R4-MODEQ-01)"
+            )
 
     # --- raw cquery bytes ---
     accounted = {"modeq.json"}
@@ -152,8 +276,10 @@ def validate_bundle(bundle_dir: pathlib.Path) -> list[str]:
             if not (isinstance(fname, str) and fname):
                 errors.append(f"cquery.{role}_file missing")
                 continue
+            fpath = safe_bundle_file(bundle_dir, fname, f"cquery.{role}_file", errors)
+            if fpath is None:
+                continue
             accounted.add(fname)
-            fpath = bundle_dir / fname
             if not fpath.is_file():
                 errors.append(f"cquery.{role}_file {fname} does not exist in the bundle")
                 continue
@@ -167,9 +293,12 @@ def validate_bundle(bundle_dir: pathlib.Path) -> list[str]:
         if cq.get("exit_code") != 0:
             errors.append(f"cquery.exit_code is {cq.get('exit_code')!r} — a nonzero cquery is not evidence of anything")
         stdout_file = cq.get("stdout_file")
-        if isinstance(stdout_file, str) and (bundle_dir / stdout_file).is_file():
+        if isinstance(stdout_file, str) and SAFE_BASENAME.match(stdout_file) \
+                and (bundle_dir / stdout_file).is_file():
             if (bundle_dir / stdout_file).stat().st_size == 0:
                 errors.append("cquery stdout is empty — an empty snapshot enumerates nothing")
+            else:
+                check_cquery_stdout(bundle_dir / stdout_file, errors)
 
     # --- target set ---
     targets = doc.get("targets")
@@ -189,9 +318,9 @@ def validate_bundle(bundle_dir: pathlib.Path) -> list[str]:
     xw_name = doc.get("crosswalk_file")
     if not (isinstance(xw_name, str) and xw_name):
         errors.append("crosswalk_file missing")
-    else:
+    elif (xw_path := safe_bundle_file(bundle_dir, xw_name, "crosswalk_file",
+                                      errors)) is not None:
         accounted.add(xw_name)
-        xw_path = bundle_dir / xw_name
         if not xw_path.is_file():
             errors.append(f"crosswalk_file {xw_name} does not exist in the bundle")
         else:
@@ -206,12 +335,14 @@ def validate_bundle(bundle_dir: pathlib.Path) -> list[str]:
                 else:
                     cat_ids = catalog_target_ids(errors)
                     seen: list[str] = []
+                    by_catalog_id: dict[str, list[str]] = {}
                     for i, row in enumerate(xw):
                         if not (isinstance(row, dict) and isinstance(row.get("bazel_target"), str)
                                 and isinstance(row.get("catalog_target_id"), str)):
                             errors.append(f"crosswalk row {i} is not {{bazel_target, catalog_target_id}}")
                             continue
                         seen.append(row["bazel_target"])
+                        by_catalog_id.setdefault(row["catalog_target_id"], []).append(row["bazel_target"])
                         if target_set and row["bazel_target"] not in target_set:
                             errors.append(f"crosswalk names unknown bazel target {row['bazel_target']}")
                         if cat_ids is not None and row["catalog_target_id"] not in cat_ids:
@@ -219,6 +350,23 @@ def validate_bundle(bundle_dir: pathlib.Path) -> list[str]:
                     if len(set(seen)) != len(seen):
                         dupes = sorted({t for t in seen if seen.count(t) > 1})
                         errors.append(f"crosswalk maps a bazel target more than once: {', '.join(dupes)}")
+                    # R4-MODEQ-01: BIJECTION policy — each catalogue id may
+                    # receive at most one Bazel label unless a versioned
+                    # allowlist entry with a reason approves the n:1 mapping
+                    for cid, labels in sorted(by_catalog_id.items()):
+                        if len(labels) <= 1:
+                            continue
+                        allowed = N_TO_ONE_ALLOWLIST.get(cid)
+                        if allowed and sorted(labels) == sorted(allowed.get("labels", [])) \
+                                and allowed.get("reason"):
+                            continue
+                        errors.append(
+                            f"crosswalk maps {len(labels)} bazel labels "
+                            f"({', '.join(sorted(labels)[:3])}) onto one catalogue id "
+                            f"{cid} — the mapping must be a bijection; an n:1 mapping "
+                            f"requires a versioned allowlist entry with a reason "
+                            f"(allowlist v{N_TO_ONE_ALLOWLIST_VERSION} has none)"
+                        )
                     missing = sorted(target_set - set(seen))
                     if missing:
                         errors.append(

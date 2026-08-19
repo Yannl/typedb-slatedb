@@ -15,6 +15,20 @@ time — each mutant MUST make the validator exit 1:
   duplicate-target     the same target listed twice
   nonzero-exit         cquery.exit_code recorded as 101
 
+R4-MODEQ-01 additions (the round-4 synthetic-artifact counterexample):
+  junk-stdout          stdout replaced by "THIS IS NOT BAZEL OUTPUT" with
+                       hashes and root diligently regenerated — the cquery
+                       line grammar must reject it
+  argv-echo            argv ['echo', 'cquery'] — containing the string
+                       'cquery' is not an invocation; argv[0] must be an
+                       approved bazel/bazelisk basename
+  wrong-workspace-hash a well-shaped (64-hex) workspace_lock_sha256 that is
+                       not the sha256 of the current workspace lock
+  two-to-one-crosswalk two Bazel labels mapped onto one catalogue id —
+                       the bijection policy (empty n:1 allowlist) rejects it
+  path-traversal-ref   crosswalk_file referencing '../' — referenced names
+                       must be safe basenames inside the bundle
+
 A validator that accepts any of these proves nothing; this script exits 1
 if any mutant survives (or if the healthy baseline is rejected).
 """
@@ -99,6 +113,22 @@ def edit_manifest(bundle: pathlib.Path, mutate) -> None:
     path.write_text(json.dumps(doc, indent=2) + "\n")
 
 
+def reseal(bundle: pathlib.Path) -> None:
+    """What a diligent forger does after tampering with raw files: refresh
+    the recorded stdout/stderr hashes and the content-addressed root so only
+    the SEMANTIC checks can still catch the edit."""
+    def fn(doc):
+        for role in ("stdout", "stderr"):
+            fname = doc["cquery"].get(f"{role}_file")
+            if isinstance(fname, str) and "/" not in fname and (bundle / fname).is_file():
+                doc["cquery"][f"{role}_sha256"] = sha256_bytes((bundle / fname).read_bytes())
+        lines = []
+        for name in sorted(p.name for p in bundle.iterdir() if p.name != "modeq.json"):
+            lines.append(f"{name}\n{sha256_bytes((bundle / name).read_bytes())}\n")
+        doc["root"] = hashlib.sha256("".join(lines).encode()).hexdigest()
+    edit_manifest(bundle, fn)
+
+
 def main() -> int:
     failures = 0
     with tempfile.TemporaryDirectory() as tmp:
@@ -155,10 +185,46 @@ def main() -> int:
             lambda b: edit_manifest(b, lambda d: d["cquery"].__setitem__("exit_code", 101)),
         )
 
+        # ---- R4-MODEQ-01: the round-4 synthetic-artifact counterexample ----
+
+        def junk_stdout(b):
+            (b / "cquery-stdout.txt").write_bytes(b"THIS IS NOT BAZEL OUTPUT\n")
+            reseal(b)  # hashes/root diligently regenerated; only the grammar is left
+        mutant("junk-stdout", junk_stdout)
+
+        mutant(
+            "argv-echo",
+            lambda b: edit_manifest(
+                b, lambda d: d["invocation"].__setitem__("argv", ["echo", "cquery"])
+            ),
+        )
+
+        mutant(
+            "wrong-workspace-hash",
+            lambda b: edit_manifest(
+                b, lambda d: d["invocation"].__setitem__(
+                    "workspace_lock_sha256", "0" * 64)  # well-shaped, wrong
+            ),
+        )
+
+        def two_to_one(b):
+            xw = json.loads((b / "crosswalk.json").read_text())
+            xw[1]["catalog_target_id"] = xw[0]["catalog_target_id"]  # 2 labels -> 1 id
+            (b / "crosswalk.json").write_text(json.dumps(xw, indent=2) + "\n")
+            reseal(b)
+        mutant("two-to-one-crosswalk", two_to_one)
+
+        def path_traversal(b):
+            (b.parent / "evil-crosswalk.json").write_text(
+                (b / "crosswalk.json").read_text())
+            edit_manifest(b, lambda d: d.__setitem__(
+                "crosswalk_file", "../evil-crosswalk.json"))
+        mutant("path-traversal-ref", path_traversal)
+
     if failures:
         print(f"modeq mutants: {failures} SURVIVED")
         return 1
-    print("modeq mutants: all 6 killed")
+    print("modeq mutants: all 11 killed")
     return 0
 
 

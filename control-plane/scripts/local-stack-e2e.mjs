@@ -18,12 +18,14 @@
 import { createHash } from "node:crypto";
 // The script speaks the REAL token/provisioning protocol, so it imports the
 // exact core modules the worker runs (node strips types; see package.json).
-import { mintCapability } from "../src/controller/core/capability.ts";
-import { mintProvisionToken } from "../src/controller/core/registry.ts";
+// R5-SEC-03: minting is ISSUER-SIDE - the dev-insecure Ed25519 SIGNING
+// seeds live here (and in tests), while the local-dev runtime verifies
+// under the committed dev PUBLIC keys.
+import { mintCapabilityToken, mintProvisionToken } from "../src/controller/core/issuer.ts";
 import {
-  DEV_CAPABILITY_KEY, DEV_ENVIRONMENT, DEV_PROVISION_KEY,
+  DEV_CAPABILITY_KID, DEV_ENVIRONMENT, DEV_PROVISION_KID,
+  devCapabilitySigningKey, devProvisionSigningKey,
 } from "../src/controller/core/key-config.ts";
-import { utf8 } from "../src/controller/core/journal-crypto.ts";
 
 const BASE = process.argv[2] ?? "http://127.0.0.1:8787";
 const DB = `e2e-db-${process.pid}-${Date.now()}`;
@@ -189,8 +191,8 @@ const preProvisionIssue = await rawApi("POST", "/capability",
 check("issuance to an unprovisioned database is refused",
   preProvisionIssue.status === 409 && preProvisionIssue.body.error === "DATABASE_UNPROVISIONED",
   JSON.stringify(preProvisionIssue.body));
-const squatToken = mintCapability(utf8(DEV_CAPABILITY_KEY), {
-  v: 2, kid: `cap:${DEV_ENVIRONMENT}`, env: DEV_ENVIRONMENT, tenantId: TENANT,
+const squatToken = await mintCapabilityToken(devCapabilitySigningKey(), {
+  v: 3, alg: "Ed25519", kid: DEV_CAPABILITY_KID, env: DEV_ENVIRONMENT, tenantId: TENANT,
   principal: PRINCIPAL, databaseId: DB, method: "WAL_READ", session: SESSION, generation: String(GEN),
   incarnation: 1, nonce: `n-squat-${Date.now()}`, expiresAtMs: Date.now() + 60_000,
 });
@@ -198,33 +200,34 @@ const squat = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { 
 check("an ordinary authenticated call to an unprovisioned authority fails closed (squat mutant)",
   squat.status === 403 && squat.body.error === "DATABASE_UNPROVISIONED", JSON.stringify(squat.body));
 
-const provisionTokenFor = (databaseId) => mintProvisionToken(utf8(DEV_PROVISION_KEY),
+const provisionTokenFor = (databaseId) => mintProvisionToken(devProvisionSigningKey(),
   { environment: DEV_ENVIRONMENT, tenantId: TENANT, databaseId },
-  { nonce: `n-prov-${databaseId}-${Date.now()}`, expiresAtMs: Date.now() + 60_000 });
-// verifier-material mutant at the wire: a provision token minted with the
-// ordinary CAPABILITY key must not bind anything
-const forgedProvision = mintProvisionToken(utf8(DEV_CAPABILITY_KEY),
+  { nonce: `n-prov-${databaseId}-${Date.now()}`, expiresAtMs: Date.now() + 60_000, kid: DEV_PROVISION_KID });
+// cross-scope mutant at the wire (R5-SEC-03): a provision token SIGNED
+// with the ordinary CAPABILITY keypair must not bind anything - the
+// signature cannot verify under the provisioning scope's public key
+const forgedProvision = await mintProvisionToken(devCapabilitySigningKey(),
   { environment: DEV_ENVIRONMENT, tenantId: TENANT, databaseId: DB },
-  { nonce: "n-forged", expiresAtMs: Date.now() + 60_000 });
+  { nonce: "n-forged", expiresAtMs: Date.now() + 60_000, kid: DEV_PROVISION_KID });
 const forgedBind = await rawApi("POST", "/provision", { tenantId: TENANT, databaseId: DB },
   false, { "x-provision": forgedProvision });
 check("capability-scope material cannot provision (mint/verify separation)",
-  forgedBind.status === 403 && forgedBind.body.error === "CAPABILITY_MAC_INVALID",
+  forgedBind.status === 403 && forgedBind.body.error === "CAPABILITY_SIGNATURE_INVALID",
   JSON.stringify(forgedBind.body));
 const provisioned = await rawApi("POST", "/provision", { tenantId: TENANT, databaseId: DB },
-  false, { "x-provision": provisionTokenFor(DB) });
+  false, { "x-provision": await provisionTokenFor(DB) });
 check("the internal PROVISION capability binds the authority exactly once",
   provisioned.status === 200 && provisioned.body.ok === true && provisioned.body.created === true,
   JSON.stringify(provisioned.body));
 const reProvisioned = await rawApi("POST", "/provision", { tenantId: TENANT, databaseId: DB },
-  false, { "x-provision": provisionTokenFor(DB) });
+  false, { "x-provision": await provisionTokenFor(DB) });
 check("an identical re-provision is idempotent, never a second binding",
   reProvisioned.status === 200 && reProvisioned.body.created === false,
   JSON.stringify(reProvisioned.body));
 // the capability refusal-matrix section below issues a token for other-db
 // (audience mutant), so that authority must exist too
 const otherDb = await rawApi("POST", "/provision", { tenantId: TENANT, databaseId: "other-db" },
-  false, { "x-provision": provisionTokenFor("other-db") });
+  false, { "x-provision": await provisionTokenFor("other-db") });
 check("second database provisions independently", otherDb.status === 200, JSON.stringify(otherDb.body));
 
 await api("POST", "/session/register", { databaseId: DB, generation: GEN, startupSessionId: SESSION });
@@ -621,7 +624,7 @@ check("missing capability is a typed 401", noToken.status === 401 && noToken.bod
 const readCap = await issueCap({ databaseId: DB, method: "WAL_READ", session: CURRENT_SESSION, generation: GEN });
 const flipped = readCap.token.slice(0, -1) + (readCap.token.endsWith("0") ? "1" : "0");
 const badMac = await rawApi("GET", `/wal/${DB}/${GEN}/head`, undefined, false, { "x-capability": flipped });
-check("tampered MAC is refused", badMac.status === 403 && badMac.body.error === "CAPABILITY_MAC_INVALID");
+check("tampered signature is refused", badMac.status === 403 && badMac.body.error === "CAPABILITY_SIGNATURE_INVALID");
 
 // C-07: reads are STATELESS - side-effect-free, so a read token records no
 // durable use row and is freely replayable across different read requests.

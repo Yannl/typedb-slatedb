@@ -42,6 +42,7 @@ export const ALLOWED_DIFF_PATHS = Object.freeze([
 const POSTURE_DIFF_PATHS = Object.freeze([
   "securityPosture",
   /^worker\.vars\./,
+  /^worker\.deploymentVars\b/,
   /^worker\.forbiddenVars\b/,
 ]);
 
@@ -113,6 +114,19 @@ export function assertPostureInvariants(graph) {
         detail: `posture '${posture}' FORBIDS var ${k} (fail-closed: its absence closes routes); graph carries ${JSON.stringify(vars[k])}`,
       });
     }
+  }
+  // R5-SEC-01: deployment vars (deployment-supplied NAMES, e.g. the public
+  // verification keyrings) are an exact per-posture set too — a graph that
+  // silently drops one cannot boot, and one that adds one carries an
+  // unreviewed runtime input.
+  const declaredDeployment = [...(graph?.worker?.deploymentVars ?? [])].sort();
+  const requiredDeployment = [...(spec.deploymentVars ?? [])].sort();
+  if (JSON.stringify(declaredDeployment) !== JSON.stringify(requiredDeployment)) {
+    violations.push({
+      path: "worker.deploymentVars",
+      detail: `posture '${posture}' requires deployment vars ${JSON.stringify(requiredDeployment)},`
+        + ` graph declares ${JSON.stringify(declaredDeployment)}`,
+    });
   }
   // No extra vars beyond the posture's exact allowlist: an unexpected var
   // is an unreviewed knob, not a convenience (exact allowlist, not denylist).

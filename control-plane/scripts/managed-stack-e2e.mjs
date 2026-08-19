@@ -1,51 +1,51 @@
 /*
- * R4 PR1: PRODUCTION-SURFACE local E2E.
+ * R4 PR1 / R5-SEC-03: PRODUCTION-SURFACE local E2E.
  *
  * Boots `wrangler dev` on the MANAGED config (wrangler.toml - the exact
  * fail-closed posture a default deploy selects: no CONTROLLER_SURFACE, so
- * every dev-only route is physically absent) with MANAGED EPHEMERAL KEYS:
- * this script IS the private issuer for the run - it generates a fresh
- * random issuer root per run, derives the per-scope verification keys
- * (cap:<env> / prov:<env>, core/registry.ts) and hands the runtime ONLY
- * the derived keys. No dev constant can satisfy this surface, and nothing
- * is reused between runs.
+ * every dev-only route is physically absent) with PER-RUN EPHEMERAL
+ * ASYMMETRIC KEYS: this script IS the private issuer for the run
+ * (scripts/issuer.mjs). It generates a fresh Ed25519 keypair per scope
+ * (cap:<env>/1, prov:<env>/1), keeps the PRIVATE halves in this process,
+ * and hands the runtime ONLY the public verification keyrings + the
+ * journal secret + the environment name - exactly the inputs the canonical
+ * graph declares (R5-SEC-01). Nothing is reused between runs, and no dev
+ * constant can satisfy this surface.
  *
  * What it proves, in order:
  *   1. every dev route (capability issuer, legacy register/fence, budget
  *      admin, batch, admin bump, raw outbox/audit) answers 404 - and the
  *      subsequent bootstrap shows those probes left ZERO DO/journal state;
- *   2. the dev issuer constant is worthless here: the issuance route does
- *      not exist, and a token minted under the dev capability constant
- *      fails the MAC;
+ *   2. the dev keypair is worthless here: the issuance route does not
+ *      exist, and a token SIGNED with the committed dev capability key
+ *      fails signature verification;
  *   3. the FULL bootstrap runs through the internal path only: provision
- *      (registry binding + initial budgets) under the PROVISION scope key,
+ *      (registry binding + initial budgets) under the PROVISION keypair,
  *      lifecycle admission (reserve -> attest -> activate), payload upload,
- *      WAL finalize, exact read-back - every token minted in-process from
- *      the run's ephemeral root, exactly the production authorization
- *      topology, executed locally;
- *   4. the PR1 mutants hold on this surface: unprovisioned squat, forged
- *      cross-tenant token, verifier-material provisioning.
+ *      WAL finalize, exact read-back - every token minted issuer-side from
+ *      the run's ephemeral private keys, exactly the production
+ *      authorization topology, executed locally;
+ *   4. the PR1/R5 mutants hold on this surface: unprovisioned squat,
+ *      forged cross-tenant token, cross-scope signing material;
+ *   5. the loopback HTTP issuer (the R5-SEC-02 seam the Rust client will
+ *      use) issues tokens the managed surface accepts, and refuses
+ *      anonymous callers.
  *
  * Usage: node --experimental-strip-types scripts/managed-stack-e2e.mjs
  * Exit code 0 = every check passed.
  */
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { mintCapability } from "../src/controller/core/capability.ts";
-import {
-  deriveCapabilityKey, deriveProvisionKey, mintProvisionToken,
-} from "../src/controller/core/registry.ts";
-import { DEV_CAPABILITY_KEY, DEV_ISSUER_SECRET } from "../src/controller/core/key-config.ts";
-import { hex, utf8 } from "../src/controller/core/journal-crypto.ts";
+import { mintCapabilityToken, mintProvisionToken } from "../src/controller/core/issuer.ts";
+import { devCapabilitySigningKey, DEV_ISSUER_SECRET } from "../src/controller/core/key-config.ts";
+import { createIssuer, startIssuerServer } from "./issuer.mjs";
 import { startWranglerDev } from "./wrangler-dev.mjs";
 
-// ---- the private issuer for this run: fresh root, derived scope keys ----
+// ---- the private issuer for this run: fresh Ed25519 keypairs per scope ----
 const ENV_NAME = "managed-e2e";
-const ISSUER_ROOT = new Uint8Array(randomBytes(32));
-const CAPABILITY_KEY = deriveCapabilityKey(ISSUER_ROOT, ENV_NAME);
-const PROVISION_KEY = deriveProvisionKey(ISSUER_ROOT, ENV_NAME);
-
 const TENANT = "tenant-a";
+const ISSUER = await createIssuer({ environment: ENV_NAME, tenantId: TENANT });
+
 const DB = `mdb-${Date.now()}`;
 const GEN = 1;
 const SESSION = "sess-managed-1";
@@ -61,19 +61,9 @@ function sha256hex(buffer) {
   return createHash("sha256").update(buffer).digest("hex");
 }
 
-/** The private issuer mints an ordinary capability (v2, cap:<env> scope). */
-function mint(spec) {
-  return mintCapability(CAPABILITY_KEY, {
-    v: 2, kid: `cap:${ENV_NAME}`, env: ENV_NAME, tenantId: TENANT,
-    principal: "managed-e2e-issuer", incarnation: 1,
-    nonce: randomUUID(), expiresAtMs: Date.now() + 60_000,
-    ...spec,
-  });
-}
-
-function provisionToken(databaseId, tenantId = TENANT, key = PROVISION_KEY) {
-  return mintProvisionToken(key, { environment: ENV_NAME, tenantId, databaseId },
-    { nonce: randomUUID(), expiresAtMs: Date.now() + 60_000 });
+/** The private issuer mints an ordinary capability (v3, cap:<env>/1). */
+async function mint(spec) {
+  return (await ISSUER.mintCapability({ principal: "managed-e2e-issuer", ...spec })).token;
 }
 
 const { baseUrl, stop } = await startWranglerDev({
@@ -81,12 +71,10 @@ const { baseUrl, stop } = await startWranglerDev({
   port: Number(process.env.E2E_MANAGED_PORT ?? 8798),
   vars: {
     // managed posture, per-run ephemeral material - the runtime receives
-    // ONLY derived verification keys, never the issuer root
+    // ONLY public verification keyrings + the journal secret; the private
+    // signing keys never leave this script (R5-SEC-03)
     CONTROLLER_JOURNAL_KEY: randomBytes(32).toString("hex"),
-    CONTROLLER_CAPABILITY_KEY: hex(CAPABILITY_KEY),
-    CONTROLLER_PROVISION_KEY: hex(PROVISION_KEY),
-    CONTROLLER_ISSUER_SECRET: randomBytes(24).toString("hex"),
-    CONTROLLER_ENVIRONMENT: ENV_NAME,
+    ...ISSUER.runtimeVars(),
   },
 });
 
@@ -124,33 +112,39 @@ try {
       probe.status === 404 && probe.body?.error === "NOT_FOUND", JSON.stringify(probe.body));
   }
 
-  // ---- 2. dev constants are worthless against the managed surface ----
-  const devConstantToken = mintCapability(utf8(DEV_CAPABILITY_KEY), {
-    v: 2, kid: `cap:${ENV_NAME}`, env: ENV_NAME, tenantId: TENANT,
+  // ---- 2. dev signing material is worthless against the managed surface ----
+  // (a token SIGNED with the committed dev capability key, claiming this
+  // run's kid, cannot verify under the run's ephemeral public key)
+  const devConstantToken = await mintCapabilityToken(devCapabilitySigningKey(), {
+    v: 3, alg: "Ed25519", kid: ISSUER.capabilityKid, env: ENV_NAME, tenantId: TENANT,
     principal: "dev-smuggler", databaseId: DB, method: "WAL_READ",
     session: SESSION, generation: String(GEN),
     incarnation: 1, nonce: randomUUID(), expiresAtMs: Date.now() + 60_000,
   });
   const devConstant = await api("GET", `/wal/${DB}/${GEN}/head`,
     { raw: null, headers: { "x-capability": devConstantToken } });
-  check("a token minted under the DEV capability constant fails the MAC on managed",
-    devConstant.status === 403 && devConstant.body?.error === "CAPABILITY_MAC_INVALID",
+  check("a token signed with the DEV capability key fails signature verification on managed",
+    devConstant.status === 403 && devConstant.body?.error === "CAPABILITY_SIGNATURE_INVALID",
     JSON.stringify(devConstant.body));
 
   // ---- 3. squat mutant on the managed surface ----
   const preProvision = await api("GET", `/wal/${DB}/${GEN}/head`,
-    { raw: null, headers: { "x-capability": mint({ databaseId: DB, method: "WAL_READ", session: SESSION, generation: String(GEN) }) } });
+    { raw: null, headers: { "x-capability": await mint({ databaseId: DB, method: "WAL_READ", session: SESSION, generation: GEN }) } });
   check("an authenticated call to an unprovisioned authority fails closed (squat mutant)",
     preProvision.status === 403 && preProvision.body?.error === "DATABASE_UNPROVISIONED",
     JSON.stringify(preProvision.body));
 
-  // verifier-material mutant: the runtime's capability key cannot provision
+  // cross-scope mutant: a provision token SIGNED with the capability
+  // keypair (the strongest signing material outside the provisioning role;
+  // the runtime itself holds NO signing material at all) binds nothing
   const forgedProvision = await api("POST", "/provision", {
     body: { tenantId: TENANT, databaseId: DB },
-    headers: { "x-provision": provisionToken(DB, TENANT, CAPABILITY_KEY) },
+    headers: { "x-provision": await mintProvisionToken(ISSUER._private.capabilityPrivateKeyPkcs8,
+      { environment: ENV_NAME, tenantId: TENANT, databaseId: DB },
+      { nonce: randomUUID(), expiresAtMs: Date.now() + 60_000, kid: ISSUER.provisionKid }) },
   });
-  check("capability-scope material cannot provision on managed (mint/verify separation)",
-    forgedProvision.status === 403 && forgedProvision.body?.error === "CAPABILITY_MAC_INVALID",
+  check("capability-scope signing material cannot provision on managed (mint/verify separation)",
+    forgedProvision.status === 403 && forgedProvision.body?.error === "CAPABILITY_SIGNATURE_INVALID",
     JSON.stringify(forgedProvision.body));
 
   // ---- 4. the internal bootstrap: provision -> admit -> write -> read ----
@@ -159,7 +153,7 @@ try {
       tenantId: TENANT, databaseId: DB,
       budgets: { maxUnpublishedOutbox: 10_000, maxPayloadLength: 1_000_000, maxTailRecords: 1_000_000 },
     },
-    headers: { "x-provision": provisionToken(DB) },
+    headers: { "x-provision": await ISSUER.mintProvision({ environment: ENV_NAME, tenantId: TENANT, databaseId: DB }) },
   });
   check("the provisioning transaction binds tenant + database + environment + budgets",
     provisioned.status === 200 && provisioned.body?.ok === true && provisioned.body?.created === true
@@ -171,17 +165,17 @@ try {
   // route and 404s here - proven above): reserve -> attest -> activate
   const reserve = await api("POST", "/session/reserve", {
     body: { databaseId: DB, generation: GEN, startupSessionId: SESSION, holder: "managed-e2e-host" },
-    headers: { "x-capability": mint({ databaseId: DB, method: "SESSION_RESERVE", session: SESSION, generation: String(GEN) }) },
+    headers: { "x-capability": await mint({ databaseId: DB, method: "SESSION_RESERVE", session: SESSION, generation: GEN }) },
   });
   check("lifecycle: reservation via internal issuance", reserve.body?.ok === true, JSON.stringify(reserve.body));
   const attest = await api("POST", "/session/attest", {
     body: { databaseId: DB, startupSessionId: SESSION, processNonce: "pn-managed" },
-    headers: { "x-capability": mint({ databaseId: DB, method: "SESSION_ATTEST", session: SESSION }) },
+    headers: { "x-capability": await mint({ databaseId: DB, method: "SESSION_ATTEST", session: SESSION }) },
   });
   check("lifecycle: attestation", attest.body?.ok === true, JSON.stringify(attest.body));
   const activate = await api("POST", "/session/activate", {
     body: { databaseId: DB, generation: GEN, startupSessionId: SESSION, processNonce: "pn-managed", leaseMs: 60_000 },
-    headers: { "x-capability": mint({ databaseId: DB, method: "SESSION_ACTIVATE", session: SESSION, generation: String(GEN) }) },
+    headers: { "x-capability": await mint({ databaseId: DB, method: "SESSION_ACTIVATE", session: SESSION, generation: GEN }) },
   });
   check("lifecycle: verified activation", activate.body?.ok === true, JSON.stringify(activate.body));
 
@@ -193,7 +187,7 @@ try {
     raw: payload,
     headers: {
       "content-length": String(payload.length),
-      "x-capability": mint({ databaseId: DB, method: "PUT_PAYLOAD", key, digest, maxBytes: payload.length }),
+      "x-capability": await mint({ databaseId: DB, method: "PUT_PAYLOAD", digest, maxBytes: payload.length }),
     },
   });
   check("payload upload under an internally minted PUT_PAYLOAD capability",
@@ -207,7 +201,7 @@ try {
   };
   const finalize = await api("POST", "/wal/finalize", {
     body: finalizeBody,
-    headers: { "x-capability": mint({ databaseId: DB, method: "WAL_FINALIZE", session: SESSION, generation: String(GEN) }) },
+    headers: { "x-capability": await mint({ databaseId: DB, method: "WAL_FINALIZE", session: SESSION, generation: GEN }) },
   });
   check("WAL finalize through the production path", finalize.body?.ok === true && finalize.body?.appendLsn === "0",
     JSON.stringify(finalize.body));
@@ -215,7 +209,7 @@ try {
   // exact read-back
   const read = await api("GET", `/wal/${DB}/${GEN}/0`, {
     raw: null,
-    headers: { "x-capability": mint({ databaseId: DB, method: "WAL_READ", session: SESSION, generation: String(GEN) }) },
+    headers: { "x-capability": await mint({ databaseId: DB, method: "WAL_READ", session: SESSION, generation: GEN }) },
   });
   check("exact read returns the exact payload",
     read.body?.ok === true && Buffer.from(read.body.payloadBase64, "base64").equals(payload),
@@ -225,7 +219,7 @@ try {
   // this bootstrap's records (provision, activation, finalize) ----
   const journal = await api("GET", `/journal/${DB}/verify`, {
     raw: null,
-    headers: { "x-capability": mint({ databaseId: DB, method: "JOURNAL_VERIFY" }) },
+    headers: { "x-capability": await mint({ databaseId: DB, method: "JOURNAL_VERIFY" }) },
   });
   check("journal verifies and holds ONLY the bootstrap's 3 records (dev probes left zero state)",
     journal.body?.ok === true && journal.body?.length === 3,
@@ -234,11 +228,8 @@ try {
   // ---- 6. cross-tenant mutant on managed: a forged tenant claim reaches
   // a different (unprovisioned) authority, and the audience check kills a
   // plain wrong-database presentation at the worker frame ----
-  const forgedTenant = mintCapability(CAPABILITY_KEY, {
-    v: 2, kid: `cap:${ENV_NAME}`, env: ENV_NAME, tenantId: "tenant-b",
-    principal: "cross-tenant", databaseId: DB, method: "WAL_READ",
-    session: SESSION, generation: String(GEN),
-    incarnation: 1, nonce: randomUUID(), expiresAtMs: Date.now() + 60_000,
+  const forgedTenant = await mint({
+    databaseId: DB, method: "WAL_READ", session: SESSION, generation: GEN, tenantId: "tenant-b",
   });
   const crossTenant = await api("GET", `/wal/${DB}/${GEN}/head`,
     { raw: null, headers: { "x-capability": forgedTenant } });
@@ -247,11 +238,38 @@ try {
     JSON.stringify(crossTenant.body));
   const wrongAudience = await api("GET", `/wal/${DB}/${GEN}/head`, {
     raw: null,
-    headers: { "x-capability": mint({ databaseId: "another-db", method: "WAL_READ", session: SESSION, generation: String(GEN) }) },
+    headers: { "x-capability": await mint({ databaseId: "another-db", method: "WAL_READ", session: SESSION, generation: GEN }) },
   });
   check("audience framing refuses a wrong-database token at the worker",
     wrongAudience.status === 403 && wrongAudience.body?.error === "CAPABILITY_AUDIENCE_MISMATCH",
     JSON.stringify(wrongAudience.body));
+
+  // ---- 7. the loopback HTTP issuer (R5-SEC-02 seam): tokens issued over
+  // HTTP work against the managed surface; anonymous issuance refuses ----
+  const bearerToken = randomBytes(24).toString("hex");
+  const issuerServer = await startIssuerServer(ISSUER, { bearerToken });
+  try {
+    const httpIssued = await fetch(`${issuerServer.url}/issue`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${bearerToken}` },
+      body: JSON.stringify({ spec: { databaseId: DB, method: "WAL_READ", session: SESSION, generation: GEN } }),
+    });
+    const httpToken = (await httpIssued.json()).token;
+    const httpRead = await api("GET", `/wal/${DB}/${GEN}/head`,
+      { raw: null, headers: { "x-capability": httpToken } });
+    check("a token issued over the loopback HTTP issuer is accepted by the managed surface",
+      httpIssued.status === 200 && httpRead.status === 200 && httpRead.body?.ok === true,
+      JSON.stringify({ issue: httpIssued.status, read: httpRead.status, error: httpRead.body?.error }));
+    const anonymousIssue = await fetch(`${issuerServer.url}/issue`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ spec: { databaseId: DB, method: "WAL_READ", session: SESSION, generation: GEN } }),
+    });
+    check("the loopback issuer refuses anonymous issuance",
+      anonymousIssue.status === 401, String(anonymousIssue.status));
+  } finally {
+    await issuerServer.close();
+  }
 
   console.log(failures === 0
     ? "\nMANAGED (PRODUCTION-SURFACE) STACK E2E: ALL PASS"

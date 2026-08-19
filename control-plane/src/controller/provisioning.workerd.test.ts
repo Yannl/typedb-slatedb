@@ -1,6 +1,6 @@
 /*
- * R4 PR1 mandatory security mutants (audit 4.5) at the Worker/DO seam,
- * under REAL workerd:
+ * R4 PR1 / R5-SEC-03 mandatory security mutants (audit 4.5, round-5 §11)
+ * at the Worker/DO seam, under REAL workerd:
  *
  *   - ordinary authenticated call to an unprovisioned DO -> fail closed,
  *     NO binding side effect (the first-call squat is dead);
@@ -10,17 +10,19 @@
  *   - a valid tenant-A token referencing tenant B's database -> refused at
  *     the Worker framing (audience) AND at the DO (binding mismatch /
  *     unprovisioned neighbor);
- *   - capability-scope (verifier) material cannot provision;
- *   - unknown token version / unknown field -> refused at the frame check
+ *   - CROSS-SCOPE signing material cannot provision (the capability
+ *     issuer key signing a provision-shaped token fails the signature);
+ *   - unknown token version / alg / field -> refused at the frame check
  *     before any DO contact.
  */
 import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { DatabaseControllerDO } from "./database-controller.ts";
-import { utf8 } from "./core/journal-crypto.ts";
-import { DEV_CAPABILITY_KEY, DEV_ENVIRONMENT } from "./core/key-config.ts";
-import { mintCapability, type CapabilityPayload } from "./core/capability.ts";
-import { mintProvisionToken } from "./core/registry.ts";
+import { canonicalJson, hex, utf8 } from "./core/journal-crypto.ts";
+import { DEV_CAPABILITY_KID, DEV_ENVIRONMENT, devCapabilitySigningKey } from "./core/key-config.ts";
+import { base64urlEncode, type CapabilityPayload } from "./core/capability.ts";
+import { ed25519Sign } from "./core/ed25519.ts";
+import { mintCapabilityToken, mintProvisionToken } from "./core/issuer.ts";
 import {
   devProvisionToken, localBinding, localDoName, provisionInstance, provisionViaSelf,
 } from "./workerd-test-support.ts";
@@ -30,16 +32,23 @@ interface TestEnv {
 }
 const testEnv = env as unknown as TestEnv;
 
-/** A well-formed, correctly-MACed v2 capability minted directly under the
- *  local-dev capability key - the strongest ordinary credential an
+/** A well-formed, correctly-signed v3 capability minted directly under the
+ *  local-dev capability signing key - the strongest ordinary credential an
  *  attacker-controlled caller could present. */
-function mintLocalCapability(overrides: Partial<CapabilityPayload> & { databaseId: string; method: string }): string {
-  return mintCapability(utf8(DEV_CAPABILITY_KEY), {
-    v: 2, kid: `cap:${DEV_ENVIRONMENT}`, env: DEV_ENVIRONMENT, tenantId: "local",
+function mintLocalCapability(overrides: Partial<CapabilityPayload> & { databaseId: string; method: string }): Promise<string> {
+  return mintCapabilityToken(devCapabilitySigningKey(), {
+    v: 3, alg: "Ed25519", kid: DEV_CAPABILITY_KID, env: DEV_ENVIRONMENT, tenantId: "local",
     principal: "mutant-suite", incarnation: 1, nonce: crypto.randomUUID(),
     expiresAtMs: Date.now() + 60_000, session: "sess-m", generation: "1",
     ...overrides,
   } as CapabilityPayload);
+}
+
+/** Sign an arbitrary (deliberately malformed) payload with the dev
+ *  capability key, bypassing the issuer's own schema refusals. */
+async function rawSigned(payload: Record<string, unknown>): Promise<string> {
+  const body = utf8(canonicalJson(payload));
+  return `${base64urlEncode(body)}.${hex(await ed25519Sign(devCapabilitySigningKey(), body))}`;
 }
 
 function stubForName(name: string) {
@@ -51,7 +60,7 @@ describe("R4 PR1 provisioning seam mutants (workerd)", () => {
     const db = "squat-target";
     // a READ under a valid, fully-bound token
     const read = await SELF.fetch(`https://facade.local/wal/${db}/1/head`, {
-      method: "GET", headers: { "x-capability": mintLocalCapability({ databaseId: db, method: "WAL_READ" }) },
+      method: "GET", headers: { "x-capability": await mintLocalCapability({ databaseId: db, method: "WAL_READ" }) },
     });
     expect(read.status).toBe(403);
     expect(((await read.json()) as { error: string }).error).toBe("DATABASE_UNPROVISIONED");
@@ -60,7 +69,7 @@ describe("R4 PR1 provisioning seam mutants (workerd)", () => {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-capability": mintLocalCapability({ databaseId: db, method: "SESSION_RESERVE" }),
+        "x-capability": await mintLocalCapability({ databaseId: db, method: "SESSION_RESERVE" }),
       },
       body: JSON.stringify({ databaseId: db, generation: 1, startupSessionId: "sess-m", holder: "h" }),
     });
@@ -79,16 +88,16 @@ describe("R4 PR1 provisioning seam mutants (workerd)", () => {
       const bindingB = localBinding("race-db", "tenant-b");
       // the DO serializes the two provisioning transactions; the first
       // writes the record...
-      const first = instance.provision(devProvisionToken(bindingA), bindingA);
+      const first = await instance.provision(await devProvisionToken(bindingA), bindingA);
       expect(first).toMatchObject({ ok: true, created: true });
       // ...the second (different tenant, same database id) is the typed
       // loser - even though its token is genuinely valid for ITS binding
-      const second = instance.provision(devProvisionToken(bindingB), bindingB);
+      const second = await instance.provision(await devProvisionToken(bindingB), bindingB);
       expect(second).toEqual({ ok: false, error: "PROVISION_CONFLICT" });
       // no partial or overwritten binding: the record is exactly A's
       expect(instance.getBinding()).toEqual(bindingA);
       // the winner's replay stays idempotent
-      const replay = instance.provision(devProvisionToken(bindingA), bindingA);
+      const replay = await instance.provision(await devProvisionToken(bindingA), bindingA);
       expect(replay).toMatchObject({ ok: true, created: false });
     });
   });
@@ -99,7 +108,7 @@ describe("R4 PR1 provisioning seam mutants (workerd)", () => {
 
     // (a) Worker framing: tenant A's token for ITS OWN database presented
     // against B's database path dies at the audience check - no DO contact
-    const tokenForA = mintLocalCapability({ databaseId: "tenant-a-database", tenantId: "tenant-a", method: "WAL_READ" });
+    const tokenForA = await mintLocalCapability({ databaseId: "tenant-a-database", tenantId: "tenant-a", method: "WAL_READ" });
     const framing = await SELF.fetch(`https://facade.local/wal/${dbB}/1/head`, {
       method: "GET", headers: { "x-capability": tokenForA },
     });
@@ -109,7 +118,7 @@ describe("R4 PR1 provisioning seam mutants (workerd)", () => {
     // (b) a FORGED token claiming tenant A owns B's database routes to a
     // DIFFERENT authority (the registry-derived name includes the tenant),
     // which is unprovisioned - tenant B's data is structurally unreachable
-    const forged = mintLocalCapability({ databaseId: dbB, tenantId: "tenant-a", method: "WAL_READ" });
+    const forged = await mintLocalCapability({ databaseId: dbB, tenantId: "tenant-a", method: "WAL_READ" });
     const misrouted = await SELF.fetch(`https://facade.local/wal/${dbB}/1/head`, {
       method: "GET", headers: { "x-capability": forged },
     });
@@ -121,19 +130,20 @@ describe("R4 PR1 provisioning seam mutants (workerd)", () => {
     // binding cross-check
     await runInDurableObject(stubForName(localDoName(dbB, "tenant-b")),
       async (instance: DatabaseControllerDO) => {
-        const verdict = instance.checkCapabilityOnly(forged,
+        const verdict = await instance.checkCapabilityOnly(forged,
           { method: "WAL_READ", databaseId: dbB, tenantId: "tenant-a", session: "sess-m", generation: "1" });
         expect(verdict).toEqual({ ok: false, error: "DO_BINDING_MISMATCH" });
       });
   });
 
-  it("MUTANT (verifier mints): capability-scope material cannot provision; a forged provision token binds nothing", async () => {
+  it("MUTANT (verifier/cross-scope mints): capability signing material cannot provision; the forgery binds nothing", async () => {
     const db = "verifier-mint-target";
     const binding = localBinding(db);
-    // the strongest thing a compromised verifier holds is the ordinary
-    // capability key; a provision token minted with it fails the MAC under
-    // the provisioning scope key
-    const forged = mintProvisionToken(utf8(DEV_CAPABILITY_KEY), binding, {
+    // R5-SEC-03: the runtime itself holds only PUBLIC keys (no mint API at
+    // all); the strongest remaining forgery is the CAPABILITY issuer key
+    // signing a provision-shaped token - the signature cannot validate
+    // under the provisioning scope's public key
+    const forged = await mintProvisionToken(devCapabilitySigningKey(), binding, {
       nonce: crypto.randomUUID(), expiresAtMs: Date.now() + 60_000,
     });
     const response = await SELF.fetch("https://facade.local/provision", {
@@ -142,31 +152,42 @@ describe("R4 PR1 provisioning seam mutants (workerd)", () => {
       body: JSON.stringify({ tenantId: binding.tenantId, databaseId: db }),
     });
     expect(response.status).toBe(403);
-    expect(((await response.json()) as { error: string }).error).toBe("CAPABILITY_MAC_INVALID");
+    expect(((await response.json()) as { error: string }).error).toBe("CAPABILITY_SIGNATURE_INVALID");
     await runInDurableObject(stubForName(localDoName(db)), async (instance: DatabaseControllerDO) => {
       expect(instance.getBinding()).toBeNull();
     });
   });
 
-  it("MUTANT (schema): unknown token version / unknown field are refused at the frame check", async () => {
+  it("MUTANT (schema): unknown version / unknown alg / unknown field are refused at the frame check", async () => {
     const db = "schema-target";
     expect((await provisionViaSelf(db)).status).toBe(200);
-    // v1-shaped token (no version field)
-    const v1Shaped = mintCapability(utf8(DEV_CAPABILITY_KEY), {
+    const base = {
+      v: 3, alg: "Ed25519", kid: DEV_CAPABILITY_KID, env: DEV_ENVIRONMENT, tenantId: "local",
       principal: "p", databaseId: db, method: "WAL_READ", session: "s", generation: "1",
       incarnation: 1, nonce: crypto.randomUUID(), expiresAtMs: Date.now() + 60_000,
-    } as unknown as CapabilityPayload);
+    };
+    // v1-shaped token (no version field)
+    const { v: _v, alg: _alg, kid: _kid, env: _env, tenantId: _tenant, ...v1Shape } = base;
     const versioned = await SELF.fetch(`https://facade.local/wal/${db}/1/head`, {
-      method: "GET", headers: { "x-capability": v1Shaped },
+      method: "GET", headers: { "x-capability": await rawSigned(v1Shape) },
     });
     expect(versioned.status).toBe(403);
     expect(((await versioned.json()) as { error: string }).error).toBe("CAPABILITY_VERSION_UNKNOWN");
+    // the RETIRED v2 (HMAC) version number
+    const v2Shaped = await SELF.fetch(`https://facade.local/wal/${db}/1/head`, {
+      method: "GET", headers: { "x-capability": await rawSigned({ ...base, v: 2 }) },
+    });
+    expect(v2Shaped.status).toBe(403);
+    expect(((await v2Shaped.json()) as { error: string }).error).toBe("CAPABILITY_VERSION_UNKNOWN");
+    // an unknown signature algorithm fails closed (no downgrade)
+    const wrongAlg = await SELF.fetch(`https://facade.local/wal/${db}/1/head`, {
+      method: "GET", headers: { "x-capability": await rawSigned({ ...base, alg: "HS256" }) },
+    });
+    expect(wrongAlg.status).toBe(403);
+    expect(((await wrongAlg.json()) as { error: string }).error).toBe("CAPABILITY_ALG_UNKNOWN");
     // unknown extra field
-    const extraField = mintLocalCapability(
-      { databaseId: db, method: "WAL_READ", superpowers: "all" } as unknown as
-        Partial<CapabilityPayload> & { databaseId: string; method: string });
     const unknownField = await SELF.fetch(`https://facade.local/wal/${db}/1/head`, {
-      method: "GET", headers: { "x-capability": extraField },
+      method: "GET", headers: { "x-capability": await rawSigned({ ...base, superpowers: "all" }) },
     });
     expect(unknownField.status).toBe(403);
     expect(((await unknownField.json()) as { error: string }).error).toBe("CAPABILITY_FIELD_UNKNOWN");
@@ -183,7 +204,7 @@ describe("R4 PR1 provisioning seam mutants (workerd)", () => {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-capability": mintLocalCapability({ databaseId: db, method: "SESSION_RESERVE", session: "sess-b" }),
+        "x-capability": await mintLocalCapability({ databaseId: db, method: "SESSION_RESERVE", session: "sess-b" }),
       },
       body: JSON.stringify({ databaseId: db, generation: 1, startupSessionId: "sess-b", holder: "host-1" }),
     });

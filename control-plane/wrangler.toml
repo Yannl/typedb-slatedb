@@ -53,6 +53,20 @@ bucket_name = "typedb-payloads"
 # Managed posture vars — an EXACT allowlist (wrangler-check refuses
 # extras). CONTROLLER_SURFACE is deliberately absent: unset means the
 # production surface, so losing the variable closes routes, never opens
-# them. All keys are provisioned secrets, never [vars].
+# them.
+#
+# R5-SEC-01/03 managed runtime inputs (canonical declaration:
+# stack/graph.data.mjs + core/key-requirements.mjs, cross-checked by
+# stack/wrangler-check.mjs):
+#   deployment vars (PUBLIC, per deployment, supplied via --var — never
+#   baked into this file):
+#     CONTROLLER_ENVIRONMENT              this deployment's environment name
+#     CONTROLLER_CAPABILITY_PUBLIC_KEYS   Ed25519 verification keyring (cap scope)
+#     CONTROLLER_PROVISION_PUBLIC_KEYS    Ed25519 verification keyring (prov scope)
+#   secrets (`wrangler secret put`):
+#     CONTROLLER_JOURNAL_KEY              journal MAC key (symmetric BY DESIGN:
+#                                         writer = verifier = the same DO)
+# The runtime holds NO signing material: capability/provision PRIVATE keys
+# stay with the issuer side (core/issuer.ts / scripts/issuer.mjs).
 [vars]
 CONTROLLER_KEY_PROFILE = "managed"

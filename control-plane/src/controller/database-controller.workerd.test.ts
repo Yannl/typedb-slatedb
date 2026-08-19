@@ -35,7 +35,7 @@ describe("DatabaseControllerDO on workerd", () => {
   it("finalises, replays idempotently, and rejects digest conflicts", async () => {
     const stub = testEnv.CONTROLLER.get(testEnv.CONTROLLER.idFromName("t1"));
     await runInDurableObject(stub, async (instance: DatabaseControllerDO) => {
-      provisionInstance(instance, "db1");
+      await provisionInstance(instance, "db1");
       instance.registerSession("db1", 1, "sess-1");
       instance.setBudgets("db1",
         { maxUnpublishedOutbox: 1000, maxPayloadLength: 100_000, maxTailRecords: 100_000 }, "sess-1");
@@ -51,7 +51,7 @@ describe("DatabaseControllerDO on workerd", () => {
   it("binds the database identity durably: a cross-database call fails closed (C-P0-02)", async () => {
     const stub = testEnv.CONTROLLER.get(testEnv.CONTROLLER.idFromName("t-binding"));
     await runInDurableObject(stub, async (instance: DatabaseControllerDO) => {
-      provisionInstance(instance, "db1"); // ONLY provisioning binds (R4 PR1)
+      await provisionInstance(instance, "db1"); // ONLY provisioning binds (R4 PR1)
       instance.registerSession("db1", 1, "sess-1");
       expect(() => instance.registerSession("db-OTHER", 1, "sess-x"))
         .toThrowError(/DO_DATABASE_BINDING_VIOLATION/);
@@ -84,7 +84,7 @@ describe("DatabaseControllerDO on workerd", () => {
   it("enforces the status singleton inside real transactionSync", async () => {
     const stub = testEnv.CONTROLLER.get(testEnv.CONTROLLER.idFromName("t2"));
     await runInDurableObject(stub, async (instance: DatabaseControllerDO) => {
-      provisionInstance(instance, "db1");
+      await provisionInstance(instance, "db1");
       instance.registerSession("db1", 1, "sess-1");
       instance.setBudgets("db1",
         { maxUnpublishedOutbox: 1000, maxPayloadLength: 100_000, maxTailRecords: 100_000 }, "sess-1");
@@ -102,7 +102,7 @@ describe("DatabaseControllerDO on workerd", () => {
   it("register fences the predecessor and serves the U3 read surface on real SqlStorage", async () => {
     const stub = testEnv.CONTROLLER.get(testEnv.CONTROLLER.idFromName("t3"));
     await runInDurableObject(stub, async (instance: DatabaseControllerDO) => {
-      provisionInstance(instance, "db1");
+      await provisionInstance(instance, "db1");
       instance.registerSession("db1", 1, "sess-1");
       instance.setBudgets("db1",
         { maxUnpublishedOutbox: 1000, maxPayloadLength: 100_000, maxTailRecords: 100_000 }, "sess-1");

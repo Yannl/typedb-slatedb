@@ -63,6 +63,21 @@ export const LOCAL_VARS = Object.freeze({
 export const PRODUCTION_VARS = Object.freeze({
   CONTROLLER_KEY_PROFILE: "managed",
 });
+// R5-SEC-01/03: managed DEPLOYMENT vars — names declared here, values
+// supplied per deployment (`wrangler deploy --var` / the managed E2E boot
+// script), never baked into the committed wrangler.toml. They are PUBLIC
+// runtime inputs (the environment name and the two Ed25519 verification
+// keyrings), not secrets: the managed runtime verifies tokens but holds no
+// signing material. stack/wrangler-check.mjs cross-validates this list
+// against the runtime's own requirement declaration
+// (control-plane/src/controller/core/key-requirements.mjs), so the graph
+// and resolveKeyConfig cannot skew — that skew is exactly how the round-5
+// audit's "managed graph cannot boot" defect happened.
+export const PRODUCTION_DEPLOYMENT_VARS = Object.freeze([
+  "CONTROLLER_ENVIRONMENT",
+  "CONTROLLER_CAPABILITY_PUBLIC_KEYS",
+  "CONTROLLER_PROVISION_PUBLIC_KEYS",
+]);
 // Vars that MUST NOT appear in any managed-posture graph: their absence is
 // the fail-closed posture (losing the var closes routes, never opens them).
 export const PRODUCTION_FORBIDDEN_VARS = Object.freeze(["CONTROLLER_SURFACE"]);
@@ -73,25 +88,31 @@ export const PRODUCTION_FORBIDDEN_VARS = Object.freeze(["CONTROLLER_SURFACE"]);
 // pass merely by sharing the same unsafe values (the round-4 audit's
 // surviving semantic mutant: cloudflare-real carrying local-dev vars).
 export const SECURITY_POSTURES = Object.freeze({
-  // Non-parity local iteration: dev issuer + dev admin routes.
+  // Non-parity local iteration: dev issuer + dev admin routes. No
+  // deployment vars: the committed dev keypairs need no provisioning.
   "developer-convenience": Object.freeze({
     vars: LOCAL_VARS,
+    deploymentVars: Object.freeze([]),
     forbiddenVars: Object.freeze([]),
   }),
   // Production-shaped: managed keys, closed surface, no dev vars. Used by
   // cloudflare-real AND by the local parity lane (which supplies local
-  // ephemeral managed secrets rather than dev constants).
+  // ephemeral managed material rather than dev constants).
   managed: Object.freeze({
     vars: PRODUCTION_VARS,
+    deploymentVars: PRODUCTION_DEPLOYMENT_VARS,
     forbiddenVars: PRODUCTION_FORBIDDEN_VARS,
   }),
 });
 
 // Secret schema (managed posture provisions these via `wrangler secret put`;
 // local-dev falls back to loud dev constants — core/key-config.ts).
+// R5-SEC-03: exactly ONE secret remains. The capability/provision material
+// became PUBLIC Ed25519 verification keys (deployment vars above); the
+// issuer credential left the runtime entirely (issuance is issuer-side);
+// the journal MAC key stays a symmetric secret BY DESIGN — its writer and
+// verifier are the same DatabaseControllerDO (R5-SEC-08).
 export const SECRET_SCHEMA = Object.freeze([
-  "CONTROLLER_CAPABILITY_KEY",
-  "CONTROLLER_ISSUER_SECRET",
   "CONTROLLER_JOURNAL_KEY",
 ]);
 
@@ -232,6 +253,7 @@ export function toGraph(variant = "local-native", repoRoot = REPO_ROOT) {
       provider: v.doProvider,
       bindings,
       vars: { ...posture.vars },
+      deploymentVars: [...posture.deploymentVars],
       forbiddenVars: [...posture.forbiddenVars],
       // Public workers.dev / preview URLs are disabled in EVERY variant:
       // an implicit public route is an unsafe default, not a convenience.
@@ -298,6 +320,7 @@ export function toWranglerView(repoRoot = REPO_ROOT) {
     managed: {
       ...shared,
       vars: { ...PRODUCTION_VARS },
+      deployment_vars: [...PRODUCTION_DEPLOYMENT_VARS],
       forbidden_vars: [...PRODUCTION_FORBIDDEN_VARS],
       r2_buckets: active
         .filter((b) => b.type === "r2_bucket")
@@ -306,6 +329,7 @@ export function toWranglerView(repoRoot = REPO_ROOT) {
     local_dev: {
       ...shared,
       vars: { ...LOCAL_VARS },
+      deployment_vars: [],
       forbidden_vars: [],
       r2_buckets: active
         .filter((b) => b.type === "r2_bucket")

@@ -61,9 +61,9 @@ export { DatabaseContainerDO };
 import { MAX_BATCH_BYTES, MAX_BATCH_MEMBERS, u64FromWire, type FinalizeRequest } from "./core/procedures.ts";
 import { devOnlyRoute } from "./surface.ts";
 import { canonicalJson } from "./core/journal-crypto.ts";
-import { checkCapability, type CapabilityPayload } from "./core/capability.ts";
+import { verifyCapabilityToken, type CapabilityPayload } from "./core/capability.ts";
 import { resolveKeyConfig, type ResolvedKeys } from "./core/key-config.ts";
-import { checkBinding, checkProvisionToken, controllerDoName, type ProvisionBinding } from "./core/registry.ts";
+import { checkBinding, verifyProvisionToken, controllerDoName, type ProvisionBinding } from "./core/registry.ts";
 
 interface Env {
   CONTROLLER: DurableObjectNamespace<DatabaseControllerDO>;
@@ -73,15 +73,21 @@ interface Env {
    *  through the typed RPC surface (recordObservation/getObservations). */
   CONTAINER: DurableObjectNamespace<DatabaseContainerDO>;
   PAYLOADS: R2Bucket;
-  /** Q-24/Q-02: key posture + issuance credential; see core/key-config.ts. */
+  /** Q-24: key posture; see core/key-config.ts. */
   CONTROLLER_KEY_PROFILE?: string;
   CONTROLLER_JOURNAL_KEY?: string;
-  CONTROLLER_CAPABILITY_KEY?: string;
-  /** R4 PR1: PROVISION-scope verification key + the deployment's
-   *  environment name (registry.ts / key-config.ts). */
-  CONTROLLER_PROVISION_KEY?: string;
+  /** R5-SEC-01/03: managed runtime inputs — environment name + the two
+   *  PUBLIC Ed25519 verification keyrings (plain vars; they are not
+   *  secret). The runtime holds NO signing material in any posture other
+   *  than local-dev's committed dev capability keypair. */
   CONTROLLER_ENVIRONMENT?: string;
+  CONTROLLER_CAPABILITY_PUBLIC_KEYS?: string;
+  CONTROLLER_PROVISION_PUBLIC_KEYS?: string;
+  /** local-dev only: the dev issuance route credential (Q-02). */
   CONTROLLER_ISSUER_SECRET?: string;
+  /** RETIRED v2 HMAC inputs — their PRESENCE refuses managed boot. */
+  CONTROLLER_CAPABILITY_KEY?: string;
+  CONTROLLER_PROVISION_KEY?: string;
   /** Surface posture (audit C-P0-01/03/09, PR0 containment). ONLY the exact
    *  value "local-dev" opens the dev-only routes; anything else - including
    *  unset, which is what a production deployment that lost the variable
@@ -522,24 +528,25 @@ export default {
 
     /**
      * Stateless capability FRAMING pre-check at the outer worker (audit
-     * C-03): verify schema version, kid/env scope, MAC, expiry, audience,
-     * method, key/digest/session/generation using the worker's own resolved
-     * capability key BEFORE any Durable Object is contacted. A junk,
-     * forged, expired, wrong-audience or wrong-method token is refused
-     * here, so it never instantiates, migrates or binds a DO. On success
-     * the token's verified binding triple decides the DO route
-     * (routeBinding); the authoritative incarnation/binding checks and the
-     * single-request nonce claim then run inside the DO. Returns the token
-     * + verified payload, or the typed denial Response.
+     * C-03): verify schema version/alg, kid/env scope, the Ed25519
+     * SIGNATURE (R5-SEC-03 — the worker holds only the public keyring),
+     * expiry, audience, method, key/digest/session/generation BEFORE any
+     * Durable Object is contacted. A junk, forged, expired, wrong-audience
+     * or wrong-method token is refused here, so it never instantiates,
+     * migrates or binds a DO. On success the token's verified binding
+     * triple decides the DO route (routeBinding); the authoritative
+     * incarnation/binding checks and the single-request nonce claim then
+     * run inside the DO. Returns the token + verified payload, or the
+     * typed denial Response.
      */
-    const frameCheck = (databaseId: string, expect: CapExpect):
-      { token: string; payload: CapabilityPayload } | { denied: Response } => {
+    const frameCheck = async (databaseId: string, expect: CapExpect):
+      Promise<{ token: string; payload: CapabilityPayload } | { denied: Response }> => {
       const token = request.headers.get("x-capability");
       if (token === null) return { denied: json({ ok: false, error: "CAPABILITY_REQUIRED" }, 401) };
       const resolved = resolveKeysOr500();
       if ("denied" in resolved) return resolved;
       // currentIncarnation omitted: the DO owns the authoritative check
-      const framed = checkCapability(resolved.keys.capabilityKey, token, {
+      const framed = await verifyCapabilityToken(resolved.keys.capabilityKeyring, token, {
         databaseId, env: resolved.keys.environment, ...expect, nowMs: Date.now(),
       });
       if (!framed.ok) return { denied: json(framed, framed.error === "CAPABILITY_MALFORMED" ? 400 : 403) };
@@ -558,7 +565,7 @@ export default {
      *  request authorized (C-02): the claim binds the nonce to it, and a
      *  terminal use replays its stored response instead of re-executing. */
     const verifyCapability = async (databaseId: string, expect: CapExpect, useDigest: string) => {
-      const framed = frameCheck(databaseId, expect);
+      const framed = await frameCheck(databaseId, expect);
       if ("denied" in framed) return { authorized: false as const, denied: framed.denied };
       // the DO call carries the full expected binding (tenant from the
       // verified token), so the authority can verify it was addressed as
@@ -574,7 +581,7 @@ export default {
      *  to the control tables. Incarnation and session are still enforced. */
     const verifyRead = async (databaseId: string, expect: CapExpect):
       Promise<{ authorized: true; payload: { session?: string } } | { authorized: false; denied: Response }> => {
-      const framed = frameCheck(databaseId, expect);
+      const framed = await frameCheck(databaseId, expect);
       if ("denied" in framed) return { authorized: false as const, denied: framed.denied };
       const verdict = await stubFor(databaseId).checkCapabilityOnly(
         framed.token, { databaseId, tenantId: framed.payload.tenantId, ...expect });
@@ -742,7 +749,7 @@ export default {
       if (!binding.ok) return json(binding, 400);
       const token = request.headers.get("x-provision");
       if (token === null) return json({ ok: false, error: "PROVISION_TOKEN_REQUIRED" }, 401);
-      const framed = checkProvisionToken(resolved.keys.provisionKey, token, {
+      const framed = await verifyProvisionToken(resolved.keys.provisionKeyring, token, {
         binding: binding.binding, nowMs: Date.now(),
       });
       if (!framed.ok) return json(framed, framed.error === "CAPABILITY_MALFORMED" ? 400 : 403);
@@ -771,8 +778,11 @@ export default {
       // issuance outright rather than falling back to open issuance.
       const resolved = resolveKeysOr500();
       if ("denied" in resolved) return resolved.denied;
+      // the issuance credential exists ONLY under local-dev (the route
+      // itself is dev-only); a posture with no credential issues nothing
+      const issuerSecret = resolved.keys.issuerSecret;
       const presented = request.headers.get("x-issuer-authorization");
-      if (presented === null || !credentialsEqual(presented, resolved.keys.issuerSecret)) {
+      if (issuerSecret === undefined || presented === null || !credentialsEqual(presented, issuerSecret)) {
         return json({ ok: false, error: "ISSUER_UNAUTHORIZED" }, 401);
       }
       const parsed = await readJson(request);

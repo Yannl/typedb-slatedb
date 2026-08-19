@@ -2,10 +2,10 @@
  * F9 (data-path hardening): controller-issued capability tokens.
  *
  * A capability is a short-lived, audience-bound authorization for ONE
- * data-path operation class, minted by the controller and verified by the
- * worker before any storage or DO work happens. The token binds:
+ * data-path operation class, minted by the PRIVATE ISSUER and verified by
+ * the worker before any storage or DO work happens. The token binds:
  *
- *   principal        - who the controller issued it to (attribution);
+ *   principal        - who the issuer issued it to (attribution);
  *   databaseId       - the audience: one database's data path;
  *   method           - the operation class (PUT_PAYLOAD, WAL_READ, ...);
  *   key/digest/      - for payload writes: the EXACT object key (derived
@@ -16,24 +16,52 @@
  *   nonce            - single use, burned transactionally at first use;
  *   expiresAtMs      - hard expiry.
  *
- * Encoding: base64url(canonicalJson(payload)) + "." + hex(HMAC-SHA-256)
- * under the controller's capability key (distinct from the journal key).
- * Everything is synchronous and runtime-agnostic, like the journal crypto.
+ * SCHEMA v3 (R5-SEC-03): the schema-v2 HMAC is replaced by an Ed25519
+ * SIGNATURE. Encoding:
+ *
+ *   base64url(canonicalJson(payload)) + "." + hex(ed25519_sig)   (128 hex)
+ *
+ * The verifier holds ONLY public keys (a two-slot rotation keyring per
+ * scope); the private signing keys live with the issuer (core/issuer.ts —
+ * dev constants under local-dev, per-run ephemeral keys for managed local
+ * runs, a provisioned private issuer in production). Verification is
+ * therefore mathematically one-way: a component that can validate tokens
+ * has NO material capable of minting them — the §2.3 "verifier keys can
+ * mint" property of the HMAC design is dead by construction, not by
+ * discipline. Verification is async (WebCrypto); the synchronous core
+ * (procedures.ts) keeps receiving only pre-verified payloads.
+ *
+ * Everything in this module either VERIFIES or is pure schema; minting
+ * lives exclusively in core/issuer.ts.
  */
 
-import { bytesEqual, canonicalJson, CANONICAL_U64, fromHex, hmacSha256, hex, utf8 } from "./journal-crypto.ts";
+import { canonicalJson, CANONICAL_U64, fromHex, utf8 } from "./journal-crypto.ts";
+import { ed25519Verify } from "./ed25519.ts";
 
 const UTF8_DECODER = new TextDecoder();
 
+/** The one token schema version this verifier understands. v1 (implicit)
+ *  and v2 (HMAC) are RETIRED: any other value refuses. */
+export const CAPABILITY_TOKEN_VERSION = 3;
+/** The one signature algorithm of schema v3. A token naming any other
+ *  algorithm refuses — "alg confusion" is a version refusal here, never a
+ *  downgrade negotiation. */
+export const CAPABILITY_TOKEN_ALG = "Ed25519";
+
 export interface CapabilityPayload {
-  /** Token schema version (audit 4.4 item 4). Exactly 2; any other value -
-   *  including the absent field of the retired v1 shape - is refused, so a
-   *  schema change can never be smuggled past an old verifier. */
-  v: 2;
-  /** Key id: the derived scope key this token is MACed under
-   *  ("cap:<env>" | "prov:<env>", registry.ts). Verified against the scope
-   *  the checking key belongs to - a token cannot claim one scope while
-   *  validating under another. */
+  /** Token schema version. Exactly 3; any other value - including the
+   *  retired v2 HMAC shape and the absent field of the v1 shape - is
+   *  refused, so a schema change can never be smuggled past an old
+   *  verifier. */
+  v: 3;
+  /** Signature algorithm. Exactly "Ed25519"; part of the signed body, so
+   *  an attacker cannot re-frame a token under a weaker algorithm. */
+  alg: "Ed25519";
+  /** Key id: names the exact issuer key this token is signed under.
+   *  Syntax: `cap:<env>` | `prov:<env>`, optionally suffixed `/<slot>`
+   *  for rotation (e.g. `cap:prod/2`). The verifier requires the kid to
+   *  (a) name the scope+environment the presented method belongs to and
+   *  (b) resolve to a NON-RETIRED key in its keyring. */
   kid: string;
   /** Environment the token is bound to; must equal the verifier's own. */
   env: string;
@@ -73,11 +101,14 @@ export type CapabilityCheck =
   | { ok: false; error:
       | "CAPABILITY_MALFORMED"
       | "CAPABILITY_VERSION_UNKNOWN"
+      | "CAPABILITY_ALG_UNKNOWN"
       | "CAPABILITY_FIELD_UNKNOWN"
       | "CAPABILITY_KID_MISMATCH"
+      | "CAPABILITY_KID_UNKNOWN"
+      | "CAPABILITY_KID_RETIRED"
       | "CAPABILITY_ENV_MISMATCH"
       | "CAPABILITY_TENANT_MISMATCH"
-      | "CAPABILITY_MAC_INVALID"
+      | "CAPABILITY_SIGNATURE_INVALID"
       | "CAPABILITY_EXPIRED"
       | "CAPABILITY_METHOD_MISMATCH"
       | "CAPABILITY_AUDIENCE_MISMATCH"
@@ -91,11 +122,50 @@ export type CapabilityCheck =
       | "CAPABILITY_METHOD_UNKNOWN"
       | "CAPABILITY_STALE_INCARNATION" };
 
+// ---------------------------------------------------------------------------
+// Verification keyrings (R5-SEC-03 rotation): two slots, explicit retirement
+// ---------------------------------------------------------------------------
+
+/** One public verification key of a keyring. `retired: true` keeps the kid
+ *  RECOGNIZED but REFUSED (typed CAPABILITY_KID_RETIRED, distinguishable
+ *  from an attacker-invented kid) — the explicit end of a rotation overlap
+ *  window. */
+export interface VerificationKey {
+  kid: string;
+  /** raw 32-byte Ed25519 public key */
+  publicKey: Uint8Array;
+  retired: boolean;
+}
+
+/** A per-scope verification keyring: at most two slots (current + previous)
+ *  so rotation is an overlap-then-retire protocol, never an unbounded key
+ *  list. keys[0] is the CURRENT key (never retired; new tokens are minted
+ *  under its kid); keys[1], when present, is the previous key — accepted
+ *  during the overlap window, refused once retired. */
+export interface VerificationKeyring {
+  scope: "cap" | "prov";
+  environment: string;
+  keys: VerificationKey[];
+}
+
+/** The scope a method's tokens must be signed under: the PROVISION power
+ *  lives under "prov:<env>", everything else under "cap:<env>". */
+export function requiredScope(method: string): "cap" | "prov" {
+  return method === "PROVISION" ? "prov" : "cap";
+}
+
+/** kid syntax: `<scope>:<env>` optionally + `/<slot digits>`. */
+export function kidNamesScope(kid: string, scope: "cap" | "prov", environment: string): boolean {
+  if (kid === `${scope}:${environment}`) return true;
+  const prefix = `${scope}:${environment}/`;
+  return kid.startsWith(prefix) && /^[0-9]{1,9}$/.test(kid.slice(prefix.length));
+}
+
 /**
  * Restrictions that are MANDATORY for a method, not optional decoration.
  *
  * Every restriction used to be checked as `if (payload.X !== undefined)`, so
- * a correctly-MACed token that simply OMITTED key, digest and maxBytes
+ * a correctly-signed token that simply OMITTED key, digest and maxBytes
  * satisfied all three checks and authorized any key, any body, any length.
  * That is not a narrower capability - it is a wider one, and it is exactly
  * how a capability system inverts into a bearer token. A method's
@@ -153,8 +223,8 @@ export const REQUIRED_RESTRICTIONS: Record<string, ReadonlyArray<"session" | "ge
   // R4 PR1: the internal provisioning power - the ONLY method that may bind
   // an uninitialized controller DO to its registry record. Its authority IS
   // the binding triple (env/tenantId/databaseId are mandatory core fields
-  // of every v2 token) under the SEPARATE "prov:<env>" scope key
-  // (registry.ts): ordinary capability-scope material cannot mint it.
+  // of every v3 token) under the SEPARATE "prov:<env>" scope keypair
+  // (issuer.ts): ordinary capability-scope material cannot mint it.
   PROVISION: [],
 };
 
@@ -178,7 +248,7 @@ export function isKnownCapabilityMethod(method: string): boolean {
  */
 export const MAX_CAPABILITY_BYTES = 8 * 1024 * 1024;
 
-function base64urlEncode(bytes: Uint8Array): string {
+export function base64urlEncode(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -197,71 +267,77 @@ function base64urlDecode(text: string): Uint8Array | null {
   }
 }
 
-export function mintCapability(capabilityKey: Uint8Array, payload: CapabilityPayload): string {
-  const body = utf8(canonicalJson(payload as unknown as Record<string, unknown>));
-  const mac = hmacSha256(capabilityKey, body);
-  return `${base64urlEncode(body)}.${hex(mac)}`;
+/** The canonical signed body bytes of a payload — shared with the issuer
+ *  (core/issuer.ts) so the two ends cannot disagree about what is signed. */
+export function capabilityBodyBytes(payload: CapabilityPayload): Uint8Array {
+  return utf8(canonicalJson(payload as unknown as Record<string, unknown>));
 }
 
-/**
- * Verify a token against what the REQUEST actually is. MAC first (nothing
- * inside an unauthenticated token is trusted, including its expiry), then
- * expiry, incarnation, method, audience, key, digest, budget. The nonce is
- * NOT claimed here - the use claim is transactional state and belongs to
- * the authority (ControllerCore.claimCapability), called after this check
- * passes.
- */
-/** The CLOSED field set of a v2 token. Any key outside this list refuses
+/** The CLOSED field set of a v3 token. Any key outside this list refuses
  *  the whole token (audit 4.4 item 4): an unknown field is a schema the
  *  verifier does not understand, and "ignore it" is how a future
  *  authority-bearing field gets silently dropped by old verifiers. */
-const V2_FIELDS = new Set([
-  "v", "kid", "env", "tenantId", "principal", "databaseId", "method",
+const V3_FIELDS = new Set([
+  "v", "alg", "kid", "env", "tenantId", "principal", "databaseId", "method",
   "session", "generation", "key", "digest", "maxBytes",
   "incarnation", "nonce", "expiresAtMs",
 ]);
 
-export function checkCapability(
-  capabilityKey: Uint8Array,
+export interface CapabilityExpectation {
+  method: string;
+  databaseId: string;
+  /** the verifier's own environment; the token's `env` (and its kid's
+   *  scope) must name exactly this. */
+  env: string;
+  /** when set (the DO passes its provisioned tenant; a provision check
+   *  passes the binding's tenant), the token's tenantId must match. */
+  tenantId?: string;
+  /** the authority's current incarnation. OMIT it (undefined) for a
+   *  stateless FRAMING pre-check at the outer worker (audit C-03): the
+   *  worker verifies signature/expiry/audience/method/key/digest/session/
+   *  generation before ANY Durable Object contact, so a junk token never
+   *  instantiates, migrates or binds a DO; the authoritative incarnation
+   *  check + nonce claim then run inside the DO. */
+  currentIncarnation?: number;
+  nowMs: number;
+  /** when set, the capability MUST carry a matching session binding - a
+   *  finalize request cannot be authorized by a session-unbound token
+   *  (donor A3): the actor identity is part of the authority, not just a
+   *  field in the request body. */
+  session?: string;
+  /** the request's generation as a canonical decimal string; when set, the
+   *  token's bound generation must match exactly (audit C-05). */
+  generation?: string;
+  key?: string;
+  bodyDigest?: string;
+  bodyLength?: number;
+}
+
+/**
+ * Verify a token against what the REQUEST actually is: schema/alg first
+ * (a token the verifier does not understand refuses before anything else),
+ * then key selection by kid (scope + environment + keyring membership +
+ * retirement), then the SIGNATURE — nothing inside an unauthenticated
+ * token is trusted beyond what key selection needs — then expiry,
+ * incarnation, method, audience, key, digest, budget. The nonce is NOT
+ * claimed here - the use claim is transactional state and belongs to the
+ * authority (ControllerCore.claimCapability), called after this check
+ * passes.
+ *
+ * This is THE verification seam (R5-SEC-03): async because WebCrypto is,
+ * called from the worker fetch frame and the DO's async RPC methods; the
+ * sync core only ever sees the returned pre-verified payload.
+ */
+export async function verifyCapabilityToken(
+  keyring: VerificationKeyring,
   token: string,
-  expect: {
-    method: string;
-    databaseId: string;
-    /** the verifier's own environment; the token's `env` (and its kid's
-     *  scope) must name exactly this. */
-    env: string;
-    /** when set (the DO passes its provisioned tenant; a provision check
-     *  passes the binding's tenant), the token's tenantId must match. */
-    tenantId?: string;
-    /** the authority's current incarnation. OMIT it (undefined) for a
-     *  stateless FRAMING pre-check at the outer worker (audit C-03): the
-     *  worker verifies MAC/expiry/audience/method/key/digest/session/
-     *  generation before ANY Durable Object contact, so a junk token never
-     *  instantiates, migrates or binds a DO; the authoritative incarnation
-     *  check + nonce claim then run inside the DO. */
-    currentIncarnation?: number;
-    nowMs: number;
-    /** when set, the capability MUST carry a matching session binding - a
-     *  finalize request cannot be authorized by a session-unbound token
-     *  (donor A3): the actor identity is part of the authority, not just a
-     *  field in the request body. */
-    session?: string;
-    /** the request's generation as a canonical decimal string; when set, the
-     *  token's bound generation must match exactly (audit C-05). */
-    generation?: string;
-    key?: string;
-    bodyDigest?: string;
-    bodyLength?: number;
-  },
-): CapabilityCheck {
+  expect: CapabilityExpectation,
+): Promise<CapabilityCheck> {
   const dot = token.lastIndexOf(".");
   if (dot <= 0) return { ok: false, error: "CAPABILITY_MALFORMED" };
   const bodyBytes = base64urlDecode(token.slice(0, dot));
-  const macHex = token.slice(dot + 1);
-  if (bodyBytes === null || !/^[0-9a-f]{64}$/.test(macHex)) return { ok: false, error: "CAPABILITY_MALFORMED" };
-  if (!bytesEqual(hmacSha256(capabilityKey, bodyBytes), fromHex(macHex))) {
-    return { ok: false, error: "CAPABILITY_MAC_INVALID" };
-  }
+  const sigHex = token.slice(dot + 1);
+  if (bodyBytes === null || !/^[0-9a-f]{128}$/.test(sigHex)) return { ok: false, error: "CAPABILITY_MALFORMED" };
   let parsed: unknown;
   try {
     parsed = JSON.parse(UTF8_DECODER.decode(bodyBytes));
@@ -271,12 +347,14 @@ export function checkCapability(
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     return { ok: false, error: "CAPABILITY_MALFORMED" };
   }
-  // schema versioning (audit 4.4 item 4): version FIRST - a v1-shaped or
-  // future-versioned token is a version refusal, not a field-by-field guess
+  // schema versioning (audit 4.4 item 4): version FIRST - a v1/v2-shaped or
+  // future-versioned token is a version refusal, not a field-by-field guess;
+  // then the algorithm - unknown alg fails closed, never negotiates down
   const record = parsed as Record<string, unknown>;
-  if (record.v !== 2) return { ok: false, error: "CAPABILITY_VERSION_UNKNOWN" };
+  if (record.v !== CAPABILITY_TOKEN_VERSION) return { ok: false, error: "CAPABILITY_VERSION_UNKNOWN" };
+  if (record.alg !== CAPABILITY_TOKEN_ALG) return { ok: false, error: "CAPABILITY_ALG_UNKNOWN" };
   for (const field of Object.keys(record)) {
-    if (!V2_FIELDS.has(field)) return { ok: false, error: "CAPABILITY_FIELD_UNKNOWN" };
+    if (!V3_FIELDS.has(field)) return { ok: false, error: "CAPABILITY_FIELD_UNKNOWN" };
   }
   const payload = record as unknown as CapabilityPayload;
   if (typeof payload.kid !== "string" || typeof payload.env !== "string"
@@ -284,6 +362,23 @@ export function checkCapability(
       || typeof payload.databaseId !== "string"
       || typeof payload.nonce !== "string" || typeof payload.expiresAtMs !== "number") {
     return { ok: false, error: "CAPABILITY_MALFORMED" };
+  }
+  // key selection (R5-SEC-03 rotation): the kid must name the exact scope
+  // the presented method belongs to IN THE VERIFIER'S OWN ENVIRONMENT - a
+  // token cannot claim one scope while validating under another - and must
+  // resolve to a live key in the keyring. An attacker-invented kid is a
+  // typed KID_UNKNOWN; a rotation-retired kid is a typed KID_RETIRED. Both
+  // fail closed BEFORE any signature work.
+  const scope = requiredScope(payload.method);
+  if (keyring.scope !== scope || !kidNamesScope(payload.kid, scope, expect.env)) {
+    return { ok: false, error: "CAPABILITY_KID_MISMATCH" };
+  }
+  const verificationKey = keyring.keys.find((key) => key.kid === payload.kid);
+  if (verificationKey === undefined) return { ok: false, error: "CAPABILITY_KID_UNKNOWN" };
+  if (verificationKey.retired) return { ok: false, error: "CAPABILITY_KID_RETIRED" };
+  // the SIGNATURE: everything after this line trusts the payload
+  if (!(await ed25519Verify(verificationKey.publicKey, fromHex(sigHex), bodyBytes))) {
+    return { ok: false, error: "CAPABILITY_SIGNATURE_INVALID" };
   }
   if (expect.nowMs >= payload.expiresAtMs) return { ok: false, error: "CAPABILITY_EXPIRED" };
   if (expect.currentIncarnation !== undefined && payload.incarnation !== expect.currentIncarnation) {
@@ -295,16 +390,10 @@ export function checkCapability(
   // it; the `?? []` fallback below must never launder an unknown method
   // into a restriction-free bearer token.
   if (!isKnownCapabilityMethod(payload.method)) return { ok: false, error: "CAPABILITY_METHOD_UNKNOWN" };
-  // environment + key-scope binding (R4 PR1): the token must name the
-  // verifier's own environment, and its kid must be the exact scope the
-  // presented method belongs to in that environment - the PROVISION power
-  // lives under "prov:<env>", everything else under "cap:<env>"
-  // (registry.ts). The MAC above already proves which key signed it; the
-  // kid check refuses a token that CLAIMS a different scope than the one
-  // it validated under.
+  // environment binding (R4 PR1): the token must name the verifier's own
+  // environment (the kid scope check above already pinned the kid to it;
+  // this pins the payload's own env field too).
   if (payload.env !== expect.env) return { ok: false, error: "CAPABILITY_ENV_MISMATCH" };
-  const expectedKid = payload.method === "PROVISION" ? `prov:${expect.env}` : `cap:${expect.env}`;
-  if (payload.kid !== expectedKid) return { ok: false, error: "CAPABILITY_KID_MISMATCH" };
   if (expect.tenantId !== undefined && payload.tenantId !== expect.tenantId) {
     return { ok: false, error: "CAPABILITY_TENANT_MISMATCH" };
   }

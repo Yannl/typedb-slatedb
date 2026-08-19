@@ -28,11 +28,13 @@ import {
 } from "./core/procedures.ts";
 import { resolveKeyConfig } from "./core/key-config.ts";
 import {
-  checkCapability, isKnownCapabilityMethod, mintCapability, MAX_CAPABILITY_BYTES, REQUIRED_RESTRICTIONS,
-  type CapabilityCheck, type CapabilityPayload,
+  isKnownCapabilityMethod, verifyCapabilityToken, MAX_CAPABILITY_BYTES, REQUIRED_RESTRICTIONS,
+  CAPABILITY_TOKEN_ALG, CAPABILITY_TOKEN_VERSION,
+  type CapabilityCheck, type CapabilityPayload, type VerificationKeyring,
 } from "./core/capability.ts";
+import { mintCapabilityToken } from "./core/issuer.ts";
 import {
-  bindingsEqual, checkBinding, checkProvisionToken, type ProvisionBinding,
+  bindingsEqual, checkBinding, verifyProvisionToken, type ProvisionBinding,
 } from "./core/registry.ts";
 
 /** Typed refusals of the registry-binding gate (R4 PR1): every ordinary
@@ -45,24 +47,32 @@ export type BindingRefusal =
 
 export interface Env {
   /** Q-24: key posture. "managed" (the default when unset - a lost variable
-   *  refuses, it never downgrades) requires provisioned hex keys via the
-   *  variables below; "local-dev" is the L1 scaffolding posture with loud
-   *  dev constants. Resolution and policy: core/key-config.ts. */
+   *  refuses, it never downgrades) requires the provisioned asymmetric
+   *  inputs below; "local-dev" is the L1 scaffolding posture with loud
+   *  committed dev keypairs. Resolution and policy: core/key-config.ts. */
   CONTROLLER_KEY_PROFILE?: string;
   CONTROLLER_JOURNAL_KEY?: string;
-  CONTROLLER_CAPABILITY_KEY?: string;
-  /** R4 PR1: PROVISION-scope verification key + environment name. */
-  CONTROLLER_PROVISION_KEY?: string;
+  /** R5-SEC-01/03: managed runtime inputs - environment name + the two
+   *  PUBLIC Ed25519 verification keyrings (vars, not secrets). */
   CONTROLLER_ENVIRONMENT?: string;
+  CONTROLLER_CAPABILITY_PUBLIC_KEYS?: string;
+  CONTROLLER_PROVISION_PUBLIC_KEYS?: string;
+  /** local-dev only: the dev issuance route credential (Q-02). */
   CONTROLLER_ISSUER_SECRET?: string;
+  /** RETIRED v2 HMAC inputs - their PRESENCE refuses managed boot. */
+  CONTROLLER_CAPABILITY_KEY?: string;
+  CONTROLLER_PROVISION_KEY?: string;
 }
 
 export class DatabaseControllerDO extends DurableObject {
   private sql: SqlStorage;
   private readonly controllerCore: ControllerCore;
-  private readonly capabilityKey: Uint8Array;
-  private readonly provisionKey: Uint8Array;
+  private readonly capabilityKeyring: VerificationKeyring;
+  private readonly provisionKeyring: VerificationKeyring;
   private readonly environment: string;
+  /** R5-SEC-03: present ONLY under the local-dev profile (dev issuance);
+   *  a managed authority resolves no signing material at all. */
+  private readonly capabilitySigningKey: Uint8Array | undefined;
 
   constructor(state: DurableObjectState, env: Env) {
     super(state, env);
@@ -96,9 +106,10 @@ export class DatabaseControllerDO extends DurableObject {
     // process, and no route that serves before the check runs.
     const keys = resolveKeyConfig(env);
     this.controllerCore = new ControllerCore(adapter, { journalKey: keys.journalKey });
-    this.capabilityKey = keys.capabilityKey;
-    this.provisionKey = keys.provisionKey;
+    this.capabilityKeyring = keys.capabilityKeyring;
+    this.provisionKeyring = keys.provisionKeyring;
     this.environment = keys.environment;
+    this.capabilitySigningKey = keys.capabilitySigningKey;
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS databases(
         database_id TEXT PRIMARY KEY,
@@ -151,20 +162,23 @@ export class DatabaseControllerDO extends DurableObject {
    * replay (identical binding) or the typed conflict (different binding) -
    * never a partial or overwritten binding.
    */
-  provision(
+  async provision(
     token: string,
     wireBinding: { environment?: unknown; tenantId?: unknown; databaseId?: unknown },
     budgets?: { maxUnpublishedOutbox: number; maxPayloadLength: number; maxTailRecords: number },
-  ):
+  ): Promise<
     | { ok: true; created: boolean; binding: ProvisionBinding }
-    | { ok: false; error: string; field?: string } {
+    | { ok: false; error: string; field?: string }
+  > {
     const checked = checkBinding(wireBinding);
     if (!checked.ok) return checked;
     const binding = checked.binding;
     if (binding.environment !== this.environment) {
       return { ok: false, error: "PROVISION_ENVIRONMENT_MISMATCH" };
     }
-    const verdict = checkProvisionToken(this.provisionKey, token, {
+    // async signature verification FIRST (R5-SEC-03); the binding write
+    // below stays one synchronous transaction with no await inside it
+    const verdict = await verifyProvisionToken(this.provisionKeyring, token, {
       binding, nowMs: this.controllerCore.controllerNow(),
     });
     if (!verdict.ok) return verdict;
@@ -381,15 +395,17 @@ export class DatabaseControllerDO extends DurableObject {
   }
 
   /**
-   * Mint a capability (F9). In production this surface is controller-
-   * internal (issued to authenticated principals during session admission);
-   * on the L1 lane the facade exposes it openly - the local Worker is
-   * scaffolding, not a security boundary (parity plan), and the contract
-   * under proof is the DATA PATH's refusal matrix, not local issuance.
-   * PUT_PAYLOAD capabilities derive the object key from the CONTENT DIGEST
-   * (`p/<databaseId>/<sha256hex>`): the caller never selects an R2 key.
+   * Mint a capability (F9) - the DEV-LANE issuance path only (R5-SEC-03).
+   * Production issuance belongs to the private issuer (core/issuer.ts on
+   * the issuer side); a managed authority resolves NO signing key, so this
+   * method is structurally inert there: it throws before touching the
+   * issuer module, and nothing in the managed configuration could make the
+   * signature succeed anyway. Under local-dev the committed INSECURE dev
+   * capability keypair signs. PUT_PAYLOAD capabilities derive the object
+   * key from the CONTENT DIGEST (`p/<databaseId>/<sha256hex>`): the caller
+   * never selects an R2 key.
    */
-  issueCapability(spec: {
+  async issueCapability(spec: {
     principal: string;
     databaseId: string;
     method: string;
@@ -398,7 +414,12 @@ export class DatabaseControllerDO extends DurableObject {
     digest?: string;
     maxBytes?: number;
     ttlMs?: number;
-  }): { token: string; key?: string; expiresAtMs: number; incarnation: number } {
+  }): Promise<{ token: string; key?: string; expiresAtMs: number; incarnation: number }> {
+    if (this.capabilitySigningKey === undefined) {
+      // managed posture: verification-only material - minting is impossible
+      // here BY CONSTRUCTION, not by route gating (R5-SEC-03)
+      throw new Error("CAPABILITY_ISSUANCE_UNAVAILABLE: this runtime holds no signing key (verification-only posture)");
+    }
     // R4 PR1: issuance embeds the PROVISIONED binding (env + tenant), so it
     // is impossible before provisioning - the dev issuer cannot be used to
     // squat an unbound authority either.
@@ -422,7 +443,7 @@ export class DatabaseControllerDO extends DurableObject {
       ? `p/${spec.databaseId}/${spec.digest}`
       : undefined;
     // audit C-05: finalize tokens bind the generation as a canonical decimal
-    // string so a rollover invalidates them (checked in checkCapability)
+    // string so a rollover invalidates them (checked in verifyCapabilityToken)
     const generation = spec.generation !== undefined ? String(spec.generation) : undefined;
     // Issuance is fail-closed on the same restriction table verification
     // enforces. Minting a PUT_PAYLOAD token with no digest/budget used to
@@ -447,8 +468,10 @@ export class DatabaseControllerDO extends DurableObject {
         `CAPABILITY_BUDGET_ABOVE_CEILING: ${spec.maxBytes} exceeds the ${MAX_CAPABILITY_BYTES}-byte data-path ceiling`);
     }
     const payload: CapabilityPayload = {
-      v: 2,
-      kid: `cap:${binding.environment}`,
+      v: CAPABILITY_TOKEN_VERSION,
+      alg: CAPABILITY_TOKEN_ALG,
+      // new tokens are always minted under the CURRENT keyring slot's kid
+      kid: this.capabilityKeyring.keys[0].kid,
       env: binding.environment,
       tenantId: binding.tenantId,
       principal: spec.principal,
@@ -463,27 +486,31 @@ export class DatabaseControllerDO extends DurableObject {
       nonce: crypto.randomUUID(),
       expiresAtMs,
     };
-    return { token: mintCapability(this.capabilityKey, payload), key, expiresAtMs, incarnation };
+    return { token: await mintCapabilityToken(this.capabilitySigningKey, payload), key, expiresAtMs, incarnation };
   }
 
   /**
-   * Verify-and-claim a capability for one request (F9, audit C-P0-08). MAC,
-   * expiry, incarnation, method, audience, key, digest and budget are
-   * checked synchronously; the claim is the transactional single-REQUEST
-   * rule - the nonce is durably bound to `useDigest` (the canonical digest
-   * of the one request being authorized), so an IDENTICAL retry after a
-   * lost response is admitted again (every authorized procedure is
-   * idempotent by operation identity and reproduces its original outcome),
-   * while a DIFFERENT request under a used token is CAPABILITY_REPLAYED.
+   * Verify-and-claim a capability for one request (F9, audit C-P0-08).
+   * Signature (async, WebCrypto - R5-SEC-03), expiry, incarnation, method,
+   * audience, key, digest and budget are checked first; the claim is then
+   * the transactional single-REQUEST rule - the nonce is durably bound to
+   * `useDigest` (the canonical digest of the one request being authorized),
+   * so an IDENTICAL retry after a lost response is admitted again (every
+   * authorized procedure is idempotent by operation identity and reproduces
+   * its original outcome), while a DIFFERENT request under a used token is
+   * CAPABILITY_REPLAYED. The sync core only ever sees the pre-verified
+   * payload; the claim itself runs with no await inside it.
    */
-  useCapability(
+  async useCapability(
     token: string,
     expect: { method: string; databaseId: string; tenantId?: string; session?: string; generation?: string;
               key?: string; bodyDigest?: string; bodyLength?: number },
     useDigest: string,
-  ): (CapabilityCheck & { claim?: { fresh: boolean; terminal: boolean; response: string | null } })
+  ): Promise<
+    (CapabilityCheck & { claim?: { fresh: boolean; terminal: boolean; response: string | null } })
     | { ok: false; error: "CAPABILITY_REPLAYED" }
-    | BindingRefusal {
+    | BindingRefusal
+  > {
     // R4 PR1: the registry-binding gate FIRST, as a typed refusal with no
     // side effect - an unprovisioned authority cannot be bound (or even
     // touched) by an ordinary authenticated call, and a provisioned one
@@ -492,7 +519,7 @@ export class DatabaseControllerDO extends DurableObject {
     if (unbound !== null) return unbound;
     // audit C-05: verification reads the same controller clock issuance used
     const nowMs = this.controllerCore.controllerNow();
-    const checked = checkCapability(this.capabilityKey, token, {
+    const checked = await verifyCapabilityToken(this.capabilityKeyring, token, {
       ...expect,
       env: this.environment,
       currentIncarnation: this.controllerCore.currentIncarnation(),
@@ -511,18 +538,19 @@ export class DatabaseControllerDO extends DurableObject {
    * Verify a capability WITHOUT claiming a durable use row (audit C-07).
    * Read routes are side-effect-free, so recording a durable IN_FLIGHT row
    * per read made reads write to SQLite and grow the control tables. This
-   * still enforces MAC, expiry, incarnation, method, audience and session -
-   * a stale-incarnation or fenced-session read is refused - it simply does
-   * not consume the single-request replay slot that only mutations need.
+   * still enforces signature, expiry, incarnation, method, audience and
+   * session - a stale-incarnation or fenced-session read is refused - it
+   * simply does not consume the single-request replay slot that only
+   * mutations need.
    */
-  checkCapabilityOnly(
+  async checkCapabilityOnly(
     token: string,
     expect: { method: string; databaseId: string; tenantId?: string; session?: string; generation?: string;
               key?: string; bodyDigest?: string; bodyLength?: number },
-  ): CapabilityCheck | BindingRefusal {
+  ): Promise<CapabilityCheck | BindingRefusal> {
     const unbound = this.requireBinding(expect);
     if (unbound !== null) return unbound;
-    return checkCapability(this.capabilityKey, token, {
+    return verifyCapabilityToken(this.capabilityKeyring, token, {
       ...expect,
       env: this.environment,
       currentIncarnation: this.controllerCore.currentIncarnation(),

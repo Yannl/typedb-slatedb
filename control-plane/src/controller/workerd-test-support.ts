@@ -4,15 +4,16 @@
  * R4 PR1: a controller authority serves NOTHING until it is provisioned
  * (registry binding), so every workerd suite that exercises a database
  * first runs the provisioning transaction - exactly as the real bootstrap
- * does. The local-dev posture's provisioning scope key is the loud dev
- * constant (key-config.ts), so tests mint the PROVISION capability
- * in-process the same way the local stack driver does.
+ * does. R5-SEC-03: provisioning is an ISSUER-SIDE act — the token is
+ * SIGNED with the committed dev-insecure provision keypair (key-config.ts;
+ * never resolved into any runtime), and the local-dev worker/DO verify it
+ * against the dev provision PUBLIC key.
  */
 
 import { SELF } from "cloudflare:test";
-import { utf8 } from "./core/journal-crypto.ts";
-import { DEV_ENVIRONMENT, DEV_PROVISION_KEY } from "./core/key-config.ts";
-import { controllerDoName, mintProvisionToken, type ProvisionBinding } from "./core/registry.ts";
+import { DEV_ENVIRONMENT, DEV_PROVISION_KID, devProvisionSigningKey } from "./core/key-config.ts";
+import { controllerDoName, type ProvisionBinding } from "./core/registry.ts";
+import { mintProvisionToken } from "./core/issuer.ts";
 import type { DatabaseControllerDO } from "./database-controller.ts";
 
 export const LOCAL_TENANT = "local";
@@ -21,9 +22,9 @@ export function localBinding(databaseId: string, tenantId = LOCAL_TENANT): Provi
   return { environment: DEV_ENVIRONMENT, tenantId, databaseId };
 }
 
-export function devProvisionToken(binding: ProvisionBinding): string {
-  return mintProvisionToken(utf8(DEV_PROVISION_KEY), binding, {
-    nonce: crypto.randomUUID(), expiresAtMs: Date.now() + 60_000,
+export function devProvisionToken(binding: ProvisionBinding): Promise<string> {
+  return mintProvisionToken(devProvisionSigningKey(), binding, {
+    nonce: crypto.randomUUID(), expiresAtMs: Date.now() + 60_000, kid: DEV_PROVISION_KID,
   });
 }
 
@@ -32,17 +33,17 @@ export async function provisionViaSelf(databaseId: string, tenantId = LOCAL_TENA
   const binding = localBinding(databaseId, tenantId);
   return SELF.fetch("https://facade.local/provision", {
     method: "POST",
-    headers: { "content-type": "application/json", "x-provision": devProvisionToken(binding) },
+    headers: { "content-type": "application/json", "x-provision": await devProvisionToken(binding) },
     body: JSON.stringify({ tenantId, databaseId }),
   });
 }
 
 /** Provision directly on a DO instance (runInDurableObject suites). */
-export function provisionInstance(
+export async function provisionInstance(
   instance: DatabaseControllerDO, databaseId: string, tenantId = LOCAL_TENANT,
-): void {
+): Promise<void> {
   const binding = localBinding(databaseId, tenantId);
-  const result = instance.provision(devProvisionToken(binding), binding);
+  const result = await instance.provision(await devProvisionToken(binding), binding);
   if (!result.ok) throw new Error(`test provisioning failed: ${JSON.stringify(result)}`);
 }
 

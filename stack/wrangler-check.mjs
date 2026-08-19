@@ -23,7 +23,14 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { REPO_ROOT, toWranglerView } from "./graph.data.mjs";
+import { REPO_ROOT, toGraph, toWranglerView } from "./graph.data.mjs";
+// R5-SEC-01: the runtime's OWN declaration of what the managed profile
+// consumes (core/key-config.ts imports this exact module) — the graph must
+// declare the same set, or the deploy would pass config checks and then
+// refuse to boot. Enforced here, BEFORE any deployment.
+import {
+  MANAGED_DEPLOYMENT_VARS, MANAGED_FIXED_VARS, MANAGED_SECRETS,
+} from "../control-plane/src/controller/core/key-requirements.mjs";
 
 export const WRANGLER_TOML = path.join(REPO_ROOT, "control-plane", "wrangler.toml");
 export const WRANGLER_LOCAL_DEV_TOML = path.join(REPO_ROOT, "control-plane", "wrangler.local-dev.toml");
@@ -191,6 +198,40 @@ export function checkOneConfig(toml, postureView, declaredAhead, label) {
 }
 
 /**
+ * R5-SEC-01 managed BOOTABILITY: the graph's declared managed inputs
+ * (fixed vars + deployment var names + secret names) must equal the
+ * runtime's requirement list (key-requirements.mjs) — name-complete in
+ * BOTH directions. A graph that omits a required input describes a
+ * deployment that cannot boot; one that adds an undeclared name carries an
+ * unreviewed runtime input. Pure over its arguments so tests can execute
+ * the drop-each-input mutants directly.
+ */
+export function bootabilityFindings({ fixedVars, deploymentVars, secrets }) {
+  const findings = [];
+  for (const [name, value] of Object.entries(MANAGED_FIXED_VARS)) {
+    if (fixedVars?.[name] !== value) {
+      findings.push(`managed boot: graph must fix [vars] ${name}=${JSON.stringify(value)}, declares ${JSON.stringify(fixedVars?.[name])}`);
+    }
+  }
+  const compare = (label, declared, required) => {
+    const declaredSet = new Set(declared ?? []);
+    for (const name of required) {
+      if (!declaredSet.has(name)) {
+        findings.push(`managed boot: required ${label} ${name} is not declared by the graph — the deployment cannot boot`);
+      }
+    }
+    for (const name of declaredSet) {
+      if (!required.includes(name)) {
+        findings.push(`managed boot: graph declares ${label} ${name} the runtime does not consume — unreviewed input`);
+      }
+    }
+  };
+  compare("deployment var", deploymentVars, MANAGED_DEPLOYMENT_VARS);
+  compare("secret", secrets, MANAGED_SECRETS);
+  return findings;
+}
+
+/**
  * Check BOTH committed configs against their posture views. Optional
  * overrides ({managedText, localDevText}) support tests.
  */
@@ -203,6 +244,13 @@ export function checkWrangler({
 } = {}) {
   const view = toWranglerView(repoRoot);
   const findings = [];
+  // R5-SEC-01: the managed view must be a BOOTABLE declaration before the
+  // committed files are even compared — a graph/runtime skew fails here.
+  findings.push(...bootabilityFindings({
+    fixedVars: view.managed.vars,
+    deploymentVars: view.managed.deployment_vars,
+    secrets: toGraph("cloudflare-real", repoRoot).worker.secretSchema,
+  }));
   for (const [label, text, pathToRead, posture] of [
     ["wrangler.toml(managed)", managedText, managedPath, view.managed],
     ["wrangler.local-dev.toml", localDevText, localDevPath, view.local_dev],

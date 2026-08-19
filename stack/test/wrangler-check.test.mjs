@@ -139,3 +139,73 @@ test("unparseable constructs fail closed", () => {
   const findings = checkWrangler({ managedText: 'name = { weird = "inline table" }\n' });
   assert.ok(findings.some((f) => f.includes("unparseable")), findings.join("; "));
 });
+
+// --- R5-SEC-01: managed BOOTABILITY (graph declaration == runtime need) ----
+// The runtime requirement list is the SHARED module
+// control-plane/src/controller/core/key-requirements.mjs; the checker must
+// fail BEFORE deployment whenever the graph's declared inputs skew from it.
+
+test("R5-SEC-01: the committed graph declaration is bootable (no findings)", async () => {
+  const { bootabilityFindings } = await import("../wrangler-check.mjs");
+  const { toGraph, toWranglerView } = await import("../graph.data.mjs");
+  const view = toWranglerView();
+  const findings = bootabilityFindings({
+    fixedVars: view.managed.vars,
+    deploymentVars: view.managed.deployment_vars,
+    secrets: toGraph("cloudflare-real").worker.secretSchema,
+  });
+  assert.deepEqual(findings, []);
+});
+
+test("MUTANT R5-SEC-01: dropping EACH required managed input in turn fails the graph checker", async () => {
+  const { bootabilityFindings } = await import("../wrangler-check.mjs");
+  const { toGraph, toWranglerView } = await import("../graph.data.mjs");
+  const { MANAGED_DEPLOYMENT_VARS, MANAGED_SECRETS } =
+    await import("../../control-plane/src/controller/core/key-requirements.mjs");
+  const view = toWranglerView();
+  const healthy = {
+    fixedVars: view.managed.vars,
+    deploymentVars: view.managed.deployment_vars,
+    secrets: toGraph("cloudflare-real").worker.secretSchema,
+  };
+  for (const name of MANAGED_DEPLOYMENT_VARS) {
+    const findings = bootabilityFindings({
+      ...healthy, deploymentVars: healthy.deploymentVars.filter((v) => v !== name),
+    });
+    assert.ok(findings.some((f) => f.includes(name) && f.includes("cannot boot")),
+      `dropping deployment var ${name} must fail: ${findings.join("; ")}`);
+  }
+  for (const name of MANAGED_SECRETS) {
+    const findings = bootabilityFindings({
+      ...healthy, secrets: healthy.secrets.filter((s) => s !== name),
+    });
+    assert.ok(findings.some((f) => f.includes(name) && f.includes("cannot boot")),
+      `dropping secret ${name} must fail: ${findings.join("; ")}`);
+  }
+  // the fixed posture selector cannot silently change value either
+  const findings = bootabilityFindings({ ...healthy, fixedVars: { CONTROLLER_KEY_PROFILE: "local-dev" } });
+  assert.ok(findings.some((f) => f.includes("CONTROLLER_KEY_PROFILE")), findings.join("; "));
+});
+
+test("MUTANT R5-SEC-01: an UNDECLARED extra runtime input fails the graph checker (unreviewed input)", async () => {
+  const { bootabilityFindings } = await import("../wrangler-check.mjs");
+  const { toGraph, toWranglerView } = await import("../graph.data.mjs");
+  const view = toWranglerView();
+  const findings = bootabilityFindings({
+    fixedVars: view.managed.vars,
+    deploymentVars: [...view.managed.deployment_vars, "CONTROLLER_EXTRA_BACKDOOR"],
+    secrets: toGraph("cloudflare-real").worker.secretSchema,
+  });
+  assert.ok(findings.some((f) => f.includes("CONTROLLER_EXTRA_BACKDOOR") && f.includes("unreviewed")),
+    findings.join("; "));
+});
+
+test("R5-SEC-01: a managed graph missing a deployment var fails its posture invariant", async () => {
+  const { toGraph } = await import("../graph.data.mjs");
+  const { assertPostureInvariants } = await import("../graph-diff.mjs");
+  const mutant = JSON.parse(JSON.stringify(toGraph("cloudflare-real")));
+  mutant.worker.deploymentVars = mutant.worker.deploymentVars.filter(
+    (v) => v !== "CONTROLLER_PROVISION_PUBLIC_KEYS");
+  const violations = assertPostureInvariants(mutant);
+  assert.ok(violations.some((v) => v.path === "worker.deploymentVars"), JSON.stringify(violations));
+});

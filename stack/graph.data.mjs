@@ -82,6 +82,38 @@ export const PRODUCTION_DEPLOYMENT_VARS = Object.freeze([
 // the fail-closed posture (losing the var closes routes, never opens them).
 export const PRODUCTION_FORBIDDEN_VARS = Object.freeze(["CONTROLLER_SURFACE"]);
 
+// R5-SEC-07 HONESTY: what each `execution` value actually means TODAY.
+// The graph's `execution: "container"` used to read as if a Cloudflare
+// Container process were exercised; it never has been — no lane in this
+// repository has ever started a real Container resource (no Docker in the
+// local sandbox, and Alchemy local cannot run one). This table is emitted
+// into EVERY graph (identical across variants, so the graph differential
+// is unaffected) and is the same declared-ahead convention the CONTAINER
+// DO binding uses: a reader resolving a graph's `execution` mode through
+// EXECUTION_FACETS can never mistake a declared container topology for an
+// exercised one. The facet flips to exercised only when a Docker-capable
+// lane actually starts the pinned image and the ContainerDO control
+// protocol binds to it (the provisioned containerRuntime descriptor in
+// control-plane/src/container/database-container.ts is that seam).
+export const EXECUTION_FACETS = Object.freeze({
+  native: Object.freeze({
+    status: "exercised",
+    declaredAhead: false,
+    note: "native process execution is what local lanes actually run",
+  }),
+  container: Object.freeze({
+    status: "declared-ahead",
+    declaredAhead: true,
+    advisory: true,
+    note:
+      "DECLARED topology only: no real Cloudflare Container process has ever "
+      + "been started or exercised by any lane; the ContainerDO holds a "
+      + "provisioned identity and ADVISORY observations, not a container "
+      + "lifecycle. Requires a Docker-capable lane / the real Container "
+      + "resource (matrix CF-02).",
+  }),
+});
+
 // The two declared security postures. Every graph variant names its
 // posture explicitly; the graph differential validates each graph's vars
 // against its DECLARED posture independently, so two graphs can never
@@ -244,6 +276,10 @@ export function toGraph(variant = "local-native", repoRoot = REPO_ROOT) {
     app: "typedb-r2",
     variant,
     execution: v.execution,
+    // R5-SEC-07: the honesty table rides in every graph so `execution` can
+    // never be read without its facet status (identical across variants —
+    // the differential sees no new paths).
+    executionFacets: EXECUTION_FACETS,
     securityPosture: v.securityPosture,
     worker: {
       name: WORKER_NAME,

@@ -681,6 +681,20 @@
     "0d111e9",
     "660c211"
    ]
+  },
+  {
+   "id": "R5-REL-00",
+   "title": "Round-5 release truth: the audited implementation is ON main at a recorded commit (R5-REL-00)",
+   "status": "DONE",
+   "items": [
+    "PR #8 merged to main as 553febdec5c1cca6e7955b0971feeb6aa9f57046 (merge commit; branch head c0e8082).",
+    "TREE EQUALITY VERIFIED: `git diff HEAD origin/main` is EMPTY — the merged tree is byte-identical to the tree every gate in the final sweep was executed against, so no merge delta invalidates the evidence.",
+    "Commit-sensitive gates re-executed ON the merged commit: ledger lint PASS, ledger mutants 16/16 killed (including done-action-citing-non-ancestor-commit, which verifies every commit this ledger cites exists in main's history), catalogue --require-current-lock PASS, plan --check --require-current-lock PASS (23132 rows).",
+    "Gate states unchanged by the merge and honest: G0 OPEN_RED, G1 OPEN, G2 NOT_READY_TO_EXECUTE, plan coverage 0/23138."
+   ],
+   "commits": [
+    "553febd"
+   ]
   }
  ],
  "q_dispositions": {

@@ -1,8 +1,14 @@
 //! End-to-end protocol checks for the L1 client against a live control
-//! plane (workerd via `wrangler dev`). One suite, two drivers: the
-//! `l1-e2e` binary (`cargo run --bin l1-e2e -- [baseUrl]`) and the
-//! `l1_stack` integration test both run exactly this, so the proof cannot
-//! fork from the client.
+//! plane (workerd via `wrangler dev`) plus a live PRIVATE ISSUER sidecar.
+//! One suite, three drivers: the `l1-e2e` binary, the `l1_stack`
+//! integration test (local-dev posture) and the `l1_managed_stack`
+//! integration test (managed posture) all run exactly this, so the proof
+//! cannot fork from the client - and because the suite touches ONLY routes
+//! that exist on the MANAGED surface (R5-SEC-02: provision, the
+//! reserve -> attest -> activate lifecycle, payload, finalize, reads,
+//! journal verify - never /capability, /session/register, /session/fence,
+//! /budgets or the other dev-only routes), a green run on either posture
+//! proves the production-shaped protocol, not developer convenience.
 //!
 //! Fail-closed reporting: every check prints one PASS/FAIL line; a report
 //! with zero executed checks, or any FAIL, is a failure.
@@ -27,7 +33,7 @@ impl SuiteReport {
         self.failed == 0 && self.passed > 0
     }
 
-    fn check(&mut self, name: &str, ok: bool, detail: &str) {
+    pub fn check(&mut self, name: &str, ok: bool, detail: &str) {
         if ok {
             self.passed += 1;
             println!("PASS  {name}");
@@ -68,91 +74,218 @@ pub fn wait_healthy(client: &L1Client, timeout: Duration) -> Result<(), String> 
     }
 }
 
+/// The standard admission budgets the suite provisions databases with.
+fn suite_budgets() -> Budgets {
+    Budgets { max_unpublished_outbox: 10_000, max_payload_length: 1_000_000, max_tail_records: 1_000_000 }
+}
+
 /// Run the full protocol suite against `database_id` (must be unused: local
-/// DO state persists across runs, so drivers pass a unique id per run).
+/// DO state persists across runs, so drivers pass a unique id per run; a
+/// sibling `<database_id>-nb` authority is used for the no-budget check).
+/// Every route exercised here exists on the MANAGED surface.
 pub fn run(client: &L1Client, database_id: &str) -> SuiteReport {
     let mut report = SuiteReport::default();
     let db = database_id;
-    let session = "sess-l1";
+    let session = "sess-l1-a";
     const GEN: u64 = 1;
+    const LEASE_MS: u64 = 10 * 60 * 1000;
 
-    // ---- R4 PR1: the registry provisioning transaction gates EVERYTHING.
-    // These lanes run against the local-dev posture, whose provisioning
-    // scope key is the dev constant and whose environment/tenant are the
-    // dev defaults ("local"/"local" - the same identifiers the dev
-    // /capability route derives routing from).
-    const DEV_PROVISION_KEY: &[u8] = b"dev-insecure-provision-key";
-    const DEV_ENVIRONMENT: &str = "local";
-    const DEV_TENANT: &str = "local";
-    let expires_at_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("clock after epoch")
-        .as_millis() as u64
-        + 15 * 60 * 1000;
-    let provision_token = crate::l1_client::mint_provision_token(
-        DEV_PROVISION_KEY, DEV_ENVIRONMENT, DEV_TENANT, db, &format!("prov-{db}"), expires_at_ms);
+    // the client's actor is bound EXPLICITLY for the pre-lifecycle probes;
+    // activation re-binds it authoritatively below
+    client.bind_actor(session, GEN);
 
-    // squat mutant first: BEFORE provisioning, issuance against this
-    // authority must refuse - an unprovisioned database is not a database.
-    let pre_provision = client.issue(db, CapabilityMethod::WalRead,
-        MintRestrictions { session: Some(session), generation: Some(GEN), ..Default::default() });
+    // ---- R4 PR1 + R5-SEC-02: an unprovisioned authority serves nothing.
+    // The private issuer grants a syntactically valid, correctly signed
+    // token without knowing provisioning state - the AUTHORITY is what
+    // refuses (squat mutant): an authenticated call to an unprovisioned
+    // database fails closed at use.
+    let pre_provision = client.head(db, GEN);
     report.check(
-        "issuance to an unprovisioned database is refused (DATABASE_UNPROVISIONED)",
+        "an issuer-granted token against an unprovisioned authority fails closed (DATABASE_UNPROVISIONED)",
         matches!(&pre_provision,
-            Err(L1Error::Issuance { status: 409, body }) if body.contains("DATABASE_UNPROVISIONED")),
+            Err(L1Error::Protocol { status: 403, body }) if body.contains("DATABASE_UNPROVISIONED")),
         &format!("{pre_provision:?}"),
     );
 
-    // verifier-material mutant: a provision token minted under the
-    // CAPABILITY scope key must not carry the registry write power.
-    let forged = crate::l1_client::mint_provision_token(
-        b"dev-insecure-capability-key", DEV_ENVIRONMENT, DEV_TENANT, db,
-        &format!("forged-{db}"), expires_at_ms);
-    let forged_result = client.provision(db, DEV_TENANT, &forged);
-    report.check(
-        "capability-scope material cannot provision (mint/verify separation)",
-        matches!(&forged_result, Err(L1Error::Protocol { status: 403, .. })),
-        &format!("{forged_result:?}"),
-    );
-
-    if report.require("provisioning binds the authority (internal PROVISION capability)",
-        client.provision(db, DEV_TENANT, &provision_token)).is_none() {
-        return report;
-    }
-    report.check(
-        "provisioning replay of the same binding is idempotent",
-        client.provision(db, DEV_TENANT, &provision_token).is_ok(),
-        "replay refused",
-    );
-
-    // ---- session + mandatory budgets ----------------------------------
-    if report.require("session registers (exact SESSION_REGISTER capability, session+generation-bound)",
-        client.register_session(db, GEN, session)).is_none() {
-        return report;
+    // verifier-scope mutant: an ordinary CAPABILITY-scope token presented
+    // as the provisioning credential must not carry the registry write
+    // power (mint/verify scope separation, R5-SEC-03 - the client itself
+    // holds NO signing material, so the strongest thing it can present is
+    // a token from the wrong scope).
+    match client.issue(db, CapabilityMethod::JournalVerify, MintRestrictions::default()) {
+        Ok(cap) => {
+            let forged = client.provision_with_token(db, &cap.token, None);
+            report.check(
+                "an ordinary capability-scope token cannot provision (scope separation)",
+                matches!(&forged, Err(L1Error::Protocol { status: 403, body })
+                    if body.contains("CAPABILITY_KID_MISMATCH")),
+                &format!("{forged:?}"),
+            );
+        }
+        Err(error) => report.check(
+            "an ordinary capability-scope token cannot provision (scope separation)",
+            false, &error.to_string()),
     }
 
-    // ---- R4-SEC-03/05: under-restricted mints die at ISSUANCE -----------
-    // The Worker's issuer enforces REQUIRED_RESTRICTIONS at mint time:
-    // removing the generation from a WAL_FINALIZE or WAL_READ mint must
-    // fail HERE, before the guarded route is ever reached - a token
-    // missing a required restriction would be a WIDER capability.
+    // ---- R4-SEC-03/05: under-restricted specs die at the ISSUER ---------
+    // The issuer enforces REQUIRED_RESTRICTIONS at issuance: omitting the
+    // generation from a WAL_FINALIZE or WAL_READ spec must fail HERE,
+    // before any token exists - a token missing a required restriction
+    // would be a WIDER capability.
     let no_gen_finalize = client.issue(db, CapabilityMethod::WalFinalize,
         MintRestrictions { session: Some(session), ..Default::default() });
     report.check(
-        "a finalize mint omitting the generation is refused at issuance",
+        "a finalize spec omitting the generation is refused at the issuer",
         matches!(&no_gen_finalize,
-            Err(L1Error::Issuance { body, .. }) if body.contains("CAPABILITY_RESTRICTION_MISSING")),
+            Err(L1Error::Issuance { status: 400, body }) if body.contains("CAPABILITY_RESTRICTION_MISSING")),
         &format!("{no_gen_finalize:?}"),
     );
     let no_gen_read = client.issue(db, CapabilityMethod::WalRead,
         MintRestrictions { session: Some(session), ..Default::default() });
     report.check(
-        "a read mint omitting the generation is refused at issuance",
+        "a read spec omitting the generation is refused at the issuer",
         matches!(&no_gen_read,
-            Err(L1Error::Issuance { body, .. }) if body.contains("CAPABILITY_RESTRICTION_MISSING")),
+            Err(L1Error::Issuance { status: 400, body }) if body.contains("CAPABILITY_RESTRICTION_MISSING")),
         &format!("{no_gen_read:?}"),
     );
 
+    // ---- the provisioning transaction gates EVERYTHING; admission budgets
+    // ride it because the managed surface has no budget-admin route -------
+    match client.provision(db, Some(&suite_budgets())) {
+        Ok(outcome) => report.check(
+            "provisioning binds the authority (issuer-granted PROVISION capability, budgets riding)",
+            outcome.created,
+            &format!("created={}", outcome.created)),
+        Err(error) => {
+            report.check(
+                "provisioning binds the authority (issuer-granted PROVISION capability, budgets riding)",
+                false, &error.to_string());
+            return report;
+        }
+    }
+    match client.provision(db, Some(&suite_budgets())) {
+        Ok(outcome) => report.check(
+            "provisioning replay of the same binding is idempotent (created:false)",
+            !outcome.created,
+            &format!("created={}", outcome.created)),
+        Err(error) => report.check(
+            "provisioning replay of the same binding is idempotent (created:false)",
+            false, &error.to_string()),
+    }
+
+    // ---- cross-tenant + audience mutants on the provisioned authority ---
+    // a forged tenant-B claim on tenant-A's database reaches only a
+    // DIFFERENT (unprovisioned) authority - the binding triple routes
+    let forged_tenant = client.issue(db, CapabilityMethod::WalRead, MintRestrictions {
+        session: Some(session), generation: Some(GEN), tenant_id: Some("tenant-b"), ..Default::default()
+    });
+    match forged_tenant {
+        Ok(cap) => {
+            let cross = client.probe("GET", &format!("/wal/{db}/{GEN}/head"), None,
+                &[("x-capability", &cap.token)]);
+            report.check(
+                "a forged cross-tenant claim reaches only an unprovisioned authority",
+                matches!(&cross, Ok((403, body)) if body["error"] == "DATABASE_UNPROVISIONED"),
+                &format!("{cross:?}"),
+            );
+        }
+        Err(error) => report.check(
+            "a forged cross-tenant claim reaches only an unprovisioned authority",
+            false, &error.to_string()),
+    }
+    // audience framing: a token for another database refuses at the worker
+    // frame, before any DO is contacted
+    match client.issue("another-db", CapabilityMethod::WalRead,
+        MintRestrictions { session: Some(session), generation: Some(GEN), ..Default::default() }) {
+        Ok(cap) => {
+            let wrong = client.probe("GET", &format!("/wal/{db}/{GEN}/head"), None,
+                &[("x-capability", &cap.token)]);
+            report.check(
+                "audience framing refuses a wrong-database token at the worker",
+                matches!(&wrong, Ok((403, body)) if body["error"] == "CAPABILITY_AUDIENCE_MISMATCH"),
+                &format!("{wrong:?}"),
+            );
+        }
+        Err(error) => report.check(
+            "audience framing refuses a wrong-database token at the worker",
+            false, &error.to_string()),
+    }
+
+    // ---- production lifecycle admission (R4-SEC-04 exact actions): the
+    // legacy one-call register is a dev route - reserve -> attest ->
+    // activate is the ONLY admission path on the managed surface ----------
+    if report.require("lifecycle: reservation (exact SESSION_RESERVE capability)",
+        client.reserve_session(db, GEN, session, "l1-suite-host")).is_none() {
+        return report;
+    }
+    if report.require("lifecycle: attestation (exact SESSION_ATTEST capability)",
+        client.attest_session(db, session, "pn-l1-a")).is_none() {
+        return report;
+    }
+    match client.activate_session(db, GEN, session, "pn-l1-a", LEASE_MS) {
+        Ok(activation) => report.check(
+            "lifecycle: verified activation establishes the actor (nothing to fence yet)",
+            activation.fenced_predecessors == 0 && activation.lease_deadline_ms > 0,
+            &format!("{activation:?}")),
+        Err(error) => {
+            report.check("lifecycle: verified activation establishes the actor (nothing to fence yet)",
+                false, &error.to_string());
+            return report;
+        }
+    }
+    report.check(
+        "lifecycle: lease renewal extends the active actor",
+        client.renew_session(db, session, LEASE_MS).is_ok(),
+        "renewal refused",
+    );
+
+    // ---- Q-12 on the managed surface: a database provisioned WITHOUT
+    // budgets denies writes - budgets can only ride provisioning, so a
+    // sibling authority proves the fail direction end to end -------------
+    {
+        let nb = format!("{db}-nb");
+        let nb_session = "sess-l1-nb";
+        let flow = client.provision(&nb, None)
+            .and_then(|_| client.reserve_session(&nb, GEN, nb_session, "l1-suite-host"))
+            .and_then(|_| client.attest_session(&nb, nb_session, "pn-l1-nb"))
+            .and_then(|_| client.activate_session(&nb, GEN, nb_session, "pn-l1-nb", LEASE_MS))
+            .and_then(|_| client.upload_payload(&nb, b"l1-nb-record"));
+        match flow {
+            Ok(receipt) => {
+                let mut request = FinalizeHttpRequest {
+                    database_id: nb.clone(),
+                    generation: GEN,
+                    startup_session_id: nb_session.to_string(),
+                    operation_id: "op-nb-1".to_string(),
+                    sequencing_kind: SequencingKind::Sequenced,
+                    record_type: 2,
+                    logical_key: None,
+                    payload_key: String::new(),
+                    payload_digest: String::new(),
+                    payload_length: 0,
+                };
+                request.payload_from(&receipt);
+                match client.finalize(&request) {
+                    Ok((status, outcome)) => report.check(
+                        "a database provisioned without budgets denies writes (no budget row = deny)",
+                        status == 409 && outcome.error.as_deref() == Some("ADMISSION_REJECTED_NO_BUDGET"),
+                        &format!("status={status} error={:?}", outcome.error),
+                    ),
+                    Err(error) => report.check(
+                        "a database provisioned without budgets denies writes (no budget row = deny)",
+                        false, &error.to_string()),
+                }
+            }
+            Err(error) => report.check(
+                "a database provisioned without budgets denies writes (no budget row = deny)",
+                false, &format!("no-budget bootstrap failed: {error}")),
+        }
+        // the sibling authority's actor state must not leak into the main
+        // flow: re-bind the suite's actor explicitly
+        client.bind_actor(session, GEN);
+    }
+
+    // ---- payload upload + finalize + identical-retry replay -------------
     let payload1: &[u8] = b"l1-commit-record-1";
     let Some(receipt1) = report.require("payload uploads under the issuer-derived key",
         client.upload_payload(db, payload1)) else { return report };
@@ -176,25 +309,6 @@ pub fn run(client: &L1Client, database_id: &str) -> SuiteReport {
     };
     request.payload_from(&receipt1);
 
-    // missing budget row = deny, never unlimited (Q-12)
-    match client.finalize(&request) {
-        Ok((status, outcome)) => report.check(
-            "a database with no budget row denies writes",
-            status == 409 && outcome.error.as_deref() == Some("ADMISSION_REJECTED_NO_BUDGET"),
-            &format!("status={status} error={:?}", outcome.error),
-        ),
-        Err(error) => report.check("a database with no budget row denies writes", false, &error.to_string()),
-    }
-    if report.require("budgets install (session-bound BUDGETS_SET)",
-        client.set_budgets(db, session, &Budgets {
-            max_unpublished_outbox: 10_000,
-            max_payload_length: 1_000_000,
-            max_tail_records: 1_000_000,
-        })).is_none() {
-        return report;
-    }
-
-    // ---- finalize + identical-retry replay -----------------------------
     match client.finalize(&request) {
         Ok((status, outcome)) => report.check(
             "finalize allocates lsn 0",
@@ -206,11 +320,12 @@ pub fn run(client: &L1Client, database_id: &str) -> SuiteReport {
     }
     match client.finalize(&request) {
         Ok((status, outcome)) => report.check(
-            "identical retry replays the same allocation (replayed:true, same lsn)",
+            "identical retry under a FRESH token replays the same allocation (replayed:true, same lsn)",
             status == 200 && outcome.ok && outcome.append_lsn == Some(0) && outcome.replayed == Some(true),
             &format!("status={status} outcome={outcome:?}"),
         ),
-        Err(error) => report.check("identical retry replays the same allocation", false, &error.to_string()),
+        Err(error) => report.check("identical retry under a FRESH token replays the same allocation",
+            false, &error.to_string()),
     }
 
     // ---- exact read-back with byte equality ----------------------------
@@ -380,45 +495,116 @@ pub fn run(client: &L1Client, database_id: &str) -> SuiteReport {
         Err(error) => report.check("a non-canonical payload key is refused pre-I/O", false, &error.to_string()),
     }
 
-    // ---- generation rollover: commit authority follows the session ------
-    if report.require("live-actor rollover re-registers into generation 2",
-        client.register_session(db, GEN + 1, session)).is_some() {
-        let mut stale = request.clone();
-        stale.operation_id = "op-stale-gen".to_string();
-        match client.finalize(&stale) {
-            Ok((status, outcome)) => report.check(
-                "the old generation refuses after rollover (SESSION_GENERATION_MISMATCH)",
-                status == 409 && outcome.error.as_deref() == Some("SESSION_GENERATION_MISMATCH"),
-                &format!("status={status} error={:?}", outcome.error),
-            ),
-            Err(error) => report.check(
-                "the old generation refuses after rollover (SESSION_GENERATION_MISMATCH)",
-                false,
-                &error.to_string(),
-            ),
-        }
-        let mut current = request.clone();
-        current.generation = GEN + 1;
-        current.operation_id = "op-gen2".to_string();
-        match client.finalize(&current) {
-            Ok((status, outcome)) => report.check(
-                "the current generation admits the same actor (fresh lsn 0)",
-                status == 200 && outcome.ok && outcome.append_lsn == Some(0) && outcome.replayed == Some(false),
-                &format!("status={status} outcome={outcome:?}"),
-            ),
-            Err(error) => report.check("the current generation admits the same actor (fresh lsn 0)",
-                false, &error.to_string()),
-        }
+    // ---- generation binding: an actor active in generation 1 holds no
+    // authority in generation 2 (no session row exists there) -------------
+    let mut wrong_gen = request.clone();
+    wrong_gen.generation = GEN + 1;
+    wrong_gen.operation_id = "op-wrong-gen".to_string();
+    match client.finalize(&wrong_gen) {
+        Ok((status, outcome)) => report.check(
+            "a finalize claiming an unheld generation is refused (SESSION_UNKNOWN)",
+            status == 409 && outcome.error.as_deref() == Some("SESSION_UNKNOWN"),
+            &format!("status={status} error={:?}", outcome.error),
+        ),
+        Err(error) => report.check(
+            "a finalize claiming an unheld generation is refused (SESSION_UNKNOWN)",
+            false, &error.to_string()),
     }
 
-    // ---- contiguity audit over generation 1 -----------------------------
-    match client.audit(db, GEN) {
-        Ok(audit) => report.check(
-            "generation 1 tail is contiguous (3 records through lsn 2)",
-            audit.ok && audit.contiguous && audit.count == 3 && audit.max_lsn == WalPosition::At(2),
-            &format!("{audit:?}"),
+    // ---- takeover through the lifecycle: a SUCCESSOR actor reserves the
+    // next generation and its verified ACTIVATION - the one fencing
+    // transition on the managed surface - fences the incumbent ------------
+    let successor = "sess-l1-b";
+    let takeover = client.reserve_session(db, GEN + 1, successor, "l1-suite-successor")
+        .and_then(|_| client.attest_session(db, successor, "pn-l1-b"))
+        .and_then(|_| client.activate_session(db, GEN + 1, successor, "pn-l1-b", LEASE_MS));
+    match takeover {
+        Ok(activation) => {
+            report.check(
+                "takeover: the successor's verified activation fences the incumbent",
+                activation.fenced_predecessors == 1,
+                &format!("{activation:?}"),
+            );
+            // the fenced predecessor's commit authority is gone: an
+            // identical-shape finalize by the old actor answers exactly
+            // SESSION_FENCED (inv. 38 - no result fields, no attribution)
+            let mut stale = request.clone();
+            stale.operation_id = "op-stale".to_string();
+            match client.finalize(&stale) {
+                Ok((status, outcome)) => report.check(
+                    "the fenced predecessor cannot finalize (SESSION_FENCED)",
+                    status == 409 && outcome.error.as_deref() == Some("SESSION_FENCED"),
+                    &format!("status={status} error={:?}", outcome.error),
+                ),
+                Err(error) => report.check("the fenced predecessor cannot finalize (SESSION_FENCED)",
+                    false, &error.to_string()),
+            }
+            // R4-SEC-05 use-time revalidation: the old actor's READ
+            // authority died with the fence too - a fresh, validly signed
+            // token for the revoked session is refused at use
+            client.bind_actor(session, GEN);
+            let stale_read = client.head(db, GEN);
+            report.check(
+                "the fenced predecessor cannot read (use-time revalidation, 409)",
+                matches!(&stale_read, Err(L1Error::Protocol { status: 409, body })
+                    if body.contains("SESSION_NOT_ACTIVE")),
+                &format!("{stale_read:?}"),
+            );
+            client.bind_actor(successor, GEN + 1);
+            // the successor commits in ITS generation from a fresh lsn 0
+            let mut current = request.clone();
+            current.generation = GEN + 1;
+            current.startup_session_id = successor.to_string();
+            current.operation_id = "op-gen2".to_string();
+            match client.finalize(&current) {
+                Ok((status, outcome)) => report.check(
+                    "the successor commits in the new generation (fresh lsn 0)",
+                    status == 200 && outcome.ok && outcome.append_lsn == Some(0) && outcome.replayed == Some(false),
+                    &format!("status={status} outcome={outcome:?}"),
+                ),
+                Err(error) => report.check("the successor commits in the new generation (fresh lsn 0)",
+                    false, &error.to_string()),
+            }
+            // durable history survives the fence: the CURRENT actor reads
+            // generation 1's first record byte-identically
+            match client.read_exact(db, GEN, 0) {
+                Ok((status, read)) => {
+                    let bytes = read
+                        .payload_base64
+                        .as_deref()
+                        .map(base64_decode)
+                        .transpose()
+                        .unwrap_or_default()
+                        .unwrap_or_default();
+                    report.check(
+                        "durable predecessor history stays readable by the current actor",
+                        status == 200 && read.ok && bytes == payload1,
+                        &format!("status={status} len={}", bytes.len()),
+                    );
+                }
+                Err(error) => report.check(
+                    "durable predecessor history stays readable by the current actor",
+                    false, &error.to_string()),
+            }
+        }
+        Err(error) => report.check(
+            "takeover: the successor's verified activation fences the incumbent",
+            false, &error.to_string()),
+    }
+
+    // ---- journal verification (F8): the chain verifies and holds EXACTLY
+    // this bootstrap's authority-moving records - provision, two verified
+    // activations, four finalizations (the identical retry replays without
+    // a new row; renewals and refusals journal nothing; any dev-route
+    // probe a driver ran left zero state) --------------------------------
+    match client.journal_verify(db) {
+        Ok(journal) => report.check(
+            "journal verifies and holds exactly the bootstrap's 7 records",
+            journal.ok && journal.length == 7,
+            &format!("{journal:?}"),
         ),
-        Err(error) => report.check("generation 1 tail is contiguous (3 records through lsn 2)",
+        Err(error) => report.check(
+            "journal verifies and holds exactly the bootstrap's 7 records",
             false, &error.to_string()),
     }
 

@@ -1,18 +1,31 @@
 //! L1 remote-WAL client: the CURRENT control-plane Worker protocol
 //! (`control-plane/src/controller/worker-entry.ts`) spoken over real HTTP to
 //! workerd (`wrangler dev`), payloads travelling through the (local) R2 data
-//! path. Rewritten for audit C-P0-01: the previous client spoke a retired
-//! protocol (caller-chosen keys, caller-supplied request digests, numeric
-//! u64s, caller-named scan bounds).
+//! path. Reworked for R5-SEC-02: the client operates against the MANAGED
+//! control-plane surface through the PRIVATE ISSUER path - no dev routes.
 //!
 //! Protocol facts this client encodes:
-//!   - every route except `/health` and `POST /capability` requires a
-//!     controller-issued capability in `x-capability`; issuance itself is
-//!     credentialed via `x-issuer-authorization` (Q-02). Tokens are
-//!     SINGLE-REQUEST: the nonce is bound at first use to the exact request,
-//!     so this client mints one token per request and never reuses one - an
-//!     identical caller-driven retry simply mints a fresh token and relies
-//!     on operation-identity idempotency at the authority.
+//!   - the client is a pure BEARER of issuer-granted schema-v3 Ed25519
+//!     tokens: it holds NO signing material and constructs NO tokens. Every
+//!     capability - the internal PROVISION capability included - is obtained
+//!     over HTTP from the private issuer (`control-plane/scripts/issuer.mjs`
+//!     startIssuerServer: loopback-only, bearer-authenticated,
+//!     `POST /issue {spec} -> {token}`, `POST /provision-token {binding} ->
+//!     {token}`). The managed worker surface deliberately has NO issuance
+//!     route (`/capability` is dev-only and answers 404 there), and the
+//!     managed runtime holds only PUBLIC verification keys (R5-SEC-03), so
+//!     this bearer topology is the only one that can work in production.
+//!   - tokens are SINGLE-REQUEST: the nonce is bound at first use to the
+//!     exact request, so this client requests one token per request and
+//!     never reuses one - an identical caller-driven retry simply obtains a
+//!     fresh token and relies on operation-identity idempotency at the
+//!     authority.
+//!   - session lifecycle is the production reserve -> attest -> activate
+//!     protocol (R4-SEC-04 exact per-action capabilities; ONLY activation
+//!     fences). The legacy one-call `/session/register` macro and the
+//!     `/session/fence` + `/budgets` admin routes are dev-only and absent
+//!     from the managed surface; admission budgets ride the provisioning
+//!     transaction instead (`POST /provision`).
 //!   - payload keys are ISSUER-DERIVED and content-addressed
 //!     (`p/<databaseId>/<sha256hex>`): the key comes back from issuance for
 //!     `PUT_PAYLOAD`, and this client refuses a non-canonical one rather
@@ -25,12 +38,13 @@
 //!   - scan pages are bounded by a SERVER-owned snapshot: `snapshotId` from
 //!     `POST /wal/{db}/{gen}/iterator`; the client never names `throughLsn`.
 //!   - capability methods are a CLOSED registry with MANDATORY per-method
-//!     restrictions (R4-SEC-03/04/05): WAL_FINALIZE and WAL_READ tokens bind
-//!     the exact session AND generation (issuance body carries `generation`
-//!     as a JSON number; the token binds the canonical decimal string), and
-//!     each session-lifecycle transition is its own exact method naming its
-//!     target actor - the generic SESSION_ADMIN bearer method no longer
-//!     exists. This client threads every restriction explicitly and never
+//!     restrictions (R4-SEC-03/04/05) enforced at the ISSUER (the real
+//!     `core/issuer.ts` mintCapabilityToken refuses an under-restricted
+//!     spec with CAPABILITY_RESTRICTION_MISSING before any token exists)
+//!     and re-enforced by the worker's verifier. WAL_FINALIZE and WAL_READ
+//!     tokens bind the exact session AND generation (issuance spec carries
+//!     `generation` as a JSON number; the token binds the canonical decimal
+//!     string). This client threads every restriction explicitly and never
 //!     defaults or zero-fills one it was not given.
 //!
 //! Every refusal is a typed outcome, nothing here panics on wire input, and
@@ -39,11 +53,6 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::{hex, sha256};
-
-/// The local-dev issuer credential (`control-plane/src/controller/core/
-/// key-config.ts` DEV_ISSUER_SECRET). Scaffolding for the L1 lane only:
-/// managed deployments refuse this constant outright.
-pub const DEV_ISSUER_SECRET: &str = "dev-insecure-issuer-secret";
 
 #[derive(Debug)]
 pub enum L1Error {
@@ -54,10 +63,10 @@ pub enum L1Error {
     /// the response did not decode as the protocol shape (includes any
     /// non-canonical u64 encoding - exactness is part of the contract)
     Decode(String),
-    /// capability issuance was refused or returned a malformed grant
+    /// the private issuer refused issuance (or answered a malformed grant)
     Issuance { status: u16, body: String },
     /// a session/generation-bound capability was requested while the client
-    /// holds no bound actor: the caller must register (or `bind_actor`) the
+    /// holds no bound actor: the caller must activate (or `bind_actor`) the
     /// exact session and generation first - there is deliberately no default
     /// and no zero fallback for either field (R4-SEC-05)
     ActorUnbound,
@@ -71,7 +80,7 @@ impl std::fmt::Display for L1Error {
             L1Error::Decode(e) => write!(f, "decode: {e}"),
             L1Error::Issuance { status, body } => write!(f, "capability issuance ({status}): {body}"),
             L1Error::ActorUnbound => {
-                write!(f, "no bound actor (session + generation): register_session or bind_actor first")
+                write!(f, "no bound actor (session + generation): activate_session or bind_actor first")
             }
         }
     }
@@ -181,89 +190,6 @@ fn encode_path(raw: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Provisioning (R4 PR1).
-//
-// Since the opaque tenant registry landed, an authority is UNBOUND until the
-// internal PROVISION capability binds it - issuance and every ordinary call
-// refuse with DATABASE_UNPROVISIONED before that. The PROVISION token is
-// minted by the ISSUER side (in these lanes, the test driver holding the
-// provisioning-scope key), so this client carries a byte-exact Rust
-// implementation of the worker's schema-v2 token mint for the PROVISION
-// method only: canonical JSON (sorted keys, JSON string escapes),
-// base64url-no-pad body, lowercase-hex HMAC-SHA-256 MAC. Parity with the
-// TypeScript `mintProvisionToken` is pinned by a cross-implementation
-// vector generated from the real `core/registry.ts` (see the contract
-// tests): if either side drifts, the token stops verifying.
-// ---------------------------------------------------------------------------
-
-/// HMAC-SHA-256 over the already-locked `sha2` dependency (RFC 2104: the
-/// crate set is pinned by `--locked`, and 15 lines beat a new dependency).
-fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
-    use sha2::{Digest, Sha256};
-    let mut block = [0u8; 64];
-    if key.len() > 64 {
-        block[..32].copy_from_slice(&Sha256::digest(key));
-    } else {
-        block[..key.len()].copy_from_slice(key);
-    }
-    let mut inner = Sha256::new();
-    inner.update(block.map(|b| b ^ 0x36));
-    inner.update(message);
-    let mut outer = Sha256::new();
-    outer.update(block.map(|b| b ^ 0x5c));
-    outer.update(inner.finalize());
-    outer.finalize().into()
-}
-
-/// base64url WITHOUT padding - exactly the worker's `base64urlEncode`.
-fn base64url_no_pad(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let mut acc = 0u32;
-        for (i, &b) in chunk.iter().enumerate() {
-            acc |= (b as u32) << (16 - 8 * i);
-        }
-        for i in 0..(chunk.len() * 8).div_ceil(6) {
-            out.push(ALPHABET[((acc >> (18 - 6 * i)) & 0x3f) as usize] as char);
-        }
-    }
-    out
-}
-
-fn hex_lower(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// Mint the internal PROVISION capability for `(environment, tenant,
-/// database)` - the schema-v2 payload with the exact canonical field order
-/// (sorted keys) the worker's `canonicalJson` produces. `serde_json`
-/// string encoding matches `JSON.stringify` for these identifier-shaped
-/// values (both emit minimal escapes).
-pub fn mint_provision_token(
-    provision_key: &[u8],
-    environment: &str,
-    tenant_id: &str,
-    database_id: &str,
-    nonce: &str,
-    expires_at_ms: u64,
-) -> String {
-    let js = |s: &str| serde_json::to_string(s).expect("string encodes");
-    let body = format!(
-        "{{\"databaseId\":{},\"env\":{},\"expiresAtMs\":{},\"incarnation\":0,\"kid\":{},\
-         \"method\":\"PROVISION\",\"nonce\":{},\"principal\":\"provisioner\",\"tenantId\":{},\"v\":2}}",
-        js(database_id),
-        js(environment),
-        expires_at_ms,
-        js(&format!("prov:{environment}")),
-        js(nonce),
-        js(tenant_id),
-    );
-    let mac = hmac_sha256(provision_key, body.as_bytes());
-    format!("{}.{}", base64url_no_pad(body.as_bytes()), hex_lower(&mac))
-}
-
-// ---------------------------------------------------------------------------
 // Wire shapes.
 // ---------------------------------------------------------------------------
 
@@ -271,40 +197,50 @@ pub fn mint_provision_token(
 /// spells them (`core/capability.ts` REQUIRED_RESTRICTIONS). R4-SEC-04
 /// retired the generic SESSION_ADMIN bearer method: each lifecycle
 /// transition this client performs is its own exact action, and issuance
-/// refuses any name outside the registry with CAPABILITY_METHOD_UNKNOWN.
-/// Only the methods this client actually mints are spelled here.
+/// refuses any name outside the registry. Only the methods this client
+/// actually requests are spelled here - in particular the dev-only
+/// SESSION_REGISTER/SESSION_FENCE/BUDGETS_SET route methods are gone: the
+/// managed lifecycle is reserve -> attest -> activate (+ renew), and
+/// budgets ride provisioning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CapabilityMethod {
-    /// legacy register/rollover macro (dev-only route); binds session + generation
-    SessionRegister,
-    /// actor-wide fence; binds the target session only
-    SessionFence,
-    /// budget installation; binds the acting session
-    BudgetsSet,
+    /// reserve a startup-session id (grants nothing; single-use per id)
+    SessionReserve,
+    /// bind the reservation to one process nonce (still grants nothing)
+    SessionAttest,
+    /// the ONE fencing transition: verified activation under a lease
+    SessionActivate,
+    /// heartbeat lease extension for the active/draining actor
+    SessionRenew,
     WalFinalize,
     WalRead,
     PutPayload,
+    /// session-independent recovery/forensics journal audit
+    JournalVerify,
 }
 
 impl CapabilityMethod {
     fn wire(self) -> &'static str {
         match self {
-            CapabilityMethod::SessionRegister => "SESSION_REGISTER",
-            CapabilityMethod::SessionFence => "SESSION_FENCE",
-            CapabilityMethod::BudgetsSet => "BUDGETS_SET",
+            CapabilityMethod::SessionReserve => "SESSION_RESERVE",
+            CapabilityMethod::SessionAttest => "SESSION_ATTEST",
+            CapabilityMethod::SessionActivate => "SESSION_ACTIVATE",
+            CapabilityMethod::SessionRenew => "SESSION_RENEW",
             CapabilityMethod::WalFinalize => "WAL_FINALIZE",
             CapabilityMethod::WalRead => "WAL_READ",
             CapabilityMethod::PutPayload => "PUT_PAYLOAD",
+            CapabilityMethod::JournalVerify => "JOURNAL_VERIFY",
         }
     }
 }
 
-/// Restrictions a mint request carries. Which of these a method REQUIRES is
-/// the issuer's closed registry (REQUIRED_RESTRICTIONS): a mint missing a
-/// required one is refused with CAPABILITY_RESTRICTION_MISSING - absence is
-/// never a wider token. `Default` spells "no restriction requested"; it is
-/// NOT a fallback value for a required field (there is no zero-generation
-/// default anywhere in this client).
+/// Restrictions an issuance request carries. Which of these a method
+/// REQUIRES is the issuer's closed registry (REQUIRED_RESTRICTIONS): a
+/// request missing a required one is refused at the issuer with
+/// CAPABILITY_RESTRICTION_MISSING - absence is never a wider token.
+/// `Default` spells "no restriction requested"; it is NOT a fallback value
+/// for a required field (there is no zero-generation default anywhere in
+/// this client).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MintRestrictions<'a> {
     /// the startup session the token authorizes (the exact actor)
@@ -316,6 +252,43 @@ pub struct MintRestrictions<'a> {
     pub digest: Option<&'a str>,
     /// byte budget (PUT_PAYLOAD)
     pub max_bytes: Option<u64>,
+    /// tenant override for adversarial probes (a forged cross-tenant claim);
+    /// ordinary issuance omits it and receives the issuer's own tenant
+    pub tenant_id: Option<&'a str>,
+}
+
+/// The typed issuance spec body for `POST /issue` - the exact field names
+/// `scripts/issuer.mjs` reads. Kept a pure function so the spec encoding
+/// (generation as a JSON NUMBER, absent restrictions truly absent) is
+/// unit-testable without a live issuer.
+pub fn issuance_spec(
+    principal: &str,
+    database_id: &str,
+    method: CapabilityMethod,
+    restrict: &MintRestrictions<'_>,
+) -> serde_json::Value {
+    let mut spec = serde_json::json!({
+        "principal": principal,
+        "databaseId": database_id,
+        "method": method.wire(),
+        "ttlMs": 60_000,
+    });
+    if let Some(session) = restrict.session {
+        spec["session"] = session.into();
+    }
+    if let Some(generation) = restrict.generation {
+        spec["generation"] = generation.into();
+    }
+    if let Some(digest) = restrict.digest {
+        spec["digest"] = digest.into();
+    }
+    if let Some(max_bytes) = restrict.max_bytes {
+        spec["maxBytes"] = max_bytes.into();
+    }
+    if let Some(tenant_id) = restrict.tenant_id {
+        spec["tenantId"] = tenant_id.into();
+    }
+    spec
 }
 
 /// One issued grant. `key` is present only for `PUT_PAYLOAD` - the
@@ -508,43 +481,77 @@ pub struct Budgets {
     pub max_tail_records: u64,
 }
 
+/// Outcome of the provisioning transaction: `created` is true for the
+/// binding write, false for an idempotent replay of the same binding.
+#[derive(Debug, Clone, Copy)]
+pub struct ProvisionOutcome {
+    pub created: bool,
+}
+
+/// Outcome of a verified activation (`POST /session/activate`): the
+/// controller-time lease deadline and how many predecessor actors this
+/// activation fenced - the ONE takeover mechanism on the managed surface.
+#[derive(Debug, Clone, Copy)]
+pub struct ActivationOutcome {
+    pub lease_deadline_ms: u64,
+    pub fenced_predecessors: u64,
+}
+
+/// `GET /journal/{db}/verify` verdict (F8): the server recomputes the whole
+/// hash chain + MACs; `length` is the number of journaled commands.
+#[derive(Debug, Clone, Copy)]
+pub struct JournalOutcome {
+    pub ok: bool,
+    pub length: u64,
+}
+
 // ---------------------------------------------------------------------------
 // Client.
 // ---------------------------------------------------------------------------
 
+/// Where the client gets authority from (the private issuer) and where it
+/// spends it (the managed worker surface). The issuer bearer credential is
+/// the client's ONLY credential: everything else is granted per-request.
+#[derive(Debug, Clone)]
+pub struct L1Config {
+    /// managed control-plane worker base URL
+    pub base: String,
+    /// private issuer base URL (loopback sidecar locally; a private service
+    /// binding in production topology)
+    pub issuer_base: String,
+    /// bearer credential the issuer authenticates issuance with
+    pub issuer_bearer: String,
+    /// principal name stamped into issued tokens (attribution)
+    pub principal: String,
+    /// the tenant this client provisions and operates databases under
+    pub tenant_id: String,
+}
+
 pub struct L1Client {
-    base: String,
-    principal: String,
-    issuer_secret: String,
+    config: L1Config,
     agent: ureq::Agent,
     /// The bound actor: the startup session this client operates as, plus
     /// the EXACT generation that session currently holds authority in.
-    /// WAL_READ tokens are minted for this pair (R4-SEC-05: runtime reads
-    /// are actor-bound and revalidated live at use time). `None` until the
-    /// caller registers or binds - a read before that is a typed
-    /// `ActorUnbound` refusal, never a defaulted or zero-filled mint.
+    /// WAL_READ tokens are requested for this pair (R4-SEC-05: runtime
+    /// reads are actor-bound and revalidated live at use time). `None`
+    /// until the caller activates or binds - a read before that is a typed
+    /// `ActorUnbound` refusal, never a defaulted or zero-filled request.
     actor: std::sync::Mutex<Option<(String, u64)>>,
 }
 
 impl L1Client {
-    pub fn new(base: impl Into<String>, principal: impl Into<String>, issuer_secret: impl Into<String>) -> Self {
+    pub fn new(config: L1Config) -> Self {
         // 4xx/5xx are typed protocol outcomes here (409 conflict, 422 data-
         // path rejection, 404 exact miss) - never transport errors
-        let config = ureq::config::Config::builder().http_status_as_error(false).build();
-        Self {
-            base: base.into(),
-            principal: principal.into(),
-            issuer_secret: issuer_secret.into(),
-            agent: config.new_agent(),
-            actor: std::sync::Mutex::new(None),
-        }
+        let agent_config = ureq::config::Config::builder().http_status_as_error(false).build();
+        Self { config, agent: agent_config.new_agent(), actor: std::sync::Mutex::new(None) }
     }
 
-    /// Bind the actor identity this client mints read tokens for: the
+    /// Bind the actor identity this client requests read tokens for: the
     /// startup session and the exact generation it currently operates
-    /// under. `register_session` re-binds this on every successful
-    /// (re-)registration, so after a rollover the client's read authority
-    /// follows the session's CURRENT generation - exactly like its commit
+    /// under. `activate_session` re-binds this on every successful
+    /// activation, so after a takeover the client's read authority follows
+    /// the session's CURRENT generation - exactly like its commit
     /// authority does at the controller.
     pub fn bind_actor(&self, session: &str, generation: u64) {
         *self.actor.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) =
@@ -552,7 +559,7 @@ impl L1Client {
     }
 
     /// The bound (session, generation) pair, or the typed refusal. No
-    /// default and no zero fallback: an unbound actor cannot mint an
+    /// default and no zero fallback: an unbound actor cannot request an
     /// actor-bound capability.
     fn actor(&self) -> Result<(String, u64), L1Error> {
         self.actor
@@ -563,8 +570,11 @@ impl L1Client {
     }
 
     pub fn health(&self) -> Result<(), L1Error> {
-        let mut response =
-            self.agent.get(format!("{}/health", self.base)).call().map_err(|e| L1Error::Http(e.to_string()))?;
+        let mut response = self
+            .agent
+            .get(format!("{}/health", self.config.base))
+            .call()
+            .map_err(|e| L1Error::Http(e.to_string()))?;
         let status = response.status().as_u16();
         let body: serde_json::Value = response.body_mut().read_json().map_err(|e| L1Error::Decode(e.to_string()))?;
         if status == 200 && body["ok"] == serde_json::Value::Bool(true) {
@@ -574,67 +584,125 @@ impl L1Client {
         }
     }
 
-    /// Mint ONE capability (`POST /capability`, credentialed issuance). Each
+    /// One bearer-authenticated POST to the private issuer. The refusal
+    /// body text is preserved verbatim in the typed Issuance error: the
+    /// issuer's refusal identity (ISSUER_UNAUTHORIZED / ISSUE_SPEC_INVALID
+    /// with its CAPABILITY_RESTRICTION_MISSING detail / INVALID_BINDING)
+    /// is diagnostic surface, and it must survive rather than dying as a
+    /// JSON decode error.
+    fn issuer_post(&self, path: &str, body: &serde_json::Value) -> Result<serde_json::Value, L1Error> {
+        let mut response = self
+            .agent
+            .post(format!("{}{}", self.config.issuer_base, path))
+            .header("authorization", format!("Bearer {}", self.config.issuer_bearer))
+            .send_json(body)
+            .map_err(|e| L1Error::Http(e.to_string()))?;
+        let status = response.status().as_u16();
+        let raw = response.body_mut().read_to_string().map_err(|e| L1Error::Http(e.to_string()))?;
+        let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap_or(serde_json::Value::Null);
+        if status != 200 || parsed["ok"] != serde_json::Value::Bool(true) {
+            return Err(L1Error::Issuance { status, body: raw });
+        }
+        Ok(parsed)
+    }
+
+    /// Obtain ONE capability from the private issuer (`POST /issue`). Each
     /// request needs its own token - the authority binds the nonce to the
     /// first request it authorizes. Every restriction the method REQUIRES
-    /// (issuer's REQUIRED_RESTRICTIONS registry) must ride in the mint or
-    /// issuance refuses with CAPABILITY_RESTRICTION_MISSING; `generation`
-    /// travels as a JSON NUMBER here and is bound into the token as a
-    /// canonical decimal string. Public so contract tests can probe the
-    /// issuer's refusal matrix directly (e.g. a mint that omits the
-    /// generation a finalize token must carry).
+    /// (the issuer's REQUIRED_RESTRICTIONS registry) must ride in the spec
+    /// or issuance refuses with CAPABILITY_RESTRICTION_MISSING;
+    /// `generation` travels as a JSON NUMBER here and is bound into the
+    /// token as a canonical decimal string. Public so contract tests and
+    /// the suite can probe the issuer's refusal matrix directly (e.g. a
+    /// spec that omits the generation a finalize token must carry).
     pub fn issue(
         &self,
         database_id: &str,
         method: CapabilityMethod,
         restrict: MintRestrictions<'_>,
     ) -> Result<IssuedCapability, L1Error> {
-        let mut spec = serde_json::json!({
-            "principal": self.principal,
-            "databaseId": database_id,
-            "method": method.wire(),
-            "ttlMs": 60_000,
-        });
-        if let Some(session) = restrict.session {
-            spec["session"] = session.into();
-        }
-        if let Some(generation) = restrict.generation {
-            spec["generation"] = generation.into();
-        }
-        if let Some(digest) = restrict.digest {
-            spec["digest"] = digest.into();
-        }
-        if let Some(max_bytes) = restrict.max_bytes {
-            spec["maxBytes"] = max_bytes.into();
-        }
-        let mut response = self
-            .agent
-            .post(format!("{}/capability", self.base))
-            .header("x-issuer-authorization", &self.issuer_secret)
-            .send_json(&spec)
-            .map_err(|e| L1Error::Http(e.to_string()))?;
-        let status = response.status().as_u16();
-        // Read TEXT first: a mint-time refusal is not always JSON (the local
-        // lane surfaces the issuer's thrown CAPABILITY_RESTRICTION_MISSING /
-        // CAPABILITY_METHOD_UNKNOWN as an error page), and the refusal
-        // identity must survive into the typed Issuance error instead of
-        // dying as a JSON decode error.
-        let raw = response.body_mut().read_to_string().map_err(|e| L1Error::Http(e.to_string()))?;
-        let body: serde_json::Value = serde_json::from_str(&raw).unwrap_or(serde_json::Value::Null);
-        if status != 200 || body["ok"] != serde_json::Value::Bool(true) {
-            return Err(L1Error::Issuance { status, body: raw });
-        }
+        let spec = issuance_spec(&self.config.principal, database_id, method, &restrict);
+        let body = self.issuer_post("/issue", &serde_json::json!({ "spec": spec }))?;
         serde_json::from_value(body).map_err(|e| L1Error::Decode(format!("issuance grant: {e}")))
     }
 
+    /// Obtain the internal PROVISION capability for `(tenant, database)`
+    /// from the issuer (`POST /provision-token`). The client BEARS the
+    /// token; it cannot construct one - the provisioning-scope private key
+    /// lives with the issuer alone (R5-SEC-03).
+    pub fn provision_token(&self, database_id: &str) -> Result<String, L1Error> {
+        let body = self.issuer_post(
+            "/provision-token",
+            &serde_json::json!({ "binding": {
+                "tenantId": self.config.tenant_id, "databaseId": database_id,
+            } }),
+        )?;
+        match body["token"].as_str() {
+            Some(token) => Ok(token.to_string()),
+            None => Err(L1Error::Decode(format!("provision grant without token: {body}"))),
+        }
+    }
+
+    /// Provision the authority for this client's tenant + `database_id`
+    /// through the production `/provision` route (R4 PR1) - the ONLY act
+    /// that binds an uninitialized controller. Admission budgets ride the
+    /// SAME transaction (the managed surface has no budget-admin route);
+    /// provisioning without budgets leaves the database write-denying
+    /// (Q-12: no budget row means deny, never unlimited). Success is
+    /// `created: true`; an idempotent replay of the same binding answers
+    /// `created: false` - NOTE a replay does not install budgets, so they
+    /// must ride the first call. Everything else - forged scope,
+    /// conflicting binding, malformed ids - is the typed refusal.
+    pub fn provision(&self, database_id: &str, budgets: Option<&Budgets>) -> Result<ProvisionOutcome, L1Error> {
+        let token = self.provision_token(database_id)?;
+        self.provision_with_token(database_id, &token, budgets)
+    }
+
+    /// The worker half of provisioning under an explicitly supplied
+    /// `x-provision` token. Public so adversarial checks can present the
+    /// WRONG material (e.g. an ordinary capability-scope token) and pin the
+    /// typed mint/verify-scope refusal.
+    pub fn provision_with_token(
+        &self,
+        database_id: &str,
+        provision_token: &str,
+        budgets: Option<&Budgets>,
+    ) -> Result<ProvisionOutcome, L1Error> {
+        let mut body = serde_json::json!({
+            "tenantId": self.config.tenant_id,
+            "databaseId": database_id,
+        });
+        if let Some(budgets) = budgets {
+            body["budgets"] = serde_json::json!({
+                "maxUnpublishedOutbox": budgets.max_unpublished_outbox,
+                "maxPayloadLength": budgets.max_payload_length,
+                "maxTailRecords": budgets.max_tail_records,
+            });
+        }
+        let mut response = self
+            .agent
+            .post(format!("{}/provision", self.config.base))
+            .header("x-provision", provision_token)
+            .send_json(&body)
+            .map_err(|e| L1Error::Http(e.to_string()))?;
+        let status = response.status().as_u16();
+        let raw = response.body_mut().read_to_string().map_err(|e| L1Error::Http(e.to_string()))?;
+        let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap_or(serde_json::Value::Null);
+        if status != 200 || parsed["ok"] != serde_json::Value::Bool(true) {
+            return Err(L1Error::Protocol { status, body: raw });
+        }
+        Ok(ProvisionOutcome { created: parsed["created"] == serde_json::Value::Bool(true) })
+    }
+
     /// Capability-bearing POST where the only success shape is HTTP 200 with
-    /// `{"ok": true}`. Anything else (non-200 status, `ok:false`, missing
-    /// `ok`) is a typed protocol error: register/fence/budgets callers act
-    /// on the *effect* having been applied, so silently accepting an error
-    /// body would let a caller believe state exists that was never installed.
-    /// Each lifecycle transition mints its OWN exact method (R4-SEC-04 - the
-    /// generic SESSION_ADMIN bearer method no longer exists) carrying the
-    /// restrictions that method requires.
+    /// `{"ok": true}`; the parsed success body is returned for outcome
+    /// fields (lease deadline, fenced count). Anything else (non-200
+    /// status, `ok:false`, missing `ok`) is a typed protocol error:
+    /// lifecycle callers act on the *effect* having been applied, so
+    /// silently accepting an error body would let a caller believe state
+    /// exists that was never installed. Each transition requests its OWN
+    /// exact method (R4-SEC-04) carrying the restrictions that method
+    /// requires.
     fn lifecycle_post(
         &self,
         database_id: &str,
@@ -642,11 +710,11 @@ impl L1Client {
         restrict: MintRestrictions<'_>,
         path: &str,
         body: &serde_json::Value,
-    ) -> Result<(), L1Error> {
+    ) -> Result<serde_json::Value, L1Error> {
         let cap = self.issue(database_id, method, restrict)?;
         let mut response = self
             .agent
-            .post(format!("{}{}", self.base, path))
+            .post(format!("{}{}", self.config.base, path))
             .header("x-capability", &cap.token)
             .send_json(body)
             .map_err(|e| L1Error::Http(e.to_string()))?;
@@ -656,88 +724,98 @@ impl L1Client {
         if status != 200 || parsed["ok"] != serde_json::Value::Bool(true) {
             return Err(L1Error::Protocol { status, body: parsed.to_string() });
         }
-        Ok(())
+        Ok(parsed)
     }
 
-    /// Provision the authority for `(tenant_id, database_id)` through the
-    /// production `/provision` route (R4 PR1) - the ONLY act that binds an
-    /// uninitialized controller. `provision_token` is the internal
-    /// PROVISION capability (mint_provision_token). Success is `ok:true`;
-    /// an idempotent replay of the same binding also answers `ok:true`, so
-    /// suites may provision unconditionally. Everything else - forged
-    /// scope, conflicting binding, malformed ids - is the typed refusal.
-    pub fn provision(
+    /// Reserve a startup-session id (`POST /session/reserve`). Grants
+    /// nothing; ids are single-use identities, so a NEW actor always
+    /// reserves a NEW id - the takeover/rollover path is a fresh
+    /// reservation at the target generation, never reuse.
+    pub fn reserve_session(
         &self,
         database_id: &str,
-        tenant_id: &str,
-        provision_token: &str,
+        generation: u64,
+        session: &str,
+        holder: &str,
     ) -> Result<(), L1Error> {
-        let mut response = self
-            .agent
-            .post(format!("{}/provision", self.base))
-            .header("x-provision", provision_token)
-            .send_json(&serde_json::json!({ "tenantId": tenant_id, "databaseId": database_id }))
-            .map_err(|e| L1Error::Http(e.to_string()))?;
-        let status = response.status().as_u16();
-        let raw = response.body_mut().read_to_string().map_err(|e| L1Error::Http(e.to_string()))?;
-        let body: serde_json::Value = serde_json::from_str(&raw).unwrap_or(serde_json::Value::Null);
-        if status != 200 || body["ok"] != serde_json::Value::Bool(true) {
-            return Err(L1Error::Protocol { status, body: raw });
-        }
-        Ok(())
-    }
-
-    /// Register (or, for the live actor, roll over) a startup session. The
-    /// SESSION_REGISTER capability binds the exact target actor AND the
-    /// exact generation (R4-SEC-04). On success the client re-binds its
-    /// actor state to (session, generation): commit AND read authority
-    /// follow the session's CURRENT generation, so after a rollover
-    /// finalizing in the old one refuses with SESSION_GENERATION_MISMATCH
-    /// and read tokens are minted for the new one.
-    pub fn register_session(&self, database_id: &str, generation: u64, session: &str) -> Result<(), L1Error> {
         self.lifecycle_post(
             database_id,
-            CapabilityMethod::SessionRegister,
+            CapabilityMethod::SessionReserve,
             MintRestrictions { session: Some(session), generation: Some(generation), ..Default::default() },
-            "/session/register",
-            &serde_json::json!({ "databaseId": database_id, "generation": generation, "startupSessionId": session }),
+            "/session/reserve",
+            &serde_json::json!({
+                "databaseId": database_id, "generation": generation,
+                "startupSessionId": session, "holder": holder,
+            }),
         )?;
-        self.bind_actor(session, generation);
         Ok(())
     }
 
-    /// Fencing is actor-wide: it revokes this startup session's append
-    /// authority across every generation it registered - so the
-    /// SESSION_FENCE capability binds only the target session (the body's
-    /// generation is wire compatibility, not authority scope).
-    pub fn fence_session(&self, database_id: &str, generation: u64, session: &str) -> Result<(), L1Error> {
+    /// Bind the reservation to this process (`POST /session/attest`). Still
+    /// grants nothing; the nonce presented here must be re-presented at
+    /// activation.
+    pub fn attest_session(&self, database_id: &str, session: &str, process_nonce: &str) -> Result<(), L1Error> {
         self.lifecycle_post(
             database_id,
-            CapabilityMethod::SessionFence,
+            CapabilityMethod::SessionAttest,
             MintRestrictions { session: Some(session), ..Default::default() },
-            "/session/fence",
-            &serde_json::json!({ "databaseId": database_id, "generation": generation, "startupSessionId": session }),
-        )
+            "/session/attest",
+            &serde_json::json!({
+                "databaseId": database_id, "startupSessionId": session, "processNonce": process_nonce,
+            }),
+        )?;
+        Ok(())
     }
 
-    /// Install admission budgets (BUDGETS_SET, session-bound: the core
-    /// revalidates that `session` is still the live actor). Without a
-    /// validated budget row every finalize refuses
-    /// (ADMISSION_REJECTED_NO_BUDGET) - missing budget means deny, never
-    /// unlimited.
-    pub fn set_budgets(&self, database_id: &str, session: &str, budgets: &Budgets) -> Result<(), L1Error> {
+    /// The ONE transaction that authorizes takeover (`POST
+    /// /session/activate`, 12.4): verified activation fences every
+    /// predecessor and establishes this actor under a controller-time
+    /// lease. On success the client re-binds its actor state to (session,
+    /// generation): commit AND read authority follow the activated
+    /// generation.
+    pub fn activate_session(
+        &self,
+        database_id: &str,
+        generation: u64,
+        session: &str,
+        process_nonce: &str,
+        lease_ms: u64,
+    ) -> Result<ActivationOutcome, L1Error> {
+        let body = self.lifecycle_post(
+            database_id,
+            CapabilityMethod::SessionActivate,
+            MintRestrictions { session: Some(session), generation: Some(generation), ..Default::default() },
+            "/session/activate",
+            &serde_json::json!({
+                "databaseId": database_id, "generation": generation, "startupSessionId": session,
+                "processNonce": process_nonce, "leaseMs": lease_ms,
+            }),
+        )?;
+        let outcome = ActivationOutcome {
+            lease_deadline_ms: body["leaseDeadlineMs"]
+                .as_u64()
+                .ok_or_else(|| L1Error::Decode(format!("activation without leaseDeadlineMs: {body}")))?,
+            fenced_predecessors: body["fencedPredecessors"]
+                .as_u64()
+                .ok_or_else(|| L1Error::Decode(format!("activation without fencedPredecessors: {body}")))?,
+        };
+        self.bind_actor(session, generation);
+        Ok(outcome)
+    }
+
+    /// Heartbeat lease extension (`POST /session/renew`); refuses once the
+    /// lease already expired - expiry is terminal, renewal cannot resurrect.
+    pub fn renew_session(&self, database_id: &str, session: &str, lease_ms: u64) -> Result<(), L1Error> {
         self.lifecycle_post(
             database_id,
-            CapabilityMethod::BudgetsSet,
+            CapabilityMethod::SessionRenew,
             MintRestrictions { session: Some(session), ..Default::default() },
-            "/budgets",
+            "/session/renew",
             &serde_json::json!({
-                "databaseId": database_id,
-                "maxUnpublishedOutbox": budgets.max_unpublished_outbox,
-                "maxPayloadLength": budgets.max_payload_length,
-                "maxTailRecords": budgets.max_tail_records,
+                "databaseId": database_id, "startupSessionId": session, "leaseMs": lease_ms,
             }),
-        )
+        )?;
+        Ok(())
     }
 
     /// Upload one payload through the capability-bound data path. The key is
@@ -762,7 +840,7 @@ impl L1Client {
         };
         let mut response = self
             .agent
-            .put(format!("{}/payload/{}", self.base, encode_path(&key)))
+            .put(format!("{}/payload/{}", self.config.base, encode_path(&key)))
             .header("x-capability", &cap.token)
             .send(bytes)
             .map_err(|e| L1Error::Http(e.to_string()))?;
@@ -791,8 +869,8 @@ impl L1Client {
         // the finalize capability is SESSION- AND GENERATION-bound (donor A3
         // + audit C-05, R4-SEC-03): the token carries the actor identity the
         // request claims and the EXACT generation it finalizes in - a token
-        // minted for generation N is not write authority in N+1, and a mint
-        // omitting either restriction is refused at issuance
+        // issued for generation N is not write authority in N+1, and a spec
+        // omitting either restriction is refused at the issuer
         // (CAPABILITY_RESTRICTION_MISSING), before finalize is ever reached
         let cap = self.issue(
             &request.database_id,
@@ -805,7 +883,7 @@ impl L1Client {
         )?;
         let mut response = self
             .agent
-            .post(format!("{}/wal/finalize", self.base))
+            .post(format!("{}/wal/finalize", self.config.base))
             .header("x-capability", &cap.token)
             .send_json(request)
             .map_err(|e| L1Error::Http(e.to_string()))?;
@@ -818,7 +896,7 @@ impl L1Client {
     /// One capability-bearing GET under a fresh ACTOR-BOUND WAL_READ token
     /// (R4-SEC-05): the token names the client's bound session AND the
     /// generation that session currently operates under - the session's
-    /// CURRENT generation, which after a rollover differs from the path
+    /// CURRENT generation, which after a takeover differs from the path
     /// generation being read. The Worker revalidates live authority at use
     /// time, so a fenced/unknown session gets a typed 409 regardless of an
     /// unexpired token.
@@ -829,7 +907,7 @@ impl L1Client {
             CapabilityMethod::WalRead,
             MintRestrictions { session: Some(&session), generation: Some(generation), ..Default::default() },
         )?;
-        let mut request = self.agent.get(format!("{}{}", self.base, path)).header("x-capability", &cap.token);
+        let mut request = self.agent.get(format!("{}{}", self.config.base, path)).header("x-capability", &cap.token);
         for (name, value) in query {
             request = request.query(*name, value);
         }
@@ -860,8 +938,8 @@ impl L1Client {
     /// server-owned cut every subsequent `scan` page presents; pages of one
     /// logical iteration never observe later appends.
     pub fn open_iterator(&self, database_id: &str, generation: u64) -> Result<IteratorOutcome, L1Error> {
-        // same actor-bound WAL_READ mint as read_get: session + the actor's
-        // CURRENT generation (R4-SEC-05), never an unbound reader
+        // same actor-bound WAL_READ request as read_get: session + the
+        // actor's CURRENT generation (R4-SEC-05), never an unbound reader
         let (session, actor_generation) = self.actor()?;
         let cap = self.issue(
             database_id,
@@ -870,7 +948,7 @@ impl L1Client {
         )?;
         let mut response = self
             .agent
-            .post(format!("{}/wal/{database_id}/{generation}/iterator", self.base))
+            .post(format!("{}/wal/{database_id}/{generation}/iterator", self.config.base))
             .header("x-capability", &cap.token)
             .send_json(serde_json::json!({}))
             .map_err(|e| L1Error::Http(e.to_string()))?;
@@ -920,7 +998,9 @@ impl L1Client {
         Ok((status, outcome))
     }
 
-    /// Contiguity audit over one generation's tail.
+    /// Contiguity audit over one generation's tail. DEV-ONLY route: the
+    /// managed surface answers 404 here (the local-dev stack lane uses this
+    /// to prove the developer-convenience posture still serves it).
     pub fn audit(&self, database_id: &str, generation: u64) -> Result<AuditOutcome, L1Error> {
         let mut response = self.read_get(database_id, &format!("/wal/{database_id}/{generation}/audit"), &[])?;
         let status = response.status().as_u16();
@@ -931,52 +1011,116 @@ impl L1Client {
         }
         response.body_mut().read_json().map_err(|e| L1Error::Decode(e.to_string()))
     }
+
+    /// Full journal verification (`GET /journal/{db}/verify`, F8): the
+    /// session-independent recovery/forensics read - its JOURNAL_VERIFY
+    /// capability binds no session or generation by design.
+    pub fn journal_verify(&self, database_id: &str) -> Result<JournalOutcome, L1Error> {
+        let cap = self.issue(database_id, CapabilityMethod::JournalVerify, MintRestrictions::default())?;
+        let mut response = self
+            .agent
+            .get(format!("{}/journal/{database_id}/verify", self.config.base))
+            .header("x-capability", &cap.token)
+            .call()
+            .map_err(|e| L1Error::Http(e.to_string()))?;
+        let status = response.status().as_u16();
+        let body: serde_json::Value = response.body_mut().read_json().map_err(|e| L1Error::Decode(e.to_string()))?;
+        if status != 200 || body["ok"] != serde_json::Value::Bool(true) {
+            return Err(L1Error::Protocol { status, body: body.to_string() });
+        }
+        let length = body["length"]
+            .as_u64()
+            .ok_or_else(|| L1Error::Decode(format!("journal verdict without length: {body}")))?;
+        Ok(JournalOutcome { ok: true, length })
+    }
+
+    /// Raw probe against the WORKER surface: exact method/path/body/headers,
+    /// returning (status, parsed JSON or Null). This is the adversarial and
+    /// posture-probe surface for suites and stack lanes (dev-route 404
+    /// matrices, forged-token presentations) - product code paths never use
+    /// it.
+    pub fn probe(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&serde_json::Value>,
+        headers: &[(&str, &str)],
+    ) -> Result<(u16, serde_json::Value), L1Error> {
+        let url = format!("{}{}", self.config.base, path);
+        let mut response = match (method, body) {
+            ("GET", _) => {
+                let mut request = self.agent.get(&url);
+                for (name, value) in headers {
+                    request = request.header(*name, *value);
+                }
+                request.call()
+            }
+            ("POST", Some(json)) => {
+                let mut request = self.agent.post(&url);
+                for (name, value) in headers {
+                    request = request.header(*name, *value);
+                }
+                request.send_json(json)
+            }
+            ("POST", None) => {
+                let mut request = self.agent.post(&url);
+                for (name, value) in headers {
+                    request = request.header(*name, *value);
+                }
+                request.send_empty()
+            }
+            (other, _) => return Err(L1Error::Decode(format!("probe method {other:?} unsupported"))),
+        }
+        .map_err(|e| L1Error::Http(e.to_string()))?;
+        let status = response.status().as_u16();
+        let raw = response.body_mut().read_to_string().map_err(|e| L1Error::Http(e.to_string()))?;
+        let parsed = serde_json::from_str(&raw).unwrap_or(serde_json::Value::Null);
+        Ok((status, parsed))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Cross-implementation parity pin: this exact token was generated from
-    /// the REAL worker code (`core/registry.ts` `mintProvisionToken` via
-    /// node --experimental-strip-types) for these exact inputs. If the Rust
-    /// mint's canonical JSON, base64url or HMAC drifts by one byte, this
-    /// fails - and so would live verification.
+    /// The issuance spec is the typed seam between MintRestrictions and the
+    /// issuer's wire format: generation MUST be a JSON number (the issuer
+    /// binds its canonical decimal string form into the token), and absent
+    /// restrictions must be truly ABSENT - an issuer treating null as "no
+    /// restriction" versus "restriction present but empty" is exactly the
+    /// wider-token drift R4-SEC-03 named.
     #[test]
-    fn provision_token_is_byte_identical_to_the_typescript_mint() {
-        let token = mint_provision_token(
-            b"dev-insecure-provision-key",
-            "local",
-            "local",
-            "parity-db-1",
-            "nonce-parity-1",
-            1_787_200_000_000,
+    fn issuance_spec_encodes_restrictions_exactly() {
+        let spec = issuance_spec(
+            "p-1",
+            "db-1",
+            CapabilityMethod::WalFinalize,
+            &MintRestrictions { session: Some("sess-a"), generation: Some(u64::MAX), ..Default::default() },
         );
-        assert_eq!(
-            token,
-            "eyJkYXRhYmFzZUlkIjoicGFyaXR5LWRiLTEiLCJlbnYiOiJsb2NhbCIsImV4cGlyZXNBdE1zIjoxNzg3MjAwMDAwMDAwLCJpbmNhcm5hdGlvbiI6MCwia2lkIjoicHJvdjpsb2NhbCIsIm1ldGhvZCI6IlBST1ZJU0lPTiIsIm5vbmNlIjoibm9uY2UtcGFyaXR5LTEiLCJwcmluY2lwYWwiOiJwcm92aXNpb25lciIsInRlbmFudElkIjoibG9jYWwiLCJ2IjoyfQ.4b631f8080c213b3b20eb21622f00fc6ed152d4643da941a6e9bc82412bab7b6",
-        );
-    }
-
-    /// RFC 4231 test case 2 pins the HMAC construction itself (key shorter
-    /// than the block, the common path here).
-    #[test]
-    fn hmac_sha256_matches_rfc_4231_vector() {
-        let mac = hmac_sha256(b"Jefe", b"what do ya want for nothing?");
-        assert_eq!(
-            hex_lower(&mac),
-            "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843",
-        );
+        assert_eq!(spec["method"], "WAL_FINALIZE");
+        assert_eq!(spec["databaseId"], "db-1");
+        assert_eq!(spec["session"], "sess-a");
+        assert_eq!(spec["generation"], serde_json::json!(u64::MAX), "generation is a JSON number");
+        for absent in ["digest", "maxBytes", "tenantId"] {
+            assert!(spec.get(absent).is_none(), "{absent} must be absent, not null");
+        }
     }
 
     #[test]
-    fn base64url_no_pad_matches_the_worker_encoder() {
-        // no padding, url-safe alphabet, all three tail lengths
-        assert_eq!(base64url_no_pad(b""), "");
-        assert_eq!(base64url_no_pad(b"f"), "Zg");
-        assert_eq!(base64url_no_pad(b"fo"), "Zm8");
-        assert_eq!(base64url_no_pad(b"foo"), "Zm9v");
-        assert_eq!(base64url_no_pad(&[0xfb, 0xff]), "-_8");
+    fn issuance_spec_carries_payload_and_tenant_restrictions() {
+        let spec = issuance_spec(
+            "p-1",
+            "db-1",
+            CapabilityMethod::PutPayload,
+            &MintRestrictions {
+                digest: Some("ab"), max_bytes: Some(7), tenant_id: Some("tenant-b"), ..Default::default()
+            },
+        );
+        assert_eq!(spec["method"], "PUT_PAYLOAD");
+        assert_eq!(spec["digest"], "ab");
+        assert_eq!(spec["maxBytes"], 7);
+        assert_eq!(spec["tenantId"], "tenant-b");
+        assert!(spec.get("session").is_none() && spec.get("generation").is_none());
     }
 
     #[test]

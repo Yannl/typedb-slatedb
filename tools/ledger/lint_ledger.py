@@ -16,7 +16,18 @@ Fails when:
      in this repository or is not an ancestor of HEAD (short hashes are
      resolved by git); any docs/ path the ledger references does not
      exist. All fail-closed: an unverifiable claim is a failing claim
-     (in CI this requires a full-history checkout — see gates.yml).
+     (in CI this requires a full-history checkout — see gates.yml);
+  6. (round-5 R5-REL-01) present-state/history contradictions:
+     a closed action (DONE / DONE_WITH_RECORDED_REMAINDER) with no commits;
+     a `closes` claim on an action that is not closed; a gate or lane whose
+     structured `blocking_findings` names a finding id some closed action's
+     `closes` records as closed (the "old blocker described as live beside
+     a later done action" defect — checked on STRUCTURED ids, never by
+     fuzzy prose matching); and impossible status transitions against the
+     last COMMITTED ledger: a closed action reopening or an action row
+     disappearing entirely (history may be corrected, never erased).
+     Mutants for every check live in tools/ledger/ledger_mutants.py and
+     are executed in CI.
 
 Historical review documents record what was believed at the time; only the
 LIVE status surfaces are linted (list below).
@@ -56,6 +67,11 @@ ACTION_STATUSES = {
     "DONE",
     "DONE_WITH_RECORDED_REMAINDER",
 }
+# the statuses that assert "this action's work is closed"; everything else is
+# still in flight. Used by the R5-REL-01 checks below.
+CLOSED_ACTION_STATUSES = {"DONE", "DONE_WITH_RECORDED_REMAINDER"}
+# structured finding ids (SI-G0-1, C-P0-01, R4-CF-02, E-P0-08, ...)
+FINDING_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\-]*")
 
 
 def check_semantics(ledger: dict, failures: list[str]) -> None:
@@ -125,6 +141,107 @@ def check_semantics(ledger: dict, failures: list[str]) -> None:
             failures.append(f"ledger references evidence path {rel} which does not exist")
 
 
+def check_present_state_contradictions(ledger: dict, failures: list[str]) -> None:
+    """Round-5 R5-REL-01: the ledger must not mix historical action completion
+    with a contradictory present gate state.
+
+    Structured, conservative checks only — no prose scanning:
+      - a closed action must cite the commits that closed it;
+      - `closes` (the finding ids an action fully closed) is only meaningful
+        on a closed action;
+      - a gate/lane `blocking_findings` id that some closed action `closes`
+        is a live contradiction: the blocker is either still live (then the
+        action lied) or closed (then the gate text is stale). Reconcile the
+        DATA; the linter refuses both.
+    """
+    def id_list_ok(owner: str, field: str, value) -> list[str]:
+        if value is None:
+            return []
+        if not isinstance(value, list) or not all(
+                isinstance(x, str) and FINDING_ID_RE.fullmatch(x) for x in value):
+            failures.append(
+                f"{owner}: {field} must be a list of structured finding ids "
+                f"(got {value!r})")
+            return []
+        return value
+
+    closed_by: dict[str, str] = {}
+    for action in ledger.get("actions", []):
+        aid = action.get("id")
+        status = action.get("status")
+        closes = id_list_ok(f"action {aid}", "closes", action.get("closes"))
+        if status in CLOSED_ACTION_STATUSES and not (action.get("commits") or []):
+            failures.append(
+                f"action {aid}: status {status} with no commits - a closed "
+                f"action must cite the commits that closed it")
+        if closes and status not in CLOSED_ACTION_STATUSES:
+            failures.append(
+                f"action {aid}: lists closes={closes} but status {status!r} is "
+                f"not a closed status - only a closed action closes a finding")
+        if status in CLOSED_ACTION_STATUSES:
+            for f in closes:
+                closed_by.setdefault(f, aid)
+
+    for kind in ("gates", "lanes"):
+        for entry in ledger.get(kind, []):
+            eid = entry.get("id")
+            for f in id_list_ok(f"{kind[:-1]} {eid}", "blocking_findings",
+                                entry.get("blocking_findings")):
+                if f in closed_by:
+                    failures.append(
+                        f"{kind[:-1]} {eid}: names finding {f} as still "
+                        f"blocking, but closed action {closed_by[f]} records "
+                        f"it closed - the gate state and the action history "
+                        f"contradict; reconcile the ledger data")
+
+
+def check_committed_transitions(ledger: dict, failures: list[str]) -> None:
+    """Round-5 R5-REL-01: impossible status transitions, fail-closed.
+
+    The baseline is the last COMMITTED ledger: HEAD's copy when the working
+    file differs from it (an edit under review), otherwise first-parent
+    HEAD~1's copy (so every CI run validates the transition the commit under
+    test actually made). Against that baseline: a closed action may never
+    silently reopen, and an action row may never disappear — history is
+    corrected by follow-up rows, not erased. No baseline (initial commit,
+    file not yet tracked) skips the check; an unreadable baseline fails.
+    """
+    rel = "docs/ledger/gates.json"
+
+    def show(ref: str):
+        r = subprocess.run(["git", "-C", str(REPO), "show", f"{ref}:{rel}"],
+                           capture_output=True, text=True)
+        return r.stdout if r.returncode == 0 else None
+
+    head_text = show("HEAD")
+    if head_text is None:
+        return  # not yet tracked: nothing to compare against
+    baseline_text = head_text if head_text != LEDGER.read_text() else show("HEAD~1")
+    if baseline_text is None:
+        return  # initial commit
+    try:
+        baseline = json.loads(baseline_text)
+    except Exception as error:
+        failures.append(f"last committed ledger is unreadable: {error}")
+        return
+    current_actions = {a.get("id"): a for a in ledger.get("actions", [])}
+    for prev in baseline.get("actions", []):
+        pid = prev.get("id")
+        cur = current_actions.get(pid)
+        if cur is None:
+            failures.append(
+                f"action {pid}: present in the last committed ledger but "
+                f"DELETED here - history rows may be corrected, never erased")
+            continue
+        if prev.get("status") in CLOSED_ACTION_STATUSES \
+                and cur.get("status") not in CLOSED_ACTION_STATUSES:
+            failures.append(
+                f"action {pid}: impossible status transition "
+                f"{prev.get('status')} -> {cur.get('status')} - a closed "
+                f"action cannot silently reopen; record a NEW action for the "
+                f"regression instead")
+
+
 def main() -> int:
     failures: list[str] = []
     try:
@@ -142,6 +259,11 @@ def main() -> int:
 
     # round-3 E-07 semantic checks (ids, enums, commit ancestry, evidence paths)
     check_semantics(ledger, failures)
+
+    # round-5 R5-REL-01: present-state vs history contradictions, and
+    # impossible transitions against the last committed ledger
+    check_present_state_contradictions(ledger, failures)
+    check_committed_transitions(ledger, failures)
 
     # 2. rendered-block drift
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))

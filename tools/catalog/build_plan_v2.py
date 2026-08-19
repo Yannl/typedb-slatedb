@@ -35,15 +35,13 @@ The plan is a DENOMINATOR, never a pass: emitting it proves nothing ran.
 tools/catalog/plan_coverage.py joins execution evidence onto these rows and
 must report the plan NOT satisfied until every row is covered or excluded.
 
-R4-EVID-01a (recorded OPEN finding): the committed catalogue - and therefore
-the plan's generated_from.source_lock_digest, which this tool faithfully
-copies from it - pins the OLDER lock digest 9cf330d8..., while the current
-source-lock/source-lock.json hashes 50f5bf42... . The stale binding is a
-recorded open finding, not silently repaired here (regeneration needs a full
-cargo build). `--check --require-current-lock` turns the staleness into a
-hard failure; plain `--check` reports it informationally. CI runs the
-flagged form as a NON-blocking informational step until the catalogue and
-plan are regenerated.
+Source-lock freshness (R4-EVID-01a, closed by the round-5 R5-EVID-01
+regeneration): the plan's generated_from.source_lock_digest is faithfully
+copied from the catalogue, and `--check` always compares it against the
+CURRENT source-lock/source-lock.json. `--check --require-current-lock`
+turns staleness into a hard failure; plain `--check` reports it
+informationally. CI runs the flagged form as a BLOCKING step: a source-lock
+change without catalogue+plan regeneration turns CI red.
 
 Usage:
   python3 tools/catalog/build_plan_v2.py            # (re)build + write + print root
@@ -378,8 +376,8 @@ def check(catalog, catalog_sha, require_current_lock=False):
         msg = (f"plan pins source_lock_digest {pinned_lock} (copied from the "
                f"catalogue) but the current "
                f"{SOURCE_LOCK.relative_to(REPO)} hashes {current_lock} - the "
-               f"source binding is STALE (recorded open finding R4-EVID-01a; "
-               f"regenerate catalogue + plan against the current lock)")
+               f"source binding is STALE (R5-EVID-01: regenerate catalogue + "
+               f"plan against the current lock)")
         if require_current_lock:
             problems.append(msg)
         else:
@@ -419,9 +417,9 @@ def main():
     ap.add_argument("--require-current-lock", action="store_true",
                     help="with --check: FAIL if the plan's pinned "
                          "source_lock_digest is not the sha256 of the current "
-                         "source-lock/source-lock.json (R4-EVID-01a: currently "
-                         "stale; CI runs this as a non-blocking informational "
-                         "step until regeneration)")
+                         "source-lock/source-lock.json (R5-EVID-01: CI runs "
+                         "this as a BLOCKING step; regenerate whenever the "
+                         "source lock changes)")
     args = ap.parse_args()
     catalog = json.loads(args.catalog.read_text())
     catalog_sha = common.sha256_file(args.catalog)

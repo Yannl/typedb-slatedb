@@ -187,6 +187,21 @@ else
   failures=$((failures + 1))
 fi
 
+# --- control 7b: R4-CF-00/01/03 destructive-stop mutants ------------------
+# The round-4 audit's exact reproduced counterexample (RED preflight run
+# with dummy credentials against a forbidden bucket name issued one real
+# PUT .../lock rules:[]) plus the envelope-budget, lock-baseline-conflict,
+# post-deadline-refusal and seal-scanner mutants. All must be inert/typed.
+out="$EVIDENCE_ROOT/control7b.log"
+controls=$((controls + 1))
+if "${NODE[@]}" --test runner-safety.test.ts >"$out" 2>&1; then
+  echo "control 7b ok: destructive-stop mutants (RED=>zero calls, lock baseline restore, envelope budget, seal scanner)"
+else
+  echo "CONTROL FAILED: runner-safety.test.ts failed"
+  sed 's/^/    | /' "$out"
+  failures=$((failures + 1))
+fi
+
 # --- control 8: P-06 preflight CLI ----------------------------------------
 out="$EVIDENCE_ROOT/control8.log"
 controls=$((controls + 1))

@@ -208,3 +208,67 @@ export function redactedBodyPreview(body: Uint8Array, cls: RedactionClass): stri
     return redactText(printable);
   }
 }
+
+// ---------------------------------------------------------------------------
+// R4-CF-03: redaction as a SERIALIZATION invariant, not a recording habit.
+// ---------------------------------------------------------------------------
+
+/** Exactly 64 lowercase/uppercase hex chars: a sha256 digest, never a secret. */
+const SHA256_HEX = /^[0-9a-fA-F]{64}$/;
+
+/**
+ * Deep redactor applied by the evidence-bundle writer to EVERY value it
+ * serializes — probe evidence, assertion detail, notes, thrown-error
+ * text, preflight reasons, cleanup detail, run record and verdict alike.
+ * The round-4 audit proved a canary in an innocent harness JSON field
+ * survived into a sealed PASS bundle because only recorded exchanges
+ * passed the redactor; with this choke point nothing reaches bytes
+ * without passing it.
+ *
+ * One deliberate exception to the secret-KEY rule: a value that is
+ * exactly a sha256 hex digest is evidence, not a secret — fields like
+ * `credential_key_id_sha256` keep their digest (the digest itself still
+ * cannot match any secret VALUE shape).
+ */
+export function redactEvidenceValue(value: unknown, keyName?: string): unknown {
+  if (keyName !== undefined && SECRET_KEY_PATTERN.test(keyName)) {
+    if (typeof value === "string" && SHA256_HEX.test(value)) return value;
+    return `[REDACTED:${keyName}]`;
+  }
+  if (typeof value === "string") return redactText(value);
+  if (Array.isArray(value)) return value.map((v) => redactEvidenceValue(v));
+  if (typeof value === "object" && value !== null) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = redactEvidenceValue(v, k);
+    return out;
+  }
+  return value;
+}
+
+/**
+ * Post-serialization scanner run at seal time over every artifact byte
+ * (belt and braces behind the write-time redactor: a file smuggled into
+ * the bundle directory outside the writer is caught here). Returns every
+ * distinct leak description found; a nonempty result must prevent
+ * COMPLETE and fail the run.
+ *
+ * `knownSecrets` are the actual configured credential values of this run
+ * (from the environment) — their exact bytes must never appear anywhere.
+ */
+export function findSecretLeaks(text: string, knownSecrets: ReadonlyArray<string>): string[] {
+  const leaks: string[] = [];
+  for (const { tag, re } of VALUE_SHAPES) {
+    // A fresh regex per scan: VALUE_SHAPES' instances carry /g state.
+    if (new RegExp(re.source, re.flags.replace("g", "")).test(text)) {
+      // The redactor's own replacement markers are not leaks.
+      const stripped = text.split(`[REDACTED:${tag}]`).join("");
+      if (new RegExp(re.source, re.flags.replace("g", "")).test(stripped)) {
+        leaks.push(`value-shape:${tag}`);
+      }
+    }
+  }
+  for (const secret of knownSecrets) {
+    if (secret.length >= 8 && text.includes(secret)) leaks.push("known-secret:exact-bytes");
+  }
+  return [...new Set(leaks)];
+}

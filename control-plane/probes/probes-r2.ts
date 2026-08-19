@@ -18,25 +18,11 @@ import type { ProbeContext, ProbeImpl } from "./probe.ts";
 import { asJson, BOTH, MOCK_ONLY, patternBytes, r2Delete, r2Get, r2Key, r2Put } from "./probe.ts";
 import type { SeamCredentials } from "./provider.ts";
 import { sha256hex, utf8 } from "./provider.ts";
-import { validateBucketLockGetResponse, validateTempCredentialsResponse } from "./cfapi-dto.ts";
+import { canonicalRules, validateBucketLockGetResponse, validateTempCredentialsResponse } from "./cfapi-dto.ts";
 import type { BucketLockRule } from "./cfapi-dto.ts";
 
 function b64sha256(body: Uint8Array): string {
   return Buffer.from(sha256hex(body), "hex").toString("base64");
-}
-
-/** Key-order-independent canonical form of a lock-rule list. */
-function canonicalRules(rules: ReadonlyArray<BucketLockRule>): string {
-  return JSON.stringify(
-    rules.map((r) => ({
-      id: r.id,
-      enabled: r.enabled,
-      prefix: r.prefix ?? null,
-      condition_type: r.condition.type,
-      condition_max_age: r.condition.type === "Age" ? r.condition.maxAgeSeconds : null,
-      condition_date: r.condition.type === "Date" ? r.condition.date : null,
-    })),
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -297,16 +283,30 @@ const pR2_03: ProbeImpl = {
     const lockedPrefix = `probes/${ctx.runNonce}/p-r2-03/locked/`;
     const lockedKey = `/${ctx.bucket}/${lockedPrefix}a`;
     const freeKey = r2Key(ctx, "p-r2-03/free/b");
+
+    // R4-CF-00: read-modify-write, never replace. The probe first reads
+    // the CURRENT policy and appends its one run-owned rule to it, so a
+    // pre-existing operator rule is preserved through the whole probe.
+    // The runner's cleanup restores the captured baseline exactly.
+    let baselineRules: BucketLockRule[] = [];
+    const pre = await ctx.fetch({ service: "cfapi", method: "GET", path: `/r2/buckets/${ctx.bucket}/lock` });
+    try {
+      baselineRules = validateBucketLockGetResponse(asJson(pre)).result.rules;
+    } catch {
+      // A malformed pre-policy is caught below by admin-lock-accepted /
+      // policy-readback-exact failing; never guess a baseline.
+      baselineRules = [];
+    }
+
     // Official rule shape: {id, enabled, prefix, condition} — condition
     // Indefinite locks matching objects until the rule is removed.
-    const rules: BucketLockRule[] = [
-      {
-        id: `probe-lock-${ctx.runNonce}`,
-        enabled: true,
-        prefix: lockedPrefix,
-        condition: { type: "Indefinite" },
-      },
-    ];
+    const ownRule: BucketLockRule = {
+      id: `probe-lock-${ctx.runNonce}`,
+      enabled: true,
+      prefix: lockedPrefix,
+      condition: { type: "Indefinite" },
+    };
+    const rules: BucketLockRule[] = [...baselineRules, ownRule];
 
     // Seed an object, then lock its prefix from the admin plane.
     const seed = await r2Put(ctx, lockedKey, utf8("locked-object-v1"));

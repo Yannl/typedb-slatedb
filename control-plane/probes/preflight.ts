@@ -53,6 +53,10 @@ export const REQUIRED_ENVELOPE_LIMITS = [
   "max_cost_usd_cents",
 ] as const;
 
+/** The fixed ttlSeconds P-R2-02 mints with; preflight refuses an envelope
+ *  whose run window is shorter (the credential would outlive the run). */
+export const PROBE_CREDENTIAL_TTL_SECONDS = 900;
+
 export interface PreflightReason {
   code: "PREREQUISITE_MISSING" | "REFUSED";
   detail: string;
@@ -127,6 +131,19 @@ function checkEnvelope(path: string, reasons: PreflightReason[]): Record<string,
         detail: `envelope limit '${key}' is missing or not a positive finite number — it is not guessed`,
       });
     }
+  }
+  // R4-CF-01: a minted temporary credential (fixed ttlSeconds=900 in
+  // P-R2-02) must never outlive the approved run window — there is no
+  // revocation API, so expiry is the only bound and it must fit inside
+  // the envelope the owner actually signed off.
+  const runSeconds = l.max_run_seconds;
+  if (typeof runSeconds === "number" && Number.isFinite(runSeconds) && runSeconds > 0 && runSeconds < PROBE_CREDENTIAL_TTL_SECONDS) {
+    reasons.push({
+      code: "PREREQUISITE_MISSING",
+      detail:
+        `envelope max_run_seconds=${runSeconds} is shorter than the fixed temporary-credential ` +
+        `ttlSeconds=${PROBE_CREDENTIAL_TTL_SECONDS} — a minted credential would outlive the approved run`,
+    });
   }
   return doc;
 }

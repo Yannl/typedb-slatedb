@@ -87,9 +87,17 @@ source of truth. Everything lives in the top-level `stack/` package:
   facade over local R2 is explicitly rejected.
 - **Known limits here**: `alchemy dev` serves on its default port 1337
   (one stack instance at a time); the ContainerDO execution lane (L2)
-  still needs a Docker daemon and stays blocked in this sandbox; wiring
-  the exact TypeDB release binary + fault proxy into `stack dev` is the
-  next PR on this path.
+  still needs a Docker daemon and stays blocked in this sandbox.
+- **Native-fidelity lane (landed)**: `stack/native-fidelity.mjs` runs the
+  EXACT `typedb_server_bin` fork build over SlateDB-on-S3 through the
+  deterministic fault proxy (`stack/fault-proxy.mjs`), driven via the
+  official HTTP surface. Six phases, executed green on BOTH pinned
+  providers (MinIO baseline, RustFS 1.0.0-rc.2): product workload,
+  nonzero-S3-path witness (proxy connection report), kill -9 recovery,
+  two-stack parallel isolation, injected-reset survival, and a U1-profile
+  mutant proving the S3 witness detects a silent local fallback. Still
+  open on this path: U3 remote-WAL product integration and driver-level
+  suites inside the lane.
 
 ## Should local dev use a "local dev TypeDB stack" (plain TypeDB), or the production backend?
 

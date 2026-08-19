@@ -43,13 +43,12 @@
    "title": "Real-platform probe run under an owner-approved envelope",
    "state": "NOT_READY_TO_EXECUTE",
    "authority": "v16 brief G2; platform-probe spec (14 probe IDs)",
-   "why": "Round-4: the runner's destructive RED-preflight cleanup (R4-CF-00) is repaired with zero-authority refusal, lock-baseline restore and an enforced envelope meter (R4-CF-01), and redaction is a serialization invariant (R4-CF-03) — all mutant-proved locally. Still blocking: nine probes require /do|/ctr|/worker harness endpoints with no deployable implementation (R4-CF-02); several real-mode assertions invert or omit normative product requirements (R4-CF-04); no owner-approved envelope; no credentials; the production issuer/registry seam (R4-SEC-01) precedes any product-labelled run.",
+   "why": "Round-4: the runner's destructive RED-preflight cleanup (R4-CF-00) is repaired with zero-authority refusal, lock-baseline restore and an enforced envelope meter (R4-CF-01), redaction is a serialization invariant (R4-CF-03), the nine /do|/ctr|/worker probes now have a deployable in-repo harness whose source digest is bound into the bundle (R4-CF-02, probes/harness-worker.ts + wrangler.probe-harness.toml), and every assertion is classified provider-fact vs product-conformance by the obligation manifest with three product obligations honestly OPEN so the product_conformance sub-verdict cannot overclaim (R4-CF-04) — all mutant-proved locally (24 self-test controls). Still blocking: no owner-approved envelope; no credentials; the production issuer/registry seam (R4-SEC-01) precedes any product-labelled run; the three OPEN product obligations (ambiguity-resolution-real, runtime-cannot-delete, attempt-identity-changed-bytes-real).",
    "blockers": [
-    "R4-CF-02 deployable probe harness in the canonical graph",
-    "R4-CF-04 obligation-manifest assertion split (provider facts vs product conformance)",
     "owner-approved G2 numeric envelope file (absent by design until the owner signs one)",
     "SI-G0-3 credentials",
-    "R4-SEC-01 production issuer/registry seam"
+    "R4-SEC-01 production issuer/registry seam (R4-PR1)",
+    "three OPEN product-conformance obligations in probes/obligations.ts"
    ]
   },
   {

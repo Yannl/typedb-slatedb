@@ -12,16 +12,21 @@ prose:
 ```sh
 cd control-plane
 npm run probes:preflight        # exit 3 = RED = STOP. No credential goes near the runner.
-npm run probes:selftest         # 22 controls; anything nonzero = STOP.
+npm run probes:selftest         # 24 controls; anything nonzero = STOP.
 ```
 
 The current blockers (ledger `G2.blockers`) are structural, not
-paperwork: nine of the fourteen probes require `/do/*`, `/ctr/*`,
-`/worker/*` harness endpoints that have **no deployable implementation in
-this repository** (R4-CF-02); several real-mode assertions do not yet
-encode the normative product contract (R4-CF-04); there is no
-owner-approved numeric envelope; and the production issuer/registry seam
-(R4-SEC-01) precedes any product-labelled run.
+paperwork: there is no owner-approved numeric envelope, and the
+production issuer/registry seam (R4-SEC-01) precedes any
+product-labelled run. Two former blockers are now closed in-repo:
+the nine `/do/*`, `/ctr/*`, `/worker/*` probes have a deployable
+harness implementation (`control-plane/probes/harness-worker.ts` +
+`wrangler.probe-harness.toml`, source-digest-bound into the bundle;
+R4-CF-02), and every assertion is classified provider-fact vs
+product-conformance by the obligation manifest with the three
+product obligations honestly OPEN (`probes/obligations.ts`;
+R4-CF-04) — the VERDICT's `product_conformance` sub-verdict stays
+OPEN until they are discharged, so a run cannot overclaim.
 
 What IS true after round-4: the runner's formerly destructive refusal
 path is repaired and mutant-proved — a RED preflight makes **zero**

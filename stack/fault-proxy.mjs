@@ -112,21 +112,29 @@ export async function startFaultProxy({ upstreamPort, listenPort = 0, schedule =
     }
     if (fault?.action === "delay") {
       entry.applied = true;
+      // Hold the response until the timer fires; the upstream may END
+      // before the hold elapses, so the client-side end must wait for
+      // the flush (otherwise the fault degenerates into an empty close).
       let held = true;
+      let upstreamEnded = false;
       const buffered = [];
-      upstream.on("data", async (chunk) => {
+      const flush = () => {
+        held = false;
+        for (const b of buffered.splice(0)) client.write(b);
+        if (upstreamEnded) client.end();
+      };
+      upstream.on("data", (chunk) => {
         if (held) {
           buffered.push(chunk);
-          if (buffered.length === 1) {
-            await delay(fault.ms);
-            held = false;
-            for (const b of buffered.splice(0)) client.write(b);
-          }
+          if (buffered.length === 1) delay(fault.ms).then(flush);
           return;
         }
         client.write(chunk);
       });
-      upstream.on("end", () => client.end());
+      upstream.on("end", () => {
+        upstreamEnded = true;
+        if (!held) client.end();
+      });
       return;
     }
     upstream.pipe(client);

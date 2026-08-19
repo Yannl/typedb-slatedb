@@ -167,6 +167,130 @@ mod semantics {
         });
     }
 
+    /// R5-LOCAL-01: the 12-tiny-writer smoke race above can accidentally
+    /// serialize (the Versity defect required every precondition check to
+    /// pass BEFORE any body completed). This hardened variant makes the
+    /// decisive overlap structural: many rounds; every writer holds its
+    /// OWN client (independent HTTP pool); a barrier releases all writers
+    /// immediately before dispatch; bodies are 1 MiB and pairwise distinct
+    /// so a lost race is also a changed-byte overwrite if the provider is
+    /// broken. Every round: exactly one winner, all losers typed, stored
+    /// bytes byte-exact the winner's.
+    #[test]
+    fn cas_create_race_hardened_rounds() {
+        if skip() { return; }
+        let rounds: u32 = std::env::var("S3_CERT_CAS_ROUNDS").ok()
+            .and_then(|v| v.parse().ok()).unwrap_or(100);
+        let writers: u32 = std::env::var("S3_CERT_CAS_WRITERS").ok()
+            .and_then(|v| v.parse().ok()).unwrap_or(16);
+        assert!(writers >= 8, "R5-LOCAL-01 demands at least 8 synchronized writers");
+        let verify = target_from_env().unwrap();
+        rt().block_on(async {
+            for round in 0..rounds {
+                let key = unique(&format!("cas-hard-{round}"));
+                let barrier = Arc::new(tokio::sync::Barrier::new(writers as usize));
+                let mut attempts = FuturesUnordered::new();
+                for i in 0..writers {
+                    // independent client per writer: separate builder,
+                    // separate connection pool — no shared-pool serialization
+                    let store = target_from_env().unwrap().store;
+                    let key = key.clone();
+                    let barrier = Arc::clone(&barrier);
+                    attempts.push(tokio::spawn(async move {
+                        let mut body = vec![0u8; 1_048_576];
+                        // pairwise-distinct deterministic pattern
+                        for (j, b) in body.iter_mut().enumerate() {
+                            *b = ((i as usize).wrapping_mul(131) ^ j.wrapping_mul(31) ^ round as usize) as u8;
+                        }
+                        let body = Bytes::from(body);
+                        let opts = PutOptions { mode: PutMode::Create, ..Default::default() };
+                        barrier.wait().await; // release ALL writers together
+                        store.put_opts(&key, PutPayload::from(body.clone()), opts).await.map(|_| body)
+                    }));
+                }
+                let mut winner: Option<Bytes> = None;
+                let mut losers = 0u32;
+                while let Some(joined) = attempts.next().await {
+                    match joined.expect("task join") {
+                        Ok(body) => {
+                            assert!(winner.is_none(), "round {round}: TWO conditional-create winners — provider fails CAS");
+                            winner = Some(body);
+                        }
+                        Err(StoreError::AlreadyExists { .. }) => losers += 1,
+                        Err(other) => panic!("round {round}: loser must be TYPED AlreadyExists, got {other:?}"),
+                    }
+                }
+                let winner = winner.unwrap_or_else(|| panic!("round {round}: no winner at all"));
+                assert_eq!(losers, writers - 1, "round {round}: every loser typed");
+                let stored = verify.store.get(&key).await.unwrap().bytes().await.unwrap();
+                assert_eq!(stored, winner, "round {round}: stored bytes are not the winner's — changed-byte overwrite");
+            }
+        });
+    }
+
+    /// R5-LOCAL-01: current-ETag UPDATE racers — all writers observe the
+    /// same current version, a barrier releases them together, exactly one
+    /// may win; afterwards the now-stale version must be refused (ABA).
+    #[test]
+    fn etag_update_race_exactly_one_winner() {
+        if skip() { return; }
+        let rounds: u32 = std::env::var("S3_CERT_UPDATE_ROUNDS").ok()
+            .and_then(|v| v.parse().ok()).unwrap_or(50);
+        let writers: u32 = 8;
+        let t = target_from_env().unwrap();
+        rt().block_on(async {
+            for round in 0..rounds {
+                let key = unique(&format!("etag-race-{round}"));
+                t.store.put(&key, PutPayload::from_static(b"seed")).await.unwrap();
+                let current = t.store.head(&key).await.unwrap();
+                let version = UpdateVersion { e_tag: current.e_tag.clone(), version: current.version.clone() };
+                let barrier = Arc::new(tokio::sync::Barrier::new(writers as usize));
+                let mut attempts = FuturesUnordered::new();
+                for i in 0..writers {
+                    let store = target_from_env().unwrap().store;
+                    let key = key.clone();
+                    let barrier = Arc::clone(&barrier);
+                    let version = version.clone();
+                    attempts.push(tokio::spawn(async move {
+                        let mut body = vec![0u8; 1_048_576];
+                        for (j, b) in body.iter_mut().enumerate() {
+                            *b = ((i as usize).wrapping_mul(197) ^ j.wrapping_mul(17)) as u8;
+                        }
+                        let body = Bytes::from(body);
+                        let opts = PutOptions { mode: PutMode::Update(version), ..Default::default() };
+                        barrier.wait().await;
+                        store.put_opts(&key, PutPayload::from(body.clone()), opts).await.map(|_| body)
+                    }));
+                }
+                let mut winner: Option<Bytes> = None;
+                let mut losers = 0u32;
+                while let Some(joined) = attempts.next().await {
+                    match joined.expect("task join") {
+                        Ok(body) => {
+                            assert!(winner.is_none(), "round {round}: TWO current-ETag update winners");
+                            winner = Some(body);
+                        }
+                        Err(StoreError::Precondition { .. } | StoreError::AlreadyExists { .. }) => losers += 1,
+                        Err(other) => panic!("round {round}: update loser must be typed precondition, got {other:?}"),
+                    }
+                }
+                let winner = winner.unwrap_or_else(|| panic!("round {round}: no update winner"));
+                assert_eq!(losers, writers - 1);
+                // ABA: the pre-race version is now stale and must refuse
+                let aba = t.store
+                    .put_opts(&key, PutPayload::from_static(b"aba"), PutOptions {
+                        mode: PutMode::Update(UpdateVersion { e_tag: current.e_tag.clone(), version: current.version.clone() }),
+                        ..Default::default()
+                    })
+                    .await;
+                assert!(matches!(aba, Err(StoreError::Precondition { .. } | StoreError::AlreadyExists { .. })),
+                    "round {round}: stale pre-race version must be refused, got {aba:?}");
+                let stored = t.store.get(&key).await.unwrap().bytes().await.unwrap();
+                assert_eq!(stored, winner, "round {round}: stored bytes are not the update winner's");
+            }
+        });
+    }
+
     /// §6.4: PutMode::Update with the CURRENT version succeeds; a stale or
     /// fabricated expected version is the typed Precondition failure and
     /// mutates nothing.

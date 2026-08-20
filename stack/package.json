@@ -15,5 +15,13 @@
     "@effect/platform-node": "4.0.0-rc.110",
     "alchemy": "2.0.0-beta.72",
     "effect": "4.0.0-rc.110"
+  },
+  "overrides": {
+    "@hono/node-server": "1.19.17",
+    "@puppeteer/browsers": "3.2.1",
+    "hono": "4.13.3",
+    "lodash": "4.18.1",
+    "sharp": "0.35.3",
+    "valibot": "1.4.2"
   }
 }

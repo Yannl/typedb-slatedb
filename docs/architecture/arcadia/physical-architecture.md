@@ -13,7 +13,7 @@ components onto them.*
 | `fork/typedb` server crates (`typedb_server_bin`) | Query Engine, MVCC Storage, Recovery Manager | soft-fork of upstream at pin `2256711ab`; every patch ledgered (`fork/typedb/PORT-LEDGER.md`) |
 | `storage/factory.rs` | Storage Factory | `TYPEDB_STORAGE_PROFILE`, cached per process |
 | RocksDB (vendored via upstream deps) | Keyspace Engine — oracle arm | upstream tuning verbatim; WAL disabled |
-| **SlateDB `=0.15.0` from crates.io** | Keyspace Engine — object-store arm | consume-only (ADR-0001); adapter is `storage/keyspace/slate.rs` |
+| **SlateDB `=0.15.0` soft fork** (`sources/slatedb-fork`, `[patch.crates-io]`) | Keyspace Engine — object-store arm | soft fork over the digest-pinned crates.io crate, ADR-0012 (supersedes ADR-0001's consume-only); `external_epoch_required` on by default; adapter is `storage/keyspace/slate.rs` |
 | Tokio storage runtime (4 threads) + std-channel bridge | sync/async boundary | ADR-0004; one per process, all SlateDB futures |
 | File WAL (`durability/`) | Durability Client realisation (U0–U2) | upstream implementation behind the factory |
 

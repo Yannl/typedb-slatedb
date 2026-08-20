@@ -132,10 +132,7 @@ mod tests {
             // whatever the old writer managed to publish happened strictly
             // before the fence; nothing after it
             assert!(published_by_old <= pause_at);
-            assert!(cell
-                .published
-                .iter()
-                .all(|(e, w)| *w != "stale" && *e <= cell.stored_epoch));
+            assert!(cell.published.iter().all(|(e, w)| *w != "stale" && *e <= cell.stored_epoch));
         }
     }
 
@@ -150,10 +147,7 @@ mod tests {
         issuer.rotate_incarnation();
         let new_epoch = issuer.issue();
         cell.init_with_epoch(new_epoch).unwrap();
-        assert_eq!(
-            cell.publish(old_epoch, "old-incarnation"),
-            Err(PublishError::Fenced)
-        );
+        assert_eq!(cell.publish(old_epoch, "old-incarnation"), Err(PublishError::Fenced));
         cell.publish(new_epoch, "new-incarnation").unwrap();
     }
 
@@ -173,14 +167,8 @@ mod tests {
         }
         let mut cell = BrokenCell { stored: 5 };
         // the correct model rejects this; the mutant accepts it
-        assert!(
-            cell.init_with_epoch(5).is_ok(),
-            "mutant must accept (showing the test bites)"
-        );
-        let mut good = ManifestCell {
-            stored_epoch: 5,
-            published: vec![],
-        };
+        assert!(cell.init_with_epoch(5).is_ok(), "mutant must accept (showing the test bites)");
+        let mut good = ManifestCell { stored_epoch: 5, published: vec![] };
         assert_eq!(good.init_with_epoch(5), Err(PublishError::Fenced));
     }
 }

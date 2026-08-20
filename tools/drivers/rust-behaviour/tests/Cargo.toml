@@ -1,0 +1,63 @@
+# Projection of the Bazel rust_behaviour_test targets in
+#   //rust/tests/behaviour/driver:BUILD      (test_concept, test_connection,
+#                                             test_migration, test_query,
+#                                             test_user, test_cluster)
+#   //rust/tests/behaviour/connection:BUILD  (test_database, test_transaction)
+# deps = behaviour_test_deps from rust/tests/behaviour/rules.bzl
+#        (steps, config, tokio, serial_test).
+#
+# Every [[test]].path is the locked upstream source file itself.
+[package]
+name = "typedb-driver-behaviour"
+version = "0.0.0"
+edition = "2024"
+
+[lib]
+name = "typedb_driver_behaviour"
+path = "lib.rs"
+
+[dev-dependencies]
+steps = { workspace = true }
+config = { workspace = true }
+tokio = { workspace = true }
+serial_test = { workspace = true }
+
+[[test]]
+name = "test_concept"
+path = "../../../../sources/typedb-driver/rust/tests/behaviour/driver/concept.rs"
+harness = true
+
+[[test]]
+name = "test_connection"
+path = "../../../../sources/typedb-driver/rust/tests/behaviour/driver/connection.rs"
+harness = true
+
+[[test]]
+name = "test_migration"
+path = "../../../../sources/typedb-driver/rust/tests/behaviour/driver/migration.rs"
+harness = true
+
+[[test]]
+name = "test_query"
+path = "../../../../sources/typedb-driver/rust/tests/behaviour/driver/query.rs"
+harness = true
+
+[[test]]
+name = "test_user"
+path = "../../../../sources/typedb-driver/rust/tests/behaviour/driver/user.rs"
+harness = true
+
+[[test]]
+name = "test_cluster"
+path = "../../../../sources/typedb-driver/rust/tests/behaviour/driver/cluster.rs"
+harness = true
+
+[[test]]
+name = "test_database"
+path = "../../../../sources/typedb-driver/rust/tests/behaviour/connection/database.rs"
+harness = true
+
+[[test]]
+name = "test_transaction"
+path = "../../../../sources/typedb-driver/rust/tests/behaviour/connection/transaction.rs"
+harness = true

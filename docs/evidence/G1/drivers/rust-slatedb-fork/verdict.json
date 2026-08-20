@@ -1,0 +1,21 @@
+{
+ "green": true,
+ "policy_verdict": "GREEN",
+ "row_id": "driver:rust:slatedb",
+ "bundle_root": "adc3e4b9d1c30fec46b8fd55435808b7f187f7cab851ce0e2edcc561c5e4881d",
+ "plan_root": "72020aa01fafebddc41321e0c6100c158f80ae997037430871212049054a7a41",
+ "anomaly_count": 0,
+ "anomalies": [],
+ "observation": {
+  "suites_selected": 8,
+  "suites_executed": 7,
+  "plan_leaves_in_scope": 213,
+  "plan_leaves_with_outcome": 213,
+  "plan_leaves_passed": 213,
+  "leaf_status_counts": {
+   "NOT_RUN": 9,
+   "PASSED": 222
+  }
+ },
+ "statement": "GREEN here means: every selected suite executed, every plan leaf in scope produced a leaf outcome, no anomaly was raised, and every one of those leaves passed. It says nothing about the plan rows this lane does not cover."
+}

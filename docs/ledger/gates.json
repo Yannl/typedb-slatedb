@@ -54,7 +54,7 @@
    "title": "Real-platform probe run under an owner-approved envelope",
    "state": "NOT_READY_TO_EXECUTE",
    "authority": "v16 brief G2; platform-probe spec (14 probe IDs)",
-   "why": "Round-4: the runner's destructive RED-preflight cleanup (R4-CF-00) is repaired with zero-authority refusal, lock-baseline restore and an enforced envelope meter (R4-CF-01), redaction is a serialization invariant (R4-CF-03), the nine /do|/ctr|/worker probes now have a deployable in-repo harness whose source digest is bound into the bundle (R4-CF-02, probes/harness-worker.ts + wrangler.probe-harness.toml), and every assertion is classified provider-fact vs product-conformance by the obligation manifest with three product obligations honestly OPEN so the product_conformance sub-verdict cannot overclaim (R4-CF-04) — all mutant-proved locally (24 self-test controls). Still blocking: no owner-approved envelope; no credentials; the production issuer/registry seam (R4-SEC-01) is now implemented and proven locally (R4-PR1: opaque registry, provisioning transaction, mint/verify separation, managed-surface E2E) - what remains for live is provisioning real managed keys, under the credentials blocker; the three OPEN product obligations (ambiguity-resolution-real, runtime-cannot-delete, attempt-identity-changed-bytes-real).",
+   "why": "Round-4: the runner's destructive RED-preflight cleanup (R4-CF-00) is repaired with zero-authority refusal, lock-baseline restore and an enforced envelope meter (R4-CF-01), redaction is a serialization invariant (R4-CF-03), the nine /do|/ctr|/worker probes now have a deployable in-repo harness whose source digest is bound into the bundle (R4-CF-02, probes/harness-worker.ts + wrangler.probe-harness.toml), and every assertion is classified provider-fact vs product-conformance by the obligation manifest. ROUND-6 (R6-TRUTH-01 semantic pass, 2026-08-20 — what changed and what did NOT): (a) SELF-TEST COUNT: the harness now executes 26 controls, not 24. Executed 2026-08-20 on this branch: `bash probes/self-test.sh` → 'self-test: all 26 controls passed'. The 24 figure predated controls 7c and 7d. (b) ENVELOPE LIMITS: as of 09ce01e every signed envelope field now has an enforced global counter, including `max_cost_usd_cents`, which was previously signed and never priced; preflight refuses when the REMAINING signed validity is shorter than the credential TTL it would mint, and the displayed key fingerprint must equal the one derived from the trusted verification key. The claim 'all envelope limits are enforced' is TRUE for the LOCAL enforcement path, proved by budget-enforcement 9/9 including a schema-to-counter exhaustiveness test that fails when a signed field gains no counter. It is NOT a claim about provider-side enforcement: no credentialed run has ever occurred, so nothing here is attested against a real Cloudflare account. (c) AMBIGUITY: as of 3ac9ae9 all 16 mutation routes bind an explicit authoritative effect, IDEMPOTENT_REEXECUTE is gone from the union, and `deriveEffectOutcome` ends in `const unhandled: never` so a new variant cannot compile without an authoritative query. The four ambiguity cuts, restart resumption, one-physical-effect and byte-equal canonical replay are EXECUTED for every route. What that closes is the CODE-LEVEL obligation; the probe obligation `ambiguity-resolution-real` stays OPEN because it asks for the behaviour against a real Durable Object under real faults, which needs credentials. Recorded honestly with it: CUT_EXISTS/CUT_NOT_PENDING remain the typed refusals for a DIFFERENT token, and a reconstructed WAL receipt still differs in its `replayed` flag. (d) S3 EVIDENCE: as of 21780b0 the corpus bundle is schema v2 — clean-tree refusal BEFORE execution, provider digest RECOMPUTED from bytes and matched against the source lock, sealed lock bytes, structured per-phase results, and a path-independent stable root; evidence_mutants.py kills 28 of 28. The bundle is therefore SOURCE-AUTHENTIC and independently re-derivable. It is NOT 'qualification-grade' for the product: it certifies an S3 PROVIDER against the object-store corpus, not TypeDB against the upstream test corpus, and the two round-5 bundles are schema v1 and are REJECTED by the new verifier. The MinIO comparator bundle has not been regenerated. 'Attested' here means recorded-and-recomputable, not signed: there is no key infrastructure in that territory. Still blocking: no owner-approved envelope; no credentials; the production issuer/registry seam (R4-SEC-01) is implemented and proven locally (R4-PR1: opaque registry, provisioning transaction, mint/verify separation, managed-surface E2E) - what remains for live is provisioning real managed keys, under the credentials blocker; the three OPEN product-conformance obligations (ambiguity-resolution-real, runtime-cannot-delete, attempt-identity-changed-bytes-real).",
    "blocking_findings": [
     "SI-G0-3"
    ],
@@ -695,6 +695,69 @@
    "commits": [
     "553febd"
    ]
+  },
+  {
+   "id": "R6-PR8-SUPPLY",
+   "title": "Round-6 R6-SUPPLY-01: the stack dependency surface is advisory-clean and the gate is machine-readable",
+   "status": "IN_PROGRESS",
+   "items": [
+    "MEASURED BEFORE: `cd stack && npm audit --omit=dev` = 14 advisories (9 high, 5 moderate) over 307 production-class packages, 43 distinct GHSA ids.",
+    "The audit's prescribed remedy - 'upgrade to the newest compatible Alchemy line' - was NOT AVAILABLE: alchemy@2.0.0-beta.72 IS the newest published line (dist-tags latest AND next, published 2026-08-12). The only semver-greater registry versions are April-2026 pipeline/CLI test tags, which is why `npm audit fix --force` proposed the four-months-OLDER 2.0.0-pipeline-v2-test. Recorded as a finding about the recommendation, not papered over.",
+    "REMEDIATED INSTEAD at the transitive packages with pinned npm `overrides` in stack/package.json: @hono/node-server 1.19.9->1.19.17, hono 4.11.4->4.13.3, lodash 4.17.21->4.18.1, valibot 1.2.0->1.4.2, sharp 0.34.5->0.35.3, @puppeteer/browsers 2.13.2->3.2.1 (which drops extract-zip entirely - the only package with NO fixed version at any release).",
+    "MEASURED AFTER: 0 advisories, 247 production-class packages. `node cli.mjs graph` is BYTE-IDENTICAL before and after; `node cli.mjs check-wrangler` PASS; the stack suite passes.",
+    "GATE: tools/ci/check_npm_advisories.py + tools/ci/dependency-advisory-policy.json. A reported advisory needs an unexpired exception carrying advisory id, package, affected range, reachability, reason, compensating control, owner and expiry <= 90 days. Expired, unbounded, stale, incomplete and brand-new-unlisted all FAIL. --lockfile additionally requires every locked package to resolve from an allowed registry with an integrity digest.",
+    "The exception list is EMPTY because nothing needed excepting. The gate's 11 behavioural mutants prove it would fail if something did."
+   ]
+  },
+  {
+   "id": "R6-PR8-CI",
+   "title": "Round-6 R6-CI-01: CI is three tiers, and ENVIRONMENT-BLOCKED is a distinct non-green state",
+   "status": "IN_PROGRESS",
+   "items": [
+    "TIER 1 (.github/workflows/gates.yml, every push/PR) gains: a `hygiene` job (rustfmt on the tools workspace AND the TypeDB fork under the pinned nightly, `git diff --check` over the PR range and the working tree, clippy -D warnings on all three tools crates, the warning-ratchet mutants); a `supply-chain` job (advisory policy + lockfile provenance + their mutants, the dependency-source linter's mutants, the release-identity template check and its four-posture self-test, the capability-probe mutants); a short RustFS provider corpus with its capability probe; and, in the storage job, the durability unit lane, the shipped-fence attestation, the STRICT negative epoch suite (--quick) and the dependency-source truth gate.",
+    "TIER 2 (.github/workflows/nightly.yml, NEW - nightly + manual pre-live) carries what previously ran nowhere or dispatch-only: storage/durability integration tests, bench compile-check, the FULL feature-off + feature-on fence suite, the full RustFS crash/fault corpus with the MinIO comparator and the evidence mutants, managed local Node and Rust E2Es, the pristine catalogue drift rebuild, npm + cargo advisory scans, and a ledger-honesty gate that turns red if a driver harness lands without the OFFICIAL_DRIVERS lane being updated.",
+    "TIER 3 (.github/workflows/release-qualification.yml, NEW - tag or explicit dispatch only): clean-tree refusal before anything is measured, an immutable digest-bound release identity, the hermetic truth plane, SBOM (npm CycloneDX) + resolved-graph cargo inventory + digests bound to the identity, and a final release-predicate job that evaluates EVERY gate and lane and fails while any is unmet. Today it fails by construction: G0 is OPEN_RED (Mode-Q absent), plan coverage is expected-RED, U3.0 is RED, OFFICIAL_DRIVERS is NOT_IMPLEMENTED.",
+    "NO `continue-on-error:` key exists on any job or step in any of the three workflows.",
+    "ENVIRONMENT-BLOCKED is IMPLEMENTED, not described: tools/ci/capability_probe.py classifies the runner, the lane runs only when CAPABLE, and a dedicated `*-environment-blocked` job FAILS with exit 75 (EX_TEMPFAIL) and an `::error title=ENVIRONMENT-BLOCKED::` annotation naming the missing capability and the runner needed. `continue-on-error` was rejected because it reports SUCCESS; a bare `if:` was rejected because it reports SKIPPED, which branch protection also treats as satisfied.",
+    "RECORDED REMAINDER: no SHA-pinned artifact-upload action exists in this repository, so blocked verdicts and attestation digests are written to the job summary rather than uploaded. Adding an artifact action requires resolving and recording its commit SHA, which this session could not verify."
+   ]
+  },
+  {
+   "id": "R6-PR8-TRUTH",
+   "title": "Round-6 R6-TRUTH-01: the SlateDB fork decision is ratified honestly, and a semantic linter keeps it that way",
+   "status": "IN_PROGRESS",
+   "items": [
+    "GROUND TRUTH, re-derived: `cargo metadata` on the STAGED sources/typedb workspace resolves exactly one slatedb node, path+file://.../sources/slatedb-fork#slatedb@0.15.0, with features [aws, external_epoch_required, wal_disable]. The tools workspace (no patch table) resolves registry+https://github.com/rust-lang/crates.io-index#slatedb@0.15.0.",
+    "The supersession is WIDER than ADR-0012 originally ratified: [patch.crates-io] is workspace-global by construction (Cargo has no per-lane patch table), so U2/U2S3 and even the RocksDB oracle lanes resolve the fork. ADR-0012's status block now ratifies that explicitly and marks its decision 3 (conformance lanes keep crates.io) SUPERSEDED; the oracle property is preserved differently - tools/storage-diff-spike links the unpatched registry crate from a workspace with no patch table.",
+    "RATIFIED ACROSS: ADR-0001 (status SUPERSEDED in full, title marked, round-6 banner), ADR-0012 (status accepted (shipped), scope table, oracle explanation, fence default-on, upgrade/rebase pointer, risk ownership), the ADR index, README, docs/architecture.md, docs/development.md (a new fork/slatedb patch-discipline section plus an upgrade/rebase procedure and a named risk owner), docs/operations.md, the arcadia EPBS and physical-architecture dependency tables, docs/design/slatedb-external-epochs.md and docs/spec-delivery-comparison.md.",
+    "GATE: tools/ci/check_dependency_sources.py + tools/ci/dependency-source-claims.json. SEMANTIC, not grep - it reads cargo metadata's resolve graph, fails when the graph contradicts a ratified claim, and only THEN checks that every registered document states the posture the graph proves (both forbidden prose and required statements). Executed against the pre-fix tree it produced exactly the audit's twelve findings, including README:49-50, architecture.md:4, development.md:157, operations.md:123 and both ADR index rows.",
+    "LEDGER SEMANTIC PASS: G2's `why` was carrying '24 self-test controls' (26 execute now, measured), and its envelope / ambiguity / S3-evidence statements have been rewritten to say what 09ce01e, 3ac9ae9 and 21780b0 actually established - and, as importantly, what they did not (local enforcement is not provider enforcement; code-level ambiguity closure is not the real-DO probe obligation; a source-authentic provider bundle is not product qualification)."
+   ]
+  },
+  {
+   "id": "R6-PR8-HYGIENE",
+   "title": "Round-6 R6-HYGIENE-01: formatting, whitespace and warning gates are green and enforced",
+   "status": "IN_PROGRESS",
+   "items": [
+    "ROOT CAUSE of the ~180-hunk rustfmt diff: the tools workspace is WRITTEN in the project's 120-column style but had no rustfmt.toml, so `cargo fmt --check` measured it against rustfmt's 100-column DEFAULTS. tools/rustfmt.toml now pins the same style as fork/typedb/rustfmt.toml (differing only in edition, which follows this workspace's edition 2021), and the workspace is formatted: `cargo +nightly-2026-04-15 fmt --manifest-path tools/Cargo.toml --all -- --check` exits 0.",
+    "PATCH WHITESPACE: `git diff --check 29fd003..HEAD` flagged four lines in fork/slatedb/patches/0004 and 0005. Those are diff CONTEXT lines for empty source lines - a unified diff encodes them as a single space, and stripping it would CORRUPT the patch. Fixed with a .gitattributes `-whitespace` attribute for *.patch rather than by editing the patches; their real integrity gate is the post-patch tree digest in tools/fork/materialize_slatedb.py --check. `git diff --check 29fd003..HEAD` and `git diff --check` now both exit 0.",
+    "CLIPPY: protocol-models and storage-diff-spike are held at -D warnings in tier-1 CI. storage-diff-spike needed two fixes: manual_is_multiple_of (rewritten) and should_implement_trait / unusual_byte_groupings, both #[allow]ed AT THE SITE with the reason written down - an infinite seeded generator must not become an Iterator, and the differential seed is grouped to read as 'slatedb' and its VALUE is load-bearing for archived evidence.",
+    "WARNING RATCHET: `storage` cannot be flipped to -D warnings without editing upstream code we do not own, so tools/ci/warning_ratchet.py enforces a one-way ratchet against tools/ci/warning-baseline.json. Baseline measured 2026-08-20: 13 warnings across 3 lints (9 dead_code, 2 unused_imports, 2 private_interfaces), none in the SlateDB adapter or the recovery path, one of them the INTENTIONAL dead init_writer in the fork's manifest/store.rs that patch 0001 replaced. New lint, increased count, unratcheted improvement and dead baseline entry all FAIL.",
+    "OPEN, and NOT done by this pass: `cargo +nightly-2026-04-15 fmt --manifest-path fork/typedb/Cargo.toml --all -- --check` reports 48 hunks across 9 files (storage/keyspace/slate.rs 15, storage/factory.rs 13, storage/recovery/checkpoint.rs 6, storage/tests/test_recovery.rs 5, storage/storage.rs 2, storage/recovery/sha256.rs 2, storage/keyspace/mod.rs 2, database/database.rs 2, durability/wal.rs 1). The tier-1 hygiene job enforces it; the fork owner runs `cargo +nightly-2026-04-15 fmt --manifest-path fork/typedb/Cargo.toml --all` to clear it.",
+    "OPEN, and NOT done by this pass: `cargo clippy -p remote-wal-spike --all-targets -- -D warnings` fails on tools/remote-wal-spike/src/l1_stream.rs (derivable_impls at 738, field_reassign_with_default at 1099) - an in-flight file from the streaming work, enforced by the tier-1 hygiene job."
+   ]
+  },
+  {
+   "id": "R6-PR8-PORT",
+   "title": "Round-6 R6-PORT-01: a source archive can prove its own identity",
+   "status": "IN_PROGRESS",
+   "items": [
+    "MECHANISM: RELEASE-IDENTITY.json (committed as a TEMPLATE carrying literal $Format:%H$ tokens) plus a .gitattributes `export-subst` attribute, so `git archive` expands the release commit at export time; tools/release/release_identity.py --generate writes a fully populated body plus an identity_digest over its canonical form for a release tarball or installed package.",
+    "RESOLUTION ORDER, identical in both resolvers: a git checkout is authoritative (it alone can also report dirtiness); otherwise the identity file; otherwise a typed SOURCE_IDENTITY_UNAVAILABLE refusal. Refusing is the point - evidence.ts's current fallback returns the string 'UNKNOWN (git rev-parse HEAD failed)' and lets a run continue with no provenance.",
+    "EXECUTED, not asserted: tools/release/release_identity_selftest.py materialises all four postures for real (checkout, `git archive` export, release tarball, installed package) plus two negative postures (a naked copy without .git or an expanded identity; an identity edited after it was digest-bound), and resolves each with BOTH the Python resolver CI uses and the TypeScript resolver the probes call. 6/6 postures, both resolvers.",
+    "PROBES-SIDE CHANGE NOT APPLIED (control-plane/probes/** is not this pass's territory): three call sites each need one line replaced, plus one import line, to call resolveReleaseCommit(REPO_ROOT) from tools/release/release-identity.mts instead of shelling out to git. Verified compatible: `tsc --noEmit` passes with the cross-workspace .mts import, and `node --experimental-strip-types` resolves it.",
+    "Until those three lines land, the two controls the audit found still fail in a `git archive` materialisation - the mechanism exists and is proven, the call sites are not yet switched."
+   ]
   }
  ],
  "q_dispositions": {
@@ -712,8 +775,8 @@
   "historical_migration": "REPAIRED_WITH_FIXTURES this commit (C-P0-06)",
   "batch": "DISABLED_IN_PRODUCTION until G2 authorizes; pre-I/O bounds added",
   "checkpoint": "PARTIAL; enumeration/fsync integrity landed, global-cut protocol OPEN",
-  "external_epochs": "PRIMITIVE_PROVED; full candidate integration OPEN (post-G2)",
-  "no_fork_firewall": "HYPOTHESIS_WITH_SPIKE; TOCTOU noted, contract revision required for adoption",
+  "external_epochs": "SHIPPED AND RATIFIED (R6-TRUTH-01, 2026-08-20). The soft fork is what every crate in the product workspace links: `cargo metadata` resolves slatedb to path sources/slatedb-fork@0.15.0 with external_epoch_required enabled, via a workspace-global [patch.crates-io]. ADR-0012 status is 'accepted (shipped)'; ADR-0001 is SUPERSEDED in full. Enforced by tools/ci/check_dependency_sources.py against the resolved graph. Full PRODUCT integration of the epoch protocol end-to-end remains OPEN (post-G2): shipping the fenced engine is not the same as having exercised it against a real platform.",
+  "no_fork_firewall": "NOT SELECTED. Candidate B (the publication firewall over stock SlateDB) is measured and its three spike defects are repaired, and its provider-enforced credential rotation remains a sound storage-side backstop underneath whatever ships - but Candidate A is what ships (ADR-0012, round-6 ratification). Candidate B's remaining unmeasured items are unchanged: provider-credential enforcement, the latency envelope of the gate's preflight reads, and a cooperating client for the typed transition envelope.",
   "evidence_denominator": "DENOMINATOR_LANDED by R3-H (7f2ba55): immutable 23,132-row leaf/profile plan + independent verifier chain (R4-D); EXECUTION coverage remains honestly RED (0 rows fully covered) and is a G1 blocker",
   "u2_u2s3_verdict": "HISTORICAL_NON_QUALIFYING",
   "official_driver_parity": "NOT_IMPLEMENTED",
@@ -737,6 +800,14 @@
   {
    "pattern": "105 green",
    "reason": "the U2S3 archive is a historical observation: 105 exited 0, with 2 parsed failed cases; never summarise as green"
+  },
+  {
+   "pattern": "SlateDB is consumed \\*\\*unmodified from crates\\.io\\*\\*|deliberately no fork|SlateDB is never edited",
+   "reason": "R6-TRUTH-01: the product workspace resolves slatedb to sources/slatedb-fork through a workspace-global [patch.crates-io]; ADR-0012 supersedes ADR-0001 in full. tools/ci/check_dependency_sources.py re-derives this from cargo metadata."
+  },
+  {
+   "pattern": "\\b24 (self-test )?controls\\b|\\b24/24 controls\\b",
+   "reason": "R6-TRUTH-01: the probe harness executes 26 controls (measured 2026-08-20). A stale count in a status document is a stale claim about how much was proved."
   }
  ],
  "adopted_audit_round3": {
@@ -752,5 +823,11 @@
   "local_s3_decision": "OD-009: RustFS strategic target / MinIO loopback-confined transition baseline; promotion gated on the provider-neutral certification corpus",
   "confidentiality_decision": "OD-008 OPEN: no confidentiality profile is decided; v16 §19.6 is NOT closed",
   "response": "docs/reviews/deep-audit-2026-08-19-round4-response.md"
+ },
+ "adopted_audit_round6": {
+  "directive": "TypeDB × SlateDB × Cloudflare R2 round-6 deep audit and implementation directive, 2026-08-20",
+  "audited_commit": "29fd0038c0fe1b3ddb6c9baebd6fadf2226c345c",
+  "decision": "NO-GO for a live qualification run and NO-GO for a production claim; continue local implementation (R6 program adopted)",
+  "note": "This block records ADOPTION of the round-6 directive. It is not a claim that the round-6 program is complete; see the R6-* actions below for per-finding status."
  }
 }

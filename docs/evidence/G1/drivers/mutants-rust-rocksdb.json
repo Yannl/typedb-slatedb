@@ -1,0 +1,210 @@
+{
+ "schema": "driver-lane-mutants-v1",
+ "bundle": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic",
+ "baseline": {
+  "exit_code": 0,
+  "anomalies": [],
+  "rederived_verdict": "GREEN",
+  "qualification_pass": true
+ },
+ "mutants": [
+  {
+   "mutant": "dropped_leaf_rows",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "test_concept: recorded leaf ids do not equal an independent re-enumeration of driver/concept.feature (0 recorded vs 74 enumerated)",
+    "test_concept: 0 leaf row(s) claim an executed outcome but the log carries 74 scenario block(s) - fabricated or lost rows",
+    "74 plan leaf/leaves in scope have no leaf row (['cucumber:driver/concept.feature::Driver processes attribute types with value type <value-type> correctly#ex1', 'cucumber:driver/concept.feature::Driver processes attribute types with value type <value-type> correctly#ex2', 'cucumber:driver/concept.feature::Driver processes attribute types with value type <value-type> correctly#ex3'])"
+   ],
+   "anomaly_count": 7,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "empty_log",
+   "sophistication": "NAIVE",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "suite test_concept: log docs/evidence/G1/drivers/rust-rocksdb-fork-classic/test_concept.log hashes to e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 but the row records 55896027f37ee001df88de7aa629f5e703ced631cf6071b1e73e6df9e564702a - the bytes changed after the run",
+    "test_concept: raw log is empty - an empty log is never evidence",
+    "test_concept: re-parse finds ZERO cucumber scenarios in the log - a suite that ran nothing proves nothing"
+   ],
+   "anomaly_count": 10,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "empty_result_file",
+   "sophistication": "NAIVE",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "driver-results.json does not parse: Expecting value: line 1 column 1 (char 0)"
+   ],
+   "anomaly_count": 1,
+   "rederived_verdict": null,
+   "qualification_pass": false
+  },
+  {
+   "mutant": "fabricated_leaf_row",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "test_concept: recorded leaf ids do not equal an independent re-enumeration of driver/concept.feature (75 recorded vs 74 enumerated)",
+    "test_concept: 75 leaf row(s) claim an executed outcome but the log carries 74 scenario block(s) - fabricated or lost rows",
+    "leaf cucumber:driver/concept.feature::Driver processes empty concepts correctly#FABRICATED claims in_plan but the plan has no such leaf - fabricated plan membership"
+   ],
+   "anomaly_count": 7,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "flipped_leaf_status",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "test_concept: leaf cucumber:driver/concept.feature::Driver processes empty concepts correctly records status FAILED but the log re-parses to PASSED",
+    "recomputed bundle root 75f68d1c3a2467efbf5aeb278428dde49878588143ec101682589439482fd88b != sidecar manifest root f07fb18143d9b5e45de6c68d1a93772d488c1ca684b894cb755156c504cbd258 - a consumed file changed after sealing",
+    "verdict records bundle_root f07fb18143d9b5e45de6c68d1a93772d488c1ca684b894cb755156c504cbd258 but the bundle recomputes to 75f68d1c3a2467efbf5aeb278428dde49878588143ec101682589439482fd88b"
+   ],
+   "anomaly_count": 5,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "forged_feature_hash",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "test_concept: driver/concept.feature hashes to f3c4783f94d23b66acc2ad2856ee3962b992077672edcf70c4603a7f3f530d2a but the row records 0000000000000000000000000000000000000000000000000000000000000000",
+    "recomputed bundle root 1312fe47b5480680550c1009289a74c0ea1c89b3412404736bd8050410161272 != sidecar manifest root aeef5d74784c17215394ec49ffb68948b9fee30a50785d8462412189e5d78530 - a consumed file changed after sealing",
+    "verdict records bundle_root aeef5d74784c17215394ec49ffb68948b9fee30a50785d8462412189e5d78530 but the bundle recomputes to 1312fe47b5480680550c1009289a74c0ea1c89b3412404736bd8050410161272"
+   ],
+   "anomaly_count": 5,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "forged_plan_membership",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "leaf cucumber:driver/cluster.feature::Driver can discover servers in a cluster claims in_plan but the plan has no such leaf - fabricated plan membership",
+    "recomputed bundle root 353483af9dfa49de0038142d11a7b63f79e11710fac1deb76e98cf779c83a579 != sidecar manifest root 10a58313b77214f7688c0814b362f83fedaf17244ebae78b9bab886c3bad1aa0 - a consumed file changed after sealing",
+    "verdict records bundle_root 10a58313b77214f7688c0814b362f83fedaf17244ebae78b9bab886c3bad1aa0 but the bundle recomputes to 353483af9dfa49de0038142d11a7b63f79e11710fac1deb76e98cf779c83a579"
+   ],
+   "anomaly_count": 5,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "forged_step_counts",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "test_concept: leaf cucumber:driver/concept.feature::Driver processes empty concepts correctly records steps_passed=21 but the log re-parses to 14",
+    "recomputed bundle root 117d6177511edee2a10ddc0e0c93307e758b26b8bd657791627b255f3f262972 != sidecar manifest root fdfcdeca8a0d9dae6fbfca19d50a10fd3366a49bfe9ef15ade3d42f8bfbc60ba - a consumed file changed after sealing",
+    "verdict records bundle_root fdfcdeca8a0d9dae6fbfca19d50a10fd3366a49bfe9ef15ade3d42f8bfbc60ba but the bundle recomputes to 117d6177511edee2a10ddc0e0c93307e758b26b8bd657791627b255f3f262972"
+   ],
+   "anomaly_count": 5,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "forged_verdict_enum",
+   "sophistication": "NAIVE",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "verdict policy_verdict is 'TOTAL_QUALITY_PASS', not in {GREEN,RED} - forged or foreign verdict"
+   ],
+   "anomaly_count": 1,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "server_never_booted",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "server[test_cluster]: no readiness probes recorded - readiness was assumed, not observed",
+    "recomputed bundle root b7fca33ed85c392c01aa0eb6e68a268253f9cc587ff9e59a70141afdb03037bf != sidecar manifest root 92c5c8368706042e70bf57f3605ab3c39d93052c1f80674cb9fdc570b42f1afa - a consumed file changed after sealing",
+    "verdict records bundle_root 92c5c8368706042e70bf57f3605ab3c39d93052c1f80674cb9fdc570b42f1afa but the bundle recomputes to b7fca33ed85c392c01aa0eb6e68a268253f9cc587ff9e59a70141afdb03037bf"
+   ],
+   "anomaly_count": 5,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "server_probe_failed",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "server[test_cluster]: the last readiness probe is not a success ({\"t\": 1.0, \"error\": \"ConnectionRefusedError: [Errno 111]\"}) - the suite ran against a server that was never proven up",
+    "recomputed bundle root b0952dfdbf4c78c90fa5440169c00f0be9d29d526f30d746329dc64250b4ce9a != sidecar manifest root d8b5410c6114bce047c7712f691ad8bcdb4e3ec07c893ad75a29d215f5ed860f - a consumed file changed after sealing",
+    "verdict records bundle_root d8b5410c6114bce047c7712f691ad8bcdb4e3ec07c893ad75a29d215f5ed860f but the bundle recomputes to b0952dfdbf4c78c90fa5440169c00f0be9d29d526f30d746329dc64250b4ce9a"
+   ],
+   "anomaly_count": 5,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "suite_never_started",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "test_concept: re-parse finds ZERO cucumber scenarios in the log - a suite that ran nothing proves nothing",
+    "test_concept: re-parse finds no [Summary] - truncated run",
+    "test_concept: no libtest result line - the process never finished its test case"
+   ],
+   "anomaly_count": 8,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "truncated_run",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "test_concept: re-parse finds no [Summary] - truncated run",
+    "test_concept: no libtest result line - the process never finished its test case",
+    "test_concept: leaf cucumber:driver/concept.feature::Driver processes datetime-tz values in different user time-zones identically records steps_passed=37 but the log re-parses to 17"
+   ],
+   "anomaly_count": 7,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "unsealed_edit",
+   "sophistication": "NAIVE",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "recomputed bundle root bb3ced0aec49ba639fd5bba90297c6bae54d12176afddf0564b306a45d49a4f9 != sidecar manifest root 30cb9f34425de0bc82e4fa46bd5e75b3a1dcd3e04d5bb603e0a7bc61730292df - a consumed file changed after sealing",
+    "verdict records bundle_root 30cb9f34425de0bc82e4fa46bd5e75b3a1dcd3e04d5bb603e0a7bc61730292df but the bundle recomputes to bb3ced0aec49ba639fd5bba90297c6bae54d12176afddf0564b306a45d49a4f9",
+    "COMPLETE binds root 30cb9f34425de0bc82e4fa46bd5e75b3a1dcd3e04d5bb603e0a7bc61730292df but the bundle recomputes to bb3ced0aec49ba639fd5bba90297c6bae54d12176afddf0564b306a45d49a4f9 - modified after sealing"
+   ],
+   "anomaly_count": 4,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  }
+ ],
+ "summary": {
+  "total": 14,
+  "killed": 14,
+  "survived": 0,
+  "errored": 0
+ }
+}

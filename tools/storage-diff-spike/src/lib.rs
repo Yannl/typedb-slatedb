@@ -15,6 +15,13 @@ use std::collections::BTreeMap;
 pub struct Lcg(pub u64);
 
 impl Lcg {
+    // R6-HYGIENE-01, documented allowance: `next` is deliberately NOT
+    // `Iterator::next`. This is an infinite seeded generator, not an
+    // iterator - it has no `None`, and wrapping it in `Iterator` would let
+    // callers reach for `take`/`collect` and quietly change how many draws a
+    // differential workload makes, which is exactly the determinism this
+    // oracle depends on. The clippy lint is right in general and wrong here.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> u64 {
         self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
         self.0
@@ -59,7 +66,7 @@ pub fn generate_workload(seed: u64, steps: usize) -> Vec<Op> {
                 let n = (rng.next() % 6 + 2) as usize;
                 let mut entries = Vec::with_capacity(n);
                 for _ in 0..n {
-                    if rng.next() % 4 == 0 {
+                    if rng.next().is_multiple_of(4) {
                         entries.push((rng.key(), None));
                     } else {
                         entries.push((rng.key(), Some(rng.value())));

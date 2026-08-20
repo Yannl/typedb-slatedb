@@ -216,48 +216,209 @@ cargo test --lib --features test-util,external_epoch_required db::builder
   test result: ok. 12 passed; 0 failed          (was 7 passed; 5 failed)
 ```
 
-An earlier draft of this entry claimed the FULL feature-on suite was
-`1940 passed; 0 failed`. That claim was wrong and is retracted here: the
-full feature-on suite is **1566 passed / 420 failed**, and those failures
-are correct behaviour, not breakage — see patch 0005 and the gate below.
+Two claims about the FULL feature-on suite have been made in this entry and
+both are now retired; the retractions stay on the record.
 
-## Patch 0005 — internal-epoch tests are unfenced-posture only (R5-STOR-04)
+* An early draft claimed `1940 passed; 0 failed`. That was simply wrong.
+* The round-5 entry then recorded **1566 passed / 420 failed** and argued
+  the failures were "correct behaviour, not breakage". The arithmetic was
+  right; the conclusion was not. Those 420 tests were refused during an
+  epoch-less OPEN, so their bodies never exercised reads, writes,
+  compaction, manifest handling, recovery, GC, concurrency or fault
+  behaviour under the feature that ships. Round 6 (R6-FORK-01) named it —
+  "calling the final result a suite PASS invites false qualification" — and
+  patch 0006 fixes it rather than re-describing it. The current number is
+  **1993 passed / 0 failed**.
 
-Test-only (`src/db.rs`), three `#[cfg(not(feature = "external_epoch_required"))]`
-gates. Once the fence SHIPS, "run the whole upstream suite feature-on" has
-an exact and unflattering answer, and it needs stating plainly:
+Patch 0004's six explicit epochs are now redundant with patch 0006's harness
+issuer, which would supply them anyway. They are kept deliberately: an epoch
+a test states is better documentation than one it inherits, and the issuer
+only ever fills in for opens that name nothing.
 
-  * **feature OFF, full suite: 1988 passed / 0 failed.** The fork does not
-    change upstream semantics outside its patch series. This is the
-    no-regression gate.
-  * **feature ON, `db::builder`: 12 passed / 0 failed** (was 7/5). This is
-    the exact set the round-5 audit measured; patch 0004 closes it.
-  * **feature ON, full suite: 1566 passed / 420 failed.** Upstream opens
-    databases through the epoch-less builder in hundreds of tests; under
-    the shipped posture the fence refuses precisely those opens. Making
-    them "pass" would mean rewriting upstream's suite into a different
-    suite, which is not what a thin fork should do.
+## Patch 0005 — WITHDRAWN (number not reused)
 
-Three of the original 423 failures were NOT the fence refusing:
-`test_writer_paused_in_replay_wal_should_be_fenced_by_concurrent_open`,
+Patch 0005 compiled three upstream tests
+(`test_writer_paused_in_replay_wal_should_be_fenced_by_concurrent_open`,
 `wal_replay_not_found_should_be_fenced_when_writer_epoch_advanced`,
-`wal_replay_not_found_should_remain_not_found_when_writer_epoch_unchanged`.
-They assert INTERNAL writer-epoch allocation semantics — a second writer
-auto-advancing the manifest epoch and fencing the first — and they failed
-by TIMEOUT (a spawned writer was refused, so the WAL SST they waited for
-never appeared), which is why the refusal text never reached their output.
-Under the shipped posture internal allocation does not exist, so the
-behaviour they describe is absent by design; they are now compiled only
-for the unfenced posture, where they still guard upstream semantics.
+`wal_replay_not_found_should_remain_not_found_when_writer_epoch_unchanged`)
+only for the unfenced posture, on the reasoning that they assert INTERNAL
+writer-epoch allocation and so describe behaviour that is "absent by design"
+once the fence ships.
 
-The gate that keeps this honest is `tools/fork/check_strict_epoch_suite.py`:
-it runs all three clauses and asserts that under the shipped posture EVERY
-failing upstream test fails *because the fence refused an unauthorized
-epoch-less open*, and for no other reason. One failure with a different
-cause fails the gate — which is exactly how the three tests above were
-found. Executed: `STRICT-EPOCH SUITE GATE: PASS` (1988/0 off, 12/0 builder
-on, 420/420 failures accounted for as fence refusals).
+Re-measured with patch 0006's harness controller in place, **all three
+pass feature-on**. The exclusion was premature. What those tests actually
+assert is that a second writer holding a HIGHER epoch fences the incumbent
+and that WAL replay resolves accordingly — which is equally true of
+controller-issued epochs. They failed in round 5 by timeout only because
+the second writer was refused at open, so the WAL SST the first waited on
+never appeared. The harness issues epoch 1 then 2 for the same database:
+exactly the values those tests assert.
 
-(The feature-off suite has one fewer fenced test: `a_missing_external_epoch_
-is_refused_not_defaulted` is `cfg(external_epoch_required)`. The one ignored
-test is upstream's `g0_dirty_writes`, unchanged by this series.)
+The patch file is deleted. The number is deliberately **not reused**, so the
+round-5 record (`docs/ledger/gates.json`,
+`docs/reviews/deep-audit-2026-08-19-round5-response.md`) keeps pointing at
+the thing it described rather than at different content.
+
+## Patch 0006 — the upstream suite EXECUTES under the shipped fence (R6-FORK-01)
+
+Four files, test-and-refusal only; no change to the epoch protocol itself.
+
+| File | Change |
+|---|---|
+| `src/db/builder.rs` | `mod test_epoch_issuer` (`cfg(all(test, feature = "external_epoch_required"))`): a per-database, monotonic epoch issuer standing in for the controller. `build()` resolves the epoch through it, so an open that names none is ISSUED one instead of refused. Plus `without_controller_issued_epoch()` (test-only) to opt out, and the early refusal below. |
+| `src/db/builder.rs` | `build()` now refuses an unauthorized open **before creating anything**, not just before claiming an epoch (see "what the negative suite found"). |
+| `src/fence.rs` | `WriterFencerTestHarness::take_fencer()` hands the raw fencer a controller-issued epoch at the moment the test fences, which is what those tests' ordering requires. Plus the fencer-level negative test. |
+| `src/clone.rs` | A clone manifest INHERITS its parent's writer epoch, so the issuer inherits the parent's high-water for the clone's path. Test-only; a real controller has the same obligation. |
+| `src/error.rs` | one-line `dead_code` allow so the unfenced build is warning-clean. |
+
+### Why a seam and not 420 edits
+
+277 call sites in the crate open a database, and the audit's remedy is
+explicitly "adapt upstream test helpers", not "rewrite upstream's suite".
+The whole adaptation is therefore ONE decision point in `DbBuilder::build`
+plus two ordering hooks (the raw fencer, and clone inheritance). Upstream's
+tests are unmodified: no assertion, no expectation and no test name changed.
+
+The issuer is **not** a fallback to upstream's `stored + 1`. It never reads
+the manifest. It is a controller: it decides the number from its own
+sequence, and the manifest still claims exactly that number or refuses. The
+Nth open of a given database in a process claims epoch N — deterministic
+per database, so tests that assert exact epochs (1 for the first writer, 2
+for the writer that fences it) keep asserting exactly that. An epoch a test
+supplies itself is never overridden, only OBSERVED, so explicit and issued
+epochs compose into one monotonic sequence per database.
+
+The seam is `cfg(test)`. It cannot exist in the shipped library: TypeDB's
+`storage` crate consumes `slatedb` as a dependency, where `cfg(test)` is
+off and `None` is still a refusal. `tools/fork/check_strict_epoch.py`
+attests the feature is resolved into the ordinary build; the negative suite
+below attests the refusal is still live.
+
+### What the negative suite found
+
+`negative_fence_an_epoch_less_open_creates_no_database` was written to assert
+that a refused first open leaves nothing behind. It FAILED: upstream's
+`build()` creates the database (a manifest at writer epoch 0) and only then
+reaches the fencer, so an unauthorized client could create empty databases
+it could never write to. Patch 0006 moves the refusal to the top of
+`build()`. The fencer's own refusal is deliberately KEPT — it is reachable
+from other callers, and `negative_fence_the_fencer_refuses_an_unnamed_epoch`
+executes it directly so the deeper branch does not go dark.
+
+### Executed evidence
+
+Toolchain `rustc 1.93.0`, in the materialised fork.
+
+```
+cargo test --lib --features test-util
+  test result: ok. 1988 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out
+
+cargo test --lib --features test-util,external_epoch_required
+  test result: ok. 1993 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out
+
+cargo test --lib --features test-util,external_epoch_required negative_fence_
+  test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 1989 filtered out
+```
+
+1989 leaves execute feature-off (1988 + the one upstream `ignored` test,
+`g0_dirty_writes`). 1994 execute feature-on: the same 1989 **plus** the five
+`cfg(external_epoch_required)` negative tests. The gate reconciles executed
+leaf IDENTITIES, not counts, so the 420 formerly-refused bodies are proven to
+have run by name.
+
+**Exclusions: none.** Every test that executes feature-off also executes
+feature-on. This is the measured result; the gate fails if a future change
+makes it untrue and the omission is not enumerated with a reviewed reason.
+
+### Mutants executed
+
+*Fail-closed becomes optional* — the early refusal deleted AND the fencer's
+`None` arm reverted to upstream's internal `init_writer`:
+
+```
+test result: FAILED. 2 passed; 3 failed
+  negative_fence_a_missing_external_epoch_is_refused_not_defaulted  FAILED
+  negative_fence_an_epoch_less_open_creates_no_database             FAILED
+  negative_fence_the_fencer_refuses_an_unnamed_epoch                FAILED
+```
+
+*The harness reuses one epoch instead of issuing a successor* (`issue()`
+returns a constant 1) — this is the mutant that would make the adapted
+suite a sham, since a harness that hands every open the same number is not
+a controller:
+
+```
+cargo test --lib --features test-util,external_epoch_required negative_fence_
+  test result: FAILED. 4 passed; 1 failed
+    negative_fence_harness_epochs_are_exact_and_monotonic_per_database FAILED
+
+cargo test --lib --features test-util,external_epoch_required clone::tests
+  test result: FAILED. 10 passed; 5 failed
+```
+
+The five upstream `clone::tests` failures matter more than the negative one:
+they are unmodified upstream bodies, and they die because the epochs they
+run on stopped being successors. That is the direct witness that those
+bodies genuinely execute through the external-epoch path rather than merely
+compiling. The FULL feature-on suite under this mutant does not fail fast —
+it HANGS (writers fenced by a replayed epoch leave later assertions waiting)
+and was aborted after ~6 minutes against a 46 s green baseline; the two runs
+above are the deterministic kills. Both mutants reverted → green.
+
+(The "builder field ignored" and "internal allocation restored" mutants for
+the epoch protocol itself remain as executed under patches 0001 and 0003.)
+
+## The gate: `tools/fork/check_strict_epoch_suite.py`
+
+Reworked for R6-FORK-01, because the round-5 version's PASS did not mean
+what a reader would assume. It used to run the feature-on suite, parse every
+failure, and pass if each failure carried the expected refusal text. That
+invariant earned its keep — it is how the three round-5 regressions were
+found — but it let 1566/420 be reported as a suite PASS.
+
+The gate now passes only when all four clauses hold:
+
+1. **feature OFF, full suite fully green** — the upstream-regression oracle.
+2. **feature ON, full suite fully green.** Not "green except expected
+   refusals". A fence refusal here is now a FAILURE, reported as "an open
+   with no epoch was not covered by the harness seam", not as an expectation.
+3. **the negative fence suite green and matching its declared membership** —
+   a test that quietly stops being part of the negative suite fails the gate.
+4. **leaf reconciliation** — every leaf executed feature-off also executes
+   feature-on, except names enumerated in `EXCLUSIONS` with a reviewed
+   reason; every leaf executed feature-on but not feature-off is enumerated
+   in `FEATURE_ON_ONLY`. A STALE exclusion (a name that does execute) fails
+   the gate too, so the list cannot rot into a silent skip list.
+
+`--quick` is the PR tier CI already runs (`.github/workflows/gates.yml`). It
+is materially stronger than before without costing more: clause 2 — the
+feature-on FULL suite, green — is exactly the "add the feature-on full suite
+to CI" that R6-FORK-01 asks for, and `--quick` runs it in full along with the
+negative suite. What it skips is the feature-off oracle and (consequently)
+the leaf reconciliation, so its verdict is `PARTIAL` and names what it did
+not prove. Only a full run prints `PASS`. The CI step's own comment still
+describes the old `--quick` shape ("feature-on builder tests + the
+fence-cause invariant") and should be updated by the workflow owner; no
+tier-2 job running this gate WITHOUT `--quick` exists in that workflow yet.
+
+`--evidence PATH` writes the executed leaf identities and counts as JSON,
+which is the "record executed leaf identities" the audit asked for.
+
+Executed: `STRICT-EPOCH SUITE GATE: PASS`.
+
+## What this series still does not do
+
+Unchanged from patches 0001/0003, and still true:
+
+- It does not decide ADR-0012.
+- It does not wire the production lane's `[patch.crates-io]` entry.
+- It does not issue epochs in production. The controller side (allocating an
+  exact u64 per writer incarnation) is the U3.2 integration; the harness
+  issuer added here is `cfg(test)` and is not that.
+- The compactor orchestrator still constructs its own fenceable manifest via
+  `init_compactor`; `with_external_compactor_epoch` through `CompactorBuilder`
+  is still deliberately left for the decision.
+- The suite adapted here is the **library** suite (`--lib`). The crate's
+  `tests/` integration targets are separate crates, where `cfg(test)` of the
+  library does not apply, so the harness seam does not reach them; they are
+  outside this gate.

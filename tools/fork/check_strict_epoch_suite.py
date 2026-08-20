@@ -1,35 +1,53 @@
 #!/usr/bin/env python3
-"""Fenced-posture suite gate for the SlateDB fork (R5-STOR-04).
+"""Shipped-posture suite gate for the SlateDB fork (R6-FORK-01).
 
-The strict `external_epoch_required` fence now SHIPS (see
-tools/fork/check_strict_epoch.py). That changes what "the fork's suite is
-green" can honestly mean, and the round-5 audit's request to "run the full
-patched SlateDB suite feature-on" needs an exact answer rather than an
-optimistic one:
+WHAT THIS GATE'S "PASS" MEANS
+-----------------------------
+The strict `external_epoch_required` fence SHIPS (see
+tools/fork/check_strict_epoch.py). The round-5 version of this script ran the
+feature-on suite, parsed every failure, and passed if each failure carried the
+expected missing-epoch refusal. That invariant did find three genuine
+regressions hiding among the refusals — but it let a run of **1,566 passed /
+420 failed** be reported as a suite PASS, and the round-6 audit was right that
+this "invites false qualification": those 420 tests were refused during an
+epoch-less OPEN, so their bodies never exercised reads, writes, compaction,
+manifest handling, recovery, GC, concurrency, or fault behaviour under the
+feature that actually ships.
 
-  * feature OFF, full suite  -> must be FULLY green. This is the
-    no-regression gate: the fork must not change upstream semantics for
-    anything outside its patch series.
-  * feature ON, builder tests -> must be FULLY green. These are the tests
-    the audit measured (it found 7/12); patch 0004 supplies epochs at the
-    five upstream builder sites that opened databases without one.
-  * feature ON, full suite   -> NOT fully green, and that is CORRECT.
-    Hundreds of upstream tests open databases through the epoch-less
-    builder path on purpose; under the shipped posture the fence refuses
-    exactly those opens. Rewriting them all would mean patching upstream's
-    test suite into a different suite.
+This gate therefore passes only when ALL of the following hold:
 
-So the invariant this script enforces is the one that actually matters:
-under the shipped posture EVERY failing upstream test must fail BECAUSE
-THE FENCE REFUSED AN UNAUTHORIZED OPEN, and for no other reason. A single
-failure with a different cause is a real regression and fails this gate.
+  1. feature OFF, full library suite  -> fully green. The upstream-regression
+     oracle: the fork must not change upstream semantics outside its series.
+  2. feature ON, full library suite   -> fully green. Not "green except for
+     expected refusals" — GREEN. Patch 0006 gives the crate's own test build a
+     harness controller that issues a deterministic per-database epoch to any
+     open that does not name one, so upstream test BODIES execute under the
+     shipped fence.
+  3. the dedicated NEGATIVE fence suite -> green and non-empty. The seam in
+     (2) could hide the very refusal it works around; these tests opt out of
+     it and prove an omitted epoch still fails closed.
+  4. LEAF RECONCILIATION -> every test executed feature-off is also executed
+     feature-on, except the tests enumerated in EXCLUSIONS below, each with a
+     reviewed reason; and every test executed feature-on but not feature-off is
+     enumerated in FEATURE_ON_ONLY. This is the clause that proves the
+     formerly-skipped bodies RAN: it compares executed leaf identities, not
+     just counts, so a test that silently stops being compiled is caught.
 
-    python3 tools/fork/check_strict_epoch_suite.py            # full gate
-    python3 tools/fork/check_strict_epoch_suite.py --quick    # skip feature-off
+Anything less prints FAIL.
 
-Exit 0 only when every clause above holds.
+`--quick` is the PR-tier shape used by CI: it still runs clauses 2 and 3 in
+full — the feature-on FULL suite must be green, which is the expensive and
+load-bearing clause R6-FORK-01 asks CI to add — and skips clause 1 (and
+therefore clause 4, which needs feature-off's leaf list). Its verdict is
+`PARTIAL`, never the bare word `PASS`, and it names what it did not prove.
+Only a full run prints `PASS`.
+
+    python3 tools/fork/check_strict_epoch_suite.py
+    python3 tools/fork/check_strict_epoch_suite.py --quick
+    python3 tools/fork/check_strict_epoch_suite.py --evidence out.json
 """
 import argparse
+import json
 import pathlib
 import re
 import subprocess
@@ -37,33 +55,98 @@ import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 FORK = REPO / "sources" / "slatedb-fork"
+TOOLCHAIN = "+1.93.0"
+FEATURES_OFF = "test-util"
+FEATURES_ON = "test-util,external_epoch_required"
 
-# The exact refusal the fence raises. Anything else failing under the
-# shipped posture is a genuine regression, not the fence doing its job.
-FENCE_REFUSAL = "external writer epoch required: internal allocation is observe-and-bind"
+# Tests that are genuinely INAPPLICABLE under the shipped posture. Each entry
+# must name an exact leaf identity and a reviewed reason: "it fails" is not a
+# reason, and an early-open failure is not by itself evidence of
+# inapplicability. The gate REQUIRES that every name here is executed
+# feature-off and absent feature-on — a stale exclusion fails the gate rather
+# than silently widening it.
+#
+# This list is currently EMPTY, and that is the measured result, not an
+# aspiration. Round 5 excluded three tests
+# (`test_writer_paused_in_replay_wal_should_be_fenced_by_concurrent_open`,
+# `wal_replay_not_found_should_be_fenced_when_writer_epoch_advanced`,
+# `wal_replay_not_found_should_remain_not_found_when_writer_epoch_unchanged`)
+# on the grounds that they assert INTERNAL writer-epoch allocation. Re-measured
+# with the harness controller in place, they pass: what they actually assert is
+# that a second writer holding a higher epoch fences the first, which is true
+# of controller-issued epochs too — the harness issues 1 then 2 for the same
+# database, exactly the values those tests expect. Patch 0005 is withdrawn.
+EXCLUSIONS: dict[str, str] = {}
 
-TEST_RESULT = re.compile(r"^test result: (?:ok|FAILED)\. (\d+) passed; (\d+) failed", re.M)
+# Tests that exist ONLY under the shipped posture (they are `cfg`-gated on the
+# feature), so they legitimately appear feature-on and not feature-off.
+FEATURE_ON_ONLY: dict[str, str] = {
+    "db::builder::tests::negative_fence_a_missing_external_epoch_is_refused_not_defaulted":
+        "negative fence: an epoch-less open is a typed Invalid refusal and does not advance the stored epoch",
+    "db::builder::tests::negative_fence_an_epoch_less_open_creates_no_database":
+        "negative fence: an epoch-less FIRST open is refused before any manifest is created",
+    "db::builder::tests::negative_fence_a_harness_issued_epoch_cannot_be_replayed":
+        "negative fence: replaying an epoch the harness already claimed is Fenced, so the harness does not weaken the fence",
+    "db::builder::tests::negative_fence_harness_epochs_are_exact_and_monotonic_per_database":
+        "witness: the Nth harness-issued open of a database claims epoch N exactly, so the adapted suite runs on external epochs",
+    "fence::tests::negative_fence_the_fencer_refuses_an_unnamed_epoch":
+        "negative fence: WriterFencer refuses an unnamed epoch on its own, independently of the builder's early refusal",
+}
+
+# The negative suite is selected by this substring filter; every test in
+# FEATURE_ON_ONLY that is part of the fence proof carries the prefix.
+NEGATIVE_FILTER = "negative_fence_"
+
+TEST_RESULT = re.compile(
+    r"^test result: (?:ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored", re.M)
+TEST_LEAF = re.compile(r"^test (\S+) \.\.\. (ok|FAILED|ignored)", re.M)
 FAILED_CASE = re.compile(r"^---- (\S+) stdout ----$", re.M)
 
+# The exact refusal the fence raises. Kept only to explain a failure, never to
+# excuse one: under this gate a fence refusal in the full feature-on suite is a
+# BUG in the harness seam, not an expected outcome.
+FENCE_REFUSAL = "external writer epoch required: internal allocation is observe-and-bind"
 
-def run(args: list[str]) -> tuple[int, str]:
-    proc = subprocess.run(
-        ["cargo", "+1.93.0", "test", *args],
-        cwd=FORK, capture_output=True, text=True,
-    )
+
+def run(features: str, filt: str | None = None) -> tuple[int, str]:
+    args = ["cargo", TOOLCHAIN, "test", "--lib", "--features", features]
+    if filt:
+        args.append(filt)
+    proc = subprocess.run(args, cwd=FORK, capture_output=True, text=True)
     return proc.returncode, proc.stdout + proc.stderr
 
 
-def counts(output: str) -> tuple[int, int]:
-    passed = failed = 0
-    for p, f in TEST_RESULT.findall(output):
+def ran_at_all(label: str, rc: int, output: str) -> str | None:
+    """A run that never reached a `test result:` line did not measure anything.
+
+    Reporting that as "0 passed, 0 failed" would be the same class of mistake
+    this gate exists to correct: an absence of evidence rendered as a number.
+    A harness that is OOM-killed or starved on a shared machine looks exactly
+    like this, so say so and show the tail.
+    """
+    if TEST_RESULT.search(output):
+        return None
+    tail = "\n".join(line for line in output.splitlines()[-12:] if line.strip())
+    return (f"{label}: cargo exited {rc} without producing a `test result:` line — the suite "
+            f"did not run, so nothing was measured (a killed or starved test harness looks "
+            f"like this). Last output:\n      " + tail.replace("\n", "\n      "))
+
+
+def counts(output: str) -> tuple[int, int, int]:
+    passed = failed = ignored = 0
+    for p, f, i in TEST_RESULT.findall(output):
         passed += int(p)
         failed += int(f)
-    return passed, failed
+        ignored += int(i)
+    return passed, failed, ignored
+
+
+def leaves(output: str) -> dict[str, str]:
+    """Executed leaf identities -> outcome. This is the coverage evidence."""
+    return {name: outcome for name, outcome in TEST_LEAF.findall(output)}
 
 
 def failing_blocks(output: str) -> dict[str, str]:
-    """name -> its stdout block, so each failure's CAUSE can be inspected."""
     blocks: dict[str, str] = {}
     marks = [(m.group(1), m.start()) for m in FAILED_CASE.finditer(output)]
     for i, (name, start) in enumerate(marks):
@@ -72,9 +155,32 @@ def failing_blocks(output: str) -> dict[str, str]:
     return blocks
 
 
+def describe_failures(output: str) -> str:
+    blocks = failing_blocks(output)
+    if not blocks:
+        return ""
+    fenced = sorted(n for n, b in blocks.items() if FENCE_REFUSAL in b)
+    other = sorted(n for n in blocks if n not in fenced)
+    lines = []
+    if fenced:
+        lines.append(f"    {len(fenced)} failed at the FENCE (an open with no epoch reached the "
+                     f"fence — the harness seam did not cover it):")
+        lines += [f"      {n}" for n in fenced[:20]]
+    if other:
+        lines.append(f"    {len(other)} failed for another reason (genuine regression):")
+        lines += [f"      {n}" for n in other[:20]]
+    return "\n".join(lines)
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--quick", action="store_true", help="skip the feature-off full suite")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--quick", action="store_true",
+                    help="PR tier: run the feature-on full suite and the negative suite, but "
+                         "skip the feature-off oracle and the leaf reconciliation. Verdict is "
+                         "PARTIAL, never PASS.")
+    ap.add_argument("--evidence", metavar="PATH",
+                    help="write executed leaf identities and counts to PATH as JSON")
     args = ap.parse_args()
 
     if not FORK.exists():
@@ -82,45 +188,141 @@ def main() -> int:
         return 2
 
     failures: list[str] = []
+    evidence: dict = {
+        "gate": "R6-FORK-01 shipped-posture suite gate",
+        "toolchain": TOOLCHAIN,
+        "exclusions": EXCLUSIONS,
+        "feature_on_only": FEATURE_ON_ONLY,
+    }
+    off_leaves: dict[str, str] = {}
 
-    # 1. feature OFF, full suite: upstream semantics preserved.
+    # ---- clause 1: feature OFF, full suite -> upstream-regression oracle ----
     if not args.quick:
-        rc, out = run(["--lib", "--features", "test-util"])
-        passed, failed = counts(out)
-        if rc != 0 or failed != 0:
+        rc, out = run(FEATURES_OFF)
+        did_not_run = ran_at_all("feature-OFF full suite", rc, out)
+        if did_not_run:
+            failures.append(did_not_run)
+        passed, failed, ignored = counts(out)
+        off_leaves = leaves(out)
+        print(f"feature-OFF  full suite  : {passed} passed, {failed} failed, {ignored} ignored "
+              f"({len(off_leaves)} leaves executed)")
+        if rc != 0 or failed != 0 or passed == 0:
             failures.append(f"feature-OFF full suite is not green: {passed} passed, {failed} failed")
-        print(f"feature-OFF  full suite : {passed} passed, {failed} failed")
+            detail = describe_failures(out)
+            if detail:
+                failures.append(detail)
+        evidence["feature_off"] = {"passed": passed, "failed": failed, "ignored": ignored,
+                                   "leaves": sorted(off_leaves)}
 
-    # 2. feature ON, builder module: the audit's measured set.
-    rc, out = run(["--lib", "--features", "test-util,external_epoch_required", "db::builder"])
-    passed, failed = counts(out)
-    if rc != 0 or failed != 0 or passed == 0:
-        failures.append(f"feature-ON builder tests are not green: {passed} passed, {failed} failed")
-    print(f"feature-ON   db::builder: {passed} passed, {failed} failed")
+    # ---- clause 2: feature ON, full suite -> must be GREEN, not "expected" ----
+    rc, out = run(FEATURES_ON)
+    did_not_run = ran_at_all("feature-ON full suite", rc, out)
+    if did_not_run:
+        failures.append(did_not_run)
+    on_passed, on_failed, on_ignored = counts(out)
+    on_leaves = leaves(out)
+    print(f"feature-ON   full suite  : {on_passed} passed, {on_failed} failed, {on_ignored} ignored "
+          f"({len(on_leaves)} leaves executed)")
+    if rc != 0 or on_failed != 0 or on_passed == 0:
+        failures.append(
+            f"feature-ON full suite is not green: {on_passed} passed, {on_failed} failed. "
+            f"A refusal here is NOT an expected outcome — it means an open with no epoch was "
+            f"not covered by the harness seam (patch 0006), or a real regression.")
+        detail = describe_failures(out)
+        if detail:
+            failures.append(detail)
+    evidence["feature_on"] = {"passed": on_passed, "failed": on_failed, "ignored": on_ignored,
+                              "leaves": sorted(on_leaves)}
 
-    # 3. feature ON, full suite: every failure must be the fence refusing.
-    rc, out = run(["--lib", "--features", "test-util,external_epoch_required"])
-    passed, failed = counts(out)
-    blocks = failing_blocks(out)
-    print(f"feature-ON   full suite : {passed} passed, {failed} failed "
-          f"({len(blocks)} failure blocks captured)")
-    if failed != len(blocks):
+    # ---- clause 3: the dedicated negative fence suite ----
+    rc, out = run(FEATURES_ON, NEGATIVE_FILTER)
+    did_not_run = ran_at_all("negative fence suite", rc, out)
+    if did_not_run:
+        failures.append(did_not_run)
+    neg_passed, neg_failed, _ = counts(out)
+    neg_leaves = leaves(out)
+    expected_neg = {n for n in FEATURE_ON_ONLY if NEGATIVE_FILTER in n}
+    print(f"feature-ON   negative suite: {neg_passed} passed, {neg_failed} failed "
+          f"({len(neg_leaves)} leaves executed)")
+    if rc != 0 or neg_failed != 0 or neg_passed == 0:
+        failures.append(f"negative fence suite is not green: {neg_passed} passed, {neg_failed} failed")
+    if set(neg_leaves) != expected_neg:
         failures.append(
-            f"could not account for every failure: {failed} reported, {len(blocks)} blocks parsed")
-    foreign = sorted(name for name, body in blocks.items() if FENCE_REFUSAL not in body)
-    if foreign:
-        failures.append(
-            f"{len(foreign)} feature-ON failure(s) are NOT the fence refusal — genuine regressions:\n    "
-            + "\n    ".join(foreign[:20]))
+            "negative fence suite does not match its declared membership:\n"
+            f"    ran but undeclared : {sorted(set(neg_leaves) - expected_neg)}\n"
+            f"    declared but absent: {sorted(expected_neg - set(neg_leaves))}")
+    evidence["negative_suite"] = {"passed": neg_passed, "failed": neg_failed,
+                                  "leaves": sorted(neg_leaves)}
+
+    # ---- clause 4: leaf reconciliation -> the bodies actually ran ----
+    if not args.quick:
+        missing = set(off_leaves) - set(on_leaves)
+        extra = set(on_leaves) - set(off_leaves)
+        declared_excluded = set(EXCLUSIONS)
+        declared_extra = set(FEATURE_ON_ONLY)
+
+        undeclared_missing = sorted(missing - declared_excluded)
+        stale_exclusions = sorted(declared_excluded - missing)
+        undeclared_extra = sorted(extra - declared_extra)
+        stale_extra = sorted(declared_extra - extra)
+
+        print(f"leaf reconciliation      : feature-off {len(off_leaves)} - "
+              f"{len(EXCLUSIONS)} excluded + {len(FEATURE_ON_ONLY)} shipped-posture-only "
+              f"= {len(off_leaves) - len(EXCLUSIONS) + len(FEATURE_ON_ONLY)} "
+              f"vs feature-on {len(on_leaves)} executed")
+        if undeclared_missing:
+            failures.append(
+                f"{len(undeclared_missing)} test(s) execute feature-OFF but NOT feature-ON and are "
+                f"not enumerated in EXCLUSIONS (add an exact id and a reviewed reason, or fix the "
+                f"harness seam):\n    " + "\n    ".join(undeclared_missing[:20]))
+        if stale_exclusions:
+            failures.append(
+                "EXCLUSIONS names test(s) that DO execute feature-ON — the exclusion is stale and "
+                "must be removed:\n    " + "\n    ".join(stale_exclusions))
+        if undeclared_extra:
+            failures.append(
+                "test(s) execute feature-ON but not feature-OFF and are not enumerated in "
+                "FEATURE_ON_ONLY:\n    " + "\n    ".join(undeclared_extra[:20]))
+        if stale_extra:
+            failures.append(
+                "FEATURE_ON_ONLY names test(s) that did not execute feature-ON:\n    "
+                + "\n    ".join(stale_extra))
+        for name, reason in EXCLUSIONS.items():
+            if not reason.strip():
+                failures.append(f"exclusion {name} carries no reason")
+
+        evidence["reconciliation"] = {
+            "feature_off_leaves": len(off_leaves),
+            "feature_on_leaves": len(on_leaves),
+            "excluded": sorted(EXCLUSIONS),
+            "shipped_posture_only": sorted(FEATURE_ON_ONLY),
+            "undeclared_missing": undeclared_missing,
+            "undeclared_extra": undeclared_extra,
+        }
+
+    if EXCLUSIONS:
+        print("exclusions (inapplicable under the shipped posture):")
+        for name, reason in sorted(EXCLUSIONS.items()):
+            print(f"  - {name}\n      {reason}")
     else:
-        print(f"feature-ON   every one of the {len(blocks)} failures is the fence refusing an "
-              f"unauthorized epoch-less open (expected under the shipped posture)")
+        print("exclusions               : none — every test executed feature-off also "
+              "executes feature-on")
+
+    if args.evidence:
+        pathlib.Path(args.evidence).write_text(json.dumps(evidence, indent=2) + "\n")
+        print(f"evidence written to {args.evidence}")
 
     if failures:
         print("STRICT-EPOCH SUITE GATE: FAIL")
         for f in failures:
             print(f"  - {f}")
         return 1
+    if args.quick:
+        print("STRICT-EPOCH SUITE GATE: PARTIAL — the feature-ON full suite and the negative "
+              "fence suite are green, but the feature-OFF upstream-regression oracle and the "
+              "leaf reconciliation were NOT run. This is not a qualification result; only a "
+              "full run (no --quick) prints PASS.")
+        return 0
     print("STRICT-EPOCH SUITE GATE: PASS")
     return 0
 

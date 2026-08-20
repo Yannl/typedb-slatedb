@@ -1,0 +1,455 @@
+diff -ruN orig/src/clone.rs slatedb-0.15.0/src/clone.rs
+--- orig/src/clone.rs	2006-07-24 01:21:28.000000000 +0000
++++ slatedb-0.15.0/src/clone.rs	2026-08-20 09:01:45.201832794 +0000
+@@ -86,6 +86,21 @@
+         clone_manifest.update(dirty).await?;
+     }
+ 
++    // FORK PATCH 0006 (R6-FORK-01): a clone manifest INHERITS its parent's
++    // writer epoch, so the harness controller must inherit the parent's
++    // issuance high-water for the clone's path. Without this, the first open
++    // of a clone would present an epoch issued from the clone path's own
++    // (lower) sequence, land below the fence it inherited, and be refused —
++    // correctly, but for a reason that is an artefact of the test harness
++    // rather than of the code under test. This is test-only: a real
++    // controller has the same obligation, and the shipped library has no
++    // issuer at all.
++    #[cfg(all(test, feature = "external_epoch_required"))]
++    crate::db::builder::test_epoch_issuer::observe(
++        &clone_path,
++        clone_manifest.manifest().writer_epoch,
++    );
++
+     Ok(())
+ }
+ 
+diff -ruN orig/src/db/builder.rs slatedb-0.15.0/src/db/builder.rs
+--- orig/src/db/builder.rs	2026-08-20 09:19:22.535923408 +0000
++++ slatedb-0.15.0/src/db/builder.rs	2026-08-20 09:22:24.008279368 +0000
+@@ -171,6 +171,78 @@
+ use slatedb_common::DbRand;
+ use uuid::Uuid;
+ 
++// ---------------------------------------------------------------------------
++// FORK PATCH 0006 (R6-FORK-01): the test harness plays the controller.
++//
++// Under the shipped `external_epoch_required` posture there is no internal
++// epoch allocation to fall back on, so an upstream test that opens a database
++// without an epoch is refused at the fence before its body runs. Round 5
++// left 420 such tests failing and called that a pass; it was not — those
++// bodies never exercised reads, writes, compaction, manifest handling,
++// recovery, GC, concurrency or fault behaviour under the feature that ships.
++//
++// The fix is a SINGLE test-only seam rather than 420 edits: when the crate is
++// compiled for its own tests AND the fence is on, an open that names no epoch
++// is issued one by the harness below. That is not a fallback to upstream's
++// observe-and-bind allocation — the harness is a stand-in CONTROLLER: it
++// decides the number, and the manifest still claims exactly it or refuses.
++// The seam is `cfg(test)`, so it cannot exist in the shipped library: a
++// dependent crate (TypeDB's `storage`) compiles the `None` arm as a refusal,
++// exactly as before.
++//
++// The issuer is deterministic per database: the Nth open of a given path in a
++// process claims epoch N. Explicit epochs supplied by a test are never
++// overridden — they are only OBSERVED, so a later harness-issued open of the
++// same database is still a strict successor and the two schemes compose.
++//
++// Tests that must prove the fence still fails closed opt OUT explicitly via
++// `without_controller_issued_epoch()`; see the negative suite at the bottom
++// of this file.
++// ---------------------------------------------------------------------------
++#[cfg(all(test, feature = "external_epoch_required"))]
++pub(crate) mod test_epoch_issuer {
++    use object_store::path::Path;
++    use std::collections::HashMap;
++    use std::sync::{Mutex, OnceLock};
++
++    fn issued() -> &'static Mutex<HashMap<String, u64>> {
++        static ISSUED: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
++        ISSUED.get_or_init(|| Mutex::new(HashMap::new()))
++    }
++
++    /// Record an epoch a test chose for itself, so anything this issuer hands
++    /// out for the same database afterwards is a strict successor rather than
++    /// a replay the fence would (correctly) refuse.
++    pub(crate) fn observe(path: &Path, epoch: u64) {
++        let mut issued = issued().lock().expect("test epoch issuer poisoned");
++        let high = issued.entry(path.to_string()).or_insert(0);
++        *high = (*high).max(epoch);
++    }
++
++    /// Issue the next epoch for `path`: 1 for the first open of that database
++    /// in this process, 2 for the next, and so on.
++    pub(crate) fn issue(path: &Path) -> u64 {
++        let mut issued = issued().lock().expect("test epoch issuer poisoned");
++        let high = issued.entry(path.to_string()).or_insert(0);
++        *high += 1;
++        *high
++    }
++
++    /// The epoch this open should present: the test's own if it named one,
++    /// otherwise a freshly issued successor — unless the test explicitly
++    /// opted out to exercise the refusal.
++    pub(crate) fn resolve(path: &Path, configured: Option<u64>, opted_out: bool) -> Option<u64> {
++        match configured {
++            Some(epoch) => {
++                observe(path, epoch);
++                Some(epoch)
++            }
++            None if opted_out => None,
++            None => Some(issue(path)),
++        }
++    }
++}
++
+ /// A builder for creating a new Db instance.
+ ///
+ /// This builder provides a fluent API for configuring and opening a SlateDB database.
+@@ -195,6 +267,10 @@
+     metrics_recorder: Arc<dyn MetricsRecorder>,
+     segment_extractor: Option<Arc<dyn crate::prefix_extractor::PrefixExtractor>>,
+     external_writer_epoch: Option<u64>,
++    /// FORK PATCH 0006: test-only opt-out from harness epoch issuance,
++    /// so the negative suite can still open with no epoch at all.
++    #[cfg(all(test, feature = "external_epoch_required"))]
++    omit_controller_issued_epoch: bool,
+ }
+ 
+ impl<P: Into<Path>> DbBuilder<P> {
+@@ -225,6 +301,8 @@
+             metrics_recorder: Arc::new(NoopMetricsRecorder::new()),
+             segment_extractor: None,
+             external_writer_epoch: None,
++            #[cfg(all(test, feature = "external_epoch_required"))]
++            omit_controller_issued_epoch: false,
+         }
+     }
+ 
+@@ -249,6 +327,16 @@
+         self
+     }
+ 
++    /// FORK PATCH 0006 (test-only): open with NO external epoch even though
++    /// the harness would otherwise issue one. This is how the negative suite
++    /// proves the fence still fails closed — without it, the seam that makes
++    /// the upstream suite executable would also make the refusal untestable.
++    #[cfg(all(test, feature = "external_epoch_required"))]
++    pub(crate) fn without_controller_issued_epoch(mut self) -> Self {
++        self.omit_controller_issued_epoch = true;
++        self
++    }
++
+     /// Set the segment extractor (RFC-0024). When configured, every
+     /// write is routed through the extractor and the database tracks
+     /// per-segment LSM state. The extractor must be configured at
+@@ -451,6 +539,35 @@
+         self.settings.validate()?;
+ 
+         let path = self.path.into();
++
++        // FORK PATCH 0006 (R6-FORK-01): in the crate's own test build under the
++        // shipped fence, an unnamed epoch is issued by the harness controller
++        // (see `test_epoch_issuer`) so upstream test BODIES execute instead of
++        // being refused at open. Everywhere else — including the library as a
++        // dependency, which is how TypeDB consumes it — this is the configured
++        // value verbatim, so `None` still means refusal.
++        #[cfg(all(test, feature = "external_epoch_required"))]
++        let external_writer_epoch = test_epoch_issuer::resolve(
++            &path,
++            self.external_writer_epoch,
++            self.omit_controller_issued_epoch,
++        );
++        #[cfg(not(all(test, feature = "external_epoch_required")))]
++        let external_writer_epoch = self.external_writer_epoch;
++
++        // ADR-0012: refuse an unauthorized open HERE, before the builder can
++        // create a manifest for a database that no controller authorized. The
++        // fencer refuses the same thing again (`fence.rs`) and that is
++        // deliberate — the fencer is reachable from other callers — but by the
++        // time the fencer runs, `build()` has already created the database on
++        // first open. Discovered by the negative suite added with this patch:
++        // an epoch-less open used to be refused only AFTER leaving an empty
++        // database behind.
++        #[cfg(feature = "external_epoch_required")]
++        if external_writer_epoch.is_none() {
++            return Err(SlateDBError::ExternalEpochRequired.into());
++        }
++
+         // TODO: proper URI generation, for now it works just as a flag
+         let wal_object_store_uri = self.wal_object_store.as_ref().map(|_| String::new());
+ 
+@@ -637,7 +754,7 @@
+             &self.settings,
+             system_clock.clone(),
+             task_executor.clone(),
+-            self.external_writer_epoch,
++            external_writer_epoch,
+         );
+         let WriterFenceResult {
+             manifest,
+@@ -2618,13 +2735,28 @@
+         }
+     }
+ 
++    // ----------------------------------------------------------------
++    // NEGATIVE FENCE SUITE (FORK PATCH 0006, R6-FORK-01).
++    //
++    // Patch 0006 gives the crate's own test build a harness controller that
++    // issues an epoch to any open that does not name one, so the upstream
++    // suite's BODIES execute under the shipped fence instead of dying at
++    // open. That seam could hide the very refusal it exists to work around,
++    // so these tests opt OUT of it (`without_controller_issued_epoch`) and
++    // assert the fence still fails closed. Every test below must fail if the
++    // `None` arm of `WriterFencer::fence` ever gains a fallback.
++    //
++    // These are prefixed `negative_fence_` so the gate
++    // (tools/fork/check_strict_epoch_suite.py) can select and count them.
++    // ----------------------------------------------------------------
++
+     /// Production-lane posture: with `external_epoch_required` on, the real
+     /// builder REFUSES an open with no external epoch — before mutating the
+     /// stored epoch — instead of silently falling back to observe-and-bind
+     /// internal allocation.
+     #[cfg(feature = "external_epoch_required")]
+     #[tokio::test]
+-    async fn a_missing_external_epoch_is_refused_not_defaulted() {
++    async fn negative_fence_a_missing_external_epoch_is_refused_not_defaulted() {
+         let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+         let path = "a_missing_external_epoch_is_refused_not_defaulted";
+ 
+@@ -2635,7 +2767,10 @@
+             .expect("authorized open");
+         db.close().await.expect("close");
+ 
+-        let refused = crate::Db::builder(path, Arc::clone(&store)).build().await;
++        let refused = crate::Db::builder(path, Arc::clone(&store))
++            .without_controller_issued_epoch()
++            .build()
++            .await;
+         match refused {
+             Err(error) => assert_eq!(
+                 error.kind(),
+@@ -2650,4 +2785,103 @@
+             "a refused open must not have advanced the stored epoch"
+         );
+     }
++
++    /// A database that never existed is not a special case: with no manifest
++    /// to fence against, an epoch-less open is still refused, and refused
++    /// BEFORE anything is created. "Fail closed" that only holds for existing
++    /// databases would leave first-open unfenced, which is exactly the moment
++    /// a controller most needs to be the one choosing the number.
++    #[cfg(feature = "external_epoch_required")]
++    #[tokio::test]
++    async fn negative_fence_an_epoch_less_open_creates_no_database() {
++        let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
++        let path = "negative_fence_an_epoch_less_open_creates_no_database";
++
++        let refused = crate::Db::builder(path, Arc::clone(&store))
++            .without_controller_issued_epoch()
++            .build()
++            .await;
++        match refused {
++            Err(error) => assert_eq!(error.kind(), ErrorKind::Invalid),
++            Ok(_) => panic!("an epoch-less first open must refuse"),
++        }
++
++        let manifest_store = Arc::new(ManifestStore::new(
++            &Path::from(path),
++            Arc::clone(&store),
++        ));
++        assert!(
++            manifest_store.read_latest_manifest().await.is_err(),
++            "a refused first open must not have created a manifest"
++        );
++    }
++
++    /// The harness controller does not weaken the fence for opens that DO
++    /// name an epoch: after the harness has opened a database, replaying the
++    /// epoch it issued is still fenced, and the stored epoch is untouched.
++    /// This is the test that fails if `test_epoch_issuer` is ever allowed to
++    /// override a caller-supplied epoch instead of merely observing it.
++    #[cfg(feature = "external_epoch_required")]
++    #[tokio::test]
++    async fn negative_fence_a_harness_issued_epoch_cannot_be_replayed() {
++        let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
++        let path = "negative_fence_a_harness_issued_epoch_cannot_be_replayed";
++
++        // No epoch named: the harness issues one, and because this path is
++        // opened here for the first time in the process it is exactly 1.
++        let db = crate::Db::builder(path, Arc::clone(&store))
++            .build()
++            .await
++            .expect("harness-issued open");
++        db.close().await.expect("close");
++        assert_eq!(
++            latest_writer_epoch(&store, path).await,
++            1,
++            "the harness issues the Nth open of a path epoch N, exactly"
++        );
++
++        for replay in [1u64, 0] {
++            let refused = crate::Db::builder(path, Arc::clone(&store))
++                .with_external_writer_epoch(replay)
++                .build()
++                .await;
++            match refused {
++                Err(error) => assert_eq!(
++                    error.kind(),
++                    ErrorKind::Closed(crate::CloseReason::Fenced),
++                    "epoch {replay} must be fenced after the harness claimed 1"
++                ),
++                Ok(_) => panic!("epoch {replay} must not open a writer"),
++            }
++            assert_eq!(latest_writer_epoch(&store, path).await, 1);
++        }
++    }
++
++    /// Witness that the adapted suite really runs on EXTERNAL epochs: three
++    /// harness-issued opens of one database claim 1, 2, 3 exactly. Upstream's
++    /// internal allocation would produce the same first value, so the value
++    /// alone proves nothing — what proves it is that the sequence is the
++    /// issuer's and that `without_controller_issued_epoch` (above) refuses.
++    /// If the fence ever fell back to internal allocation, the negative tests
++    /// would pass an open they must refuse; if the issuer stopped being
++    /// consulted, this test's epochs would drift from the issued sequence.
++    #[cfg(feature = "external_epoch_required")]
++    #[tokio::test]
++    async fn negative_fence_harness_epochs_are_exact_and_monotonic_per_database() {
++        let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
++        let path = "negative_fence_harness_epochs_are_exact_and_monotonic_per_database";
++
++        for expected in 1u64..=3 {
++            let db = crate::Db::builder(path, Arc::clone(&store))
++                .build()
++                .await
++                .expect("harness-issued open");
++            db.close().await.expect("close");
++            assert_eq!(
++                latest_writer_epoch(&store, path).await,
++                expected,
++                "open #{expected} of this database must claim epoch {expected} exactly"
++            );
++        }
++    }
+ }
+diff -ruN orig/src/error.rs slatedb-0.15.0/src/error.rs
+--- orig/src/error.rs	2026-08-20 09:19:22.531613017 +0000
++++ slatedb-0.15.0/src/error.rs	2026-08-20 09:10:32.614520997 +0000
+@@ -81,6 +81,10 @@
+     /// they hold the newest epoch across a partition. The production lane
+     /// refuses that mode rather than falling back to it.
+     #[error("external writer epoch required: internal allocation is observe-and-bind")]
++    // FORK PATCH 0006: only constructed when the fence is compiled in; the
++    // conversion arm below still needs the variant, so silence the unfenced
++    // build's dead-code warning rather than cfg-ing the variant away.
++    #[cfg_attr(not(feature = "external_epoch_required"), allow(dead_code))]
+     ExternalEpochRequired,
+ 
+     /// The bounded L0 upload retry budget is exhausted (bounded-retry
+diff -ruN orig/src/fence.rs slatedb-0.15.0/src/fence.rs
+--- orig/src/fence.rs	2026-08-20 09:19:22.528878506 +0000
++++ slatedb-0.15.0/src/fence.rs	2026-08-20 09:15:16.714275109 +0000
+@@ -262,6 +262,26 @@
+             }
+         }
+ 
++        /// FORK PATCH 0006 (R6-FORK-01): hand out the standalone fencer with a
++        /// controller-issued epoch, taken at the moment the test is about to
++        /// fence rather than when the harness was built. These tests interleave
++        /// a raw `WriterFencer` with real `Db` opens on the SAME path and depend
++        /// on the fencer's epoch sitting strictly between them; the harness
++        /// issuer is per-path and monotonic, so taking the number here — and not
++        /// earlier — reproduces that ordering exactly. Feature-off this is the
++        /// unmodified upstream fencer with no epoch at all.
++        fn take_fencer(&mut self) -> WriterFencer {
++            #[allow(unused_mut)]
++            let mut fencer = self.fencer.take().unwrap();
++            #[cfg(feature = "external_epoch_required")]
++            {
++                fencer.external_writer_epoch = Some(
++                    crate::db::builder::test_epoch_issuer::issue(&Path::from(self.path.clone())),
++                );
++            }
++            fencer
++        }
++
+         async fn fenced_db(&self) -> Db {
+             // initialize a db with manifest poll interval set to 1hr — long enough
+             // that the db won't independently observe the fencer's epoch bump
+@@ -425,13 +445,56 @@
+         }
+     }
+ 
++    /// NEGATIVE FENCE SUITE (FORK PATCH 0006, R6-FORK-01): the refusal is
++    /// defence in depth, not one check. `DbBuilder::build` refuses an
++    /// unnamed epoch early (so nothing is created); the FENCER refuses it
++    /// again here, which is what protects any other caller that reaches
++    /// `WriterFencer` directly. A fallback added to either site — the exact
++    /// way a fail-closed posture silently becomes optional — fails this test.
++    #[cfg(feature = "external_epoch_required")]
++    #[tokio::test]
++    async fn negative_fence_the_fencer_refuses_an_unnamed_epoch() {
++        let mut h =
++            WriterFencerTestHarness::new("/tmp/negative_fence_the_fencer_refuses_an_unnamed_epoch")
++                .await;
++        // NOTE: `h.fencer.take()`, not `h.take_fencer()` — deliberately no
++        // harness-issued epoch, which is the whole point of this test.
++        let fencer = h.fencer.take().unwrap();
++        let stored_manifest = h.stored_manifest.take().unwrap();
++        let before = h
++            .manifest_store
++            .read_latest_manifest()
++            .await
++            .unwrap()
++            .manifest
++            .writer_epoch;
++
++        let result = fencer.fence(stored_manifest).await;
++
++        assert!(
++            matches!(result, Err(SlateDBError::ExternalEpochRequired)),
++            "an unnamed epoch must be refused by the fencer, got {:?}",
++            result.map(|_| "ok")
++        );
++        assert_eq!(
++            h.manifest_store
++                .read_latest_manifest()
++                .await
++                .unwrap()
++                .manifest
++                .writer_epoch,
++            before,
++            "a refused fence must not have advanced the stored writer epoch"
++        );
++    }
++
+     #[tokio::test]
+     async fn test_fence() {
+         let mut h =
+             WriterFencerTestHarness::new("/tmp/test_fence_handles_fenced_writer_flush").await;
+         let db = h.db().await;
+         h.put(&db, 1, false).await;
+-        let fencer = h.fencer.take().unwrap();
++        let fencer = h.take_fencer();
+ 
+         let result = fencer.fence(h.stored_manifest.take().unwrap()).await;
+ 
+@@ -478,7 +541,7 @@
+         fail_parallel::cfg(h.fp_registry.clone(), "LoadEmptyWalId", "pause").unwrap();
+         fail_parallel::cfg(h.fp_registry.clone(), case.pause_event, "pause").unwrap();
+ 
+-        let fencer = h.fencer.take().unwrap();
++        let fencer = h.take_fencer();
+         let stored_manifest = h.stored_manifest.take().unwrap();
+         let jh = tokio::task::spawn(async move { fencer.fence(stored_manifest).await });
+         // wait for LoadEmptyWalId pause
+@@ -580,7 +643,7 @@
+         fail_parallel::cfg(h.fp_registry.clone(), case.event, "pause").unwrap();
+ 
+         // spawn WriterFencer on another task
+-        let fencer = h.fencer.take().unwrap();
++        let fencer = h.take_fencer();
+         let stored_manifest = h.stored_manifest.take().unwrap();
+         let jh = tokio::task::spawn(async move { fencer.fence(stored_manifest).await });
+         // wait for fencer to load empty wal id and pause

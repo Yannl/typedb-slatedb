@@ -146,21 +146,14 @@ pub fn resolve(basis: &ValidationBasisV1) -> TransactionResolutionV1 {
         for key in keys {
             if basis.write_set.contains(key) {
                 let candidate = (*seq, key.clone());
-                if convicted
-                    .as_ref()
-                    .is_none_or(|current| candidate < *current)
-                {
+                if convicted.as_ref().is_none_or(|current| candidate < *current) {
                     convicted = Some(candidate);
                 }
             }
         }
     }
     let (verdict, conflict_class, apply_plan_digest) = match convicted {
-        Some((seq, key)) => (
-            Verdict::AbortConflict,
-            Some(format!("ww-conflict/{seq}/{key}")),
-            None,
-        ),
+        Some((seq, key)) => (Verdict::AbortConflict, Some(format!("ww-conflict/{seq}/{key}")), None),
         None => {
             // normalized apply plan: the write set in canonical order under
             // the commit sequence
@@ -181,13 +174,7 @@ pub fn resolve(basis: &ValidationBasisV1) -> TransactionResolutionV1 {
     if let Some(plan) = apply_plan_digest {
         resolution_digest = digest_u64(resolution_digest, plan);
     }
-    TransactionResolutionV1 {
-        basis_digest,
-        verdict,
-        conflict_class,
-        apply_plan_digest,
-        resolution_digest,
-    }
+    TransactionResolutionV1 { basis_digest, verdict, conflict_class, apply_plan_digest, resolution_digest }
 }
 
 // ---------------------------------------------------------------------------
@@ -205,11 +192,7 @@ pub enum ResolveOutcome {
 /// Drive `resolve` through an infrastructure-fault schedule: `faults[i]`
 /// true means attempt i dies before producing a result. A fault is retried
 /// on the SAME basis up to `bound` attempts; exhaustion quarantines.
-pub fn resolve_with_faults(
-    basis: &ValidationBasisV1,
-    faults: &[bool],
-    bound: u32,
-) -> ResolveOutcome {
+pub fn resolve_with_faults(basis: &ValidationBasisV1, faults: &[bool], bound: u32) -> ResolveOutcome {
     for attempt in 0..bound {
         let faulted = faults.get(attempt as usize).copied().unwrap_or(false);
         if !faulted {
@@ -262,10 +245,7 @@ impl StatusStore {
             0 => {
                 self.next_record_id += 1;
                 let id = self.next_record_id;
-                slot.push(PhysicalRecord {
-                    record_id: id,
-                    resolution,
-                });
+                slot.push(PhysicalRecord { record_id: id, resolution });
                 AdmitOutcome::Recorded(id)
             }
             1 => {
@@ -287,17 +267,10 @@ impl StatusStore {
     /// Model the durability-boundary failure: a second physical record got
     /// appended under one logical key (e.g. two racing recoveries). Every
     /// later admission must observe it and quarantine.
-    pub fn inject_duplicate_physical(
-        &mut self,
-        key: StatusKey,
-        resolution: TransactionResolutionV1,
-    ) {
+    pub fn inject_duplicate_physical(&mut self, key: StatusKey, resolution: TransactionResolutionV1) {
         self.next_record_id += 1;
         let id = self.next_record_id;
-        self.records.entry(key).or_default().push(PhysicalRecord {
-            record_id: id,
-            resolution,
-        });
+        self.records.entry(key).or_default().push(PhysicalRecord { record_id: id, resolution });
     }
 
     pub fn record_count(&self, key: &StatusKey) -> usize {
@@ -334,11 +307,7 @@ mod tests {
     }
 
     fn status_key() -> StatusKey {
-        StatusKey {
-            database_id: "db1".into(),
-            generation: 3,
-            commit_sequence: 10,
-        }
+        StatusKey { database_id: "db1".into(), generation: 3, commit_sequence: 10 }
     }
 
     /// Determinism over a bounded enumeration: every basis in the space
@@ -373,24 +342,12 @@ mod tests {
         assert_eq!(convicted.conflict_class.as_deref(), Some("ww-conflict/7/b"));
         assert_eq!(convicted.apply_plan_digest, None);
         // disjoint write sets: commit
-        assert_eq!(
-            resolve(&basis(&["a"], &[(7, &["z"])])).verdict,
-            Verdict::Commit
-        );
+        assert_eq!(resolve(&basis(&["a"], &[(7, &["z"])])).verdict, Verdict::Commit);
         // overlap OUTSIDE the window (at or before isolation start, at or
         // after own sequence): not interference
-        assert_eq!(
-            resolve(&basis(&["a"], &[(5, &["a"])])).verdict,
-            Verdict::Commit
-        );
-        assert_eq!(
-            resolve(&basis(&["a"], &[(10, &["a"])])).verdict,
-            Verdict::Commit
-        );
-        assert_eq!(
-            resolve(&basis(&["a"], &[(11, &["a"])])).verdict,
-            Verdict::Commit
-        );
+        assert_eq!(resolve(&basis(&["a"], &[(5, &["a"])])).verdict, Verdict::Commit);
+        assert_eq!(resolve(&basis(&["a"], &[(10, &["a"])])).verdict, Verdict::Commit);
+        assert_eq!(resolve(&basis(&["a"], &[(11, &["a"])])).verdict, Verdict::Commit);
         // two convictions: the canonical (seq, key) minimum names the class
         let multi = resolve(&basis(&["a", "b"], &[(8, &["b"]), (6, &["a"])]));
         assert_eq!(multi.conflict_class.as_deref(), Some("ww-conflict/6/a"));
@@ -433,15 +390,8 @@ mod tests {
         shifted.committed_interference[0].0 = 8;
         variants.push(shifted);
         for variant in &variants {
-            assert_ne!(
-                variant.digest(),
-                reference_digest,
-                "field not bound: {variant:?}"
-            );
-            assert_ne!(
-                resolve(variant).resolution_digest,
-                resolve(&reference).resolution_digest
-            );
+            assert_ne!(variant.digest(), reference_digest, "field not bound: {variant:?}");
+            assert_ne!(resolve(variant).resolution_digest, resolve(&reference).resolution_digest);
         }
     }
 
@@ -458,10 +408,7 @@ mod tests {
                 panic!("first admission must record");
             };
             for _ in 0..replays {
-                assert_eq!(
-                    store.admit(status_key(), resolution.clone()),
-                    AdmitOutcome::Original(original_id)
-                );
+                assert_eq!(store.admit(status_key(), resolution.clone()), AdmitOutcome::Original(original_id));
             }
             assert_eq!(store.record_count(&status_key()), 1);
         }
@@ -478,23 +425,14 @@ mod tests {
         // opposite verdict
         let mut store = StatusStore::default();
         store.admit(status_key(), committed.clone());
-        assert_eq!(
-            store.admit(status_key(), aborted.clone()),
-            AdmitOutcome::Quarantine("opposite-verdict")
-        );
+        assert_eq!(store.admit(status_key(), aborted.clone()), AdmitOutcome::Quarantine("opposite-verdict"));
         // changed digest, same verdict (a different commit's certificate)
         let other_commit = resolve(&basis(&["b"], &[]));
         assert_eq!(other_commit.verdict, Verdict::Commit);
-        assert_eq!(
-            store.admit(status_key(), other_commit),
-            AdmitOutcome::Quarantine("changed-digest")
-        );
+        assert_eq!(store.admit(status_key(), other_commit), AdmitOutcome::Quarantine("changed-digest"));
         // and the original is still the one record standing
         assert_eq!(store.record_count(&status_key()), 1);
-        assert_eq!(
-            store.admit(status_key(), committed),
-            AdmitOutcome::Original(1)
-        );
+        assert_eq!(store.admit(status_key(), committed), AdmitOutcome::Original(1));
     }
 
     /// A second physical record under one singleton key (the durability
@@ -507,10 +445,7 @@ mod tests {
         store.admit(status_key(), resolution.clone());
         store.inject_duplicate_physical(status_key(), resolution.clone());
         assert_eq!(store.record_count(&status_key()), 2);
-        assert_eq!(
-            store.admit(status_key(), resolution),
-            AdmitOutcome::Quarantine("duplicate-physical-record"),
-        );
+        assert_eq!(store.admit(status_key(), resolution), AdmitOutcome::Quarantine("duplicate-physical-record"),);
     }
 
     /// §9.2 step 5: infrastructure error NEVER creates an abort. Exhaust
@@ -528,10 +463,7 @@ mod tests {
                     ResolveOutcome::Resolved(resolution) => assert_eq!(resolution, truth),
                     ResolveOutcome::Quarantined { attempts } => {
                         assert_eq!(attempts, bound);
-                        assert!(
-                            faults.iter().all(|f| *f),
-                            "quarantine requires every attempt faulted"
-                        );
+                        assert!(faults.iter().all(|f| *f), "quarantine requires every attempt faulted");
                     }
                 }
             }
@@ -555,10 +487,7 @@ mod tests {
         let b = basis(&["a"], &[]);
         let first = broken_resolve(&b);
         let second = broken_resolve(&b);
-        assert_ne!(
-            first, second,
-            "the determinism assertion would fail under this mutant"
-        );
+        assert_ne!(first, second, "the determinism assertion would fail under this mutant");
 
         // MUTANT store: last-write-wins overwrite
         let committed = resolve(&basis(&["a"], &[]));
@@ -574,9 +503,6 @@ mod tests {
         let mut correct = StatusStore::default();
         correct.admit(status_key(), committed.clone());
         correct.admit(status_key(), aborted);
-        assert_eq!(
-            correct.admit(status_key(), committed),
-            AdmitOutcome::Original(1)
-        );
+        assert_eq!(correct.admit(status_key(), committed), AdmitOutcome::Original(1));
     }
 }

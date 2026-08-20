@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Shared primitives for the official-driver qualification lane."""
+
 import hashlib
 import json
 import pathlib
@@ -25,8 +26,9 @@ def sha256_bytes(b):
 
 
 def git(repo, *args):
-    return subprocess.run(["git", "-C", str(repo), *args],
-                          capture_output=True, text=True, check=False)
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], capture_output=True, text=True, check=False
+    )
 
 
 def checkout_identity(path):
@@ -40,17 +42,24 @@ def checkout_identity(path):
     tree = git(path, "rev-parse", "HEAD^{tree}")
     st = git(path, "status", "--porcelain")
     if rev.returncode or tree.returncode or st.returncode:
-        return {"path": rel(path), "revision": None, "tree": None,
-                "dirty": None,
-                "error": (rev.stderr or tree.stderr or st.stderr).strip()}
+        return {
+            "path": rel(path),
+            "revision": None,
+            "tree": None,
+            "dirty": None,
+            "error": (rev.stderr or tree.stderr or st.stderr).strip(),
+        }
     changed = [ln for ln in st.stdout.splitlines() if ln.strip()]
-    out = {"path": rel(path), "revision": rev.stdout.strip(),
-           "tree": tree.stdout.strip(), "dirty": bool(changed),
-           "dirty_path_count": len(changed)}
+    out = {
+        "path": rel(path),
+        "revision": rev.stdout.strip(),
+        "tree": tree.stdout.strip(),
+        "dirty": bool(changed),
+        "dirty_path_count": len(changed),
+    }
     if changed:
         out["dirty_paths"] = sorted(ln[3:] for ln in changed)[:200]
-        out["dirty_delta_sha256"] = sha256_bytes(
-            git(path, "diff", "HEAD").stdout.encode())
+        out["dirty_delta_sha256"] = sha256_bytes(git(path, "diff", "HEAD").stdout.encode())
     return out
 
 
@@ -102,8 +111,9 @@ def compute_bundle_root(bundle_dir, files, repo=None):
 
 
 def canonical_json_sha256(obj):
-    return sha256_bytes(json.dumps(obj, sort_keys=True, separators=(",", ":"),
-                                   ensure_ascii=False).encode())
+    return sha256_bytes(
+        json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    )
 
 
 def plan_root_of_body(doc):

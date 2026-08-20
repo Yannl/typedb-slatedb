@@ -17,12 +17,12 @@ Layout reproduced from TB root BUILD at the pin (anchors):
 Binary permissions 0744 per binary_permissions (BUILD L59); the wrapper needs
 exec permission for the test to spawn it.
 """
+
 import gzip
 import hashlib
 import json
 import pathlib
 import shutil
-import subprocess
 import sys
 import tarfile
 import tempfile
@@ -99,8 +99,10 @@ def main():
                 if member is None:
                     sys.exit(f"{tarball}: subpath {sub} not found")
                 dest.mkdir(parents=True, exist_ok=True)
-                with tf.extractfile(member) as src, \
-                        open(dest / pathlib.Path(sub).name, "wb") as dst:
+                with (
+                    tf.extractfile(member) as src,
+                    open(dest / pathlib.Path(sub).name, "wb") as dst,
+                ):
                     shutil.copyfileobj(src, dst)
                 (dest / pathlib.Path(sub).name).chmod(0o755)
 
@@ -129,9 +131,11 @@ def main():
             for p in sorted(root.rglob("*"), key=lambda p: p.relative_to(root).as_posix())
         ]
         OUT.parent.mkdir(parents=True, exist_ok=True)
-        with open(OUT, "wb") as raw, \
-                gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as gz, \
-                tarfile.open(fileobj=gz, mode="w", format=tarfile.GNU_FORMAT) as tf:
+        with (
+            open(OUT, "wb") as raw,
+            gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as gz,
+            tarfile.open(fileobj=gz, mode="w", format=tarfile.GNU_FORMAT) as tf,
+        ):
             for path, arcname in entries:
                 tf.add(path, arcname=arcname, recursive=False, filter=normalise)
 

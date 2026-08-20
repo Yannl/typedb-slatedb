@@ -29,6 +29,7 @@ Modes:
                       file; non-zero on drift (generated_at is not
                       recorded at all). Wired into lint_source_lock.py.
 """
+
 import argparse
 import hashlib
 import json
@@ -51,7 +52,10 @@ from run_static import RUSTFMT_TOOLCHAIN  # noqa: E402
 WORKSPACES = {
     "fork/typedb": {"manifest": "fork/typedb/Cargo.toml", "lockfile": "fork/typedb/Cargo.lock"},
     "tools": {"manifest": "tools/Cargo.toml", "lockfile": "tools/Cargo.lock"},
-    "control-plane": {"manifest": "control-plane/package.json", "lockfile": "control-plane/package-lock.json"},
+    "control-plane": {
+        "manifest": "control-plane/package.json",
+        "lockfile": "control-plane/package-lock.json",
+    },
 }
 
 # Pinned *inputs* only. The assembly archive
@@ -122,7 +126,9 @@ def slatedb_consumption() -> dict:
             "default_features": m.group(3) == "true",
         }
     spike = (REPO / "tools/storage-diff-spike/Cargo.toml").read_text()
-    m = re.search(r'slatedb\s*=\s*\{\s*version\s*=\s*"([^"]+)"\s*,\s*default-features\s*=\s*(\w+)', spike)
+    m = re.search(
+        r'slatedb\s*=\s*\{\s*version\s*=\s*"([^"]+)"\s*,\s*default-features\s*=\s*(\w+)', spike
+    )
     if m:
         out["tools/storage-diff-spike"] = {
             "version": m.group(1),
@@ -165,8 +171,11 @@ def main() -> int:
     # `--chek` silently fell through to GENERATE mode and overwrote the
     # committed lock - a verify that becomes a write on a typo
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true",
-                        help="regenerate in memory and diff against the committed file")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="regenerate in memory and diff against the committed file",
+    )
     args = parser.parse_args()
     doc = build()
     if args.check:
@@ -179,7 +188,9 @@ def main() -> int:
         if a != b:
             for key in sorted(set(a) | set(b)):
                 if a.get(key) != b.get(key):
-                    print(f"workspace-lock DRIFT in '{key}':\n  now:       {a.get(key)}\n  committed: {b.get(key)}")
+                    print(
+                        f"workspace-lock DRIFT in '{key}':\n  now:       {a.get(key)}\n  committed: {b.get(key)}"
+                    )
             return 1
         print("workspace-lock: OK")
         return 0

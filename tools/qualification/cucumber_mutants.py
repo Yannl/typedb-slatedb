@@ -50,6 +50,7 @@ Controls, and the defect each one is:
 
 Usage: python3 tools/qualification/cucumber_mutants.py [--bundle DIR]
 """
+
 import argparse
 import atexit
 import collections
@@ -116,7 +117,7 @@ class Copy:
     def owner_log(self, bundle=None, min_leaves=5):
         """The raw_log of an owning log with enough leaves to mutate."""
         bundle = bundle if bundle is not None else self.load()
-        n = collections.Counter(l["raw_log"] for l in bundle["leaves"])
+        n = collections.Counter(leaf["raw_log"] for leaf in bundle["leaves"])
         for raw, k in n.most_common():
             if k >= min_leaves:
                 return raw
@@ -141,7 +142,8 @@ class Copy:
             rf.write_text(json.dumps(b, indent=1) + "\n")
             root, pairs = lc.compute_bundle_root(d, b, self.tree)
             (d / "bundle-manifest.json").write_text(
-                json.dumps({"bundle_root": root, "files": pairs}, indent=1) + "\n")
+                json.dumps({"bundle_root": root, "files": pairs}, indent=1) + "\n"
+            )
             vf = d / "leaf-verdict.json"
             if vf.is_file():
                 v = json.loads(vf.read_text())
@@ -168,7 +170,8 @@ class Copy:
         self.save(bundle)
         root, pairs = cc.compute_bundle_root(self.dir, bundle, self.tree)
         (self.dir / cc.MANIFEST_NAME).write_text(
-            json.dumps({"bundle_root": root, "files": pairs}, indent=1) + "\n")
+            json.dumps({"bundle_root": root, "files": pairs}, indent=1) + "\n"
+        )
         vf = self.dir / cc.VERDICT_NAME
         if vf.is_file():
             v = json.loads(vf.read_text())
@@ -181,15 +184,19 @@ class Copy:
         return root
 
     def verify(self, extra=()):
-        p = subprocess.run([sys.executable, str(VERIFIER), str(self.dir),
-                            "--repo", str(self.tree), *extra],
-                           capture_output=True, text=True)
+        p = subprocess.run(
+            [sys.executable, str(VERIFIER), str(self.dir), "--repo", str(self.tree), *extra],
+            capture_output=True,
+            text=True,
+        )
         return p.returncode, p.stdout + p.stderr
 
     def coverage(self):
-        p = subprocess.run([sys.executable, str(COVERAGE), "--cucumber",
-                            str(self.dir), "--repo", str(self.tree)],
-                           capture_output=True, text=True)
+        p = subprocess.run(
+            [sys.executable, str(COVERAGE), "--cucumber", str(self.dir), "--repo", str(self.tree)],
+            capture_output=True,
+            text=True,
+        )
         return p.returncode, p.stdout + p.stderr
 
 
@@ -199,13 +206,17 @@ def control(label, src, mutate, needle=None, extra=(), expect_ok=False):
         mutate(c)
     rc, out = c.verify(extra)
     ok = (rc == 0) if expect_ok else (rc != 0 and (needle is None or needle in out))
-    expect(label, ok, detail=f"rc={rc} tail: {out[-1200:]}",
-           verb=("ACCEPTED", "WRONGLY REFUSED") if expect_ok
-           else ("KILLED", "SURVIVED"))
+    expect(
+        label,
+        ok,
+        detail=f"rc={rc} tail: {out[-1200:]}",
+        verb=("ACCEPTED", "WRONGLY REFUSED") if expect_ok else ("KILLED", "SURVIVED"),
+    )
     return c
 
 
 # ------------------------------------------------------------- mutations
+
 
 def _log_lines(c, raw):
     return (c.tree / raw).read_text(errors="replace").splitlines()
@@ -218,16 +229,16 @@ def _write_log(c, raw, lines):
 def delete_scenario(c):
     b = c.load()
     raw = c.owner_log(b)
-    victim = next(l for l in b["leaves"] if l["raw_log"] == raw)
+    victim = next(leaf for leaf in b["leaves"] if leaf["raw_log"] == raw)
     lines = _log_lines(c, raw)
     del lines[victim["log_line"] - 1]
     _write_log(c, raw, lines)
-    b["leaves"] = [l for l in b["leaves"] if l is not victim]
+    b["leaves"] = [leaf for leaf in b["leaves"] if leaf is not victim]
     # the forger renumbers everything the deletion shifted and corrects the
     # scan count, so only the runtime's OWN tally and the P3 sequence remain
-    for l in b["leaves"]:
-        if l["raw_log"] == raw and l["log_line"] > victim["log_line"]:
-            l["log_line"] -= 1
+    for leaf in b["leaves"]:
+        if leaf["raw_log"] == raw and leaf["log_line"] > victim["log_line"]:
+            leaf["log_line"] -= 1
     for s in b["sources"]:
         for lg in s["logs"]:
             if lg["raw_log"] == raw:
@@ -260,8 +271,8 @@ def summary_reports_failure(c):
     b = c.load()
     raw = c.owner_log(b)
     lines = _log_lines(c, raw)
-    for i, l in enumerate(lines):
-        if l.strip() == "[Summary]":
+    for i, line in enumerate(lines):
+        if line.strip() == "[Summary]":
             m = lines[i + 2].strip()
             n = int(m.split()[0])
             lines[i + 2] = f"{n} scenarios ({n - 1} passed, 1 failed)"
@@ -273,11 +284,19 @@ def summary_reports_failure(c):
 def swap_two_leaves(c):
     b = c.load()
     raw = c.owner_log(b)
-    same = [l for l in b["leaves"] if l["raw_log"] == raw]
+    same = [leaf for leaf in b["leaves"] if leaf["raw_log"] == raw]
     a, d = same[0], same[1]
-    for k in ("leaf_case_id", "display_name", "runtime_name", "template",
-              "example_index", "example_total", "anchor", "declaration_line",
-              "scenario_ordinal_in_feature"):
+    for k in (
+        "leaf_case_id",
+        "display_name",
+        "runtime_name",
+        "template",
+        "example_index",
+        "example_total",
+        "anchor",
+        "declaration_line",
+        "scenario_ordinal_in_feature",
+    ):
         a[k], d[k] = d[k], a[k]
     c.refresh(b)
 
@@ -289,17 +308,16 @@ def rotate_example_indices(c):
     rewritten to the rotated example - only the log line stays put."""
     b = c.load()
     groups = collections.defaultdict(list)
-    for l in b["leaves"]:
-        if l["template"]:
-            groups[(l["target_id"], l["template"], l["declaration_line"])].append(l)
+    for leaf in b["leaves"]:
+        if leaf["template"]:
+            groups[(leaf["target_id"], leaf["template"], leaf["declaration_line"])].append(leaf)
     key = next(k for k, v in sorted(groups.items()) if len(v) >= 3)
-    g = sorted(groups[key], key=lambda l: l["example_index"])
-    fields = ("leaf_case_id", "display_name", "runtime_name", "example_index",
-              "anchor")
-    vals = [{k: l[k] for k in fields} for l in g]
-    for i, l in enumerate(g):
+    g = sorted(groups[key], key=lambda leaf: leaf["example_index"])
+    fields = ("leaf_case_id", "display_name", "runtime_name", "example_index", "anchor")
+    vals = [{k: leaf[k] for k in fields} for leaf in g]
+    for i, leaf in enumerate(g):
         for k in fields:
-            l[k] = vals[(i + 1) % len(vals)][k]
+            leaf[k] = vals[(i + 1) % len(vals)][k]
     c.refresh(b)
 
 
@@ -311,10 +329,16 @@ def swap_identical_names(c):
     the ORDINAL binding (the i-th runtime scenario is example i) is left."""
     b = c.load()
     g = collections.defaultdict(list)
-    for l in b["leaves"]:
-        if l["template"]:
-            g[(l["target_id"], l["template"], l["declaration_line"],
-               l["runtime_name"])].append(l)
+    for leaf in b["leaves"]:
+        if leaf["template"]:
+            g[
+                (
+                    leaf["target_id"],
+                    leaf["template"],
+                    leaf["declaration_line"],
+                    leaf["runtime_name"],
+                )
+            ].append(leaf)
     pair = next(v for k, v in sorted(g.items()) if len(v) >= 2)[:2]
     a, d = pair
     for k in ("leaf_case_id", "display_name", "example_index", "anchor"):
@@ -333,20 +357,22 @@ def forge_template_counts(c):
 
 def drop_one_example(c):
     b = c.load()
-    victim = next(l for l in b["leaves"] if l["template"])
-    b["leaves"] = [l for l in b["leaves"] if l is not victim]
+    victim = next(leaf for leaf in b["leaves"] if leaf["template"])
+    b["leaves"] = [leaf for leaf in b["leaves"] if leaf is not victim]
     for f in b["features"]:
         if f["target_id"] == victim["target_id"]:
             f["leaves_published"] -= 1
             for t in f["templates"]:
-                if t["template"] == victim["template"] \
-                        and t["declaration_line"] == victim["declaration_line"]:
+                if (
+                    t["template"] == victim["template"]
+                    and t["declaration_line"] == victim["declaration_line"]
+                ):
                     t["catalogued_examples"] -= 1
                     t["runnable_examples"] -= 1
                     t["runtime_matched"] -= 1
                     t["example_indices_bound"] = [
-                        i for i in t["example_indices_bound"]
-                        if i != victim["example_index"]]
+                        i for i in t["example_indices_bound"] if i != victim["example_index"]
+                    ]
     c.refresh(b)
 
 
@@ -354,9 +380,9 @@ def filtered_run(c):
     b = c.load()
     raw = c.owner_log(b)
     lines = _log_lines(c, raw)
-    for i, l in enumerate(lines):
-        if l.startswith("test result:"):
-            lines[i] = l.replace("0 filtered out", "3 filtered out")
+    for i, line in enumerate(lines):
+        if line.startswith("test result:"):
+            lines[i] = line.replace("0 filtered out", "3 filtered out")
             break
     _write_log(c, raw, lines)
     # the forger also corrects the SEALED source bundle's recorded counts, so
@@ -381,17 +407,16 @@ def truncate_log(c):
     b = c.load()
     raw = c.owner_log(b)
     lines = _log_lines(c, raw)
-    _write_log(c, raw, lines[:len(lines) // 2])
+    _write_log(c, raw, lines[: len(lines) // 2])
     c.refresh(b)
 
 
 def publish_ignored(c):
     b = c.load()
     victim = b["not_run"][0]
-    donor = next(l for l in b["leaves"] if l["target_id"] == victim["target_id"])
+    donor = next(leaf for leaf in b["leaves"] if leaf["target_id"] == victim["target_id"])
     new = dict(donor)
-    new.update({"leaf_case_id": victim["leaf_case_id"],
-                "display_name": victim["display_name"]})
+    new.update({"leaf_case_id": victim["leaf_case_id"], "display_name": victim["display_name"]})
     b["leaves"].append(new)
     b["not_run"] = [x for x in b["not_run"] if x is not victim]
     c.refresh(b)
@@ -414,8 +439,7 @@ def delete_log(c):
 
 def unseal_source(c):
     b = c.load()
-    (c.tree / b["sources"][0]["bundle"] / "COMPLETE").write_text(
-        "COMPLETE " + "0" * 64 + "\n")
+    (c.tree / b["sources"][0]["bundle"] / "COMPLETE").write_text("COMPLETE " + "0" * 64 + "\n")
     # deliberately NOT resealing the sources: that is the mutation
     c.refresh(b, reseal_sources=False)
 
@@ -428,7 +452,7 @@ def withhold_log(c):
             if lg["raw_log"] == raw:
                 lg["publishable"] = False
                 lg["refusals"] = ["withheld"]
-    b["leaves"] = [l for l in b["leaves"] if l["raw_log"] != raw]
+    b["leaves"] = [leaf for leaf in b["leaves"] if leaf["raw_log"] != raw]
     for f in b["features"]:
         if (f.get("owner") or {}).get("raw_log") == raw:
             f["owner"], f["leaves_published"], f["templates"] = None, 0, []
@@ -445,82 +469,147 @@ def log_outside_bundle(c):
         for lg in s["logs"]:
             if lg["raw_log"] == raw:
                 lg["raw_log"] = str(outside)
-    for l in b["leaves"]:
-        if l["raw_log"] == raw:
-            l["raw_log"] = str(outside)
+    for leaf in b["leaves"]:
+        if leaf["raw_log"] == raw:
+            leaf["raw_log"] = str(outside)
     c.refresh(b)
 
 
 def main():
     ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--bundle", default="docs/evidence/G3/leaf/cucumber-u2-1",
-                    help="a real sealed cucumber leaf bundle (repo-relative)")
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--bundle",
+        default="docs/evidence/G3/leaf/cucumber-u2-1",
+        help="a real sealed cucumber leaf bundle (repo-relative)",
+    )
     args = ap.parse_args()
     src = args.bundle
     if not (REPO / src / cc.RESULTS_NAME).is_file():
-        sys.exit(f"{src} is not a cucumber leaf bundle - the controls mutate "
-                 f"REAL evidence copies, never a fixture invented for the test")
-    print(f"cucumber mutants (REAL subprocess: verify_cucumber_leaf.py over a "
-          f"mutated COPY of {src} and its sealed sources)")
+        sys.exit(
+            f"{src} is not a cucumber leaf bundle - the controls mutate "
+            f"REAL evidence copies, never a fixture invented for the test"
+        )
+    print(
+        f"cucumber mutants (REAL subprocess: verify_cucumber_leaf.py over a "
+        f"mutated COPY of {src} and its sealed sources)"
+    )
 
-    control("0  intact bundle copy verifies (control of controls)",
-            src, None, expect_ok=True)
+    control("0  intact bundle copy verifies (control of controls)", src, None, expect_ok=True)
 
     # T ------------------------------------------- positive property control
     b = json.loads((REPO / src / cc.RESULTS_NAME).read_text())
-    torn = [l for l in b["leaves"] if l["log_column"] > 1]
-    expect(f"T  scenario(s) whose 'Feature:' marker was FUSED into another "
-           f"writer's line by concurrent libtest output are still covered "
-           f"({len(torn)} such leaf/leaves, e.g. "
-           f"{(torn[0]['raw_log'].rsplit('/', 1)[-1] + ':' + str(torn[0]['log_line']) + ' col ' + str(torn[0]['log_column'])) if torn else 'none'})",
-           bool(torn),
-           detail="the archive this bundle derives from contains a torn line; "
-                  "if none is covered the scanner silently lost a scenario",
-           verb=("HOLDS", "MISSING"))
+    torn = [leaf for leaf in b["leaves"] if leaf["log_column"] > 1]
+    expect(
+        f"T  scenario(s) whose 'Feature:' marker was FUSED into another "
+        f"writer's line by concurrent libtest output are still covered "
+        f"({len(torn)} such leaf/leaves, e.g. "
+        f"{(torn[0]['raw_log'].rsplit('/', 1)[-1] + ':' + str(torn[0]['log_line']) + ' col ' + str(torn[0]['log_column'])) if torn else 'none'})",
+        bool(torn),
+        detail="the archive this bundle derives from contains a torn line; "
+        "if none is covered the scanner silently lost a scenario",
+        verb=("HOLDS", "MISSING"),
+    )
 
-    control("1  a scenario deleted from a log (the forger renumbers the source "
-            "bundle's own leaf rows too)", src, delete_scenario,
-            needle="summaries count")
-    control("2  an outcome flipped in the JSON, log untouched", src,
-            flip_outcome, needle="ALL_PASSED_SUMMARY is the only derivation")
-    control("2b a log whose cucumber summary reports a failure, published anyway",
-            src, summary_reports_failure, needle="not all-passed")
-    control("3  a scenario bound to the wrong plan row (two leaves swapped)",
-            src, swap_two_leaves, needle="do not say what it claims")
-    control("4  an example index off by one (a template's bindings rotated, "
-            "leaf id / display name / anchor / runtime name all forged)",
-            src, rotate_example_indices,
-            needle="the row points at bytes that do not say what it claims")
-    control("4b two examples with IDENTICAL substituted names swapped - every "
-            "byte readback still succeeds, so ONLY the ordinal binding can "
-            "catch it", src, swap_identical_names,
-            needle="ordinal binding is wrong")
-    control("5  a per-template reconciliation that disagrees with the catalogue",
-            src, forge_template_counts, needle="the expansion and the log give")
-    control("5b one example's leaf row dropped (template runtime count no "
-            "longer matches the catalogue's examples)", src, drop_one_example,
-            needle="have no leaf row")
-    control("6  a FILTERED run presented as a full enumeration", src,
-            filtered_run, needle="filtered_out=3")
+    control(
+        "1  a scenario deleted from a log (the forger renumbers the source "
+        "bundle's own leaf rows too)",
+        src,
+        delete_scenario,
+        needle="summaries count",
+    )
+    control(
+        "2  an outcome flipped in the JSON, log untouched",
+        src,
+        flip_outcome,
+        needle="ALL_PASSED_SUMMARY is the only derivation",
+    )
+    control(
+        "2b a log whose cucumber summary reports a failure, published anyway",
+        src,
+        summary_reports_failure,
+        needle="not all-passed",
+    )
+    control(
+        "3  a scenario bound to the wrong plan row (two leaves swapped)",
+        src,
+        swap_two_leaves,
+        needle="do not say what it claims",
+    )
+    control(
+        "4  an example index off by one (a template's bindings rotated, "
+        "leaf id / display name / anchor / runtime name all forged)",
+        src,
+        rotate_example_indices,
+        needle="the row points at bytes that do not say what it claims",
+    )
+    control(
+        "4b two examples with IDENTICAL substituted names swapped - every "
+        "byte readback still succeeds, so ONLY the ordinal binding can "
+        "catch it",
+        src,
+        swap_identical_names,
+        needle="ordinal binding is wrong",
+    )
+    control(
+        "5  a per-template reconciliation that disagrees with the catalogue",
+        src,
+        forge_template_counts,
+        needle="the expansion and the log give",
+    )
+    control(
+        "5b one example's leaf row dropped (template runtime count no "
+        "longer matches the catalogue's examples)",
+        src,
+        drop_one_example,
+        needle="have no leaf row",
+    )
+    control(
+        "6  a FILTERED run presented as a full enumeration",
+        src,
+        filtered_run,
+        needle="filtered_out=3",
+    )
     control("7  an empty log", src, empty_log, needle="no libtest 'test result:'")
-    control("8  a truncated log (tail and summary removed)", src, truncate_log,
-            needle="marked publishable but re-derivation refuses it")
-    control("9  a tag-excluded scenario published as covered", src,
-            publish_ignored, needle="yet the bundle publishes an outcome for it")
-    control("10 the not_run list suppressed", src, suppress_not_run,
-            needle="absent from not_run")
-    control("11 COMPLETE sealing a root the bytes do not recompute to", src,
-            lambda c: (c.dir / "COMPLETE").write_text("COMPLETE " + "0" * 64 + "\n"),
-            needle="the archive was modified after it was sealed")
+    control(
+        "8  a truncated log (tail and summary removed)",
+        src,
+        truncate_log,
+        needle="marked publishable but re-derivation refuses it",
+    )
+    control(
+        "9  a tag-excluded scenario published as covered",
+        src,
+        publish_ignored,
+        needle="yet the bundle publishes an outcome for it",
+    )
+    control("10 the not_run list suppressed", src, suppress_not_run, needle="absent from not_run")
+    control(
+        "11 COMPLETE sealing a root the bytes do not recompute to",
+        src,
+        lambda c: (c.dir / "COMPLETE").write_text("COMPLETE " + "0" * 64 + "\n"),
+        needle="the archive was modified after it was sealed",
+    )
     control("12 a deleted log", src, delete_log, needle="named as publishable")
-    control("13 a source leaf bundle that is no longer sealed", src,
-            unseal_source, needle="does not re-verify")
-    control("14 a publishable log silently withheld, hiding a whole feature",
-            src, withhold_log, needle="silently withheld log hides evidence")
-    control("15 a log repointed outside the sealed bundle that vouches for it",
-            src, log_outside_bundle,
-            needle="reads a log the sealed source bundle")
+    control(
+        "13 a source leaf bundle that is no longer sealed",
+        src,
+        unseal_source,
+        needle="does not re-verify",
+    )
+    control(
+        "14 a publishable log silently withheld, hiding a whole feature",
+        src,
+        withhold_log,
+        needle="silently withheld log hides evidence",
+    )
+    control(
+        "15 a log repointed outside the sealed bundle that vouches for it",
+        src,
+        log_outside_bundle,
+        needle="reads a log the sealed source bundle",
+    )
 
     # 16 ------------------ the coverage reporter counts nothing from a refusal
     def cuke_covered(report):
@@ -528,19 +617,21 @@ def main():
 
     c = Copy(src)
     _rc0, out0 = c.coverage()
-    clean = json.loads(out0[out0.index("{"):out0.rindex("}") + 1])
+    clean = json.loads(out0[out0.index("{") : out0.rindex("}") + 1])
     c2 = Copy(src)
     flip_outcome(c2)
     _rc1, out1 = c2.coverage()
-    mutated = json.loads(out1[out1.index("{"):out1.rindex("}") + 1])
-    expect(f"16 leaf_coverage counts 0 cucumber rows from a refused bundle "
-           f"(the same bundle intact covers {cuke_covered(clean)})",
-           cuke_covered(clean) > 0 and cuke_covered(mutated) == 0
-           and mutated["cucumber_leaf_bundles"][0]["anomalies"],
-           detail=f"intact={cuke_covered(clean)} mutated={cuke_covered(mutated)}")
+    mutated = json.loads(out1[out1.index("{") : out1.rindex("}") + 1])
+    expect(
+        f"16 leaf_coverage counts 0 cucumber rows from a refused bundle "
+        f"(the same bundle intact covers {cuke_covered(clean)})",
+        cuke_covered(clean) > 0
+        and cuke_covered(mutated) == 0
+        and mutated["cucumber_leaf_bundles"][0]["anomalies"],
+        detail=f"intact={cuke_covered(clean)} mutated={cuke_covered(mutated)}",
+    )
 
-    print(f"\n{checks - len(failures)}/{checks} controls held "
-          f"({len(failures)} SURVIVED)")
+    print(f"\n{checks - len(failures)}/{checks} controls held ({len(failures)} SURVIVED)")
     for f in failures:
         print(f"SURVIVED: {f}", file=sys.stderr)
     return 1 if failures else 0

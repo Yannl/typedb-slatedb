@@ -1,0 +1,39 @@
+# Python lint/format policy for the TOOLING languages (spec §9).
+#
+# Python in this repository is tooling only — the catalogue, evidence,
+# ledger, driver-lane and qualification machinery. It is not product code;
+# the production languages are Rust and the TypeScript control plane.
+#
+# line-length is 100, not ruff's default 88, because that is the width this
+# code was actually written at. Measured over the 23,059 non-blank lines
+# under tools/: p95 = 82, p99 = 98, and only 180 lines exceed 100. Choosing
+# 88 would reformat the tooling layer to satisfy a number nobody wrote to,
+# for no readability gain.
+line-length = 100
+
+# Not ours to lint OR format. These three must be listed here rather than
+# under [lint]/[format] alone, so that a single list binds both commands:
+#   sources/**        source-locked upstream checkouts, byte-pinned by
+#                     source-lock/source-lock.json. Reformatting them would
+#                     break the lock. (They are also gitignored, but ruff's
+#                     gitignore handling is a default that can be turned off
+#                     with --no-respect-gitignore; the lock is not optional,
+#                     so the exclusion must not be either.)
+#   docs/evidence/**  archived evidence corpora. Sealed bundles are hashed;
+#                     editing a byte invalidates the seal.
+#   fork/**           the patch overlay onto upstream typedb. Its Python is
+#                     upstream's (fork/typedb/.circleci/...), and ruff's lint
+#                     pass does reach it — .circleci is not excluded by
+#                     default — so it is named explicitly here.
+exclude = ["sources/**", "docs/evidence/**", "fork/**"]
+
+[lint]
+# This is ruff's current default rule set, written out rather than left
+# implicit, so the set is pinned against a future change in that default and
+# so E741 is visibly in scope. Nothing is disabled.
+#
+# E741 (ambiguous name `l`/`I`/`O`) is KEPT ON deliberately. It fired 122
+# times, all of them `l` bound to a line, a label or a leaf, and every one of
+# those is now spelled out. Silencing it would have been the cheaper edit and
+# the worse one.
+select = ["E4", "E7", "E9", "F"]

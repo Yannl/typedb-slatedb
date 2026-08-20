@@ -40,6 +40,7 @@ Usage:
      --out docs/evidence/G1/drivers/typescript-rocksdb-fork-classic \
      --run-dir /tmp/ts-lane
 """
+
 import argparse
 import json
 import os
@@ -51,9 +52,9 @@ import sys
 import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import common               # noqa: E402
-import gherkin_leaves       # noqa: E402
-import typedb_server        # noqa: E402
+import common  # noqa: E402
+import gherkin_leaves  # noqa: E402
+import typedb_server  # noqa: E402
 
 REPO = common.REPO
 DRIVER = REPO / "sources" / "typedb-driver"
@@ -69,7 +70,8 @@ SUITE_PRECONDITIONS = {
         "it needs a replicated TypeDB deployment and the TLS certificates in "
         "//tool/test/resources:certificates. TypeDB CE - the only server this "
         "repository builds - is single-node, so no cluster can be stood up "
-        "here."),
+        "here."
+    ),
 }
 
 
@@ -78,16 +80,21 @@ def scan_suites():
     text = FEATURE_BUILD.read_text()
     out = {}
     for m in re.finditer(
-            r'(typedb_behaviour_http_ts_test|typedb_behaviour_http_ts_cluster_test)'
-            r'\(\s*name\s*=\s*"([^"]+)"\s*,\s*features\s*=\s*\[\s*"([^"]+)"',
-            text):
+        r"(typedb_behaviour_http_ts_test|typedb_behaviour_http_ts_cluster_test)"
+        r'\(\s*name\s*=\s*"([^"]+)"\s*,\s*features\s*=\s*\[\s*"([^"]+)"',
+        text,
+    ):
         rule, name, feat = m.group(1), m.group(2), m.group(3)
-        out[name] = {"feature_ref": feat.split("//", 1)[1].replace(":", "/"),
-                     "bazel_rule": rule,
-                     "cluster_only": rule.endswith("cluster_test")}
+        out[name] = {
+            "feature_ref": feat.split("//", 1)[1].replace(":", "/"),
+            "bazel_rule": rule,
+            "cluster_only": rule.endswith("cluster_test"),
+        }
     if not out:
-        raise RuntimeError(f"{common.rel(FEATURE_BUILD)}: no behaviour test "
-                           f"declarations found - refusing to guess the suite set")
+        raise RuntimeError(
+            f"{common.rel(FEATURE_BUILD)}: no behaviour test "
+            f"declarations found - refusing to guess the suite set"
+        )
     return dict(sorted(out.items()))
 
 
@@ -96,11 +103,14 @@ def core_tag_expression():
     rules.bzl rather than copied, so a corpus/rule change cannot silently
     widen or narrow what this lane runs."""
     text = RULES_BZL.read_text()
-    m = re.search(r"def typedb_behaviour_http_ts_core_test\(.*?"
-                  r'"--tags \'([^\']+)\'"', text, re.S)
+    m = re.search(
+        r"def typedb_behaviour_http_ts_core_test\(.*?"
+        r'"--tags \'([^\']+)\'"',
+        text,
+        re.S,
+    )
     if not m:
-        raise RuntimeError(f"{common.rel(RULES_BZL)}: cannot extract the core "
-                           f"tag expression")
+        raise RuntimeError(f"{common.rel(RULES_BZL)}: cannot extract the core tag expression")
     return m.group(1)
 
 
@@ -139,25 +149,39 @@ def materialise(run_dir):
         dst = work / src.relative_to(HTTPTS)
         if not dst.is_file() or common.sha256_file(dst) != common.sha256_file(src):
             mismatches.append(src.relative_to(HTTPTS).as_posix())
-    return work, {"source": common.rel(HTTPTS), "work_tree": str(work),
-                  "files_copied": files, "hash_mismatches": mismatches}
+    return work, {
+        "source": common.rel(HTTPTS),
+        "work_tree": str(work),
+        "files_copied": files,
+        "hash_mismatches": mismatches,
+    }
 
 
 def run(argv, cwd, log, env=None, timeout=1800):
     t0 = time.time()
     with open(log, "wb") as fh:
         try:
-            p = subprocess.run(argv, cwd=str(cwd), stdout=fh,
-                               stderr=subprocess.STDOUT,
-                               stdin=subprocess.DEVNULL, env=env,
-                               timeout=timeout)
+            p = subprocess.run(
+                argv,
+                cwd=str(cwd),
+                stdout=fh,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                env=env,
+                timeout=timeout,
+            )
             rc, to = p.returncode, False
         except subprocess.TimeoutExpired:
             rc, to = None, True
-    return {"argv": argv, "cwd": str(cwd), "exit_code": rc, "timed_out": to,
-            "duration_seconds": round(time.time() - t0, 2),
-            "log": common.rel(log) if str(log).startswith(str(REPO)) else str(log),
-            "log_sha256": common.sha256_file(log)}
+    return {
+        "argv": argv,
+        "cwd": str(cwd),
+        "exit_code": rc,
+        "timed_out": to,
+        "duration_seconds": round(time.time() - t0, 2),
+        "log": common.rel(log) if str(log).startswith(str(REPO)) else str(log),
+        "log_sha256": common.sha256_file(log),
+    }
 
 
 def parse_messages(path):
@@ -176,8 +200,7 @@ def parse_messages(path):
         elif "testCaseStarted" in m:
             started.append(m["testCaseStarted"])
         elif "testCaseFinished" in m:
-            finished[m["testCaseFinished"]["testCaseStartedId"]] = \
-                m["testCaseFinished"]
+            finished[m["testCaseFinished"]["testCaseStartedId"]] = m["testCaseFinished"]
         elif "testStepFinished" in m:
             r = m["testStepFinished"]["testStepResult"]
             sid = m["testStepFinished"]["testCaseStartedId"]
@@ -191,39 +214,51 @@ def parse_messages(path):
         case = cases.get(st.get("testCaseId")) or {}
         pk = pickles.get(case.get("pickleId")) or {}
         statuses = steps_by_case.get(st["id"], [])
-        status = ("FAILED" if any(s in ("FAILED", "UNDEFINED", "AMBIGUOUS")
-                                  for s in statuses)
-                  else "SKIPPED" if statuses and all(
-                      s in ("SKIPPED", "PENDING") for s in statuses)
-                  else "PASSED" if statuses else "EMPTY")
-        out.append({
-            "name": pk.get("name"), "status": status,
-            "steps_total": len(statuses),
-            "steps_passed": sum(1 for s in statuses if s == "PASSED"),
-            "steps_failed": sum(1 for s in statuses
-                                if s in ("FAILED", "UNDEFINED", "AMBIGUOUS")),
-            "steps_skipped": sum(1 for s in statuses
-                                 if s in ("SKIPPED", "PENDING")),
-            "attempt": st.get("attempt", 0),
-        })
-    return {"scenarios": [s for s in out if s["attempt"] == 0],
-            "undefined_steps": undefined, "ambiguous_steps": ambiguous,
-            "pickles": len(pickles)}
+        status = (
+            "FAILED"
+            if any(s in ("FAILED", "UNDEFINED", "AMBIGUOUS") for s in statuses)
+            else "SKIPPED"
+            if statuses and all(s in ("SKIPPED", "PENDING") for s in statuses)
+            else "PASSED"
+            if statuses
+            else "EMPTY"
+        )
+        out.append(
+            {
+                "name": pk.get("name"),
+                "status": status,
+                "steps_total": len(statuses),
+                "steps_passed": sum(1 for s in statuses if s == "PASSED"),
+                "steps_failed": sum(
+                    1 for s in statuses if s in ("FAILED", "UNDEFINED", "AMBIGUOUS")
+                ),
+                "steps_skipped": sum(1 for s in statuses if s in ("SKIPPED", "PENDING")),
+                "attempt": st.get("attempt", 0),
+            }
+        )
+    return {
+        "scenarios": [s for s in out if s["attempt"] == 0],
+        "undefined_steps": undefined,
+        "ambiguous_steps": ambiguous,
+        "pickles": len(pickles),
+    }
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--lane", default="fork-classic",
-                    choices=sorted(typedb_server.LANES))
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument("--lane", default="fork-classic", choices=sorted(typedb_server.LANES))
     ap.add_argument("--backend", default=None)
     ap.add_argument("--out", type=pathlib.Path, required=True)
     ap.add_argument("--run-dir", type=pathlib.Path, required=True)
     ap.add_argument("--timeout", type=int, default=3600)
     args = ap.parse_args()
 
-    backend = args.backend or {"U0": "rocksdb", "U1": "rocksdb",
-                               "U2": "slatedb"}[typedb_server.LANES[args.lane][1]]
+    backend = (
+        args.backend
+        or {"U0": "rocksdb", "U1": "rocksdb", "U2": "slatedb"}[typedb_server.LANES[args.lane][1]]
+    )
     out_dir = args.out if args.out.is_absolute() else REPO / args.out
     out_dir.mkdir(parents=True, exist_ok=True)
     run_dir = args.run_dir
@@ -233,13 +268,17 @@ def main():
     plan = json.loads(common.PLAN.read_text())
     if common.plan_root_of_body(plan) != plan.get("plan_root"):
         anomalies.append("plan: plan_root does not recompute from its own body")
-    for node_id, path, key in (("TDRIVER", DRIVER, "resolved_revision"),
-                               ("BH", BEHAVIOUR, "revision")):
+    for node_id, path, key in (
+        ("TDRIVER", DRIVER, "resolved_revision"),
+        ("BH", BEHAVIOUR, "revision"),
+    ):
         node = common.source_lock_node(node_id) or {}
         ident = common.checkout_identity(path)
         if ident.get("dirty") is not False:
-            anomalies.append(f"{node_id}: {common.rel(path)} is dirty or its "
-                             f"dirt is unknown ({ident.get('dirty')!r})")
+            anomalies.append(
+                f"{node_id}: {common.rel(path)} is dirty or its "
+                f"dirt is unknown ({ident.get('dirty')!r})"
+            )
         if ident.get("revision") != node.get(key) or ident.get("tree") != node.get("tree"):
             anomalies.append(f"{node_id}: checkout does not match the source lock")
 
@@ -257,12 +296,17 @@ def main():
         work, copy_report = materialise(run_dir)
         build["copy"] = copy_report
         if copy_report["hash_mismatches"]:
-            anomalies.append(f"work-tree copy differs from the locked http-ts "
-                             f"sources in {len(copy_report['hash_mismatches'])} "
-                             f"file(s)")
+            anomalies.append(
+                f"work-tree copy differs from the locked http-ts "
+                f"sources in {len(copy_report['hash_mismatches'])} "
+                f"file(s)"
+            )
         build["npm_install"] = run(
-            ["npm", "install", "--no-audit", "--no-fund"], work,
-            run_dir / "npm-install.log", timeout=1800)
+            ["npm", "install", "--no-audit", "--no-fund"],
+            work,
+            run_dir / "npm-install.log",
+            timeout=1800,
+        )
         if build["npm_install"]["exit_code"] != 0:
             anomalies.append("npm install failed")
         # Dependency provenance: http-ts ships a pnpm-lock.yaml and pins
@@ -272,8 +316,9 @@ def main():
         # a real provenance gap, so it is DECLARED as a caveat and the exact
         # resolved tree is archived rather than left implicit.
         lock = work / "pnpm-lock.yaml"
-        ls = subprocess.run(["npm", "ls", "--all", "--json"], cwd=str(work),
-                            capture_output=True, text=True)
+        ls = subprocess.run(
+            ["npm", "ls", "--all", "--json"], cwd=str(work), capture_output=True, text=True
+        )
         (run_dir / "npm-tree.json").write_text(ls.stdout or "{}")
         shutil.copy(run_dir / "npm-tree.json", out_dir / "npm-tree.json")
         pkg = json.loads((work / "package.json").read_text())
@@ -286,15 +331,16 @@ def main():
             pass
         declared = dict(pkg.get("devDependencies") or {})
         declared.update(pkg.get("dependencies") or {})
-        drift = {n: {"declared": v, "installed": installed.get(n)}
-                 for n, v in declared.items()
-                 if not v.startswith("^") and installed.get(n) != v}
+        drift = {
+            n: {"declared": v, "installed": installed.get(n)}
+            for n, v in declared.items()
+            if not v.startswith("^") and installed.get(n) != v
+        }
         build["dependencies"] = {
             "package_manager_used": "npm",
             "package_manager_declared": pkg.get("packageManager"),
             "pnpm_lock_present": lock.is_file(),
-            "pnpm_lock_sha256": (common.sha256_file(lock) if lock.is_file()
-                                 else None),
+            "pnpm_lock_sha256": (common.sha256_file(lock) if lock.is_file() else None),
             "pnpm_lock_honoured": False,
             "declared": declared,
             "installed_top_level": installed,
@@ -302,64 +348,72 @@ def main():
             "resolved_tree": common.rel(out_dir / "npm-tree.json"),
         }
         if drift:
-            anomalies.append(f"exactly-pinned dependencies did not install at "
-                             f"their pinned versions: {drift}")
-        caveats.append({
-            "id": "npm-install-not-pnpm-lock",
-            "detail": (
-                f"http-ts declares packageManager "
-                f"{pkg.get('packageManager')!r} and ships pnpm-lock.yaml "
-                f"(sha256 {build['dependencies']['pnpm_lock_sha256']}), but "
-                f"the pnpm available here is 10.x, which does not honour a v8 "
-                f"lockfile without migrating it. Dependencies were therefore "
-                f"resolved by npm within package.json's ranges. Every exact "
-                f"pin was verified to have installed at its pinned version, "
-                f"and the full resolved tree is archived as npm-tree.json, "
-                f"but the transitive closure is NOT the closure the committed "
-                f"pnpm lockfile names."),
-        })
+            anomalies.append(
+                f"exactly-pinned dependencies did not install at their pinned versions: {drift}"
+            )
+        caveats.append(
+            {
+                "id": "npm-install-not-pnpm-lock",
+                "detail": (
+                    f"http-ts declares packageManager "
+                    f"{pkg.get('packageManager')!r} and ships pnpm-lock.yaml "
+                    f"(sha256 {build['dependencies']['pnpm_lock_sha256']}), but "
+                    f"the pnpm available here is 10.x, which does not honour a v8 "
+                    f"lockfile without migrating it. Dependencies were therefore "
+                    f"resolved by npm within package.json's ranges. Every exact "
+                    f"pin was verified to have installed at its pinned version, "
+                    f"and the full resolved tree is archived as npm-tree.json, "
+                    f"but the transitive closure is NOT the closure the committed "
+                    f"pnpm lockfile names."
+                ),
+            }
+        )
         build["tsup"] = run(["npx", "tsup"], work, run_dir / "tsup.log")
         if build["tsup"]["exit_code"] != 0:
             anomalies.append("tsup driver build failed")
         cfg = work / "behaviour-steps-tsconfig.json"
         cfg.write_text(json.dumps(BAZEL_STEPS_TSCONFIG, indent=1))
         build["tsconfig"] = BAZEL_STEPS_TSCONFIG
-        build["tsc"] = run(["npx", "tsc", "-p", cfg.name], work,
-                           run_dir / "tsc.log")
+        build["tsc"] = run(["npx", "tsc", "-p", cfg.name], work, run_dir / "tsc.log")
         diag = (run_dir / "tsc.log").read_text(errors="replace")
-        build["tsc"]["diagnostics"] = [l for l in diag.splitlines()
-                                       if re.search(r"error TS\d+", l)]
+        build["tsc"]["diagnostics"] = [
+            line for line in diag.splitlines() if re.search(r"error TS\d+", line)
+        ]
         # the emitted JS is what cucumber-js runs; the type surface upstream
         # compiles against is not reproducible outside bazel (http-ts/BUILD
         # TODO). Record, never hide.
         (work / "tests" / "behaviour" / "steps" / "package.json").write_text(
-            '{"type":"commonjs"}\n')
+            '{"type":"commonjs"}\n'
+        )
         steps_dir = work / "tests" / "behaviour" / "steps"
-        ts_srcs = sorted(p.stem for p in steps_dir.glob("*.ts")
-                         if not p.name.endswith(".d.ts"))
+        ts_srcs = sorted(p.stem for p in steps_dir.glob("*.ts") if not p.name.endswith(".d.ts"))
         js_out = sorted(p.stem for p in steps_dir.glob("*.js"))
         build["emitted_steps"] = {"sources": ts_srcs, "emitted": js_out}
         if set(ts_srcs) - set(js_out):
-            anomalies.append(f"tsc did not emit JavaScript for "
-                             f"{sorted(set(ts_srcs) - set(js_out))}")
+            anomalies.append(
+                f"tsc did not emit JavaScript for {sorted(set(ts_srcs) - set(js_out))}"
+            )
         if build["tsc"]["exit_code"] != 0:
-            caveats.append({
-                "id": "steps-typecheck-not-clean",
-                "detail": (
-                    f"tsc exited {build['tsc']['exit_code']} with "
-                    f"{len(build['tsc']['diagnostics'])} diagnostic(s) while "
-                    f"compiling the behaviour steps, and still emitted "
-                    f"JavaScript for every source. Upstream's Bazel target "
-                    f"compiles the steps against //http-ts:driver-lib, which "
-                    f"emits only dist/index.cjs and deliberately no "
-                    f"index.d.cts (http-ts/BUILD: 'TODO: should also output "
-                    f"index.d.cts (works in filesystem but not in bazel)'), so "
-                    f"the upstream type surface is not reproducible outside "
-                    f"bazel. The executed evidence below rests on the emitted "
-                    f"JavaScript plus a zero-undefined/zero-ambiguous step "
-                    f"check, not on a clean typecheck."),
-                "diagnostics": build["tsc"]["diagnostics"],
-            })
+            caveats.append(
+                {
+                    "id": "steps-typecheck-not-clean",
+                    "detail": (
+                        f"tsc exited {build['tsc']['exit_code']} with "
+                        f"{len(build['tsc']['diagnostics'])} diagnostic(s) while "
+                        f"compiling the behaviour steps, and still emitted "
+                        f"JavaScript for every source. Upstream's Bazel target "
+                        f"compiles the steps against //http-ts:driver-lib, which "
+                        f"emits only dist/index.cjs and deliberately no "
+                        f"index.d.cts (http-ts/BUILD: 'TODO: should also output "
+                        f"index.d.cts (works in filesystem but not in bazel)'), so "
+                        f"the upstream type surface is not reproducible outside "
+                        f"bazel. The executed evidence below rests on the emitted "
+                        f"JavaScript plus a zero-undefined/zero-ambiguous step "
+                        f"check, not on a clean typecheck."
+                    ),
+                    "diagnostics": build["tsc"]["diagnostics"],
+                }
+            )
     shutil.copy(run_dir / "tsc.log", out_dir / "tsc.log")
 
     suite_rows, leaf_rows, server_records = [], [], []
@@ -369,23 +423,33 @@ def main():
         ref = meta["feature_ref"]
         feature = BEHAVIOUR / ref
         expected = gherkin_leaves.enumerate_leaves(feature, ref)
-        row = {"suite_id": name, "feature_ref": ref,
-               "bazel_rule": meta["bazel_rule"],
-               "feature_path": common.rel(feature),
-               "feature_sha256": common.sha256_file(feature),
-               "tag_expression": tag_expr,
-               "leaves_enumerated": len(expected)}
+        row = {
+            "suite_id": name,
+            "feature_ref": ref,
+            "bazel_rule": meta["bazel_rule"],
+            "feature_path": common.rel(feature),
+            "feature_sha256": common.sha256_file(feature),
+            "tag_expression": tag_expr,
+            "leaves_enumerated": len(expected),
+        }
         if meta["cluster_only"]:
             row["status"] = "NOT_EXECUTED_PRECONDITION_UNMET"
             row["precondition"] = SUITE_PRECONDITIONS[name]
             suite_rows.append(row)
             leaf_rows.extend(
-                {"leaf_case_id": e["leaf_case_id"], "suite_id": name,
-                 "feature_ref": ref, "display_name": e["display_name"],
-                 "feature_line": e["line"], "kind": e["kind"],
-                 "status": "NOT_RUN", "reason": row["precondition"],
-                 "in_plan": e["leaf_case_id"] in plan["leaves"]}
-                for e in expected)
+                {
+                    "leaf_case_id": e["leaf_case_id"],
+                    "suite_id": name,
+                    "feature_ref": ref,
+                    "display_name": e["display_name"],
+                    "feature_line": e["line"],
+                    "kind": e["kind"],
+                    "status": "NOT_RUN",
+                    "reason": row["precondition"],
+                    "in_plan": e["leaf_case_id"] in plan["leaves"],
+                }
+                for e in expected
+            )
             continue
 
         def skipped_tag(leaf):
@@ -410,22 +474,29 @@ def main():
         cenv = dict(os.environ)
         cenv["TYPEDB_HTTP_HOST"] = f"http://{typedb_server.LOOPBACK}"
         cenv["TYPEDB_HTTP_PORT"] = str(server.http_port)
-        argv = ["npx", "cucumber-js", "--publish-quiet", "--strict",
-                "--tags", tag_expr,
-                "--require", "tests/behaviour/steps/*.js",
-                "--format", f"message:{ndjson}",
-                str(feature)]
+        argv = [
+            "npx",
+            "cucumber-js",
+            "--publish-quiet",
+            "--strict",
+            "--tags",
+            tag_expr,
+            "--require",
+            "tests/behaviour/steps/*.js",
+            "--format",
+            f"message:{ndjson}",
+            str(feature),
+        ]
         r = run(argv, work, log, env=cenv, timeout=args.timeout)
-        row.update({k: r[k] for k in ("argv", "exit_code", "timed_out",
-                                      "duration_seconds")})
+        row.update({k: r[k] for k in ("argv", "exit_code", "timed_out", "duration_seconds")})
         row["driver_endpoint_env"] = {
             "TYPEDB_HTTP_HOST": cenv["TYPEDB_HTTP_HOST"],
-            "TYPEDB_HTTP_PORT": cenv["TYPEDB_HTTP_PORT"]}
+            "TYPEDB_HTTP_PORT": cenv["TYPEDB_HTTP_PORT"],
+        }
         row["raw_log"] = common.rel(log)
         row["log_sha256"] = common.sha256_file(log)
         row["structured_log"] = common.rel(ndjson) if ndjson.is_file() else None
-        row["structured_log_sha256"] = (common.sha256_file(ndjson)
-                                        if ndjson.is_file() else None)
+        row["structured_log_sha256"] = common.sha256_file(ndjson) if ndjson.is_file() else None
         row["server_alive_after_suite"] = server.alive()
         if not server.alive():
             anomalies.append(f"{name}: the TypeDB server died during the suite")
@@ -463,75 +534,102 @@ def main():
                 f"{name}: {parsed['undefined_steps']} undefined and "
                 f"{parsed['ambiguous_steps']} ambiguous step(s) - the step "
                 f"definitions did not all load and match, so the emitted "
-                f"JavaScript is not the upstream suite")
-        planned = sorted(k for k in plan["leaves"]
-                         if k.startswith(f"cucumber:{ref}::"))
+                f"JavaScript is not the upstream suite"
+            )
+        planned = sorted(k for k in plan["leaves"] if k.startswith(f"cucumber:{ref}::"))
         row["leaves_in_plan"] = len(planned)
         if planned and sorted(e["leaf_case_id"] for e in expected) != planned:
-            anomalies.append(f"{name}: independent enumeration of {ref} "
-                             f"disagrees with the plan's leaf ids")
+            anomalies.append(
+                f"{name}: independent enumeration of {ref} disagrees with the plan's leaf ids"
+            )
         for lid in planned:
             ph = plan["leaves"][lid].get("source_hash")
             if ph and ph != row["feature_sha256"]:
-                anomalies.append(f"{name}: {ref} does not match the plan's "
-                                 f"pinned source hash")
+                anomalies.append(f"{name}: {ref} does not match the plan's pinned source hash")
                 break
         obs_names = [o["name"] for o in observed]
         exp_names = [e["display_name"] for e in runnable]
         if obs_names != exp_names:
-            first = next((i for i, (a, b) in enumerate(zip(exp_names, obs_names))
-                          if a != b), min(len(exp_names), len(obs_names)))
+            first = next(
+                (i for i, (a, b) in enumerate(zip(exp_names, obs_names)) if a != b),
+                min(len(exp_names), len(obs_names)),
+            )
             anomalies.append(
                 f"{name}: observed scenario sequence != the sequence enumerated "
                 f"from {ref} (expected {len(exp_names)}, observed "
                 f"{len(obs_names)}; first divergence at {first}: "
-                f"{exp_names[first:first + 1]} vs {obs_names[first:first + 1]})")
+                f"{exp_names[first : first + 1]} vs {obs_names[first : first + 1]})"
+            )
         if row["exit_code"] not in (0, None):
             anomalies.append(f"{name}: cucumber-js exited {row['exit_code']}")
         ri = 0
         for e in expected:
             tag = skipped_tag(e)
-            lr = {"leaf_case_id": e["leaf_case_id"], "suite_id": name,
-                  "feature_ref": ref, "display_name": e["display_name"],
-                  "feature_line": e["line"], "kind": e["kind"],
-                  "in_plan": e["leaf_case_id"] in plan["leaves"]}
+            lr = {
+                "leaf_case_id": e["leaf_case_id"],
+                "suite_id": name,
+                "feature_ref": ref,
+                "display_name": e["display_name"],
+                "feature_line": e["line"],
+                "kind": e["kind"],
+                "in_plan": e["leaf_case_id"] in plan["leaves"],
+            }
             if tag is not None:
-                lr.update({"status": "SKIPPED_IGNORED_TAG", "ignored_tag": tag,
-                           "reason": f"the upstream core tag expression "
-                                     f"({tag_expr}) excludes {tag}"})
+                lr.update(
+                    {
+                        "status": "SKIPPED_IGNORED_TAG",
+                        "ignored_tag": tag,
+                        "reason": f"the upstream core tag expression ({tag_expr}) excludes {tag}",
+                    }
+                )
                 leaf_rows.append(lr)
                 continue
             o = observed[ri] if ri < len(observed) else None
             ri += 1
             if o is None or o["name"] != e["display_name"]:
-                lr.update({"status": "NOT_RUN",
-                           "reason": "no cucumber-js test case at this position "
-                                     "with this name"})
+                lr.update(
+                    {
+                        "status": "NOT_RUN",
+                        "reason": "no cucumber-js test case at this position with this name",
+                    }
+                )
             else:
-                lr.update({"status": o["status"],
-                           "steps_passed": o["steps_passed"],
-                           "steps_failed": o["steps_failed"],
-                           "steps_skipped": o["steps_skipped"],
-                           "steps_total": o["steps_total"]})
+                lr.update(
+                    {
+                        "status": o["status"],
+                        "steps_passed": o["steps_passed"],
+                        "steps_failed": o["steps_failed"],
+                        "steps_skipped": o["steps_skipped"],
+                        "steps_total": o["steps_total"],
+                    }
+                )
             leaf_rows.append(lr)
         suite_rows.append(row)
 
-    scope = sorted({k for s in suite_rows for k in plan["leaves"]
-                    if k.startswith(f"cucumber:{s['feature_ref']}::")})
-    produced = {l["leaf_case_id"] for l in leaf_rows}
+    scope = sorted(
+        {
+            k
+            for s in suite_rows
+            for k in plan["leaves"]
+            if k.startswith(f"cucumber:{s['feature_ref']}::")
+        }
+    )
+    produced = {leaf["leaf_case_id"] for leaf in leaf_rows}
     missing = sorted(set(scope) - produced)
     if missing:
-        anomalies.append(f"{len(missing)} plan leaf/leaves in scope produced no "
-                         f"leaf row, e.g. {missing[:3]}")
-    in_plan = [l for l in leaf_rows if l["in_plan"]]
-    covered = [l for l in in_plan
-               if l["status"] in ("PASSED", "FAILED", "SKIPPED",
-                                  "SKIPPED_IGNORED_TAG")]
-    passed = [l for l in in_plan
-              if l["status"] in ("PASSED", "SKIPPED_IGNORED_TAG")]
+        anomalies.append(
+            f"{len(missing)} plan leaf/leaves in scope produced no leaf row, e.g. {missing[:3]}"
+        )
+    in_plan = [leaf for leaf in leaf_rows if leaf["in_plan"]]
+    covered = [
+        leaf
+        for leaf in in_plan
+        if leaf["status"] in ("PASSED", "FAILED", "SKIPPED", "SKIPPED_IGNORED_TAG")
+    ]
+    passed = [leaf for leaf in in_plan if leaf["status"] in ("PASSED", "SKIPPED_IGNORED_TAG")]
     counts = {}
-    for l in leaf_rows:
-        counts[l["status"]] = counts.get(l["status"], 0) + 1
+    for leaf in leaf_rows:
+        counts[leaf["status"]] = counts.get(leaf["status"], 0) + 1
 
     results = {
         "schema": "typedb-r2-driver-lane-v1",
@@ -540,14 +638,19 @@ def main():
             "LEAF-LEVEL execution evidence for one official-driver plan row, "
             "produced by the OFFICIAL http-ts TypeScript driver built from the "
             "locked TDRIVER sources and driven by cucumber-js over the locked "
-            "behaviour corpus."),
+            "behaviour corpus."
+        ),
         "row_id": f"driver:typescript:{backend}",
-        "driver": "typescript", "backend": backend, "lane": args.lane,
+        "driver": "typescript",
+        "backend": backend,
+        "lane": args.lane,
         "generated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "plan": {"path": common.rel(common.PLAN),
-                 "plan_root_declared": plan.get("plan_root"),
-                 "plan_root_recomputed": common.plan_root_of_body(plan),
-                 "sha256": common.sha256_file(common.PLAN)},
+        "plan": {
+            "path": common.rel(common.PLAN),
+            "plan_root_declared": plan.get("plan_root"),
+            "plan_root_recomputed": common.plan_root_of_body(plan),
+            "sha256": common.sha256_file(common.PLAN),
+        },
         "build": build,
         "tag_expression": tag_expr,
         "tag_expression_source": common.rel(RULES_BZL),
@@ -559,8 +662,7 @@ def main():
         "leaves": leaf_rows,
         "counts": {
             "suites_selected": len(selected),
-            "suites_executed": sum(1 for r in suite_rows
-                                   if r.get("status") == "EXECUTED"),
+            "suites_executed": sum(1 for r in suite_rows if r.get("status") == "EXECUTED"),
             "leaf_rows": len(leaf_rows),
             "leaf_rows_in_plan": len(in_plan),
             "leaf_rows_outside_plan": len(leaf_rows) - len(in_plan),
@@ -569,8 +671,9 @@ def main():
             "plan_leaves_passed": len(passed),
             "by_status": dict(sorted(counts.items())),
         },
-        "leaves_outside_plan": sorted(l["leaf_case_id"] for l in leaf_rows
-                                      if not l["in_plan"]),
+        "leaves_outside_plan": sorted(
+            leaf["leaf_case_id"] for leaf in leaf_rows if not leaf["in_plan"]
+        ),
         "plan_leaves_without_outcome": missing,
         "anomalies": anomalies,
     }
@@ -578,25 +681,37 @@ def main():
     rp.write_text(json.dumps(results, indent=1) + "\n")
     consumed = [rp, common.PLAN]
     consumed += [REPO / r["raw_log"] for r in suite_rows if r.get("raw_log")]
-    consumed += [REPO / r["structured_log"] for r in suite_rows
-                 if r.get("structured_log")]
+    consumed += [REPO / r["structured_log"] for r in suite_rows if r.get("structured_log")]
     consumed += [REPO / r["log"] for r in server_records if r.get("log")]
-    consumed += [REPO / (r.get("backend_witness") or {})["archived_marker"]
-                 for r in server_records
-                 if (r.get("backend_witness") or {}).get("archived_marker")]
+    consumed += [
+        REPO / (r.get("backend_witness") or {})["archived_marker"]
+        for r in server_records
+        if (r.get("backend_witness") or {}).get("archived_marker")
+    ]
     for extra in ("npm-tree.json", "tsc.log"):
         if (out_dir / extra).is_file():
             consumed.append(out_dir / extra)
     root, pairs = common.compute_bundle_root(out_dir, consumed)
-    (out_dir / "bundle-manifest.json").write_text(json.dumps(
-        {"schema": "driver-lane-bundle-manifest-v1", "bundle_root": root,
-         "files": dict(sorted(pairs.items()))}, indent=1) + "\n")
+    (out_dir / "bundle-manifest.json").write_text(
+        json.dumps(
+            {
+                "schema": "driver-lane-bundle-manifest-v1",
+                "bundle_root": root,
+                "files": dict(sorted(pairs.items())),
+            },
+            indent=1,
+        )
+        + "\n"
+    )
     green = not anomalies and bool(covered) and len(covered) == len(passed)
     verdict = {
-        "green": bool(green), "policy_verdict": "GREEN" if green else "RED",
-        "row_id": results["row_id"], "bundle_root": root,
+        "green": bool(green),
+        "policy_verdict": "GREEN" if green else "RED",
+        "row_id": results["row_id"],
+        "bundle_root": root,
         "plan_root": plan.get("plan_root"),
-        "anomaly_count": len(anomalies), "anomalies": anomalies,
+        "anomaly_count": len(anomalies),
+        "anomalies": anomalies,
         "caveats": [c["id"] for c in caveats],
         "observation": {
             "suites_selected": len(selected),
@@ -614,12 +729,14 @@ def main():
     elif marker.exists():
         marker.unlink()
     print(json.dumps(verdict, indent=1))
-    print(f"DRIVER LANE {results['row_id']} ({args.lane}): "
-          f"{results['counts']['suites_executed']}/{len(selected)} suites, "
-          f"{len(covered)}/{len(scope)} plan leaves with an outcome, "
-          f"{len(passed)} passed, {len(anomalies)} anomaly(ies), "
-          f"{len(caveats)} caveat(s) -> {'GREEN' if green else 'RED'}",
-          file=sys.stderr)
+    print(
+        f"DRIVER LANE {results['row_id']} ({args.lane}): "
+        f"{results['counts']['suites_executed']}/{len(selected)} suites, "
+        f"{len(covered)}/{len(scope)} plan leaves with an outcome, "
+        f"{len(passed)} passed, {len(anomalies)} anomaly(ies), "
+        f"{len(caveats)} caveat(s) -> {'GREEN' if green else 'RED'}",
+        file=sys.stderr,
+    )
     return 0 if green else 1
 
 

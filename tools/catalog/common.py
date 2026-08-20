@@ -60,12 +60,10 @@ def parse_libtest_counts(text):
     log is then a contradiction, not a trusted number - the exact false-green
     the E-P0-06 audit demonstrated (edited counts, untouched logs, GREEN).
     """
-    counts = {"passed": 0, "failed": 0, "ignored": 0,
-              "measured": 0, "filtered_out": 0}
+    counts = {"passed": 0, "failed": 0, "ignored": 0, "measured": 0, "filtered_out": 0}
     for line in text.splitlines():
         if line.startswith("test result:"):
-            for n, key in re.findall(
-                    r"(\d+) (passed|failed|ignored|measured|filtered out)", line):
+            for n, key in re.findall(r"(\d+) (passed|failed|ignored|measured|filtered out)", line):
                 counts[key.replace(" ", "_")] += int(n)
     return counts
 
@@ -84,7 +82,7 @@ def parse_libtest_failed_cases(text):
     lines = text.splitlines()
     for i, line in enumerate(lines):
         if line.strip() == "failures:":
-            for after in lines[i + 1:]:
+            for after in lines[i + 1 :]:
                 m = re.match(r"^ {4}(\S+)\s*$", after)
                 if not m:
                     break
@@ -105,8 +103,11 @@ def is_non_libtest_harness_error(head):
     """True when output shows a `harness = false` binary rejecting libtest
     flags. Harness DETECTION, not failure classification: both the catalogue
     generator and the corpus runner must agree on what a harness is."""
-    return ("Unrecognized option" in head or "unexpected argument" in head
-            or "error: Found argument" in head)
+    return (
+        "Unrecognized option" in head
+        or "unexpected argument" in head
+        or "error: Found argument" in head
+    )
 
 
 def runner_row_id(target):
@@ -140,7 +141,11 @@ def required_executable_targets(catalog):
 
     Returns (required_row_ids, case_bearing_row_ids, excluded_row_id_reasons).
     """
-    declared = {e["subject_id"]: e.get("reason") for e in catalog.get("exclusions", []) if e.get("subject_id")}
+    declared = {
+        e["subject_id"]: e.get("reason")
+        for e in catalog.get("exclusions", [])
+        if e.get("subject_id")
+    }
     leaves = {}
     for lc in catalog["leaf_cases"]:
         leaves[lc["target_id"]] = leaves.get(lc["target_id"], 0) + 1
@@ -159,11 +164,13 @@ def required_executable_targets(catalog):
                 f"catalogue join: runner row id '{rid}' is claimed by BOTH "
                 f"catalogue targets '{rid_sources[rid]}' and '{t['target_id']}' - "
                 f"one result row cannot account for two required targets; "
-                f"the catalogue must disambiguate before any verdict is derivable")
+                f"the catalogue must disambiguate before any verdict is derivable"
+            )
         rid_sources[rid] = t["target_id"]
         if t["target_id"].split(":")[2:3] == ["bench"]:
             excluded[rid] = declared.get(
-                t["target_id"], "cargo target kind == bench: compiled, never executed as a test")
+                t["target_id"], "cargo target kind == bench: compiled, never executed as a test"
+            )
             continue
         required.add(rid)
         if leaves.get(t["target_id"], 0) > 0:

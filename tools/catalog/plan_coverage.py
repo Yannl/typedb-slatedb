@@ -50,6 +50,7 @@ Usage:
   python3 tools/catalog/plan_coverage.py --evidence DIR [--evidence DIR ...]
   python3 tools/catalog/plan_coverage.py --out docs/evidence/G1/plan-coverage-v2.json
 """
+
 import argparse
 import json
 import pathlib
@@ -66,6 +67,7 @@ def common_rel(p):
         return pathlib.Path(p).resolve().relative_to(REPO).as_posix()
     except ValueError:
         return str(p)
+
 
 PLAN = REPO / "docs" / "evidence" / "G1" / "qualification-plan-v2.json"
 CATALOG = REPO / "docs" / "evidence" / "G1" / "upstream-test-catalog.json"
@@ -101,6 +103,7 @@ def load_leaf_evidence(dirs, plan, catalog):
         return {}, []
     sys.path.insert(0, str(REPO / "tools" / "qualification"))
     import leaf_coverage  # noqa: E402
+
     catalog_leaves = {}
     for lc in catalog["leaf_cases"]:
         if lc["kind"] == "LIBTEST":
@@ -128,12 +131,15 @@ def load_evidence(dirs, plan_profiles):
         data = json.loads(rf.read_text())
         profile = data.get("profile")
         rows = data["results"]
-        unjoinable = [r["target_id"] for r in rows
-                      if r["target_id"].startswith("0.0.0:")]
-        trees = [t for t in
-                 ([((r.get("run") or {}).get("executed_tree")) for r in rows]
-                  + [(data.get("last_write_run") or {}).get("executed_tree")])
-                 if t]
+        unjoinable = [r["target_id"] for r in rows if r["target_id"].startswith("0.0.0:")]
+        trees = [
+            t
+            for t in (
+                [((r.get("run") or {}).get("executed_tree")) for r in rows]
+                + [(data.get("last_write_run") or {}).get("executed_tree")]
+            )
+            if t
+        ]
         # unknown provenance must never read as clean: dirty_tree is True,
         # False, or None (= the bundle predates tree recording entirely)
         dirty = any(t.get("dirty") for t in trees) if trees else None
@@ -149,25 +155,34 @@ def load_evidence(dirs, plan_profiles):
         if not trees:
             note["provenance_note"] = (
                 "this bundle records no executed-tree identity at all; "
-                "'dirty_tree: null' means UNKNOWN, never clean")
+                "'dirty_tree: null' means UNKNOWN, never clean"
+            )
         if unjoinable:
             note["unjoinable_reason"] = (
                 "target ids in the broken pre-fix '0.0.0:<target>' id space "
                 "cannot be joined to catalogue targets without guessing; "
-                "they contribute NOTHING to coverage")
+                "they contribute NOTHING to coverage"
+            )
         if profile not in plan_profiles:
             note["lane_note"] = (
                 f"profile {profile!r} is not a plan profile; this bundle's "
-                f"rows are other-lane evidence and cover no plan row")
+                f"rows are other-lane evidence and cover no plan row"
+            )
         notes.append(note)
         for r in rows:
             rid = r["target_id"]
             if rid.startswith("0.0.0:"):
                 continue
-            cases = (r.get("passed", 0) + r.get("failed", 0)
-                     + r.get("ignored", 0) + r.get("measured", 0))
-            ref = {"bundle": str(d), "profile": profile, "cases": cases,
-                   "exit_code": r.get("exit_code"), "dirty_tree": dirty}
+            cases = (
+                r.get("passed", 0) + r.get("failed", 0) + r.get("ignored", 0) + r.get("measured", 0)
+            )
+            ref = {
+                "bundle": str(d),
+                "profile": profile,
+                "cases": cases,
+                "exit_code": r.get("exit_code"),
+                "dirty_tree": dirty,
+            }
             if profile in plan_profiles:
                 same_lane.setdefault((profile, rid), []).append(ref)
             else:
@@ -175,12 +190,12 @@ def load_evidence(dirs, plan_profiles):
     return same_lane, other_lane, notes
 
 
-DRIVER_STATUS = (REPO / "docs" / "evidence" / "G1" / "drivers"
-                 / "driver-row-status.json")
+DRIVER_STATUS = REPO / "docs" / "evidence" / "G1" / "drivers" / "driver-row-status.json"
 
 
 def _sha256_file(path):
     import hashlib
+
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
@@ -199,6 +214,7 @@ def driver_row_status(plan):
     A ledger that merely asserts a status buys nothing.
     """
     import hashlib
+
     out = {}
     for dr in plan["driver_rows"]:
         out[dr["row_id"]] = ("NOT_IMPLEMENTED", dr.get("reason", ""))
@@ -207,21 +223,26 @@ def driver_row_status(plan):
     try:
         ledger = json.loads(DRIVER_STATUS.read_text())
     except json.JSONDecodeError as e:
-        return {k: ("NOT_IMPLEMENTED",
-                    f"driver row status ledger does not parse: {e}")
-                for k in out}
+        return {
+            k: ("NOT_IMPLEMENTED", f"driver row status ledger does not parse: {e}") for k in out
+        }
     if ledger.get("schema") != "typedb-r2-driver-row-status-v1":
-        return {k: ("NOT_IMPLEMENTED",
-                    f"driver row status ledger has unexpected schema "
-                    f"{ledger.get('schema')!r}") for k in out}
+        return {
+            k: (
+                "NOT_IMPLEMENTED",
+                f"driver row status ledger has unexpected schema {ledger.get('schema')!r}",
+            )
+            for k in out
+        }
     for row_id, entry in (ledger.get("rows") or {}).items():
         if row_id not in out:
             continue
         status = entry.get("status", "NOT_IMPLEMENTED")
         if status == "NOT_IMPLEMENTED":
-            out[row_id] = ("NOT_IMPLEMENTED",
-                           entry.get("blocked_precondition")
-                           or "no precondition recorded")
+            out[row_id] = (
+                "NOT_IMPLEMENTED",
+                entry.get("blocked_precondition") or "no precondition recorded",
+            )
             continue
         bdir = entry.get("evidence_bundle")
         problem = None
@@ -236,8 +257,7 @@ def driver_row_status(plan):
                 m = json.loads(man.read_text())
                 pairs, missing, changed = {}, [], []
                 for rel, sha in (m.get("files") or {}).items():
-                    f = (b / rel[len("<out>/"):]) if rel.startswith("<out>/") \
-                        else (REPO / rel)
+                    f = (b / rel[len("<out>/") :]) if rel.startswith("<out>/") else (REPO / rel)
                     if not f.is_file():
                         # bundles verify wherever they are checked out
                         alt = b / pathlib.Path(rel).name
@@ -256,56 +276,64 @@ def driver_row_status(plan):
                 marker = b / "COMPLETE"
                 verdict = b / "verdict.json"
                 if missing:
-                    problem = (f"{bdir}: {len(missing)} file(s) the manifest "
-                               f"names are absent, e.g. {missing[:2]}")
+                    problem = (
+                        f"{bdir}: {len(missing)} file(s) the manifest "
+                        f"names are absent, e.g. {missing[:2]}"
+                    )
                 elif changed:
-                    problem = (f"{bdir}: {len(changed)} consumed file(s) no "
-                               f"longer hash to the manifest, e.g. {changed[:2]}")
+                    problem = (
+                        f"{bdir}: {len(changed)} consumed file(s) no "
+                        f"longer hash to the manifest, e.g. {changed[:2]}"
+                    )
                 elif root != m.get("bundle_root"):
-                    problem = (f"{bdir}: recomputed root {root} != manifest "
-                               f"root {m.get('bundle_root')}")
+                    problem = (
+                        f"{bdir}: recomputed root {root} != manifest root {m.get('bundle_root')}"
+                    )
                 elif not marker.is_file():
                     problem = f"{bdir}: no COMPLETE marker - never sealed green"
                 elif marker.read_text().strip() != f"COMPLETE {root}":
-                    problem = (f"{bdir}: COMPLETE does not bind the recomputed "
-                               f"root {root}")
+                    problem = f"{bdir}: COMPLETE does not bind the recomputed root {root}"
                 elif not verdict.is_file():
                     problem = f"{bdir}: no verdict.json"
                 else:
                     v = json.loads(verdict.read_text())
                     if v.get("policy_verdict") != "GREEN":
-                        problem = (f"{bdir}: verdict is "
-                                   f"{v.get('policy_verdict')!r}")
+                        problem = f"{bdir}: verdict is {v.get('policy_verdict')!r}"
                     elif v.get("bundle_root") != root:
-                        problem = (f"{bdir}: verdict binds root "
-                                   f"{v.get('bundle_root')}, not {root}")
+                        problem = f"{bdir}: verdict binds root {v.get('bundle_root')}, not {root}"
                     elif entry.get("bundle_root") != root:
-                        problem = (f"{bdir}: ledger records root "
-                                   f"{entry.get('bundle_root')}, not {root}")
+                        problem = (
+                            f"{bdir}: ledger records root {entry.get('bundle_root')}, not {root}"
+                        )
         if problem:
-            out[row_id] = ("NOT_IMPLEMENTED",
-                           f"driver row status claimed {status} but the seal "
-                           f"does not re-derive: {problem}")
+            out[row_id] = (
+                "NOT_IMPLEMENTED",
+                f"driver row status claimed {status} but the seal does not re-derive: {problem}",
+            )
             continue
         klass = entry.get("coverage_class")
         if klass == "COVERED":
-            out[row_id] = ("COVERED",
-                           f"official driver suite executed at leaf "
-                           f"granularity; {entry.get('plan_leaves_with_outcome')} "
-                           f"plan leaves carry a per-scenario outcome "
-                           f"({bdir})")
+            out[row_id] = (
+                "COVERED",
+                f"official driver suite executed at leaf "
+                f"granularity; {entry.get('plan_leaves_with_outcome')} "
+                f"plan leaves carry a per-scenario outcome "
+                f"({bdir})",
+            )
         else:
             blocked = dict(entry.get("suites_blocked") or {})
-            for c in (entry.get("caveats") or []):
+            for c in entry.get("caveats") or []:
                 blocked[f"caveat:{c.get('id')}"] = c.get("detail")
-            out[row_id] = ("PARTIAL",
-                           f"official driver suite executed at leaf "
-                           f"granularity for "
-                           f"{entry.get('suites_executed')}/"
-                           f"{entry.get('suites_selected')} suites "
-                           f"({entry.get('plan_leaves_with_outcome')} plan "
-                           f"leaves with a per-scenario outcome); blocked: "
-                           + "; ".join(f"{k}: {v}" for k, v in blocked.items()))
+            out[row_id] = (
+                "PARTIAL",
+                f"official driver suite executed at leaf "
+                f"granularity for "
+                f"{entry.get('suites_executed')}/"
+                f"{entry.get('suites_selected')} suites "
+                f"({entry.get('plan_leaves_with_outcome')} plan "
+                f"leaves with a per-scenario outcome); blocked: "
+                + "; ".join(f"{k}: {v}" for k, v in blocked.items()),
+            )
     return out
 
 
@@ -313,15 +341,23 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--plan", type=pathlib.Path, default=PLAN)
     ap.add_argument("--catalog", type=pathlib.Path, default=CATALOG)
-    ap.add_argument("--evidence", action="append", default=None,
-                    help="results dir (repeatable); default: the three "
-                         "committed bundles")
-    ap.add_argument("--leaf", action="append", default=None,
-                    help="leaf-granularity evidence bundle dir (repeatable); "
-                         "each is re-verified from its own bytes before any "
-                         "row of it is counted")
-    ap.add_argument("--out", type=pathlib.Path, default=None,
-                    help="also write the JSON report here")
+    ap.add_argument(
+        "--evidence",
+        action="append",
+        default=None,
+        help="results dir (repeatable); default: the three committed bundles",
+    )
+    ap.add_argument(
+        "--leaf",
+        action="append",
+        default=None,
+        help="leaf-granularity evidence bundle dir (repeatable); "
+        "each is re-verified from its own bytes before any "
+        "row of it is counted",
+    )
+    ap.add_argument(
+        "--out", type=pathlib.Path, default=None, help="also write the JSON report here"
+    )
     args = ap.parse_args()
 
     plan = json.loads(args.plan.read_text())
@@ -329,10 +365,8 @@ def main():
     plan_profiles = set(plan["profiles"])
     targets = {t["target_id"]: t for t in catalog["targets"]}
 
-    same_lane, other_lane, notes = load_evidence(
-        args.evidence or DEFAULT_EVIDENCE, plan_profiles)
-    leaf_index, leaf_notes = load_leaf_evidence(
-        args.leaf or DEFAULT_LEAF_EVIDENCE, plan, catalog)
+    same_lane, other_lane, notes = load_evidence(args.evidence or DEFAULT_EVIDENCE, plan_profiles)
+    leaf_index, leaf_notes = load_leaf_evidence(args.leaf or DEFAULT_LEAF_EVIDENCE, plan, catalog)
 
     def runner_rid(target_id):
         # the one shared join (common.runner_row_id) so this reporter's
@@ -340,7 +374,7 @@ def main():
         return common.runner_row_id(targets.get(target_id))
 
     leaves = plan["leaves"]
-    counts = {}   # (family, status) -> n
+    counts = {}  # (family, status) -> n
     outcome_counts = {}  # (family, leaf outcome) -> n, for covered rows
     uncovered_reasons = {}
     partial_examples = []
@@ -351,21 +385,28 @@ def main():
         rid = runner_rid(leaf["target_id"])
         # leaf-granularity evidence, for THIS row's own fixture set and
         # toolchain, is the only thing that can make a row COVERED
-        leaf_refs = [r for r in leaf_index.get((profile_id, leaf_id), [])
-                     if r["fixture_set_id"] == _fs and r["toolchain_id"] == _tc]
+        leaf_refs = [
+            r
+            for r in leaf_index.get((profile_id, leaf_id), [])
+            if r["fixture_set_id"] == _fs and r["toolchain_id"] == _tc
+        ]
         if leaf_refs:
-            family = ("cargo-" + kind.lower()) if rid else \
-                {"CUCUMBER": "cucumber", "STATIC_CHECK": "static",
-                 "SCRIPT": "script"}.get(kind, kind.lower())
+            family = (
+                ("cargo-" + kind.lower())
+                if rid
+                else {"CUCUMBER": "cucumber", "STATIC_CHECK": "static", "SCRIPT": "script"}.get(
+                    kind, kind.lower()
+                )
+            )
             status, reason = "COVERED", None
             for o in {r["outcome"] for r in leaf_refs}:
                 outcome_counts[(family, o)] = outcome_counts.get((family, o), 0) + 1
             if len(covered_examples) < 3:
-                covered_examples.append({"row": [leaf_id, profile_id],
-                                         "evidence": leaf_refs[:1]})
+                covered_examples.append({"row": [leaf_id, profile_id], "evidence": leaf_refs[:1]})
         elif rid is None:
-            family = {"CUCUMBER": "cucumber", "STATIC_CHECK": "static",
-                      "SCRIPT": "script"}.get(kind, kind.lower())
+            family = {"CUCUMBER": "cucumber", "STATIC_CHECK": "static", "SCRIPT": "script"}.get(
+                kind, kind.lower()
+            )
             status = "UNCOVERED"
             reason = "no leaf-level runner lane has produced archived evidence"
         else:
@@ -379,18 +420,21 @@ def main():
                 # NEVER covered
                 status, reason = "PARTIAL", None
                 if len(partial_examples) < 3:
-                    partial_examples.append(
-                        {"row": [leaf_id, profile_id], "evidence": live[:1]})
+                    partial_examples.append({"row": [leaf_id, profile_id], "evidence": live[:1]})
             elif vacuous:
                 status = "UNCOVERED"
-                reason = ("only zero-case (vacuous) evidence exists for the "
-                          "target in this lane - a binary that ran nothing "
-                          "proves nothing about its leaves")
+                reason = (
+                    "only zero-case (vacuous) evidence exists for the "
+                    "target in this lane - a binary that ran nothing "
+                    "proves nothing about its leaves"
+                )
             elif rid in other_lane:
                 status = "UNCOVERED"
-                reason = ("target evidence exists ONLY under a lane the plan "
-                          "does not require (historical U2S3 dirty-tree "
-                          "archive) - other-lane evidence covers no plan row")
+                reason = (
+                    "target evidence exists ONLY under a lane the plan "
+                    "does not require (historical U2S3 dirty-tree "
+                    "archive) - other-lane evidence covers no plan row"
+                )
             else:
                 status = "UNCOVERED"
                 reason = "no execution evidence for the target in any lane"
@@ -404,8 +448,7 @@ def main():
     for dr in plan["driver_rows"]:
         status, reason = driver_status[dr["row_id"]]
         counts[("driver", status)] = counts.get(("driver", status), 0) + 1
-        driver_rows_report.append({"row_id": dr["row_id"], "status": status,
-                                   "reason": reason})
+        driver_rows_report.append({"row_id": dr["row_id"], "status": status, "reason": reason})
         if status != "COVERED":
             key = ("driver", reason)
             uncovered_reasons[key] = uncovered_reasons.get(key, 0) + 1
@@ -417,8 +460,7 @@ def main():
     # re-derived above.
     covered = sum(n for (f, s), n in counts.items() if s == "COVERED")
     partial = sum(n for (f, s), n in counts.items() if s == "PARTIAL")
-    uncovered = sum(n for (f, s), n in counts.items()
-                    if s in ("UNCOVERED", "NOT_IMPLEMENTED"))
+    uncovered = sum(n for (f, s), n in counts.items() if s in ("UNCOVERED", "NOT_IMPLEMENTED"))
 
     by_family = {}
     for (family, status), n in sorted(counts.items()):
@@ -436,18 +478,20 @@ def main():
         "uncovered_rows": uncovered,
         "by_family": by_family,
         "uncovered_reasons": [
-            {"family": f, "reason": r, "rows": n}
-            for (f, r), n in sorted(uncovered_reasons.items())],
+            {"family": f, "reason": r, "rows": n} for (f, r), n in sorted(uncovered_reasons.items())
+        ],
         "partial_examples": partial_examples,
         "covered_examples": covered_examples,
         "covered_row_outcomes": {
             f: {o: n for (ff, o), n in sorted(outcome_counts.items()) if ff == f}
-            for f in sorted({ff for ff, _ in outcome_counts})},
+            for f in sorted({ff for ff, _ in outcome_counts})
+        },
         "covered_meaning": (
             "COVERED = a re-verified leaf bundle carries an OUTCOME for exactly "
             "this (leaf, profile, fixture-set, toolchain) row. It does NOT mean "
             "the leaf passed: see covered_row_outcomes for the split. Coverage "
-            "is denominator progress, never a pass."),
+            "is denominator progress, never a pass."
+        ),
         "evidence_bundles": notes,
         "leaf_evidence_bundles": leaf_notes,
         "driver_rows_detail": driver_rows_report,
@@ -460,7 +504,8 @@ def main():
             "its seal re-derived here, but at least one declared suite of "
             "that driver's official corpus could not run in this environment "
             "and names its exact external precondition. PARTIAL rows are NOT "
-            "covered in either family."),
+            "covered in either family."
+        ),
         "plan_satisfied": False,
         "statement": (
             f"THE PLAN IS NOT SATISFIED. {covered} of {total_rows} denominator "
@@ -473,14 +518,17 @@ def main():
             f"and {counts.get(('driver', 'PARTIAL'), 0)} partial on executed, "
             f"independently re-derived leaf evidence). The plan is the "
             f"denominator of qualification, not a pass, and no claim of "
-            f"qualification may cite this report as green."),
+            f"qualification may cite this report as green."
+        ),
     }
     print(json.dumps(report, indent=1))
     if args.out:
         args.out.write_text(json.dumps(report, indent=1) + "\n")
-    print(f"PLAN COVERAGE: {covered} covered / {partial} partial / "
-          f"{uncovered} uncovered of {total_rows} rows -> NOT SATISFIED",
-          file=sys.stderr)
+    print(
+        f"PLAN COVERAGE: {covered} covered / {partial} partial / "
+        f"{uncovered} uncovered of {total_rows} rows -> NOT SATISFIED",
+        file=sys.stderr,
+    )
     return 0 if (covered + 0 == total_rows) else 1
 
 

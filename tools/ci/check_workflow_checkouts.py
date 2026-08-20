@@ -66,7 +66,7 @@ def audit(text: str, path_label: str) -> list[str]:
         # scan the step's own block only: stop at the next line that starts a
         # sibling or shallower element
         persisted = None
-        for nxt in lines[i + 1:]:
+        for nxt in lines[i + 1 :]:
             if not nxt.strip():
                 continue
             nindent = len(nxt) - len(nxt.lstrip())
@@ -88,37 +88,50 @@ def audit(text: str, path_label: str) -> list[str]:
             problems.append(
                 f"{where}: actions/checkout does not set "
                 "`persist-credentials: false`, so the job's token is written "
-                "into .git/config and is readable by anything that runs after")
+                "into .git/config and is readable by anything that runs after"
+            )
         else:
-            problems.append(
-                f"{where}: actions/checkout sets "
-                f"`persist-credentials: {persisted}`")
+            problems.append(f"{where}: actions/checkout sets `persist-credentials: {persisted}`")
     return problems
 
 
 def self_test() -> int:
     """The check must fail on the thing it exists to catch."""
     cases = [
-        ("guarded", """jobs:
+        (
+            "guarded",
+            """jobs:
   a:
     steps:
       - uses: actions/checkout@abc # v4
         with:
           persist-credentials: false
-""", 0),
-        ("absent", """jobs:
+""",
+            0,
+        ),
+        (
+            "absent",
+            """jobs:
   a:
     steps:
       - uses: actions/checkout@abc # v4
-""", 1),
-        ("explicit true", """jobs:
+""",
+            1,
+        ),
+        (
+            "explicit true",
+            """jobs:
   a:
     steps:
       - uses: actions/checkout@abc # v4
         with:
           persist-credentials: true
-""", 1),
-        ("guarded then unguarded", """jobs:
+""",
+            1,
+        ),
+        (
+            "guarded then unguarded",
+            """jobs:
   a:
     steps:
       - uses: actions/checkout@abc # v4
@@ -129,7 +142,9 @@ def self_test() -> int:
       - uses: actions/checkout@abc # v4
         with:
           fetch-depth: 0
-""", 1),
+""",
+            1,
+        ),
     ]
     failures = []
     for name, text, want in cases:
@@ -138,8 +153,10 @@ def self_test() -> int:
         print(f"  {'ok  ' if ok else 'FAIL'} {name}: {got} problem(s), want {want}")
         if not ok:
             failures.append(name)
-    print(f"checkout-credential self-test: {len(cases) - len(failures)}/{len(cases)} "
-          f"cases behaved as specified")
+    print(
+        f"checkout-credential self-test: {len(cases) - len(failures)}/{len(cases)} "
+        f"cases behaved as specified"
+    )
     return 1 if failures else 0
 
 
@@ -157,12 +174,16 @@ def main() -> int:
     for p in problems:
         print(f"  {p}")
     if problems:
-        print(f"CHECKOUT CREDENTIAL GATE: FAIL ({len(problems)} of {checked} "
-              "checkout step(s) keep their token)")
+        print(
+            f"CHECKOUT CREDENTIAL GATE: FAIL ({len(problems)} of {checked} "
+            "checkout step(s) keep their token)"
+        )
         return 1
-    print(f"CHECKOUT CREDENTIAL GATE: PASS ({checked} checkout step(s), all "
-          f"persist-credentials: false, {len(CREDENTIALED_CHECKOUT_ALLOWLIST)} "
-          "declared exception(s))")
+    print(
+        f"CHECKOUT CREDENTIAL GATE: PASS ({checked} checkout step(s), all "
+        f"persist-credentials: false, {len(CREDENTIALED_CHECKOUT_ALLOWLIST)} "
+        "declared exception(s))"
+    )
     return 0
 
 

@@ -41,6 +41,7 @@ Usage:
   python3 tools/drivers/driver_mutants.py --bundle docs/evidence/G1/drivers/<b>
   python3 tools/drivers/driver_mutants.py --bundle B --only truncated_run
 """
+
 import argparse
 import copy
 import hashlib
@@ -59,6 +60,7 @@ VERIFIER = REPO / "tools" / "evidence" / "verify_drivers.py"
 
 
 # --------------------------------------------------------------- mutant kit
+
 
 def load(bundle):
     return json.loads((bundle / "driver-results.json").read_text())
@@ -95,25 +97,39 @@ def reseal(bundle, data, repo=None):
             if p.is_file():
                 srv["log_sha256"] = common.sha256_file(p)
     save(bundle, data)
-    plan = (pathlib.Path(repo) / "docs" / "evidence" / "G1"
-            / "qualification-plan-v2.json") if repo else common.PLAN
+    plan = (
+        (pathlib.Path(repo) / "docs" / "evidence" / "G1" / "qualification-plan-v2.json")
+        if repo
+        else common.PLAN
+    )
     consumed = [bundle / "driver-results.json", plan]
-    consumed += [log_path(bundle, s["raw_log"])
-                 for s in data.get("suites", []) if s.get("raw_log")]
-    consumed += [log_path(bundle, s["structured_log"])
-                 for s in data.get("suites", []) if s.get("structured_log")]
-    consumed += [log_path(bundle, s["log"])
-                 for s in data.get("servers", []) if s.get("log")]
-    consumed += [log_path(bundle, (s.get("backend_witness") or {})["archived_marker"])
-                 for s in data.get("servers", [])
-                 if (s.get("backend_witness") or {}).get("archived_marker")]
+    consumed += [log_path(bundle, s["raw_log"]) for s in data.get("suites", []) if s.get("raw_log")]
+    consumed += [
+        log_path(bundle, s["structured_log"])
+        for s in data.get("suites", [])
+        if s.get("structured_log")
+    ]
+    consumed += [log_path(bundle, s["log"]) for s in data.get("servers", []) if s.get("log")]
+    consumed += [
+        log_path(bundle, (s.get("backend_witness") or {})["archived_marker"])
+        for s in data.get("servers", [])
+        if (s.get("backend_witness") or {}).get("archived_marker")
+    ]
     for extra in ("npm-tree.json", "tsc.log"):
         if (bundle / extra).is_file():
             consumed.append(bundle / extra)
     root, pairs = common.compute_bundle_root(bundle, consumed, repo=repo)
-    (bundle / "bundle-manifest.json").write_text(json.dumps(
-        {"schema": "driver-lane-bundle-manifest-v1", "bundle_root": root,
-         "files": dict(sorted(pairs.items()))}, indent=1) + "\n")
+    (bundle / "bundle-manifest.json").write_text(
+        json.dumps(
+            {
+                "schema": "driver-lane-bundle-manifest-v1",
+                "bundle_root": root,
+                "files": dict(sorted(pairs.items())),
+            },
+            indent=1,
+        )
+        + "\n"
+    )
     v = json.loads((bundle / "verdict.json").read_text())
     v["bundle_root"] = root
     v["green"] = True
@@ -133,6 +149,7 @@ def _first_executed_suite(data):
 
 
 # ------------------------------------------------------------------ mutants
+
 
 def m_empty_result_file(bundle, data, repo=None):
     (bundle / "driver-results.json").write_text("")
@@ -154,19 +171,19 @@ def m_truncated_run(bundle, data, repo=None):
     if s.get("structured_log"):
         p = log_path(bundle, s["structured_log"])
         text = p.read_text()
-        if text.lstrip().startswith("["):          # behave JSON array
+        if text.lstrip().startswith("["):  # behave JSON array
             doc = json.loads(text)
             for feat in doc:
                 feat["elements"] = (feat.get("elements") or [])[:3]
             p.write_text(json.dumps(doc))
-        else:                                      # cucumber-js NDJSON
+        else:  # cucumber-js NDJSON
             lines = p.read_text().splitlines()
-            p.write_text("\n".join(lines[:max(1, len(lines) // 3)]) + "\n")
+            p.write_text("\n".join(lines[: max(1, len(lines) // 3)]) + "\n")
     else:
         p = log_path(bundle, s["raw_log"])
         lines = p.read_text().splitlines()
         cut = next(i for i, ln in enumerate(lines) if ln.strip() == "[Summary]")
-        p.write_text("\n".join(lines[:cut - 20]) + "\n")
+        p.write_text("\n".join(lines[: cut - 20]) + "\n")
     reseal(bundle, data, repo)
     return "RESEALED"
 
@@ -180,7 +197,7 @@ def m_suite_never_started(bundle, data, repo=None):
 
 def m_fabricated_leaf_row(bundle, data, repo=None):
     s = _first_executed_suite(data)
-    tmpl = next(l for l in data["leaves"] if l["suite_id"] == s["suite_id"])
+    tmpl = next(leaf for leaf in data["leaves"] if leaf["suite_id"] == s["suite_id"])
     fake = copy.deepcopy(tmpl)
     fake["leaf_case_id"] = tmpl["leaf_case_id"] + "#FABRICATED"
     fake["display_name"] = "a scenario that never ran"
@@ -194,30 +211,30 @@ def m_fabricated_leaf_row(bundle, data, repo=None):
 
 def m_dropped_leaf_rows(bundle, data, repo=None):
     s = _first_executed_suite(data)
-    data["leaves"] = [l for l in data["leaves"] if l["suite_id"] != s["suite_id"]]
+    data["leaves"] = [leaf for leaf in data["leaves"] if leaf["suite_id"] != s["suite_id"]]
     reseal(bundle, data, repo)
     return "RESEALED"
 
 
 def m_flipped_leaf_status(bundle, data, repo=None):
-    l = next(l for l in data["leaves"] if l.get("status") == "PASSED")
-    l["status"] = "FAILED"
+    leaf = next(leaf for leaf in data["leaves"] if leaf.get("status") == "PASSED")
+    leaf["status"] = "FAILED"
     reseal(bundle, data, repo)
     return "RESEALED"
 
 
 def m_forged_step_counts(bundle, data, repo=None):
-    l = next(l for l in data["leaves"] if l.get("steps_passed"))
-    l["steps_passed"] = l["steps_passed"] + 7
+    leaf = next(leaf for leaf in data["leaves"] if leaf.get("steps_passed"))
+    leaf["steps_passed"] = leaf["steps_passed"] + 7
     reseal(bundle, data, repo)
     return "RESEALED"
 
 
 def m_forged_plan_membership(bundle, data, repo=None):
-    l = next((l for l in data["leaves"] if not l.get("in_plan")), None)
-    if l is None:
+    leaf = next((leaf for leaf in data["leaves"] if not leaf.get("in_plan")), None)
+    if leaf is None:
         raise RuntimeError("bundle has no out-of-plan leaf to promote")
-    l["in_plan"] = True
+    leaf["in_plan"] = True
     reseal(bundle, data, repo)
     return "RESEALED"
 
@@ -251,14 +268,23 @@ def m_server_probe_failed(bundle, data, repo=None):
 def m_forged_backend_kind(bundle, data, repo=None):
     """The slatedb row's on-disk witness rewritten to the rocksdb backend:
     the environment variable would still say U2."""
-    srv = next((s for s in data.get("servers", [])
-                if (s.get("backend_witness") or {}).get("archived_marker")), None)
+    srv = next(
+        (
+            s
+            for s in data.get("servers", [])
+            if (s.get("backend_witness") or {}).get("archived_marker")
+        ),
+        None,
+    )
     if srv is None:
         raise RuntimeError("bundle archives no backend-spec marker")
     w = srv["backend_witness"]
     mp = bundle / pathlib.Path(w["archived_marker"]).name
-    text = mp.read_text().replace("kind slatedb-r2", "kind classic") \
-                         .replace("kind classic", "kind classic")
+    text = (
+        mp.read_text()
+        .replace("kind slatedb-r2", "kind classic")
+        .replace("kind classic", "kind classic")
+    )
     if text == mp.read_text():
         text = mp.read_text().replace("kind ", "kind tampered-")
     mp.write_text(text)
@@ -270,8 +296,7 @@ def m_forged_backend_kind(bundle, data, repo=None):
 
 
 def m_backend_witness_stripped(bundle, data, repo=None):
-    srv = next((s for s in data.get("servers", [])
-                if s.get("backend_witness")), None)
+    srv = next((s for s in data.get("servers", []) if s.get("backend_witness")), None)
     if srv is None:
         raise RuntimeError("bundle records no backend witness")
     srv["backend_witness"] = {}
@@ -288,7 +313,7 @@ def m_forged_verdict_enum(bundle, data, repo=None):
 
 def m_unsealed_edit(bundle, data, repo=None):
     data["counts"]["plan_leaves_passed"] = 999999
-    save(bundle, data)          # deliberately NOT resealed
+    save(bundle, data)  # deliberately NOT resealed
     return "NAIVE"
 
 
@@ -334,20 +359,22 @@ def shadow_repo(td, src_bundle):
 
 
 def run_verifier(bundle, repo=REPO):
-    p = subprocess.run([sys.executable, str(VERIFIER), str(bundle),
-                        "--repo", str(repo), "--qualification"],
-                       capture_output=True, text=True)
+    p = subprocess.run(
+        [sys.executable, str(VERIFIER), str(bundle), "--repo", str(repo), "--qualification"],
+        capture_output=True,
+        text=True,
+    )
     try:
         rep = json.loads(p.stdout)
     except json.JSONDecodeError:
-        rep = {"anomalies": ["verifier produced no JSON"],
-               "stderr": p.stderr[-500:]}
+        rep = {"anomalies": ["verifier produced no JSON"], "stderr": p.stderr[-500:]}
     return p.returncode, rep
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--bundle", type=pathlib.Path, required=True)
     ap.add_argument("--only", action="append", default=None)
     ap.add_argument("--out", type=pathlib.Path, default=None)
@@ -355,21 +382,28 @@ def main():
 
     src = args.bundle if args.bundle.is_absolute() else REPO / args.bundle
     rc0, base = run_verifier(src)
-    results = {"schema": "driver-lane-mutants-v1",
-               "bundle": common.rel(src),
-               "baseline": {"exit_code": rc0,
-                            "anomalies": base.get("anomalies"),
-                            "rederived_verdict": base.get("rederived_verdict"),
-                            "qualification_pass": base.get("qualification_pass")},
-               "mutants": []}
+    results = {
+        "schema": "driver-lane-mutants-v1",
+        "bundle": common.rel(src),
+        "baseline": {
+            "exit_code": rc0,
+            "anomalies": base.get("anomalies"),
+            "rederived_verdict": base.get("rederived_verdict"),
+            "qualification_pass": base.get("qualification_pass"),
+        },
+        "mutants": [],
+    }
     if rc0 != 0:
         print(json.dumps(results, indent=1))
-        print("BASELINE BUNDLE DOES NOT VERIFY - mutants are meaningless "
-              "against a bundle that is already refused", file=sys.stderr)
+        print(
+            "BASELINE BUNDLE DOES NOT VERIFY - mutants are meaningless "
+            "against a bundle that is already refused",
+            file=sys.stderr,
+        )
         return 2
 
     killed = survived = errored = 0
-    for name in (args.only or sorted(MUTANTS)):
+    for name in args.only or sorted(MUTANTS):
         fn = MUTANTS[name]
         with tempfile.TemporaryDirectory(prefix=f"mutant-{name}-") as td:
             shadow, work = shadow_repo(td, src)
@@ -378,34 +412,38 @@ def main():
                 level = fn(work, data, shadow)
             except Exception as e:
                 results["mutants"].append(
-                    {"mutant": name, "outcome": "ERROR",
-                     "error": f"{type(e).__name__}: {e}"})
+                    {"mutant": name, "outcome": "ERROR", "error": f"{type(e).__name__}: {e}"}
+                )
                 errored += 1
                 continue
             rc, rep = run_verifier(work, repo=shadow)
             dead = rc != 0 and bool(rep.get("anomalies"))
             killed += dead
             survived += not dead
-            results["mutants"].append({
-                "mutant": name,
-                "sophistication": level,
-                "verifier_exit_code": rc,
-                "outcome": "KILLED" if dead else "SURVIVED",
-                "first_anomalies": (rep.get("anomalies") or [])[:3],
-                "anomaly_count": len(rep.get("anomalies") or []),
-                "rederived_verdict": rep.get("rederived_verdict"),
-                "qualification_pass": rep.get("qualification_pass"),
-            })
-    results["summary"] = {"total": killed + survived + errored,
-                          "killed": killed, "survived": survived,
-                          "errored": errored}
+            results["mutants"].append(
+                {
+                    "mutant": name,
+                    "sophistication": level,
+                    "verifier_exit_code": rc,
+                    "outcome": "KILLED" if dead else "SURVIVED",
+                    "first_anomalies": (rep.get("anomalies") or [])[:3],
+                    "anomaly_count": len(rep.get("anomalies") or []),
+                    "rederived_verdict": rep.get("rederived_verdict"),
+                    "qualification_pass": rep.get("qualification_pass"),
+                }
+            )
+    results["summary"] = {
+        "total": killed + survived + errored,
+        "killed": killed,
+        "survived": survived,
+        "errored": errored,
+    }
     print(json.dumps(results, indent=1))
     if args.out:
         out = args.out if args.out.is_absolute() else REPO / args.out
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(results, indent=1) + "\n")
-    print(f"MUTANTS: {killed} killed, {survived} survived, {errored} errored",
-          file=sys.stderr)
+    print(f"MUTANTS: {killed} killed, {survived} survived, {errored} errored", file=sys.stderr)
     return 0 if (survived == 0 and errored == 0) else 1
 
 

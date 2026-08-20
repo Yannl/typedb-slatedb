@@ -95,9 +95,13 @@ def compare(baseline: dict, crate: str, counts: dict[str, int], strict: bool) ->
     for code, n in sorted(counts.items()):
         allowed = recorded.get(code)
         if allowed is None:
-            problems.append(f"{crate}: NEW lint {code} x{n} has no baseline entry - fix it, or record it with a reason")
+            problems.append(
+                f"{crate}: NEW lint {code} x{n} has no baseline entry - fix it, or record it with a reason"
+            )
         elif n > allowed:
-            problems.append(f"{crate}: {code} regressed {allowed} -> {n} (the ratchet only turns one way)")
+            problems.append(
+                f"{crate}: {code} regressed {allowed} -> {n} (the ratchet only turns one way)"
+            )
         elif strict and n < allowed:
             problems.append(
                 f"{crate}: {code} improved {allowed} -> {n} but the baseline still allows {allowed}. "
@@ -106,7 +110,9 @@ def compare(baseline: dict, crate: str, counts: dict[str, int], strict: bool) ->
     if strict:
         for code, allowed in sorted(recorded.items()):
             if code not in counts:
-                problems.append(f"{crate}: baseline still allows {code} x{allowed} but it no longer occurs - delete the entry")
+                problems.append(
+                    f"{crate}: baseline still allows {code} x{allowed} but it no longer occurs - delete the entry"
+                )
     return problems
 
 
@@ -118,9 +124,24 @@ def self_test() -> int:
     }
     cases = [
         ("CONTROL: counts at the baseline pass", {"dead_code": 3, "unused_variables": 1}, False, 0),
-        ("MUTANT a lint regresses above its baseline", {"dead_code": 4, "unused_variables": 1}, False, 1),
-        ("MUTANT a brand-new lint appears", {"dead_code": 3, "unused_variables": 1, "unreachable_code": 1}, False, 1),
-        ("MUTANT an improvement is not re-recorded (strict)", {"dead_code": 1, "unused_variables": 1}, True, 1),
+        (
+            "MUTANT a lint regresses above its baseline",
+            {"dead_code": 4, "unused_variables": 1},
+            False,
+            1,
+        ),
+        (
+            "MUTANT a brand-new lint appears",
+            {"dead_code": 3, "unused_variables": 1, "unreachable_code": 1},
+            False,
+            1,
+        ),
+        (
+            "MUTANT an improvement is not re-recorded (strict)",
+            {"dead_code": 1, "unused_variables": 1},
+            True,
+            1,
+        ),
         ("MUTANT a baseline entry became dead (strict)", {"dead_code": 3}, True, 1),
         ("MUTANT an unrecorded crate", None, False, 1),
     ]
@@ -137,16 +158,38 @@ def self_test() -> int:
 
     stream = "\n".join(
         [
-            json.dumps({"reason": "compiler-message", "message": {"level": "warning", "code": {"code": "dead_code"}, "rendered": "a"}}),
-            json.dumps({"reason": "compiler-message", "message": {"level": "warning", "code": {"code": "dead_code"}, "rendered": "a"}}),
-            json.dumps({"reason": "compiler-message", "message": {"level": "warning", "code": {"code": "dead_code"}, "rendered": "b"}}),
-            json.dumps({"reason": "compiler-message", "message": {"level": "error", "code": {"code": "E0001"}, "rendered": "c"}}),
+            json.dumps(
+                {
+                    "reason": "compiler-message",
+                    "message": {"level": "warning", "code": {"code": "dead_code"}, "rendered": "a"},
+                }
+            ),
+            json.dumps(
+                {
+                    "reason": "compiler-message",
+                    "message": {"level": "warning", "code": {"code": "dead_code"}, "rendered": "a"},
+                }
+            ),
+            json.dumps(
+                {
+                    "reason": "compiler-message",
+                    "message": {"level": "warning", "code": {"code": "dead_code"}, "rendered": "b"},
+                }
+            ),
+            json.dumps(
+                {
+                    "reason": "compiler-message",
+                    "message": {"level": "error", "code": {"code": "E0001"}, "rendered": "c"},
+                }
+            ),
             "not json at all",
         ]
     )
     got = parse_warnings(stream)
     ok = got == {"dead_code": 2}
-    print(f"  {'ok  ' if ok else 'FAIL'} the parser dedupes re-emitted diagnostics and ignores errors/noise")
+    print(
+        f"  {'ok  ' if ok else 'FAIL'} the parser dedupes re-emitted diagnostics and ignores errors/noise"
+    )
     if not ok:
         print(f"       got {got}")
         failures += 1
@@ -160,13 +203,23 @@ def self_test() -> int:
 
 
 def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--input", help="cargo --message-format=json output (default: stdin)")
     ap.add_argument("--crate", help="crate name this stream belongs to")
     ap.add_argument("--baseline", default=str(BASELINE_PATH))
-    ap.add_argument("--record", action="store_true", help="write the observed counts into the baseline")
-    ap.add_argument("--reason", default="", help="why these warnings are tolerated (required with --record)")
-    ap.add_argument("--strict", action="store_true", help="also fail on unratcheted improvements and dead entries")
+    ap.add_argument(
+        "--record", action="store_true", help="write the observed counts into the baseline"
+    )
+    ap.add_argument(
+        "--reason", default="", help="why these warnings are tolerated (required with --record)"
+    )
+    ap.add_argument(
+        "--strict",
+        action="store_true",
+        help="also fail on unratcheted improvements and dead entries",
+    )
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
 
@@ -182,10 +235,16 @@ def main(argv: list[str]) -> int:
 
     if args.record:
         if not args.reason:
-            ap.error("--record requires --reason: an unexplained baseline is a suppression, not a ratchet")
+            ap.error(
+                "--record requires --reason: an unexplained baseline is a suppression, not a ratchet"
+            )
         baseline.setdefault("crates", {})[args.crate] = {"lints": counts, "reason": args.reason}
-        baseline_path.write_text(json.dumps(baseline, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        print(f"recorded {sum(counts.values())} warning(s) across {len(counts)} lint(s) for {args.crate}")
+        baseline_path.write_text(
+            json.dumps(baseline, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        print(
+            f"recorded {sum(counts.values())} warning(s) across {len(counts)} lint(s) for {args.crate}"
+        )
         return 0
 
     problems = compare(baseline, args.crate, counts, args.strict)

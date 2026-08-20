@@ -32,6 +32,7 @@ counts its row claims; and a bundle root over everything the verdict
 consumed is bound into the COMPLETE marker so post-hoc edits of any consumed
 file (including the results JSON itself) are a root mismatch, not a shrug.
 """
+
 import datetime
 import hashlib
 import json
@@ -75,29 +76,39 @@ def load_ledger(path=None):
             problems.append("ledger: entry with no target_id")
             continue
         if tid in entries:
-            problems.append(f"ledger: duplicate entry for {tid} - one target, "
-                            f"one policy; two entries means one silently wins")
+            problems.append(
+                f"ledger: duplicate entry for {tid} - one target, "
+                f"one policy; two entries means one silently wins"
+            )
             continue
         if not e.get("reason"):
             problems.append(f"ledger: {tid} has no reason - exclusions must be explained")
         if not e.get("profile"):
-            problems.append(f"ledger: {tid} names no profile - a tolerance must "
-                            f"say which storage lane(s) it was observed on")
+            problems.append(
+                f"ledger: {tid} names no profile - a tolerance must "
+                f"say which storage lane(s) it was observed on"
+            )
         exp_f = e.get("expected_failed", 0)
         exp_i = e.get("expected_ignored", 0)
         fp = e.get("fingerprint")
         if exp_f + exp_i > 0 and fp is None:
-            problems.append(f"ledger: {tid} tolerates {exp_f} failed + {exp_i} "
-                            f"ignored case(s) but carries no fingerprint naming them")
+            problems.append(
+                f"ledger: {tid} tolerates {exp_f} failed + {exp_i} "
+                f"ignored case(s) but carries no fingerprint naming them"
+            )
         if fp is not None:
             if len(fp.get("failed") or []) != exp_f:
-                problems.append(f"ledger: {tid} fingerprint names "
-                                f"{len(fp.get('failed') or [])} failed case(s) but the "
-                                f"entry declares expected_failed={exp_f}")
+                problems.append(
+                    f"ledger: {tid} fingerprint names "
+                    f"{len(fp.get('failed') or [])} failed case(s) but the "
+                    f"entry declares expected_failed={exp_f}"
+                )
             if len(fp.get("ignored") or []) != exp_i:
-                problems.append(f"ledger: {tid} fingerprint names "
-                                f"{len(fp.get('ignored') or [])} ignored case(s) but the "
-                                f"entry declares expected_ignored={exp_i}")
+                problems.append(
+                    f"ledger: {tid} fingerprint names "
+                    f"{len(fp.get('ignored') or [])} ignored case(s) but the "
+                    f"entry declares expected_ignored={exp_i}"
+                )
         expiry = e.get("expiry")
         if not expiry:
             problems.append(f"ledger: {tid} has no expiry - open-ended exclusions are forbidden")
@@ -134,8 +145,9 @@ def compute_policy_roots(ledger_path=None, plan_path=None):
 
 
 def _cases(row):
-    return (row.get("passed", 0) + row.get("failed", 0)
-            + row.get("ignored", 0) + row.get("measured", 0))
+    return (
+        row.get("passed", 0) + row.get("failed", 0) + row.get("ignored", 0) + row.get("measured", 0)
+    )
 
 
 def classify_rows(results, ledger, expected_case_bearing=None):
@@ -164,32 +176,37 @@ def classify_rows(results, ledger, expected_case_bearing=None):
         if rc != exp_rc:
             anomalies.append(
                 f"{tid}: exit code {rc!r} but policy expects {exp_rc!r}"
-                + ("" if entry else " (no ledger entry)"))
+                + ("" if entry else " (no ledger entry)")
+            )
         failed, ignored = r.get("failed", 0), r.get("ignored", 0)
         if failed != exp_failed:
             anomalies.append(
                 f"{tid}: {failed} failed case(s), policy expects {exp_failed}"
-                + ("" if entry else " (no ledger entry)"))
+                + ("" if entry else " (no ledger entry)")
+            )
         if ignored != exp_ignored:
             anomalies.append(
                 f"{tid}: {ignored} ignored case(s), policy expects {exp_ignored}"
-                + ("" if entry else " (no ledger entry)"))
+                + ("" if entry else " (no ledger entry)")
+            )
         if entry and entry.get("cases") is not None:
             # the ledger names the exact cases; their count must agree with
             # the counts it also declares, or the entry is self-inconsistent
             if len(entry["cases"]) != exp_failed + exp_ignored:
                 anomalies.append(
                     f"ledger: {tid} names {len(entry['cases'])} case(s) but declares "
-                    f"{exp_failed} failed + {exp_ignored} ignored")
-        if expected_case_bearing is not None and tid in expected_case_bearing \
-                and _cases(r) == 0:
+                    f"{exp_failed} failed + {exp_ignored} ignored"
+                )
+        if expected_case_bearing is not None and tid in expected_case_bearing and _cases(r) == 0:
             anomalies.append(
                 f"{tid}: ran to completion with ZERO cases although the catalogue "
-                f"records leaf cases for it - the corpus silently shrank here")
+                f"records leaf cases for it - the corpus silently shrank here"
+            )
     for tid in sorted(set(ledger) - matched):
         anomalies.append(
             f"ledger: entry for {tid} matched no row in this run - stale "
-            f"exclusions must be retired, not carried")
+            f"exclusions must be retired, not carried"
+        )
     return anomalies
 
 
@@ -216,6 +233,7 @@ def denominator_anomalies(results, required_target_ids, declared_exclusions=None
 
 
 # ------------------------------------------------------- bundle verification
+
 
 def _resolve_log(raw_log, repo):
     p = pathlib.Path(raw_log)
@@ -262,8 +280,9 @@ def compute_bundle_root(results_dir, results, ledger_path=None, repo=None):
     return h.hexdigest(), pairs
 
 
-def verify_bundle(results_dir, results, ledger, file_profile=None,
-                  ledger_path=None, repo=None, unsealed_ok=False):
+def verify_bundle(
+    results_dir, results, ledger, file_profile=None, ledger_path=None, repo=None, unsealed_ok=False
+):
     """The audit-mandated layer: verify the BYTES a verdict rests on.
 
     Returns (anomalies, warnings, bundle_root). Checks, all fail-closed:
@@ -304,15 +323,19 @@ def verify_bundle(results_dir, results, ledger, file_profile=None,
     for r in results:
         tid = r.get("target_id", "<no target_id>")
         if tid in seen_ids:
-            anomalies.append(f"bundle: duplicate result row for {tid} - a row "
-                             f"that appears twice inflates the corpus without "
-                             f"running anything")
+            anomalies.append(
+                f"bundle: duplicate result row for {tid} - a row "
+                f"that appears twice inflates the corpus without "
+                f"running anything"
+            )
             continue
         seen_ids[tid] = r
         raw_log = r.get("raw_log")
         if not raw_log:
-            anomalies.append(f"bundle: {tid} records no raw log - a count "
-                             f"without its log is an assertion, not evidence")
+            anomalies.append(
+                f"bundle: {tid} records no raw log - a count "
+                f"without its log is an assertion, not evidence"
+            )
             continue
         log = _resolve_log(raw_log, repo)
         try:
@@ -320,18 +343,24 @@ def verify_bundle(results_dir, results, ledger, file_profile=None,
         except OSError:
             inside = False
         if not log.is_file():
-            anomalies.append(f"bundle: {tid} names raw log {raw_log} which does "
-                             f"not exist - the evidence for its counts is gone")
+            anomalies.append(
+                f"bundle: {tid} names raw log {raw_log} which does "
+                f"not exist - the evidence for its counts is gone"
+            )
             continue
         if not inside:
-            anomalies.append(f"bundle: {tid} names raw log {raw_log} OUTSIDE the "
-                             f"evidence dir {results_dir} - logs must live in the "
-                             f"bundle they justify")
+            anomalies.append(
+                f"bundle: {tid} names raw log {raw_log} OUTSIDE the "
+                f"evidence dir {results_dir} - logs must live in the "
+                f"bundle they justify"
+            )
             continue
         key = log.resolve()
         if key in seen_logs:
-            anomalies.append(f"bundle: {tid} and {seen_logs[key]} both name log "
-                             f"{raw_log} - one execution cannot vouch for two rows")
+            anomalies.append(
+                f"bundle: {tid} and {seen_logs[key]} both name log "
+                f"{raw_log} - one execution cannot vouch for two rows"
+            )
             continue
         seen_logs[key] = tid
         actual_sha = common.sha256_file(log)
@@ -339,25 +368,33 @@ def verify_bundle(results_dir, results, ledger, file_profile=None,
         recorded = r.get("log_sha256")
         if recorded is not None:
             if recorded != actual_sha:
-                anomalies.append(f"bundle: {tid} log {raw_log} hashes {actual_sha} "
-                                 f"but the row recorded {recorded} - the log was "
-                                 f"rewritten after the row was")
+                anomalies.append(
+                    f"bundle: {tid} log {raw_log} hashes {actual_sha} "
+                    f"but the row recorded {recorded} - the log was "
+                    f"rewritten after the row was"
+                )
         elif rel_in_dir in manifest:
             if manifest[rel_in_dir] != actual_sha:
-                anomalies.append(f"bundle: {tid} log {raw_log} hashes {actual_sha} "
-                                 f"but the sidecar manifest recorded "
-                                 f"{manifest[rel_in_dir]} - the archived bytes changed")
+                anomalies.append(
+                    f"bundle: {tid} log {raw_log} hashes {actual_sha} "
+                    f"but the sidecar manifest recorded "
+                    f"{manifest[rel_in_dir]} - the archived bytes changed"
+                )
         else:
-            anomalies.append(f"bundle: {tid} log {raw_log} has no recorded hash and "
-                             f"no sidecar manifest entry - unbound bytes are not "
-                             f"evidence (add {LOG_MANIFEST_NAME} for legacy archives)")
+            anomalies.append(
+                f"bundle: {tid} log {raw_log} has no recorded hash and "
+                f"no sidecar manifest entry - unbound bytes are not "
+                f"evidence (add {LOG_MANIFEST_NAME} for legacy archives)"
+            )
         text = log.read_text(errors="replace")
         parsed = common.parse_libtest_counts(text)
         for k, v in parsed.items():
             if v != r.get(k, 0):
-                anomalies.append(f"bundle: {tid} row claims {k}={r.get(k, 0)} but its "
-                                 f"log reparses to {k}={v} - the aggregate "
-                                 f"contradicts the evidence it summarizes")
+                anomalies.append(
+                    f"bundle: {tid} row claims {k}={r.get(k, 0)} but its "
+                    f"log reparses to {k}={v} - the aggregate "
+                    f"contradicts the evidence it summarizes"
+                )
         # ---- ledger fingerprint vs the raw log (E-P0-07) ----
         entry = ledger.get(tid)
         if entry is None:
@@ -366,17 +403,23 @@ def verify_bundle(results_dir, results, ledger, file_profile=None,
         allowed = [prof] if isinstance(prof, str) else list(prof or [])
         row_profile = (r.get("run") or {}).get("profile") or file_profile
         if not allowed:
-            anomalies.append(f"ledger: {tid} names no profile - a tolerance must "
-                             f"say which storage lane(s) it covers")
+            anomalies.append(
+                f"ledger: {tid} names no profile - a tolerance must "
+                f"say which storage lane(s) it covers"
+            )
         elif row_profile not in allowed:
-            anomalies.append(f"ledger: {tid} tolerance covers profile(s) {allowed} "
-                             f"but this run's profile is {row_profile!r} - a "
-                             f"tolerance observed on one lane excuses no other")
+            anomalies.append(
+                f"ledger: {tid} tolerance covers profile(s) {allowed} "
+                f"but this run's profile is {row_profile!r} - a "
+                f"tolerance observed on one lane excuses no other"
+            )
         fp = entry.get("fingerprint")
         if fp is None:
             if entry.get("expected_failed", 0) + entry.get("expected_ignored", 0) > 0:
-                anomalies.append(f"ledger: {tid} tolerates cases it does not name - "
-                                 f"add a fingerprint or retire the entry")
+                anomalies.append(
+                    f"ledger: {tid} tolerates cases it does not name - "
+                    f"add a fingerprint or retire the entry"
+                )
             continue
         fp_failed = set(fp.get("failed") or [])
         log_failed = common.parse_libtest_failed_cases(text)
@@ -386,48 +429,62 @@ def verify_bundle(results_dir, results, ledger, file_profile=None,
             anomalies.append(
                 f"ledger: {tid} fingerprint does not match the log's failing cases"
                 + (f"; ledgered but NOT failing in the log (ghosts): {ghosts}" if ghosts else "")
-                + (f"; failing in the log but NOT ledgered: {unledgered}" if unledgered else ""))
+                + (f"; failing in the log but NOT ledgered: {unledgered}" if unledgered else "")
+            )
         fp_ignored = set(fp.get("ignored") or [])
         if fp_ignored:
             log_ignored = common.parse_libtest_ignored_cases(text)
             if log_ignored and fp_ignored != log_ignored:
-                anomalies.append(f"ledger: {tid} fingerprint ignored cases "
-                                 f"{sorted(fp_ignored)} do not match the log's "
-                                 f"named ignored cases {sorted(log_ignored)}")
+                anomalies.append(
+                    f"ledger: {tid} fingerprint ignored cases "
+                    f"{sorted(fp_ignored)} do not match the log's "
+                    f"named ignored cases {sorted(log_ignored)}"
+                )
             elif not log_ignored:
                 # terse libtest output prints `i` with no name; the COUNT is
                 # still bound (parse_libtest_counts above), the NAMES are not.
                 # Honest gap, named - never silently claimed as verified.
-                warnings.append(f"{tid}: log is terse-format and names no ignored "
-                                f"cases; {len(fp_ignored)} ignored tolerance(s) "
-                                f"verified by count only, not by name")
+                warnings.append(
+                    f"{tid}: log is terse-format and names no ignored "
+                    f"cases; {len(fp_ignored)} ignored tolerance(s) "
+                    f"verified by count only, not by name"
+                )
 
-    root, _pairs = compute_bundle_root(results_dir, results,
-                                       ledger_path=ledger_path, repo=repo)
+    root, _pairs = compute_bundle_root(results_dir, results, ledger_path=ledger_path, repo=repo)
     if manifest_root is not None and manifest_root != root:
-        anomalies.append(f"bundle: recomputed root {root} != sidecar manifest root "
-                         f"{manifest_root} - some consumed file changed after the "
-                         f"manifest was computed")
+        anomalies.append(
+            f"bundle: recomputed root {root} != sidecar manifest root "
+            f"{manifest_root} - some consumed file changed after the "
+            f"manifest was computed"
+        )
     marker = results_dir / "COMPLETE"
     if marker.is_file():
         marker_text = marker.read_text()
-        m = re.match(r"^COMPLETE ([0-9a-f]{64})\s*$",
-                     marker_text.splitlines()[0] if marker_text.strip() else "")
+        m = re.match(
+            r"^COMPLETE ([0-9a-f]{64})\s*$",
+            marker_text.splitlines()[0] if marker_text.strip() else "",
+        )
         if m:
             if m.group(1) != root:
-                anomalies.append(f"bundle: COMPLETE binds root {m.group(1)} but the "
-                                 f"bundle recomputes to {root} - the archive was "
-                                 f"modified after it was sealed")
+                anomalies.append(
+                    f"bundle: COMPLETE binds root {m.group(1)} but the "
+                    f"bundle recomputes to {root} - the archive was "
+                    f"modified after it was sealed"
+                )
         else:
-            warnings.append(f"COMPLETE carries no bundle root (legacy marker, "
-                            f"predates root binding) - archive integrity rests on "
-                            f"the sidecar manifest and this verdict's recorded "
-                            f"bundle_root {root}; future runs seal 'COMPLETE <root>'")
+            warnings.append(
+                f"COMPLETE carries no bundle root (legacy marker, "
+                f"predates root binding) - archive integrity rests on "
+                f"the sidecar manifest and this verdict's recorded "
+                f"bundle_root {root}; future runs seal 'COMPLETE <root>'"
+            )
     elif not unsealed_ok:
         # unsealed_ok is for the LIVE producer, which verifies immediately
         # before sealing; every re-reader must see the missing seal named
-        warnings.append("no COMPLETE marker in the results dir - this bundle was "
-                        "never sealed green (mid-run, red, or pre-verdict)")
+        warnings.append(
+            "no COMPLETE marker in the results dir - this bundle was "
+            "never sealed green (mid-run, red, or pre-verdict)"
+        )
     return anomalies, warnings, root
 
 
@@ -437,8 +494,9 @@ def compute_observation(results):
     happened; both must always travel together."""
     return {
         "rows": len(results),
-        "nonzero_exit_rows": sum(1 for r in results
-                                 if not r.get("timed_out") and r.get("exit_code") != 0),
+        "nonzero_exit_rows": sum(
+            1 for r in results if not r.get("timed_out") and r.get("exit_code") != 0
+        ),
         "timed_out_rows": sum(1 for r in results if r.get("timed_out")),
         "cases_passed": sum(r.get("passed", 0) for r in results),
         "cases_failed": sum(r.get("failed", 0) for r in results),
@@ -451,15 +509,25 @@ def human_line(observation, green, ledgered_rows):
     (with the reds the ledger tolerates still visible) always precedes the
     policy outcome."""
     o = observation
-    return (f"OBSERVATION: {o['rows']} rows, {o['nonzero_exit_rows']} nonzero exit(s), "
-            f"{o['timed_out_rows']} timeout(s), {o['cases_failed']} failed case(s), "
-            f"{o['cases_ignored']} ignored case(s); "
-            f"POLICY: {'GREEN' if green else 'RED'} ({ledgered_rows} ledgered)")
+    return (
+        f"OBSERVATION: {o['rows']} rows, {o['nonzero_exit_rows']} nonzero exit(s), "
+        f"{o['timed_out_rows']} timeout(s), {o['cases_failed']} failed case(s), "
+        f"{o['cases_ignored']} ignored case(s); "
+        f"POLICY: {'GREEN' if green else 'RED'} ({ledgered_rows} ledgered)"
+    )
 
 
-def verdict_exit_code(anomalies, complete_selection, out_dir=None, extra=None,
-                      observation=None, warnings=None, bundle_root=None,
-                      verdict_filename="verdict.json", write_complete=True):
+def verdict_exit_code(
+    anomalies,
+    complete_selection,
+    out_dir=None,
+    extra=None,
+    observation=None,
+    warnings=None,
+    bundle_root=None,
+    verdict_filename="verdict.json",
+    write_complete=True,
+):
     """Write the verdict file (+ a COMPLETE marker on green) and return 0/1.
 
     The verdict now carries BOTH the raw `observation` and the ledger-filtered
@@ -492,8 +560,11 @@ def verdict_exit_code(anomalies, complete_selection, out_dir=None, extra=None,
                     marker.write_text(f"COMPLETE {bundle_root}\n")
                 else:
                     marker.write_text(
-                        json.dumps({"green": True,
-                                    "written_by": "tools/catalog/verdict.py"}, indent=1) + "\n")
+                        json.dumps(
+                            {"green": True, "written_by": "tools/catalog/verdict.py"}, indent=1
+                        )
+                        + "\n"
+                    )
             elif marker.exists():
                 # a re-run that goes red must not leave a stale green marker behind
                 marker.unlink()

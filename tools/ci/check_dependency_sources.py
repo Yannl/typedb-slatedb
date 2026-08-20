@@ -40,7 +40,6 @@ Exit codes: 0 PASS, 1 contradiction found, 2 usage/IO/toolchain error.
 from __future__ import annotations
 
 import argparse
-import copy
 import json
 import re
 import shutil
@@ -74,10 +73,22 @@ def cargo_metadata(manifest: Path) -> dict:
             f"workspace's `materialize` commands from tools/ci/dependency-source-claims.json first. "
             f"An absent tree is not evidence of a clean graph."
         )
-    cmd = [cargo, CARGO_TOOLCHAIN, "metadata", "--manifest-path", str(manifest), "--format-version", "1", "--locked", "--offline"]
+    cmd = [
+        cargo,
+        CARGO_TOOLCHAIN,
+        "metadata",
+        "--manifest-path",
+        str(manifest),
+        "--format-version",
+        "1",
+        "--locked",
+        "--offline",
+    ]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
-        raise LinterError(f"`{' '.join(cmd)}` failed (exit {proc.returncode}):\n{proc.stderr.strip()[:4000]}")
+        raise LinterError(
+            f"`{' '.join(cmd)}` failed (exit {proc.returncode}):\n{proc.stderr.strip()[:4000]}"
+        )
     try:
         return json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
@@ -138,16 +149,24 @@ def assert_holds(claim: dict, facts: list[dict]) -> list[str]:
     if "version" in spec and fact["version"] != spec["version"]:
         bad.append(f"version is {fact['version']}, claim says {spec['version']}")
     if "resolved_source_kind" in spec and fact["kind"] != spec["resolved_source_kind"]:
-        bad.append(f"resolved source kind is {fact['kind']!r} ({fact['detail']}), claim says {spec['resolved_source_kind']!r}")
+        bad.append(
+            f"resolved source kind is {fact['kind']!r} ({fact['detail']}), claim says {spec['resolved_source_kind']!r}"
+        )
     if "resolved_path_suffix" in spec:
         suffix = spec["resolved_path_suffix"]
         if fact["kind"] != "path" or not fact["detail"].replace("\\", "/").endswith(suffix):
-            bad.append(f"resolved path is {fact['detail']!r}, claim expects it to end with {suffix!r}")
+            bad.append(
+                f"resolved path is {fact['detail']!r}, claim expects it to end with {suffix!r}"
+            )
     if "resolved_registry" in spec and fact["detail"] != spec["resolved_registry"]:
-        bad.append(f"resolved registry is {fact['detail']!r}, claim says {spec['resolved_registry']!r}")
+        bad.append(
+            f"resolved registry is {fact['detail']!r}, claim says {spec['resolved_registry']!r}"
+        )
     for feat in spec.get("enabled_features_include", []):
         if feat not in fact["features"]:
-            bad.append(f"feature {feat!r} is NOT enabled in the resolved graph (enabled: {fact['features']})")
+            bad.append(
+                f"feature {feat!r} is NOT enabled in the resolved graph (enabled: {fact['features']})"
+            )
     return bad
 
 
@@ -197,7 +216,15 @@ def check_prose(claim: dict, root: Path) -> list[str]:
 def _fixture_metadata(*, source: str | None, manifest: str, features: list[str]) -> dict:
     ident = "path+file:///x#slatedb@0.15.0" if source is None else f"{source}#slatedb@0.15.0"
     return {
-        "packages": [{"id": ident, "name": "slatedb", "version": "0.15.0", "source": source, "manifest_path": manifest}],
+        "packages": [
+            {
+                "id": ident,
+                "name": "slatedb",
+                "version": "0.15.0",
+                "source": source,
+                "manifest_path": manifest,
+            }
+        ],
         "resolve": {"nodes": [{"id": ident, "features": features, "deps": []}], "root": None},
     }
 
@@ -218,24 +245,52 @@ def self_test(root: Path) -> int:
         ("CONTROL: the fork-resolved graph satisfies DS-01", forked, True),
         (
             "MUTANT graph-reverts-to-crates.io (the [patch.crates-io] line is deleted)",
-            _fixture_metadata(source=registry_src, manifest="/root/.cargo/registry/.../Cargo.toml", features=["aws", "external_epoch_required", "wal_disable"]),
+            _fixture_metadata(
+                source=registry_src,
+                manifest="/root/.cargo/registry/.../Cargo.toml",
+                features=["aws", "external_epoch_required", "wal_disable"],
+            ),
             False,
         ),
         (
             "MUTANT shipped-fence-feature-silently-dropped",
-            _fixture_metadata(source=None, manifest="/repo/sources/slatedb-fork/Cargo.toml", features=["aws", "wal_disable"]),
+            _fixture_metadata(
+                source=None,
+                manifest="/repo/sources/slatedb-fork/Cargo.toml",
+                features=["aws", "wal_disable"],
+            ),
             False,
         ),
         (
             "MUTANT fork-path-swapped-for-a-different-tree",
-            _fixture_metadata(source=None, manifest="/repo/sources/slatedb-someone-elses/Cargo.toml", features=["aws", "external_epoch_required", "wal_disable"]),
+            _fixture_metadata(
+                source=None,
+                manifest="/repo/sources/slatedb-someone-elses/Cargo.toml",
+                features=["aws", "external_epoch_required", "wal_disable"],
+            ),
             False,
         ),
         (
             "MUTANT version-drifts-under-the-same-path",
             {
-                "packages": [{"id": "path+file:///x#slatedb@0.16.0", "name": "slatedb", "version": "0.16.0", "source": None, "manifest_path": "/repo/sources/slatedb-fork/Cargo.toml"}],
-                "resolve": {"nodes": [{"id": "path+file:///x#slatedb@0.16.0", "features": ["aws", "external_epoch_required", "wal_disable"], "deps": []}]},
+                "packages": [
+                    {
+                        "id": "path+file:///x#slatedb@0.16.0",
+                        "name": "slatedb",
+                        "version": "0.16.0",
+                        "source": None,
+                        "manifest_path": "/repo/sources/slatedb-fork/Cargo.toml",
+                    }
+                ],
+                "resolve": {
+                    "nodes": [
+                        {
+                            "id": "path+file:///x#slatedb@0.16.0",
+                            "features": ["aws", "external_epoch_required", "wal_disable"],
+                            "deps": [],
+                        }
+                    ]
+                },
             },
             False,
         ),
@@ -268,7 +323,9 @@ def self_test(root: Path) -> int:
     # prose mutants, executed over real copies of the real documents
     with tempfile.TemporaryDirectory() as tmp:
         sandbox = Path(tmp)
-        for rel in real["documents"] + [r["file"] for r in real["prose"]["required_when_assert_holds"]]:
+        for rel in real["documents"] + [
+            r["file"] for r in real["prose"]["required_when_assert_holds"]
+        ]:
             src = root / rel
             dst = sandbox / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
@@ -302,7 +359,10 @@ def self_test(root: Path) -> int:
                 False,
             ),
         ]
-        originals = {rel: (sandbox / rel).read_text(encoding="utf-8") for rel in {c[1] for c in prose_cases if c[1]}}
+        originals = {
+            rel: (sandbox / rel).read_text(encoding="utf-8")
+            for rel in {c[1] for c in prose_cases if c[1]}
+        }
         for name, rel, injected, expect_pass in prose_cases:
             if rel:
                 (sandbox / rel).write_text(originals[rel] + injected, encoding="utf-8")
@@ -319,10 +379,14 @@ def self_test(root: Path) -> int:
         # how a superseded claim survives a review.
         rel = real["prose"]["required_when_assert_holds"][0]["file"]
         original = (sandbox / rel).read_text(encoding="utf-8")
-        (sandbox / rel).write_text(original.replace("sources/slatedb-fork", "the storage engine"), encoding="utf-8")
+        (sandbox / rel).write_text(
+            original.replace("sources/slatedb-fork", "the storage engine"), encoding="utf-8"
+        )
         found = check_prose(real, sandbox)
         ok = any("does not state the posture" in f for f in found)
-        print(f"  {'ok  ' if ok else 'FAIL'} MUTANT the required fork statement is quietly deleted from {rel}")
+        print(
+            f"  {'ok  ' if ok else 'FAIL'} MUTANT the required fork statement is quietly deleted from {rel}"
+        )
         if not ok:
             print(f"       expected a missing-required-statement failure, got {found}")
             failures += 1
@@ -354,11 +418,18 @@ def load_claims(path: Path) -> dict:
 
 
 def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--claims", default=str(CLAIMS_PATH))
     ap.add_argument("--root", default=str(REPO_ROOT))
-    ap.add_argument("--metadata", action="append", default=[], metavar="WS=FILE",
-                    help="use a captured `cargo metadata` document for workspace WS instead of running cargo")
+    ap.add_argument(
+        "--metadata",
+        action="append",
+        default=[],
+        metavar="WS=FILE",
+        help="use a captured `cargo metadata` document for workspace WS instead of running cargo",
+    )
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
 
@@ -406,8 +477,10 @@ def main(argv: list[str]) -> int:
         bad = assert_holds(claim, facts)
         fact_line = facts[0] if facts else None
         if fact_line:
-            print(f"{claim['id']}: {ws_id}/{claim['package']} resolves as {fact_line['kind']} -> {fact_line['detail']} "
-                  f"(v{fact_line['version']}, features {fact_line['features']})")
+            print(
+                f"{claim['id']}: {ws_id}/{claim['package']} resolves as {fact_line['kind']} -> {fact_line['detail']} "
+                f"(v{fact_line['version']}, features {fact_line['features']})"
+            )
         if bad:
             for b in bad:
                 failures.append(
@@ -424,7 +497,9 @@ def main(argv: list[str]) -> int:
         for f in failures:
             print(f"  - {f}")
         return 1
-    print("DEPENDENCY-SOURCE TRUTH: PASS (every documented dependency source matches the resolved cargo graph)")
+    print(
+        "DEPENDENCY-SOURCE TRUTH: PASS (every documented dependency source matches the resolved cargo graph)"
+    )
     return 0
 
 

@@ -27,6 +27,7 @@ never accept, and each one is closed by a specific rule here:
 
 Usage: compare_u2s3.py <run-dir-name>   (under docs/evidence/G3/)
 """
+
 import argparse
 import json
 import pathlib
@@ -42,21 +43,21 @@ EXPLAINED = {
         "u2s3": ["18/0/0 ok"],
         "u1": ["8/0/0 ok"],
         "reason": "additive port-layer tests, counted rather than assumed: the U1 "
-                  "oracle's 8 are the upstream storage lib's unit tests; the U2S3 "
-                  "run's 18 are those 8 plus the 10 #[test] functions in "
-                  "fork/typedb/storage/keyspace/slate.rs (retry_channel_tests, "
-                  "read_contract_tests, posture_tests, materialization_tests) - a "
-                  "module that does not exist on the RocksDB baseline at all. "
-                  "8 + 10 = 18 exactly, so zero baseline tests changed outcome. "
-                  "Adding a control to slate.rs moves this number and the comparison "
-                  "goes red until the declaration is updated: that is the intended "
-                  "behaviour, not a nuisance.",
+        "oracle's 8 are the upstream storage lib's unit tests; the U2S3 "
+        "run's 18 are those 8 plus the 10 #[test] functions in "
+        "fork/typedb/storage/keyspace/slate.rs (retry_channel_tests, "
+        "read_contract_tests, posture_tests, materialization_tests) - a "
+        "module that does not exist on the RocksDB baseline at all. "
+        "8 + 10 = 18 exactly, so zero baseline tests changed outcome. "
+        "Adding a control to slate.rs moves this number and the comparison "
+        "goes red until the declaration is updated: that is the intended "
+        "behaviour, not a nuisance.",
     },
     "storage:test_recovery": {
         "u2s3": ["5/2/0 rc=101"],
         "u1": ["5/2/0 rc=101"],
         "reason": "baseline-identical: the 2 failures are upstream todo!() stubs "
-                  "(wal_missing_records_*) that fail on every backend.",
+        "(wal_missing_records_*) that fail on every backend.",
     },
     "storage:test_isolation": {
         "u2s3": ["14/0/1 ok"],
@@ -67,24 +68,24 @@ EXPLAINED = {
         "u2s3": ["2/0/0 ok"],
         "u1": ["0/0/0 TIMEOUT"],
         "reason": "corrected expectation: the U1 baseline row is itself a 1800s "
-                  "TIMEOUT; the corrected oracle profile is U2's measured 2 passed / "
-                  "0 failed at a raised timeout (u2-full: 2099s at 3600s).",
+        "TIMEOUT; the corrected oracle profile is U2's measured 2 passed / "
+        "0 failed at a raised timeout (u2-full: 2099s at 3600s).",
     },
     "typedb_server_bin:bench_concurrency": {
         "u2s3": ["0/0/0 ok"],
         "u1": ["ABSENT"],
         "reason": "absent from the U1 baseline: the executable was dropped by the "
-                  "pre-fix (package,target) dedupe collapse and first measured on "
-                  "the U2 run; it contains 0 test cases on every lane.",
+        "pre-fix (package,target) dedupe collapse and first measured on "
+        "the U2 run; it contains 0 test cases on every lane.",
     },
     "typedb_server_bin:bench_iam": {
         "u2s3": ["2/0/0 ok"],
         "u1": ["ABSENT"],
         "reason": "absent from the U1 baseline (same dedupe collapse) and GREEN on "
-                  "U2S3 where U2 is red: the upstream environment defect (the test "
-                  "queries a database whose TempDir storage dir was deleted at the "
-                  "end of setup) cannot trigger when keyspace data lives in the "
-                  "object store, so U2S3 matches U0/RocksDB directly.",
+        "U2S3 where U2 is red: the upstream environment defect (the test "
+        "queries a database whose TempDir storage dir was deleted at the "
+        "end of setup) cannot trigger when keyspace data lives in the "
+        "object store, so U2S3 matches U0/RocksDB directly.",
     },
 }
 
@@ -115,8 +116,12 @@ def profiles(rows):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("run_dir", nargs="?", default="u2s3-full",
-                        help="evidence dir under docs/evidence/G3 to compare against the U1 oracle")
+    parser.add_argument(
+        "run_dir",
+        nargs="?",
+        default="u2s3-full",
+        help="evidence dir under docs/evidence/G3 to compare against the U1 oracle",
+    )
     run_dir = parser.parse_args().run_dir
     u2s3 = json.loads((REPO / f"docs/evidence/G3/{run_dir}/u0-results.json").read_text())
     u1 = json.loads((REPO / "docs/evidence/G3/u1-full/u0-results.json").read_text())
@@ -155,28 +160,33 @@ def main():
             classification = (
                 f"UNEXPLAINED - stop the line: a classification exists for this "
                 f"target but declares u2s3={sorted(exp['u2s3'])} u1={sorted(exp['u1'])}, "
-                f"and the measured profiles are u2s3={run_profile} u1={base_profile}")
+                f"and the measured profiles are u2s3={run_profile} u1={base_profile}"
+            )
         elif not run_rows:
-            classification = ("UNEXPLAINED - stop the line: present in the U1 oracle "
-                              "and ABSENT from this run (the corpus shrank)")
+            classification = (
+                "UNEXPLAINED - stop the line: present in the U1 oracle "
+                "and ABSENT from this run (the corpus shrank)"
+            )
         else:
             classification = "UNEXPLAINED - stop the line"
-        diffs.append({
-            "target": tid,
-            "u2s3_profile": " + ".join(run_profile),
-            "u1_profile": " + ".join(base_profile),
-            "u1_timed_out": bool(base_rows and any(x["timed_out"] for x in base_rows)),
-            "classification": classification,
-        })
+        diffs.append(
+            {
+                "target": tid,
+                "u2s3_profile": " + ".join(run_profile),
+                "u1_profile": " + ".join(base_profile),
+                "u1_timed_out": bool(base_rows and any(x["timed_out"] for x in base_rows)),
+                "classification": classification,
+            }
+        )
 
     unexplained = [d for d in diffs if d["classification"].startswith("UNEXPLAINED")]
     out = {
         "claim": "U2S3 (SlateDB keyspaces over an S3-compatible object store - local "
-                 "MinIO standing in for Cloudflare R2 - with file WAL) runs the "
-                 "complete applicable upstream TypeDB test corpus with a pass/fail "
-                 "profile structurally equal to the U1 RocksDB oracle baseline, under "
-                 "the declared corrected expectations for known upstream-defective "
-                 "targets",
+        "MinIO standing in for Cloudflare R2 - with file WAL) runs the "
+        "complete applicable upstream TypeDB test corpus with a pass/fail "
+        "profile structurally equal to the U1 RocksDB oracle baseline, under "
+        "the declared corrected expectations for known upstream-defective "
+        "targets",
         "u2s3_run": f"docs/evidence/G3/{run_dir}/u0-results.json",
         "u1_baseline": "docs/evidence/G3/u1-full/u0-results.json",
         "s3_endpoint": "MinIO (S3 API) at 127.0.0.1:9000, bucket typedb-keyspaces",
@@ -190,22 +200,27 @@ def main():
             "cases_ignored": cases["ignored"],
         },
         "method": "union-of-both-sides per-target profile multiset equality, where a "
-                  "profile is <passed>/<failed>/<ignored> plus the process outcome "
-                  "(ok | rc=<n> | TIMEOUT), joined on target name (the U1 manifest "
-                  "predates the package-id discovery fix). Every inequality must match "
-                  "a classification that declares the exact expected profiles on both "
-                  "sides, or the comparison fails.",
+        "profile is <passed>/<failed>/<ignored> plus the process outcome "
+        "(ok | rc=<n> | TIMEOUT), joined on target name (the U1 manifest "
+        "predates the package-id discovery fix). Every inequality must match "
+        "a classification that declares the exact expected profiles on both "
+        "sides, or the comparison fails.",
         "divergent_targets": diffs,
         "unexplained_count": len(unexplained),
     }
-    path = REPO / ("docs/evidence/G3/u2s3-vs-oracle-comparison.json" if run_dir == "u2s3-full"
-                   else f"docs/evidence/G3/{run_dir}-vs-oracle-comparison.json")
+    path = REPO / (
+        "docs/evidence/G3/u2s3-vs-oracle-comparison.json"
+        if run_dir == "u2s3-full"
+        else f"docs/evidence/G3/{run_dir}-vs-oracle-comparison.json"
+    )
     path.write_text(json.dumps(out, indent=1) + "\n")
     print(json.dumps(out["u2s3_summary"], indent=1))
     print(f"divergent: {len(diffs)}, unexplained: {len(unexplained)}")
     for d in unexplained:
-        print(f"UNEXPLAINED {d['target']}: u2s3={d['u2s3_profile']} "
-              f"u1={d['u1_profile']}", file=sys.stderr)
+        print(
+            f"UNEXPLAINED {d['target']}: u2s3={d['u2s3_profile']} u1={d['u1_profile']}",
+            file=sys.stderr,
+        )
     return 1 if unexplained else 0
 
 

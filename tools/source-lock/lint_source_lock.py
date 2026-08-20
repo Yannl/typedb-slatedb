@@ -27,6 +27,7 @@ The staged-fork and workspace-lock subprocess checks always run against
 this repo (their scripts are bound to it); everything else resolves against
 --repo-root.
 """
+
 import argparse
 import hashlib
 import json
@@ -126,6 +127,7 @@ VERSION = re.compile(r"^=?\d+(\.\d+)*([.+-][0-9A-Za-z.]+)*$")
 def cargo_lock_packages(path: pathlib.Path) -> dict:
     """name -> (version, checksum) for registry packages in a Cargo.lock."""
     pkgs = {}
+
     def quoted(line: str):
         parts = line.split('"')
         return parts[1] if len(parts) >= 2 else None
@@ -169,9 +171,15 @@ def check_patched_consumers(nid: str, node: dict, repo_root: pathlib.Path, failu
         text = manifest.read_text()
         # the [patch.crates-io] override for this crate must point at the
         # recorded fork path (a different path is a different, unlocked fork)
-        if "[patch.crates-io]" not in text or crate not in text or (patch_path and patch_path not in text):
-            failures.append(f"{nid}: {manifest_rel} lacks the [patch.crates-io] {crate} = path override "
-                            f"pointing at {patch_path!r}")
+        if (
+            "[patch.crates-io]" not in text
+            or crate not in text
+            or (patch_path and patch_path not in text)
+        ):
+            failures.append(
+                f"{nid}: {manifest_rel} lacks the [patch.crates-io] {crate} = path override "
+                f"pointing at {patch_path!r}"
+            )
         # the consumer lock must NOT resolve the crate from the registry
         # (if it does, the patch did not take and we are silently on crates.io)
         lock_path = repo_root / lock_rel if lock_rel else None
@@ -179,12 +187,15 @@ def check_patched_consumers(nid: str, node: dict, repo_root: pathlib.Path, failu
             failures.append(f"{nid}: patched consumer lock missing at {lock_rel}")
             continue
         if crate in cargo_lock_packages(lock_path):
-            failures.append(f"{nid}: {lock_rel} still resolves {crate} from the REGISTRY - "
-                            f"the [patch.crates-io] override did not take (S-02 regression)")
+            failures.append(
+                f"{nid}: {lock_rel} still resolves {crate} from the REGISTRY - "
+                f"the [patch.crates-io] override did not take (S-02 regression)"
+            )
 
 
-def check_crates_in_lock(nid: str, want: dict, lock_rel: str,
-                         repo_root: pathlib.Path, failures: list) -> None:
+def check_crates_in_lock(
+    nid: str, want: dict, lock_rel: str, repo_root: pathlib.Path, failures: list
+) -> None:
     """Every crate in `want` (name -> (version, checksum)) must be pinned in
     the consumer lockfile with exactly that version and checksum."""
     lock_path = repo_root / lock_rel
@@ -198,8 +209,8 @@ def check_crates_in_lock(nid: str, want: dict, lock_rel: str,
             failures.append(f"{nid}: crate {cname} not pinned in {lock_rel}")
         elif got != (wver, wsum):
             failures.append(
-                f"{nid}: crate {cname} mismatch in {lock_rel} "
-                f"want {(wver, wsum)} got {got}")
+                f"{nid}: crate {cname} mismatch in {lock_rel} want {(wver, wsum)} got {got}"
+            )
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -214,6 +225,7 @@ def sha256(path: pathlib.Path) -> str:
 # per-kind schema validation — every node passes through exactly one of
 # these; a kind with no validator is a failure (fail closed on unknown)
 # ---------------------------------------------------------------------------
+
 
 def validate_git(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
     """git / git_tag: commit and tree must both be locked as 40-hex ids.
@@ -252,12 +264,10 @@ def validate_registry(nid: str, node: dict, repo_root: pathlib.Path, failures: l
             failures.append(f"{nid}: crate {cname} malformed version {ver!r}")
         cs = cinfo.get("checksum_sha256")
         if not (isinstance(cs, str) and HEX64.match(cs)):
-            failures.append(
-                f"{nid}: crate {cname} checksum_sha256 missing or not 64-hex: {cs!r}")
+            failures.append(f"{nid}: crate {cname} checksum_sha256 missing or not 64-hex: {cs!r}")
 
 
-def validate_cargo_dependency(nid: str, node: dict, repo_root: pathlib.Path,
-                              failures: list):
+def validate_cargo_dependency(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
     """Transitively-pinned crate: same shape rules as a registry node; the
     consumer Cargo.lock agreement is checked in the CARGO_DEP_NODES loop."""
     if not node.get("name"):
@@ -284,8 +294,8 @@ def validate_npm(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
     integrity = node.get("integrity")
     if not (isinstance(integrity, str) and NPM_INTEGRITY.match(integrity)):
         failures.append(
-            f"{nid}: integrity missing or not sha512-<86 base64 chars>==: "
-            f"{integrity!r}")
+            f"{nid}: integrity missing or not sha512-<86 base64 chars>==: {integrity!r}"
+        )
     tarball = node.get("tarball")
     if not (isinstance(tarball, str) and tarball.startswith("https://registry.npmjs.org/")):
         failures.append(f"{nid}: tarball missing or not registry.npmjs.org: {tarball!r}")
@@ -302,11 +312,13 @@ def validate_npm(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
         if entry.get("version") != ver:
             failures.append(
                 f"{nid}: version mismatch vs {NPM_LOCKFILE} "
-                f"want {ver!r} got {entry.get('version')!r}")
+                f"want {ver!r} got {entry.get('version')!r}"
+            )
         if entry.get("integrity") != integrity:
             failures.append(
                 f"{nid}: integrity mismatch vs {NPM_LOCKFILE} "
-                f"want {integrity!r} got {entry.get('integrity')!r}")
+                f"want {integrity!r} got {entry.get('integrity')!r}"
+            )
 
 
 def validate_artifact(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
@@ -337,8 +349,7 @@ def validate_oci_image(nid: str, node: dict, repo_root: pathlib.Path, failures: 
         failures.append(f"{nid}: oci_image without a reference: {ref!r}")
     digest = node.get("digest")
     if not (isinstance(digest, str) and OCI_DIGEST.match(digest)):
-        failures.append(
-            f"{nid}: oci digest missing or not sha256:<64-hex>: {digest!r}")
+        failures.append(f"{nid}: oci digest missing or not sha256:<64-hex>: {digest!r}")
 
 
 def validate_toolchain(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
@@ -350,8 +361,7 @@ def validate_toolchain(nid: str, node: dict, repo_root: pathlib.Path, failures: 
         failures.append(f"{nid}: malformed toolchain version {ver!r}")
 
 
-def validate_toolchain_set(nid: str, node: dict, repo_root: pathlib.Path,
-                           failures: list):
+def validate_toolchain_set(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
     """toolchain_set node: a non-empty member map, every member recorded as a
     non-empty identity string (path or version banner)."""
     members = node.get("members")
@@ -388,7 +398,9 @@ def check_staged_fork(workspace_lock_stale):
     out = []
     stage = subprocess.run(
         [sys.executable, str(REPO / "tools" / "fork" / "stage.py"), "--check"],
-        capture_output=True, text=True)
+        capture_output=True,
+        text=True,
+    )
     state = stage.stdout.strip().splitlines()[0] if stage.stdout.strip() else "UNKNOWN"
     if not state.startswith("STAGED:"):
         out.append(f"TB: sources/typedb is dirty but not cleanly staged - {state}")
@@ -399,14 +411,18 @@ def check_staged_fork(workspace_lock_stale):
         return out
     locked = json.loads(ws_path.read_text()).get("fork_staging")
     if not locked:
-        out.append("TB: workspace-lock.json records no fork_staging digest - "
-                   "regenerate it (tools/source-lock/generate_workspace_lock.py)")
+        out.append(
+            "TB: workspace-lock.json records no fork_staging digest - "
+            "regenerate it (tools/source-lock/generate_workspace_lock.py)"
+        )
         return out
     # the digest comparison itself is main()'s single generate_workspace_lock
     # --check run (previously re-run here: a second full-tree rehash per lint)
     if workspace_lock_stale:
-        out.append("TB: staged fork digest does not match workspace-lock.json "
-                   "(see generate_workspace_lock.py --check)")
+        out.append(
+            "TB: staged fork digest does not match workspace-lock.json "
+            "(see generate_workspace_lock.py --check)"
+        )
     return out
 
 
@@ -414,10 +430,18 @@ def main() -> int:
     # overrides exist for the negative controls (lock_mutants.py): they run
     # this real linter against mutated temp copies, never the real files
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--lock-file", type=pathlib.Path, default=LOCK,
-                        help="source-lock.json to lint (default: the committed one)")
-    parser.add_argument("--repo-root", type=pathlib.Path, default=REPO,
-                        help="root for resolving sources/ and consumer lockfiles")
+    parser.add_argument(
+        "--lock-file",
+        type=pathlib.Path,
+        default=LOCK,
+        help="source-lock.json to lint (default: the committed one)",
+    )
+    parser.add_argument(
+        "--repo-root",
+        type=pathlib.Path,
+        default=REPO,
+        help="root for resolving sources/ and consumer lockfiles",
+    )
     args = parser.parse_args()
     repo_root = args.repo_root.resolve()
     sources = repo_root / "sources"
@@ -431,13 +455,20 @@ def main() -> int:
     # below consume this result. Always runs against THIS repo: the script
     # is bound to it, and the mutant lane mutates node data, not the binding.
     ws_check = subprocess.run(
-        [sys.executable, str(REPO / "tools" / "source-lock" / "generate_workspace_lock.py"), "--check"],
-        capture_output=True, text=True)
+        [
+            sys.executable,
+            str(REPO / "tools" / "source-lock" / "generate_workspace_lock.py"),
+            "--check",
+        ],
+        capture_output=True,
+        text=True,
+    )
 
     for nid, node in nodes.items():
         status = node.get("status", "")
-        if status.startswith(("locked", "recorded", "declared_not_yet_qualified",
-                              "architecture_choice_required")):
+        if status.startswith(
+            ("locked", "recorded", "declared_not_yet_qualified", "architecture_choice_required")
+        ):
             pass
         else:
             failures.append(f"{nid}: unresolved status {status!r}")
@@ -451,7 +482,8 @@ def main() -> int:
         if validator is None:
             failures.append(
                 f"{nid}: unknown or missing kind {kind!r} - no validator; "
-                f"fail closed (add one to KIND_VALIDATORS or fix the node)")
+                f"fail closed (add one to KIND_VALIDATORS or fix the node)"
+            )
         else:
             validator(nid, node, repo_root, failures)
 
@@ -465,8 +497,9 @@ def main() -> int:
         if not (d / ".git").exists():
             failures.append(f"{nid}: checkout missing at sources/{dirname}")
             continue
-        got = subprocess.run(["git", "-C", str(d), "rev-parse", "HEAD"],
-                             capture_output=True, text=True).stdout.strip()
+        got = subprocess.run(
+            ["git", "-C", str(d), "rev-parse", "HEAD"], capture_output=True, text=True
+        ).stdout.strip()
         if got != want:
             failures.append(f"{nid}: revision mismatch want {want} got {got}")
         # the locked tree must be the commit's real tree. rev-parse reads the
@@ -474,14 +507,16 @@ def main() -> int:
         # working tree does not change HEAD^{tree}); a forged tree in the
         # lock (E-P0-02 mutant 3) fails here against every present checkout.
         want_tree = node.get("tree")
-        got_tree = subprocess.run(["git", "-C", str(d), "rev-parse", "HEAD^{tree}"],
-                                  capture_output=True, text=True).stdout.strip()
+        got_tree = subprocess.run(
+            ["git", "-C", str(d), "rev-parse", "HEAD^{tree}"], capture_output=True, text=True
+        ).stdout.strip()
         if want_tree != got_tree:
             failures.append(
-                f"{nid}: tree mismatch want {want_tree} got {got_tree} "
-                f"(sources/{dirname})")
-        dirty = subprocess.run(["git", "-C", str(d), "status", "--porcelain"],
-                               capture_output=True, text=True).stdout.strip()
+                f"{nid}: tree mismatch want {want_tree} got {got_tree} (sources/{dirname})"
+            )
+        dirty = subprocess.run(
+            ["git", "-C", str(d), "status", "--porcelain"], capture_output=True, text=True
+        ).stdout.strip()
         if dirty:
             if nid == "TB":
                 # sources/typedb is legitimately dirty while the fork is
@@ -503,8 +538,7 @@ def main() -> int:
         if node.get("kind") != "registry":
             failures.append(f"{nid}: expected kind 'registry', got {node.get('kind')!r}")
             continue
-        want = {node["crate"]: (node["version"].lstrip("="),
-                                node.get("checksum_sha256"))}
+        want = {node["crate"]: (node["version"].lstrip("="), node.get("checksum_sha256"))}
         for cname, cinfo in node.get("companion_crates", {}).items():
             want[cname] = (cinfo["version"].lstrip("="), cinfo.get("checksum_sha256"))
         for lock_rel in lock_rels:
@@ -518,11 +552,9 @@ def main() -> int:
             failures.append(f"{nid}: missing from lock")
             continue
         if node.get("kind") != "cargo_dependency":
-            failures.append(
-                f"{nid}: expected kind 'cargo_dependency', got {node.get('kind')!r}")
+            failures.append(f"{nid}: expected kind 'cargo_dependency', got {node.get('kind')!r}")
             continue
-        want = {node["name"]: (node["version"].lstrip("="),
-                               node.get("checksum_sha256"))}
+        want = {node["name"]: (node["version"].lstrip("="), node.get("checksum_sha256"))}
         for lock_rel in lock_rels:
             check_crates_in_lock(nid, want, lock_rel, repo_root, failures)
 
@@ -541,7 +573,8 @@ def main() -> int:
         integrity = node.get("integrity")
         if not (isinstance(integrity, str) and NPM_INTEGRITY.match(integrity)):
             failures.append(
-                f"{nid}: integrity missing or not sha512-<86 base64 chars>==: {integrity!r}")
+                f"{nid}: integrity missing or not sha512-<86 base64 chars>==: {integrity!r}"
+            )
         if not stack_lock_path.exists():
             failures.append(f"{nid}: consumer lockfile missing at {STACK_NPM_LOCKFILE}")
             continue
@@ -553,18 +586,20 @@ def main() -> int:
         if entry.get("version") != node.get("version"):
             failures.append(
                 f"{nid}: version mismatch vs {STACK_NPM_LOCKFILE} "
-                f"want {node.get('version')!r} got {entry.get('version')!r}")
+                f"want {node.get('version')!r} got {entry.get('version')!r}"
+            )
         if entry.get("integrity") != integrity:
             failures.append(
                 f"{nid}: integrity mismatch vs {STACK_NPM_LOCKFILE} "
-                f"want {integrity!r} got {entry.get('integrity')!r}")
+                f"want {integrity!r} got {entry.get('integrity')!r}"
+            )
         if stack_pkg_path.exists():
-            spec = (json.loads(stack_pkg_path.read_text())
-                    .get("dependencies", {}).get(pkg))
+            spec = json.loads(stack_pkg_path.read_text()).get("dependencies", {}).get(pkg)
             if spec is not None and spec != node.get("version"):
                 failures.append(
                     f"{nid}: {STACK_PACKAGE_JSON} pins {pkg} as {spec!r} - "
-                    f"must be the exact locked version {node.get('version')!r}, never a range")
+                    f"must be the exact locked version {node.get('version')!r}, never a range"
+                )
         else:
             failures.append(f"{nid}: {STACK_PACKAGE_JSON} missing")
 
@@ -583,7 +618,8 @@ def main() -> int:
             if got != node.get("sha256"):
                 failures.append(
                     f"{nid}: cached artifact sha256 mismatch at sources/{rel} "
-                    f"want {node.get('sha256')} got {got}")
+                    f"want {node.get('sha256')} got {got}"
+                )
 
     for nid, rel in ARTIFACTS.items():
         node = nodes.get(nid)
@@ -603,9 +639,11 @@ def main() -> int:
         for f in failures:
             print("  -", f)
         return 1
-    print(f"SOURCE-LOCK LINT: PASS ({len(GIT_DIRS)} git nodes, "
-          f"{len(ARTIFACTS)} artifacts, {len(nodes)} lock nodes, "
-          f"all kinds schema-validated)")
+    print(
+        f"SOURCE-LOCK LINT: PASS ({len(GIT_DIRS)} git nodes, "
+        f"{len(ARTIFACTS)} artifacts, {len(nodes)} lock nodes, "
+        f"all kinds schema-validated)"
+    )
     return 0
 
 

@@ -43,7 +43,6 @@ import hashlib
 import json
 import os
 import pathlib
-import shutil
 import stat
 import subprocess
 import sys
@@ -84,14 +83,16 @@ def sha256_bytes(b):
 
 def canonical(obj):
     """Canonical JSON bytes: sorted keys, no insignificant whitespace."""
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"),
-                      ensure_ascii=False).encode("utf-8")
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8"
+    )
 
 
 def write_json(path, obj):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(obj, sort_keys=True, indent=2,
-                               ensure_ascii=False) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(obj, sort_keys=True, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
 
 
 def read_json(path):
@@ -117,20 +118,21 @@ def member_root(tar_path):
                 raise Refusal(
                     f"ARTIFACT_NON_REGULAR_MEMBER {member.name} "
                     f"(type={member.type!r}) — an artifact must contain only "
-                    "directories and regular files")
+                    "directories and regular files"
+                )
             fh = tf.extractfile(member)
             h = hashlib.sha256()
             for chunk in iter(lambda: fh.read(1 << 20), b""):
                 h.update(chunk)
-            lines.append(f"{member.name}\0{member.mode:o}\0{member.size}\0"
-                         f"{h.hexdigest()}\n")
+            lines.append(f"{member.name}\0{member.mode:o}\0{member.size}\0{h.hexdigest()}\n")
     return sha256_bytes("".join(sorted(lines)).encode("utf-8")), len(lines)
 
 
 def git(*argv):
     try:
-        r = subprocess.run(["git", "-C", str(REPO), *argv], capture_output=True,
-                           text=True, timeout=120)
+        r = subprocess.run(
+            ["git", "-C", str(REPO), *argv], capture_output=True, text=True, timeout=120
+        )
     except (OSError, subprocess.TimeoutExpired):
         return None
     return r.stdout.strip() if r.returncode == 0 else None
@@ -158,18 +160,17 @@ def source_identity():
     identity, identity_digest, identity_verified = None, None, False
     try:
         identity = release_identity.resolve(REPO)
-    except Exception:                                   # noqa: BLE001
+    except Exception:  # noqa: BLE001
         # An unresolvable identity is a normal posture (a bare tarball), not
         # an error here: it simply leaves the identity unbound below.
         identity = None
     if identity is not None:
         identity_verified = bool(identity.get("verified"))
         identity_digest = identity.get("identity_digest")
-        if commit and identity.get("release_commit") \
-                and commit != identity["release_commit"]:
+        if commit and identity.get("release_commit") and commit != identity["release_commit"]:
             raise Refusal(
-                f"SOURCE_IDENTITY_CONFLICT git={commit} "
-                f"identity-file={identity['release_commit']}")
+                f"SOURCE_IDENTITY_CONFLICT git={commit} identity-file={identity['release_commit']}"
+            )
 
     env_commit = os.environ.get("RELEASE_SOURCE_COMMIT") or None
     env_tree = os.environ.get("RELEASE_SOURCE_TREE") or None
@@ -177,16 +178,15 @@ def source_identity():
         raise Refusal(f"SOURCE_IDENTITY_CONFLICT git={commit} env={env_commit}")
     if tree and env_tree and tree != env_tree:
         raise Refusal(f"SOURCE_TREE_CONFLICT git={tree} env={env_tree}")
-    if identity is not None and env_commit \
-            and identity.get("release_commit") != env_commit:
+    if identity is not None and env_commit and identity.get("release_commit") != env_commit:
         raise Refusal(
             f"SOURCE_IDENTITY_CONFLICT identity-file="
-            f"{identity.get('release_commit')} env={env_commit}")
+            f"{identity.get('release_commit')} env={env_commit}"
+        )
 
     status = git("status", "--porcelain")
     dirty = sorted(line[3:] for line in status.splitlines()) if status else []
-    if identity is not None and status is None \
-            and identity.get("dirty_paths") is not None:
+    if identity is not None and status is None and identity.get("dirty_paths") is not None:
         dirty = [f"(identity-file reports {identity['dirty_paths']} dirty paths)"]
 
     if commit:
@@ -194,7 +194,7 @@ def source_identity():
     elif identity is not None and identity.get("release_commit"):
         bound_by = "release-identity-file"
     elif env_commit:
-        bound_by = "environment"                        # unauthenticated
+        bound_by = "environment"  # unauthenticated
     else:
         bound_by = None
 
@@ -208,8 +208,7 @@ def source_identity():
         "dirty_paths": dirty,
         "dirty_paths_known": status is not None
         or (identity is not None and identity.get("dirty_paths") is not None),
-        "source_lock_sha256": (sha256_file(SOURCE_LOCK)
-                               if SOURCE_LOCK.exists() else None),
+        "source_lock_sha256": (sha256_file(SOURCE_LOCK) if SOURCE_LOCK.exists() else None),
     }
 
 
@@ -220,6 +219,7 @@ def toolchain_identity():
         except (OSError, subprocess.TimeoutExpired):
             return None
         return (r.stdout + r.stderr).strip().splitlines()[0] if (r.stdout or r.stderr) else None
+
     return {
         "python": sys.version.split()[0],
         "node": ver(["node", "--version"]),
@@ -231,6 +231,7 @@ def toolchain_identity():
 # --------------------------------------------------------------------------
 # release directory model
 # --------------------------------------------------------------------------
+
 
 def release_dir(releases, digest):
     return pathlib.Path(releases) / digest
@@ -270,10 +271,12 @@ def load_required_lanes(manifest_path):
         raise Refusal(
             f"LANE_NOT_IMPLEMENTED {unknown} — a lane id must name a Python "
             "implementation in tools/release/lanes.py; a manifest cannot "
-            "introduce a lane by naming a command")
+            "introduce a lane by naming a command"
+        )
     if not ids:
-        raise Refusal("LANE_MANIFEST_EMPTY — promotion with no required lane "
-                      "would be a promotion of nothing")
+        raise Refusal(
+            "LANE_MANIFEST_EMPTY — promotion with no required lane would be a promotion of nothing"
+        )
     return ids
 
 
@@ -285,9 +288,11 @@ def load_trusted_keys():
     for entry in doc["keys"]:
         if entry["class"] not in ("production", "development-public"):
             raise Refusal(f"TRUSTED_KEY_CLASS {entry['class']!r}")
-        if not (isinstance(entry["public_key"], str)
-                and len(entry["public_key"]) == 64
-                and all(c in "0123456789abcdef" for c in entry["public_key"])):
+        if not (
+            isinstance(entry["public_key"], str)
+            and len(entry["public_key"]) == 64
+            and all(c in "0123456789abcdef" for c in entry["public_key"])
+        ):
             raise Refusal(f"TRUSTED_KEY_MALFORMED {entry['key_id']!r}")
         if entry["key_id"] in by_id:
             raise Refusal(f"TRUSTED_KEY_DUPLICATE {entry['key_id']!r}")
@@ -311,7 +316,8 @@ def resolve_seed(entry):
             raise Refusal(
                 f"RELEASE_SIGNING_KEY_ABSENT {entry['key_id']} — set {env_name} "
                 "to a file holding the 32-byte hex seed; a production seed is "
-                "never read from the repository")
+                "never read from the repository"
+            )
         path = REPO / entry["seed_file"]
     seed_path = pathlib.Path(path)
     if not seed_path.exists():
@@ -327,7 +333,8 @@ def resolve_seed(entry):
     if ed.public_key(seed).hex() != entry["public_key"]:
         raise Refusal(
             f"RELEASE_SIGNING_SEED_MISMATCH {entry['key_id']} — the seed does "
-            "not derive the public key recorded in the trusted-key list")
+            "not derive the public key recorded in the trusted-key list"
+        )
     return seed
 
 
@@ -336,7 +343,10 @@ def node_verify(pub_hex, msg, sig_hex):
     try:
         r = subprocess.run(
             ["node", str(NODE_ED25519), "verify", pub_hex, msg.hex(), sig_hex],
-            capture_output=True, text=True, timeout=120)
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
     except (OSError, subprocess.TimeoutExpired) as err:
         return f"UNAVAILABLE:{err}"
     return r.stdout.strip() or f"NODE_ERROR:{r.stderr.strip()[:200]}"
@@ -346,23 +356,29 @@ def verify_signature_twice(pub_hex, msg, sig_hex):
     """True only when both implementations verify; a disagreement is fatal."""
     py = ed.verify(bytes.fromhex(pub_hex), msg, bytes.fromhex(sig_hex))
     node = node_verify(pub_hex, msg, sig_hex)
-    if node.startswith("UNAVAILABLE") or node.startswith("NODE_ERROR") \
-            or node.startswith("MALFORMED"):
+    if (
+        node.startswith("UNAVAILABLE")
+        or node.startswith("NODE_ERROR")
+        or node.startswith("MALFORMED")
+    ):
         raise Refusal(
             f"SIGNATURE_SECOND_OPINION_UNAVAILABLE {node} — the release root "
             "is verified by two independent implementations; one is not a "
-            "quorum")
+            "quorum"
+        )
     if py != (node == "VERIFIED"):
         raise Refusal(
             f"SIGNATURE_IMPLEMENTATION_DISAGREEMENT python={py} node={node} — "
             "one of the two Ed25519 implementations is wrong; refusing to "
-            "guess which")
+            "guess which"
+        )
     return py
 
 
 # --------------------------------------------------------------------------
 # commands
 # --------------------------------------------------------------------------
+
 
 def cmd_build(args):
     artifact = pathlib.Path(args.artifact).resolve()
@@ -394,8 +410,12 @@ def cmd_build(args):
                 "RELEASE_RECORD_IMMUTABLE — a record for this digest exists "
                 "with different content; a release is built once. Differing "
                 "keys: "
-                + ", ".join(sorted(k for k in set(existing) | set(record)
-                                   if existing.get(k) != record.get(k))))
+                + ", ".join(
+                    sorted(
+                        k for k in set(existing) | set(record) if existing.get(k) != record.get(k)
+                    )
+                )
+            )
         print(f"BUILD UNCHANGED {digest}")
         return 0
     write_json(record_path, record)
@@ -407,19 +427,23 @@ def cmd_build(args):
 def cmd_test(args):
     artifact = pathlib.Path(args.artifact).resolve()
     if args.lane not in lanes_mod.LANES:
-        raise Refusal(f"LANE_NOT_IMPLEMENTED {args.lane!r} — known lanes: "
-                      f"{sorted(lanes_mod.LANES)}")
+        raise Refusal(
+            f"LANE_NOT_IMPLEMENTED {args.lane!r} — known lanes: {sorted(lanes_mod.LANES)}"
+        )
     digest = args.digest or sha256_file(artifact)
     rdir = release_dir(args.releases, digest)
     if not (rdir / "release.json").exists():
-        raise Refusal(f"RELEASE_NOT_BUILT {digest} — run `build` first; a lane "
-                      "result must attach to a recorded release")
+        raise Refusal(
+            f"RELEASE_NOT_BUILT {digest} — run `build` first; a lane "
+            "result must attach to a recorded release"
+        )
     before = sha256_file(artifact)
     if before != digest:
         raise Refusal(
             f"ARTIFACT_DIGEST_MISMATCH file={before} requested={digest} — the "
             "artifact on disk is not the one this release names. Testing the "
-            "exact artifact is the point of the pipeline")
+            "exact artifact is the point of the pipeline"
+        )
     with tempfile.TemporaryDirectory(prefix="release-lane-") as tmp:
         extract = pathlib.Path(tmp) / "x"
         extract.mkdir()
@@ -437,7 +461,8 @@ def cmd_test(args):
         raise Refusal(
             f"ARTIFACT_CHANGED_DURING_LANE before={digest} after={after} — the "
             "artifact was rebuilt while its own lane was running; this result "
-            "belongs to neither digest")
+            "belongs to neither digest"
+        )
     log_rel = f"lanes/{args.lane}.log"
     log_path = rdir / log_rel
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -450,10 +475,17 @@ def cmd_test(args):
     # count, and a required lane that needed more than one attempt is a
     # release-grade blocker rather than an invisible retry.
     attempts_path = rdir / f"lanes/{args.lane}.attempts.jsonl"
-    prior = (len(attempts_path.read_text(encoding="utf-8").strip().splitlines())
-             if attempts_path.exists() else 0)
-    attempt = {"attempt": prior + 1, "artifact_sha256": digest,
-               "passed": bool(passed), "log_sha256": log_digest}
+    prior = (
+        len(attempts_path.read_text(encoding="utf-8").strip().splitlines())
+        if attempts_path.exists()
+        else 0
+    )
+    attempt = {
+        "attempt": prior + 1,
+        "artifact_sha256": digest,
+        "passed": bool(passed),
+        "log_sha256": log_digest,
+    }
     with open(attempts_path, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(attempt, sort_keys=True, separators=(",", ":")) + "\n")
     result = {
@@ -467,8 +499,7 @@ def cmd_test(args):
         "log_sha256": log_digest,
     }
     write_json(rdir / f"lanes/{args.lane}.json", result)
-    print(f"LANE {args.lane} {'PASS' if passed else 'FAIL'} attempt={prior + 1} "
-          f"artifact={digest}")
+    print(f"LANE {args.lane} {'PASS' if passed else 'FAIL'} attempt={prior + 1} artifact={digest}")
     return 0 if passed else 1
 
 
@@ -515,47 +546,58 @@ def collect(rdir, required, artifact_path, digest):
         lane_states[lane] = res
         if res.get("lane") != lane:
             issues.append(f"LANE_ID_MISMATCH {lane} != {res.get('lane')}")
-        if res.get("artifact_sha256") != digest or \
-                res.get("artifact_sha256_after") != digest:
-            issues.append(f"LANE_BOUND_TO_OTHER_ARTIFACT {lane} "
-                          f"{res.get('artifact_sha256')}/"
-                          f"{res.get('artifact_sha256_after')}")
+        if res.get("artifact_sha256") != digest or res.get("artifact_sha256_after") != digest:
+            issues.append(
+                f"LANE_BOUND_TO_OTHER_ARTIFACT {lane} "
+                f"{res.get('artifact_sha256')}/"
+                f"{res.get('artifact_sha256_after')}"
+            )
         log_path = rdir / res.get("log_file", "")
         if not log_path.exists():
             issues.append(f"LANE_LOG_MISSING {lane}")
             continue
         if sha256_file(log_path) != res.get("log_sha256"):
-            issues.append(f"LANE_LOG_UNBOUND {lane} — log bytes do not hash to "
-                          "the recorded log_sha256")
+            issues.append(
+                f"LANE_LOG_UNBOUND {lane} — log bytes do not hash to the recorded log_sha256"
+            )
             continue
         attempts_path = rdir / f"lanes/{lane}.attempts.jsonl"
         if not attempts_path.exists():
-            issues.append(f"LANE_ATTEMPTS_MISSING {lane} — a result without its "
-                          "append-only attempt ledger hides retries")
+            issues.append(
+                f"LANE_ATTEMPTS_MISSING {lane} — a result without its "
+                "append-only attempt ledger hides retries"
+            )
         else:
-            entries = [json.loads(ln) for ln
-                       in attempts_path.read_text(encoding="utf-8").splitlines()
-                       if ln.strip()]
+            entries = [
+                json.loads(ln)
+                for ln in attempts_path.read_text(encoding="utf-8").splitlines()
+                if ln.strip()
+            ]
             if not entries:
                 issues.append(f"LANE_ATTEMPTS_EMPTY {lane}")
             else:
                 last = entries[-1]
                 if [e["attempt"] for e in entries] != list(range(1, len(entries) + 1)):
                     issues.append(f"LANE_ATTEMPTS_NOT_SEQUENTIAL {lane}")
-                if last.get("log_sha256") != res.get("log_sha256") or \
-                        bool(last.get("passed")) != bool(res.get("passed")) or \
-                        last.get("attempt") != res.get("attempt"):
+                if (
+                    last.get("log_sha256") != res.get("log_sha256")
+                    or bool(last.get("passed")) != bool(res.get("passed"))
+                    or last.get("attempt") != res.get("attempt")
+                ):
                     issues.append(
                         f"LANE_RESULT_NOT_LAST_ATTEMPT {lane} — the stored "
-                        "result is not the final recorded attempt")
+                        "result is not the final recorded attempt"
+                    )
                 res["_attempts"] = len(entries)
         derived = lane_verdict_from_log(log_path.read_text(encoding="utf-8"))
         if derived is None:
-            issues.append(f"LANE_LOG_UNPARSEABLE {lane} — no trailing "
-                          "'<name>: PASS|FAIL' verdict line")
+            issues.append(
+                f"LANE_LOG_UNPARSEABLE {lane} — no trailing '<name>: PASS|FAIL' verdict line"
+            )
         elif derived != bool(res.get("passed")):
-            issues.append(f"LANE_VERDICT_CONTRADICTION {lane} json="
-                          f"{res.get('passed')} log={derived}")
+            issues.append(
+                f"LANE_VERDICT_CONTRADICTION {lane} json={res.get('passed')} log={derived}"
+            )
         elif not derived:
             issues.append(f"REQUIRED_LANE_FAILED {lane}")
     # a lane result present but not required is fine; a lane result for a
@@ -563,8 +605,7 @@ def collect(rdir, required, artifact_path, digest):
     for rpath in sorted((rdir / "lanes").glob("*.json")) if (rdir / "lanes").exists() else []:
         res = read_json(rpath)
         if res.get("artifact_sha256") != digest:
-            issues.append(f"FOREIGN_LANE_RESULT {rpath.name} bound to "
-                          f"{res.get('artifact_sha256')}")
+            issues.append(f"FOREIGN_LANE_RESULT {rpath.name} bound to {res.get('artifact_sha256')}")
     return record, lane_states, issues
 
 
@@ -573,8 +614,7 @@ def cmd_promote(args):
     rdir = release_dir(args.releases, digest)
     if not (rdir / "release.json").exists():
         raise Refusal(f"RELEASE_NOT_BUILT {digest}")
-    required = (args.require.split(",") if args.require
-                else load_required_lanes(LANE_MANIFEST))
+    required = args.require.split(",") if args.require else load_required_lanes(LANE_MANIFEST)
     unknown = [lane for lane in required if lane not in lanes_mod.LANES]
     if unknown:
         raise Refusal(f"LANE_NOT_IMPLEMENTED {unknown}")
@@ -587,7 +627,8 @@ def cmd_promote(args):
     if entry is None:
         raise Refusal(
             f"UNTRUSTED_SIGNING_KEY {args.key_id!r} — not in "
-            f"{TRUSTED_KEYS.relative_to(REPO)} (trusted: {sorted(keys)})")
+            f"{TRUSTED_KEYS.relative_to(REPO)} (trusted: {sorted(keys)})"
+        )
     seed = resolve_seed(entry)
     promotion = {
         "schema": "release-promotion/v1",
@@ -595,8 +636,7 @@ def cmd_promote(args):
         "member_root": record["artifact"]["member_root"],
         "required_lanes": sorted(required),
         "profile": record["profile"],
-        "promotion_class": ("RELEASE" if entry["class"] == "production"
-                            else "DEVELOPMENT"),
+        "promotion_class": ("RELEASE" if entry["class"] == "production" else "DEVELOPMENT"),
         "signing_key_id": entry["key_id"],
         "signing_key_class": entry["class"],
     }
@@ -608,23 +648,32 @@ def cmd_promote(args):
     sig = ed.sign(seed, msg)
     pub = ed.public_key(seed).hex()
     if not verify_signature_twice(pub, msg, sig.hex()):
-        raise Refusal("SIGNATURE_SELF_CHECK_FAILED — the freshly produced "
-                      "signature does not verify; refusing to record it")
-    write_json(rdir / SIGNATURE_FILE, {
-        "schema": "release-signature/v1",
-        "signed_message": msg.decode("utf-8"),
-        "artifact_sha256": digest,
-        "root": root,
-        "root_files": files,
-        "key_id": entry["key_id"],
-        "public_key": pub,
-        "signature": sig.hex(),
-    })
-    print(f"PROMOTED {digest} class={promotion['promotion_class']} "
-          f"profile={record['profile']} root={root} lanes={len(required)}")
+        raise Refusal(
+            "SIGNATURE_SELF_CHECK_FAILED — the freshly produced "
+            "signature does not verify; refusing to record it"
+        )
+    write_json(
+        rdir / SIGNATURE_FILE,
+        {
+            "schema": "release-signature/v1",
+            "signed_message": msg.decode("utf-8"),
+            "artifact_sha256": digest,
+            "root": root,
+            "root_files": files,
+            "key_id": entry["key_id"],
+            "public_key": pub,
+            "signature": sig.hex(),
+        },
+    )
+    print(
+        f"PROMOTED {digest} class={promotion['promotion_class']} "
+        f"profile={record['profile']} root={root} lanes={len(required)}"
+    )
     if promotion["promotion_class"] != "RELEASE":
-        print("NOTE: signed by a development-class key — this is NOT a "
-              "release-grade promotion and `verify --release-grade` refuses it.")
+        print(
+            "NOTE: signed by a development-class key — this is NOT a "
+            "release-grade promotion and `verify --release-grade` refuses it."
+        )
     return 0
 
 
@@ -635,15 +684,13 @@ def cmd_verify(args):
         raise Refusal(f"RELEASE_ABSENT {digest}")
     if not (rdir / "release.json").exists():
         raise Refusal(f"RELEASE_NOT_BUILT {digest}")
-    required = (args.require.split(",") if args.require
-                else load_required_lanes(LANE_MANIFEST))
+    required = args.require.split(",") if args.require else load_required_lanes(LANE_MANIFEST)
     # `promote` refused an unimplemented lane id; `verify` did not, so a
     # caller could ask it to "verify" a lane set containing a name no lane
     # implements and read the resulting report as a check that ran.
     unknown = [lane for lane in required if lane not in lanes_mod.LANES]
     if unknown:
-        raise Refusal(f"LANE_NOT_IMPLEMENTED {unknown} — known lanes: "
-                      f"{sorted(lanes_mod.LANES)}")
+        raise Refusal(f"LANE_NOT_IMPLEMENTED {unknown} — known lanes: {sorted(lanes_mod.LANES)}")
     artifact = pathlib.Path(args.artifact).resolve() if args.artifact else None
     record, _lane_states, issues = collect(rdir, required, artifact, digest)
 
@@ -659,23 +706,28 @@ def cmd_verify(args):
             issues.append(
                 f"PROMOTION_LANE_SET_MISMATCH promoted="
                 f"{sorted(promotion.get('required_lanes', []))} "
-                f"required-now={sorted(required)}")
+                f"required-now={sorted(required)}"
+            )
         if promotion.get("member_root") != record["artifact"]["member_root"]:
             issues.append("PROMOTION_MEMBER_ROOT_MISMATCH")
         if not sig_path.exists():
-            issues.append("PROMOTION_UNSIGNED — a promotion record without a "
-                          "signature binds nothing")
+            issues.append(
+                "PROMOTION_UNSIGNED — a promotion record without a signature binds nothing"
+            )
         else:
             sig = read_json(sig_path)
             root, files = evidence_root(rdir)
             if sig.get("root") != root:
-                issues.append(f"ROOT_MISMATCH recorded={sig.get('root')} "
-                              f"recomputed={root} ({files} files) — a file in "
-                              "the release directory changed after signing")
+                issues.append(
+                    f"ROOT_MISMATCH recorded={sig.get('root')} "
+                    f"recomputed={root} ({files} files) — a file in "
+                    "the release directory changed after signing"
+                )
             expect_msg = f"typedb-r2/release-root/v1\n{digest}\n{root}\n"
             if sig.get("signed_message") != expect_msg:
-                issues.append("SIGNED_MESSAGE_MISMATCH — the signature does "
-                              "not cover this digest and root")
+                issues.append(
+                    "SIGNED_MESSAGE_MISMATCH — the signature does not cover this digest and root"
+                )
             keys = load_trusted_keys()
             entry = keys.get(sig.get("key_id"))
             if entry is None:
@@ -683,14 +735,16 @@ def cmd_verify(args):
             elif entry["public_key"] != sig.get("public_key"):
                 issues.append(
                     f"SIGNING_KEY_SUBSTITUTED {sig.get('key_id')!r} — the "
-                    "recorded public key is not the trusted one for this id")
-            elif verify_signature_twice(sig["public_key"],
-                                        sig["signed_message"].encode("utf-8"),
-                                        sig["signature"]):
+                    "recorded public key is not the trusted one for this id"
+                )
+            elif verify_signature_twice(
+                sig["public_key"], sig["signed_message"].encode("utf-8"), sig["signature"]
+            ):
                 signature_verified = True
             else:
-                issues.append("SIGNATURE_INVALID — both implementations "
-                              "rejected the recorded signature")
+                issues.append(
+                    "SIGNATURE_INVALID — both implementations rejected the recorded signature"
+                )
 
     grade_issues = []
     if record["profile"] != "RELEASE":
@@ -705,8 +759,7 @@ def cmd_verify(args):
     elif src.get("bound_by") == "environment":
         # an environment variable is not evidence of anything
         grade_issues.append("SOURCE_IDENTITY_UNAUTHENTICATED")
-    elif src.get("bound_by") == "release-identity-file" \
-            and not src.get("identity_verified"):
+    elif src.get("bound_by") == "release-identity-file" and not src.get("identity_verified"):
         grade_issues.append("SOURCE_IDENTITY_FILE_UNVERIFIED")
     if not src.get("dirty_paths_known"):
         grade_issues.append("SOURCE_DIRT_UNKNOWN")
@@ -727,8 +780,9 @@ def cmd_verify(args):
         "promoted": promoted,
         "promotion_class": promotion.get("promotion_class") if promotion else None,
         "signature_verified": signature_verified,
-        "lane_attempts": {lane: (res or {}).get("_attempts")
-                          for lane, res in sorted(_lane_states.items())},
+        "lane_attempts": {
+            lane: (res or {}).get("_attempts") for lane, res in sorted(_lane_states.items())
+        },
         "integrity_issues": issues,
         "release_grade_blockers": grade_issues,
         "release_grade": not issues and not grade_issues,
@@ -738,11 +792,9 @@ def cmd_verify(args):
         print("VERIFY: FAILED", file=sys.stderr)
         return 1
     if args.release_grade and grade_issues:
-        print("VERIFY: NOT RELEASE GRADE — " + "; ".join(grade_issues),
-              file=sys.stderr)
+        print("VERIFY: NOT RELEASE GRADE — " + "; ".join(grade_issues), file=sys.stderr)
         return 1
-    print("VERIFY: OK" + ("" if not grade_issues else " (not release grade)"),
-          file=sys.stderr)
+    print("VERIFY: OK" + ("" if not grade_issues else " (not release grade)"), file=sys.stderr)
     return 0
 
 
@@ -755,17 +807,17 @@ def cmd_list(args):
         if not (d / "release.json").exists():
             continue
         rec = read_json(d / "release.json")
-        promo = (read_json(d / "promotion.json")
-                 if (d / "promotion.json").exists() else None)
-        print(f"{d.name} profile={rec['profile']} state={rec['state']} "
-              f"promotion={promo['promotion_class'] if promo else 'NONE'}")
+        promo = read_json(d / "promotion.json") if (d / "promotion.json").exists() else None
+        print(
+            f"{d.name} profile={rec['profile']} state={rec['state']} "
+            f"promotion={promo['promotion_class'] if promo else 'NONE'}"
+        )
     return 0
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--releases", default=str(DEFAULT_RELEASES),
-                    help="release evidence directory")
+    ap.add_argument("--releases", default=str(DEFAULT_RELEASES), help="release evidence directory")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     b = sub.add_parser("build", help="record an immutable release for an artifact")
@@ -782,17 +834,21 @@ def main(argv=None):
     p.add_argument("--digest", required=True)
     p.add_argument("--artifact", default=str(DEFAULT_ARTIFACT))
     p.add_argument("--key-id", required=True)
-    p.add_argument("--require", default=None,
-                   help="override the required lane set (marks the promotion "
-                        "as overridden; never release grade)")
+    p.add_argument(
+        "--require",
+        default=None,
+        help="override the required lane set (marks the promotion "
+        "as overridden; never release grade)",
+    )
     p.set_defaults(fn=cmd_promote)
 
     v = sub.add_parser("verify", help="re-derive everything from the bytes")
     v.add_argument("--digest", required=True)
     v.add_argument("--artifact", default=str(DEFAULT_ARTIFACT))
     v.add_argument("--require", default=None)
-    v.add_argument("--release-grade", action="store_true",
-                   help="fail unless this is a release-grade promotion")
+    v.add_argument(
+        "--release-grade", action="store_true", help="fail unless this is a release-grade promotion"
+    )
     v.set_defaults(fn=cmd_verify)
 
     ls = sub.add_parser("list", help="list recorded releases")

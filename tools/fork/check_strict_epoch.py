@@ -32,6 +32,7 @@ real staged tree.
 Not wired into CI here (the workflow owner does that); this file only
 guarantees the check exists, fails closed, and is one command.
 """
+
 import argparse
 import pathlib
 import re
@@ -53,32 +54,38 @@ VERSION_NODE = re.compile(r"\bslatedb (v\S+)(?: \(([^)]*)\))?")
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--workspace-dir", type=pathlib.Path, default=WORKSPACE,
-                    help="cargo workspace to interrogate (default: sources/typedb; "
-                         "override only for mutant runs against a scratch copy)")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--workspace-dir",
+        type=pathlib.Path,
+        default=WORKSPACE,
+        help="cargo workspace to interrogate (default: sources/typedb; "
+        "override only for mutant runs against a scratch copy)",
+    )
     args = ap.parse_args()
 
     if not (args.workspace_dir / "Cargo.toml").exists():
-        print(f"FAIL: no Cargo.toml under {args.workspace_dir} "
-              f"(materialise + stage first)", file=sys.stderr)
+        print(
+            f"FAIL: no Cargo.toml under {args.workspace_dir} (materialise + stage first)",
+            file=sys.stderr,
+        )
         return 1
 
     cmd = ["cargo", TOOLCHAIN, "tree", "-p", "storage", "-e", "features", "--locked"]
     r = subprocess.run(cmd, cwd=args.workspace_dir, capture_output=True, text=True)
     if r.returncode != 0:
-        print(f"FAIL: {' '.join(cmd)} exited {r.returncode}:\n{r.stderr}",
-              file=sys.stderr)
+        print(f"FAIL: {' '.join(cmd)} exited {r.returncode}:\n{r.stderr}", file=sys.stderr)
         return 1
 
     features = sorted({m.group(1) for m in FEATURE_NODE.finditer(r.stdout)})
-    resolved = sorted({(m.group(1), m.group(2) or "registry")
-                       for m in VERSION_NODE.finditer(r.stdout)})
+    resolved = sorted(
+        {(m.group(1), m.group(2) or "registry") for m in VERSION_NODE.finditer(r.stdout)}
+    )
 
     if not resolved:
-        print("FAIL: `slatedb` does not resolve in storage's dependency tree",
-              file=sys.stderr)
+        print("FAIL: `slatedb` does not resolve in storage's dependency tree", file=sys.stderr)
         return 1
 
     for version, source in resolved:
@@ -86,9 +93,12 @@ def main() -> int:
     print(f"resolved slatedb features: {', '.join(features) if features else '(none)'}")
 
     if FEATURE not in features:
-        print(f"FAIL: `{FEATURE}` is ABSENT from the ordinary build's resolved "
-              f"slatedb feature set — the strict epoch fence is not shipped "
-              f"(R5-STOR-04)", file=sys.stderr)
+        print(
+            f"FAIL: `{FEATURE}` is ABSENT from the ordinary build's resolved "
+            f"slatedb feature set — the strict epoch fence is not shipped "
+            f"(R5-STOR-04)",
+            file=sys.stderr,
+        )
         return 1
 
     print(f"PASS: `{FEATURE}` is resolved into the ordinary `storage` build")

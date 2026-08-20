@@ -27,12 +27,12 @@ What it deliberately does NOT do: build anything. The assembly archive
 (sources/assembly-artifacts/) is a build product of the parity toolchain
 — see docs/development.md.
 """
+
 import argparse
 import hashlib
 import json
 import os
 import pathlib
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -46,8 +46,7 @@ def run(cmd, **kw):
 
 
 def out(cmd) -> str:
-    return subprocess.run(cmd, check=True, text=True,
-                          capture_output=True).stdout.strip()
+    return subprocess.run(cmd, check=True, text=True, capture_output=True).stdout.strip()
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -83,19 +82,31 @@ def fetch_git(nid: str, node: dict, dest: pathlib.Path, force: bool) -> str:
     # Named refs first (cheap, always allowed); a bare-SHA fetch is the
     # fallback for revisions that no branch tip reaches any more.
     try:
-        run(["git", "-C", str(dest), "fetch", "--force", "--tags", "origin"],
-            stdout=subprocess.DEVNULL)
-        run(["git", "-C", str(dest), "cat-file", "-e", f"{rev}^{{commit}}"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        run(
+            ["git", "-C", str(dest), "fetch", "--force", "--tags", "origin"],
+            stdout=subprocess.DEVNULL,
+        )
+        run(
+            ["git", "-C", str(dest), "cat-file", "-e", f"{rev}^{{commit}}"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
     except subprocess.CalledProcessError:
         run(["git", "-C", str(dest), "fetch", "--force", "origin", rev])
 
-    run(["git", "-C", str(dest), "checkout", "--detach", "--force", rev],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    run(["git", "-C", str(dest), "submodule", "update", "--init", "--recursive"],
-        stdout=subprocess.DEVNULL)
-    run(["git", "-C", str(dest), "clean", "-fdx", "-e", "target", "-e", "node_modules"],
-        stdout=subprocess.DEVNULL)
+    run(
+        ["git", "-C", str(dest), "checkout", "--detach", "--force", rev],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    run(
+        ["git", "-C", str(dest), "submodule", "update", "--init", "--recursive"],
+        stdout=subprocess.DEVNULL,
+    )
+    run(
+        ["git", "-C", str(dest), "clean", "-fdx", "-e", "target", "-e", "node_modules"],
+        stdout=subprocess.DEVNULL,
+    )
     return "materialised"
 
 
@@ -133,13 +144,24 @@ def fetch_artifact(nid: str, node: dict, rel: str, force: bool) -> str:
     try:
         # curl, not urllib: it picks up the environment's proxy and CA
         # configuration, which sandboxed/corporate networks depend on.
-        run(["curl", "--fail", "--location", "--silent", "--show-error",
-             "--retry", "5", "--retry-all-errors",
-             url, "--output", str(tmp_path)])
+        run(
+            [
+                "curl",
+                "--fail",
+                "--location",
+                "--silent",
+                "--show-error",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                url,
+                "--output",
+                str(tmp_path),
+            ]
+        )
         got = sha256(tmp_path)
         if got != want:
-            raise SystemExit(f"{nid}: sha256 mismatch for {url}\n"
-                             f"  want {want}\n  got  {got}")
+            raise SystemExit(f"{nid}: sha256 mismatch for {url}\n  want {want}\n  got  {got}")
         os.replace(tmp_path, dest)
     finally:
         tmp_path.unlink(missing_ok=True)
@@ -147,15 +169,26 @@ def fetch_artifact(nid: str, node: dict, rel: str, force: bool) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--force", action="store_true",
-                    help="re-fetch even when the node is already at the lock")
-    ap.add_argument("--only", action="append", default=None, metavar="NODE_ID",
-                    help="materialise only these lock nodes (repeatable)")
-    ap.add_argument("--lock", default=str(LOCK), metavar="PATH",
-                    help="read a different lock file (used by the negative "
-                         "control: a corrupted digest must abort the fetch)")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--force", action="store_true", help="re-fetch even when the node is already at the lock"
+    )
+    ap.add_argument(
+        "--only",
+        action="append",
+        default=None,
+        metavar="NODE_ID",
+        help="materialise only these lock nodes (repeatable)",
+    )
+    ap.add_argument(
+        "--lock",
+        default=str(LOCK),
+        metavar="PATH",
+        help="read a different lock file (used by the negative "
+        "control: a corrupted digest must abort the fetch)",
+    )
     args = ap.parse_args()
 
     nodes = {n["id"]: n for n in json.loads(pathlib.Path(args.lock).read_text())["nodes"]}
@@ -167,7 +200,8 @@ def main() -> int:
         if unknown:
             raise SystemExit(
                 f"unknown node id(s): {', '.join(sorted(unknown))} "
-                f"(materialisable: {', '.join(sorted(known))})")
+                f"(materialisable: {', '.join(sorted(known))})"
+            )
     problems = []
     done_git = done_art = 0
 
@@ -190,8 +224,10 @@ def main() -> int:
         done_git += 1
         node_problems = verify_git(nid, node, dest)
         problems += node_problems
-        print(f"  {nid:<16} sources/{dirname:<28} {status}"
-              f"{' — ' + '; '.join(node_problems) if node_problems else ''}")
+        print(
+            f"  {nid:<16} sources/{dirname:<28} {status}"
+            f"{' — ' + '; '.join(node_problems) if node_problems else ''}"
+        )
 
     for nid, rel in ARTIFACTS.items():
         if selected and nid not in selected:
@@ -216,8 +252,10 @@ def main() -> int:
         for p in problems:
             print("  -", p)
         return 1
-    print(f"MATERIALISE: OK ({done_git} git node(s), {done_art} artifact(s)"
-          f"{' — selection via --only' if selected else ''})")
+    print(
+        f"MATERIALISE: OK ({done_git} git node(s), {done_art} artifact(s)"
+        f"{' — selection via --only' if selected else ''})"
+    )
     print("next: python3 tools/source-lock/lint_source_lock.py")
     return 0
 

@@ -82,8 +82,7 @@ def lane_artifact_layout(tree, _record):
             log.append(f"FAIL {rel}: executable={executable} want={spec['executable']}")
             ok = False
         else:
-            log.append(f"ok   {rel} ({path.stat().st_size} bytes, "
-                       f"executable={executable})")
+            log.append(f"ok   {rel} ({path.stat().st_size} bytes, executable={executable})")
     for rel in sorted(set(EXPECTED_FILES) - seen):
         log.append(f"FAIL missing member: {rel}")
         ok = False
@@ -107,8 +106,13 @@ def lane_artifact_exec(tree, _record):
         binary = tree / rel
         try:
             r = subprocess.run(
-                [str(binary), "--version"], capture_output=True, text=True,
-                timeout=120, cwd=str(tree), env={**os.environ, "HOME": str(tree)})
+                [str(binary), "--version"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                cwd=str(tree),
+                env={**os.environ, "HOME": str(tree)},
+            )
         except OSError as err:
             log.append(f"FAIL {rel}: could not execute: {err}")
             ok = False
@@ -178,22 +182,36 @@ def lane_artifact_health(tree, _record):
     grpc_port, http_port = _free_port(), _free_port()
     argv = [
         str(binary),
-        "--config", str(tree / "server" / "config.yml"),
-        "--storage.data-directory", str(data),
-        "--server.listen-address", f"127.0.0.1:{grpc_port}",
-        "--server.http.enabled", "true",
-        "--server.http.listen-address", f"127.0.0.1:{http_port}",
-        "--diagnostics.reporting.errors", "false",
-        "--diagnostics.reporting.metrics", "false",
-        "--diagnostics.monitoring.enabled", "false",
-        "--logging.directory", str(logs),
+        "--config",
+        str(tree / "server" / "config.yml"),
+        "--storage.data-directory",
+        str(data),
+        "--server.listen-address",
+        f"127.0.0.1:{grpc_port}",
+        "--server.http.enabled",
+        "true",
+        "--server.http.listen-address",
+        f"127.0.0.1:{http_port}",
+        "--diagnostics.reporting.errors",
+        "false",
+        "--diagnostics.reporting.metrics",
+        "false",
+        "--diagnostics.monitoring.enabled",
+        "false",
+        "--logging.directory",
+        str(logs),
     ]
     log = [f"argv: {argv}"]
     out_path = logs / "server-stdout.log"
     with open(out_path, "wb") as out:
-        child = subprocess.Popen(argv, stdout=out, stderr=subprocess.STDOUT,
-                                 cwd=str(tree), start_new_session=True,
-                                 env={**os.environ, "HOME": str(tree)})
+        child = subprocess.Popen(
+            argv,
+            stdout=out,
+            stderr=subprocess.STDOUT,
+            cwd=str(tree),
+            start_new_session=True,
+            env={**os.environ, "HOME": str(tree)},
+        )
         try:
             status = None
             deadline = time.monotonic() + 120  # generous: a cold binary on a loaded box
@@ -227,8 +245,11 @@ def lane_artifact_health(tree, _record):
                         os.killpg(child.pid, signal.SIGKILL)
                     child.wait(timeout=30)
     tail = out_path.read_text("utf-8", "replace")[-4000:]
-    log += ["--- server output (last 4000 bytes) ---", tail,
-            f"health: {'PASS' if healthy else 'FAIL'}"]
+    log += [
+        "--- server output (last 4000 bytes) ---",
+        tail,
+        f"health: {'PASS' if healthy else 'FAIL'}",
+    ]
     return healthy, "\n".join(log)
 
 

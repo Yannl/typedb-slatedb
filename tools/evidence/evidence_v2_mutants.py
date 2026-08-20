@@ -44,6 +44,7 @@ R4-EVID-03a additions (forged verdict/plan semantics):
 
 Usage: python3 tools/evidence/evidence_v2_mutants.py
 """
+
 import atexit
 import hashlib
 import json
@@ -98,10 +99,21 @@ def make_pristine():
 
 def run_verifier(tree, bundle=None, extra=()):
     p = subprocess.run(
-        [sys.executable, str(VERIFIER), str(bundle or (tree / ARCHIVE_REL)),
-         "--repo", str(tree), "--ledger", str(tree / LEDGER_REL),
-         "--plan", str(tree / PLAN_REL), *extra],
-        capture_output=True, text=True)
+        [
+            sys.executable,
+            str(VERIFIER),
+            str(bundle or (tree / ARCHIVE_REL)),
+            "--repo",
+            str(tree),
+            "--ledger",
+            str(tree / LEDGER_REL),
+            "--plan",
+            str(tree / PLAN_REL),
+            *extra,
+        ],
+        capture_output=True,
+        text=True,
+    )
     return p.returncode, p.stdout + p.stderr
 
 
@@ -160,16 +172,20 @@ def control(label, mutate, needle=None, extra=(), expect_ok=False):
 
 
 def main():
-    print("evidence-v2 mutants (REAL subprocess: tools/evidence/verify_all.py "
-          "over a mutated archive copy)")
+    print(
+        "evidence-v2 mutants (REAL subprocess: tools/evidence/verify_all.py "
+        "over a mutated archive copy)"
+    )
 
     # 0. control of controls
     control("intact archive copy verifies", None, expect_ok=True)
 
     # 1. deleted log
-    control("deleted raw log is rejected",
-            lambda t: (t / ARCHIVE_REL / "storage__storage.log").unlink(),
-            needle="does not exist")
+    control(
+        "deleted raw log is rejected",
+        lambda t: (t / ARCHIVE_REL / "storage__storage.log").unlink(),
+        needle="does not exist",
+    )
 
     # 2. edited count: the forger edits the aggregate and regenerates the
     # manifest and the seal; the LOG is untouched, so only the independent
@@ -178,6 +194,7 @@ def main():
         def fn(rows):
             r = next(r for r in rows if r["passed"] > 1)
             r["passed"] -= 1
+
         edit_rows(tree, fn)
         refresh_shallow(tree, reseal_complete=True)
         # the forger also rewrites every verdict's recorded root
@@ -185,21 +202,26 @@ def main():
             v = json.loads(vf.read_text())
             v["bundle_root"] = recompute_root(tree)
             vf.write_text(json.dumps(v, indent=1) + "\n")
-    control("edited count (manifest/COMPLETE/verdict roots regenerated) "
-            "fails the independent reparse", edited_count,
-            needle="independently reparses to")
+
+    control(
+        "edited count (manifest/COMPLETE/verdict roots regenerated) fails the independent reparse",
+        edited_count,
+        needle="independently reparses to",
+    )
 
     # 3. duplicated row
     def dup_row(tree):
         edit_rows(tree, lambda rows: rows.append(dict(rows[0])))
         refresh_shallow(tree)
+
     control("duplicated result row is rejected", dup_row, needle="duplicate")
 
     # 4. tampered COMPLETE: seals a root the bytes do not recompute to
-    control("tampered COMPLETE (foreign sealed root) is rejected",
-            lambda t: (t / ARCHIVE_REL / "COMPLETE").write_text(
-                "COMPLETE " + "0" * 64 + "\n"),
-            needle="COMPLETE binds root")
+    control(
+        "tampered COMPLETE (foreign sealed root) is rejected",
+        lambda t: (t / ARCHIVE_REL / "COMPLETE").write_text("COMPLETE " + "0" * 64 + "\n"),
+        needle="COMPLETE binds root",
+    )
 
     # 5. policy edit without re-run: ledger byte change, shallow layers
     # regenerated; the verdict's pinned policy_roots must catch it
@@ -209,26 +231,36 @@ def main():
         data["entries"][0]["expiry"] = "2028-01-01"  # semantically live edit
         lf.write_text(json.dumps(data, indent=2) + "\n")
         refresh_shallow(tree, reseal_complete=True)
-    control("policy (flake ledger) edited without a re-run is caught by the "
-            "pinned policy_roots", policy_edit,
-            needle="the policy changed after the verdict")
+
+    control(
+        "policy (flake ledger) edited without a re-run is caught by the pinned policy_roots",
+        policy_edit,
+        needle="the policy changed after the verdict",
+    )
 
     # 6. verifier-vs-producer disagreement: log edited, row counts and all
     # shallow bindings regenerated to agree with the edited log; the CACHED
     # verdict still records the old observation and old root
     def cached_verdict_stale(tree):
         log = tree / ARCHIVE_REL / "cache__cache.log"
-        log.write_text(log.read_text(errors="replace")
-                       + "\ntest result: ok. 1 passed; 0 failed; 0 ignored; "
-                         "0 measured; 0 filtered out; finished in 0.00s\n")
+        log.write_text(
+            log.read_text(errors="replace") + "\ntest result: ok. 1 passed; 0 failed; 0 ignored; "
+            "0 measured; 0 filtered out; finished in 0.00s\n"
+        )
+
         def fn(rows):
             r = next(r for r in rows if r["target_id"] == "cache:cache")
             r["passed"] += 1
             r["log_sha256"] = sha256_file(log)
+
         edit_rows(tree, fn)
         refresh_shallow(tree, ["cache__cache.log"], reseal_complete=True)
-    control("producer-cached verdict vs fresh reparse disagreement is "
-            "rejected", cached_verdict_stale, needle="disagree")
+
+    control(
+        "producer-cached verdict vs fresh reparse disagreement is rejected",
+        cached_verdict_stale,
+        needle="disagree",
+    )
 
     # ---- R4-EVID-03a: forged verdict / plan semantics ----
 
@@ -238,8 +270,9 @@ def main():
         their row counts, so row sums == fresh sums)."""
         return {
             "rows": len(rows),
-            "nonzero_exit_rows": sum(1 for r in rows if not r.get("timed_out")
-                                     and r.get("exit_code") != 0),
+            "nonzero_exit_rows": sum(
+                1 for r in rows if not r.get("timed_out") and r.get("exit_code") != 0
+            ),
             "timed_out_rows": sum(1 for r in rows if r.get("timed_out")),
             "cases_passed": sum(r.get("passed", 0) for r in rows),
             "cases_failed": sum(r.get("failed", 0) for r in rows),
@@ -254,34 +287,46 @@ def main():
 
     # 8. forged policy enum: the verdict claims a verdict this policy
     # cannot produce; everything else left intact
-    control("policy_verdict forged to TOTAL_QUALITY_PASS is rejected "
-            "(exact enum enforced)",
-            lambda t: rewrite_verdicts(
-                t, lambda v: v.__setitem__("policy_verdict",
-                                           "TOTAL_QUALITY_PASS")),
-            needle="outside the exact enum")
+    control(
+        "policy_verdict forged to TOTAL_QUALITY_PASS is rejected (exact enum enforced)",
+        lambda t: rewrite_verdicts(
+            t, lambda v: v.__setitem__("policy_verdict", "TOTAL_QUALITY_PASS")
+        ),
+        needle="outside the exact enum",
+    )
 
     # 9. forged plan body with the self-declared root retained: only the
     # canonical-body root recomputation still tells the truth
     def forged_plan_body(tree):
         pf = tree / PLAN_REL
         doc = json.loads(pf.read_text())
-        doc["statement"] = ("This plan certifies TOTAL QUALITY and every "
-                            "row as PASSED.")  # plan_root left untouched
+        doc["statement"] = (
+            "This plan certifies TOTAL QUALITY and every row as PASSED."  # plan_root left untouched
+        )
         pf.write_text(json.dumps(doc, indent=1) + "\n")
-    control("forged plan statement with plan_root retained is rejected "
-            "(root recomputed from the canonical body)", forged_plan_body,
-            needle="canonical body recomputes")
+
+    control(
+        "forged plan statement with plan_root retained is rejected "
+        "(root recomputed from the canonical body)",
+        forged_plan_body,
+        needle="canonical body recomputes",
+    )
 
     # 10. absent verdict: fatal to qualification (loud issue in default)
-    control("deleted verdict.json is fatal in --qualification mode",
-            lambda t: (t / ARCHIVE_REL / "verdict.json").unlink(),
-            needle="no verdict file", extra=("--qualification",))
+    control(
+        "deleted verdict.json is fatal in --qualification mode",
+        lambda t: (t / ARCHIVE_REL / "verdict.json").unlink(),
+        needle="no verdict file",
+        extra=("--qualification",),
+    )
 
     # 11. absent COMPLETE: fatal to qualification
-    control("deleted COMPLETE is fatal in --qualification mode",
-            lambda t: (t / ARCHIVE_REL / "COMPLETE").unlink(),
-            needle="no COMPLETE marker", extra=("--qualification",))
+    control(
+        "deleted COMPLETE is fatal in --qualification mode",
+        lambda t: (t / ARCHIVE_REL / "COMPLETE").unlink(),
+        needle="no COMPLETE marker",
+        extra=("--qualification",),
+    )
 
     # 12. missing row: a ledgered row (and its log) removed, COMPLETE
     # retained, manifest root + verdict observation/root regenerated -> the
@@ -289,19 +334,28 @@ def main():
     def missing_row(tree):
         (tree / ARCHIVE_REL / "storage__test_recovery.log").unlink()
         state = {}
+
         def fn(rows):
-            rows[:] = [r for r in rows
-                       if r["target_id"] != "storage:test_recovery"]
+            rows[:] = [r for r in rows if r["target_id"] != "storage:test_recovery"]
             state["obs"] = obs_from_rows(rows)
+
         edit_rows(tree, fn)
         refresh_shallow(tree)
         root = recompute_root(tree)
-        rewrite_verdicts(tree, lambda v: (
-            v.__setitem__("bundle_root", root),
-            v.__setitem__("observation", state["obs"])))
-    control("deleted result row (COMPLETE retained, shallow bindings "
-            "regenerated) fails the policy re-derivation", missing_row,
-            needle="matched no row")
+        rewrite_verdicts(
+            tree,
+            lambda v: (
+                v.__setitem__("bundle_root", root),
+                v.__setitem__("observation", state["obs"]),
+            ),
+        )
+
+    control(
+        "deleted result row (COMPLETE retained, shallow bindings "
+        "regenerated) fails the policy re-derivation",
+        missing_row,
+        needle="matched no row",
+    )
 
     # 13. recorded GREEN over a non-ledgered failing row: log forged to
     # really fail, row and every shallower binding regenerated to match,
@@ -309,44 +363,60 @@ def main():
     # the policy from rows + ledger still catches it
     def unledgered_failure(tree):
         log = tree / ARCHIVE_REL / "cache__cache.log"
-        log.write_text(log.read_text(errors="replace")
-                       + "\ntest forged_regression ... FAILED\n"
-                         "\ntest result: FAILED. 0 passed; 1 failed; "
-                         "0 ignored; 0 measured; 0 filtered out; "
-                         "finished in 0.00s\n")
+        log.write_text(
+            log.read_text(errors="replace") + "\ntest forged_regression ... FAILED\n"
+            "\ntest result: FAILED. 0 passed; 1 failed; "
+            "0 ignored; 0 measured; 0 filtered out; "
+            "finished in 0.00s\n"
+        )
         state = {}
+
         def fn(rows):
             r = next(r for r in rows if r["target_id"] == "cache:cache")
             r["failed"] += 1
             r["log_sha256"] = sha256_file(log)
             state["obs"] = obs_from_rows(rows)
+
         edit_rows(tree, fn)
         refresh_shallow(tree, ["cache__cache.log"], reseal_complete=True)
         root = recompute_root(tree)
-        rewrite_verdicts(tree, lambda v: (
-            v.__setitem__("bundle_root", root),
-            v.__setitem__("observation", state["obs"])))
-    control("recorded GREEN over a non-ledgered failing row is rejected by "
-            "the independent policy re-derivation", unledgered_failure,
-            needle="independent policy re-derivation")
+        rewrite_verdicts(
+            tree,
+            lambda v: (
+                v.__setitem__("bundle_root", root),
+                v.__setitem__("observation", state["obs"]),
+            ),
+        )
+
+    control(
+        "recorded GREEN over a non-ledgered failing row is rejected by "
+        "the independent policy re-derivation",
+        unledgered_failure,
+        needle="independent policy re-derivation",
+    )
 
     # 7. the historical archive must FAIL --require-current-source against
     # the REAL repo's current staged tree (read-only invocation, real paths)
     p = subprocess.run(
-        [sys.executable, str(VERIFIER), str(REPO / ARCHIVE_REL),
-         "--require-current-source"], capture_output=True, text=True)
-    expect("--require-current-source FAILS on the historical archive "
-           "(correct behavior, asserted)",
-           p.returncode != 0 and "current-source" in (p.stdout + p.stderr),
-           detail=f"rc={p.returncode} tail: {(p.stdout + p.stderr)[-700:]}")
+        [sys.executable, str(VERIFIER), str(REPO / ARCHIVE_REL), "--require-current-source"],
+        capture_output=True,
+        text=True,
+    )
+    expect(
+        "--require-current-source FAILS on the historical archive (correct behavior, asserted)",
+        p.returncode != 0 and "current-source" in (p.stdout + p.stderr),
+        detail=f"rc={p.returncode} tail: {(p.stdout + p.stderr)[-700:]}",
+    )
     # ...and the same invocation WITHOUT the flag verifies (the archive is
     # intact; it is merely not current-source evidence)
     p = subprocess.run(
-        [sys.executable, str(VERIFIER), str(REPO / ARCHIVE_REL)],
-        capture_output=True, text=True)
-    expect("the committed archive verifies without --require-current-source",
-           p.returncode == 0,
-           detail=f"rc={p.returncode} tail: {(p.stdout + p.stderr)[-700:]}")
+        [sys.executable, str(VERIFIER), str(REPO / ARCHIVE_REL)], capture_output=True, text=True
+    )
+    expect(
+        "the committed archive verifies without --require-current-source",
+        p.returncode == 0,
+        detail=f"rc={p.returncode} tail: {(p.stdout + p.stderr)[-700:]}",
+    )
 
     print(f"\nevidence-v2 mutants: {checks - len(failures)}/{checks} controls held")
     for f in failures:

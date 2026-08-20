@@ -36,6 +36,7 @@ Usage:
   python3 tools/catalog/validate_catalog.py --require-current-lock
   python3 tools/catalog/validate_catalog.py --self-test    # negative controls
 """
+
 import argparse
 import datetime
 import copy
@@ -52,15 +53,22 @@ SOURCE_LOCK = REPO / "source-lock" / "source-lock.json"
 
 def sha256_file(path):
     import hashlib
+
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
 
+
 TYPES = {
-    "object": dict, "array": list, "string": str, "boolean": bool,
-    "number": (int, float), "integer": int, "null": type(None),
+    "object": dict,
+    "array": list,
+    "string": str,
+    "boolean": bool,
+    "number": (int, float),
+    "integer": int,
+    "null": type(None),
 }
 
 
@@ -83,7 +91,7 @@ def validate(node, schema, root, path, errors):
         if not ref.startswith("#/$defs/"):
             errors.append(f"{path}: unsupported $ref {ref}")
             return
-        validate(node, root["$defs"][ref[len("#/$defs/"):]], root, path, errors)
+        validate(node, root["$defs"][ref[len("#/$defs/") :]], root, path, errors)
         return
     if "const" in schema and node != schema["const"]:
         errors.append(f"{path}: {node!r} != const {schema['const']!r}")
@@ -135,19 +143,19 @@ def semantic_checks(cat):
         leaf_ids.add(lc["leaf_case_id"])
         if lc["target_id"] not in target_ids:
             errors.append(
-                f"leaf_cases: {lc['leaf_case_id']!r} references unknown target "
-                f"{lc['target_id']!r}")
+                f"leaf_cases: {lc['leaf_case_id']!r} references unknown target {lc['target_id']!r}"
+            )
     profile_ids = {p["profile_id"] for p in cat["profiles"]}
     pair_profiles = set()
     for rp in cat["required_pairs"]:
         if rp["leaf_case_id"] not in leaf_ids:
-            errors.append(
-                f"required_pairs: unknown leaf_case_id {rp['leaf_case_id']!r}")
+            errors.append(f"required_pairs: unknown leaf_case_id {rp['leaf_case_id']!r}")
         if rp["profile_id"] not in profile_ids:
             errors.append(f"required_pairs: unknown profile {rp['profile_id']!r}")
         pair_profiles.add(rp["profile_id"])
-    if len(cat["required_pairs"]) != len({(r["leaf_case_id"], r["profile_id"])
-                                          for r in cat["required_pairs"]}):
+    if len(cat["required_pairs"]) != len(
+        {(r["leaf_case_id"], r["profile_id"]) for r in cat["required_pairs"]}
+    ):
         errors.append("required_pairs: duplicate (leaf, profile) pair")
     leaves_per_target = {}
     for lc in cat["leaf_cases"]:
@@ -160,7 +168,8 @@ def semantic_checks(cat):
             if leaves_per_target.get(sid, 0):
                 errors.append(
                     f"exclusions: {sid} is declared zero-case but carries "
-                    f"{leaves_per_target[sid]} leaves")
+                    f"{leaves_per_target[sid]} leaves"
+                )
         elif not sid.startswith(("bazel:", "policy:")):
             errors.append(f"exclusions: subject {sid!r} resolves to nothing")
         try:
@@ -172,7 +181,8 @@ def semantic_checks(cat):
         if not leaves_per_target.get(tid, 0) and tid not in declared_zero:
             errors.append(
                 f"targets: {tid} has zero leaf cases and no declared exclusion - "
-                f"an undeclared empty target is indistinguishable from a lost suite")
+                f"an undeclared empty target is indistinguishable from a lost suite"
+            )
     return errors, sorted(pair_profiles)
 
 
@@ -185,18 +195,40 @@ def self_test():
         "rust_toolchain": {"rustc": "r", "cargo": "c"},
         "target_triple": "x86_64-unknown-linux-gnu",
         "bazel_query_oracle": None,
-        "profiles": [{"profile_id": p, "kv_backend": "k", "durability": "d",
-                      "object_store": "o", "controller": "c"}
-                     for p in ("U0", "U1", "U2", "U3", "U4")],
-        "targets": [{"target_id": "cargo:p:unit:t", "origin": "CARGO",
-                     "upstream_label": None, "cargo_package": "p", "cargo_target": "t",
-                     "source_files": [{"path": "a.rs", "sha256": "b" * 64}],
-                     "case_discovery": "LIBTEST_LIST", "platform_predicate": "any",
-                     "timeout_seconds": 60, "serial_group": None,
-                     "port_status": "BYTE_IDENTICAL"}],
-        "leaf_cases": [{"leaf_case_id": "cargo:p:unit:t::x", "target_id": "cargo:p:unit:t",
-                        "kind": "LIBTEST", "source_hash": "b" * 64,
-                        "declared_ignored": False}],
+        "profiles": [
+            {
+                "profile_id": p,
+                "kv_backend": "k",
+                "durability": "d",
+                "object_store": "o",
+                "controller": "c",
+            }
+            for p in ("U0", "U1", "U2", "U3", "U4")
+        ],
+        "targets": [
+            {
+                "target_id": "cargo:p:unit:t",
+                "origin": "CARGO",
+                "upstream_label": None,
+                "cargo_package": "p",
+                "cargo_target": "t",
+                "source_files": [{"path": "a.rs", "sha256": "b" * 64}],
+                "case_discovery": "LIBTEST_LIST",
+                "platform_predicate": "any",
+                "timeout_seconds": 60,
+                "serial_group": None,
+                "port_status": "BYTE_IDENTICAL",
+            }
+        ],
+        "leaf_cases": [
+            {
+                "leaf_case_id": "cargo:p:unit:t::x",
+                "target_id": "cargo:p:unit:t",
+                "kind": "LIBTEST",
+                "source_hash": "b" * 64,
+                "declared_ignored": False,
+            }
+        ],
         "required_pairs": [{"leaf_case_id": "cargo:p:unit:t::x", "profile_id": "U0"}],
         "fixtures": [],
         "exclusions": [],
@@ -221,37 +253,56 @@ def self_test():
         failures.append(f"self-test: valid baseline rejected: {errs + sem}")
 
     check("duplicate leaf id", lambda c: c["leaf_cases"].append(dict(c["leaf_cases"][0])))
-    check("leaf pointing at a missing target",
-          lambda c: c["leaf_cases"][0].__setitem__("target_id", "cargo:ghost:unit:ghost"))
-    check("required pair naming an unknown leaf",
-          lambda c: c["required_pairs"].append(
-              {"leaf_case_id": "nope", "profile_id": "U0"}))
-    check("target with zero leaves and no declaration",
-          lambda c: c["targets"].append(dict(c["targets"][0], target_id="cargo:p:unit:empty")))
-    check("profile outside the contract enum",
-          lambda c: c["profiles"].append(dict(c["profiles"][0], profile_id="U2S3")),
-          expect_schema=True)
-    check("undeclared extra property on a target",
-          lambda c: c["targets"][0].__setitem__("leaf_count", 0), expect_schema=True)
-    check("non-hex source digest",
-          lambda c: c["leaf_cases"][0].__setitem__("source_hash", "zz"), expect_schema=True)
+    check(
+        "leaf pointing at a missing target",
+        lambda c: c["leaf_cases"][0].__setitem__("target_id", "cargo:ghost:unit:ghost"),
+    )
+    check(
+        "required pair naming an unknown leaf",
+        lambda c: c["required_pairs"].append({"leaf_case_id": "nope", "profile_id": "U0"}),
+    )
+    check(
+        "target with zero leaves and no declaration",
+        lambda c: c["targets"].append(dict(c["targets"][0], target_id="cargo:p:unit:empty")),
+    )
+    check(
+        "profile outside the contract enum",
+        lambda c: c["profiles"].append(dict(c["profiles"][0], profile_id="U2S3")),
+        expect_schema=True,
+    )
+    check(
+        "undeclared extra property on a target",
+        lambda c: c["targets"][0].__setitem__("leaf_count", 0),
+        expect_schema=True,
+    )
+    check(
+        "non-hex source digest",
+        lambda c: c["leaf_cases"][0].__setitem__("source_hash", "zz"),
+        expect_schema=True,
+    )
 
     for f in failures:
         print(f"SELF-TEST FAIL: {f}", file=sys.stderr)
-    print(f"validate_catalog self-test: {'FAIL' if failures else 'PASS'} "
-          f"(7 negative controls + baseline)", file=sys.stderr)
+    print(
+        f"validate_catalog self-test: {'FAIL' if failures else 'PASS'} "
+        f"(7 negative controls + baseline)",
+        file=sys.stderr,
+    )
     return 1 if failures else 0
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--catalog", type=pathlib.Path, default=CATALOG)
-    ap.add_argument("--require-current-lock", action="store_true",
-                    help="FAIL if the catalogue's source_lock_digest is not "
-                         "the sha256 of the current source-lock/"
-                         "source-lock.json (R5-EVID-01: CI runs this as a "
-                         "BLOCKING step; regenerate the catalogue whenever "
-                         "the source lock changes)")
+    ap.add_argument(
+        "--require-current-lock",
+        action="store_true",
+        help="FAIL if the catalogue's source_lock_digest is not "
+        "the sha256 of the current source-lock/"
+        "source-lock.json (R5-EVID-01: CI runs this as a "
+        "BLOCKING step; regenerate the catalogue whenever "
+        "the source lock changes)",
+    )
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
     if args.self_test:
@@ -267,31 +318,37 @@ def main():
     # R4-EVID-01a: compare the catalogue's pinned lock digest against the
     # CURRENT lock file, always report, fail only under --require-current-lock
     current_lock = sha256_file(SOURCE_LOCK) if SOURCE_LOCK.is_file() else None
-    lock_current = current_lock is not None \
-        and cat.get("source_lock_digest") == current_lock
+    lock_current = current_lock is not None and cat.get("source_lock_digest") == current_lock
     if not lock_current:
-        msg = (f"catalogue pins source_lock_digest "
-               f"{cat.get('source_lock_digest')} but the current "
-               f"{SOURCE_LOCK.relative_to(REPO)} hashes {current_lock} - the "
-               f"catalogue's source binding is STALE (R5-EVID-01: regenerate "
-               f"the catalogue against the current lock)")
+        msg = (
+            f"catalogue pins source_lock_digest "
+            f"{cat.get('source_lock_digest')} but the current "
+            f"{SOURCE_LOCK.relative_to(REPO)} hashes {current_lock} - the "
+            f"catalogue's source binding is STALE (R5-EVID-01: regenerate "
+            f"the catalogue against the current lock)"
+        )
         if args.require_current_lock:
             errors.append(msg)
         else:
             print(f"STALE-LOCK: {msg}", file=sys.stderr)
-    print(json.dumps({
-        "catalog": str(args.catalog.relative_to(REPO)),
-        "catalog_source_lock_digest": cat.get("source_lock_digest"),
-        "current_source_lock_sha256": current_lock,
-        "source_lock_current": lock_current,
-        "targets": len(cat["targets"]),
-        "leaf_cases": len(cat["leaf_cases"]),
-        "unique_leaf_cases": len({l["leaf_case_id"] for l in cat["leaf_cases"]}),
-        "required_pairs": len(cat["required_pairs"]),
-        "required_pair_profiles": pair_profiles,
-        "exclusions": len(cat["exclusions"]),
-        "errors": len(errors),
-    }, indent=1))
+    print(
+        json.dumps(
+            {
+                "catalog": str(args.catalog.relative_to(REPO)),
+                "catalog_source_lock_digest": cat.get("source_lock_digest"),
+                "current_source_lock_sha256": current_lock,
+                "source_lock_current": lock_current,
+                "targets": len(cat["targets"]),
+                "leaf_cases": len(cat["leaf_cases"]),
+                "unique_leaf_cases": len({leaf["leaf_case_id"] for leaf in cat["leaf_cases"]}),
+                "required_pairs": len(cat["required_pairs"]),
+                "required_pair_profiles": pair_profiles,
+                "exclusions": len(cat["exclusions"]),
+                "errors": len(errors),
+            },
+            indent=1,
+        )
+    )
     for e in errors[:200]:
         print(f"ERROR: {e}", file=sys.stderr)
     if len(errors) > 200:

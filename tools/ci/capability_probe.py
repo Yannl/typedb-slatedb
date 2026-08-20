@@ -68,11 +68,19 @@ def probe_docker() -> dict:
     if exe is None:
         return {"available": False, "detail": "docker is not on PATH"}
     try:
-        proc = subprocess.run([exe, "info", "--format", "{{.ServerVersion}}"], capture_output=True, text=True, timeout=30)
+        proc = subprocess.run(
+            [exe, "info", "--format", "{{.ServerVersion}}"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return {"available": False, "detail": f"docker present but not usable: {exc}"}
     if proc.returncode != 0:
-        return {"available": False, "detail": f"docker daemon unreachable: {proc.stderr.strip()[:200]}"}
+        return {
+            "available": False,
+            "detail": f"docker daemon unreachable: {proc.stderr.strip()[:200]}",
+        }
     return {"available": True, "detail": f"docker server {proc.stdout.strip()}"}
 
 
@@ -83,7 +91,10 @@ def probe_proc_visibility() -> dict:
     except OSError as exc:
         return {"available": False, "detail": f"/proc/<pid>/stat unreadable: {exc}"}
     if len(stat.split()) < 22:
-        return {"available": False, "detail": "/proc/<pid>/stat is truncated; start-tick authentication impossible"}
+        return {
+            "available": False,
+            "detail": "/proc/<pid>/stat is truncated; start-tick authentication impossible",
+        }
     return {"available": True, "detail": "/proc/<pid>/stat exposes start ticks"}
 
 
@@ -117,7 +128,11 @@ def probe_mem(min_gb: float) -> dict:
     if total_kb is None:
         return {"available": False, "detail": "cannot read /proc/meminfo"}
     total_gb = total_kb / (1024**2)
-    return {"available": total_gb >= min_gb, "detail": f"{total_gb:.1f} GiB RAM (need {min_gb:g})", "value_gb": round(total_gb, 1)}
+    return {
+        "available": total_gb >= min_gb,
+        "detail": f"{total_gb:.1f} GiB RAM (need {min_gb:g})",
+        "value_gb": round(total_gb, 1),
+    }
 
 
 def probe_locked_binary(node: str, env_var: str) -> dict:
@@ -131,21 +146,30 @@ def probe_locked_binary(node: str, env_var: str) -> dict:
     return {
         "available": False,
         "detail": f"sources/{node} is not materialised and {env_var} is unset; "
-                  f"run `python3 tools/source-lock/materialize_sources.py` on a runner with egress",
+        f"run `python3 tools/source-lock/materialize_sources.py` on a runner with egress",
     }
 
 
 def probe_toolchain(name: str) -> dict:
     exe = _which(name)
-    return {"available": exe is not None, "detail": f"{name} at {exe}" if exe else f"{name} is not on PATH"}
+    return {
+        "available": exe is not None,
+        "detail": f"{name} at {exe}" if exe else f"{name} is not on PATH",
+    }
 
 
 PROBES = {
     "docker": (probe_docker, "Docker daemon (real Cloudflare Container lane, CF-02)"),
-    "proc": (probe_proc_visibility, "/proc start-tick visibility (supervisor child authentication)"),
+    "proc": (
+        probe_proc_visibility,
+        "/proc start-tick visibility (supervisor child authentication)",
+    ),
     "egress": (probe_network_egress, "outbound HTTPS to the package registries"),
     "rustfs": (lambda: probe_locked_binary("rustfs", "RUSTFS_BIN"), "source-locked RustFS binary"),
-    "minio": (lambda: probe_locked_binary("minio", "MINIO_BIN"), "source-locked MinIO comparator binary"),
+    "minio": (
+        lambda: probe_locked_binary("minio", "MINIO_BIN"),
+        "source-locked MinIO comparator binary",
+    ),
     "cargo": (lambda: probe_toolchain("cargo"), "Rust toolchain"),
     "node": (lambda: probe_toolchain("node"), "Node runtime"),
     "npm": (lambda: probe_toolchain("npm"), "npm"),
@@ -158,25 +182,43 @@ def run_probe(spec: str) -> tuple[str, dict]:
     if ":" in spec:
         name, _, arg = spec.partition(":")
         if name == "disk":
-            return spec, {**probe_disk(float(arg)), "capability": spec, "description": f"at least {arg} GiB free disk"}
+            return spec, {
+                **probe_disk(float(arg)),
+                "capability": spec,
+                "description": f"at least {arg} GiB free disk",
+            }
         if name == "mem":
-            return spec, {**probe_mem(float(arg)), "capability": spec, "description": f"at least {arg} GiB RAM"}
+            return spec, {
+                **probe_mem(float(arg)),
+                "capability": spec,
+                "description": f"at least {arg} GiB RAM",
+            }
         raise SystemExit(f"unknown parameterised capability {name!r} (known: disk, mem)")
     if spec not in PROBES:
-        raise SystemExit(f"unknown capability {spec!r} (known: {', '.join(sorted(PROBES))}, disk:N, mem:N)")
+        raise SystemExit(
+            f"unknown capability {spec!r} (known: {', '.join(sorted(PROBES))}, disk:N, mem:N)"
+        )
     fn, description = PROBES[spec]
     return spec, {**fn(), "capability": spec, "description": description}
 
 
 def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--require", action="append", default=[], metavar="CAP")
     ap.add_argument("--lane", default=os.environ.get("GITHUB_JOB", "unnamed-lane"))
     ap.add_argument("--runner-hint", default="a runner with the capability above")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--out", help="write the verdict document here (blocked.json)")
-    ap.add_argument("--gate", action="store_true", help="exit 75 with a GitHub error annotation when BLOCKED")
-    ap.add_argument("--github-output", action="store_true", help="also append blocked=true|false to $GITHUB_OUTPUT")
+    ap.add_argument(
+        "--gate", action="store_true", help="exit 75 with a GitHub error annotation when BLOCKED"
+    )
+    ap.add_argument(
+        "--github-output",
+        action="store_true",
+        help="also append blocked=true|false to $GITHUB_OUTPUT",
+    )
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
@@ -255,16 +297,28 @@ def self_test() -> int:
     # The gate's exit code must be the BLOCKED code, and must differ from both
     # success (0) and the generic failure code a source error would produce (1).
     proc = subprocess.run(
-        [sys.executable, str(Path(__file__)), "--require", "disk:999999", "--gate", "--lane", "selftest"],
+        [
+            sys.executable,
+            str(Path(__file__)),
+            "--require",
+            "disk:999999",
+            "--gate",
+            "--lane",
+            "selftest",
+        ],
         capture_output=True,
         text=True,
     )
     ok = proc.returncode == EX_BLOCKED_GATE and "ENVIRONMENT-BLOCKED" in proc.stderr
-    print(f"  {'ok  ' if ok else 'FAIL'} the gate exits {EX_BLOCKED_GATE} with a classified annotation (got {proc.returncode})")
+    print(
+        f"  {'ok  ' if ok else 'FAIL'} the gate exits {EX_BLOCKED_GATE} with a classified annotation (got {proc.returncode})"
+    )
     if not ok:
         failures += 1
     ok = EX_BLOCKED_GATE not in (0, 1)
-    print(f"  {'ok  ' if ok else 'FAIL'} BLOCKED is distinguishable from success (0) and source failure (1)")
+    print(
+        f"  {'ok  ' if ok else 'FAIL'} BLOCKED is distinguishable from success (0) and source failure (1)"
+    )
     if not ok:
         failures += 1
 

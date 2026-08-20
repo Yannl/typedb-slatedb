@@ -23,8 +23,8 @@ side-channel resistance matters.
 import hashlib
 
 # curve parameters (RFC 8032 §5.1)
-P = 2 ** 255 - 19
-Q = 2 ** 252 + 27742317777372353535851937790883648493
+P = 2**255 - 19
+Q = 2**252 + 27742317777372353535851937790883648493
 
 
 def _sha512(b):

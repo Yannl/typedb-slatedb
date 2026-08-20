@@ -17,6 +17,7 @@ Probes:
 Usage:
   python3 tools/drivers/probe_blocked_lanes.py
 """
+
 import json
 import os
 import pathlib
@@ -44,12 +45,14 @@ def probe_python_from_source():
     env = dict(os.environ)
     env["PYTHONPATH"] = str(REPO / "sources" / "typedb-driver" / "python")
     r = subprocess.run(
-        [sys.executable, "-c",
-         "import typedb.native_driver_wrapper as w; print(w.__file__)"],
-        capture_output=True, text=True, env=env)
+        [sys.executable, "-c", "import typedb.native_driver_wrapper as w; print(w.__file__)"],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
     return {
         "command": "PYTHONPATH=sources/typedb-driver/python python3 -c "
-                   "'import typedb.native_driver_wrapper'",
+        "'import typedb.native_driver_wrapper'",
         "exit_code": r.returncode,
         "stderr_tail": r.stderr.strip().splitlines()[-3:],
         "conclusion": (
@@ -61,8 +64,10 @@ def probe_python_from_source():
             "nor swig exists here, so a from-source Python driver is blocked; "
             "the lane instead runs the OFFICIAL published wheel of the same "
             "version and proves module-for-module byte identity with the "
-            "locked tree." if r.returncode != 0 else
-            "the Python driver imports from the locked source tree"),
+            "locked tree."
+            if r.returncode != 0
+            else "the Python driver imports from the locked source tree"
+        ),
     }
 
 
@@ -70,8 +75,7 @@ def probe_pristine_server():
     pristine = REPO / "sources" / "typedb-pristine"
     fork_target = REPO / "sources" / "typedb" / "target"
     bin_path = pristine / "target" / "debug" / "typedb_server_bin"
-    du = subprocess.run(["du", "-sb", str(fork_target)], capture_output=True,
-                        text=True)
+    du = subprocess.run(["du", "-sb", str(fork_target)], capture_output=True, text=True)
     fork_bytes = int(du.stdout.split()[0]) if du.returncode == 0 else None
     st = os.statvfs(REPO)
     free = st.f_bavail * st.f_frsize
@@ -90,7 +94,8 @@ def probe_pristine_server():
             f"U0) driver lane is therefore blocked on disk capacity in this "
             f"environment, not on tooling. The executed lanes use the fork "
             f"server, whose checkout dirt is recorded explicitly in every "
-            f"bundle."),
+            f"bundle."
+        ),
     }
 
 
@@ -101,12 +106,14 @@ def main():
             "Executed probes behind every 'blocked' claim in "
             "driver-row-status.json. Each entry records the command that was "
             "run and what it returned; a precondition nobody executed is not "
-            "a precondition, it is an excuse."),
+            "a precondition, it is an excuse."
+        ),
         "generated_at_utc": __import__("time").strftime(
-            "%Y-%m-%dT%H:%M:%SZ", __import__("time").gmtime()),
-        "toolchain_probes": [which(t) for t in
-                             ("bazel", "swig", "cargo", "rustc", "node", "npm",
-                              "python3", "pnpm")],
+            "%Y-%m-%dT%H:%M:%SZ", __import__("time").gmtime()
+        ),
+        "toolchain_probes": [
+            which(t) for t in ("bazel", "swig", "cargo", "rustc", "node", "npm", "python3", "pnpm")
+        ],
         "python_driver_from_source": probe_python_from_source(),
         "pristine_server_lane": probe_pristine_server(),
         "rows": {},

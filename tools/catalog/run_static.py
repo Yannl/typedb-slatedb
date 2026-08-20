@@ -14,7 +14,13 @@ Faithful reimplementation of the two Bazel static rules at the pin:
   (Bazel globs stop at package boundaries).
 """
 
-import argparse, json, pathlib, re, subprocess, sys, fnmatch
+import argparse
+import json
+import pathlib
+import re
+import subprocess
+import sys
+import fnmatch
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 TYPEDB = REPO / "sources" / "typedb"
@@ -71,7 +77,7 @@ def parse_rule_block(build_text: str, rule: str, name: str) -> str:
             elif build_text[i] == ")":
                 depth -= 1
             i += 1
-        block = build_text[m.start():i]
+        block = build_text[m.start() : i]
         if re.search(r'name\s*=\s*"' + re.escape(name) + r'"', block):
             return block
     return ""
@@ -100,7 +106,7 @@ def eval_rule_attrs(block: str, package_dir: pathlib.Path):
 
 def load_header_regexes(license_type: str):
     lines = HEADER_FILES[license_type].read_text().splitlines()
-    return [re.compile(l) for l in lines]
+    return [re.compile(pattern) for pattern in lines]
 
 
 def check_regexp_header(path: pathlib.Path, header_regexes) -> str | None:
@@ -151,7 +157,11 @@ def run_checkstyle(target_id: str):
     exclude = attrs.get("exclude", [])
     if exclude:
         excluded = set(exclude)
-        files = [f for f in files if f not in excluded and not any(fnmatch.fnmatch(f, p) for p in exclude)]
+        files = [
+            f
+            for f in files
+            if f not in excluded and not any(fnmatch.fnmatch(f, p) for p in exclude)
+        ]
     header_regexes = load_header_regexes(attrs.get("license_type", "mpl-header"))
     failures = []
     checked = 0
@@ -206,7 +216,9 @@ def run_rustfmt_batch(targets):
         package_dir = (TYPEDB / build_rel).parent
         files = package_rs_files(package_dir)
         if not files:
-            results.append({"target_id": target_id, "status": "PASS", "files_checked": 0, "failures": []})
+            results.append(
+                {"target_id": target_id, "status": "PASS", "files_checked": 0, "failures": []}
+            )
             continue
         cmd = [
             str(pathlib.Path.home() / ".cargo/bin/rustfmt"),
@@ -217,16 +229,34 @@ def run_rustfmt_batch(targets):
         ] + [str(f) for f in files]
         proc = subprocess.run(cmd, capture_output=True, text=True, cwd=TYPEDB)
         if proc.returncode == 0:
-            results.append({"target_id": target_id, "status": "PASS", "files_checked": len(files), "failures": []})
+            results.append(
+                {
+                    "target_id": target_id,
+                    "status": "PASS",
+                    "files_checked": len(files),
+                    "failures": [],
+                }
+            )
         else:
-            bad = sorted({l.split(" at line")[0].replace("Diff in ", "") for l in proc.stdout.splitlines() if l.startswith("Diff in ")})
+            bad = sorted(
+                {
+                    line.split(" at line")[0].replace("Diff in ", "")
+                    for line in proc.stdout.splitlines()
+                    if line.startswith("Diff in ")
+                }
+            )
             detail = bad or [proc.stderr.strip()[:200]]
-            results.append({
-                "target_id": target_id,
-                "status": "FAIL",
-                "files_checked": len(files),
-                "failures": [str(pathlib.Path(b).relative_to(TYPEDB)) if b.startswith(str(TYPEDB)) else b for b in detail][:20],
-            })
+            results.append(
+                {
+                    "target_id": target_id,
+                    "status": "FAIL",
+                    "files_checked": len(files),
+                    "failures": [
+                        str(pathlib.Path(b).relative_to(TYPEDB)) if b.startswith(str(TYPEDB)) else b
+                        for b in detail
+                    ][:20],
+                }
+            )
     return results
 
 
@@ -236,8 +266,12 @@ def main():
     args = parser.parse_args()
 
     catalog = json.loads(CATALOG.read_text())
-    static_targets = sorted({l["target_id"] for l in catalog["leaf_cases"] if l["kind"] == "STATIC_CHECK"})
-    checkstyle_targets = [t for t in static_targets if t.rsplit(":", 1)[-1].startswith("checkstyle")]
+    static_targets = sorted(
+        {leaf["target_id"] for leaf in catalog["leaf_cases"] if leaf["kind"] == "STATIC_CHECK"}
+    )
+    checkstyle_targets = [
+        t for t in static_targets if t.rsplit(":", 1)[-1].startswith("checkstyle")
+    ]
     rustfmt_targets = [t for t in static_targets if t.rsplit(":", 1)[-1].startswith("rustfmt")]
     other = [t for t in static_targets if t not in checkstyle_targets and t not in rustfmt_targets]
 
@@ -246,7 +280,7 @@ def main():
         results.append(run_checkstyle(t))
         sys.stdout.write(f"{results[-1]['status']:5} {t}\n")
     results.extend(run_rustfmt_batch(rustfmt_targets))
-    for r in results[len(checkstyle_targets):]:
+    for r in results[len(checkstyle_targets) :]:
         sys.stdout.write(f"{r['status']:5} {r['target_id']}\n")
     for t in other:
         results.append({"target_id": t, "status": "ERROR", "detail": "unrecognized static rule"})
@@ -270,17 +304,24 @@ def main():
     # so any CI step invoking it recorded a green static lane over a red one.
     # There is no ledger for static checks - a formatting/checkstyle rule
     # either passes or the lane is red.
-    anomalies = [f"{r['target_id']}: {r['status']}"
-                 + (f" ({', '.join(r.get('failures', [])[:3])})" if r.get("failures") else "")
-                 + (f" ({r['detail']})" if r.get("detail") else "")
-                 for r in results if r["status"] != "PASS"]
+    anomalies = [
+        f"{r['target_id']}: {r['status']}"
+        + (f" ({', '.join(r.get('failures', [])[:3])})" if r.get("failures") else "")
+        + (f" ({r['detail']})" if r.get("detail") else "")
+        for r in results
+        if r["status"] != "PASS"
+    ]
     if not results:
-        anomalies.append("static: the catalogue selected ZERO static targets - "
-                         "an empty static lane is never a pass")
+        anomalies.append(
+            "static: the catalogue selected ZERO static targets - "
+            "an empty static lane is never a pass"
+        )
     for a in anomalies:
         print(f"ANOMALY: {a}", file=sys.stderr)
-    print(f"VERDICT: {'GREEN' if not anomalies else 'RED'} "
-          f"({len(anomalies)} anomaly/anomalies)", file=sys.stderr)
+    print(
+        f"VERDICT: {'GREEN' if not anomalies else 'RED'} ({len(anomalies)} anomaly/anomalies)",
+        file=sys.stderr,
+    )
     return 1 if anomalies else 0
 
 

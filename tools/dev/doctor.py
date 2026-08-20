@@ -16,6 +16,7 @@ A recorded-version mismatch is a WARN, not a failure: the lock records the
 environment the evidence was produced in, and a different patch level is a
 fact worth seeing, not a stop sign.
 """
+
 import argparse
 import json
 import pathlib
@@ -95,8 +96,12 @@ def check_native(rep: Report, lock: dict) -> None:
         got = version_of(argv, pattern)
         want = recorded.get(member, "")
         want_v = re.search(r"(\d+\.\d+(\.\d+)?)", want)
-        if got and want_v and not want_v.group(1).startswith(got) \
-                and not got.startswith(want_v.group(1)):
+        if (
+            got
+            and want_v
+            and not want_v.group(1).startswith(got)
+            and not got.startswith(want_v.group(1))
+        ):
             rep.warn(member, f"{got} (lock recorded {want_v.group(1)})")
         else:
             rep.ok(member, got or "present")
@@ -111,44 +116,54 @@ def check_rust(rep: Report, lock: dict) -> None:
     print("rust toolchains")
     parity = next((n["version"] for n in lock["nodes"] if n["id"] == "RUST_PARITY"), None)
     if shutil.which("rustup") is None:
-        rep.fail("rustup", "not on PATH",
-                 "curl https://sh.rustup.rs -sSf | sh")
+        rep.fail("rustup", "not on PATH", "curl https://sh.rustup.rs -sSf | sh")
         return
-    installed = subprocess.run(["rustup", "toolchain", "list"],
-                               capture_output=True, text=True).stdout
+    installed = subprocess.run(
+        ["rustup", "toolchain", "list"], capture_output=True, text=True
+    ).stdout
     if parity and parity not in installed:
-        rep.fail(f"rust {parity} (parity lane)", "not installed",
-                 f"rustup toolchain install {parity}")
+        rep.fail(
+            f"rust {parity} (parity lane)", "not installed", f"rustup toolchain install {parity}"
+        )
     else:
         rep.ok(f"rust {parity} (parity lane)", "installed")
     if "stable" in installed:
         rep.ok("rust stable (tools workspace)", "installed")
     else:
-        rep.fail("rust stable (tools workspace)", "not installed",
-                 "rustup toolchain install stable")
+        rep.fail(
+            "rust stable (tools workspace)", "not installed", "rustup toolchain install stable"
+        )
     # the static lane shells out to the pinned nightly rustfmt. IMPORT the
     # pin rather than regex-scraping run_static's source: a constant rename
     # made the scrape miss silently and doctor skipped the check entirely.
     sys.path.insert(0, str(REPO / "tools" / "catalog"))
     from run_static import RUSTFMT_TOOLCHAIN  # noqa: E402
+
     if RUSTFMT_TOOLCHAIN in installed:
         rep.ok(f"rustfmt {RUSTFMT_TOOLCHAIN}", "installed")
     else:
-        rep.fail(f"rustfmt {RUSTFMT_TOOLCHAIN} (static lane)", "not installed",
-                 f"rustup toolchain install {RUSTFMT_TOOLCHAIN} "
-                 f"--profile minimal --component rustfmt")
+        rep.fail(
+            f"rustfmt {RUSTFMT_TOOLCHAIN} (static lane)",
+            "not installed",
+            f"rustup toolchain install {RUSTFMT_TOOLCHAIN} --profile minimal --component rustfmt",
+        )
 
 
 def check_sources(rep: Report) -> None:
     print("pinned sources")
-    lint = subprocess.run([sys.executable,
-                           str(REPO / "tools" / "source-lock" / "lint_source_lock.py")],
-                          capture_output=True, text=True)
+    lint = subprocess.run(
+        [sys.executable, str(REPO / "tools" / "source-lock" / "lint_source_lock.py")],
+        capture_output=True,
+        text=True,
+    )
     first = (lint.stdout.strip().splitlines() or ["no output"])[0]
-    missing = [l for l in lint.stdout.splitlines() if "missing at" in l]
+    missing = [line for line in lint.stdout.splitlines() if "missing at" in line]
     if missing:
-        rep.fail("sources/ materialisation", f"{len(missing)} node(s) missing",
-                 "python3 tools/source-lock/materialize_sources.py")
+        rep.fail(
+            "sources/ materialisation",
+            f"{len(missing)} node(s) missing",
+            "python3 tools/source-lock/materialize_sources.py",
+        )
     elif lint.returncode != 0:
         # a lint failure that is not a missing checkout is a real drift signal,
         # but it does not stop a lane from running — surface it, don't block.
@@ -160,8 +175,10 @@ def check_sources(rep: Report) -> None:
     if archive.exists():
         rep.ok("assembly archive", "present (corpus assembly lane runnable)")
     else:
-        rep.warn("assembly archive",
-                 "absent — build the fork, then python3 tools/catalog/package_assembly.py")
+        rep.warn(
+            "assembly archive",
+            "absent — build the fork, then python3 tools/catalog/package_assembly.py",
+        )
 
 
 def check_node_deps(rep: Report) -> None:
@@ -173,8 +190,9 @@ def check_node_deps(rep: Report) -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--quiet", action="store_true", help="print only problems")
     args = ap.parse_args()
 
@@ -193,8 +211,10 @@ def main() -> int:
             if fix:
                 print(f"      fix: {fix}")
         return 1
-    print(f"DOCTOR: every local lane is runnable"
-          f"{f' ({len(rep.warnings)} warning(s))' if rep.warnings else ''}")
+    print(
+        f"DOCTOR: every local lane is runnable"
+        f"{f' ({len(rep.warnings)} warning(s))' if rep.warnings else ''}"
+    )
     return 0
 
 

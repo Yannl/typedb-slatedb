@@ -18,6 +18,7 @@ and MUST NOT be trusted until the gap is closed.
 
 Run: python3 tools/source-lock/lock_mutants.py
 """
+
 import json
 import os
 import pathlib
@@ -43,6 +44,7 @@ def node(doc: dict, nid: str) -> dict:
 # mutations: each takes the parsed lock and returns the id the linter must
 # name. Mutants 1-4 are the audit's E-P0-02 forgeries, verbatim.
 # ---------------------------------------------------------------------------
+
 
 def mutant_object_store_version(doc):
     """E-P0-02 mutant 1: cargo_dependency version forged."""
@@ -117,9 +119,10 @@ def build_shadow_root(tmp: pathlib.Path) -> pathlib.Path:
 
 def run_linter(lock_file: pathlib.Path, repo_root: pathlib.Path):
     r = subprocess.run(
-        [sys.executable, str(LINTER),
-         "--lock-file", str(lock_file), "--repo-root", str(repo_root)],
-        capture_output=True, text=True)
+        [sys.executable, str(LINTER), "--lock-file", str(lock_file), "--repo-root", str(repo_root)],
+        capture_output=True,
+        text=True,
+    )
     return r.returncode, (r.stdout + r.stderr)
 
 
@@ -128,11 +131,19 @@ def judge(label: str, must_name: str, rc: int, output: str) -> bool:
         print(f"  SURVIVED  {label}: linter returned 0 on a forged lock")
         return False
     if must_name not in output:
-        print(f"  SURVIVED  {label}: linter failed (rc={rc}) but never "
-              f"named node {must_name}; a failure nobody can act on")
+        print(
+            f"  SURVIVED  {label}: linter failed (rc={rc}) but never "
+            f"named node {must_name}; a failure nobody can act on"
+        )
         return False
-    line = next((l.strip() for l in output.splitlines()
-                 if must_name in l and l.strip().startswith("-")), "")
+    line = next(
+        (
+            out_line.strip()
+            for out_line in output.splitlines()
+            if must_name in out_line and out_line.strip().startswith("-")
+        ),
+        "",
+    )
     print(f"  held      {label} (rc={rc}) {line}")
     return True
 
@@ -161,11 +172,12 @@ def main() -> int:
         text = clock.read_text()
         needle = 'name = "object_store"\nversion = "0.14.1"'
         if needle not in text:
-            print("  SURVIVED  mutant_consumer_lock_bumped: could not apply "
-                  "(object_store 0.14.1 not found in Cargo.lock - update the control)")
+            print(
+                "  SURVIVED  mutant_consumer_lock_bumped: could not apply "
+                "(object_store 0.14.1 not found in Cargo.lock - update the control)"
+            )
         else:
-            clock.write_text(text.replace(
-                needle, 'name = "object_store"\nversion = "0.99.0"', 1))
+            clock.write_text(text.replace(needle, 'name = "object_store"\nversion = "0.99.0"', 1))
             rc, out = run_linter(LOCK, root)
             if judge("mutant_consumer_lock_bumped", "OBJECT_STORE", rc, out):
                 held += 1

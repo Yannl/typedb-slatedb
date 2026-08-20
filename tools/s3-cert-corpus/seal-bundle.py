@@ -57,6 +57,7 @@ re-derives every value with its own code):
 
 Stdlib only.
 """
+
 import argparse
 import hashlib
 import json
@@ -79,21 +80,52 @@ REQUIRED_PHASES = ("semantics", "mp-cas", "crash-restart", "post-restart")
 # Environment allowlist: variables that may influence the build or the run.
 # Values are captured verbatim except where the name looks secret-bearing.
 ENV_ALLOWLIST = (
-    "CARGO", "CARGO_BUILD_TARGET", "CARGO_HOME", "CARGO_HTTP_CAINFO",
-    "CARGO_HTTP_PROXY", "CARGO_INCREMENTAL", "CARGO_NET_GIT_FETCH_WITH_CLI",
-    "CARGO_NET_OFFLINE", "CARGO_TARGET_DIR", "CARGO_TERM_COLOR",
-    "LANG", "LC_ALL", "LD_AUDIT",
-    "LD_LIBRARY_PATH", "LD_PRELOAD", "PATH", "RUSTC", "RUSTDOCFLAGS",
-    "RUSTFLAGS", "RUSTUP_DIST_SERVER", "RUSTUP_HOME", "RUSTUP_TOOLCHAIN",
-    "RUSTUP_UPDATE_ROOT", "RUST_BACKTRACE", "RUST_LOG", "RUST_MIN_STACK",
-    "RUST_TEST_THREADS", "SOURCE_DATE_EPOCH", "TZ",
+    "CARGO",
+    "CARGO_BUILD_TARGET",
+    "CARGO_HOME",
+    "CARGO_HTTP_CAINFO",
+    "CARGO_HTTP_PROXY",
+    "CARGO_INCREMENTAL",
+    "CARGO_NET_GIT_FETCH_WITH_CLI",
+    "CARGO_NET_OFFLINE",
+    "CARGO_TARGET_DIR",
+    "CARGO_TERM_COLOR",
+    "LANG",
+    "LC_ALL",
+    "LD_AUDIT",
+    "LD_LIBRARY_PATH",
+    "LD_PRELOAD",
+    "PATH",
+    "RUSTC",
+    "RUSTDOCFLAGS",
+    "RUSTFLAGS",
+    "RUSTUP_DIST_SERVER",
+    "RUSTUP_HOME",
+    "RUSTUP_TOOLCHAIN",
+    "RUSTUP_UPDATE_ROOT",
+    "RUST_BACKTRACE",
+    "RUST_LOG",
+    "RUST_MIN_STACK",
+    "RUST_TEST_THREADS",
+    "SOURCE_DATE_EPOCH",
+    "TZ",
     # the per-run S3 credentials are allowlisted so they are ACCOUNTED FOR,
     # and redacted by ENV_SECRET_RE so their values never enter the bundle.
-    "S3_CERT_ACCESS_KEY", "S3_CERT_ALLOW_DIRTY", "S3_CERT_BUCKET",
-    "S3_CERT_CAS_ROUNDS", "S3_CERT_CAS_WRITERS", "S3_CERT_ENDPOINT",
-    "S3_CERT_EVIDENCE_DIR", "S3_CERT_MP_PROCS", "S3_CERT_MP_ROUNDS",
-    "S3_CERT_PHASE", "S3_CERT_PORT", "S3_CERT_PROVIDER", "S3_CERT_SECRET_KEY",
-    "S3_CERT_SERVER_BIN", "S3_CERT_UPDATE_ROUNDS",
+    "S3_CERT_ACCESS_KEY",
+    "S3_CERT_ALLOW_DIRTY",
+    "S3_CERT_BUCKET",
+    "S3_CERT_CAS_ROUNDS",
+    "S3_CERT_CAS_WRITERS",
+    "S3_CERT_ENDPOINT",
+    "S3_CERT_EVIDENCE_DIR",
+    "S3_CERT_MP_PROCS",
+    "S3_CERT_MP_ROUNDS",
+    "S3_CERT_PHASE",
+    "S3_CERT_PORT",
+    "S3_CERT_PROVIDER",
+    "S3_CERT_SECRET_KEY",
+    "S3_CERT_SERVER_BIN",
+    "S3_CERT_UPDATE_ROUNDS",
 )
 # Any variable matching this prefix set influences the run; if one is present
 # and NOT in the allowlist the bundle records it and the verifier refuses.
@@ -106,6 +138,7 @@ CORPUS_REL = "tools/s3-cert-corpus"
 # --------------------------------------------------------------------------
 # digests and the corpus content root
 # --------------------------------------------------------------------------
+
 
 def sha256_file(path) -> str:
     h = hashlib.sha256()
@@ -168,11 +201,16 @@ def parse_cargo_test_log(text: str) -> dict:
             continue
         m = RE_RESULT.match(line)
         if m:
-            results.append({
-                "verdict": m.group(1), "passed": int(m.group(2)),
-                "failed": int(m.group(3)), "ignored": int(m.group(4)),
-                "measured": int(m.group(5)), "filtered_out": int(m.group(6)),
-            })
+            results.append(
+                {
+                    "verdict": m.group(1),
+                    "passed": int(m.group(2)),
+                    "failed": int(m.group(3)),
+                    "ignored": int(m.group(4)),
+                    "measured": int(m.group(5)),
+                    "filtered_out": int(m.group(6)),
+                }
+            )
     return {
         "tests": sorted(tests, key=lambda t: t["name"]),
         "suite_results": results,
@@ -184,6 +222,7 @@ def parse_cargo_test_log(text: str) -> dict:
 # --------------------------------------------------------------------------
 # helpers
 # --------------------------------------------------------------------------
+
 
 def run(argv, **kw) -> str:
     return subprocess.run(argv, capture_output=True, text=True, **kw).stdout.strip()
@@ -199,7 +238,7 @@ def git(repo: pathlib.Path, *argv: str) -> str:
 def dirty_paths(repo: pathlib.Path) -> list:
     """Every tracked modification AND every untracked non-ignored path."""
     out = git(repo, "status", "--porcelain", "--untracked-files=all")
-    return [l.rstrip() for l in out.splitlines() if l.strip()]
+    return [line.rstrip() for line in out.splitlines() if line.strip()]
 
 
 def die(msg: str, code: int = 2):
@@ -246,6 +285,7 @@ def capture_environment() -> dict:
 # stable root: the deterministic identity of the run
 # --------------------------------------------------------------------------
 
+
 def stable_payload(bundle: dict) -> dict:
     """Deterministic subset — reproducible from a fresh clean checkout.
 
@@ -269,11 +309,14 @@ def stable_payload(bundle: dict) -> dict:
         "corpus": bundle["corpus"],
         # only the reproducible part of the toolchain: cargo_target_dir is a
         # per-checkout path and must not enter the stable identity.
-        "toolchain": {k: bundle["toolchain"].get(k)
-                      for k in ("rustc", "cargo", "object_store")},
+        "toolchain": {k: bundle["toolchain"].get(k) for k in ("rustc", "cargo", "object_store")},
         "phases": [
-            {"name": p["name"], "verdict": p["verdict"], "exit_code": p["exit_code"],
-             "summary": p["summary"]}
+            {
+                "name": p["name"],
+                "verdict": p["verdict"],
+                "exit_code": p["exit_code"],
+                "summary": p["summary"],
+            }
             for p in bundle["phases"]
         ],
     }
@@ -286,14 +329,20 @@ def stable_root(bundle: dict) -> str:
 
 # --------------------------------------------------------------------------
 
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("evidence_dir", nargs="?")
-    ap.add_argument("--preflight", action="store_true",
-                    help="only run the clean-tree gate (used before execution) and exit")
+    ap.add_argument(
+        "--preflight",
+        action="store_true",
+        help="only run the clean-tree gate (used before execution) and exit",
+    )
     ap.add_argument("--provider")
     ap.add_argument("--server-bin")
-    ap.add_argument("--server-sha256", help="CALLER CLAIM; recorded and cross-checked, never trusted")
+    ap.add_argument(
+        "--server-sha256", help="CALLER CLAIM; recorded and cross-checked, never trusted"
+    )
     ap.add_argument("--endpoint")
     ap.add_argument("--repo", required=True)
     ap.add_argument("--semantics-expected", type=int)
@@ -301,8 +350,11 @@ def main() -> int:
     ap.add_argument("--mp-procs", type=int)
     ap.add_argument("--racer", help="cas_racer path resolved from cargo, not hardcoded")
     ap.add_argument("--cargo-target-dir", help="effective target directory reported by cargo")
-    ap.add_argument("--allow-dirty", action="store_true",
-                    help="opt out of the clean-tree gate; STAMPS the bundle non-qualification")
+    ap.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help="opt out of the clean-tree gate; STAMPS the bundle non-qualification",
+    )
     args = ap.parse_args()
 
     repo = pathlib.Path(args.repo).resolve()
@@ -311,25 +363,42 @@ def main() -> int:
     # ---- here before sealing) -------------------------------------------
     dirt = dirty_paths(repo)
     if dirt and not args.allow_dirty:
-        print("seal-bundle: REFUSED — working tree is dirty; evidence must be produced from a "
-              "clean checkout.", file=sys.stderr)
+        print(
+            "seal-bundle: REFUSED — working tree is dirty; evidence must be produced from a "
+            "clean checkout.",
+            file=sys.stderr,
+        )
         for d in dirt[:50]:
             print(f"  {d}", file=sys.stderr)
         if len(dirt) > 50:
             print(f"  … and {len(dirt) - 50} more", file=sys.stderr)
-        print("seal-bundle: re-run from a clean tree, or set S3_CERT_ALLOW_DIRTY=1 to produce a "
-              "bundle explicitly STAMPED qualification=false.", file=sys.stderr)
+        print(
+            "seal-bundle: re-run from a clean tree, or set S3_CERT_ALLOW_DIRTY=1 to produce a "
+            "bundle explicitly STAMPED qualification=false.",
+            file=sys.stderr,
+        )
         return 3
     if args.preflight:
         if dirt:
-            print(f"seal-bundle: preflight — dirty tree ACCEPTED under --allow-dirty "
-                  f"({len(dirt)} paths); the bundle will be stamped qualification=false")
+            print(
+                f"seal-bundle: preflight — dirty tree ACCEPTED under --allow-dirty "
+                f"({len(dirt)} paths); the bundle will be stamped qualification=false"
+            )
         else:
             print("seal-bundle: preflight — clean tree")
         return 0
 
-    for req in ("evidence_dir", "provider", "server_bin", "server_sha256", "endpoint",
-                "semantics_expected", "mp_rounds", "mp_procs", "racer"):
+    for req in (
+        "evidence_dir",
+        "provider",
+        "server_bin",
+        "server_sha256",
+        "endpoint",
+        "semantics_expected",
+        "mp_rounds",
+        "mp_procs",
+        "racer",
+    ):
         if getattr(args, req) in (None, ""):
             die(f"--{req.replace('_', '-')} is required to seal")
 
@@ -354,8 +423,10 @@ def main() -> int:
     lock_doc = json.loads(src_lock_path.read_text())
     ws_doc = json.loads(ws_lock_path.read_text())
     if ws_doc.get("source_lock_sha256") != locks["source_lock_sha256"]:
-        die("workspace-lock.json does not bind the current source-lock.json bytes "
-            f"(binds {ws_doc.get('source_lock_sha256')}, actual {locks['source_lock_sha256']})")
+        die(
+            "workspace-lock.json does not bind the current source-lock.json bytes "
+            f"(binds {ws_doc.get('source_lock_sha256')}, actual {locks['source_lock_sha256']})"
+        )
 
     # ---- provider identity: RECOMPUTED, matched to the locked node -------
     node_id = PROVIDER_LOCK_NODE.get(args.provider)
@@ -367,11 +438,15 @@ def main() -> int:
         die(f"provider binary absent at {server_bin}")
     recomputed = sha256_file(server_bin)
     if recomputed != node.get("sha256"):
-        die(f"provider binary digest {recomputed} != source-lock {node_id} sha256 "
-            f"{node.get('sha256')} — a verdict may only cite the pinned artifact")
+        die(
+            f"provider binary digest {recomputed} != source-lock {node_id} sha256 "
+            f"{node.get('sha256')} — a verdict may only cite the pinned artifact"
+        )
     if args.server_sha256 != recomputed:
-        die(f"caller claimed --server-sha256 {args.server_sha256} but the bytes at "
-            f"{server_bin} hash to {recomputed}")
+        die(
+            f"caller claimed --server-sha256 {args.server_sha256} but the bytes at "
+            f"{server_bin} hash to {recomputed}"
+        )
     provider = {
         "name": args.provider,
         "source_lock_node": node_id,
@@ -401,8 +476,10 @@ def main() -> int:
     # ---- corpus content root --------------------------------------------
     files = corpus_source_files(repo)
     corpus_source = {
-        "set": (f"{CORPUS_REL}: Cargo.toml, Cargo.lock, ./*.py, ./*.sh, src/** "
-                "(excluding target/, evidence/, __pycache__/)"),
+        "set": (
+            f"{CORPUS_REL}: Cargo.toml, Cargo.lock, ./*.py, ./*.sh, src/** "
+            "(excluding target/, evidence/, __pycache__/)"
+        ),
         "files": files,
         "root": rollup(files.items()),
     }
@@ -416,10 +493,20 @@ def main() -> int:
     rustc_version = run(["rustc", "+1.93.0", "--version"])
     cargo_version = run(["cargo", "+1.93.0", "--version"])
     executables = [
-        {"name": "provider", "path": str(server_bin), "sha256": recomputed,
-         "required": True, "version": node.get("version")},
-        {"name": "cas_racer", "path": str(racer), "sha256": sha256_file(racer),
-         "required": True, "version": None},
+        {
+            "name": "provider",
+            "path": str(server_bin),
+            "sha256": recomputed,
+            "required": True,
+            "version": node.get("version"),
+        },
+        {
+            "name": "cas_racer",
+            "path": str(racer),
+            "sha256": sha256_file(racer),
+            "required": True,
+            "version": None,
+        },
         tool_record("cargo", cargo_version),
         tool_record("rustc", rustc_version),
         tool_record(sys.executable, sys.version.split()[0]),
@@ -485,29 +572,35 @@ def main() -> int:
                 "errors_total": sum(r["errors"] for r in rounds),
             }
         elif name == "crash-restart":
-            rec["summary"] = {"kind": "crash-restart", "signal": "SIGKILL",
-                              "restarted_same_data_dir": True}
+            rec["summary"] = {
+                "kind": "crash-restart",
+                "signal": "SIGKILL",
+                "restarted_same_data_dir": True,
+            }
         else:
             rec["summary"] = {"kind": "other"}
         phases.append(rec)
 
     got_phases = tuple(p["name"] for p in phases)
     if got_phases != REQUIRED_PHASES:
-        die(f"phase list {got_phases} != required {REQUIRED_PHASES} — a truncated corpus "
-            "cannot be sealed")
+        die(
+            f"phase list {got_phases} != required {REQUIRED_PHASES} — a truncated corpus "
+            "cannot be sealed"
+        )
 
     commands = []
     cmd_path = evidence / "commands.jsonl"
     if cmd_path.is_file():
-        commands = [json.loads(l) for l in cmd_path.read_text().splitlines() if l.strip()]
+        commands = [json.loads(line) for line in cmd_path.read_text().splitlines() if line.strip()]
 
     bundle = {
         "schema": SCHEMA,
         "sealed_at": datetime.now(timezone.utc).isoformat(),
         "qualification": not dirt,
         "qualification_disqualifiers": (
-            [] if not dirt else
-            [f"dirty-tree: {len(dirt)} path(s) not committed at seal time (--allow-dirty)"]
+            []
+            if not dirt
+            else [f"dirty-tree: {len(dirt)} path(s) not committed at seal time (--allow-dirty)"]
         ),
         "provider": provider,
         "source": source,
@@ -530,13 +623,21 @@ def main() -> int:
     bundle["attestation"] = {
         "attested_by": "tools/s3-cert-corpus/run-corpus.sh via seal-bundle.py",
         "runner_host": run(["hostname"]) or "unknown",
-        "statement": ("the phases below were executed by this runner against the provider "
-                      "binary named above, from the corpus source whose content root is "
-                      "recorded here"),
+        "statement": (
+            "the phases below were executed by this runner against the provider "
+            "binary named above, from the corpus source whose content root is "
+            "recorded here"
+        ),
         "stable_root": stable_root(bundle),
-        "stable_root_excludes": ["sealed_at", "pids", "ports", "temp paths",
-                                 "log digests", "build-path-dependent artifact digests",
-                                 "git identity"],
+        "stable_root_excludes": [
+            "sealed_at",
+            "pids",
+            "ports",
+            "temp paths",
+            "log digests",
+            "build-path-dependent artifact digests",
+            "git identity",
+        ],
     }
 
     for path in sorted(evidence.iterdir()):

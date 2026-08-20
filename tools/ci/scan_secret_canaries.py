@@ -24,6 +24,7 @@ Usage:
   python3 tools/ci/scan_secret_canaries.py <dir> [<dir>...]
           [--canary EXTRA_MARKER]... [--max-bytes N]
 """
+
 import argparse
 import pathlib
 import re
@@ -59,10 +60,15 @@ def scan_file(path: pathlib.Path, canaries: list[re.Pattern[bytes]], max_bytes: 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("dirs", nargs="+", type=pathlib.Path)
-    parser.add_argument("--canary", action="append", default=[],
-                        help="extra canary marker (literal, case-sensitive)")
-    parser.add_argument("--max-bytes", type=int, default=32 * 1024 * 1024,
-                        help="per-file scan cap (default 32 MiB)")
+    parser.add_argument(
+        "--canary",
+        action="append",
+        default=[],
+        help="extra canary marker (literal, case-sensitive)",
+    )
+    parser.add_argument(
+        "--max-bytes", type=int, default=32 * 1024 * 1024, help="per-file scan cap (default 32 MiB)"
+    )
     args = parser.parse_args()
 
     canaries = [re.compile(re.escape(c.encode())) for c in DEFAULT_CANARIES + args.canary]
@@ -86,7 +92,9 @@ def main() -> int:
             scanned += 1
 
     if all_hits:
-        print(f"SECRET-SCAN: FAIL — {len(all_hits)} credential-shaped hit(s) across {scanned} file(s):")
+        print(
+            f"SECRET-SCAN: FAIL — {len(all_hits)} credential-shaped hit(s) across {scanned} file(s):"
+        )
         for h in all_hits:
             print(f"  {h}")
         return 1

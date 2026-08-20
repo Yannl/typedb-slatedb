@@ -37,8 +37,8 @@ Usage:
   python3 tools/drivers/run_python_behaviour.py --lane fork-classic \
      --out docs/evidence/G1/drivers/python-rocksdb-fork-classic
 """
+
 import argparse
-import hashlib
 import json
 import os
 import pathlib
@@ -49,9 +49,9 @@ import sys
 import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import common               # noqa: E402
-import gherkin_leaves       # noqa: E402
-import typedb_server        # noqa: E402
+import common  # noqa: E402
+import gherkin_leaves  # noqa: E402
+import typedb_server  # noqa: E402
 
 REPO = common.REPO
 DRIVER = REPO / "sources" / "typedb-driver"
@@ -67,11 +67,13 @@ SUITE_PRECONDITIONS = {
         "cluster lane: it targets 127.0.0.1:11729 and needs three TypeDB "
         "servers with replication. TypeDB CE - the only server this "
         "repository builds - is single-node, so no cluster can be stood up "
-        "here."),
+        "here."
+    ),
 }
 
 
 # ------------------------------------------------------- BUILD file scanning
+
 
 def _strings(text):
     return re.findall(r'"([^"]*)"', text)
@@ -127,7 +129,7 @@ def scan_calls(text):
             k += 1
         if depth != 0:
             raise RuntimeError("unbalanced parentheses in a BUILD declaration")
-        calls.append((callee, text[j + 1:k]))
+        calls.append((callee, text[j + 1 : k]))
         i = k + 1
     return calls
 
@@ -145,7 +147,7 @@ def arg_list(args_text, key):
             if depth == 0:
                 break
         i += 1
-    return _strings(args_text[m.end():i])
+    return _strings(args_text[m.end() : i])
 
 
 def arg_str(args_text, key):
@@ -155,10 +157,10 @@ def arg_str(args_text, key):
 
 def scan_python_behaviour():
     """-> {suite_id: {feature_ref, step_files, build_file, cluster_only}}."""
-    libs = {}       # label -> [files]
+    libs = {}  # label -> [files]
     suites = {}
     for build in sorted(BHROOT.rglob("BUILD")):
-        pkg = build.parent.relative_to(PYROOT).as_posix()   # tests/behaviour/...
+        pkg = build.parent.relative_to(PYROOT).as_posix()  # tests/behaviour/...
         label_pkg = "//python/" + pkg
         for callee, args in scan_calls(build.read_text()):
             if callee == "py_library":
@@ -169,21 +171,25 @@ def scan_python_behaviour():
         pkg_dir = build.parent
         label_pkg = "//python/" + pkg_dir.relative_to(PYROOT).as_posix()
         for callee, args in scan_calls(build.read_text()):
-            if callee not in ("typedb_behaviour_py_test",
-                              "typedb_behaviour_py_test_cluster",
-                              "typedb_behaviour_py_test_core"):
+            if callee not in (
+                "typedb_behaviour_py_test",
+                "typedb_behaviour_py_test_cluster",
+                "typedb_behaviour_py_test_core",
+            ):
                 continue
             feats = arg_list(args, "feats") or []
             if len(feats) != 1:
                 raise RuntimeError(f"{build}: expected one feats entry, got {feats}")
             ref = feats[0].split("//", 1)[1].replace(":", "/")
             steps = []
-            for lab in (arg_list(args, "steps") or []):
+            for lab in arg_list(args, "steps") or []:
                 lab = f"{label_pkg}{lab}" if lab.startswith(":") else lab
                 files = libs.get(lab)
                 if files is None:
-                    raise RuntimeError(f"{build}: steps label {lab!r} does not "
-                                       f"resolve to a py_library in this tree")
+                    raise RuntimeError(
+                        f"{build}: steps label {lab!r} does not "
+                        f"resolve to a py_library in this tree"
+                    )
                 steps.extend(files)
             suite_id = pkg_dir.relative_to(BHROOT).as_posix()
             suites[suite_id] = {
@@ -198,6 +204,7 @@ def scan_python_behaviour():
 
 # --------------------------------------------------------- wheel provenance
 
+
 def wheel_provenance(venv):
     site = next(iter((venv / "lib").glob("python3*/site-packages")))
     pkg = site / "typedb"
@@ -208,8 +215,9 @@ def wheel_provenance(venv):
     for f in sorted(sfiles | wfiles):
         a, b = src / f, pkg / f
         if not a.is_file():
-            only_wheel.append({"file": f, "bytes": b.stat().st_size,
-                               "sha256": common.sha256_file(b)})
+            only_wheel.append(
+                {"file": f, "bytes": b.stat().st_size, "sha256": common.sha256_file(b)}
+            )
         elif not b.is_file():
             only_source.append(f)
         elif common.sha256_file(a) == common.sha256_file(b):
@@ -233,20 +241,32 @@ def wheel_provenance(venv):
         "only_in_wheel": [f["file"] for f in only_wheel],
         "only_in_wheel_nonempty": [f for f in only_wheel if f["bytes"] > 0],
         "only_in_locked_source": only_source,
-        "native_extensions": [
-            {"file": n, "sha256": common.sha256_file(pkg / n)} for n in native],
+        "native_extensions": [{"file": n, "sha256": common.sha256_file(pkg / n)} for n in native],
         "note": (
             "The published wheel is used because the Python driver's SWIG "
             "wrapper and native extension are Bazel outputs and neither bazel "
             "nor swig exists in this environment. Every pure-Python module in "
             "the wheel is compared byte-for-byte with the locked TDRIVER tree; "
             "the only files the wheel may add are Bazel-generated package "
-            "markers and the SWIG products, which are enumerated above."),
+            "markers and the SWIG products, which are enumerated above."
+        ),
     }
 
 
-IANA_AREAS = ("Africa", "America", "Antarctica", "Arctic", "Asia", "Atlantic",
-              "Australia", "Europe", "Indian", "Pacific", "Etc", "US")
+IANA_AREAS = (
+    "Africa",
+    "America",
+    "Antarctica",
+    "Arctic",
+    "Asia",
+    "Atlantic",
+    "Australia",
+    "Europe",
+    "Indian",
+    "Pacific",
+    "Etc",
+    "US",
+)
 
 
 def corpus_time_zones(refs):
@@ -298,21 +318,23 @@ def harness_environment(venv, refs):
         "except Exception as e:\n"
         "    v=f'absent ({type(e).__name__})'\n"
         "print(json.dumps({'python':sys.version,'tzpath':list(zoneinfo.TZPATH),"
-        "'zones_from_corpus':res,'tzdata_package':v}))\n")
+        "'zones_from_corpus':res,'tzdata_package':v}))\n"
+    )
     r = subprocess.run([str(py), "-c", probe], capture_output=True, text=True)
     try:
         info = json.loads(r.stdout)
     except json.JSONDecodeError:
-        return {"problems": [f"time-zone probe failed: {r.stderr[-300:]}"],
-                "raw": r.stdout}
+        return {"problems": [f"time-zone probe failed: {r.stderr[-300:]}"], "raw": r.stdout}
     info["problems"] = [
-        f"time zone {z}, named by the behaviour corpus, is not resolvable in "
-        f"this interpreter: {v}"
-        for z, v in info["zones_from_corpus"].items() if v is not True]
+        f"time zone {z}, named by the behaviour corpus, is not resolvable in this interpreter: {v}"
+        for z, v in info["zones_from_corpus"].items()
+        if v is not True
+    ]
     return info
 
 
 # ----------------------------------------------------------------- behave IO
+
 
 def materialise(suite_id, meta, run_dir):
     """Rebuild the Bazel `prepare_py_behave_directory` output for one suite."""
@@ -331,11 +353,12 @@ def materialise(suite_id, meta, run_dir):
         copied.append({"source": rel, "sha256": common.sha256_file(s)})
     return d, {
         "features_dir": str(d),
-        "environment": {"source": common.rel(env_src),
-                        "sha256": common.sha256_file(env_src)},
-        "feature": {"source": common.rel(feature_src),
-                    "sha256": common.sha256_file(feature_src),
-                    "copy_sha256": common.sha256_file(d / feature_src.name)},
+        "environment": {"source": common.rel(env_src), "sha256": common.sha256_file(env_src)},
+        "feature": {
+            "source": common.rel(feature_src),
+            "sha256": common.sha256_file(feature_src),
+            "copy_sha256": common.sha256_file(d / feature_src.name),
+        },
         "steps": copied,
     }
 
@@ -349,32 +372,42 @@ def parse_behave_json(path):
             if el.get("type") != "scenario":
                 continue
             steps = el.get("steps") or []
-            counts = {"passed": 0, "failed": 0, "skipped": 0, "undefined": 0,
-                      "untested": 0, "other": 0}
+            counts = {
+                "passed": 0,
+                "failed": 0,
+                "skipped": 0,
+                "undefined": 0,
+                "untested": 0,
+                "other": 0,
+            }
             for st in steps:
                 s = ((st.get("result") or {}).get("status")) or "untested"
                 counts[s if s in counts else "other"] += 1
             name = el.get("name") or ""
             base = re.sub(r"\s+--\s+@\d+\.\d+\s*.*$", "", name)
-            out.append({
-                "feature": feat.get("name"), "keyword": el.get("keyword"),
-                "raw_name": name, "display_name": base,
-                "location": el.get("location"),
-                "status": (el.get("status") or "untested").upper(),
-                "steps_total": len(steps),
-                "steps_passed": counts["passed"],
-                "steps_failed": counts["failed"],
-                "steps_skipped": counts["skipped"] + counts["untested"],
-                "steps_undefined": counts["undefined"],
-            })
+            out.append(
+                {
+                    "feature": feat.get("name"),
+                    "keyword": el.get("keyword"),
+                    "raw_name": name,
+                    "display_name": base,
+                    "location": el.get("location"),
+                    "status": (el.get("status") or "untested").upper(),
+                    "steps_total": len(steps),
+                    "steps_passed": counts["passed"],
+                    "steps_failed": counts["failed"],
+                    "steps_skipped": counts["skipped"] + counts["untested"],
+                    "steps_undefined": counts["undefined"],
+                }
+            )
     return out
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--lane", default="fork-classic",
-                    choices=sorted(typedb_server.LANES))
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument("--lane", default="fork-classic", choices=sorted(typedb_server.LANES))
     ap.add_argument("--backend", default=None)
     ap.add_argument("--out", type=pathlib.Path, required=False)
     ap.add_argument("--run-dir", type=pathlib.Path, required=True)
@@ -391,8 +424,10 @@ def main():
     if args.out is None:
         ap.error("--out is required")
 
-    backend = args.backend or {"U0": "rocksdb", "U1": "rocksdb",
-                               "U2": "slatedb"}[typedb_server.LANES[args.lane][1]]
+    backend = (
+        args.backend
+        or {"U0": "rocksdb", "U1": "rocksdb", "U2": "slatedb"}[typedb_server.LANES[args.lane][1]]
+    )
     out_dir = args.out if args.out.is_absolute() else REPO / args.out
     out_dir.mkdir(parents=True, exist_ok=True)
     run_dir = args.run_dir
@@ -404,38 +439,51 @@ def main():
     if common.plan_root_of_body(plan) != plan.get("plan_root"):
         anomalies.append("plan: plan_root does not recompute from its own body")
 
-    for node_id, path, key in (("TDRIVER", DRIVER, "resolved_revision"),
-                               ("BH", BEHAVIOUR, "revision")):
+    for node_id, path, key in (
+        ("TDRIVER", DRIVER, "resolved_revision"),
+        ("BH", BEHAVIOUR, "revision"),
+    ):
         node = common.source_lock_node(node_id) or {}
         ident = common.checkout_identity(path)
         if ident.get("dirty") is not False:
-            anomalies.append(f"{node_id}: {common.rel(path)} is dirty or its "
-                             f"dirt is unknown ({ident.get('dirty')!r})")
+            anomalies.append(
+                f"{node_id}: {common.rel(path)} is dirty or its "
+                f"dirt is unknown ({ident.get('dirty')!r})"
+            )
         if ident.get("revision") != node.get(key) or ident.get("tree") != node.get("tree"):
             anomalies.append(f"{node_id}: checkout does not match the source lock")
 
     prov = wheel_provenance(venv)
     prov["harness_environment"] = harness_environment(
-        venv, [m["feature_ref"] for m in suites.values()])
+        venv, [m["feature_ref"] for m in suites.values()]
+    )
     for problem in prov["harness_environment"]["problems"]:
         anomalies.append(f"harness environment: {problem}")
     if prov["differing_from_locked_source"]:
         anomalies.append(
             f"the installed wheel's python modules differ from the locked "
             f"TDRIVER tree in {len(prov['differing_from_locked_source'])} "
-            f"file(s): {prov['differing_from_locked_source'][:5]}")
+            f"file(s): {prov['differing_from_locked_source'][:5]}"
+        )
     if prov["only_in_locked_source"]:
-        anomalies.append(f"the wheel is MISSING locked driver modules: "
-                         f"{prov['only_in_locked_source'][:5]}")
+        anomalies.append(
+            f"the wheel is MISSING locked driver modules: {prov['only_in_locked_source'][:5]}"
+        )
     if prov["metadata"].get("Version") != DRIVER_VERSION:
-        anomalies.append(f"installed driver version "
-                         f"{prov['metadata'].get('Version')!r} != locked "
-                         f"driver VERSION {DRIVER_VERSION!r}")
-    extra = [f["file"] for f in prov["only_in_wheel_nonempty"]
-             if f["file"] not in ("native_driver_wrapper.py",)]
+        anomalies.append(
+            f"installed driver version "
+            f"{prov['metadata'].get('Version')!r} != locked "
+            f"driver VERSION {DRIVER_VERSION!r}"
+        )
+    extra = [
+        f["file"]
+        for f in prov["only_in_wheel_nonempty"]
+        if f["file"] not in ("native_driver_wrapper.py",)
+    ]
     if extra:
-        anomalies.append(f"the wheel carries non-empty python modules the "
-                         f"locked tree does not: {extra[:5]}")
+        anomalies.append(
+            f"the wheel carries non-empty python modules the locked tree does not: {extra[:5]}"
+        )
 
     selected = args.suite or [s for s in suites if not suites[s]["cluster_only"]]
     env = dict(os.environ)
@@ -449,34 +497,45 @@ def main():
     # "Row queries can request the query structure to be included in
     # response" failed with ModuleNotFoundError: No module named 'python'.)
     env["PYTHONPATH"] = os.pathsep.join(
-        [str(DRIVER), str(PYROOT)]
-        + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else []))
+        [str(DRIVER), str(PYROOT)] + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else [])
+    )
     behave = venv / "bin" / "behave"
 
     suite_rows, leaf_rows, server_records = [], [], []
-    for suite_id in list(selected) + sorted(
-            s for s in suites if suites[s]["cluster_only"]):
+    for suite_id in list(selected) + sorted(s for s in suites if suites[s]["cluster_only"]):
         meta = suites[suite_id]
         sid_flat = suite_id.replace("/", "__")
         ref = meta["feature_ref"]
-        row = {"suite_id": suite_id, "feature_ref": ref,
-               "build_file": meta["build_file"], "bazel_rule": meta["bazel_rule"],
-               "feature_path": common.rel(BEHAVIOUR / ref),
-               "feature_sha256": common.sha256_file(BEHAVIOUR / ref)}
+        row = {
+            "suite_id": suite_id,
+            "feature_ref": ref,
+            "build_file": meta["build_file"],
+            "bazel_rule": meta["bazel_rule"],
+            "feature_path": common.rel(BEHAVIOUR / ref),
+            "feature_sha256": common.sha256_file(BEHAVIOUR / ref),
+        }
         if meta["cluster_only"] or suite_id in SUITE_PRECONDITIONS:
             row["status"] = "NOT_EXECUTED_PRECONDITION_UNMET"
             row["precondition"] = SUITE_PRECONDITIONS.get(
-                suite_id, "declared upstream only for the cluster lane")
+                suite_id, "declared upstream only for the cluster lane"
+            )
             expected = gherkin_leaves.enumerate_leaves(BEHAVIOUR / ref, ref)
             row["leaves_enumerated"] = len(expected)
             suite_rows.append(row)
             leaf_rows.extend(
-                {"leaf_case_id": e["leaf_case_id"], "suite_id": suite_id,
-                 "feature_ref": ref, "display_name": e["display_name"],
-                 "feature_line": e["line"], "kind": e["kind"],
-                 "status": "NOT_RUN", "reason": row["precondition"],
-                 "in_plan": e["leaf_case_id"] in plan["leaves"]}
-                for e in expected)
+                {
+                    "leaf_case_id": e["leaf_case_id"],
+                    "suite_id": suite_id,
+                    "feature_ref": ref,
+                    "display_name": e["display_name"],
+                    "feature_line": e["line"],
+                    "kind": e["kind"],
+                    "status": "NOT_RUN",
+                    "reason": row["precondition"],
+                    "in_plan": e["leaf_case_id"] in plan["leaves"],
+                }
+                for e in expected
+            )
             continue
 
         srv_dir = run_dir / sid_flat
@@ -486,36 +545,57 @@ def main():
         fdir, layout = materialise(suite_id, meta, run_dir)
         row["harness_layout"] = layout
         if layout["feature"]["sha256"] != layout["feature"]["copy_sha256"]:
-            anomalies.append(f"{suite_id}: the copied feature file does not "
-                             f"match the locked corpus")
+            anomalies.append(
+                f"{suite_id}: the copied feature file does not match the locked corpus"
+            )
         log_path = out_dir / f"{sid_flat}.log"
         json_path = out_dir / f"{sid_flat}.behave.json"
-        argv = [str(behave), str(fdir), "--no-capture",
-                "-D", f"port={server.grpc_port}",
-                "-f", "json", "-o", str(json_path), "-f", "plain"]
+        argv = [
+            str(behave),
+            str(fdir),
+            "--no-capture",
+            "-D",
+            f"port={server.grpc_port}",
+            "-f",
+            "json",
+            "-o",
+            str(json_path),
+            "-f",
+            "plain",
+        ]
         t0 = time.time()
         timed_out = False
         with open(log_path, "wb") as fh:
             try:
-                p = subprocess.run(argv, stdout=fh, stderr=subprocess.STDOUT,
-                                   stdin=subprocess.DEVNULL, env=env,
-                                   timeout=args.timeout, cwd=str(run_dir))
+                p = subprocess.run(
+                    argv,
+                    stdout=fh,
+                    stderr=subprocess.STDOUT,
+                    stdin=subprocess.DEVNULL,
+                    env=env,
+                    timeout=args.timeout,
+                    cwd=str(run_dir),
+                )
                 rc = p.returncode
             except subprocess.TimeoutExpired:
                 rc, timed_out = None, True
-        row.update({
-            "argv": argv, "exit_code": rc, "timed_out": timed_out,
-            "duration_seconds": round(time.time() - t0, 2),
-            "raw_log": common.rel(log_path),
-            "log_sha256": common.sha256_file(log_path),
-            "structured_log": common.rel(json_path) if json_path.is_file() else None,
-            "structured_log_sha256": (common.sha256_file(json_path)
-                                      if json_path.is_file() else None),
-            "server_alive_after_suite": server.alive(),
-        })
+        row.update(
+            {
+                "argv": argv,
+                "exit_code": rc,
+                "timed_out": timed_out,
+                "duration_seconds": round(time.time() - t0, 2),
+                "raw_log": common.rel(log_path),
+                "log_sha256": common.sha256_file(log_path),
+                "structured_log": common.rel(json_path) if json_path.is_file() else None,
+                "structured_log_sha256": (
+                    common.sha256_file(json_path) if json_path.is_file() else None
+                ),
+                "server_alive_after_suite": server.alive(),
+            }
+        )
         if not server.alive():
-            anomalies.append(f"{suite_id}: the TypeDB server died during the "
-                             f"suite")
+            anomalies.append(f"{suite_id}: the TypeDB server died during the suite")
         rec = server.evidence()
         rec["suite_id"] = suite_id
         w = rec.get("backend_witness") or {}
@@ -534,15 +614,15 @@ def main():
 
         if not json_path.is_file():
             row["status"] = "NO_STRUCTURED_OUTPUT"
-            anomalies.append(f"{suite_id}: behave produced no JSON output - "
-                             f"nothing can be joined at leaf level")
+            anomalies.append(
+                f"{suite_id}: behave produced no JSON output - nothing can be joined at leaf level"
+            )
             suite_rows.append(row)
             continue
         observed = parse_behave_json(json_path)
         expected = gherkin_leaves.enumerate_leaves(BEHAVIOUR / ref, ref)
         mine = sorted(e["leaf_case_id"] for e in expected)
-        planned = sorted(k for k in plan["leaves"]
-                         if k.startswith(f"cucumber:{ref}::"))
+        planned = sorted(k for k in plan["leaves"] if k.startswith(f"cucumber:{ref}::"))
         row["leaves_enumerated"] = len(expected)
         row["leaves_in_plan"] = len(planned)
         row["observed_scenarios"] = len(observed)
@@ -550,60 +630,82 @@ def main():
         if not observed:
             anomalies.append(f"{suite_id}: behave ran ZERO scenarios")
         if planned and mine != planned:
-            anomalies.append(f"{suite_id}: independent enumeration of {ref} "
-                             f"disagrees with the plan's leaf ids")
+            anomalies.append(
+                f"{suite_id}: independent enumeration of {ref} disagrees with the plan's leaf ids"
+            )
         for lid in planned:
             ph = plan["leaves"][lid].get("source_hash")
             if ph and ph != row["feature_sha256"]:
-                anomalies.append(f"{suite_id}: {ref} does not match the plan's "
-                                 f"pinned source hash")
+                anomalies.append(f"{suite_id}: {ref} does not match the plan's pinned source hash")
                 break
         obs_names = [o["display_name"] for o in observed]
         exp_names = [e["display_name"] for e in expected]
         if obs_names != exp_names:
-            first = next((i for i, (a, b) in enumerate(zip(exp_names, obs_names))
-                          if a != b), min(len(exp_names), len(obs_names)))
+            first = next(
+                (i for i, (a, b) in enumerate(zip(exp_names, obs_names)) if a != b),
+                min(len(exp_names), len(obs_names)),
+            )
             anomalies.append(
                 f"{suite_id}: observed scenario sequence != the sequence "
                 f"enumerated from {ref} (expected {len(exp_names)}, observed "
                 f"{len(obs_names)}; first divergence at {first}: "
-                f"{exp_names[first:first + 1]} vs {obs_names[first:first + 1]})")
+                f"{exp_names[first : first + 1]} vs {obs_names[first : first + 1]})"
+            )
         if rc not in (0, None):
             anomalies.append(f"{suite_id}: behave exited {rc}")
         for i, e in enumerate(expected):
             o = observed[i] if i < len(observed) else None
-            lr = {"leaf_case_id": e["leaf_case_id"], "suite_id": suite_id,
-                  "feature_ref": ref, "display_name": e["display_name"],
-                  "feature_line": e["line"], "kind": e["kind"],
-                  "in_plan": e["leaf_case_id"] in plan["leaves"]}
+            lr = {
+                "leaf_case_id": e["leaf_case_id"],
+                "suite_id": suite_id,
+                "feature_ref": ref,
+                "display_name": e["display_name"],
+                "feature_line": e["line"],
+                "kind": e["kind"],
+                "in_plan": e["leaf_case_id"] in plan["leaves"],
+            }
             if o is None or o["display_name"] != e["display_name"]:
-                lr.update({"status": "NOT_RUN",
-                           "reason": "no behave element at this position with "
-                                     "this name"})
+                lr.update(
+                    {
+                        "status": "NOT_RUN",
+                        "reason": "no behave element at this position with this name",
+                    }
+                )
             else:
-                lr.update({"status": o["status"],
-                           "steps_passed": o["steps_passed"],
-                           "steps_failed": o["steps_failed"],
-                           "steps_skipped": o["steps_skipped"],
-                           "steps_total": o["steps_total"],
-                           "behave_location": o["location"],
-                           "behave_raw_name": o["raw_name"]})
+                lr.update(
+                    {
+                        "status": o["status"],
+                        "steps_passed": o["steps_passed"],
+                        "steps_failed": o["steps_failed"],
+                        "steps_skipped": o["steps_skipped"],
+                        "steps_total": o["steps_total"],
+                        "behave_location": o["location"],
+                        "behave_raw_name": o["raw_name"],
+                    }
+                )
             leaf_rows.append(lr)
         suite_rows.append(row)
 
-    scope = sorted({k for s in suite_rows for k in plan["leaves"]
-                    if k.startswith(f"cucumber:{s['feature_ref']}::")})
-    produced = {l["leaf_case_id"] for l in leaf_rows}
+    scope = sorted(
+        {
+            k
+            for s in suite_rows
+            for k in plan["leaves"]
+            if k.startswith(f"cucumber:{s['feature_ref']}::")
+        }
+    )
+    produced = {leaf["leaf_case_id"] for leaf in leaf_rows}
     missing = sorted(set(scope) - produced)
     if missing:
-        anomalies.append(f"{len(missing)} plan leaf/leaves in scope produced no "
-                         f"leaf row, e.g. {missing[:3]}")
-    in_plan = [l for l in leaf_rows if l["in_plan"]]
-    covered = [l for l in in_plan if l["status"] in ("PASSED", "FAILED", "SKIPPED")]
-    passed = [l for l in in_plan if l["status"] == "PASSED"]
+        anomalies.append(
+            f"{len(missing)} plan leaf/leaves in scope produced no leaf row, e.g. {missing[:3]}"
+        )
+    in_plan = [leaf for leaf in leaf_rows if leaf["in_plan"]]
+    covered = [leaf for leaf in in_plan if leaf["status"] in ("PASSED", "FAILED", "SKIPPED")]
+    passed = [leaf for leaf in in_plan if leaf["status"] == "PASSED"]
     counts = {}
-    for l in leaf_rows:
-        counts[l["status"]] = counts.get(l["status"], 0) + 1
+    for leaf in leaf_rows:
+        counts[leaf["status"]] = counts.get(leaf["status"], 0) + 1
 
     results = {
         "schema": "typedb-r2-driver-lane-v1",
@@ -613,14 +715,19 @@ def main():
             "produced by the OFFICIAL published typedb-driver wheel whose "
             "pure-Python modules are proven byte-identical to the locked "
             "TDRIVER tree, driving the upstream behave harness rebuilt from "
-            "the upstream BUILD declarations."),
+            "the upstream BUILD declarations."
+        ),
         "row_id": f"driver:python:{backend}",
-        "driver": "python", "backend": backend, "lane": args.lane,
+        "driver": "python",
+        "backend": backend,
+        "lane": args.lane,
         "generated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "plan": {"path": common.rel(common.PLAN),
-                 "plan_root_declared": plan.get("plan_root"),
-                 "plan_root_recomputed": common.plan_root_of_body(plan),
-                 "sha256": common.sha256_file(common.PLAN)},
+        "plan": {
+            "path": common.rel(common.PLAN),
+            "plan_root_declared": plan.get("plan_root"),
+            "plan_root_recomputed": common.plan_root_of_body(plan),
+            "sha256": common.sha256_file(common.PLAN),
+        },
         "driver_artifact": prov,
         "servers": server_records,
         "suites": suite_rows,
@@ -628,8 +735,7 @@ def main():
         "leaves": leaf_rows,
         "counts": {
             "suites_selected": len(selected),
-            "suites_executed": sum(1 for r in suite_rows
-                                   if r.get("status") == "EXECUTED"),
+            "suites_executed": sum(1 for r in suite_rows if r.get("status") == "EXECUTED"),
             "leaf_rows": len(leaf_rows),
             "leaf_rows_in_plan": len(in_plan),
             "leaf_rows_outside_plan": len(leaf_rows) - len(in_plan),
@@ -638,8 +744,9 @@ def main():
             "plan_leaves_passed": len(passed),
             "by_status": dict(sorted(counts.items())),
         },
-        "leaves_outside_plan": sorted(l["leaf_case_id"] for l in leaf_rows
-                                      if not l["in_plan"]),
+        "leaves_outside_plan": sorted(
+            leaf["leaf_case_id"] for leaf in leaf_rows if not leaf["in_plan"]
+        ),
         "plan_leaves_without_outcome": missing,
         "anomalies": anomalies,
     }
@@ -647,22 +754,34 @@ def main():
     rp.write_text(json.dumps(results, indent=1) + "\n")
     consumed = [rp, common.PLAN]
     consumed += [REPO / r["raw_log"] for r in suite_rows if r.get("raw_log")]
-    consumed += [REPO / r["structured_log"] for r in suite_rows
-                 if r.get("structured_log")]
+    consumed += [REPO / r["structured_log"] for r in suite_rows if r.get("structured_log")]
     consumed += [REPO / r["log"] for r in server_records if r.get("log")]
-    consumed += [REPO / (r.get("backend_witness") or {})["archived_marker"]
-                 for r in server_records
-                 if (r.get("backend_witness") or {}).get("archived_marker")]
+    consumed += [
+        REPO / (r.get("backend_witness") or {})["archived_marker"]
+        for r in server_records
+        if (r.get("backend_witness") or {}).get("archived_marker")
+    ]
     root, pairs = common.compute_bundle_root(out_dir, consumed)
-    (out_dir / "bundle-manifest.json").write_text(json.dumps(
-        {"schema": "driver-lane-bundle-manifest-v1", "bundle_root": root,
-         "files": dict(sorted(pairs.items()))}, indent=1) + "\n")
+    (out_dir / "bundle-manifest.json").write_text(
+        json.dumps(
+            {
+                "schema": "driver-lane-bundle-manifest-v1",
+                "bundle_root": root,
+                "files": dict(sorted(pairs.items())),
+            },
+            indent=1,
+        )
+        + "\n"
+    )
     green = not anomalies and bool(covered) and len(covered) == len(passed)
     verdict = {
-        "green": bool(green), "policy_verdict": "GREEN" if green else "RED",
-        "row_id": results["row_id"], "bundle_root": root,
+        "green": bool(green),
+        "policy_verdict": "GREEN" if green else "RED",
+        "row_id": results["row_id"],
+        "bundle_root": root,
         "plan_root": plan.get("plan_root"),
-        "anomaly_count": len(anomalies), "anomalies": anomalies,
+        "anomaly_count": len(anomalies),
+        "anomalies": anomalies,
         "observation": {
             "suites_selected": len(selected),
             "suites_executed": results["counts"]["suites_executed"],
@@ -679,11 +798,14 @@ def main():
     elif marker.exists():
         marker.unlink()
     print(json.dumps(verdict, indent=1))
-    print(f"DRIVER LANE {results['row_id']} ({args.lane}): "
-          f"{results['counts']['suites_executed']}/{len(selected)} suites, "
-          f"{len(covered)}/{len(scope)} plan leaves with an outcome, "
-          f"{len(passed)} passed, {len(anomalies)} anomaly(ies) -> "
-          f"{'GREEN' if green else 'RED'}", file=sys.stderr)
+    print(
+        f"DRIVER LANE {results['row_id']} ({args.lane}): "
+        f"{results['counts']['suites_executed']}/{len(selected)} suites, "
+        f"{len(covered)}/{len(scope)} plan leaves with an outcome, "
+        f"{len(passed)} passed, {len(anomalies)} anomaly(ies) -> "
+        f"{'GREEN' if green else 'RED'}",
+        file=sys.stderr,
+    )
     return 0 if green else 1
 
 

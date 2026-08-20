@@ -40,7 +40,6 @@ from __future__ import annotations
 import argparse
 import copy
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -142,7 +141,9 @@ def advisories_from_audit(audit: dict) -> dict[str, dict]:
     out: dict[str, dict] = {}
     vulns = audit.get("vulnerabilities")
     if not isinstance(vulns, dict):
-        raise PolicyError("audit document has no 'vulnerabilities' object - refusing to read it as clean")
+        raise PolicyError(
+            "audit document has no 'vulnerabilities' object - refusing to read it as clean"
+        )
     for pkg_name, node in vulns.items():
         for via in node.get("via", []):
             if not isinstance(via, dict):
@@ -231,11 +232,15 @@ def check_lockfile(policy: dict, ws: dict, root: Path) -> list[str]:
     try:
         lock = json.loads(lock_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return [f"{ws['id']}: package-lock.json is absent - an unlocked install has no supply-chain identity"]
+        return [
+            f"{ws['id']}: package-lock.json is absent - an unlocked install has no supply-chain identity"
+        ]
     except json.JSONDecodeError as exc:
         return [f"{ws['id']}: package-lock.json is not valid JSON: {exc}"]
     if lock.get("lockfileVersion", 0) < 3:
-        failures.append(f"{ws['id']}: lockfileVersion {lock.get('lockfileVersion')} < 3 (no per-package integrity guarantees)")
+        failures.append(
+            f"{ws['id']}: lockfileVersion {lock.get('lockfileVersion')} < 3 (no per-package integrity guarantees)"
+        )
     allowed = tuple(policy["policy"]["allowed_registries"])
     for path, entry in sorted((lock.get("packages") or {}).items()):
         if path == "" or entry.get("link"):
@@ -245,7 +250,9 @@ def check_lockfile(policy: dict, ws: dict, root: Path) -> list[str]:
             failures.append(f"{ws['id']}: {path} has no `resolved` URL")
             continue
         if not resolved.startswith(allowed):
-            failures.append(f"{ws['id']}: {path} resolves outside the allowed registries: {resolved}")
+            failures.append(
+                f"{ws['id']}: {path} resolves outside the allowed registries: {resolved}"
+            )
         if not entry.get("integrity"):
             failures.append(f"{ws['id']}: {path} has no `integrity` digest ({resolved})")
     return failures
@@ -262,7 +269,16 @@ def _mutant_audit(advisories: list[tuple[str, str, str, str]]) -> dict:
         vulns[pkg] = {
             "severity": sev,
             "range": rng,
-            "via": [{"source": 0, "name": pkg, "url": f"https://github.com/advisories/{ident}", "severity": sev, "title": f"{pkg} synthetic", "range": rng}],
+            "via": [
+                {
+                    "source": 0,
+                    "name": pkg,
+                    "url": f"https://github.com/advisories/{ident}",
+                    "severity": sev,
+                    "title": f"{pkg} synthetic",
+                    "range": rng,
+                }
+            ],
         }
     return {"vulnerabilities": vulns, "metadata": {"vulnerabilities": {"total": len(advisories)}}}
 
@@ -336,7 +352,10 @@ def self_test() -> int:
     pol = _base_policy()
     pol["exceptions"] = [_exception("GHSA-aaaa-bbbb-cccc", "2026-10-01")]
     two = _mutant_audit(
-        [("GHSA-aaaa-bbbb-cccc", "leftpad", "high", "<1.0.0"), ("GHSA-dddd-eeee-ffff", "rightpad", "critical", "*")]
+        [
+            ("GHSA-aaaa-bbbb-cccc", "leftpad", "high", "<1.0.0"),
+            ("GHSA-dddd-eeee-ffff", "rightpad", "critical", "*"),
+        ]
     )
     cases.append(("MUTANT new-unlisted-advisory", pol, two, "NEW ADVISORY with no exception"))
 
@@ -347,7 +366,10 @@ def self_test() -> int:
 
     # 5. mutant: an exception for a risk that no longer exists
     pol = _base_policy()
-    pol["exceptions"] = [_exception("GHSA-aaaa-bbbb-cccc", "2026-10-01"), _exception("GHSA-9999-9999-9999", "2026-10-01")]
+    pol["exceptions"] = [
+        _exception("GHSA-aaaa-bbbb-cccc", "2026-10-01"),
+        _exception("GHSA-9999-9999-9999", "2026-10-01"),
+    ]
     cases.append(("MUTANT stale-exception", pol, live, "STALE"))
 
     # 6. mutant: an exception missing its compensating control
@@ -355,7 +377,9 @@ def self_test() -> int:
     broken = _exception("GHSA-aaaa-bbbb-cccc", "2026-10-01")
     broken["compensating_control"] = ""
     pol["exceptions"] = [broken]
-    cases.append(("MUTANT exception-without-compensating-control", pol, live, "missing required field"))
+    cases.append(
+        ("MUTANT exception-without-compensating-control", pol, live, "missing required field")
+    )
 
     # 7. mutant: an empty/garbled audit document must never read as clean
     pol = _base_policy()
@@ -390,14 +414,26 @@ def self_test() -> int:
             "lockfileVersion": 3,
             "packages": {
                 "": {"name": "x"},
-                "node_modules/a": {"version": "1.0.0", "resolved": "https://registry.npmjs.org/a/-/a-1.0.0.tgz", "integrity": "sha512-deadbeef"},
+                "node_modules/a": {
+                    "version": "1.0.0",
+                    "resolved": "https://registry.npmjs.org/a/-/a-1.0.0.tgz",
+                    "integrity": "sha512-deadbeef",
+                },
             },
         }
         pol = _base_policy()
         for name, mutate, expect in [
             ("CONTROL: registry-resolved, integrity-carrying lockfile passes", _lock_identity, ""),
-            ("MUTANT lockfile-entry-without-integrity", _lock_drop_integrity, "no `integrity` digest"),
-            ("MUTANT lockfile-entry-from-a-foreign-registry", _lock_foreign_registry, "outside the allowed registries"),
+            (
+                "MUTANT lockfile-entry-without-integrity",
+                _lock_drop_integrity,
+                "no `integrity` digest",
+            ),
+            (
+                "MUTANT lockfile-entry-from-a-foreign-registry",
+                _lock_foreign_registry,
+                "outside the allowed registries",
+            ),
             ("MUTANT lockfile-version-2", _lock_version_2, "lockfileVersion 2"),
         ]:
             doc = mutate(copy.deepcopy(good))
@@ -421,14 +457,25 @@ def self_test() -> int:
 
 
 def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--policy", default=str(POLICY_PATH))
     ap.add_argument("--workspace", action="append", help="limit to this workspace id (repeatable)")
-    ap.add_argument("--audit-json", help="decide over a captured `npm audit --json` document instead of running npm")
-    ap.add_argument("--lockfile", action="store_true", help="ALSO run the lockfile provenance check")
-    ap.add_argument("--lockfile-only", action="store_true", help="run ONLY the lockfile provenance check")
+    ap.add_argument(
+        "--audit-json",
+        help="decide over a captured `npm audit --json` document instead of running npm",
+    )
+    ap.add_argument(
+        "--lockfile", action="store_true", help="ALSO run the lockfile provenance check"
+    )
+    ap.add_argument(
+        "--lockfile-only", action="store_true", help="run ONLY the lockfile provenance check"
+    )
     ap.add_argument("--today", help="override today's date (YYYY-MM-DD) - for tests")
-    ap.add_argument("--self-test", action="store_true", help="run the checker's own behavioral mutants")
+    ap.add_argument(
+        "--self-test", action="store_true", help="run the checker's own behavioral mutants"
+    )
     args = ap.parse_args(argv)
 
     if args.self_test:
@@ -446,7 +493,10 @@ def main(argv: list[str]) -> int:
         known = {w["id"] for w in workspaces}
         unknown = set(args.workspace) - known
         if unknown:
-            print(f"unknown workspace(s): {', '.join(sorted(unknown))}; known: {', '.join(sorted(known))}", file=sys.stderr)
+            print(
+                f"unknown workspace(s): {', '.join(sorted(unknown))}; known: {', '.join(sorted(known))}",
+                file=sys.stderr,
+            )
             return 2
         workspaces = [w for w in workspaces if w["id"] in set(args.workspace)]
     if args.audit_json and len(workspaces) != 1:
@@ -484,7 +534,9 @@ def main(argv: list[str]) -> int:
         for f in failures:
             print(f"  - {f}")
         return 1
-    print("DEPENDENCY ADVISORY POLICY: PASS (every reported advisory has an unexpired, reviewed exception)")
+    print(
+        "DEPENDENCY ADVISORY POLICY: PASS (every reported advisory has an unexpired, reviewed exception)"
+    )
     return 0
 
 

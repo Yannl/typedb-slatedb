@@ -12,6 +12,7 @@ parallelism is upstream behaviour and is preserved), with:
 
 Usage: run_u0.py [--filter SUBSTR] [--skip SUBSTR ...] [--out DIR]
 """
+
 import argparse
 import json
 import os
@@ -48,15 +49,13 @@ ORDER_LAST = ("test_behaviour", "test_http", "test_assembly", "test_fail_points"
 
 
 def discover_executables(packages=None):
-    cmd = ["cargo", TOOLCHAIN, "test", "--locked", "--no-run",
-           "--message-format", "json"]
+    cmd = ["cargo", TOOLCHAIN, "test", "--locked", "--no-run", "--message-format", "json"]
     if packages:
         for p in packages:
             cmd += ["-p", p]
     else:
         cmd += ["--workspace"]
-    out = subprocess.check_output(
-        cmd, cwd=TB, text=True, stderr=subprocess.DEVNULL, env=ENV_BASE)
+    out = subprocess.check_output(cmd, cwd=TB, text=True, stderr=subprocess.DEVNULL, env=ENV_BASE)
     execs = []
     for line in out.splitlines():
         try:
@@ -72,14 +71,26 @@ def discover_executables(packages=None):
             tgt = msg["target"]
             pkg = package_name_from_id(msg["package_id"])
             manifest = msg["manifest_path"]
-            execs.append({"package": pkg, "target": tgt["name"],
-                          "kind": tgt["kind"], "executable": msg["executable"],
-                          "package_root": str(pathlib.Path(manifest).parent)})
+            execs.append(
+                {
+                    "package": pkg,
+                    "target": tgt["name"],
+                    "kind": tgt["kind"],
+                    "executable": msg["executable"],
+                    "package_root": str(pathlib.Path(manifest).parent),
+                }
+            )
     seen = {}
     for e in execs:
         seen[(e["package"], e["target"])] = e
-    ordered = sorted(seen.values(), key=lambda e: (
-        any(e["target"].startswith(p) for p in ORDER_LAST), e["package"], e["target"]))
+    ordered = sorted(
+        seen.values(),
+        key=lambda e: (
+            any(e["target"].startswith(p) for p in ORDER_LAST),
+            e["package"],
+            e["target"],
+        ),
+    )
     return ordered
 
 
@@ -91,14 +102,13 @@ def executed_toolchain():
     itself under the pinned lane's name. That is precisely the class of claim
     this project is not allowed to make.
     """
-    out = subprocess.run(["cargo", TOOLCHAIN, "--version"],
-                         capture_output=True, text=True)
+    out = subprocess.run(["cargo", TOOLCHAIN, "--version"], capture_output=True, text=True)
     if out.returncode != 0:
         sys.exit(f"toolchain {TOOLCHAIN} is not installed: {out.stderr.strip()}")
-    rustc = subprocess.run(["rustc", TOOLCHAIN, "--version"],
-                           capture_output=True, text=True).stdout.strip()
-    return {"cargo": out.stdout.strip(), "rustc": rustc,
-            "requested": TOOLCHAIN.lstrip("+")}
+    rustc = subprocess.run(
+        ["rustc", TOOLCHAIN, "--version"], capture_output=True, text=True
+    ).stdout.strip()
+    return {"cargo": out.stdout.strip(), "rustc": rustc, "requested": TOOLCHAIN.lstrip("+")}
 
 
 def executed_tree_identity():
@@ -111,11 +121,15 @@ def executed_tree_identity():
     a digest over the staged working tree so a result row names the bytes
     that produced it.
     """
+
     def git(*a):
-        return subprocess.run(["git", "-C", str(TB), *a],
-                              capture_output=True, text=True).stdout.strip()
-    status = subprocess.run(["git", "-C", str(TB), "status", "--porcelain"],
-                            capture_output=True, text=True).stdout
+        return subprocess.run(
+            ["git", "-C", str(TB), *a], capture_output=True, text=True
+        ).stdout.strip()
+
+    status = subprocess.run(
+        ["git", "-C", str(TB), "status", "--porcelain"], capture_output=True, text=True
+    ).stdout
     h = hashlib.sha256()
     # `git status --porcelain` lists exactly the staged-fork delta against the
     # pinned revision; hashing the delta's contents (not just its names) makes
@@ -129,7 +143,7 @@ def executed_tree_identity():
     return {
         "checkout_revision": git("rev-parse", "HEAD"),
         "dirty": bool(status.strip()),
-        "staged_delta_files": len([l for l in status.splitlines() if l.strip()]),
+        "staged_delta_files": len([line for line in status.splitlines() if line.strip()]),
         "staged_delta_sha256": h.hexdigest(),
     }
 
@@ -164,18 +178,26 @@ def run_one(e, out_dir, timeout, reap=False):
         if iso.exists():
             shutil.rmtree(iso)
         (iso / "tests" / "assembly").mkdir(parents=True)
-        os.link(REPO / "sources" / "assembly-artifacts" / "typedb-all-linux-x86_64.tar.gz",
-                iso / "typedb-all-linux-x86_64.tar.gz")
-        shutil.copy2(TB / "tests" / "assembly" / "script.tql",
-                     iso / "tests" / "assembly" / "script.tql")
+        os.link(
+            REPO / "sources" / "assembly-artifacts" / "typedb-all-linux-x86_64.tar.gz",
+            iso / "typedb-all-linux-x86_64.tar.gz",
+        )
+        shutil.copy2(
+            TB / "tests" / "assembly" / "script.tql", iso / "tests" / "assembly" / "script.tql"
+        )
         cwd = iso
     start = time.time()
 
     def execute(argv):
         with open(raw, "wb") as logf:
             proc = subprocess.Popen(
-                argv, cwd=cwd, env=env, stdout=logf, stderr=subprocess.STDOUT,
-                start_new_session=True)
+                argv,
+                cwd=cwd,
+                env=env,
+                stdout=logf,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
             try:
                 return proc.wait(timeout=timeout), False
             except subprocess.TimeoutExpired:
@@ -190,8 +212,7 @@ def run_one(e, out_dir, timeout, reap=False):
         # poisons every later assembly run.
         # match only the extracted-server process paths, never this runner's
         # own command line (which carries package names as arguments)
-        subprocess.run(["pkill", "-9", "-f", "typedb-extracted/"],
-                       capture_output=True)
+        subprocess.run(["pkill", "-9", "-f", "typedb-extracted/"], capture_output=True)
         time.sleep(0.5)
 
     argv = [e["executable"], "--format", "terse"]
@@ -293,8 +314,10 @@ def ensure_behaviour_fixture():
             link.unlink()  # dangling or wrong target
         elif link.exists():
             # a real dir/file that does NOT serve the features: refuse to guess
-            sys.exit(f"{link} exists but has no features under it - "
-                     f"remove it (the runner will recreate the symlink)")
+            sys.exit(
+                f"{link} exists but has no features under it - "
+                f"remove it (the runner will recreate the symlink)"
+            )
         os.symlink(os.path.relpath(behaviour, link.parent), link)
         usable = usable and probe.exists()
     return usable
@@ -309,9 +332,12 @@ def needs_behaviour_fixture(execs):
     """
     tb = str(TB)
     behaviour_prefix = str(TB / "tests" / "behaviour")
-    return [e for e in execs
-            if str(e.get("package_root", "")) == tb  # root pkg exactly, not the whole workspace
-            or str(e.get("package_root", "")).startswith(behaviour_prefix)]
+    return [
+        e
+        for e in execs
+        if str(e.get("package_root", "")) == tb  # root pkg exactly, not the whole workspace
+        or str(e.get("package_root", "")).startswith(behaviour_prefix)
+    ]
 
 
 def reverdict(out_dir, fresh=False):
@@ -337,38 +363,58 @@ def reverdict(out_dir, fresh=False):
     results = data["results"]
     ledger, anomalies = verdict_policy.load_ledger()
     required, case_bearing, excluded = required_executable_targets()
-    anomalies += verdict_policy.classify_rows(results, ledger,
-                                              expected_case_bearing=case_bearing)
+    anomalies += verdict_policy.classify_rows(results, ledger, expected_case_bearing=case_bearing)
     if required is not None:
         anomalies += verdict_policy.denominator_anomalies(results, required, excluded)
     bundle_anoms, warnings, bundle_root = verdict_policy.verify_bundle(
-        out_dir, results, ledger, file_profile=data.get("profile"))
+        out_dir, results, ledger, file_profile=data.get("profile")
+    )
     anomalies += bundle_anoms
     observation = verdict_policy.compute_observation(results)
     ledgered = sum(1 for r in results if r.get("target_id") in ledger)
-    fname = ("verdict.json" if not fresh else
-             f"verdict-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json")
+    fname = (
+        "verdict.json"
+        if not fresh
+        else f"verdict-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json"
+    )
     rc = verdict_policy.verdict_exit_code(
-        anomalies, True, out_dir,
-        observation=observation, warnings=warnings, bundle_root=bundle_root,
-        verdict_filename=fname, write_complete=False,
-        extra={"producer": ("tools/catalog/run_u0.py --re-evaluate" if fresh
-                            else "tools/catalog/run_u0.py --verdict-only"),
-               # E-04: pin the policy inputs so a later ledger/plan edit is a
-               # detectable mismatch, never a silent reclassification
-               "policy_roots": verdict_policy.compute_policy_roots(),
-               "re_derived_from": (str(results_file.relative_to(REPO))
-                                   if results_file.is_relative_to(REPO) else str(results_file)),
-               "denominator_checked": required is not None,
-               "executables": len(results)})
+        anomalies,
+        True,
+        out_dir,
+        observation=observation,
+        warnings=warnings,
+        bundle_root=bundle_root,
+        verdict_filename=fname,
+        write_complete=False,
+        extra={
+            "producer": (
+                "tools/catalog/run_u0.py --re-evaluate"
+                if fresh
+                else "tools/catalog/run_u0.py --verdict-only"
+            ),
+            # E-04: pin the policy inputs so a later ledger/plan edit is a
+            # detectable mismatch, never a silent reclassification
+            "policy_roots": verdict_policy.compute_policy_roots(),
+            "re_derived_from": (
+                str(results_file.relative_to(REPO))
+                if results_file.is_relative_to(REPO)
+                else str(results_file)
+            ),
+            "denominator_checked": required is not None,
+            "executables": len(results),
+        },
+    )
     for a in anomalies:
         print(f"ANOMALY: {a}", file=sys.stderr)
     for w in warnings:
         print(f"WARNING: {w}", file=sys.stderr)
     print(f"BUNDLE ROOT: {bundle_root}", file=sys.stderr)
-    print(verdict_policy.human_line(observation, rc == 0, ledgered)
-          + f"; {len(anomalies)} anomaly/anomalies, re-derived over "
-          f"{len(results)} archived row(s)", file=sys.stderr)
+    print(
+        verdict_policy.human_line(observation, rc == 0, ledgered)
+        + f"; {len(anomalies)} anomaly/anomalies, re-derived over "
+        f"{len(results)} archived row(s)",
+        file=sys.stderr,
+    )
     return rc
 
 
@@ -377,18 +423,29 @@ def main():
     ap.add_argument("--filter", default=None)
     ap.add_argument("--skip", action="append", default=[])
     ap.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
-    ap.add_argument("--reap", action="store_true",
-                    help="delete each test executable after running it")
-    ap.add_argument("--package", action="append", default=None,
-                    help="restrict cargo compilation/discovery to these packages")
+    ap.add_argument(
+        "--reap", action="store_true", help="delete each test executable after running it"
+    )
+    ap.add_argument(
+        "--package",
+        action="append",
+        default=None,
+        help="restrict cargo compilation/discovery to these packages",
+    )
     ap.add_argument("--out", default=str(REPO / "docs" / "evidence" / "G1" / "u0-results"))
-    ap.add_argument("--verdict-only", action="store_true",
-                    help="re-derive the verdict from an existing results file without "
-                         "re-running anything (use after a catalogue or policy repair)")
-    ap.add_argument("--re-evaluate", action="store_true",
-                    help="like --verdict-only, but write a NEW verdict-<timestamp>.json "
-                         "and touch NOTHING that already exists (the only way to derive "
-                         "a fresh verdict over a sealed archive without altering it)")
+    ap.add_argument(
+        "--verdict-only",
+        action="store_true",
+        help="re-derive the verdict from an existing results file without "
+        "re-running anything (use after a catalogue or policy repair)",
+    )
+    ap.add_argument(
+        "--re-evaluate",
+        action="store_true",
+        help="like --verdict-only, but write a NEW verdict-<timestamp>.json "
+        "and touch NOTHING that already exists (the only way to derive "
+        "a fresh verdict over a sealed archive without altering it)",
+    )
     args = ap.parse_args()
 
     if args.verdict_only or args.re_evaluate:
@@ -402,10 +459,12 @@ def main():
     # or tree probing so nothing else can mask it. Re-derive with
     # --verdict-only/--re-evaluate, or run into a fresh --out.
     if (out_dir / "COMPLETE").exists():
-        sys.exit(f"{out_dir} already contains a COMPLETE marker - it is a sealed "
-                 f"evidence bundle and the live runner will not write into it. "
-                 f"Use a fresh --out for a new run, or --verdict-only / "
-                 f"--re-evaluate to re-derive its verdict without touching it.")
+        sys.exit(
+            f"{out_dir} already contains a COMPLETE marker - it is a sealed "
+            f"evidence bundle and the live runner will not write into it. "
+            f"Use a fresh --out for a new run, or --verdict-only / "
+            f"--re-evaluate to re-derive its verdict without touching it."
+        )
 
     # What this run actually exercised. The output directory name used to be
     # the only record of the profile, which makes a misfiled run
@@ -424,11 +483,13 @@ def main():
         "storage_profile_env": os.environ.get("TYPEDB_STORAGE_PROFILE"),
         "assembly_archive_sha256": sha256_file(archive) if archive.exists() else None,
         "repo_commit": subprocess.run(
-            ["git", "-C", str(REPO), "rev-parse", "HEAD"],
-            capture_output=True, text=True).stdout.strip(),
-        "repo_dirty": bool(subprocess.run(
-            ["git", "-C", str(REPO), "status", "--porcelain"],
-            capture_output=True, text=True).stdout.strip()),
+            ["git", "-C", str(REPO), "rev-parse", "HEAD"], capture_output=True, text=True
+        ).stdout.strip(),
+        "repo_dirty": bool(
+            subprocess.run(
+                ["git", "-C", str(REPO), "status", "--porcelain"], capture_output=True, text=True
+            ).stdout.strip()
+        ),
         "executed_tree": tree,
     }
 
@@ -436,8 +497,7 @@ def main():
     execs = discover_executables(args.package)
     if args.filter:
         execs = [e for e in execs if args.filter in f"{e['package']}:{e['target']}"]
-    execs = [e for e in execs
-             if not any(s in f"{e['package']}:{e['target']}" for s in args.skip)]
+    execs = [e for e in execs if not any(s in f"{e['package']}:{e['target']}" for s in args.skip)]
     if not ensure_behaviour_fixture():
         affected = needs_behaviour_fixture(execs)
         if affected:
@@ -446,9 +506,9 @@ def main():
                 f"target(s) read Cucumber features through it "
                 f"(e.g. {affected[0]['package']}:{affected[0]['target']}) - "
                 f"running them would archive false reds. "
-                f"Run tools/source-lock/materialize_sources.py first.")
-        print("note: behaviour fixture unavailable; no selected target needs it",
-              flush=True)
+                f"Run tools/source-lock/materialize_sources.py first."
+            )
+        print("note: behaviour fixture unavailable; no selected target needs it", flush=True)
     print(f"U0: {len(execs)} test executables", flush=True)
     # merge with any prior results in this out dir (latest run per target wins)
     prior = {}
@@ -458,24 +518,36 @@ def main():
             prior[r["target_id"]] = r
     results = []
     for i, e in enumerate(execs):
-        print(f"[{i+1}/{len(execs)}] {e['package']}:{e['target']} ...",
-              end=" ", flush=True)
+        print(f"[{i + 1}/{len(execs)}] {e['package']}:{e['target']} ...", end=" ", flush=True)
         r = run_one(e, out_dir, args.timeout, reap=args.reap)
         r["run"] = run_manifest  # provenance travels with the row it belongs to
         results.append(r)
-        status = ("TIMEOUT" if r["timed_out"]
-                  else "OK" if r["exit_code"] == 0 else f"FAIL({r['exit_code']})")
-        print(f"{status} {r['passed']}p/{r['failed']}f/{r['ignored']}i "
-              f"in {r['duration_seconds']}s", flush=True)
+        status = (
+            "TIMEOUT"
+            if r["timed_out"]
+            else "OK"
+            if r["exit_code"] == 0
+            else f"FAIL({r['exit_code']})"
+        )
+        print(
+            f"{status} {r['passed']}p/{r['failed']}f/{r['ignored']}i in {r['duration_seconds']}s",
+            flush=True,
+        )
         merged = dict(prior)
         for rr in results:
             merged[rr["target_id"]] = rr
         (out_dir / "u0-results.json").write_text(
-            json.dumps({"profile": profile,
-                        "toolchain": run_manifest["toolchain"],
-                        "last_write_run": run_manifest,
-                        "results": sorted(merged.values(),
-                                          key=lambda x: x["target_id"])}, indent=1) + "\n")
+            json.dumps(
+                {
+                    "profile": profile,
+                    "toolchain": run_manifest["toolchain"],
+                    "last_write_run": run_manifest,
+                    "results": sorted(merged.values(), key=lambda x: x["target_id"]),
+                },
+                indent=1,
+            )
+            + "\n"
+        )
     total = {
         **run_manifest,
         "executables": len(results),
@@ -497,8 +569,8 @@ def main():
     required, case_bearing, excluded = required_executable_targets()
     selection_complete = not (args.filter or args.skip or args.package)
     anomalies += verdict_policy.classify_rows(
-        results, ledger,
-        expected_case_bearing=case_bearing if selection_complete else None)
+        results, ledger, expected_case_bearing=case_bearing if selection_complete else None
+    )
     denominator_checked = False
     if selection_complete and required is not None:
         anomalies += verdict_policy.denominator_anomalies(results, required, excluded)
@@ -506,36 +578,52 @@ def main():
     # E-P0-06/10: verify the ARCHIVED bundle (the merged rows the results file
     # carries - that file is what any future reader consumes), reopening and
     # reparsing every log, then bind everything under one root.
-    archived = json.loads((out_dir / "u0-results.json").read_text())["results"] \
-        if (out_dir / "u0-results.json").exists() else results
+    archived = (
+        json.loads((out_dir / "u0-results.json").read_text())["results"]
+        if (out_dir / "u0-results.json").exists()
+        else results
+    )
     bundle_anoms, warnings, bundle_root = verdict_policy.verify_bundle(
-        out_dir, archived, ledger, file_profile=profile, unsealed_ok=True)
+        out_dir, archived, ledger, file_profile=profile, unsealed_ok=True
+    )
     anomalies += bundle_anoms
     observation = verdict_policy.compute_observation(results)
     ledgered = sum(1 for r in results if r.get("target_id") in ledger)
     # write order matters: verdict.json first, COMPLETE (sealing the root) LAST
     rc = verdict_policy.verdict_exit_code(
-        anomalies, selection_complete, out_dir,
-        observation=observation, warnings=warnings, bundle_root=bundle_root,
-        extra={"producer": "tools/catalog/run_u0.py",
-               # E-04: pin the policy inputs so a later ledger/plan edit is a
-               # detectable mismatch, never a silent reclassification
-               "policy_roots": verdict_policy.compute_policy_roots(),
-               "run": run_manifest,
-               "denominator_checked": denominator_checked,
-               "executables": len(results),
-               "selection": {"filter": args.filter, "skip": args.skip,
-                             "package": args.package}})
+        anomalies,
+        selection_complete,
+        out_dir,
+        observation=observation,
+        warnings=warnings,
+        bundle_root=bundle_root,
+        extra={
+            "producer": "tools/catalog/run_u0.py",
+            # E-04: pin the policy inputs so a later ledger/plan edit is a
+            # detectable mismatch, never a silent reclassification
+            "policy_roots": verdict_policy.compute_policy_roots(),
+            "run": run_manifest,
+            "denominator_checked": denominator_checked,
+            "executables": len(results),
+            "selection": {"filter": args.filter, "skip": args.skip, "package": args.package},
+        },
+    )
     for a in anomalies:
         print(f"ANOMALY: {a}", file=sys.stderr)
     for w in warnings:
         print(f"WARNING: {w}", file=sys.stderr)
     if not selection_complete:
-        print("VERDICT: PARTIAL (a filtered/skipped/package-scoped run can never "
-              "be a corpus verdict)", file=sys.stderr)
+        print(
+            "VERDICT: PARTIAL (a filtered/skipped/package-scoped run can never "
+            "be a corpus verdict)",
+            file=sys.stderr,
+        )
     print(f"BUNDLE ROOT: {bundle_root}", file=sys.stderr)
-    print(verdict_policy.human_line(observation, rc == 0, ledgered)
-          + f"; {len(anomalies)} anomaly/anomalies", file=sys.stderr)
+    print(
+        verdict_policy.human_line(observation, rc == 0, ledgered)
+        + f"; {len(anomalies)} anomaly/anomalies",
+        file=sys.stderr,
+    )
     return rc
 
 

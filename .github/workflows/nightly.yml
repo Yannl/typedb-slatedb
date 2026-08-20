@@ -388,3 +388,32 @@ jobs:
         run: |
           python3 tools/ledger/lint_ledger.py
           python3 tools/ledger/ledger_mutants.py
+
+  bazel-test-graph-parity:
+    # R6-QUAL-01 fidelity question: are the cargo test runs equivalent to
+    # TypeDB's NATIVE Bazel tests, or a parallel reality? This job answers it
+    # from Bazel's own graph rather than by argument. It needs only Bazel's
+    # LOADING phase (`bazel query`), not analysis, so it does not depend on
+    # fetching toolchain externals.
+    #
+    # Honest scope, restated by the tool itself on every run: this proves
+    # STRUCTURAL equivalence — every Bazel rust_test target maps 1:1 onto a
+    # cargo target, the catalogue's cargo set equals the live workspace, and
+    # the fork dropped zero upstream #[test] functions. It does NOT prove
+    # identical outcomes, because no test is executed under Bazel here.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: install the pinned Bazel and verify its digest
+        run: |
+          set -euo pipefail
+          version="$(cat sources/typedb/.bazelversion)"
+          url="https://github.com/bazelbuild/bazel/releases/download/${version}/bazel-${version}-linux-x86_64"
+          curl -fsSL -o /tmp/bazel "$url"
+          curl -fsSL -o /tmp/bazel.sha256 "${url}.sha256"
+          ( cd /tmp && sha256sum -c bazel.sha256 )
+          install -m 0755 /tmp/bazel /usr/local/bin/bazel
+          bazel --version
+      - name: the cargo test graph is a faithful superset of the Bazel one
+        run: python3 tools/bazel/bazel_parity.py

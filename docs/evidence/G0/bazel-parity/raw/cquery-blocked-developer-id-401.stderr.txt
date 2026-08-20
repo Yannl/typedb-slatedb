@@ -1,0 +1,22 @@
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 385 targets (0 packages loaded, 0 targets configured)
+Analyzing: 385 targets (32 packages loaded, 289 targets configured)
+WARNING: Download from https://repo.typedb.com/basic/private-tools/raw/files/VaticleDeveloperIDCombined.p12 failed: class com.google.devtools.build.lib.bazel.repository.downloader.UnrecoverableHttpException GET returned 401 Unauthorized
+INFO: Repository +_repo_rules2+vaticle_developer_id_combined instantiated at:
+  <builtin>: in <toplevel>
+Repository rule http_file defined at:
+  /home/user/.bazel-out/d4b4afd956fddeab58d915cbd4a185c8/external/bazel_tools/tools/build_defs/repo/http.bzl:522:28: in <toplevel>
+ERROR: /home/user/.bazel-out/d4b4afd956fddeab58d915cbd4a185c8/external/bazel_tools/tools/build_defs/repo/http.bzl:205:33: An error occurred during the fetch of repository '+_repo_rules2+vaticle_developer_id_combined':
+   Traceback (most recent call last):
+	File "/home/user/.bazel-out/d4b4afd956fddeab58d915cbd4a185c8/external/bazel_tools/tools/build_defs/repo/http.bzl", line 205, column 33, in _http_file_impl
+		download_info = ctx.download(
+Error in download: java.io.IOException: Error downloading [https://repo.typedb.com/basic/private-tools/raw/files/VaticleDeveloperIDCombined.p12] to /home/user/.bazel-out/d4b4afd956fddeab58d915cbd4a185c8/external/+_repo_rules2+vaticle_developer_id_combined/file/VaticleDeveloperIDCombined.p12: GET returned 401 Unauthorized
+ERROR: no such package '@@+_repo_rules2+vaticle_developer_id_combined//file': java.io.IOException: Error downloading [https://repo.typedb.com/basic/private-tools/raw/files/VaticleDeveloperIDCombined.p12] to /home/user/.bazel-out/d4b4afd956fddeab58d915cbd4a185c8/external/+_repo_rules2+vaticle_developer_id_combined/file/VaticleDeveloperIDCombined.p12: GET returned 401 Unauthorized
+ERROR: /home/user/typedb-slatedb/sources/typedb/BUILD:452:6: //:developer-id-certs depends on @@+_repo_rules2+vaticle_developer_id_combined//file:file in repository @@+_repo_rules2+vaticle_developer_id_combined which failed to fetch. no such package '@@+_repo_rules2+vaticle_developer_id_combined//file': java.io.IOException: Error downloading [https://repo.typedb.com/basic/private-tools/raw/files/VaticleDeveloperIDCombined.p12] to /home/user/.bazel-out/d4b4afd956fddeab58d915cbd4a185c8/external/+_repo_rules2+vaticle_developer_id_combined/file/VaticleDeveloperIDCombined.p12: GET returned 401 Unauthorized
+ERROR: Analysis of target '//:developer-id-certs' failed; build aborted: Analysis failed
+INFO: Elapsed time: 2.172s
+INFO: 0 processes.
+ERROR: Build did NOT complete successfully
+Loading: 34 packages loaded

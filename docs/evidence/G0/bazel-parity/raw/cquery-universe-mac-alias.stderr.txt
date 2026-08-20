@@ -1,0 +1,22 @@
+Computing main repo mapping: 
+Loading: 
+Loading: 2 packages loaded
+Analyzing: 446 targets (2 packages loaded, 0 targets configured)
+ERROR: /home/user/typedb-slatedb/sources/typedb/BUILD:551:6: configurable attribute "actual" in //:deploy-mac-installer-pkg doesn't match this configuration. Would a default condition help?
+
+Conditions checked:
+ @@typedb_bazel_distribution+//platform:is_mac_arm64
+ @@typedb_bazel_distribution+//platform:is_mac_x86_64
+
+To see a condition's definition, run: bazel query --output=build <condition label>.
+
+This instance of //:deploy-mac-installer-pkg has configuration identifier e35bc8c. To inspect its configuration, run: bazel config e35bc8c.
+
+For more help, see https://bazel.build/docs/configurable-attributes#faq-select-choose-condition.
+
+Analyzing: 446 targets (12 packages loaded, 723 targets configured)
+ERROR: Analysis of target '//:deploy-mac-installer-pkg' failed; build aborted
+INFO: Elapsed time: 2.297s
+INFO: 0 processes.
+ERROR: Build did NOT complete successfully
+Loading: 12 packages loaded

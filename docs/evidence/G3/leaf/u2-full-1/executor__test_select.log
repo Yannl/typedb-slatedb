@@ -1,0 +1,11 @@
+
+running 3 tests
+[2m2026-08-20T11:18:50.203963Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-20T11:18:50.207075Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[1]
+[2m2026-08-20T11:18:50.211093Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[1]
+test anonymous_vars_not_enumerated_or_counted ... ok
+test unselected_named_vars_counted ... ok
+test cartesian_named_counted_checked ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+

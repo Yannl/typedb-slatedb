@@ -1,0 +1,33 @@
+
+running 3 tests
+[2m2026-08-20T11:18:52.536932Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running schema query:
+define attribute name, value string; entity person, owns name;
+[2m2026-08-20T11:18:52.539168Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-20T11:18:52.542006Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[1] with size 418 bytes; 418 bytes total
+[2m2026-08-20T11:18:52.542175Z[0m [35mTRACE[0m [2mconcept::thing::statistics[0m[2m:[0m Statistics sync finished in 0 ms. Storage watermark was initially: SeqNr[1]. Current statistics sequence is from: SeqNr[1]
+[2m2026-08-20T11:18:52.546553Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running read query:
+match $p isa person, has name $n;
+[2m2026-08-20T11:18:52.549235Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Planning conjunction:
+(1) Conjunction
+  $0 isa person
+  $0 has $1
+  $1 isa name
+
+[2m2026-08-20T11:18:52.549410Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 0
+[2m2026-08-20T11:18:52.549458Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(1) = |$0 has $1| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 8.7075, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-20T11:18:52.549506Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 isa person| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 8.85, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-20T11:18:52.549520Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$1 isa name| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 8.85, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-20T11:18:52.549573Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 1
+[2m2026-08-20T11:18:52.550576Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(1) = |$0 has $1| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 13.71475, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-20T11:18:52.550704Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$1 isa name| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 13.71475, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-20T11:18:52.550747Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 isa person| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 13.71475, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-20T11:18:52.550811Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(1) = |$0 has $1| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 13.71475, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-20T11:18:52.550872Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 2
+[2m2026-08-20T11:18:52.550897Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(1) = |$0 has $1| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 18.0, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-20T11:18:52.550928Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(1) = |$0 has $1| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 18.0, io_ratio: 1.0 } metadata: Direction(Canonical)
+test identical_query_string_hits_parse_cache ... ok
+test schema_reset_invalidates_translation_but_keeps_parse_cache ... ok
+test identical_query_string_hits_translation_cache ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+

@@ -1,0 +1,9 @@
+
+running 4 tests
+test list_ops ... ok
+test test_basic ... ok
+test test_functions ... ok
+test test_ops_integer_double ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

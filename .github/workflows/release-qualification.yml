@@ -141,6 +141,28 @@ jobs:
           python3 tools/ledger/ledger_mutants.py
           python3 tools/catalog/validate_catalog.py --require-current-lock
           python3 tools/catalog/build_plan_v2.py --check --require-current-lock
+      - name: produce the Mode-Q bundle with the pinned Bazel
+        # SI-G0-1 / G0. The bundle is a real `bazel cquery` observation, and it
+        # can only be produced where egress to the Bazel module and toolchain
+        # externals is permitted. It is NOT producible in the agent sandbox:
+        # `aspect_bazel_lib` registers bats_toolchains, fetched from
+        # github.com/bats-core, and that fetch is denied 403 by the egress
+        # policy there. A registered toolchain must load before Bazel resolves
+        # toolchains for ANY configured target, so even a single-target cquery
+        # aborts. This job is where that constraint does not apply.
+        #
+        # Producing nothing is the correct outcome when it cannot run: an
+        # ABSENT bundle keeps G0 honestly OPEN_RED, whereas a non-conforming
+        # directory would make the validator report INVALID.
+        run: |
+          set -euo pipefail
+          version="$(cat sources/typedb/.bazelversion)"
+          url="https://github.com/bazelbuild/bazel/releases/download/${version}/bazel-${version}-linux-x86_64"
+          curl -fsSL -o /tmp/bazel "$url"
+          curl -fsSL -o /tmp/bazel.sha256 "${url}.sha256"
+          ( cd /tmp && sha256sum -c bazel.sha256 )
+          install -m 0755 /tmp/bazel /usr/local/bin/bazel
+          python3 tools/modeq/produce_modeq.py --out docs/evidence/G0/mode-q
       - name: Mode-Q semantic validation and its mutants
         run: |
           python3 tools/modeq/validate_modeq.py --ledger docs/ledger/gates.json

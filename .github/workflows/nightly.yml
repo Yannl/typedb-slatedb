@@ -92,14 +92,22 @@ jobs:
       - name: storage benches still COMPILE (never executed)
         working-directory: sources/typedb
         run: cargo +1.93.0 bench -p storage --no-run --locked
-      - name: the full SlateDB fence suite - feature-off no-regression AND feature-on
-        # Without --quick this adds the feature-OFF full upstream suite, which
-        # must be fully green (the fork must not change upstream semantics
-        # outside its patch series), on top of the feature-ON gate the PR tier
-        # already runs. The feature-on full suite is deliberately NOT expected
-        # to be all-green - hundreds of upstream tests open databases through
-        # the epoch-less builder path - so the enforced invariant is that
-        # every feature-on failure is caused BY THE FENCE and by nothing else.
+      - name: the full SlateDB fence suite - feature-off oracle, feature-on, reconciliation
+        # The only invocation that can print PASS. Four clauses, all enforced:
+        # feature-OFF every target green (the fork must not change upstream
+        # semantics outside its patch series); feature-ON every target green;
+        # the negative fence suite green AND matching its declared membership;
+        # and a leaf reconciliation over executed test IDENTITIES qualified by
+        # binary, which is the clause that proves the upstream bodies ran by
+        # name rather than being counted.
+        #
+        # This comment previously said the feature-on suite was "deliberately
+        # NOT expected to be all-green" because hundreds of upstream tests
+        # open epoch-less databases. That was true and is now false: R6-FORK-01
+        # gave the harness a controller-issued epoch seam, so feature-on is
+        # 2012/0 with an EMPTY exclusion list. The gate rejects a stale
+        # exclusion (a name that does execute), so the list cannot rot back
+        # into a skip list.
         run: python3 tools/fork/check_strict_epoch_suite.py
       - name: the storage crate's warning count did not regress (R6-HYGIENE-01)
         # The ratchet only turns one way. `storage` cannot be held at

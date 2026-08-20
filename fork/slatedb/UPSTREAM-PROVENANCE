@@ -10,6 +10,6 @@
     "0004-builder-tests-supply-external-epochs.patch",
     "0006-upstream-suite-executes-under-the-shipped-fence.patch"
   ],
-  "patched_tree_sha256": "351ff621bf424b618b82a9aaad71e41b277790e077528507c8db19dd0f484f83",
+  "patched_tree_sha256": "8096dab5f6f6f6939b26a4dd7dd77c79521cccd9eab7bdc8fb50936f5f8d58f3",
   "note": "reconstruct with tools/fork/materialize_slatedb.py; the patch series is the fork, the crate is the base"
 }

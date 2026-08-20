@@ -261,7 +261,8 @@ the thing it described rather than at different content.
 
 ## Patch 0006 — the upstream suite EXECUTES under the shipped fence (R6-FORK-01)
 
-Four files, test-and-refusal only; no change to the epoch protocol itself.
+Six existing files plus one new test helper; test-and-refusal only, with no
+change to the epoch protocol itself.
 
 | File | Change |
 |---|---|
@@ -279,7 +280,9 @@ Four files, test-and-refusal only; no change to the epoch protocol itself.
 explicitly "adapt upstream test helpers", not "rewrite upstream's suite".
 The whole adaptation is therefore ONE decision point in `DbBuilder::build`
 plus two ordering hooks (the raw fencer, and clone inheritance). Upstream's
-tests are unmodified: no assertion, no expectation and no test name changed.
+library tests are unmodified: no assertion, no expectation and no test name
+changed. (The integration targets, below, cannot use the seam and take 15
+one-line epoch arguments instead — patch 0004's style.)
 
 The issuer is **not** a fallback to upstream's `stored + 1`. It never reads
 the manifest. It is a controller: it decides the number from its own
@@ -323,21 +326,33 @@ executes it directly so the deeper branch does not go dark.
 Toolchain `rustc 1.93.0`, in the materialised fork.
 
 ```
-cargo test --lib --features test-util
-  test result: ok. 1988 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out
+cargo test --tests --no-fail-fast --features test-util
+  unittests src/lib.rs   ok. 1988 passed; 0 failed; 1 ignored
+  tests/configurable_block_size.rs  ok. 11 passed; 0 failed
+  tests/db.rs                       ok.  3 passed; 0 failed
+  tests/prefix_filter.rs            ok.  4 passed; 0 failed
+  tests/transactions.rs             ok.  1 passed; 0 failed
 
-cargo test --lib --features test-util,external_epoch_required
-  test result: ok. 1993 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out
+cargo test --tests --no-fail-fast --features test-util,external_epoch_required
+  unittests src/lib.rs   ok. 1993 passed; 0 failed; 1 ignored
+  tests/configurable_block_size.rs  ok. 11 passed; 0 failed
+  tests/db.rs                       ok.  3 passed; 0 failed
+  tests/prefix_filter.rs            ok.  4 passed; 0 failed
+  tests/transactions.rs             ok.  1 passed; 0 failed
 
-cargo test --lib --features test-util,external_epoch_required negative_fence_
-  test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 1989 filtered out
+cargo test --tests --features test-util,external_epoch_required negative_fence_
+  test result: ok. 5 passed; 0 failed
 ```
 
-1989 leaves execute feature-off (1988 + the one upstream `ignored` test,
-`g0_dirty_writes`). 1994 execute feature-on: the same 1989 **plus** the five
-`cfg(external_epoch_required)` negative tests. The gate reconciles executed
-leaf IDENTITIES, not counts, so the 420 formerly-refused bodies are proven to
-have run by name.
+2008 leaves execute feature-off (1988 library + 19 integration + the one
+upstream `ignored` test, `g0_dirty_writes`). 2013 execute feature-on: the same
+2008 **plus** the five `cfg(external_epoch_required)` negative tests. The gate
+reconciles executed leaf IDENTITIES — qualified by test binary — not counts,
+so the 420 formerly-refused bodies are proven to have run BY NAME.
+
+`--no-fail-fast` is not cosmetic: without it cargo stops after the first
+failing binary, and a single library failure would leave the integration
+targets unrun while the reconciliation reported them as "did not execute".
 
 **Exclusions: none.** Every test that executes feature-off also executes
 feature-on. This is the measured result; the gate fails if a future change
@@ -391,8 +406,9 @@ found — but it let 1566/420 be reported as a suite PASS.
 
 The gate now passes only when all four clauses hold:
 
-1. **feature OFF, full suite fully green** — the upstream-regression oracle.
-2. **feature ON, full suite fully green.** Not "green except expected
+1. **feature OFF, EVERY test target fully green** — the upstream-regression
+   oracle. `--tests`, not `--lib`: round 5 measured the library suite only.
+2. **feature ON, EVERY test target fully green.** Not "green except expected
    refusals". A fence refusal here is now a FAILURE, reported as "an open
    with no epoch was not covered by the harness seam", not as an expectation.
 3. **the negative fence suite green and matching its declared membership** —
@@ -404,10 +420,10 @@ The gate now passes only when all four clauses hold:
    the gate too, so the list cannot rot into a silent skip list.
 
 `--quick` is the PR tier CI already runs (`.github/workflows/gates.yml`). It
-is materially stronger than before without costing more: clause 2 — the
-feature-on FULL suite, green — is exactly the "add the feature-on full suite
-to CI" that R6-FORK-01 asks for, and `--quick` runs it in full along with the
-negative suite. What it skips is the feature-off oracle and (consequently)
+is materially stronger than before without costing much more: clause 2 —
+every feature-on target, green — is exactly the "add the feature-on full
+suite to CI" that R6-FORK-01 asks for, and `--quick` runs it in full along
+with the negative suite. What it skips is the feature-off oracle and (consequently)
 the leaf reconciliation, so its verdict is `PARTIAL` and names what it did
 not prove. Only a full run prints `PASS`. The CI step's own comment still
 describes the old `--quick` shape ("feature-on builder tests + the
@@ -420,10 +436,10 @@ which is the "record executed leaf identities" the audit asked for.
 Executed (`python3 tools/fork/check_strict_epoch_suite.py`):
 
 ```
-feature-OFF  full suite  : 1988 passed, 0 failed, 1 ignored (1989 leaves executed)
-feature-ON   full suite  : 1993 passed, 0 failed, 1 ignored (1994 leaves executed)
+feature-OFF  all targets : 2007 passed, 0 failed, 1 ignored (2008 leaves executed)
+feature-ON   all targets : 2012 passed, 0 failed, 1 ignored (2013 leaves executed)
 feature-ON   negative suite: 5 passed, 0 failed (5 leaves executed)
-leaf reconciliation      : feature-off 1989 - 0 excluded + 5 shipped-posture-only = 1994 vs feature-on 1994 executed
+leaf reconciliation      : feature-off 2008 - 0 excluded + 5 shipped-posture-only = 2013 vs feature-on 2013 executed
 exclusions               : none — every test executed feature-off also executes feature-on
 STRICT-EPOCH SUITE GATE: PASS
 ```
@@ -440,6 +456,12 @@ evidence and is not:
 * A run on a contended machine produced NO `test result:` line at all, which
   the first draft rendered as "0 passed, 0 failed". The gate now reports a
   run that never measured anything as exactly that, with the output tail.
+* Qualifying leaves by test binary needs cargo's `Running tests/x.rs` marker,
+  which cargo writes to STDERR while libtest writes results to STDOUT.
+  Capturing the two separately and concatenating them put every marker after
+  every result, and the attribution collapsed to zero leaves while the
+  counts still looked right. The gate merges the streams; the
+  `passed + failed + ignored == leaves parsed` assertion is what caught it.
 
 ## What this series still does not do
 
@@ -453,8 +475,24 @@ Unchanged from patches 0001/0003, and still true:
 - The compactor orchestrator still constructs its own fenceable manifest via
   `init_compactor`; `with_external_compactor_epoch` through `CompactorBuilder`
   is still deliberately left for the decision.
-- Doc-tests are not in the gate. `cargo test --doc` builds the rustdoc
-  examples, which open databases with no epoch and are documentation of the
-  UNFENCED public API; adapting them would change what the published docs
-  show. They are the one target class still unmeasured under the fence, and
-  they are named here rather than left to be found.
+- **Doc-tests are not green feature-on, and this is a measured number rather
+  than an omission.** Executed:
+
+  ```
+  cargo test --doc --features test-util
+    test result: ok. 59 passed; 0 failed; 7 ignored
+
+  cargo test --doc --features test-util,external_epoch_required
+    test result: FAILED. 16 passed; 43 failed; 7 ignored
+  ```
+
+  The 43 are rustdoc examples that open a database with no epoch. They are
+  not a coverage gap in the sense this finding is about — no upstream test
+  BODY is being skipped — but they are a documentation-truth problem: the
+  fork publishes examples that would be refused by the posture the fork
+  ships. Fixing them means rewriting upstream's public API documentation
+  across the crate, which is a documentation decision (and a much larger,
+  much less reviewable diff) than the test adaptation this patch is. It is
+  named here, with its number, so the next round decides it deliberately
+  instead of discovering it. The gate does not run `--doc` and does not
+  claim to.

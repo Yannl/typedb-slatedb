@@ -375,12 +375,20 @@ jobs:
         # that quietly lost the feature would still compile and would still
         # pass tests that never open an unfenced writer.
         run: python3 tools/fork/check_strict_epoch.py
-      - name: "the STRICT negative epoch suite (§11: PR-tier feature-on + negative fence)"
-        # Executes the refusal: an epoch-less writer open must FAIL, and
-        # EVERY feature-on failure must be caused by the fence and nothing
-        # else. --quick is the PR-tier shape (feature-on builder tests + the
-        # fence-cause invariant); tier 2 runs the same gate WITHOUT --quick,
-        # which adds the full feature-off no-regression suite.
+      - name: "the STRICT epoch suite (PR tier: full feature-on + negative fence)"
+        # R6-FORK-01 changed what this gate MEANS, so this comment changed
+        # with it. It used to enforce "every feature-on failure is caused by
+        # the fence" — an invariant that tolerated 420 upstream test bodies
+        # never running. They run now: feature-on is 2012 passed / 0 failed
+        # with an EMPTY exclusion list, and a fence refusal during the
+        # feature-on suite is a FAILURE, not an expected outcome.
+        #
+        # --quick runs the full feature-on suite plus the negative fence
+        # suite and prints PARTIAL, never PASS: it deliberately omits the
+        # feature-OFF regression oracle and the leaf reconciliation, which
+        # are the clauses that prove the bodies ran BY NAME. Only the
+        # nightly tier (same gate, no --quick) can print PASS, and only that
+        # result may be cited as evidence.
         run: python3 tools/fork/check_strict_epoch_suite.py --quick
       - name: the resolved dependency graph matches what the docs claim (R6-TRUTH-01)
         # SEMANTIC, not grep: cargo metadata's resolve graph decides where

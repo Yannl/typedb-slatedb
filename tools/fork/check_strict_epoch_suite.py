@@ -133,8 +133,13 @@ def run(features: str, filt: str | None = None) -> tuple[int, str]:
             "--features", features]
     if filt:
         args.append(filt)
-    proc = subprocess.run(args, cwd=FORK, capture_output=True, text=True)
-    return proc.returncode, proc.stdout + proc.stderr
+    # stderr MERGED into stdout, not concatenated after it. cargo announces each
+    # test binary ("Running tests/db.rs (...)") on stderr while libtest reports
+    # results on stdout; concatenating puts every marker after every result and
+    # the leaf-to-binary attribution silently collapses to nothing.
+    proc = subprocess.run(args, cwd=FORK, stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, text=True)
+    return proc.returncode, proc.stdout
 
 
 def target_label(binary_path: str) -> str:

@@ -453,3 +453,256 @@ diff -ruN orig/src/fence.rs slatedb-0.15.0/src/fence.rs
          let stored_manifest = h.stored_manifest.take().unwrap();
          let jh = tokio::task::spawn(async move { fencer.fence(stored_manifest).await });
          // wait for fencer to load empty wal id and pause
+diff -ruN orig/src/manifest/store.rs slatedb-0.15.0/src/manifest/store.rs
+--- orig/src/manifest/store.rs	2026-08-20 09:19:22.529095121 +0000
++++ slatedb-0.15.0/src/manifest/store.rs	2026-08-20 09:40:42.872909420 +0000
+@@ -31,6 +31,16 @@
+ // the relevant epoch when initialized. It also detects when the current writer has been
+ // fenced and fails all operations with SlateDBError::Fenced.
+ impl FenceableManifest {
++    // FORK PATCH 0006: with the fence compiled in, `WriterFencer` never takes
++    // the internal-allocation path, so this is reachable only from the
++    // unfenced posture and from tests. Keeping it (rather than cfg-ing it
++    // away) is deliberate — it is upstream's function and the unfenced lane
++    // still uses it — but the SHIPPED build should not emit a warning for it,
++    // because a warning nobody can act on is how real ones get ignored.
++    #[cfg_attr(
++        all(not(test), feature = "external_epoch_required"),
++        allow(dead_code)
++    )]
+     pub(crate) async fn init_writer(
+         stored_manifest: StoredManifest,
+         manifest_update_timeout: Duration,
+@@ -86,6 +96,11 @@
+     /// revocation IS issuing a newer compactor epoch to a successor: the old
+     /// job fences out on its next manifest CAS and its already-published
+     /// SSTs stay orphan bytes (inv. 83), never referenced.
++    // FORK PATCH 0006: the compactor orchestrator is not wired to external
++    // epochs yet (see the ledger's "what this series still does not do"), so
++    // outside tests this twin has no caller. Same reasoning as `init_writer`
++    // above: keep the function, silence the warning in the shipped build.
++    #[cfg_attr(not(test), allow(dead_code))]
+     pub(crate) async fn init_compactor_with_epoch(
+         stored_manifest: StoredManifest,
+         manifest_update_timeout: Duration,
+diff -ruN orig/tests/common/mod.rs slatedb-0.15.0/tests/common/mod.rs
+--- orig/tests/common/mod.rs	1970-01-01 00:00:00.000000000 +0000
++++ slatedb-0.15.0/tests/common/mod.rs	2026-08-20 09:40:42.873115821 +0000
+@@ -0,0 +1,35 @@
++//! FORK PATCH 0006 (R6-FORK-01): controller stand-in for the INTEGRATION
++//! test targets.
++//!
++//! The library's own harness seam (`test_epoch_issuer` in `src/db/builder.rs`)
++//! is `cfg(test)` and is therefore invisible here: an integration test
++//! compiles against the SHIPPED library, where an open that names no epoch is
++//! refused. That is the right posture to test against, so these targets name
++//! their epochs through the public `with_external_writer_epoch` API instead,
++//! and this helper supplies the same deterministic sequence the library's
++//! harness does: the Nth open of a given database in this binary claims epoch
++//! N, exactly.
++//!
++//! Under the unfenced posture the calls are harmless — an exact epoch is
++//! claimed where upstream would have allocated the same number internally —
++//! so ONE form of these tests runs in both postures.
++#![allow(dead_code)]
++
++use std::collections::HashMap;
++use std::sync::{Mutex, OnceLock};
++
++fn issued() -> &'static Mutex<HashMap<String, u64>> {
++    static ISSUED: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
++    ISSUED.get_or_init(|| Mutex::new(HashMap::new()))
++}
++
++/// Issue the next controller epoch for `path`: 1 for the first open of that
++/// database in this test binary, 2 for the next, and so on. A reopen must
++/// present a strict SUCCESSOR — replaying a spent epoch is exactly what the
++/// fence refuses — so this is a sequence, not a constant.
++pub(crate) fn controller_epoch(path: impl AsRef<str>) -> u64 {
++    let mut issued = issued().lock().expect("controller epoch issuer poisoned");
++    let high = issued.entry(path.as_ref().to_string()).or_insert(0);
++    *high += 1;
++    *high
++}
+diff -ruN orig/tests/configurable_block_size.rs slatedb-0.15.0/tests/configurable_block_size.rs
+--- orig/tests/configurable_block_size.rs	2006-07-24 01:21:28.000000000 +0000
++++ slatedb-0.15.0/tests/configurable_block_size.rs	2026-08-20 09:37:54.540119499 +0000
+@@ -5,12 +5,15 @@
+ use slatedb::Db;
+ use std::sync::Arc;
+ 
++mod common;
++
+ #[tokio::test]
+ async fn test_configurable_block_size() {
+     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+ 
+     // Test with custom block size of 8KiB
+     let db = Db::builder("/tmp/test_custom_block_size", object_store.clone())
++        .with_external_writer_epoch(common::controller_epoch("/tmp/test_custom_block_size"))
+         .with_sst_block_size(SstBlockSize::Block8Kib)
+         .build()
+         .await;
+@@ -40,6 +43,7 @@
+ 
+     // Test with no block size specified (should use default 4KiB)
+     let db = Db::builder("/tmp/test_default_block_size", object_store.clone())
++        .with_external_writer_epoch(common::controller_epoch("/tmp/test_default_block_size"))
+         .build()
+         .await;
+ 
+@@ -52,6 +56,7 @@
+ 
+     // Test with minimum valid block size (1KiB)
+     let db = Db::builder("/tmp/test_min_block_size", object_store.clone())
++        .with_external_writer_epoch(common::controller_epoch("/tmp/test_min_block_size"))
+         .with_sst_block_size(SstBlockSize::Block1Kib)
+         .build()
+         .await;
+@@ -60,6 +65,7 @@
+ 
+     // Test with maximum valid block size (64KiB)
+     let db = Db::builder("/tmp/test_max_block_size", object_store.clone())
++        .with_external_writer_epoch(common::controller_epoch("/tmp/test_max_block_size"))
+         .with_sst_block_size(SstBlockSize::Block64Kib)
+         .build()
+         .await;
+@@ -73,6 +79,7 @@
+ 
+     // Test with a small block size to force multiple blocks
+     let db = Db::builder("/tmp/test_block_size_used", object_store.clone())
++        .with_external_writer_epoch(common::controller_epoch("/tmp/test_block_size_used"))
+         .with_sst_block_size(SstBlockSize::Block1Kib) // 1KiB blocks
+         .build()
+         .await
+@@ -122,13 +129,12 @@
+     assert_eq!(block_size_enum.as_bytes(), expected_bytes);
+ 
+     // Verify we can create a DB with each size
+-    let db = Db::builder(
+-        format!("/tmp/test_block_size_{}", expected_bytes),
+-        object_store.clone(),
+-    )
+-    .with_sst_block_size(block_size_enum)
+-    .build()
+-    .await;
++    let path = format!("/tmp/test_block_size_{}", expected_bytes);
++    let db = Db::builder(path.clone(), object_store.clone())
++        .with_external_writer_epoch(common::controller_epoch(&path))
++        .with_sst_block_size(block_size_enum)
++        .build()
++        .await;
+ 
+     assert!(db.is_ok());
+ }
+diff -ruN orig/tests/db.rs slatedb-0.15.0/tests/db.rs
+--- orig/tests/db.rs	2006-07-24 01:21:28.000000000 +0000
++++ slatedb-0.15.0/tests/db.rs	2026-08-20 09:38:09.692912519 +0000
+@@ -21,6 +21,8 @@
+ use tokio_util::sync::CancellationToken;
+ use tracing_subscriber::fmt::format::FmtSpan;
+ 
++mod common;
++
+ /// Verify that writes succeed after WAL replay when replayed immutable
+ /// memtables have not yet been flushed to L0. Previously, the WAL buffer's
+ /// recent_flushed_wal_id lagged behind the imm_memtable WAL IDs, causing
+@@ -43,6 +45,7 @@
+     fail_parallel::cfg(fp_registry.clone(), "flush-memtable-to-l0", "return").unwrap();
+ 
+     let db = Db::builder(path, object_store.clone())
++        .with_external_writer_epoch(common::controller_epoch(path))
+         .with_settings(settings.clone())
+         .with_fp_registry(fp_registry.clone())
+         .build()
+@@ -78,6 +81,7 @@
+     fail_parallel::cfg(fp_registry.clone(), "flush-memtable-to-l0", "pause").unwrap();
+ 
+     let db = Db::builder(path, object_store.clone())
++        .with_external_writer_epoch(common::controller_epoch(path))
+         .with_settings(settings)
+         .with_fp_registry(fp_registry.clone())
+         .build()
+@@ -213,6 +217,7 @@
+                 .as_nanos();
+             let db_path = format!("/tmp/test_concurrent_writers_readers_{}", ts);
+             Db::builder(db_path.clone(), object_store.clone())
++                .with_external_writer_epoch(common::controller_epoch(&db_path))
+                 .with_settings(config.clone())
+                 .with_compactor_builder(
+                     CompactorBuilder::new(db_path, object_store.clone())
+@@ -361,6 +366,7 @@
+ async fn test_refresh_manifest() {
+     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+     let db = Db::builder("test_refresh_manifest", object_store.clone())
++        .with_external_writer_epoch(common::controller_epoch("test_refresh_manifest"))
+         .with_settings(Settings {
+             manifest_poll_interval: Duration::from_secs(60 * 60),
+             ..Default::default()
+diff -ruN orig/tests/prefix_filter.rs slatedb-0.15.0/tests/prefix_filter.rs
+--- orig/tests/prefix_filter.rs	2006-07-24 01:21:28.000000000 +0000
++++ slatedb-0.15.0/tests/prefix_filter.rs	2026-08-20 09:38:18.958733413 +0000
+@@ -16,6 +16,8 @@
+ //!     bloom filter configured. The filter must never introduce false
+ //!     negatives.
+ 
++mod common;
++
+ mod composite_filters {
+     use std::sync::Arc;
+ 
+@@ -199,6 +201,7 @@
+         policies: Vec<Arc<dyn FilterPolicy>>,
+     ) -> Db {
+         Db::builder(path, store)
++            .with_external_writer_epoch(crate::common::controller_epoch(path))
+             .with_settings(base_settings())
+             .with_filter_policies(policies)
+             .build()
+@@ -285,6 +288,7 @@
+     async fn subrange_scan_prunes_ssts_and_returns_exact_keys() {
+         let recorder = Arc::new(DefaultMetricsRecorder::new());
+         let db = Db::builder("/test/subrange", Arc::new(InMemory::new()))
++            .with_external_writer_epoch(crate::common::controller_epoch("/test/subrange"))
+             .with_settings(Settings {
+                 min_filter_keys: 0,
+                 compactor_options: None,
+@@ -429,6 +433,7 @@
+ 
+     async fn open_db(store: Arc<dyn ObjectStore>, recorder: Arc<DefaultMetricsRecorder>) -> Db {
+         Db::builder("/test/empty_prefix_filter", store)
++            .with_external_writer_epoch(crate::common::controller_epoch("/test/empty_prefix_filter"))
+             .with_settings(Settings {
+                 min_filter_keys: 0,
+                 compactor_options: None,
+@@ -574,6 +579,7 @@
+ 
+     async fn build_db(path: &str, filter_policies: Vec<Arc<dyn FilterPolicy>>) -> Db {
+         Db::builder(path, Arc::new(InMemory::new()))
++            .with_external_writer_epoch(crate::common::controller_epoch(path))
+             .with_settings(settings())
+             .with_filter_policies(filter_policies)
+             .build()
+diff -ruN orig/tests/transactions.rs slatedb-0.15.0/tests/transactions.rs
+--- orig/tests/transactions.rs	2006-07-24 01:21:28.000000000 +0000
++++ slatedb-0.15.0/tests/transactions.rs	2026-08-20 09:38:09.693084730 +0000
+@@ -5,6 +5,8 @@
+ use object_store::{memory::InMemory, ObjectStore};
+ use rand::{rngs::StdRng, Rng, SeedableRng};
+ 
++mod common;
++
+ #[tokio::test(flavor = "multi_thread", worker_threads = 16)]
+ async fn test_concurrent_bank_transfers() {
+     let num_accounts = 100;
+@@ -29,7 +31,9 @@
+ 
+     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+     let db = Arc::new(
+-        slatedb::Db::open("test_concurrency_issue", object_store)
++        slatedb::Db::builder("test_concurrency_issue", object_store)
++            .with_external_writer_epoch(common::controller_epoch("test_concurrency_issue"))
++            .build()
+             .await
+             .unwrap(),
+     );

@@ -1,0 +1,15 @@
+
+running 9 tests
+[2m2026-08-20T22:12:03.423138Z[0m [35mTRACE[0m [2mconcept::thing::statistics[0m[2m:[0m Statistics sync finished in 1 ms. Storage watermark was initially: SeqNr[1]. Current statistics sequence is from: SeqNr[1]
+test intersection_seeks ... ok
+test value_inline_string_equality_has_bound_owner ... ok
+test value_hashed_string_equality_has_bound_owner ... ok
+test intersections_seeks_with_extra_values ... ok
+test value_int_equality_has_bound_owner ... ok
+test value_int_equality_isa_reads ... ok
+test value_int_equality_has_reverse_reads ... ok
+test value_int_inequality_has_bound_owner ... ok
+test value_string_inequality_reduces_has_reads_bound_owner ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.55s
+

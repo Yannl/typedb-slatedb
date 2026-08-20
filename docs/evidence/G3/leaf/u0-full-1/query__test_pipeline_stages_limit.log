@@ -1,0 +1,7 @@
+
+running 2 tests
+test pipeline_over_limit_is_rejected ... ok
+test pipeline_at_limit_is_accepted ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+

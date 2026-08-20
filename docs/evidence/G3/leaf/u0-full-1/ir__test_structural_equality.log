@@ -1,0 +1,10 @@
+
+running 5 tests
+test test_anonymous_non_equivalence ... ok
+test test_function_equivalence ... ok
+test test_function_non_equivalence ... ok
+test test_pipeline_non_equivalence ... ok
+test test_pipeline_equivalence ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+

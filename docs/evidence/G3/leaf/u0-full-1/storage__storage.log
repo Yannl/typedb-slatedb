@@ -1,0 +1,15 @@
+
+running 8 tests
+test isolation_manager::tests::watermark_keeps_window_pinned ... ok
+test isolation_manager::tests::unused_windows_are_cleaned_up ... ok
+[2m2026-08-20T22:12:16.350368Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+test isolation_manager::tests::windows_are_dropped ... ok
+test isolation_manager::tests::watermark_is_updated ... ok
+[2m2026-08-20T22:12:16.361453Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+test tests::test_mixed_legacy_and_current_commit_records ... ok
+test isolation_manager::tests::test_highly_concurrent_correctness ... ok
+test tests::test_storage_snapshot_id_search ... ok
+test tests::test_storage_recovery_from_partial_write ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+

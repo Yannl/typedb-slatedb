@@ -1,0 +1,875 @@
+
+running 1 test
+Feature: Driver Query :: Read rows queries can include and exclude instance types
+  Scenario: Read rows queries can include and exclude instance types
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given set query option include_instance_types to: false
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  When set query option include_instance_types to: true
+   ✔  Then transaction is open: false
+   ✔  When connection open read transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  Then answer get row(0) get variable(e) try get label is not none
+   ✔  Then answer get row(0) get entity(e) get type get label: person
+   ✔  Then answer get row(0) get variable(a) try get label is not none
+   ✔  Then answer get row(0) get attribute(a) get type get label: name
+   ✔  Then answer get row(0) get variable(r) try get label is not none
+   ✔  Then answer get row(0) get relation(r) get type get label: friendship
+   ✔  When transaction closes
+   ✔  When set query option include_instance_types to: false
+   ✔  Then transaction is open: false
+   ✔  When connection open read transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  Then answer get row(0) get variable(e) try get label is none
+   ✔  Then answer get row(0) get variable(a) try get label is none
+   ✔  Then answer get row(0) get variable(r) try get label is none
+Feature: Driver Query :: Write rows queries can include and exclude instance types
+  Scenario: Write rows queries can include and exclude instance types
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given set query option include_instance_types to: false
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  When set query option include_instance_types to: true
+   ✔  Then transaction is open: false
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  When get answers of typeql write query
+   ✔  Then answer size is: 1
+   ✔  Then answer get row(0) get variable(e) try get label is not none
+   ✔  Then answer get row(0) get entity(e) get type get label: person
+   ✔  Then answer get row(0) get variable(a) try get label is not none
+   ✔  Then answer get row(0) get attribute(a) get type get label: name
+   ✔  Then answer get row(0) get variable(r) try get label is not none
+   ✔  Then answer get row(0) get relation(r) get type get label: friendship
+   ✔  When transaction closes
+   ✔  When set query option include_instance_types to: false
+   ✔  Then transaction is open: false
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  When get answers of typeql write query
+   ✔  Then answer size is: 1
+   ✔  Then answer get row(0) get variable(e) try get label is none
+   ✔  Then answer get row(0) get variable(a) try get label is none
+   ✔  Then answer get row(0) get variable(r) try get label is none
+Feature: Driver Query :: Read document queries are not controlled by the include_instance_types option
+  Scenario: Read document queries are not controlled by the include_instance_types option
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given set query option include_instance_types to: false
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given typeql write query
+   ✔  Given transaction commits
+   ✔  When set query option include_instance_types to: true
+   ✔  Then transaction is open: false
+   ✔  When connection open read transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  Then answer contains document:
+   ✔  When transaction closes
+   ✔  When set query option include_instance_types to: false
+   ✔  Then transaction is open: false
+   ✔  When connection open read transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  Then answer contains document:
+Feature: Driver Query :: Write documents queries are not controlled by the include_instance_types option
+  Scenario: Write documents queries are not controlled by the include_instance_types option
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given set query option include_instance_types to: false
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  When set query option include_instance_types to: true
+   ✔  Then transaction is open: false
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  When get answers of typeql write query
+   ✔  Then answer size is: 1
+   ✔  Then answer contains document:
+   ✔  When transaction closes
+   ✔  When set query option include_instance_types to: false
+   ✔  Then transaction is open: false
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  When get answers of typeql write query
+   ✔  Then answer size is: 1
+   ✔  Then answer contains document:
+Feature: Driver Query :: Row queries can request the query structure to be included in response
+  Scenario: Row queries can request the query structure to be included in response
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given set query option include_query_structure to: true
+   ✔  When connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answers have query structure:
+   ✔  Given transaction closes
+Feature: Driver Query :: Driver processes ok query answers correctly
+  Scenario: Driver processes ok query answers correctly
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  When get answers of typeql schema query
+   ✔  Then answer type is: ok
+   ✔  Then answer type is not: concept rows
+   ✔  Then answer type is not: concept documents
+   ✔  Then answer unwraps as ok
+   ✔  Then transaction commits
+Feature: Driver Query :: Driver processes concept row query answers correctly
+  Scenario: Driver processes concept row query answers correctly
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  When get answers of typeql read query
+   ✔  Then answer type is: concept rows
+   ✔  Then answer type is not: ok
+   ✔  Then answer type is not: concept documents
+   ✔  Then answer unwraps as concept rows
+   ✔  Then answer query type is: read
+   ✔  Then answer query type is not: schema
+   ✔  Then answer query type is not: write
+   ✔  Then answer size is: 1
+   ✔  Then answer column names are:
+       | p |
+   ✔  Then answer get row(0) query type is: read
+   ✔  Then answer get row(0) query type is not: schema
+   ✔  Then answer get row(0) query type is not: write
+   ✔  Then answer get row(0) get concepts size is: 1
+   ✔  Then answer get row(0) get entity type(p) get label: person
+   ✔  Then answer get row(0) get entity type by index of variable(p) get label: person
+   ✔  When get answers of typeql read query
+   ✔  Then answer type is: concept rows
+   ✔  Then answer type is not: ok
+   ✔  Then answer type is not: concept documents
+   ✔  Then answer query type is: read
+   ✔  Then answer query type is not: schema
+   ✔  Then answer query type is not: write
+   ✔  Then answer size is: 1
+   ✔  Then answer column names are:
+       | p |
+       | n |
+   ✔  Then answer get row(0) get concepts size is: 2
+   ✔  Then answer get row(0) get entity type(p) get label: person
+   ✔  Then answer get row(0) get attribute type(n) get label: name
+   ✔  Then answer get row(0) get entity type by index of variable(p) get label: person
+   ✔  Then answer get row(0) get attribute type by index of variable(n) get label: name
+   ✔  When typeql schema query
+   ✔  When get answers of typeql read query
+   ✔  Then answer type is: concept rows
+   ✔  Then answer type is not: ok
+   ✔  Then answer type is not: concept documents
+   ✔  Then answer query type is: read
+   ✔  Then answer query type is not: schema
+   ✔  Then answer query type is not: write
+   ✔  Then answer size is: 2
+   ✔  Then answer column names are:
+       | p |
+       | n |
+   ✔  Then answer get row(0) query type is: read
+   ✔  Then answer get row(0) query type is not: schema
+   ✔  Then answer get row(0) query type is not: write
+   ✔  Then answer get row(0) get concepts size is: 2
+   ✔  Then answer get row(0) get entity type(p) get label: person
+   ✔  Then answer get row(0) get attribute type(n) get label: name
+   ✔  Then answer get row(0) get entity type by index of variable(p) get label: person
+   ✔  Then answer get row(0) get attribute type by index of variable(n) get label: name
+   ✔  Then answer get row(1) query type is: read
+   ✔  Then answer get row(1) query type is not: schema
+   ✔  Then answer get row(1) query type is not: write
+   ✔  Then answer get row(1) get concepts size is: 2
+   ✔  Then answer get row(1) get entity type(p) get label: person
+   ✔  Then answer get row(1) get attribute type(n) get label: age
+   ✔  Then answer get row(1) get entity type by index of variable(p) get label: person
+   ✔  Then answer get row(1) get attribute type by index of variable(n) get label: age
+   ✔  Then transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer type is: concept rows
+   ✔  Then answer type is not: ok
+   ✔  Then answer type is not: concept documents
+   ✔  Then answer query type is: read
+   ✔  Then answer query type is not: schema
+   ✔  Then answer query type is not: write
+   ✔  Then answer size is: 2
+   ✔  Then answer column names are:
+       | p |
+       | n |
+   ✔  Then answer get row(0) get concepts size is: 2
+   ✔  Then answer get row(0) get entity type(p) get label: person
+   ✔  Then answer get row(0) get attribute type(n) get label: name
+   ✔  Then answer get row(0) get entity type by index of variable(p) get label: person
+   ✔  Then answer get row(0) get attribute type by index of variable(n) get label: name
+   ✔  Then answer get row(1) get concepts size is: 2
+   ✔  Then answer get row(1) get entity type(p) get label: person
+   ✔  Then answer get row(1) get attribute type(n) get label: age
+   ✔  Then answer get row(1) get entity type by index of variable(p) get label: person
+   ✔  Then answer get row(1) get attribute type by index of variable(n) get label: age
+   ✔  When get answers of typeql read query
+   ✔  Then answer type is: concept rows
+   ✔  Then answer type is not: ok
+   ✔  Then answer type is not: concept documents
+   ✔  Then answer size is: 0
+   ✔  When transaction closes
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql write query
+   ✔  Then answer type is: concept rows
+   ✔  Then answer type is not: ok
+   ✔  Then answer type is not: concept documents
+   ✔  Then answer query type is: write
+   ✔  Then answer query type is not: schema
+   ✔  Then answer query type is not: read
+   ✔  Then answer size is: 1
+   ✔  Then answer column names are:
+       | p |
+   ✔  Then answer get row(0) query type is: write
+   ✔  Then answer get row(0) query type is not: schema
+   ✔  Then answer get row(0) query type is not: read
+   ✔  Then answer get row(0) get concepts size is: 1
+   ✔  Then answer get row(0) get entity(p) get type get label: person
+   ✔  Then answer get row(0) get entity by index of variable(p) get type get label: person
+   ✔  When get answers of typeql read query
+   ✔  Then answer type is: concept rows
+   ✔  Then answer type is not: ok
+   ✔  Then answer type is not: concept documents
+   ✔  Then answer query type is: read
+   ✔  Then answer query type is not: schema
+   ✔  Then answer query type is not: write
+   ✔  Then answer size is: 1
+   ✔  Then answer column names are:
+       | p |
+       | a |
+   ✔  Then answer get row(0) get concepts size is: 2
+   ✔  Then answer get row(0) get entity(p) get type get label: person
+   ✔  Then answer get row(0) get entity by index of variable(p) get type get label: person
+   ✔  Then answer get row(0) get attribute(a) get type get label: name
+   ✔  Then answer get row(0) get attribute(a) get value is: "John"
+   ✔  Then answer get row(0) get attribute by index of variable(a) get type get label: name
+   ✔  Then answer get row(0) get attribute by index of variable(a) get value is: "John"
+   ✔  Then transaction commits
+Feature: Driver Query :: Driver processes concept document query answers from read queries correctly
+  Scenario: Driver processes concept document query answers from read queries correctly
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  When get answers of typeql read query
+   ✔  Then answer type is: concept documents
+   ✔  Then answer type is not: ok
+   ✔  Then answer type is not: concept rows
+   ✔  Then answer unwraps as concept documents
+   ✔  Then answer query type is: read
+   ✔  Then answer query type is not: schema
+   ✔  Then answer query type is not: write
+   ✔  Then answer size is: 0
+   ✔  When transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When typeql write query
+   ✔  When get answers of typeql read query
+   ✔  Then answer type is: concept documents
+   ✔  Then answer type is not: ok
+   ✔  Then answer type is not: concept rows
+   ✔  Then answer unwraps as concept documents
+   ✔  Then answer query type is: read
+   ✔  Then answer query type is not: schema
+   ✔  Then answer query type is not: write
+   ✔  Then answer size is: 3
+   ✔  Then answer contains document:
+   ✔  Then answer contains document:
+   ✔  Then answer contains document:
+   ✔  Then answer does not contain document:
+   ✔  Then answer does not contain document:
+   ✔  When transaction commits
+   ✔  When connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer type is: concept documents
+   ✔  Then answer type is not: ok
+   ✔  Then answer type is not: concept rows
+   ✔  Then answer unwraps as concept documents
+   ✔  Then answer query type is: read
+   ✔  Then answer query type is not: schema
+   ✔  Then answer query type is not: write
+   ✔  Then answer size is: 6
+   ✔  Then answer contains document:
+   ✔  Then answer contains document:
+   ✔  When get answers of typeql read query
+   ✔  Then answer type is: concept documents
+   ✔  Then answer type is not: ok
+   ✔  Then answer type is not: concept rows
+   ✔  Then answer unwraps as concept documents
+   ✔  Then answer query type is: read
+   ✔  Then answer query type is not: schema
+   ✔  Then answer query type is not: write
+   ✔  Then answer size is: 1
+   ✔  Then answer contains document:
+   ✔  When get answers of typeql read query
+   ✔  Then answer type is: concept documents
+   ✔  Then answer type is not: ok
+   ✔  Then answer type is not: concept rows
+   ✔  Then answer unwraps as concept documents
+   ✔  Then answer query type is: read
+   ✔  Then answer query type is not: schema
+   ✔  Then answer query type is not: write
+   ✔  Then answer size is: 1
+   ✔  Then answer contains document:
+Feature: Driver Query :: Driver processes concept document query answers from write queries correctly
+  Scenario: Driver processes concept document query answers from write queries correctly
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  When connection open write transaction for database: typedb
+   ✔  When get answers of typeql write query
+   ✔  Then answer type is: concept documents
+   ✔  Then answer type is not: ok
+   ✔  Then answer type is not: concept rows
+   ✔  Then answer query type is: write
+   ✔  Then answer query type is not: schema
+   ✔  Then answer query type is not: read
+   ✔  Then answer size is: 1
+   ✔  Then answer contains document:
+   ✔  When get answers of typeql write query
+   ✔  Then answer type is: concept documents
+   ✔  Then answer type is not: ok
+   ✔  Then answer type is not: concept rows
+   ✔  Then answer query type is: write
+   ✔  Then answer query type is not: schema
+   ✔  Then answer query type is not: read
+   ✔  Then answer size is: 2
+   ✔  Then answer contains document:
+   ✔  Then answer does not contain document:
+Feature: Driver Query :: Driver processes query given rows correctly
+  Scenario: Driver processes query given rows correctly
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given get answers of typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set query option include_instance_types to: true
+   ✔  Given set answers of typeql read query as given rows with order: $p, $age_value
+   ✔  When get answers of typeql write query with given rows
+   ✔  Then answer get row(0) get concepts size is: 3
+   ✔  Then answer get row(0) get entity(p) get type get label: person
+   ✔  Then answer get row(0) get attribute(name) get type get label: name
+   ✔  Then answer get row(0) get attribute(name) get value is: "Jane"
+   ✔  Then answer get row(1) get entity(p) get type get label: person
+   ✔  Then answer get row(1) get attribute(name) get type get label: name
+   ✔  Then answer get row(1) get attribute(name) get value is: "John"
+   ✔  Then transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given set query option include_instance_types to: true
+   ✔  When get answers of typeql read query
+   ✔  Then answer get row(0) get concepts size is: 3
+   ✔  Then answer get row(0) get entity(p) get type get label: person
+   ✔  Then answer get row(0) get attribute(age) get type get label: age
+   ✔  Then answer get row(0) get attribute(age) get value is: 38
+   ✔  Then answer get row(0) get attribute(name) get type get label: name
+   ✔  Then answer get row(0) get attribute(name) get value is: "Jane"
+Feature: Driver Query :: The order of variables in given rows don't matter
+  Scenario: The order of variables in given rows don't matter
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given get answers of typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set query option include_instance_types to: true
+   ✔  Given set answers of typeql read query as given rows with order: $p, $age_value
+   ✔  When get answers of typeql write query with given rows
+   ✔  Then answer get row(0) get entity(p) get type get label: person
+   ✔  Then answer get row(0) get attribute(name) get type get label: name
+   ✔  Then answer get row(0) get attribute(name) get value is: "Jane"
+   ✔  Given set answers of typeql read query as given rows with order: $p
+   ✔  When get answers of typeql write query with given rows
+   ✔  Then answer get row(0) get entity(p) get type get label: person
+   ✔  Then answer get row(0) get attribute(name) get type get label: name
+   ✔  Then answer get row(0) get attribute(name) get value is: "John"
+   ✔  Then transaction commits
+Feature: Driver Query :: In given rows, optional variables may be omitted, required ones may not, undeclared variables are flagged.
+  Scenario: In given rows, optional variables may be omitted, required ones may not, undeclared variables are flagged.
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When set answers of typeql read query as given rows with order: $x
+   ✔  When get answers of typeql read query with given rows
+   ✔  Then answer get row(0) get value(x) get is: 5
+   ✔  Then answer get row(0) get value(p) get is: 10
+   ✔  Then answer get row(0) get variable(y) is empty
+   ✔  Then answer get row(0) get variable(q) is empty
+   ✔  When set answers of typeql read query as given rows with order: $x
+   ✔  Then typeql read query with given rows; fails with a message containing: "The given rows are missing the required variable 'y'"
+   ✔  When set answers of typeql read query as given rows with order: $x, $z
+   ✔  Then typeql read query with given rows; fails with a message containing: "The variable 'z' was not declared in the query"
+Feature: Driver Query :: Drivers also accept given rows as maps
+  Scenario: Drivers also accept given rows as maps
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given get answers of typeql write query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set query option include_instance_types to: true
+   ✔  Given set answers of typeql read query as given rows dictionary with variables: $p, $age_value
+   ✔  When get answers of typeql write query with given rows
+   ✔  Then answer get row(0) get entity(p) get type get label: person
+   ✔  Then answer get row(0) get attribute(name) get type get label: name
+   ✔  Then answer get row(0) get attribute(name) get value is: "Jane"
+   ✔  Then answer get row(1) get entity(p) get type get label: person
+   ✔  Then answer get row(1) get attribute(name) get type get label: name
+   ✔  Then answer get row(1) get attribute(name) get value is: "John"
+   ✔  Then transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Given set query option include_instance_types to: true
+   ✔  When get answers of typeql read query
+   ✔  Then answer get row(0) get entity(p) get type get label: person
+   ✔  Then answer get row(0) get attribute(age) get type get label: age
+   ✔  Then answer get row(0) get attribute(age) get value is: 38
+   ✔  Then answer get row(0) get attribute(name) get type get label: name
+   ✔  Then answer get row(0) get attribute(name) get value is: "Jane"
+   ✔  When set answers of typeql read query as given rows dictionary with variables: $x
+   ✔  When get answers of typeql read query with given rows
+   ✔  Then answer get row(0) get value(x) get is: 5
+   ✔  Then answer get row(0) get value(p) get is: 10
+   ✔  Then answer get row(0) get variable(y) is empty
+   ✔  Then answer get row(0) get variable(q) is empty
+Feature: Driver Query :: Given rows handle boolean values
+  Scenario Outline: Given rows handle boolean values
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set answers of typeql read query as given rows with order: $attr
+   ✔  When get answers of typeql write query with given rows
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  Then answer get row(0) get attribute(attr) get value is: true
+Feature: Driver Query :: Given rows handle integer values
+  Scenario Outline: Given rows handle integer values
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set answers of typeql read query as given rows with order: $attr
+   ✔  When get answers of typeql write query with given rows
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  Then answer get row(0) get attribute(attr) get value is: 12345090
+Feature: Driver Query :: Given rows handle double values
+  Scenario Outline: Given rows handle double values
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set answers of typeql read query as given rows with order: $attr
+   ✔  When get answers of typeql write query with given rows
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  Then answer get row(0) get attribute(attr) get value is: 2.01234567
+Feature: Driver Query :: Given rows handle decimal values
+  Scenario Outline: Given rows handle decimal values
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set answers of typeql read query as given rows with order: $attr
+   ✔  When get answers of typeql write query with given rows
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  Then answer get row(0) get attribute(attr) get value is: 1234567890.0001234567890dec
+Feature: Driver Query :: Given rows handle date values
+  Scenario Outline: Given rows handle date values
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set answers of typeql read query as given rows with order: $attr
+   ✔  When get answers of typeql write query with given rows
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  Then answer get row(0) get attribute(attr) get value is: 2024-09-20
+Feature: Driver Query :: Given rows handle datetime values
+  Scenario Outline: Given rows handle datetime values
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set answers of typeql read query as given rows with order: $attr
+   ✔  When get answers of typeql write query with given rows
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  Then answer get row(0) get attribute(attr) get value is: 1999-02-26T12:15:05
+Feature: Driver Query :: Given rows handle datetime-tz values
+  Scenario Outline: Given rows handle datetime-tz values
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set answers of typeql read query as given rows with order: $attr
+   ✔  When get answers of typeql write query with given rows
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  Then answer get row(0) get attribute(attr) get value is: 2024-09-20T16:40:05.000000001+0100
+Feature: Driver Query :: Given rows handle duration values
+  Scenario Outline: Given rows handle duration values
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set answers of typeql read query as given rows with order: $attr
+   ✔  When get answers of typeql write query with given rows
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  Then answer get row(0) get attribute(attr) get value is: P1Y10M7DT15H44M5.00394892S
+Feature: Driver Query :: Given rows handle string values
+  Scenario Outline: Given rows handle string values
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set answers of typeql read query as given rows with order: $attr
+   ✔  When get answers of typeql write query with given rows
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  Then answer get row(0) get attribute(attr) get value is: "hello"
+Feature: Driver Query :: Given rows handle string values
+  Scenario Outline: Given rows handle string values
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open write transaction for database: typedb
+   ✔  Given set answers of typeql read query as given rows with order: $attr
+   ✔  When get answers of typeql write query with given rows
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 1
+   ✔  Then answer get row(0) get attribute(attr) get value is: "bob\"bobby"
+Feature: Driver Query :: Driver processes query structure correctly
+  Scenario: Driver processes query structure correctly
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql analyze
+   ✔  Then analyzed query pipeline structure is:
+   ✔  Then analyzed query preamble contains:
+   ✔  Then analyzed query preamble contains:
+   ✔  When get answers of typeql analyze
+   ✔  Then analyzed query pipeline structure is:
+   ✔  When get answers of typeql analyze
+   ✔  Then analyzed query pipeline structure is:
+   ✔  When get answers of typeql analyze
+   ✔  Then analyzed query pipeline structure is:
+   ✔  When get answers of typeql analyze
+   ✔  Then analyzed query given structure is:
+   ✔  Then analyzed query pipeline structure is:
+   ✔  Given transaction closes
+Feature: Driver Query :: Analyze returns the annotations of variables in the query
+  Scenario: Analyze returns the annotations of variables in the query
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql analyze
+   ✔  Then analyzed query pipeline annotations are:
+   ✔  When get answers of typeql analyze
+   ✔  Then analyzed preamble annotations contains:
+   ✔  Then analyzed query pipeline annotations are:
+   ✔  Then analyzed fetch annotations are:
+   ✔  When get answers of typeql analyze
+   ✔  Then analyzed query given annotations are:
+   ✔  Then analyzed query pipeline annotations are:
+Feature: Driver Query :: Analyze handles unsatisfiable schema queries and errors properly
+  Scenario: Analyze handles unsatisfiable schema queries and errors properly
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  Given transaction commits
+   ✔  Given connection open read transaction for database: typedb
+   ✔  When get answers of typeql analyze
+   ✔  Then analyzed query pipeline structure is:
+   ✔  Then analyzed query pipeline annotations are:
+   ✔  When get answers of typeql analyze
+   ✔  Then analyzed query pipeline structure is:
+   ✔  Then analyzed query pipeline annotations are:
+   ✔  Given transaction closes
+   ✔  Given connection open read transaction for database: typedb
+   ✔  Then typeql analyze; parsing fails
+   ✔  Then typeql analyze; fails with a message containing: "Type-inference was unable to find compatible types for the pair of variables 'x' & 'p' across a 'isa' constraint"
+   ✔  Given transaction closes
+Feature: Driver Query :: Driver processes query errors correctly
+  Scenario: Driver processes query errors correctly
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Then typeql schema query; fails
+   ✔  Then typeql schema query; fails
+   ✔  Then typeql read query; fails with a message containing: "Error analysing query"
+   ✔  Then typeql schema query; fails with a message containing: "The reserved keyword \"entity\" cannot be used as an identifier"
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Then typeql schema query; fails with a message containing: "Failed to execute define query"
+Feature: Driver Query :: Driver can concurrently process read queries without interruptions
+  Scenario: Driver can concurrently process read queries without interruptions
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  When concurrently get answers of typeql read query 10 times
+   ✔  Then concurrently process 1 row from answers
+   ✔  Then concurrently process 1 row from answers
+   ✔  Then concurrently process 3 rows from answers
+   ✔  When get answers of typeql read query
+   ✔  Then answer size is: 10
+   ✔  Then concurrently process 5 rows from answers
+   ✔  Then concurrently process 1 row from answers; fails
+Feature: Driver Query :: Driver's concurrent processing of read queries answers is not interrupted by schema queries if answers are prefetched
+  Scenario: Driver's concurrent processing of read queries answers is not interrupted by schema queries if answers are prefetched
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  When concurrently get answers of typeql read query 10 times
+   ✔  Then concurrently process 1 row from answers
+   ✔  Then concurrently process 1 row from answers
+   ✔  Then concurrently process 3 rows from answers
+   ✔  When typeql schema query
+   ✔  Then concurrently process 1 rows from answers
+   ✔  Then concurrently process 3 rows from answers
+   ✔  Then concurrently process 1 rows from answers
+   ✔  Then concurrently process 1 row from answers; fails
+Feature: Driver Query :: Driver's concurrent processing of read queries answers is interrupted by schema queries if answers are not prefetched
+  Scenario: Driver's concurrent processing of read queries answers is interrupted by schema queries if answers are not prefetched
+   ✔> Given typedb starts
+   ✔> Given connection is open: false
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔> Given connection create database: typedb
+   ✔> Given connection has database: typedb
+   ✔  Given connection open schema transaction for database: typedb
+   ✔  Given typeql schema query
+   ✔  When concurrently get answers of typeql read query 10 times
+   ✔  Then concurrently process 1 row from answers
+   ✔  Then concurrently process 1 row from answers
+   ✔  Then concurrently process 3 rows from answers
+   ✔  When typeql schema query
+[Summary]
+30 features
+30 scenarios (30 passed)
+795 steps (795 passed)
+test test ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 33.43s
+

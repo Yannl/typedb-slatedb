@@ -1,0 +1,25 @@
+{
+ "green": true,
+ "policy_verdict": "GREEN",
+ "row_id": "driver:typescript:rocksdb",
+ "bundle_root": "a75968d7ecd81438fbea798ea4245448403d7dbc00a78f92cbc0e6ef305f1aa7",
+ "plan_root": "72020aa01fafebddc41321e0c6100c158f80ae997037430871212049054a7a41",
+ "anomaly_count": 0,
+ "anomalies": [],
+ "caveats": [
+  "npm-install-not-pnpm-lock",
+  "steps-typecheck-not-clean"
+ ],
+ "observation": {
+  "suites_selected": 4,
+  "suites_executed": 4,
+  "plan_leaves_in_scope": 154,
+  "plan_leaves_with_outcome": 154,
+  "plan_leaves_passed": 154,
+  "leaf_status_counts": {
+   "NOT_RUN": 9,
+   "PASSED": 149,
+   "SKIPPED_IGNORED_TAG": 5
+  }
+ }
+}

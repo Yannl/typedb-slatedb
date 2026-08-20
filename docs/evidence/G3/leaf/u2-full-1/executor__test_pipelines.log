@@ -1,0 +1,14 @@
+
+running 9 tests
+test test_insert ... ok
+test test_match ... ok
+test test_insert_insert ... ok
+test test_insert_match_insert ... ok
+test test_match_delete_has ... ok
+test test_match_sort ... ok
+test test_require ... ok
+test test_match_match ... ok
+test test_select ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+

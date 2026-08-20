@@ -1,0 +1,11 @@
+
+running 6 tests
+test create_delete ... ok
+test create_keyspaces_duplicate_name_error ... ok
+test create_keyspaces_duplicate_id_error ... ok
+test create_keyspaces ... ok
+test get_put_iterate ... ok
+test create_reopen ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+

@@ -74,7 +74,7 @@ def log_path(bundle, rel):
     return bundle / pathlib.Path(rel).name
 
 
-def reseal(bundle, data):
+def reseal(bundle, data, repo=None):
     """What a competent forger would do: re-hash every log the results name,
     recompute the bundle root over the same consumed set, and rewrite the
     manifest, the verdict and the COMPLETE marker so every binding is
@@ -95,7 +95,9 @@ def reseal(bundle, data):
             if p.is_file():
                 srv["log_sha256"] = common.sha256_file(p)
     save(bundle, data)
-    consumed = [bundle / "driver-results.json", common.PLAN]
+    plan = (pathlib.Path(repo) / "docs" / "evidence" / "G1"
+            / "qualification-plan-v2.json") if repo else common.PLAN
+    consumed = [bundle / "driver-results.json", plan]
     consumed += [log_path(bundle, s["raw_log"])
                  for s in data.get("suites", []) if s.get("raw_log")]
     consumed += [log_path(bundle, s["structured_log"])
@@ -108,7 +110,7 @@ def reseal(bundle, data):
     for extra in ("npm-tree.json", "tsc.log"):
         if (bundle / extra).is_file():
             consumed.append(bundle / extra)
-    root, pairs = common.compute_bundle_root(bundle, consumed)
+    root, pairs = common.compute_bundle_root(bundle, consumed, repo=repo)
     (bundle / "bundle-manifest.json").write_text(json.dumps(
         {"schema": "driver-lane-bundle-manifest-v1", "bundle_root": root,
          "files": dict(sorted(pairs.items()))}, indent=1) + "\n")
@@ -132,35 +134,51 @@ def _first_executed_suite(data):
 
 # ------------------------------------------------------------------ mutants
 
-def m_empty_result_file(bundle, data):
+def m_empty_result_file(bundle, data, repo=None):
     (bundle / "driver-results.json").write_text("")
     return "NAIVE"
 
 
-def m_empty_log(bundle, data):
+def m_empty_log(bundle, data, repo=None):
     s = _first_executed_suite(data)
     log_path(bundle, s["raw_log"]).write_text("")
     return "NAIVE"
 
 
-def m_truncated_run(bundle, data):
+def m_truncated_run(bundle, data, repo=None):
+    """Cut the run short: for the cucumber-Basic harness drop everything from
+    the [Summary] on; for the structured harnesses drop the tail of the
+    machine-readable stream. Either way the leaf rows now claim more
+    scenarios than the archived bytes contain."""
     s = _first_executed_suite(data)
-    p = log_path(bundle, s["raw_log"])
-    lines = p.read_text().splitlines()
-    cut = next(i for i, ln in enumerate(lines) if ln.strip() == "[Summary]")
-    p.write_text("\n".join(lines[:cut - 20]) + "\n")
-    reseal(bundle, data)
+    if s.get("structured_log"):
+        p = log_path(bundle, s["structured_log"])
+        text = p.read_text()
+        if text.lstrip().startswith("["):          # behave JSON array
+            doc = json.loads(text)
+            for feat in doc:
+                feat["elements"] = (feat.get("elements") or [])[:3]
+            p.write_text(json.dumps(doc))
+        else:                                      # cucumber-js NDJSON
+            lines = p.read_text().splitlines()
+            p.write_text("\n".join(lines[:max(1, len(lines) // 3)]) + "\n")
+    else:
+        p = log_path(bundle, s["raw_log"])
+        lines = p.read_text().splitlines()
+        cut = next(i for i, ln in enumerate(lines) if ln.strip() == "[Summary]")
+        p.write_text("\n".join(lines[:cut - 20]) + "\n")
+    reseal(bundle, data, repo)
     return "RESEALED"
 
 
-def m_suite_never_started(bundle, data):
+def m_suite_never_started(bundle, data, repo=None):
     s = _first_executed_suite(data)
     log_path(bundle, s["raw_log"]).write_text("\nrunning 1 test\n")
-    reseal(bundle, data)
+    reseal(bundle, data, repo)
     return "RESEALED"
 
 
-def m_fabricated_leaf_row(bundle, data):
+def m_fabricated_leaf_row(bundle, data, repo=None):
     s = _first_executed_suite(data)
     tmpl = next(l for l in data["leaves"] if l["suite_id"] == s["suite_id"])
     fake = copy.deepcopy(tmpl)
@@ -170,67 +188,67 @@ def m_fabricated_leaf_row(bundle, data):
     fake["in_plan"] = True
     data["leaves"].append(fake)
     data["counts"]["leaf_rows"] += 1
-    reseal(bundle, data)
+    reseal(bundle, data, repo)
     return "RESEALED"
 
 
-def m_dropped_leaf_rows(bundle, data):
+def m_dropped_leaf_rows(bundle, data, repo=None):
     s = _first_executed_suite(data)
     data["leaves"] = [l for l in data["leaves"] if l["suite_id"] != s["suite_id"]]
-    reseal(bundle, data)
+    reseal(bundle, data, repo)
     return "RESEALED"
 
 
-def m_flipped_leaf_status(bundle, data):
+def m_flipped_leaf_status(bundle, data, repo=None):
     l = next(l for l in data["leaves"] if l.get("status") == "PASSED")
     l["status"] = "FAILED"
-    reseal(bundle, data)
+    reseal(bundle, data, repo)
     return "RESEALED"
 
 
-def m_forged_step_counts(bundle, data):
+def m_forged_step_counts(bundle, data, repo=None):
     l = next(l for l in data["leaves"] if l.get("steps_passed"))
     l["steps_passed"] = l["steps_passed"] + 7
-    reseal(bundle, data)
+    reseal(bundle, data, repo)
     return "RESEALED"
 
 
-def m_forged_plan_membership(bundle, data):
+def m_forged_plan_membership(bundle, data, repo=None):
     l = next((l for l in data["leaves"] if not l.get("in_plan")), None)
     if l is None:
         raise RuntimeError("bundle has no out-of-plan leaf to promote")
     l["in_plan"] = True
-    reseal(bundle, data)
+    reseal(bundle, data, repo)
     return "RESEALED"
 
 
-def m_forged_feature_hash(bundle, data):
+def m_forged_feature_hash(bundle, data, repo=None):
     s = _first_executed_suite(data)
     s["feature_sha256"] = "0" * 64
-    reseal(bundle, data)
+    reseal(bundle, data, repo)
     return "RESEALED"
 
 
-def m_server_never_booted(bundle, data):
+def m_server_never_booted(bundle, data, repo=None):
     if not data.get("servers"):
         raise RuntimeError("bundle records no server")
     data["servers"][0]["ready_probes"] = []
     data["servers"][0]["ready_after_seconds"] = None
-    reseal(bundle, data)
+    reseal(bundle, data, repo)
     return "RESEALED"
 
 
-def m_server_probe_failed(bundle, data):
+def m_server_probe_failed(bundle, data, repo=None):
     if not data.get("servers"):
         raise RuntimeError("bundle records no server")
     probes = data["servers"][0].get("ready_probes") or [{}]
     probes[-1] = {"t": 1.0, "error": "ConnectionRefusedError: [Errno 111]"}
     data["servers"][0]["ready_probes"] = probes
-    reseal(bundle, data)
+    reseal(bundle, data, repo)
     return "RESEALED"
 
 
-def m_forged_backend_kind(bundle, data):
+def m_forged_backend_kind(bundle, data, repo=None):
     """The slatedb row's on-disk witness rewritten to the rocksdb backend:
     the environment variable would still say U2."""
     srv = next((s for s in data.get("servers", [])
@@ -247,28 +265,28 @@ def m_forged_backend_kind(bundle, data):
     w["marker_sha256"] = hashlib.sha256(text.encode()).hexdigest()
     w["marker_text"] = text
     w["kind"] = "classic"
-    reseal(bundle, data)
+    reseal(bundle, data, repo)
     return "RESEALED"
 
 
-def m_backend_witness_stripped(bundle, data):
+def m_backend_witness_stripped(bundle, data, repo=None):
     srv = next((s for s in data.get("servers", [])
                 if s.get("backend_witness")), None)
     if srv is None:
         raise RuntimeError("bundle records no backend witness")
     srv["backend_witness"] = {}
-    reseal(bundle, data)
+    reseal(bundle, data, repo)
     return "RESEALED"
 
 
-def m_forged_verdict_enum(bundle, data):
+def m_forged_verdict_enum(bundle, data, repo=None):
     v = json.loads((bundle / "verdict.json").read_text())
     v["policy_verdict"] = "TOTAL_QUALITY_PASS"
     (bundle / "verdict.json").write_text(json.dumps(v, indent=1) + "\n")
     return "NAIVE"
 
 
-def m_unsealed_edit(bundle, data):
+def m_unsealed_edit(bundle, data, repo=None):
     data["counts"]["plan_leaves_passed"] = 999999
     save(bundle, data)          # deliberately NOT resealed
     return "NAIVE"
@@ -357,7 +375,7 @@ def main():
             shadow, work = shadow_repo(td, src)
             data = load(work)
             try:
-                level = fn(work, data)
+                level = fn(work, data, shadow)
             except Exception as e:
                 results["mutants"].append(
                     {"mutant": name, "outcome": "ERROR",

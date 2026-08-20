@@ -220,7 +220,6 @@ def main():
     ap.add_argument("--out", type=pathlib.Path, required=True)
     ap.add_argument("--run-dir", type=pathlib.Path, required=True)
     ap.add_argument("--timeout", type=int, default=3600)
-    ap.add_argument("--reuse-build", action="store_true")
     args = ap.parse_args()
 
     backend = args.backend or {"U0": "rocksdb", "U1": "rocksdb",
@@ -248,11 +247,13 @@ def main():
     tag_expr = core_tag_expression()
     skip_tags = excluded_tags(tag_expr)
 
+    # There is deliberately no "reuse the previous build" switch: a bundle
+    # whose build record is missing cannot state which dependency tree, which
+    # tsc diagnostics and which caveats the executed JavaScript came from, and
+    # an evidence file that cannot say that is not evidence.
     work = run_dir / "http-ts"
     build = {}
-    if args.reuse_build and work.is_dir():
-        build["reused"] = True
-    else:
+    if True:
         work, copy_report = materialise(run_dir)
         build["copy"] = copy_report
         if copy_report["hash_mismatches"]:

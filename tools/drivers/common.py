@@ -70,12 +70,12 @@ def rel(p):
         return str(p)
 
 
-def bundle_rel(path, bundle_dir):
+def bundle_rel(path, bundle_dir, repo=None):
     """Same identity rule the u0 evidence chain uses (tools/catalog/verdict.py
     _bundle_rel): repo-relative when possible, `<out>/`-relative otherwise."""
     p = pathlib.Path(path).resolve()
     try:
-        return p.relative_to(REPO).as_posix()
+        return p.relative_to(pathlib.Path(repo or REPO).resolve()).as_posix()
     except ValueError:
         pass
     try:
@@ -84,7 +84,7 @@ def bundle_rel(path, bundle_dir):
         return str(p)
 
 
-def compute_bundle_root(bundle_dir, files):
+def compute_bundle_root(bundle_dir, files, repo=None):
     """sha256 over sorted `rel\\0sha\\n` pairs - the SAME documented algorithm
     tools/catalog/verdict.py:compute_bundle_root uses for the u0/u2s3 lane, so
     one root definition covers the whole evidence chain. Files that do not
@@ -94,7 +94,7 @@ def compute_bundle_root(bundle_dir, files):
     for f in files:
         f = pathlib.Path(f)
         if f.is_file():
-            pairs[bundle_rel(f, bundle_dir)] = sha256_file(f)
+            pairs[bundle_rel(f, bundle_dir, repo)] = sha256_file(f)
     h = hashlib.sha256()
     for r in sorted(pairs):
         h.update(r.encode() + b"\0" + pairs[r].encode() + b"\n")

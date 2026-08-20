@@ -1,7 +1,7 @@
 {
  "schema": "typedb-r2-driver-blocked-lanes-v1",
  "statement": "Executed probes behind every 'blocked' claim in driver-row-status.json. Each entry records the command that was run and what it returned; a precondition nobody executed is not a precondition, it is an excuse.",
- "generated_at_utc": "2026-08-20T09:58:24Z",
+ "generated_at_utc": "2026-08-20T10:23:59Z",
  "toolchain_probes": [
   {
    "tool": "bazel",
@@ -82,10 +82,10 @@
   },
   "server_binary": "sources/typedb-pristine/target/debug/typedb_server_bin",
   "server_binary_present": false,
-  "fork_target_bytes": 16017030554,
-  "filesystem_free_bytes": 2464944128,
+  "fork_target_bytes": 16448829500,
+  "filesystem_free_bytes": 1051377664,
   "df_command": "os.statvfs(repo)",
-  "conclusion": "no typedb_server_bin is built under sources/typedb-pristine. Building one needs a cargo target directory of the order the fork's already occupies (16017030554 bytes measured); the filesystem has 2464944128 bytes free. The pristine (plan profile U0) driver lane is therefore blocked on disk capacity in this environment, not on tooling. The executed lanes use the fork server, whose checkout dirt is recorded explicitly in every bundle."
+  "conclusion": "no typedb_server_bin is built under sources/typedb-pristine. Building one needs a cargo target directory of the order the fork's already occupies (16448829500 bytes measured); the filesystem has 1051377664 bytes free. The pristine (plan profile U0) driver lane is therefore blocked on disk capacity in this environment, not on tooling. The executed lanes use the fork server, whose checkout dirt is recorded explicitly in every bundle."
  },
  "rows": {}
 }

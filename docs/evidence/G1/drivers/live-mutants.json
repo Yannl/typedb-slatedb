@@ -1,0 +1,86 @@
+{
+ "schema": "driver-lane-live-mutants-v1",
+ "statement": "Execution-time negative controls: the runner itself is put in each situation and must refuse. A COMPLETE marker after any of these would mean the lane can seal a bundle without a server or without a suite.",
+ "mutants": [
+  {
+   "mutant": "server_binary_missing",
+   "exit_code": 1,
+   "sealed_COMPLETE": false,
+   "recorded_verdict": null,
+   "expected_message_present": true,
+   "message_excerpt": "typedb_server.ServerError: server binary absent at /tmp/live-mutants-gat8yobv/no-such-typedb-server - build it (cargo build -p typedb_server_bin in sources/typedb) or pass --server-binary",
+   "outcome": "KILLED",
+   "argv": [
+    "/usr/local/bin/python3",
+    "/home/user/typedb-slatedb/tools/drivers/run_rust_behaviour.py",
+    "--lane",
+    "fork-classic",
+    "--suite",
+    "test_database",
+    "--out",
+    "/tmp/live-mutants-gat8yobv/server_binary_missing",
+    "--run-dir",
+    "/tmp/claude-0/-home-user-typedb-slatedb/85963f01-8967-5de9-ac03-5a7c7d75f1b3/scratchpad/live-mutants/m1",
+    "--target-dir",
+    "/home/user/typedb-slatedb/target/drivers-proj",
+    "--server-binary",
+    "/tmp/live-mutants-gat8yobv/no-such-typedb-server"
+   ]
+  },
+  {
+   "mutant": "server_port_occupied",
+   "exit_code": 1,
+   "sealed_COMPLETE": false,
+   "recorded_verdict": null,
+   "expected_message_present": true,
+   "message_excerpt": "typedb_server.ServerError: gRPC port 1729 is already bound. The upstream driver steps hardcode 127.0.0.1:1729, so this lane cannot move; it refuses to attach to a server it did not start.",
+   "outcome": "KILLED",
+   "argv": [
+    "/usr/local/bin/python3",
+    "/home/user/typedb-slatedb/tools/drivers/run_rust_behaviour.py",
+    "--lane",
+    "fork-classic",
+    "--suite",
+    "test_database",
+    "--out",
+    "/tmp/live-mutants-gat8yobv/server_port_occupied",
+    "--run-dir",
+    "/tmp/claude-0/-home-user-typedb-slatedb/85963f01-8967-5de9-ac03-5a7c7d75f1b3/scratchpad/live-mutants/m2",
+    "--target-dir",
+    "/home/user/typedb-slatedb/target/drivers-proj"
+   ]
+  },
+  {
+   "mutant": "suite_never_built",
+   "exit_code": 1,
+   "sealed_COMPLETE": false,
+   "recorded_verdict": "RED",
+   "expected_message_present": true,
+   "message_excerpt": "  \"test_database: cargo produced no test executable\",",
+   "outcome": "KILLED",
+   "argv": [
+    "/usr/local/bin/python3",
+    "/home/user/typedb-slatedb/tools/drivers/run_rust_behaviour.py",
+    "--lane",
+    "fork-classic",
+    "--suite",
+    "test_database",
+    "--out",
+    "/tmp/live-mutants-gat8yobv/suite_never_built",
+    "--run-dir",
+    "/tmp/claude-0/-home-user-typedb-slatedb/85963f01-8967-5de9-ac03-5a7c7d75f1b3/scratchpad/live-mutants/m3",
+    "--target-dir",
+    "/home/user/typedb-slatedb/target/drivers-proj",
+    "--skip-build",
+    "--target-dir",
+    "/tmp/live-mutants-gat8yobv/empty-target"
+   ]
+  }
+ ],
+ "summary": {
+  "total": 3,
+  "killed": 3,
+  "survived": 0,
+  "skipped": 0
+ }
+}

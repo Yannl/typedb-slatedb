@@ -1,0 +1,43 @@
+
+running 10 tests
+[2m2026-08-20T10:18:55.099136Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running schema query:
+define attribute age, value integer; attribute name, value string; entity person, owns age @card(0..), owns name @card(0..), plays membership:member; entity organisation, plays membership:group; relation membership, relates member, relates group;
+[2m2026-08-20T10:18:55.101905Z[0m [32m INFO[0m [2mquery::query_manager[0m[2m:[0m Schema query done.
+Query profile[measurements_enabled=true, total micros: 0]
+  CompileIR[enabled=true, total micros=0]
+    validation micros: 0
+    annotation micros: 0
+    compilation micros: 0
+  -----
+  Stage[root pattern id=0]
+    Define ~~ 0 us
+    Define pattern
+    [0] Define execution
+        ==> batches: 0, rows: 0, micros: 0, micros/row: NaN (raw seeks: 4, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+
+[2m2026-08-20T10:18:55.102577Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-20T10:18:55.104342Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-20T10:18:55.104880Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[1] with size 1.39 KiB; 1.39 KiB total
+[2m2026-08-20T10:18:55.104930Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[1]
+[2m2026-08-20T10:18:55.105060Z[0m [35mTRACE[0m [2mconcept::thing::statistics[0m[2m:[0m Statistics sync finished in 0 ms. Storage watermark was initially: SeqNr[1]. Current statistics sequence is from: SeqNr[1]
+[2m2026-08-20T10:18:55.108903Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running write query:
+insert
+        $p1 isa person, has name "Alice", has age 1, has age 5;
+        $p2 isa person, has name "Bob", has age 2;
+        $p3 isa person, has name "Chris", has age 5;
+        
+[2m2026-08-20T10:18:55.121974Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+[2m2026-08-20T10:18:55.124166Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+test fibonacci ... ok
+test function_binary ... ok
+test function_compiles ... ok
+test linear_reachability_in_tree ... ok
+test reduce_depends_on_cyclic_function ... ok
+test return_check ... ok
+test test_retries_at_collection ... ok
+test write_pipelines ... ok
+test test_retries_at_negation ... ok
+test quadratic_reachability_in_tree ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.64s
+

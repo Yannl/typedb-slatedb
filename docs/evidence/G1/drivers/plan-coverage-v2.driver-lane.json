@@ -1,0 +1,192 @@
+{
+ "schema": "plan-coverage-v2",
+ "plan_root": "72020aa01fafebddc41321e0c6100c158f80ae997037430871212049054a7a41",
+ "plan_rows": 23132,
+ "driver_rows": 6,
+ "exclusion_rows": 43,
+ "total_denominator_rows": 23138,
+ "covered_rows": 0,
+ "partial_rows": 113,
+ "uncovered_rows": 23025,
+ "by_family": {
+  "cargo-failpoint": {
+   "PARTIAL": 44,
+   "UNCOVERED": 176
+  },
+  "cargo-libtest": {
+   "PARTIAL": 63,
+   "UNCOVERED": 2212
+  },
+  "cucumber": {
+   "UNCOVERED": 20495
+  },
+  "driver": {
+   "PARTIAL": 6
+  },
+  "script": {
+   "UNCOVERED": 1
+  },
+  "static": {
+   "UNCOVERED": 141
+  }
+ },
+ "uncovered_reasons": [
+  {
+   "family": "cargo-failpoint",
+   "reason": "target evidence exists ONLY under a lane the plan does not require (historical U2S3 dirty-tree archive) - other-lane evidence covers no plan row",
+   "rows": 176
+  },
+  {
+   "family": "cargo-libtest",
+   "reason": "target evidence exists ONLY under a lane the plan does not require (historical U2S3 dirty-tree archive) - other-lane evidence covers no plan row",
+   "rows": 2212
+  },
+  {
+   "family": "cucumber",
+   "reason": "no leaf-level runner lane has produced archived evidence",
+   "rows": 20495
+  },
+  {
+   "family": "driver",
+   "reason": "official driver suite executed at leaf granularity for 4/4 suites (149 plan leaves with a per-scenario outcome); blocked: cluster: declared upstream only as typedb_behaviour_http_ts_cluster_test (http-ts/tests/behaviour/feature/BUILD), the multi-node cluster lane: it needs a replicated TypeDB deployment and the TLS certificates in //tool/test/resources:certificates. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here.; caveat:npm-install-not-pnpm-lock: http-ts declares packageManager 'pnpm@8.15.9' and ships pnpm-lock.yaml (sha256 5617f6a91f82ae909edfba27c88001612149a63323eac4e9f52af9b41fbedf92), but the pnpm available here is 10.x, which does not honour a v8 lockfile without migrating it. Dependencies were therefore resolved by npm within package.json's ranges. Every exact pin was verified to have installed at its pinned version, and the full resolved tree is archived as npm-tree.json, but the transitive closure is NOT the closure the committed pnpm lockfile names.; caveat:steps-typecheck-not-clean: tsc exited 2 with 9 diagnostic(s) while compiling the behaviour steps, and still emitted JavaScript for every source. Upstream's Bazel target compiles the steps against //http-ts:driver-lib, which emits only dist/index.cjs and deliberately no index.d.cts (http-ts/BUILD: 'TODO: should also output index.d.cts (works in filesystem but not in bazel)'), so the upstream type surface is not reproducible outside bazel. The executed evidence below rests on the emitted JavaScript plus a zero-undefined/zero-ambiguous step check, not on a clean typecheck.",
+   "rows": 2
+  },
+  {
+   "family": "driver",
+   "reason": "official driver suite executed at leaf granularity for 7/7 suites (213 plan leaves with a per-scenario outcome); blocked: driver/cluster: declared upstream only as typedb_behaviour_py_test_cluster (python/tests/behaviour/driver/cluster/BUILD), i.e. the multi-node cluster lane: it targets 127.0.0.1:11729 and needs three TypeDB servers with replication. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here.",
+   "rows": 2
+  },
+  {
+   "family": "driver",
+   "reason": "official driver suite executed at leaf granularity for 7/8 suites (213 plan leaves with a per-scenario outcome); blocked: test_cluster: requires a multi-node TypeDB cluster: the upstream test self-skips unless the `cluster` cargo feature is on (rust/tests/behaviour/driver/cluster.rs calls config::is_cluster()), and the steps then connect to Context::DEFAULT_CLUSTER_ADDRESSES 127.0.0.1:{11729,21729,31729}. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here. Executed and observed: the binary prints 'Skipping Cluster tests in a non-clustered environment' and runs zero scenarios.",
+   "rows": 2
+  },
+  {
+   "family": "script",
+   "reason": "no leaf-level runner lane has produced archived evidence",
+   "rows": 1
+  },
+  {
+   "family": "static",
+   "reason": "no leaf-level runner lane has produced archived evidence",
+   "rows": 141
+  }
+ ],
+ "partial_examples": [
+  {
+   "row": [
+    "cargo:typedb-admin:unit:typedb_admin::transport::unix::tests::accepts_socket_mode_0o600",
+    "U0"
+   ],
+   "evidence": [
+    {
+     "bundle": "docs/evidence/G1/u0-results-pass1",
+     "profile": "U0",
+     "cases": 8,
+     "exit_code": 101,
+     "dirty_tree": null
+    }
+   ]
+  },
+  {
+   "row": [
+    "cargo:typedb-admin:unit:typedb_admin::transport::unix::tests::rejects_directory",
+    "U0"
+   ],
+   "evidence": [
+    {
+     "bundle": "docs/evidence/G1/u0-results-pass1",
+     "profile": "U0",
+     "cases": 8,
+     "exit_code": 101,
+     "dirty_tree": null
+    }
+   ]
+  },
+  {
+   "row": [
+    "cargo:typedb-admin:unit:typedb_admin::transport::unix::tests::rejects_missing_path",
+    "U0"
+   ],
+   "evidence": [
+    {
+     "bundle": "docs/evidence/G1/u0-results-pass1",
+     "profile": "U0",
+     "cases": 8,
+     "exit_code": 101,
+     "dirty_tree": null
+    }
+   ]
+  }
+ ],
+ "evidence_bundles": [
+  {
+   "bundle": "docs/evidence/G1/u0-results-pass1",
+   "profile": "U0",
+   "rows": 104,
+   "profile_in_plan": true,
+   "tree_provenance": "UNRECORDED",
+   "dirty_tree": null,
+   "unjoinable_rows": 78,
+   "provenance_note": "this bundle records no executed-tree identity at all; 'dirty_tree: null' means UNKNOWN, never clean",
+   "unjoinable_reason": "target ids in the broken pre-fix '0.0.0:<target>' id space cannot be joined to catalogue targets without guessing; they contribute NOTHING to coverage"
+  },
+  {
+   "bundle": "docs/evidence/G1/u0-results-pass2-fixedenv",
+   "profile": "U0",
+   "rows": 10,
+   "profile_in_plan": true,
+   "tree_provenance": "UNRECORDED",
+   "dirty_tree": null,
+   "unjoinable_rows": 2,
+   "provenance_note": "this bundle records no executed-tree identity at all; 'dirty_tree: null' means UNKNOWN, never clean",
+   "unjoinable_reason": "target ids in the broken pre-fix '0.0.0:<target>' id space cannot be joined to catalogue targets without guessing; they contribute NOTHING to coverage"
+  },
+  {
+   "bundle": "docs/evidence/G3/u2s3-full-3",
+   "profile": "U2S3",
+   "rows": 106,
+   "profile_in_plan": false,
+   "tree_provenance": "recorded",
+   "dirty_tree": true,
+   "unjoinable_rows": 0,
+   "lane_note": "profile 'U2S3' is not a plan profile; this bundle's rows are other-lane evidence and cover no plan row"
+  }
+ ],
+ "driver_rows_detail": [
+  {
+   "row_id": "driver:rust:rocksdb",
+   "status": "PARTIAL",
+   "reason": "official driver suite executed at leaf granularity for 7/8 suites (213 plan leaves with a per-scenario outcome); blocked: test_cluster: requires a multi-node TypeDB cluster: the upstream test self-skips unless the `cluster` cargo feature is on (rust/tests/behaviour/driver/cluster.rs calls config::is_cluster()), and the steps then connect to Context::DEFAULT_CLUSTER_ADDRESSES 127.0.0.1:{11729,21729,31729}. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here. Executed and observed: the binary prints 'Skipping Cluster tests in a non-clustered environment' and runs zero scenarios."
+  },
+  {
+   "row_id": "driver:rust:slatedb",
+   "status": "PARTIAL",
+   "reason": "official driver suite executed at leaf granularity for 7/8 suites (213 plan leaves with a per-scenario outcome); blocked: test_cluster: requires a multi-node TypeDB cluster: the upstream test self-skips unless the `cluster` cargo feature is on (rust/tests/behaviour/driver/cluster.rs calls config::is_cluster()), and the steps then connect to Context::DEFAULT_CLUSTER_ADDRESSES 127.0.0.1:{11729,21729,31729}. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here. Executed and observed: the binary prints 'Skipping Cluster tests in a non-clustered environment' and runs zero scenarios."
+  },
+  {
+   "row_id": "driver:python:rocksdb",
+   "status": "PARTIAL",
+   "reason": "official driver suite executed at leaf granularity for 7/7 suites (213 plan leaves with a per-scenario outcome); blocked: driver/cluster: declared upstream only as typedb_behaviour_py_test_cluster (python/tests/behaviour/driver/cluster/BUILD), i.e. the multi-node cluster lane: it targets 127.0.0.1:11729 and needs three TypeDB servers with replication. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+  },
+  {
+   "row_id": "driver:python:slatedb",
+   "status": "PARTIAL",
+   "reason": "official driver suite executed at leaf granularity for 7/7 suites (213 plan leaves with a per-scenario outcome); blocked: driver/cluster: declared upstream only as typedb_behaviour_py_test_cluster (python/tests/behaviour/driver/cluster/BUILD), i.e. the multi-node cluster lane: it targets 127.0.0.1:11729 and needs three TypeDB servers with replication. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+  },
+  {
+   "row_id": "driver:typescript:rocksdb",
+   "status": "PARTIAL",
+   "reason": "official driver suite executed at leaf granularity for 4/4 suites (149 plan leaves with a per-scenario outcome); blocked: cluster: declared upstream only as typedb_behaviour_http_ts_cluster_test (http-ts/tests/behaviour/feature/BUILD), the multi-node cluster lane: it needs a replicated TypeDB deployment and the TLS certificates in //tool/test/resources:certificates. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here.; caveat:npm-install-not-pnpm-lock: http-ts declares packageManager 'pnpm@8.15.9' and ships pnpm-lock.yaml (sha256 5617f6a91f82ae909edfba27c88001612149a63323eac4e9f52af9b41fbedf92), but the pnpm available here is 10.x, which does not honour a v8 lockfile without migrating it. Dependencies were therefore resolved by npm within package.json's ranges. Every exact pin was verified to have installed at its pinned version, and the full resolved tree is archived as npm-tree.json, but the transitive closure is NOT the closure the committed pnpm lockfile names.; caveat:steps-typecheck-not-clean: tsc exited 2 with 9 diagnostic(s) while compiling the behaviour steps, and still emitted JavaScript for every source. Upstream's Bazel target compiles the steps against //http-ts:driver-lib, which emits only dist/index.cjs and deliberately no index.d.cts (http-ts/BUILD: 'TODO: should also output index.d.cts (works in filesystem but not in bazel)'), so the upstream type surface is not reproducible outside bazel. The executed evidence below rests on the emitted JavaScript plus a zero-undefined/zero-ambiguous step check, not on a clean typecheck."
+  },
+  {
+   "row_id": "driver:typescript:slatedb",
+   "status": "PARTIAL",
+   "reason": "official driver suite executed at leaf granularity for 4/4 suites (149 plan leaves with a per-scenario outcome); blocked: cluster: declared upstream only as typedb_behaviour_http_ts_cluster_test (http-ts/tests/behaviour/feature/BUILD), the multi-node cluster lane: it needs a replicated TypeDB deployment and the TLS certificates in //tool/test/resources:certificates. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here.; caveat:npm-install-not-pnpm-lock: http-ts declares packageManager 'pnpm@8.15.9' and ships pnpm-lock.yaml (sha256 5617f6a91f82ae909edfba27c88001612149a63323eac4e9f52af9b41fbedf92), but the pnpm available here is 10.x, which does not honour a v8 lockfile without migrating it. Dependencies were therefore resolved by npm within package.json's ranges. Every exact pin was verified to have installed at its pinned version, and the full resolved tree is archived as npm-tree.json, but the transitive closure is NOT the closure the committed pnpm lockfile names.; caveat:steps-typecheck-not-clean: tsc exited 2 with 9 diagnostic(s) while compiling the behaviour steps, and still emitted JavaScript for every source. Upstream's Bazel target compiles the steps against //http-ts:driver-lib, which emits only dist/index.cjs and deliberately no index.d.cts (http-ts/BUILD: 'TODO: should also output index.d.cts (works in filesystem but not in bazel)'), so the upstream type surface is not reproducible outside bazel. The executed evidence below rests on the emitted JavaScript plus a zero-undefined/zero-ambiguous step check, not on a clean typecheck."
+  }
+ ],
+ "driver_row_status_ledger": "docs/evidence/G1/drivers/driver-row-status.json",
+ "partial_meaning": "PARTIAL (cargo families) = the leaf's cargo target produced an aggregate libtest row in the required lane; the individual leaf outcome was never recorded. PARTIAL (driver family) = the official driver suite really executed at leaf granularity and its seal re-derived here, but at least one declared suite of that driver's official corpus could not run in this environment and names its exact external precondition. PARTIAL rows are NOT covered in either family.",
+ "plan_satisfied": false,
+ "statement": "THE PLAN IS NOT SATISFIED. 0 of 23138 denominator rows are covered at leaf granularity; 113 are PARTIAL (target-granularity aggregate evidence only); 23025 are uncovered (including 0 NOT_IMPLEMENTED official-driver rows required by v17-A17.5; 0 driver row(s) are covered and 6 partial on executed, independently re-derived leaf evidence). The plan is the denominator of qualification, not a pass, and no claim of qualification may cite this report as green."
+}

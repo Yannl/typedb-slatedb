@@ -1,0 +1,229 @@
+{
+ "schema": "driver-lane-mutants-v1",
+ "bundle": "docs/evidence/G1/drivers/python-rocksdb-fork-classic",
+ "baseline": {
+  "exit_code": 0,
+  "anomalies": [],
+  "rederived_verdict": "GREEN",
+  "qualification_pass": true
+ },
+ "mutants": [
+  {
+   "mutant": "backend_witness_stripped",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "server[connection/database]: no backend witness - the backend the server built was never observed, only requested",
+    "recorded verdict is GREEN but this verifier re-derives RED from the archived bytes"
+   ],
+   "anomaly_count": 2,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "dropped_leaf_rows",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "connection/database: recorded leaf ids do not equal an independent re-enumeration of connection/database.feature (0 recorded vs 16 enumerated)",
+    "connection/database: 0 leaf row(s) claim an executed outcome but the log carries 16 scenario block(s) - fabricated or lost rows",
+    "16 plan leaf/leaves in scope have no leaf row (['cucumber:connection/database.feature::cannot create database with an incorrect name', 'cucumber:connection/database.feature::connection can delete many databases', 'cucumber:connection/database.feature::create delete and recreate a database'])"
+   ],
+   "anomaly_count": 4,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "empty_log",
+   "sophistication": "NAIVE",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "suite connection/database: log docs/evidence/G1/drivers/python-rocksdb-fork-classic/connection__database.log hashes to e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 but the row records b8d79cfb18bd13d0a3c86c795ae3f0d677ddebedb3388d169af00da1a387bafe - the bytes changed after the run",
+    "connection/database: raw log is empty - an empty log is never evidence",
+    "connection/database: the console log carries no scenario summary - the structured stream is then the only account of the run and nothing corroborates it"
+   ],
+   "anomaly_count": 7,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "empty_result_file",
+   "sophistication": "NAIVE",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "driver-results.json does not parse: Expecting value: line 1 column 1 (char 0)"
+   ],
+   "anomaly_count": 1,
+   "rederived_verdict": null,
+   "qualification_pass": false
+  },
+  {
+   "mutant": "fabricated_leaf_row",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "connection/database: recorded leaf ids do not equal an independent re-enumeration of connection/database.feature (17 recorded vs 16 enumerated)",
+    "connection/database: 17 leaf row(s) claim an executed outcome but the log carries 16 scenario block(s) - fabricated or lost rows",
+    "leaf cucumber:connection/database.feature::create one database with name <name>#ex1#FABRICATED claims in_plan but the plan has no such leaf - fabricated plan membership"
+   ],
+   "anomaly_count": 4,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "flipped_leaf_status",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "connection/database: leaf cucumber:connection/database.feature::create one database with name <name>#ex1 records status FAILED but the log re-parses to PASSED",
+    "recorded verdict is GREEN but this verifier re-derives RED from the archived bytes"
+   ],
+   "anomaly_count": 2,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "forged_backend_kind",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "server[connection/database]: archived backend-spec marker says kind='tampered-classic' but profile U1 requires 'classic'",
+    "recorded verdict is GREEN but this verifier re-derives RED from the archived bytes"
+   ],
+   "anomaly_count": 2,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "forged_feature_hash",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "connection/database: connection/database.feature hashes to c14663578b094d67b0a570d9b30f7340d1e9151a1bf9021b9b6fa9f02cce0f1e but the row records 0000000000000000000000000000000000000000000000000000000000000000",
+    "recorded verdict is GREEN but this verifier re-derives RED from the archived bytes"
+   ],
+   "anomaly_count": 2,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "forged_plan_membership",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "leaf cucumber:driver/migration.feature::Export and import database with tricky schema and data. Verify that the result is identical to the original claims in_plan but the plan has no such leaf - fabricated plan membership",
+    "recorded verdict is GREEN but this verifier re-derives RED from the archived bytes"
+   ],
+   "anomaly_count": 2,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "forged_step_counts",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "connection/database: leaf cucumber:connection/database.feature::create one database with name <name>#ex1 records steps_passed=13 but the log re-parses to 6",
+    "recorded verdict is GREEN but this verifier re-derives RED from the archived bytes"
+   ],
+   "anomaly_count": 2,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "forged_verdict_enum",
+   "sophistication": "NAIVE",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "verdict policy_verdict is 'TOTAL_QUALITY_PASS', not in {GREEN,RED} - forged or foreign verdict"
+   ],
+   "anomaly_count": 1,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "server_never_booted",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "server[connection/database]: no readiness probes recorded - readiness was assumed, not observed",
+    "recorded verdict is GREEN but this verifier re-derives RED from the archived bytes"
+   ],
+   "anomaly_count": 2,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "server_probe_failed",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "server[connection/database]: the last readiness probe is not a success ({\"t\": 1.0, \"error\": \"ConnectionRefusedError: [Errno 111]\"}) - the suite ran against a server that was never proven up",
+    "recorded verdict is GREEN but this verifier re-derives RED from the archived bytes"
+   ],
+   "anomaly_count": 2,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "suite_never_started",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "connection/database: the console log carries no scenario summary - the structured stream is then the only account of the run and nothing corroborates it",
+    "recorded verdict is GREEN but this verifier re-derives RED from the archived bytes"
+   ],
+   "anomaly_count": 2,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "truncated_run",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "connection/database: the console log's own scenario tally {'passed': 16, 'failed': 0, 'skipped': 0} disagrees with the structured stream re-derived here {'passed': 2, 'failed': 0, 'skipped': 0} - the two artefacts the run produced do not describe the same run",
+    "connection/database: 16 leaf row(s) claim an executed outcome but the log carries 2 scenario block(s) - fabricated or lost rows",
+    "recorded verdict is GREEN but this verifier re-derives RED from the archived bytes"
+   ],
+   "anomaly_count": 3,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "unsealed_edit",
+   "sophistication": "NAIVE",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "recomputed bundle root 81ad5214a24d944aab21f7f3ca31656d0aa973851043ab303f0c30c616958d29 != sidecar manifest root a6dc3173fa364e193831ce26a59064a30520ff2fc6a56aabc30e7f49d02809bd - a consumed file changed after sealing",
+    "verdict records bundle_root a6dc3173fa364e193831ce26a59064a30520ff2fc6a56aabc30e7f49d02809bd but the bundle recomputes to 81ad5214a24d944aab21f7f3ca31656d0aa973851043ab303f0c30c616958d29",
+    "COMPLETE binds root a6dc3173fa364e193831ce26a59064a30520ff2fc6a56aabc30e7f49d02809bd but the bundle recomputes to 81ad5214a24d944aab21f7f3ca31656d0aa973851043ab303f0c30c616958d29 - modified after sealing"
+   ],
+   "anomaly_count": 4,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  }
+ ],
+ "summary": {
+  "total": 16,
+  "killed": 16,
+  "survived": 0,
+  "errored": 0
+ }
+}

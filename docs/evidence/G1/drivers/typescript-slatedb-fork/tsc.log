@@ -1,0 +1,15 @@
+tests/behaviour/steps/analyze.ts(29,5): error TS2724: '"../../../dist/index.cjs"' has no exported member named 'QueryConstraintAny'. Did you mean 'ConstraintAny'?
+tests/behaviour/steps/analyze.ts(30,5): error TS2305: Module '"../../../dist/index.cjs"' has no exported member 'QueryVertex'.
+tests/behaviour/steps/analyze.ts(45,43): error TS2339: Property 'err' does not exist on type 'ApiResponse<AnalyzeResponse>'.
+  Property 'err' does not exist on type 'ApiOkResponse<AnalyzeResponse>'.
+tests/behaviour/steps/analyze.ts(46,34): error TS2339: Property 'ok' does not exist on type 'ApiResponse<AnalyzeResponse>'.
+  Property 'ok' does not exist on type 'ApiErrorResponse'.
+tests/behaviour/steps/analyze.ts(59,50): error TS2345: Argument of type 'AnalyzeResponse' is not assignable to parameter of type '{ query: AnalyzedPipeline; given: { variableAnnotations: { [name: string]: VariableAnnotations; }; }; }'.
+  Types of property 'given' are incompatible.
+    Property 'variableAnnotations' is missing in type 'Given' but required in type '{ variableAnnotations: { [name: string]: VariableAnnotations; }; }'.
+tests/behaviour/steps/analyze.ts(277,17): error TS2367: This comparison appears to be unintentional because the types '"Ascending" | "Descending"' and '"ascending"' have no overlap.
+tests/behaviour/steps/analyze.ts(285,54): error TS2339: Property 'map' does not exist on type 'string'.
+tests/behaviour/steps/query.ts(398,40): error TS2345: Argument of type 'AnalyzedPipeline | QueryStructureLegacy' is not assignable to parameter of type 'AnalyzedPipeline'.
+  Type 'QueryStructureLegacy' is missing the following properties from type 'AnalyzedPipeline': conjunctions, stages
+tests/behaviour/steps/query.ts(399,42): error TS2345: Argument of type 'AnalyzedPipeline | QueryStructureLegacy' is not assignable to parameter of type 'AnalyzedPipeline'.
+  Type 'QueryStructureLegacy' is missing the following properties from type 'AnalyzedPipeline': conjunctions, stages

@@ -1,0 +1,15 @@
+
+running 10 tests
+test metrics::histogram_metrics::histogram_tests::empty_histogram_snapshots_with_zeros_everywhere ... ok
+test metrics::histogram_metrics::histogram_tests::bucketing_picks_the_smallest_upper_bound_that_includes_the_observation ... ok
+test metrics::histogram_metrics::histogram_tests::count_histogram_observes_u64_directly ... ok
+test metrics::histogram_metrics::histogram_tests::sum_accumulates_in_native_units ... ok
+test metrics::histogram_metrics::histogram_tests::concurrent_observers_do_not_lose_observations ... ok
+test reports::monitoring_section::tests::extensions_do_not_leak_into_posthog_payload ... ok
+test reports::monitoring_section::tests::concurrent_observers_do_not_lose_samples_and_durations_match_external_total ... ok
+test reports::monitoring_section::tests::register_is_idempotent_on_name_and_has_monitoring_extension_reflects_it ... ok
+test reports::monitoring_section::tests::register_then_scrape_emits_extension_in_prometheus_and_json ... ok
+test reports::monitoring_section::tests::measured_durations_match_observation_within_tolerance ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+

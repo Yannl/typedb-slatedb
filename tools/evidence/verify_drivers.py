@@ -299,6 +299,41 @@ def reparse_cucumberjs(path):
     return out
 
 
+def console_scenario_tally(text, harness):
+    """The scenario tally the harness printed to its CONSOLE log.
+
+    The console log and the machine-readable stream are two artefacts written
+    by the SAME process. Requiring them to agree is what stops a fabricated
+    structured stream (or a suite that never started but whose structured
+    stream was written by hand) from passing: the forger has to lie
+    consistently in two formats, and the console format carries the
+    harness's own independently computed totals.
+
+    Returns {'passed':n,'failed':n,'skipped':n} or None when the log carries
+    no summary at all - which is itself reported by the caller.
+    """
+    if harness == "python-behave-json":
+        m = re.search(r"^(\d+) scenarios? passed, (\d+) failed, (\d+) skipped",
+                      text, re.M)
+        if not m:
+            return None
+        return {"passed": int(m.group(1)), "failed": int(m.group(2)),
+                "skipped": int(m.group(3))}
+    if harness == "typescript-cucumberjs-messages":
+        m = re.search(r"^(\d+) scenarios? \(([^)]*)\)", text, re.M)
+        if not m:
+            return None
+        out = {"passed": 0, "failed": 0, "skipped": 0, "undefined": 0,
+               "ambiguous": 0, "pending": 0}
+        for n, what in re.findall(r"(\d+) (passed|failed|skipped|undefined|"
+                                  r"ambiguous|pending)", m.group(2)):
+            out[what] = int(n)
+        return {"passed": out["passed"],
+                "failed": out["failed"] + out["undefined"] + out["ambiguous"],
+                "skipped": out["skipped"] + out["pending"]}
+    return None
+
+
 # ---------------------------------------------------------------- verifying
 
 def git(repo, *args):
@@ -475,6 +510,22 @@ def verify(bundle_dir, repo, qualification=False):
             scen = (reparse_behave(jp) if harness == "python-behave-json"
                     else reparse_cucumberjs(jp))
             summary, libtest = None, None
+            console = console_scenario_tally(text, harness)
+            if console is None:
+                A.append(f"{sid}: the console log carries no scenario summary - "
+                         f"the structured stream is then the only account of "
+                         f"the run and nothing corroborates it")
+            else:
+                tally = {"passed": 0, "failed": 0, "skipped": 0}
+                for sc in scen:
+                    tally[{"PASSED": "passed", "FAILED": "failed",
+                           "SKIPPED": "skipped",
+                           "EMPTY": "failed"}[sc["status"]]] += 1
+                if tally != console:
+                    A.append(f"{sid}: the console log's own scenario tally "
+                             f"{console} disagrees with the structured stream "
+                             f"re-derived here {tally} - the two artefacts the "
+                             f"run produced do not describe the same run")
             if harness == "typescript-cucumberjs-messages":
                 und = sum(1 for x in scen if x.get("undefined"))
                 if und:

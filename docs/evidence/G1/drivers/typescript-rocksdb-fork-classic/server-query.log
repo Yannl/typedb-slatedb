@@ -1,0 +1,31 @@
+=====================================================================================
+     ________ __      __ _____    _______  _____    _____       _______  _______
+    |__    __|\  \  /  /|   _  \ |   _   ||   _  \ |   _  \    |   _   ||   _   |
+       |  |    \  \/  / |  | |  ||  | |__||  | |  ||  | |  |   |  | |  ||  | |__|
+       |  |     \    /  |  |/  / |  |___  |  | |  ||  |/  /    |  | |__||  |___
+       |  |      |  |   |   __/  |   ___| |  | |  ||   _  \    |  |  __ |   ___|
+       |  |      |  |   |  |     |  |  __ |  | |  ||  | |  |   |  | |  ||  |  __
+       |  |      |  |   |  |     |  |_|  ||  |/  / |  |/  /    |  |_|  ||  |_|  |
+       |__|      |__|   |__|     |_______||_____/  |_____/     |_______||_______|
+
+=====================================================================================
+
+Running TypeDB CE 3.12.3 in development mode.
+Serving:
+  gRPC:       127.0.0.1:1729
+  HTTP:       127.0.0.1:8729
+  Admin:      disabled
+  Monitoring: disabled
+TLS: disabled
+  WARNING: TLS NOT ENABLED. Credentials are transmitted unencrypted in plaintext.
+  Drivers must be configured to connect *without TLS*.
+
+To connect:
+  Studio:  https://studio.typedb.com/connect?address=http://127.0.0.1:8729&username=admin
+  Console: typedb console --address 127.0.0.1:1729 --tls-disabled --username admin
+
+2026-08-20T10:08:28.791535Z  INFO ThreadId(01) server/lib.rs:485: 
+Ready!
+
+Received SIGTERM. Initiating shutdown...
+Exited.

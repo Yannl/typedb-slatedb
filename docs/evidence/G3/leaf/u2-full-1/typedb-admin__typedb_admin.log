@@ -1,0 +1,13 @@
+
+running 8 tests
+test transport::unix::tests::accepts_socket_mode_0o600 ... ok
+test transport::unix::tests::rejects_missing_path ... ok
+test transport::unix::tests::rejects_directory ... ok
+test transport::unix::tests::rejects_regular_file ... ok
+test transport::unix::tests::rejects_socket_mode_0o400 ... ok
+test transport::unix::tests::rejects_socket_mode_0o644 ... ok
+test transport::unix::tests::rejects_socket_mode_0o700 ... ok
+test transport::unix::tests::rejects_socket_mode_0o660 ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

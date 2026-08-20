@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
@@ -109,11 +110,14 @@ pub fn run(repo_root: &Path, cmd: &Cmd, timeout: Duration) -> CmdResult {
     };
 
     // Drain the pipes on background threads so a chatty gate cannot deadlock on
-    // a full pipe buffer while we are polling for the timeout.
-    let mut out_pipe = child.stdout.take();
-    let mut err_pipe = child.stderr.take();
-    let out_handle = std::thread::spawn(move || read_all(&mut out_pipe));
-    let err_handle = std::thread::spawn(move || read_all(&mut err_pipe));
+    // a full pipe buffer while we are polling for the timeout. The buffers are
+    // shared rather than returned from `join`, because a killed child can leave
+    // grandchildren holding the write end of the pipe: joining would then block
+    // for as long as the orphan lives, defeating the timeout it is enforcing.
+    let out_buf: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+    let err_buf: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+    let out_handle = spawn_reader(child.stdout.take(), Arc::clone(&out_buf));
+    let err_handle = spawn_reader(child.stderr.take(), Arc::clone(&err_buf));
 
     let mut timed_out = false;
     let status = loop {
@@ -132,8 +136,14 @@ pub fn run(repo_root: &Path, cmd: &Cmd, timeout: Duration) -> CmdResult {
         }
     };
 
-    let stdout = out_handle.join().unwrap_or_default();
-    let stderr = err_handle.join().unwrap_or_default();
+    if !timed_out {
+        // The child exited on its own, so the pipes are closing; collect
+        // everything it wrote.
+        let _ = out_handle.join();
+        let _ = err_handle.join();
+    }
+    let stdout = snapshot(&out_buf);
+    let stderr = snapshot(&err_buf);
 
     CmdResult {
         command: display,
@@ -146,12 +156,28 @@ pub fn run(repo_root: &Path, cmd: &Cmd, timeout: Duration) -> CmdResult {
     }
 }
 
-fn read_all<R: std::io::Read>(pipe: &mut Option<R>) -> String {
-    let mut buf = Vec::new();
-    if let Some(p) = pipe.as_mut() {
-        let _ = p.read_to_end(&mut buf);
-    }
-    String::from_utf8_lossy(&buf).to_string()
+fn spawn_reader<R: std::io::Read + Send + 'static>(
+    pipe: Option<R>,
+    buf: Arc<Mutex<Vec<u8>>>,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let Some(mut pipe) = pipe else { return };
+        let mut chunk = [0u8; 8192];
+        loop {
+            match pipe.read(&mut chunk) {
+                Ok(0) | Err(_) => return,
+                Ok(n) => {
+                    if let Ok(mut b) = buf.lock() {
+                        b.extend_from_slice(&chunk[..n]);
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn snapshot(buf: &Arc<Mutex<Vec<u8>>>) -> String {
+    buf.lock().map(|b| String::from_utf8_lossy(&b).to_string()).unwrap_or_default()
 }
 
 /// Free space, in gigabytes, on the filesystem holding `path`.
@@ -225,9 +251,25 @@ mod tests {
 
     #[test]
     fn a_hung_command_times_out_and_is_not_a_success() {
+        let started = Instant::now();
         let r = run(Path::new("."), &Cmd::new("sh", &["-c", "sleep 30"]), Duration::from_millis(300));
         assert!(r.timed_out);
         assert!(!r.success());
+        // A killed child can leave a grandchild holding the pipe. The timeout
+        // must still return promptly, or a hung gate would hang the controller
+        // that is supposed to be enforcing the limit.
+        assert!(started.elapsed() < Duration::from_secs(5), "timeout took {:?}", started.elapsed());
+    }
+
+    #[test]
+    fn output_written_before_a_timeout_is_still_captured() {
+        let r = run(
+            Path::new("."),
+            &Cmd::new("sh", &["-c", "printf 'partial output\n'; sleep 30"]),
+            Duration::from_millis(500),
+        );
+        assert!(r.timed_out);
+        assert!(r.stdout.contains("partial output"), "stdout was {:?}", r.stdout);
     }
 
     #[test]

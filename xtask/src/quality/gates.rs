@@ -78,7 +78,7 @@ const DEFS: &[GateDef] = &[
     def("py.pip_audit", "B", Some("python"), Weight::Light, &["pip-audit"], false),
     def("py.crap", "B", Some("python"), Weight::Light, &["crap4py"], true),
     // Architecture and duplication.
-    def("arch.rust_deps", "B", None, Weight::Heavy, &[], false),
+    def("arch.rust_deps", "B", None, Weight::Light, &[], false),
     def("dup.jscpd_delta", "B", None, Weight::Light, &["jscpd"], false),
     def("dup.jscpd_full", "C", None, Weight::Light, &["jscpd"], false),
 ];
@@ -121,6 +121,19 @@ pub struct Ctx<'a> {
     pub python_projects: Vec<String>,
     pub policy_digest: String,
     pub toolchain_digest: String,
+}
+
+impl Ctx<'_> {
+    /// TypeScript project roots that carry every one of `required` (a file or
+    /// directory name), so a gate is never pointed at a project that cannot
+    /// meaningfully answer it.
+    pub fn ts_projects_with(&self, required: &[&str]) -> Vec<String> {
+        self.ts_projects
+            .iter()
+            .filter(|p| required.iter().all(|r| self.repo_root.join(p).join(r).exists()))
+            .cloned()
+            .collect()
+    }
 }
 
 const ARTIFACTS: &str = "artifacts/quality";
@@ -167,8 +180,10 @@ pub fn commands(id: &str, ctx: &Ctx) -> Vec<Cmd> {
             }
         }
         "rust.machete" => {
+            // Plain binary, not the `cargo machete` subcommand form; see the
+            // note on [tool.cargo-machete] in .quality/tools.lock.toml.
             for m in &ctx.rust_manifests_all {
-                out.push(Cmd::new("cargo", &["machete", "--with-metadata", m.trim_end_matches("/Cargo.toml")]));
+                out.push(Cmd::new("cargo-machete", &["--with-metadata", m.trim_end_matches("/Cargo.toml")]));
             }
         }
         "rust.hack.each_feature" => {
@@ -302,23 +317,28 @@ pub fn commands(id: &str, ctx: &Ctx) -> Vec<Cmd> {
                 out.push(Cmd::new("cargo", &["semver-checks", "check-release", "--manifest-path", m, "--workspace"]));
             }
         }
+        // TypeScript gates only target projects that actually carry the
+        // configuration the gate needs. Pointing `tsc --noEmit` at a plain
+        // ESM tooling directory with no tsconfig.json produces a usage error
+        // that would be recorded as a quality failure of the code, which it is
+        // not.
         "ts.typecheck" => {
-            for p in &ctx.ts_projects {
-                out.push(Cmd::new("npx", &["--no-install", "tsc", "--noEmit"]).in_dir(p));
+            for p in ctx.ts_projects_with(&["tsconfig.json"]) {
+                out.push(Cmd::new("npx", &["--no-install", "tsc", "--noEmit"]).in_dir(&p));
             }
         }
         "ts.oxlint" => {
-            for p in &ctx.ts_projects {
-                out.push(Cmd::new("npx", &["--no-install", "oxlint", "."]).in_dir(p));
+            for p in ctx.ts_projects_with(&["package.json"]) {
+                out.push(Cmd::new("npx", &["--no-install", "oxlint", "."]).in_dir(&p));
             }
         }
         "ts.knip" => {
-            for p in &ctx.ts_projects {
-                out.push(Cmd::new("npx", &["--no-install", "knip"]).in_dir(p));
+            for p in ctx.ts_projects_with(&["package.json"]) {
+                out.push(Cmd::new("npx", &["--no-install", "knip"]).in_dir(&p));
             }
         }
         "ts.depcruise" => {
-            for p in &ctx.ts_projects {
+            for p in ctx.ts_projects_with(&["tsconfig.json", "src"]) {
                 out.push(
                     Cmd::new(
                         "npx",
@@ -330,18 +350,18 @@ pub fn commands(id: &str, ctx: &Ctx) -> Vec<Cmd> {
                             "src",
                         ],
                     )
-                    .in_dir(p),
+                    .in_dir(&p),
                 );
             }
         }
         "ts.crap" => {
-            for p in &ctx.ts_projects {
-                out.push(Cmd::new("npx", &["--no-install", "crap4ts", "--format", "json"]).in_dir(p));
+            for p in ctx.ts_projects_with(&["tsconfig.json"]) {
+                out.push(Cmd::new("npx", &["--no-install", "crap4ts", "--format", "json"]).in_dir(&p));
             }
         }
         "ts.mutation" => {
-            for p in &ctx.ts_projects {
-                out.push(Cmd::new("npx", &["--no-install", "stryker", "run"]).in_dir(p));
+            for p in ctx.ts_projects_with(&["package.json"]) {
+                out.push(Cmd::new("npx", &["--no-install", "stryker", "run"]).in_dir(&p));
             }
         }
         "py.ruff.check" => {
@@ -501,9 +521,7 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
                 d.language,
                 d.advisory,
                 Status::InfrastructureFailure,
-                &format!(
-                    "insufficient build space: gate `{id}` needs {required:.1} GB free, {free:.1} GB available"
-                ),
+                &format!("insufficient build space: gate `{id}` needs {required:.1} GB free, {free:.1} GB available"),
             );
             r.command = cmds.first().map(|c| c.display());
             r.remediation = Some(format!(
@@ -517,28 +535,6 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
 
     if is_internal(id) {
         return internal(id, d, ctx);
-    }
-
-    // Build space. An ENOSPC part-way through a compile is indistinguishable
-    // from a tool bug, so refuse up front and say exactly why.
-    let required = d.weight.required_free_gb(&ctx.policy.execution);
-    if let Some(free) = exec::free_disk_gb(ctx.repo_root) {
-        if free < required {
-            let mut r = GateResult::new(
-                id,
-                d.tier,
-                d.language,
-                d.advisory,
-                Status::InfrastructureFailure,
-                &format!("insufficient build space: gate `{id}` needs {required:.1} GB free, {free:.1} GB available"),
-            );
-            r.command = Some(cmds[0].display());
-            r.remediation = Some(format!(
-                "free at least {:.1} GB, or run this gate on a machine with more disk; the gate was not attempted and no quality conclusion may be drawn from this run",
-                required - free
-            ));
-            return r;
-        }
     }
 
     let timeout = Duration::from_secs(ctx.policy.execution.gate_timeout_secs);
@@ -983,9 +979,22 @@ struct ArchSection {
 
 #[derive(Debug, serde::Deserialize)]
 struct ForbiddenEdge {
+    /// Optional workspace scope: the directory of the workspace manifest the
+    /// rule applies to, e.g. `tools` or `fork/typedb`. Absent means every
+    /// in-scope workspace.
+    #[serde(default)]
+    workspace: Option<String>,
     from: String,
     to: String,
     reason: String,
+}
+
+impl ForbiddenEdge {
+    fn applies_to(&self, manifest: &str) -> bool {
+        let Some(scope) = &self.workspace else { return true };
+        let dir = manifest.trim_end_matches("/Cargo.toml");
+        scope == dir || dir.rsplit('/').next() == Some(scope.as_str())
+    }
 }
 
 /// Crate-level dependency direction from `cargo metadata` (spec §6).
@@ -1035,7 +1044,12 @@ fn arch_rust_deps(id: &str, d: &GateDef, ctx: &Ctx) -> GateResult {
 
     let mut violations: Vec<String> = Vec::new();
     for m in &ctx.rust_manifests_production {
-        let cmd = Cmd::new("cargo", &["metadata", "--format-version", "1", "--manifest-path", m, "--locked"]);
+        // `--no-deps` restricts `packages` to the workspace's own members, so
+        // the model is evaluated over *declared* edges rather than over the
+        // whole resolve graph. Whether the product actually links a particular
+        // source of a crate is a different question with a different owner.
+        let cmd =
+            Cmd::new("cargo", &["metadata", "--format-version", "1", "--no-deps", "--manifest-path", m, "--locked"]);
         let res = exec::run(ctx.repo_root, &cmd, Duration::from_secs(ctx.policy.execution.gate_timeout_secs));
         if !res.success() {
             return GateResult::new(
@@ -1064,10 +1078,15 @@ fn arch_rust_deps(id: &str, d: &GateDef, ctx: &Ctx) -> GateResult {
         for pkg in &packages {
             let name = pkg.get("name").and_then(|n| n.as_str()).unwrap_or("");
             for dep in pkg.get("dependencies").and_then(|d| d.as_array()).cloned().unwrap_or_default() {
+                // Normal and build dependencies only: a dev-dependency does not
+                // cross an architecture boundary in the shipped artefact.
+                if dep.get("kind").and_then(|k| k.as_str()) == Some("dev") {
+                    continue;
+                }
                 let dep_name = dep.get("name").and_then(|n| n.as_str()).unwrap_or("");
-                for edge in &rules.architecture.forbidden_edge {
+                for edge in rules.architecture.forbidden_edge.iter().filter(|e| e.applies_to(m)) {
                     if super::glob::matches(&edge.from, name) && super::glob::matches(&edge.to, dep_name) {
-                        violations.push(format!("  {name} -> {dep_name}: {}", edge.reason));
+                        violations.push(format!("  [{m}] {name} -> {dep_name}: {}", edge.reason));
                     }
                 }
             }
@@ -1337,6 +1356,9 @@ mod tests {
         assert!(cov[1].contains("--lcov --output-path artifacts/quality/tools.lcov"), "{:?}", cov);
         let crap = display("rust.crap");
         assert!(crap[0].contains("--missing pessimistic"), "{:?}", crap);
+        // Regression guard: `cargo machete <args>` misparses its own
+        // subcommand name when spawned from inside a cargo-started process.
+        assert_eq!(display("rust.machete"), vec!["cargo-machete --with-metadata tools"]);
         let mutation = display("rust.mutation.diff");
         assert!(mutation[0].contains("--in-diff artifacts/quality/pr.diff"), "{:?}", mutation);
         assert!(mutation[0].contains("--test-tool=nextest"), "{:?}", mutation);
@@ -1389,6 +1411,44 @@ mod tests {
             for t in d.tools {
                 assert!(lock.get(t).is_some(), "gate `{}` requires unpinned tool `{t}`", d.id);
             }
+        }
+    }
+
+    #[test]
+    fn architecture_edges_respect_their_workspace_scope() {
+        let scoped = ForbiddenEdge {
+            workspace: Some("tools".into()),
+            from: "xtask".into(),
+            to: "tokio".into(),
+            reason: "r".into(),
+        };
+        assert!(scoped.applies_to("tools/Cargo.toml"));
+        assert!(!scoped.applies_to("fork/typedb/Cargo.toml"));
+
+        let nested = ForbiddenEdge {
+            workspace: Some("fork/typedb".into()),
+            from: "a".into(),
+            to: "b".into(),
+            reason: "r".into(),
+        };
+        assert!(nested.applies_to("fork/typedb/Cargo.toml"));
+        assert!(!nested.applies_to("tools/Cargo.toml"));
+
+        let global = ForbiddenEdge { workspace: None, from: "a".into(), to: "b".into(), reason: "r".into() };
+        assert!(global.applies_to("tools/Cargo.toml"));
+        assert!(global.applies_to("fork/typedb/Cargo.toml"));
+    }
+
+    #[test]
+    fn the_repository_architecture_rules_parse() {
+        let text = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../.quality/architecture/rust-dependencies.toml"
+        ))
+        .unwrap();
+        let rules: ArchFile = toml::from_str(&text).expect("architecture rules must parse");
+        for e in &rules.architecture.forbidden_edge {
+            assert!(!e.reason.trim().is_empty(), "edge {} -> {} has no reason", e.from, e.to);
         }
     }
 

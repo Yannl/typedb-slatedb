@@ -39,6 +39,28 @@ Exit codes are differentiated (spec §2.1, §18):
 All non-zero states block merge. `InfrastructureFailure` is never interpreted
 as a quality pass.
 
+## Execution preconditions
+
+A gate is attempted only when it can give a trustworthy answer. Two
+preconditions are checked first, and failing either is recorded as
+`InfrastructureFailure` with the exact remediation, never as a skip:
+
+1. **Pinned tools.** Every tool a gate names must be present at the version in
+   `tools.lock.toml`. A missing or drifted tool blocks; it does not silently
+   reduce the gate set.
+2. **Build space.** `[execution]` in `policy.toml` declares a free-disk floor
+   per cost class — `light` for gates that only parse, `heavy` for anything
+   that invokes rustc or a test runner, `campaign` for mutation, feature
+   powersets and long fuzz budgets. Below the floor the gate is refused up
+   front, because an ENOSPC part-way through a compile is indistinguishable
+   from a tool defect and would otherwise be argued about rather than fixed.
+   The floors are calibrated for the largest in-scope workspace
+   (`fork/typedb`), not for the smallest.
+
+Advisory gates (`crap4rs`, `crap4ts`, `crap4py`, the property-test expectation)
+keep their honest status in the report but are excluded from the merge
+decision, per §2.2: diagnosis, not a second competing CI truth source.
+
 ## Anti-gaming properties
 
 1. The protected-path list is loaded from the **trusted base SHA** and unioned

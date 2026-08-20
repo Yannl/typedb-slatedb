@@ -151,7 +151,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.11.9"
+          python-version: "3.11.15"
       - name: gate ledger is well-formed, rendered status matches, no forbidden claims
         run: python3 tools/ledger/lint_ledger.py
       - name: the ledger linter kills its own mutants (R5-REL-01)
@@ -264,7 +264,7 @@ jobs:
           persist-credentials: false # R5-CI-01
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.11.9"
+          python-version: "3.11.15"
       - name: materialise the pinned source graph
         run: python3 tools/source-lock/materialize_sources.py
       - name: source lock
@@ -364,7 +364,7 @@ jobs:
           persist-credentials: false # R5-CI-01
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.11.9"
+          python-version: "3.11.15"
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: "1.93.0"
@@ -435,7 +435,7 @@ jobs:
           persist-credentials: false # R5-CI-01
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.11.9"
+          python-version: "3.11.15"
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           # the FORMATTING toolchain is pinned separately from the build
@@ -499,7 +499,7 @@ jobs:
           persist-credentials: false # R5-CI-01
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.11.9"
+          python-version: "3.11.15"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22.22.2"
@@ -554,7 +554,7 @@ jobs:
           persist-credentials: false # R5-CI-01
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.11.9"
+          python-version: "3.11.15"
       - name: materialise the pinned source graph (brings in the locked RustFS binary)
         run: python3 tools/source-lock/materialize_sources.py
       - id: probe
@@ -596,7 +596,7 @@ jobs:
           persist-credentials: false # R5-CI-01
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.11.9"
+          python-version: "3.11.15"
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: "1.93.0"
@@ -642,7 +642,7 @@ jobs:
           persist-credentials: false # R5-CI-01
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.11.9"
+          python-version: "3.11.15"
       - name: report ENVIRONMENT-BLOCKED as a classified nonzero outcome
         run: |
           python3 tools/ci/capability_probe.py \
@@ -682,7 +682,7 @@ jobs:
           persist-credentials: false # R5-CI-01
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.11.9"
+          python-version: "3.11.15"
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: "1.93.0"
@@ -800,7 +800,7 @@ jobs:
           persist-credentials: false # R5-CI-01
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.11.9"
+          python-version: "3.11.15"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22.22.2"
@@ -900,7 +900,7 @@ jobs:
           persist-credentials: false # R5-CI-01
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.11.9"
+          python-version: "3.11.15"
       - name: install zizmor from a digest-pinned wheel
         # NOT a zizmor GitHub Action: every action in this repository is
         # pinned to a resolved and recorded commit SHA, and no verified SHA

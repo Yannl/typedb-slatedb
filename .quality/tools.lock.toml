@@ -108,7 +108,12 @@ remediation = "cargo install --locked cargo-deny@0.20.2"
 [tool.cargo-machete]
 version = "0.9.2"
 mode = "exact"
-detect = ["cargo", "machete", "--version"]
+# Invoked as the plain binary rather than as `cargo machete`: when the cargo
+# subcommand form is spawned from inside a process that cargo itself started
+# (which is exactly how `cargo xtask` runs), cargo-machete 0.9.2 mistakes the
+# `machete` argv element for a directory to scan and exits 2. The direct form
+# behaves identically in every context.
+detect = ["cargo-machete", "--version"]
 remediation = "cargo install --locked cargo-machete@0.9.2"
 
 [tool.cargo-hack]

@@ -88,7 +88,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.11.9"
+          python-version: "3.11.15"
       - name: the tree is CLEAN before anything is measured
         # A release qualified from a dirty tree qualifies nothing: the bytes
         # tested are not the bytes anyone can reproduce.
@@ -137,7 +137,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.11.9"
+          python-version: "3.11.15"
       - name: source, tool and workspace locks
         run: |
           python3 tools/source-lock/materialize_sources.py
@@ -205,7 +205,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.11.9"
+          python-version: "3.11.15"
       # zizmor `cache-poisoning` fires on the NEXT line and is ignored by
       # exact line number in .github/zizmor.yml. The reason lives there:
       # this step sets no `cache:` input, so setup-node populates and
@@ -301,7 +301,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.11.9"
+          python-version: "3.11.15"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22.22.2"
@@ -390,7 +390,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.11.9"
+          python-version: "3.11.15"
       - name: every release predicate, evaluated against the ledger
         run: |
           python3 - <<'PY'

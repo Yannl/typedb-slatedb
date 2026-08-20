@@ -62,6 +62,14 @@ TOOLCHAIN = "+1.93.0"
 FEATURES_OFF = "test-util"
 FEATURES_ON = "test-util,external_epoch_required"
 
+# Recorded doc-example population. Cross-posture equality alone is NOT enough:
+# marking an example ```ignore``` lowers the executed count in BOTH postures
+# equally, so it would sail through an equality check. These are the floor and
+# ceiling, and they may only move in the commit that explains why — the same
+# discipline the EXCLUSIONS list carries.
+DOC_MIN_EXECUTED = 59
+DOC_MAX_IGNORED = 7
+
 # Tests that are genuinely INAPPLICABLE under the shipped posture. Each entry
 # must name an exact leaf identity and a reviewed reason: "it fails" is not a
 # reason, and an early-open failure is not by itself evidence of
@@ -116,6 +124,35 @@ TARGET = re.compile(r"^\s+Running (?:unittests )?(\S+) \(", re.M)
 # excuse one: under this gate a fence refusal in the full feature-on suite is a
 # BUG in the harness seam, not an expected outcome.
 FENCE_REFUSAL = "external writer epoch required: internal allocation is observe-and-bind"
+
+
+def run_doc(features: str) -> tuple[int, str]:
+    """Run the rustdoc examples.
+
+    A published example is a claim about the API, and this fork ships
+    `external_epoch_required` ON: an example that opens a database without
+    naming a writer epoch documents something the shipped posture refuses.
+    Round 6 measured 16 passed / 43 FAILED here while every test BODY was
+    green, so doc-tests get their own clause rather than riding along.
+    """
+    args = ["cargo", TOOLCHAIN, "test", "--doc", "--features", features]
+    proc = subprocess.run(args, cwd=FORK, capture_output=True, text=True)
+    return proc.returncode, proc.stdout + proc.stderr
+
+
+def doc_counts(out: str) -> tuple[int, int, int]:
+    """(passed, failed, ignored) summed over the doc-test summary lines."""
+    passed = failed = ignored = 0
+    for line in out.splitlines():
+        if line.startswith("test result:"):
+            for n, key in re.findall(r"(\d+) (passed|failed|ignored)", line):
+                if key == "passed":
+                    passed += int(n)
+                elif key == "failed":
+                    failed += int(n)
+                else:
+                    ignored += int(n)
+    return passed, failed, ignored
 
 
 def run(features: str, filt: str | None = None) -> tuple[int, str]:
@@ -362,6 +399,52 @@ def main() -> int:
             "undeclared_missing": undeclared_missing,
             "undeclared_extra": undeclared_extra,
         }
+
+    # ---- clause 4: rustdoc examples hold under the SHIPPED posture ----
+    # Green alone is not enough here. The cheap way to make a failing example
+    # "pass" is to delete it, `ignore` it, or cfg-gate it away under the
+    # feature — so the enforced invariant is that the feature-on and
+    # feature-off doc runs execute the SAME NUMBER of examples and ignore the
+    # same number. A vanished example changes the counts and fails the gate.
+    doc_on_rc, doc_on_out = run_doc(FEATURES_ON)
+    on_p, on_f, on_i = doc_counts(doc_on_out)
+    print(f"feature-ON   doc examples: {on_p} passed, {on_f} failed, {on_i} ignored")
+    if doc_on_rc != 0 or on_f != 0 or on_p == 0:
+        failures.append(
+            f"feature-ON doc examples are not green: {on_p} passed, {on_f} failed. "
+            "The fork publishes rustdoc examples that the posture it ships would "
+            "refuse.")
+    evidence["doc_feature_on"] = {"passed": on_p, "failed": on_f, "ignored": on_i}
+    if on_p < DOC_MIN_EXECUTED:
+        failures.append(
+            f"doc examples executed under the shipped posture dropped to {on_p}, "
+            f"below the recorded floor of {DOC_MIN_EXECUTED}. An example was "
+            "removed or marked ```ignore``` rather than fixed; lowering the floor "
+            "requires a commit that says why.")
+    if on_i > DOC_MAX_IGNORED:
+        failures.append(
+            f"doc examples ignored under the shipped posture rose to {on_i}, above "
+            f"the recorded ceiling of {DOC_MAX_IGNORED}. Turning a failing example "
+            "into a skipped one is not a fix.")
+
+    if not args.quick:
+        doc_off_rc, doc_off_out = run_doc(FEATURES_OFF)
+        off_p, off_f, off_i = doc_counts(doc_off_out)
+        print(f"feature-OFF  doc examples: {off_p} passed, {off_f} failed, {off_i} ignored")
+        evidence["doc_feature_off"] = {"passed": off_p, "failed": off_f, "ignored": off_i}
+        if doc_off_rc != 0 or off_f != 0 or off_p == 0:
+            failures.append(
+                f"feature-OFF doc examples are not green: {off_p} passed, {off_f} failed")
+        if (on_p, on_i) != (off_p, off_i):
+            failures.append(
+                f"doc example population differs between postures: feature-off "
+                f"{off_p} passed/{off_i} ignored vs feature-on {on_p} passed/{on_i} "
+                "ignored. One form of every example must run in BOTH postures; a "
+                "differing count means an example was removed, ignored or "
+                "cfg-gated away rather than fixed.")
+        else:
+            print(f"doc reconciliation       : identical population in both postures "
+                  f"({on_p} executed, {on_i} ignored)")
 
     if EXCLUSIONS:
         print("exclusions (inapplicable under the shipped posture):")

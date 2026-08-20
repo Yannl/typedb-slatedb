@@ -8,8 +8,9 @@
     "0002-bounded-l0-sst-upload-retry.patch",
     "0003-external-epoch-enforced-path-tests.patch",
     "0004-builder-tests-supply-external-epochs.patch",
-    "0006-upstream-suite-executes-under-the-shipped-fence.patch"
+    "0006-upstream-suite-executes-under-the-shipped-fence.patch",
+    "0007-rustdoc-examples-name-their-writer-epoch.patch"
   ],
-  "patched_tree_sha256": "8096dab5f6f6f6939b26a4dd7dd77c79521cccd9eab7bdc8fb50936f5f8d58f3",
+  "patched_tree_sha256": "2b00c887d433abf4a3877976f71fea959ce6ed7673cd556150051669f875fae4",
   "note": "reconstruct with tools/fork/materialize_slatedb.py; the patch series is the fork, the crate is the base"
 }

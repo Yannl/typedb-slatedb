@@ -463,6 +463,186 @@ evidence and is not:
   counts still looked right. The gate merges the streams; the
   `passed + failed + ignored == leaves parsed` assertion is what caught it.
 
+## Patch 0007 — rustdoc examples name their writer epoch (R7-DOC-01)
+
+Eight files, **documentation only**: every added and removed line is a `///`
+or `//!` line (198 added, 33 removed — the 33 are the epoch-less opens). No
+executable code, no test, no assertion changes.
+
+Patch 0006 closed the test suite under the shipped fence and named, with its
+number, what it had not closed: 43 published rustdoc examples opened a
+database with NO epoch, so the crate shipped examples that its own posture
+refuses. Measured before this patch (`rustc 1.93.0`, in the materialised
+fork):
+
+```
+cargo test --doc --features test-util
+  test result: ok.     59 passed;  0 failed; 7 ignored
+
+cargo test --doc --features test-util,external_epoch_required
+  test result: FAILED. 16 passed; 43 failed; 7 ignored
+```
+
+All 43 failed for one cause — `Error { msg: "external writer epoch required:
+internal allocation is observe-and-bind", kind: Invalid }` — but not all of
+them are `Db::builder` chains, so each failure's own error was read before it
+was changed. The `DbReader`, `WalReader`, `SstReader` and `Admin` examples
+fail at the line where they CREATE the database they are about to read or
+administer: that creation is the write the fence governs. `DbReader::builder`,
+`AdminBuilder`, `WalReader::new` and `SstReader::new` claim no epoch of their
+own and were not given one — a reader is not a writer.
+
+| File | Failing examples | Change |
+|---|---|---|
+| `src/db.rs` | 24 | 21 `Db::open(..)` one-liners become the builder chain that names epoch 1; 3 existing builder chains gain the epoch. Plus prose: a "Writer epochs" section in the module docs, a doc comment on the (previously undocumented) `Db` struct, and notes on `Db::open` and `Db::builder`. |
+| `src/db/builder.rs` | 7 | the 5 module-level builder examples and the 2 `DbReaderBuilder` examples; plus a paragraph in the module docs saying where the number comes from. |
+| `src/db_reader.rs` | 6 | each example's `Db::open` — the database the reader then reads. Plus a note on the `DbReader` type: a reader claims no epoch, so the fence does not change how it opens. |
+| `src/admin.rs` | 2 | `create_detached_checkpoint` and `create_clone_builder_from_source` both create a parent database first. |
+| `src/wal_reader.rs` | 1 | the module example writes and flushes a WAL before listing it. |
+| `src/sst_reader.rs` | 1 | the module example writes and flushes an L0 SST before inspecting it. |
+| `src/db_cache/foyer.rs`, `src/db_cache/foyer_hybrid.rs` | 1 each | the cache is the subject; the `Db::builder` chain around it needed the epoch. |
+
+### One form, both postures
+
+Each example is written ONCE and executes in BOTH postures. No example was
+marked `ignore`, `no_run` or `compile_fail`: that would have converted 43
+failing doc-tests into 43 skipped ones, which is the false green this round
+exists to remove. The 7 examples upstream already marks `ignored` are
+untouched, and the count stays 7.
+
+One form suffices because naming an exact epoch is harmless in the unfenced
+posture — the fencer claims exactly the number given, which for a fresh
+database is the same 1 upstream's internal `stored + 1` would have allocated.
+This is the same property `tests/common/mod.rs` relies on (patch 0006). No
+example in the crate opens the same database twice, so every one names epoch
+1; had one re-opened, it would have needed the strict successor 2, because
+replaying a spent epoch is precisely what the fence refuses (mutant B below
+executes that refusal).
+
+### `Db::open` is now documented as unusable under the shipped posture
+
+`Db::open` takes no epoch and delegates to `Db::builder(..).build()`, so with
+`external_epoch_required` compiled in it cannot succeed at all. Its example
+now shows the open a writer must actually perform — the same defaults, with
+the controller-issued epoch named — and the prose above it says why. The
+method is deliberately NOT removed or `cfg`-gated: it is still the correct API
+in the unfenced posture that local conformance lanes build, and gating it out
+would break upstream callers to no benefit. Documenting the refusal is the
+honest fix; hiding the method would move the surprise from the doc page to the
+compiler.
+
+The other prose is placed where a reader of the SHIPPED crate meets an
+otherwise unexplained `with_external_writer_epoch(1)`. `src/db.rs` and
+`src/db/builder.rs` are private modules, so their `//!` sections are read in
+the source rather than rendered; the reader-visible statements are therefore
+on public items — the `Db` struct, `Db::open`, `Db::builder`, `DbReader` —
+plus a one-line comment in each remaining example (`admin`, `wal_reader`,
+`sst_reader`, both caches) pointing at `Db::builder`.
+
+`cargo rustdoc --lib --features test-util` reports no new diagnostic: the 49
+warnings it emits are upstream's pre-existing broken links, and no diagnostic
+points at a line this patch adds. (An earlier draft linked `[module
+documentation](self)` from the public `Db` struct, which rustdoc correctly
+flagged as a public item linking to a private one; the link was replaced with
+one to `DbBuilder::with_external_writer_epoch`.)
+
+### Executed evidence
+
+Toolchain `rustc 1.93.0`, in the materialised fork.
+
+```
+cargo test --doc --features test-util
+  test result: ok. 59 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out
+
+cargo test --doc --features test-util,external_epoch_required
+  test result: ok. 59 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out
+```
+
+43 failed → 0 failed, and the same 59 leaves execute in both postures.
+
+The suite patch 0006 fixed does not regress:
+
+```
+cargo test --tests --no-fail-fast --features test-util
+  unittests src/lib.rs              ok. 1988 passed; 0 failed; 1 ignored
+  tests/configurable_block_size.rs  ok.   11 passed; 0 failed
+  tests/db.rs                       ok.    3 passed; 0 failed
+  tests/prefix_filter.rs            ok.    4 passed; 0 failed
+  tests/transactions.rs             ok.    1 passed; 0 failed
+
+cargo test --tests --no-fail-fast --features test-util,external_epoch_required
+  unittests src/lib.rs              ok. 1993 passed; 0 failed; 1 ignored
+  tests/configurable_block_size.rs  ok.   11 passed; 0 failed
+  tests/db.rs                       ok.    3 passed; 0 failed
+  tests/prefix_filter.rs            ok.    4 passed; 0 failed
+  tests/transactions.rs             ok.    1 passed; 0 failed
+
+python3 tools/fork/check_strict_epoch_suite.py
+  feature-OFF  all targets : 2007 passed, 0 failed, 1 ignored (2008 leaves executed)
+  feature-ON   all targets : 2012 passed, 0 failed, 1 ignored (2013 leaves executed)
+  feature-ON   negative suite: 5 passed, 0 failed (5 leaves executed)
+  leaf reconciliation      : feature-off 2008 - 0 excluded + 5 shipped-posture-only = 2013 vs feature-on 2013 executed
+  exclusions               : none — every test executed feature-off also executes feature-on
+  STRICT-EPOCH SUITE GATE: PASS
+
+python3 tools/fork/materialize_slatedb.py --check
+  SLATEDB FORK: OK (6 patch(es), tree 2b00c887d433…)
+```
+
+### Mutants executed
+
+Both on the `Db::get` example in `src/db.rs`, whose baseline is
+`cargo test --doc --features test-util,external_epoch_required 'db::Db::get'`
+→ `ok. 2 passed; 0 failed`.
+
+*A — the epoch line deleted* (the "it was decoration" mutant: if the examples
+did not really need the epoch, deleting it would change nothing):
+
+```
+test src/db.rs - db::Db::get (line 899) ... FAILED
+  Error { msg: "external writer epoch required: internal allocation is
+                observe-and-bind", kind: Invalid, source: None }
+test result: FAILED. 1 passed; 1 failed
+```
+
+*B — the epoch changed from 1 to 0* (the "the number is ignored" mutant: a
+build that merely observed the CALL, or that fell back to internal
+allocation, would still open, because internal allocation would have produced
+1 regardless):
+
+```
+--features test-util,external_epoch_required
+test src/db.rs - db::Db::get (line 899) ... FAILED
+  Error { msg: "detected newer DB client", kind: Closed(Fenced), source: None }
+
+--features test-util                       (the UNFENCED posture)
+test src/db.rs - db::Db::get (line 899) ... FAILED
+  Error { msg: "detected newer DB client", kind: Closed(Fenced), source: None }
+```
+
+Mutant B run feature-OFF is the one that matters most for the "one form, both
+postures" claim: the epoch an example names is claimed exactly and fenced
+against the stored value even when the feature is off, so these examples are
+not passing feature-off by ignoring their own epoch argument. A stale epoch
+(0, against a stored 0) is refused in both.
+
+Both mutants reverted; `materialize_slatedb.py --check` re-verified the tree
+digest afterwards, and the reconstructed series was diffed file-by-file
+against `sources/slatedb-fork/` to confirm the materialised tree is exactly
+what the patches produce.
+
+### What patch 0007 does not do
+
+- **It does not put `--doc` inside a gate.**
+  `tools/fork/check_strict_epoch_suite.py` still runs `--tests` only, so the
+  numbers above are executed evidence, not a standing invariant: an example
+  added later without an epoch will fail nobody's build until someone runs
+  `cargo test --doc` with the feature on. Wiring a `--doc` clause into that
+  gate (and into `.github/workflows/gates.yml`) is the obvious follow-up and
+  is deliberately left out of this patch, which touches documentation only.
+- It does not touch the 7 examples upstream marks `ignored`, and does not
+  change the epoch protocol, the builder API, or any test.
+
 ## What this series still does not do
 
 Unchanged from patches 0001/0003, and still true:
@@ -475,24 +655,15 @@ Unchanged from patches 0001/0003, and still true:
 - The compactor orchestrator still constructs its own fenceable manifest via
   `init_compactor`; `with_external_compactor_epoch` through `CompactorBuilder`
   is still deliberately left for the decision.
-- **Doc-tests are not green feature-on, and this is a measured number rather
-  than an omission.** Executed:
-
-  ```
-  cargo test --doc --features test-util
-    test result: ok. 59 passed; 0 failed; 7 ignored
-
-  cargo test --doc --features test-util,external_epoch_required
-    test result: FAILED. 16 passed; 43 failed; 7 ignored
-  ```
-
-  The 43 are rustdoc examples that open a database with no epoch. They are
-  not a coverage gap in the sense this finding is about — no upstream test
-  BODY is being skipped — but they are a documentation-truth problem: the
-  fork publishes examples that would be refused by the posture the fork
-  ships. Fixing them means rewriting upstream's public API documentation
-  across the crate, which is a documentation decision (and a much larger,
-  much less reviewable diff) than the test adaptation this patch is. It is
-  named here, with its number, so the next round decides it deliberately
-  instead of discovering it. The gate does not run `--doc` and does not
-  claim to.
+- **Doc-tests are not green feature-on** — **RETIRED by patch 0007.** The
+  number recorded here (59 passed / 0 failed feature-off; 16 passed / 43
+  failed feature-on) was correct and so was its reading: a
+  documentation-truth defect, not a coverage gap, since no upstream test BODY
+  was being skipped. What was wrong is the estimate attached to it. Fixing the
+  43 did not require "rewriting upstream's public API documentation across the
+  crate": it is 33 examples naming the epoch they open under, 10 existing
+  builder chains gaining one line, and prose on four public items — a
+  documentation-only diff of 198 added lines, every one of them a `///` or
+  `//!` line. Both lanes now report `59 passed; 0 failed; 7 ignored`. The
+  gate still does not run `--doc` and still does not claim to; that residual
+  is restated under patch 0007, where it belongs.

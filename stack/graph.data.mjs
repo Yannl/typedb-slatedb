@@ -12,7 +12,16 @@
 // Round-3 audit A-01 / §6.7: Alchemy is the canonical orchestrator for the
 // Cloudflare-facing half (Worker + DatabaseControllerDO + local R2 binding);
 // Alchemy's local R2 has NO S3 endpoint (§6.3), so the TypeDB/SlateDB S3
-// half is a pinned native MinIO (source-lock node MINIO), never Alchemy R2.
+// half is a pinned NATIVE S3 backend (a source-locked provider binary),
+// never Alchemy R2.
+//
+// Round-6 R6-LOCAL-01: which native provider that is, is no longer welded
+// into the graph. The provider is a parameter with a named default
+// (LOCAL_S3_PROVIDER_DEFAULT) and a named comparator
+// (LOCAL_S3_PROVIDER_COMPARATOR); `stack dev/up`, the graph and
+// native-fidelity.mjs all select it the same way. Whether the default is
+// QUALIFIED is a separate, executable question answered by local-parity.mjs
+// — this file only names the topology, it never grades it.
 
 import { readFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -26,6 +35,27 @@ export const REPO_ROOT = path.resolve(STACK_DIR, "..");
 // Identity constants (must match control-plane/wrangler.toml — enforced by
 // wrangler-check.mjs, which parses the toml and fails on any drift)
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Native S3 provider identity (R6-LOCAL-01). These are the ONLY places a
+// local S3 provider is named; supervisors, the CLI and native-fidelity all
+// resolve through them.
+// ---------------------------------------------------------------------------
+
+/**
+ * The provider agent/native-local development runs by default. RustFS is
+ * the audit's promotion candidate and is the configured default here; the
+ * question "has the promotion lane actually been executed and passed?" is
+ * answered at runtime by local-parity.mjs's executable gate, never by this
+ * constant and never by a comment.
+ */
+export const LOCAL_S3_PROVIDER_DEFAULT = "rustfs";
+/** Kept as a provider-diversity comparator (R6-LOCAL-01: do not delete). */
+export const LOCAL_S3_PROVIDER_COMPARATOR = "minio";
+export const LOCAL_S3_PROVIDERS = Object.freeze([
+  LOCAL_S3_PROVIDER_DEFAULT,
+  LOCAL_S3_PROVIDER_COMPARATOR,
+]);
 
 export const WORKER_NAME = "typedb-r2-control-plane";
 export const WORKER_ENTRY = "control-plane/src/controller/worker-entry.ts";
@@ -187,12 +217,21 @@ export const GRAPH_SCHEMA = "typedb-r2-stack/graph@1";
  * lane); binding names, class names, compat date, budgets and backend
  * identity must be byte-identical.
  */
-export function toGraph(variant = "local-native", repoRoot = REPO_ROOT) {
+export function toGraph(variant = "local-native", repoRoot = REPO_ROOT, options = {}) {
+  const s3Provider = options.s3Provider ?? LOCAL_S3_PROVIDER_DEFAULT;
+  if (!LOCAL_S3_PROVIDERS.includes(s3Provider)) {
+    throw new Error(
+      `unknown local S3 provider ${JSON.stringify(s3Provider)} — known: ${LOCAL_S3_PROVIDERS.join(", ")}`,
+    );
+  }
+  // provider-neutral endpoint template: the run manifest resolves it from
+  // the supervised S3 component, whichever provider that is
+  const localS3Endpoint = "http://127.0.0.1:${run.s3.port}";
   const variants = {
     "local-native": {
       execution: "native",
-      s3Provider: "minio",
-      s3Endpoint: "http://127.0.0.1:${run.minio.port}",
+      s3Provider,
+      s3Endpoint: localS3Endpoint,
       r2Provider: "alchemy-local-r2",
       doProvider: "alchemy-workerd-local",
       routeClass: "local-loopback",
@@ -205,8 +244,8 @@ export function toGraph(variant = "local-native", repoRoot = REPO_ROOT) {
     // cloudflare-real; local-native's convenience posture may not.
     "local-parity": {
       execution: "native",
-      s3Provider: "minio",
-      s3Endpoint: "http://127.0.0.1:${run.minio.port}",
+      s3Provider,
+      s3Endpoint: localS3Endpoint,
       r2Provider: "alchemy-local-r2",
       doProvider: "alchemy-workerd-local",
       routeClass: "local-loopback",
@@ -215,8 +254,8 @@ export function toGraph(variant = "local-native", repoRoot = REPO_ROOT) {
     },
     "local-container": {
       execution: "container",
-      s3Provider: "minio",
-      s3Endpoint: "http://127.0.0.1:${run.minio.port}",
+      s3Provider,
+      s3Endpoint: localS3Endpoint,
       r2Provider: "alchemy-local-r2",
       doProvider: "alchemy-workerd-local",
       routeClass: "local-loopback",

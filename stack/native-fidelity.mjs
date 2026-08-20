@@ -23,13 +23,19 @@
 // dirs, prefixes) run the workload concurrently against ONE S3 server
 // and must never see each other's data.
 //
-// Provider selection mirrors tools/s3-cert-corpus: minio (locked
-// transition baseline) or rustfs (OD-009 candidate) — both digest-pinned
-// via source-lock; a binary that does not match the lock is refused.
+// Provider selection is the SHARED one (round-6 R6-LOCAL-01): this lane no
+// longer carries its own `if (provider === "minio") ... else ...` spawn
+// code. It resolves the provider through local-parity.mjs (same resolution
+// `stack up` and the canonical graph use) and builds the spawn spec from
+// the s3-provider.mjs descriptor, so binary resolution, argv, env,
+// data-directory creation and readiness are identical in every lane. The
+// descriptor is also what encodes that RustFS refuses to start without an
+// existing volume directory while MinIO creates its own.
 //
 // Usage:
-//   node stack/native-fidelity.mjs                # full lane, minio
-//   S3_PROVIDER=rustfs node stack/native-fidelity.mjs
+//   node stack/native-fidelity.mjs                 # agent-local default
+//   S3_PROVIDER=minio node stack/native-fidelity.mjs   # comparator
+//   node stack/native-fidelity.mjs --provider minio
 //   TYPEDB_SERVER_BIN=/path/to/bin node stack/native-fidelity.mjs
 //
 // Exit 0 only when every phase passes.
@@ -42,6 +48,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { startFaultProxy } from "./fault-proxy.mjs";
+import { formatGate, resolveProvider } from "./local-parity.mjs";
+import { providerSpawnSpec } from "./s3-provider.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..");
@@ -52,28 +60,10 @@ function log(msg) {
   console.log(`native-fidelity: ${msg}`);
 }
 
-function sha256File(file) {
-  const hash = crypto.createHash("sha256");
-  hash.update(fs.readFileSync(file));
-  return hash.digest("hex");
-}
-
-/// Resolve a source-locked artifact binary and REFUSE a digest mismatch:
-/// a lane verdict may only ever cite the exact pinned artifact.
-function lockedArtifact(nodeId) {
-  const lock = JSON.parse(fs.readFileSync(path.join(REPO, "source-lock", "source-lock.json"), "utf8"));
-  const node = lock.nodes.find((n) => n.id === nodeId);
-  if (!node) throw new Error(`source-lock has no node ${nodeId}`);
-  const file = path.join(REPO, node.cache_path);
-  if (!fs.existsSync(file)) {
-    throw new Error(`${nodeId} binary absent at ${node.cache_path} — materialize it first (see the lock node's note)`);
-  }
-  const got = sha256File(file);
-  if (got !== node.sha256) {
-    throw new Error(`${nodeId} digest mismatch: want ${node.sha256} got ${got} — refusing (pinned-artifact rule)`);
-  }
-  return file;
-}
+// Source-locked artifact resolution (materialization + digest refusal)
+// lives in s3-provider.mjs and is shared by every lane — a lane verdict may
+// only ever cite the exact pinned artifact, and there must be exactly one
+// implementation of that rule.
 
 const children = new Set();
 function spawnChild(cmd, args, opts) {
@@ -98,25 +88,26 @@ process.on("SIGTERM", () => process.exit(143));
 // S3 backend
 // ---------------------------------------------------------------------------
 
-async function startS3({ provider, port, dataDir, logFile, access, secret }) {
-  fs.mkdirSync(dataDir, { recursive: true }); // rustfs refuses a missing volume
-  const env = { ...process.env };
-  let bin, args;
-  if (provider === "minio") {
-    bin = lockedArtifact("MINIO");
-    env.MINIO_ROOT_USER = access;
-    env.MINIO_ROOT_PASSWORD = secret;
-    args = ["server", dataDir, "--address", `${LOOPBACK}:${port}`, "--console-address", `${LOOPBACK}:0`];
-  } else if (provider === "rustfs") {
-    bin = lockedArtifact("RUSTFS");
-    env.RUSTFS_ACCESS_KEY = access;
-    env.RUSTFS_SECRET_KEY = secret;
-    args = ["server", "--address", `${LOOPBACK}:${port}`, dataDir];
-  } else {
-    throw new Error(`unknown provider ${provider}`);
-  }
+/**
+ * Start the S3 backend from the SHARED provider descriptor. The only
+ * provider-specific knowledge left in this file is the provider's NAME:
+ * binary resolution + digest refusal, argv, env, and data-directory
+ * creation all come from s3-provider.mjs.
+ */
+async function startS3({ provider, port, runDir, logFile, access, secret }) {
+  const spec = await providerSpawnSpec({
+    provider,
+    runDir,
+    port,
+    consolePort: 0,
+    credentials: { accessKey: access, secretKey: secret },
+  });
   const out = fs.openSync(logFile, "a");
-  const child = spawnChild(bin, args, { env, stdio: ["ignore", out, out] });
+  const child = spawnChild(spec.command, spec.args, {
+    env: { ...process.env, ...spec.env },
+    stdio: ["ignore", out, out],
+  });
+  child.spec = spec;
   // readiness = an AUTHENTICATED S3 operation (R4-LOCAL-01), never /health
   for (let i = 0; i < 60; i++) {
     try {
@@ -269,7 +260,11 @@ function finish() {
   process.exit(failed.length === 0 ? 0 : 1);
 }
 
-const provider = process.env.S3_PROVIDER ?? "minio";
+const providerFlagIndex = process.argv.indexOf("--provider");
+const selection = resolveProvider({
+  requested: providerFlagIndex >= 0 ? process.argv[providerFlagIndex + 1] : null,
+});
+const provider = selection.provider;
 const basePort = Number(process.env.NATIVE_FIDELITY_BASE_PORT ?? 39400);
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "native-fidelity-"));
 fs.chmodSync(work, 0o700);
@@ -277,14 +272,19 @@ const access = `nf-${crypto.randomBytes(8).toString("hex")}`;
 const secret = `nf-${crypto.randomBytes(16).toString("hex")}`;
 const runNonce = crypto.randomBytes(4).toString("hex");
 
-log(`provider=${provider} work=${work}`);
+log(`provider=${provider} [${selection.selection}] work=${work}`);
+// structured, never prose: this lane never implies the promotion gate is
+// green, it prints exactly which required lanes have executed and passed
+for (const line of formatGate(selection.gate).split("\n")) log(line);
 
 // One S3 server for the whole lane; every stack gets its own proxy+prefix.
 const s3Port = basePort;
+const s3RunDir = path.join(work, "s3-run");
+fs.mkdirSync(s3RunDir, { recursive: true, mode: 0o700 });
 const s3 = await startS3({
   provider,
   port: s3Port,
-  dataDir: path.join(work, "s3-data"),
+  runDir: s3RunDir,
   logFile: path.join(work, "s3.log"),
   access,
   secret,

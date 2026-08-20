@@ -115,6 +115,25 @@
     "source-lock/source-lock.json node MINIO"
    ],
    "progress_2026_08_19": "RustFS 1.0.0-rc.2 is now PINNED (source-lock node RUSTFS: release-zip sha256 dbe7b718…, binary sha256 d286e5f8…, tag commit e9f53180 verified against both git ls-remote and the binary's own --version attestation). Against exactly that binary, tools/s3-cert-corpus PASSED on 2026-08-19: SigV4 auth, byte-exact put/get/head, ranged reads, If-None-Match:* two-writer race with exactly one winner, If-Match update fencing, list pagination, multipart complete/abort, and kill -9 crash/restart byte-exact persistence — via object_store =0.14.1, the exact crate the storage engine uses. STILL OUTSTANDING before the default may flip: the timeout/ambiguity lane (fault-proxy schedules), the patched SlateDB suite, and the TypeDB corpus run on a RustFS backend. The corpus runner hard-refuses any rustfs binary whose digest differs from the lock. ROUND-5 HARDENING (R5-LOCAL-01/03): the CAS gate can no longer accidentally serialize — 100 barrier-released rounds x 16 independent-client writers with 1 MiB pairwise-distinct bodies, 50 current-ETag update-race rounds with post-race ABA refusal, and 20 rounds of 8 independent OS PROCESSES racing conditional create (start-file barrier, winner self-verifies byte-exact stored bytes). RustFS 1.0.0-rc.2 PASSED all of it on 2026-08-19, as did the MinIO baseline; each run now emits a SEALED evidence bundle (provider binary digest, per-phase logs+digests, crash receipt, root seal) verified by an independent verifier. Outstanding before the default flips: the timeout/ambiguity fault-proxy lane, the patched SlateDB suite and the TypeDB corpus on a RustFS backend."
+  },
+  {
+   "id": "OD-010",
+   "status": "DECIDED",
+   "title": "Qualification scope for the storage-adapter change: single-node semantic parity",
+   "question": "Do the official-driver cluster suites, which require a 3-node replicated TypeDB deployment, block the qualification claim for the SlateDB/object-store storage adapter?",
+   "decision": "NO. The change under qualification is the storage adapter (TypeDB storage -> SlateDB -> S3/R2 object store). The claim being made is SEMANTIC PARITY: that running TypeDB on the object-store backend produces the same behaviour as running it on the classic backend. That claim is fully exercised by a single-node server with object storage, which is what the driver lanes run. The cluster suites exercise multi-node replication and high availability, in which the storage adapter does not participate; they are therefore OUT OF SCOPE for this claim, recorded as a declared exclusion with this rationale, and NOT a precondition that keeps a row partial.",
+   "decided_by": "release owner, recorded 2026-08-20",
+   "default_in_force": "Before this decision the cluster suites were treated as an unmet precondition, which held all six official-driver rows at PARTIAL for a reason unrelated to the property being qualified.",
+   "why_safe": "The exclusion is declared, scoped and reversible, not silent: the cluster suites are still enumerated, still reported as not executed, and would immediately re-enter scope for any claim about replication, failover or high availability. Nothing about this decision lets a scenario that DID run report a different outcome, and no cluster capability may be claimed anywhere on the strength of it.",
+   "owner_decision_changes": "tools/drivers/row_status.py classifies the cluster suites as out-of-scope rather than blocking, so a row whose only unmet suite is cluster is COVERED for the single-node semantic-parity claim.",
+   "does_not_authorise": [
+    "any claim of clustered, replicated or highly-available operation",
+    "any claim that the storage adapter behaves correctly under multi-node epoch contention, which remains untested"
+   ],
+   "referenced_by": [
+    "docs/evidence/G1/drivers/driver-row-status.json",
+    "docs/ledger/gates.json lane OFFICIAL_DRIVERS"
+   ]
   }
  ]
 }

@@ -11,8 +11,8 @@
    "row_id": "driver:rust:rocksdb",
    "plan_seed_status": "NOT_IMPLEMENTED",
    "required_by": "v17-A17.5",
-   "status": "EXECUTED_LEAF_PARTIAL_SUITES",
-   "coverage_class": "PARTIAL",
+   "status": "EXECUTED_LEAF",
+   "coverage_class": "COVERED",
    "bundles": [
     {
      "bundle": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic",
@@ -32,7 +32,10 @@
      },
      "leaves_outside_plan": 18,
      "harness": "rust-cucumber-basic",
-     "caveats": []
+     "caveats": [],
+     "suites_out_of_scope": {
+      "test_cluster": "requires a multi-node TypeDB cluster: the upstream test self-skips unless the `cluster` cargo feature is on (rust/tests/behaviour/driver/cluster.rs calls config::is_cluster()), and the steps then connect to Context::DEFAULT_CLUSTER_ADDRESSES 127.0.0.1:{11729,21729,31729}. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here. Executed and observed: the binary prints 'Skipping Cluster tests in a non-clustered environment' and runs zero scenarios."
+     }
     }
    ],
    "evidence_bundle": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic",
@@ -47,17 +50,19 @@
    },
    "harness": "rust-cucumber-basic",
    "caveats": [],
-   "not_covered_because": [
-    "blocked suite test_cluster: requires a multi-node TypeDB cluster: the upstream test self-skips unless the `cluster` cargo feature is on (rust/tests/behaviour/driver/cluster.rs calls config::is_cluster()), and the steps then connect to Context::DEFAULT_CLUSTER_ADDRESSES 127.0.0.1:{11729,21729,31729}. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here. Executed and observed: the binary prints 'Skipping Cluster tests in a non-clustered environment' and runs zero scenarios."
-   ],
-   "status_meaning": "EXECUTED_LEAF_PARTIAL_SUITES: the official driver suite ran and every plan leaf in the EXECUTED suites' scope carries a per-scenario outcome, but at least one declared suite of the official corpus could not run here; each such suite names its exact external precondition. The row is PARTIAL, never covered."
+   "suites_out_of_scope": {
+    "test_cluster": "requires a multi-node TypeDB cluster: the upstream test self-skips unless the `cluster` cargo feature is on (rust/tests/behaviour/driver/cluster.rs calls config::is_cluster()), and the steps then connect to Context::DEFAULT_CLUSTER_ADDRESSES 127.0.0.1:{11729,21729,31729}. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here. Executed and observed: the binary prints 'Skipping Cluster tests in a non-clustered environment' and runs zero scenarios."
+   },
+   "out_of_scope_authority": "OD-010 (docs/owner-decisions.json): single-node semantic parity is the claim; cluster/HA is not in scope for the storage adapter and may not be claimed on the strength of it.",
+   "not_covered_because": [],
+   "status_meaning": "EXECUTED_LEAF: the official driver suite ran against a real TypeDB server and EVERY plan leaf in its scope carries a per-scenario outcome, verified independently from the archived bytes."
   },
   "driver:rust:slatedb": {
    "row_id": "driver:rust:slatedb",
    "plan_seed_status": "NOT_IMPLEMENTED",
    "required_by": "v17-A17.5",
-   "status": "EXECUTED_LEAF_PARTIAL_SUITES",
-   "coverage_class": "PARTIAL",
+   "status": "EXECUTED_LEAF",
+   "coverage_class": "COVERED",
    "bundles": [
     {
      "bundle": "docs/evidence/G1/drivers/rust-slatedb-fork",
@@ -77,7 +82,10 @@
      },
      "leaves_outside_plan": 18,
      "harness": "rust-cucumber-basic",
-     "caveats": []
+     "caveats": [],
+     "suites_out_of_scope": {
+      "test_cluster": "requires a multi-node TypeDB cluster: the upstream test self-skips unless the `cluster` cargo feature is on (rust/tests/behaviour/driver/cluster.rs calls config::is_cluster()), and the steps then connect to Context::DEFAULT_CLUSTER_ADDRESSES 127.0.0.1:{11729,21729,31729}. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here. Executed and observed: the binary prints 'Skipping Cluster tests in a non-clustered environment' and runs zero scenarios."
+     }
     }
    ],
    "evidence_bundle": "docs/evidence/G1/drivers/rust-slatedb-fork",
@@ -92,17 +100,19 @@
    },
    "harness": "rust-cucumber-basic",
    "caveats": [],
-   "not_covered_because": [
-    "blocked suite test_cluster: requires a multi-node TypeDB cluster: the upstream test self-skips unless the `cluster` cargo feature is on (rust/tests/behaviour/driver/cluster.rs calls config::is_cluster()), and the steps then connect to Context::DEFAULT_CLUSTER_ADDRESSES 127.0.0.1:{11729,21729,31729}. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here. Executed and observed: the binary prints 'Skipping Cluster tests in a non-clustered environment' and runs zero scenarios."
-   ],
-   "status_meaning": "EXECUTED_LEAF_PARTIAL_SUITES: the official driver suite ran and every plan leaf in the EXECUTED suites' scope carries a per-scenario outcome, but at least one declared suite of the official corpus could not run here; each such suite names its exact external precondition. The row is PARTIAL, never covered."
+   "suites_out_of_scope": {
+    "test_cluster": "requires a multi-node TypeDB cluster: the upstream test self-skips unless the `cluster` cargo feature is on (rust/tests/behaviour/driver/cluster.rs calls config::is_cluster()), and the steps then connect to Context::DEFAULT_CLUSTER_ADDRESSES 127.0.0.1:{11729,21729,31729}. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here. Executed and observed: the binary prints 'Skipping Cluster tests in a non-clustered environment' and runs zero scenarios."
+   },
+   "out_of_scope_authority": "OD-010 (docs/owner-decisions.json): single-node semantic parity is the claim; cluster/HA is not in scope for the storage adapter and may not be claimed on the strength of it.",
+   "not_covered_because": [],
+   "status_meaning": "EXECUTED_LEAF: the official driver suite ran against a real TypeDB server and EVERY plan leaf in its scope carries a per-scenario outcome, verified independently from the archived bytes."
   },
   "driver:python:rocksdb": {
    "row_id": "driver:python:rocksdb",
    "plan_seed_status": "NOT_IMPLEMENTED",
    "required_by": "v17-A17.5",
-   "status": "EXECUTED_LEAF_PARTIAL_SUITES",
-   "coverage_class": "PARTIAL",
+   "status": "EXECUTED_LEAF",
+   "coverage_class": "COVERED",
    "bundles": [
     {
      "bundle": "docs/evidence/G1/drivers/python-rocksdb-fork-classic",
@@ -122,7 +132,10 @@
      },
      "leaves_outside_plan": 18,
      "harness": "python-behave-json",
-     "caveats": []
+     "caveats": [],
+     "suites_out_of_scope": {
+      "driver/cluster": "declared upstream only as typedb_behaviour_py_test_cluster (python/tests/behaviour/driver/cluster/BUILD), i.e. the multi-node cluster lane: it targets 127.0.0.1:11729 and needs three TypeDB servers with replication. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+     }
     }
    ],
    "evidence_bundle": "docs/evidence/G1/drivers/python-rocksdb-fork-classic",
@@ -137,17 +150,19 @@
    },
    "harness": "python-behave-json",
    "caveats": [],
-   "not_covered_because": [
-    "blocked suite driver/cluster: declared upstream only as typedb_behaviour_py_test_cluster (python/tests/behaviour/driver/cluster/BUILD), i.e. the multi-node cluster lane: it targets 127.0.0.1:11729 and needs three TypeDB servers with replication. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
-   ],
-   "status_meaning": "EXECUTED_LEAF_PARTIAL_SUITES: the official driver suite ran and every plan leaf in the EXECUTED suites' scope carries a per-scenario outcome, but at least one declared suite of the official corpus could not run here; each such suite names its exact external precondition. The row is PARTIAL, never covered."
+   "suites_out_of_scope": {
+    "driver/cluster": "declared upstream only as typedb_behaviour_py_test_cluster (python/tests/behaviour/driver/cluster/BUILD), i.e. the multi-node cluster lane: it targets 127.0.0.1:11729 and needs three TypeDB servers with replication. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+   },
+   "out_of_scope_authority": "OD-010 (docs/owner-decisions.json): single-node semantic parity is the claim; cluster/HA is not in scope for the storage adapter and may not be claimed on the strength of it.",
+   "not_covered_because": [],
+   "status_meaning": "EXECUTED_LEAF: the official driver suite ran against a real TypeDB server and EVERY plan leaf in its scope carries a per-scenario outcome, verified independently from the archived bytes."
   },
   "driver:python:slatedb": {
    "row_id": "driver:python:slatedb",
    "plan_seed_status": "NOT_IMPLEMENTED",
    "required_by": "v17-A17.5",
-   "status": "EXECUTED_LEAF_PARTIAL_SUITES",
-   "coverage_class": "PARTIAL",
+   "status": "EXECUTED_LEAF",
+   "coverage_class": "COVERED",
    "bundles": [
     {
      "bundle": "docs/evidence/G1/drivers/python-slatedb-fork",
@@ -167,7 +182,10 @@
      },
      "leaves_outside_plan": 18,
      "harness": "python-behave-json",
-     "caveats": []
+     "caveats": [],
+     "suites_out_of_scope": {
+      "driver/cluster": "declared upstream only as typedb_behaviour_py_test_cluster (python/tests/behaviour/driver/cluster/BUILD), i.e. the multi-node cluster lane: it targets 127.0.0.1:11729 and needs three TypeDB servers with replication. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+     }
     }
    ],
    "evidence_bundle": "docs/evidence/G1/drivers/python-slatedb-fork",
@@ -182,10 +200,12 @@
    },
    "harness": "python-behave-json",
    "caveats": [],
-   "not_covered_because": [
-    "blocked suite driver/cluster: declared upstream only as typedb_behaviour_py_test_cluster (python/tests/behaviour/driver/cluster/BUILD), i.e. the multi-node cluster lane: it targets 127.0.0.1:11729 and needs three TypeDB servers with replication. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
-   ],
-   "status_meaning": "EXECUTED_LEAF_PARTIAL_SUITES: the official driver suite ran and every plan leaf in the EXECUTED suites' scope carries a per-scenario outcome, but at least one declared suite of the official corpus could not run here; each such suite names its exact external precondition. The row is PARTIAL, never covered."
+   "suites_out_of_scope": {
+    "driver/cluster": "declared upstream only as typedb_behaviour_py_test_cluster (python/tests/behaviour/driver/cluster/BUILD), i.e. the multi-node cluster lane: it targets 127.0.0.1:11729 and needs three TypeDB servers with replication. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+   },
+   "out_of_scope_authority": "OD-010 (docs/owner-decisions.json): single-node semantic parity is the claim; cluster/HA is not in scope for the storage adapter and may not be claimed on the strength of it.",
+   "not_covered_because": [],
+   "status_meaning": "EXECUTED_LEAF: the official driver suite ran against a real TypeDB server and EVERY plan leaf in its scope carries a per-scenario outcome, verified independently from the archived bytes."
   },
   "driver:typescript:rocksdb": {
    "row_id": "driver:typescript:rocksdb",
@@ -232,7 +252,10 @@
         "tests/behaviour/steps/query.ts(399,42): error TS2345: Argument of type 'AnalyzedPipeline | QueryStructureLegacy' is not assignable to parameter of type 'AnalyzedPipeline'."
        ]
       }
-     ]
+     ],
+     "suites_out_of_scope": {
+      "cluster": "declared upstream only as typedb_behaviour_http_ts_cluster_test (http-ts/tests/behaviour/feature/BUILD), the multi-node cluster lane: it needs a replicated TypeDB deployment and the TLS certificates in //tool/test/resources:certificates. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+     }
     }
    ],
    "evidence_bundle": "docs/evidence/G1/drivers/typescript-rocksdb-fork-classic",
@@ -267,8 +290,11 @@
      ]
     }
    ],
+   "suites_out_of_scope": {
+    "cluster": "declared upstream only as typedb_behaviour_http_ts_cluster_test (http-ts/tests/behaviour/feature/BUILD), the multi-node cluster lane: it needs a replicated TypeDB deployment and the TLS certificates in //tool/test/resources:certificates. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+   },
+   "out_of_scope_authority": "OD-010 (docs/owner-decisions.json): single-node semantic parity is the claim; cluster/HA is not in scope for the storage adapter and may not be claimed on the strength of it.",
    "not_covered_because": [
-    "blocked suite cluster: declared upstream only as typedb_behaviour_http_ts_cluster_test (http-ts/tests/behaviour/feature/BUILD), the multi-node cluster lane: it needs a replicated TypeDB deployment and the TLS certificates in //tool/test/resources:certificates. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here.",
     "caveat npm-install-not-pnpm-lock: http-ts declares packageManager 'pnpm@8.15.9' and ships pnpm-lock.yaml (sha256 5617f6a91f82ae909edfba27c88001612149a63323eac4e9f52af9b41fbedf92), but the pnpm available here is 10.x, which does not honour a v8 lockfile without migrating it. Dependencies were therefore resolved by npm within package.json's ranges. Every exact pin was verified to have installed at its pinned version, and the full resolved tree is archived as npm-tree.json, but the transitive closure is NOT the closure the committed pnpm lockfile names.",
     "caveat steps-typecheck-not-clean: tsc exited 2 with 9 diagnostic(s) while compiling the behaviour steps, and still emitted JavaScript for every source. Upstream's Bazel target compiles the steps against //http-ts:driver-lib, which emits only dist/index.cjs and deliberately no index.d.cts (http-ts/BUILD: 'TODO: should also output index.d.cts (works in filesystem but not in bazel)'), so the upstream type surface is not reproducible outside bazel. The executed evidence below rests on the emitted JavaScript plus a zero-undefined/zero-ambiguous step check, not on a clean typecheck."
    ],
@@ -319,7 +345,10 @@
         "tests/behaviour/steps/query.ts(399,42): error TS2345: Argument of type 'AnalyzedPipeline | QueryStructureLegacy' is not assignable to parameter of type 'AnalyzedPipeline'."
        ]
       }
-     ]
+     ],
+     "suites_out_of_scope": {
+      "cluster": "declared upstream only as typedb_behaviour_http_ts_cluster_test (http-ts/tests/behaviour/feature/BUILD), the multi-node cluster lane: it needs a replicated TypeDB deployment and the TLS certificates in //tool/test/resources:certificates. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+     }
     }
    ],
    "evidence_bundle": "docs/evidence/G1/drivers/typescript-slatedb-fork",
@@ -354,8 +383,11 @@
      ]
     }
    ],
+   "suites_out_of_scope": {
+    "cluster": "declared upstream only as typedb_behaviour_http_ts_cluster_test (http-ts/tests/behaviour/feature/BUILD), the multi-node cluster lane: it needs a replicated TypeDB deployment and the TLS certificates in //tool/test/resources:certificates. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+   },
+   "out_of_scope_authority": "OD-010 (docs/owner-decisions.json): single-node semantic parity is the claim; cluster/HA is not in scope for the storage adapter and may not be claimed on the strength of it.",
    "not_covered_because": [
-    "blocked suite cluster: declared upstream only as typedb_behaviour_http_ts_cluster_test (http-ts/tests/behaviour/feature/BUILD), the multi-node cluster lane: it needs a replicated TypeDB deployment and the TLS certificates in //tool/test/resources:certificates. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here.",
     "caveat npm-install-not-pnpm-lock: http-ts declares packageManager 'pnpm@8.15.9' and ships pnpm-lock.yaml (sha256 5617f6a91f82ae909edfba27c88001612149a63323eac4e9f52af9b41fbedf92), but the pnpm available here is 10.x, which does not honour a v8 lockfile without migrating it. Dependencies were therefore resolved by npm within package.json's ranges. Every exact pin was verified to have installed at its pinned version, and the full resolved tree is archived as npm-tree.json, but the transitive closure is NOT the closure the committed pnpm lockfile names.",
     "caveat steps-typecheck-not-clean: tsc exited 2 with 9 diagnostic(s) while compiling the behaviour steps, and still emitted JavaScript for every source. Upstream's Bazel target compiles the steps against //http-ts:driver-lib, which emits only dist/index.cjs and deliberately no index.d.cts (http-ts/BUILD: 'TODO: should also output index.d.cts (works in filesystem but not in bazel)'), so the upstream type surface is not reproducible outside bazel. The executed evidence below rests on the emitted JavaScript plus a zero-undefined/zero-ambiguous step check, not on a clean typecheck."
    ],
@@ -365,8 +397,8 @@
  "counts": {
   "total": 6,
   "executed_leaf": 6,
-  "covered": 0,
-  "partial": 6,
+  "covered": 4,
+  "partial": 2,
   "not_implemented": 0
  }
 }

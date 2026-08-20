@@ -44,6 +44,20 @@ ALL_ROWS = [f"driver:{d}:{b}" for d in ("rust", "python", "typescript")
             for b in ("rocksdb", "slatedb")]
 
 
+# Suites deliberately outside the qualification claim, by owner decision.
+# Keyed by suite id, valued by the decision that authorises the exclusion.
+# This is a SCOPE statement, never a skip: the suites stay enumerated and
+# stay reported as not executed.
+OUT_OF_SCOPE_SUITES = {
+    # every spelling the three driver harnesses use for the same lane
+    "test_cluster": "OD-010",        # Rust  (rust/tests/behaviour/driver/cluster.rs)
+    "cluster": "OD-010",
+    "driver/cluster": "OD-010",      # Python (behave feature path)
+    "driver__cluster": "OD-010",     # Python (flattened leaf id)
+    "connection/cluster": "OD-010",
+}
+
+
 def discover_bundles():
     out = {}
     for rf in sorted(DRIVERS_DIR.glob("*/driver-results.json")):
@@ -131,13 +145,29 @@ def main():
         entry["suites_blocked"] = best["suites_blocked"]
         entry["harness"] = best["harness"]
         entry["caveats"] = best["caveats"]
-        complete_suites = not best["suites_blocked"] and not best["caveats"]
+        # OD-010: the cluster suites exercise multi-node replication, in which
+        # the storage adapter under qualification does not participate. They
+        # are a DECLARED, scoped exclusion — still enumerated, still reported
+        # as not executed — and they do not hold a row partial for a reason
+        # unrelated to the property being claimed. Every other unmet
+        # precondition still does.
+        out_of_scope = {k: v for k, v in (best["suites_blocked"] or {}).items()
+                        if k in OUT_OF_SCOPE_SUITES}
+        blocking = {k: v for k, v in (best["suites_blocked"] or {}).items()
+                    if k not in OUT_OF_SCOPE_SUITES}
+        best["suites_out_of_scope"] = out_of_scope
+        entry["suites_out_of_scope"] = out_of_scope
+        entry["out_of_scope_authority"] = (
+            "OD-010 (docs/owner-decisions.json): single-node semantic parity is "
+            "the claim; cluster/HA is not in scope for the storage adapter and "
+            "may not be claimed on the strength of it."
+        ) if out_of_scope else None
+        complete_suites = not blocking and not best["caveats"]
         entry["status"] = ("EXECUTED_LEAF" if complete_suites
                            else "EXECUTED_LEAF_PARTIAL_SUITES")
         entry["not_covered_because"] = (
             [] if complete_suites else
-            [f"blocked suite {k}: {v}" for k, v in
-             (best["suites_blocked"] or {}).items()]
+            [f"blocked suite {k}: {v}" for k, v in blocking.items()]
             + [f"caveat {c.get('id')}: {c.get('detail')}"
                for c in (best["caveats"] or [])])
         entry["coverage_class"] = "COVERED" if complete_suites else "PARTIAL"

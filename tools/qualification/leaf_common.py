@@ -75,6 +75,30 @@ SCHEMA = "typedb-r2-leaf-evidence-v1"
 # evidence, never silently dropped.
 RUNTIME_OUTPUT_PREFIXES = ("typedb-logs/",)
 
+# Paths that diverge from the pinned checkout yet PROVABLY enter neither the
+# cargo lane's build nor the catalogue's denominator.
+#
+# WHY THIS LIST EXISTS, stated plainly rather than buried: the first full U2
+# corpus run was REFUSED by this module's own tree rule, because a concurrent
+# Bazel invocation on this shared machine rewrote
+# `sources/typedb/MODULE.bazel.lock` while the run was in flight. Widening a
+# rule after it refuses your result is exactly how evidence rots, so the
+# widening is deliberately the narrowest possible shape: an explicit path
+# list, no globs (a glob is how an exclusion quietly grows), each entry
+# carrying the check that justifies it, every excluded path recorded BY NAME
+# AND SHA256 in the evidence, and the verifier refusing any bundle that
+# excludes a path this list does not name.
+NON_CARGO_INPUTS = {
+    "MODULE.bazel.lock":
+        "Bazel's bzlmod dependency lockfile. No .rs, Cargo.toml or build.rs "
+        "anywhere in the workspace mentions MODULE.bazel (grep -rln "
+        "'MODULE.bazel' over --include=*.rs --include=*.toml --include=build.rs "
+        "returns nothing), and no catalogue target names it in source_files, so "
+        "it enters neither the cargo compilation nor the denominator. Bazel "
+        "rewrites it whenever it resolves modules, which is what happened "
+        "under the first U2 run.",
+}
+
 
 def _load_stage_module():
     """tools/fork/stage.py, imported for its own definition of what a staged
@@ -290,12 +314,16 @@ def executed_tree_identity():
 
     So every diverging path is CLASSIFIED, and the classification is recorded:
 
-      FORK_PATCH      - byte-identical to the same path under fork/typedb
-      RUNTIME_OUTPUT  - a path a RUN writes and no crate compiles
-                        (RUNTIME_OUTPUT_PREFIXES); excluded from the source
-                        delta digest, listed by name in the evidence
-      UNEXPLAINED     - anything else: a source edit that is neither upstream
-                        nor the fork. One of these makes the tree DIRTY.
+      FORK_PATCH       - byte-identical to the same path under fork/typedb
+      RUNTIME_OUTPUT   - a path a RUN writes and no crate compiles
+                         (RUNTIME_OUTPUT_PREFIXES); excluded from the source
+                         delta digest, listed by name in the evidence
+      NON_CARGO_INPUT  - a path in the explicit NON_CARGO_INPUTS list above,
+                         which enters neither the cargo build nor the
+                         denominator; excluded from the digest and recorded
+                         with its sha256 AND the reason that justifies it
+      UNEXPLAINED      - anything else: a source edit that is neither upstream
+                         nor the fork. One of these makes the tree DIRTY.
 
     tree_state = PRISTINE           - nothing diverges from the locked revision
                = FORK_STAGED_EXACT  - every diverging SOURCE path is a
@@ -322,10 +350,18 @@ def executed_tree_identity():
         elif (FORK / rel).is_file() and f.is_file() and \
                 (FORK / rel).read_bytes() == f.read_bytes():
             kind = "FORK_PATCH"
+        elif rel in NON_CARGO_INPUTS:
+            kind = "NON_CARGO_INPUT"
         else:
             kind = "UNEXPLAINED"
-        classified.append({"path": rel, "class": kind})
-        if kind != "RUNTIME_OUTPUT":
+        entry = {"path": rel, "class": kind}
+        if kind == "NON_CARGO_INPUT":
+            # excluded paths are recorded by name, digest and reason, so the
+            # exclusion is auditable rather than merely asserted
+            entry["sha256"] = common.sha256_file(f) if f.is_file() else None
+            entry["reason"] = NON_CARGO_INPUTS[rel]
+        classified.append(entry)
+        if kind not in ("RUNTIME_OUTPUT", "NON_CARGO_INPUT"):
             source_entries.append((line, rel, kind))
     h = hashlib.sha256()
     for line, rel, _kind in source_entries:
@@ -352,6 +388,8 @@ def executed_tree_identity():
         "unexplained_paths": unexplained,
         "runtime_output_paths": [c["path"] for c in classified
                                  if c["class"] == "RUNTIME_OUTPUT"],
+        "non_cargo_input_paths": [c for c in classified
+                                  if c["class"] == "NON_CARGO_INPUT"],
         "diverging_paths": classified,
         "staged_delta_files": len(source_entries),
         "staged_delta_sha256": h.hexdigest(),

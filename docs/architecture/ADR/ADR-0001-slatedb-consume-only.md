@@ -1,4 +1,29 @@
-# ADR-0001 — SlateDB is consume-only: pinned crates.io dependency, no fork
+# ADR-0001 — SlateDB is consume-only: pinned crates.io dependency, no fork *(SUPERSEDED)*
+
+> **Round-6 ratification (2026-08-20) — SUPERSEDED IN FULL, NOT ONLY FOR ONE LANE.**
+> The round-3 banner below scoped the supersession to "the R2 lane" and left
+> the impression that other lanes still consume the registry crate. They do
+> not. `[patch.crates-io]` in the product workspace manifest is
+> **workspace-global**: it redirects `slatedb` for every crate in
+> `sources/typedb`, so U2, U2S3, U3, U4 and the RocksDB oracle lanes (which
+> link `storage`) all resolve `sources/slatedb-fork`. `cargo metadata` on the
+> staged workspace resolves exactly one `slatedb` node,
+> `path+file://…/sources/slatedb-fork#slatedb@0.15.0`, with
+> `external_epoch_required` enabled. There is no lane inside this workspace
+> where ADR-0001's decision still describes reality.
+>
+> ADR-0012 is therefore the governing decision for SlateDB consumption, and
+> this record is retained for its *history* — the identity change, the
+> re-validation, and the SL-P1–SL-P4 relocation table, which is what the
+> fork's own minimal-patch rule is measured against. The remaining place the
+> unmodified registry crate is resolved is the separate `tools/` workspace
+> (no patch table), where `tools/storage-diff-spike` uses it deliberately as
+> the differential oracle.
+>
+> Enforced, not just asserted: `tools/ci/check_dependency_sources.py` derives
+> the resolved source from `cargo metadata` and fails CI if this ADR, the
+> ADR index, the README, architecture, development or operations documents
+> ever restate the consume-only claim.
 
 > **Round-3 correction (2026-08-18) — SUPERSEDED FOR THE R2 LANE (CD-007).**
 > The round-3 audit finding S-02 requires the crate Cargo actually links to
@@ -13,7 +38,7 @@
 > CD-007 (safe side = ship the tested fork); an owner ADR amendment to
 > ratify fork-consumption for the R2 lane is the recorded follow-up.
 
-**Status:** accepted (owner decision, 2026-08-16) — SUPERSEDED for the R2 lane, see the round-3 banner above
+**Status:** SUPERSEDED in full by [ADR-0012](ADR-0012-slatedb-soft-fork-external-epochs.md) (round-6 ratification, 2026-08-20). Originally accepted by owner decision 2026-08-16; historical value only.
 **Amends:** brief v16 §0.2.1 (federated workspaces), §8.3–8.4 / §12.7 (SL-P1–SL-P4 as source patches), §21.1 (fork/slatedb materialization)
 
 ## Decision

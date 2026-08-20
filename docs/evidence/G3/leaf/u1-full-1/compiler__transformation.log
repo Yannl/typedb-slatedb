@@ -1,0 +1,21 @@
+
+running 12 tests
+[2m2026-08-20T09:59:48.382371Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-20T09:59:48.382839Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[1] with size 1.08 KiB; 1.08 KiB total
+[2m2026-08-20T09:59:48.382917Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[1]
+[2m2026-08-20T09:59:48.384310Z[0m [35mTRACE[0m [2mconcept::thing::statistics[0m[2m:[0m Statistics sync finished in 0 ms. Storage watermark was initially: SeqNr[1]. Current statistics sequence is from: SeqNr[1]
+test test_optimise_away_read_snapshot ... ok
+test test_optimise_away_schema_snapshot ... ok
+test test_relation_index_transformation_dual_read_snapshot ... ok
+test test_optimise_away_write_snapshot ... ok
+test test_relation_index_transformation_dual_write_snapshot ... ok
+test test_relation_index_transformation_dual_schema_snapshot ... ok
+test test_relation_index_transformation_not_applied_ternary_read_snapshot ... ok
+test test_relation_index_transformation_not_applied_ternary_schema_snapshot ... ok
+test test_relation_index_transformation_single_read_snapshot ... ok
+test test_relation_index_transformation_single_schema_snapshot ... ok
+test test_relation_index_transformation_not_applied_ternary_write_snapshot ... ok
+test test_relation_index_transformation_single_write_snapshot ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+

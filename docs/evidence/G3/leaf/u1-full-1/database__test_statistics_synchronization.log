@@ -1,0 +1,954 @@
+
+running 1 test
+[2m2026-08-20T09:59:50.456599Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running schema query:
+define attribute name, value string; attribute age, value integer; entity person, owns name @key, owns age;
+[2m2026-08-20T09:59:50.458266Z[0m [32m INFO[0m [2mquery::query_manager[0m[2m:[0m Schema query done.
+Query profile[measurements_enabled=true, total micros: 0]
+  CompileIR[enabled=true, total micros=0]
+    validation micros: 0
+    annotation micros: 0
+    compilation micros: 0
+  -----
+  Stage[root pattern id=0]
+    Define ~~ 0 us
+    Define pattern
+    [0] Define execution
+        ==> batches: 0, rows: 0, micros: 0, micros/row: NaN (raw seeks: 2, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+
+[2m2026-08-20T09:59:50.459464Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[0]
+[2m2026-08-20T09:59:50.460057Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-20T09:59:50.461857Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-20T09:59:50.463182Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[1] with size 657 bytes; 657 bytes total
+[2m2026-08-20T09:59:50.463236Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[1]
+[2m2026-08-20T09:59:50.463342Z[0m [35mTRACE[0m [2mconcept::thing::statistics[0m[2m:[0m Statistics sync finished in 0 ms. Storage watermark was initially: SeqNr[1]. Current statistics sequence is from: SeqNr[1]
+[2m2026-08-20T09:59:53.959980Z[0m [35mTRACE[0m [2mdatabase::database[0m[2m:[0m Loading database 'stats-recovery', at path '"/tmp/leafrun/38217/test_storage_9240399806732611916/stats-recovery"' (absolute path: 'Ok("/tmp/leafrun/38217/test_storage_9240399806732611916/stats-recovery")').
+[2m2026-08-20T09:59:53.960130Z[0m [35mTRACE[0m [2mdatabase::database[0m[2m:[0m Loading database 'stats-recovery' WAL.
+[2m2026-08-20T09:59:53.991240Z[0m [35mTRACE[0m [2mdatabase::database[0m[2m:[0m Loading last database 'stats-recovery' checkpoint
+[2m2026-08-20T09:59:53.991365Z[0m [35mTRACE[0m [2mstorage[0m[2m:[0m No usable checkpoint, loading from WAL
+[2m2026-08-20T09:59:53.991557Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[1] with size 657 bytes; 657 bytes total
+[2m2026-08-20T09:59:53.991588Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[1]
+[2m2026-08-20T09:59:53.991900Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[2] with size 5.03 KiB; 5.67 KiB total
+[2m2026-08-20T09:59:53.997956Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[3] with size 5.00 KiB; 10.67 KiB total
+[2m2026-08-20T09:59:53.998040Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[2]
+[2m2026-08-20T09:59:53.998052Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[3]
+[2m2026-08-20T09:59:53.998335Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[4] with size 5.02 KiB; 15.68 KiB total
+[2m2026-08-20T09:59:53.998344Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[4]
+[2m2026-08-20T09:59:53.998604Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[5] with size 5.03 KiB; 20.71 KiB total
+[2m2026-08-20T09:59:53.998862Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[6] with size 5.03 KiB; 25.74 KiB total
+[2m2026-08-20T09:59:53.998892Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[5]
+[2m2026-08-20T09:59:53.998905Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[6]
+[2m2026-08-20T09:59:53.999197Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[7] with size 5.01 KiB; 30.75 KiB total
+[2m2026-08-20T09:59:53.999213Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[7]
+[2m2026-08-20T09:59:53.999473Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[8] with size 5.03 KiB; 35.77 KiB total
+[2m2026-08-20T09:59:53.999731Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[9] with size 5.03 KiB; 40.80 KiB total
+[2m2026-08-20T09:59:53.999740Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[9]
+[2m2026-08-20T09:59:54.000064Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[10] with size 5.01 KiB; 45.81 KiB total
+[2m2026-08-20T09:59:54.000086Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[10]
+[2m2026-08-20T09:59:54.000347Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[11] with size 5.02 KiB; 50.83 KiB total
+[2m2026-08-20T09:59:54.000357Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[8]
+[2m2026-08-20T09:59:54.000631Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[12] with size 5.02 KiB; 55.84 KiB total
+[2m2026-08-20T09:59:54.000646Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[11]
+[2m2026-08-20T09:59:54.000934Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[13] with size 5.03 KiB; 60.87 KiB total
+[2m2026-08-20T09:59:54.001205Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[14] with size 5.03 KiB; 65.90 KiB total
+[2m2026-08-20T09:59:54.001459Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[15] with size 5.03 KiB; 70.93 KiB total
+[2m2026-08-20T09:59:54.001473Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[14]
+[2m2026-08-20T09:59:54.001481Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[15]
+[2m2026-08-20T09:59:54.001488Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[13]
+[2m2026-08-20T09:59:54.005801Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[16] with size 5.02 KiB; 75.94 KiB total
+[2m2026-08-20T09:59:54.006778Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[17] with size 5.01 KiB; 80.95 KiB total
+[2m2026-08-20T09:59:54.006857Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[17]
+[2m2026-08-20T09:59:54.007213Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[18] with size 5.03 KiB; 85.98 KiB total
+[2m2026-08-20T09:59:54.007258Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[16]
+[2m2026-08-20T09:59:54.007550Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[19] with size 5.03 KiB; 91.01 KiB total
+[2m2026-08-20T09:59:54.007570Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[18]
+[2m2026-08-20T09:59:54.007826Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[20] with size 5.03 KiB; 96.03 KiB total
+[2m2026-08-20T09:59:54.008126Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[21] with size 5.03 KiB; 101.06 KiB total
+[2m2026-08-20T09:59:54.008148Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[21]
+[2m2026-08-20T09:59:54.008422Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[22] with size 5.03 KiB; 106.09 KiB total
+[2m2026-08-20T09:59:54.008433Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[12]
+[2m2026-08-20T09:59:54.008441Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[22]
+[2m2026-08-20T09:59:54.008693Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[23] with size 5.02 KiB; 111.11 KiB total
+[2m2026-08-20T09:59:54.008986Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[24] with size 5.03 KiB; 116.13 KiB total
+[2m2026-08-20T09:59:54.009266Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[25] with size 5.03 KiB; 121.16 KiB total
+[2m2026-08-20T09:59:54.009280Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[24]
+[2m2026-08-20T09:59:54.009288Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[19]
+[2m2026-08-20T09:59:54.009296Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[25]
+[2m2026-08-20T09:59:54.009303Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[23]
+[2m2026-08-20T09:59:54.009311Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[20]
+[2m2026-08-20T09:59:54.009561Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[26] with size 5.03 KiB; 126.19 KiB total
+[2m2026-08-20T09:59:54.009584Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[26]
+[2m2026-08-20T09:59:54.018035Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[27] with size 5.03 KiB; 131.22 KiB total
+[2m2026-08-20T09:59:54.018349Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[28] with size 5.03 KiB; 136.24 KiB total
+[2m2026-08-20T09:59:54.018606Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[29] with size 5.03 KiB; 141.27 KiB total
+[2m2026-08-20T09:59:54.018860Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[30] with size 5.03 KiB; 146.30 KiB total
+[2m2026-08-20T09:59:54.019154Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[31] with size 5.03 KiB; 151.33 KiB total
+[2m2026-08-20T09:59:54.019414Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[32] with size 5.03 KiB; 156.35 KiB total
+[2m2026-08-20T09:59:54.019441Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[28]
+[2m2026-08-20T09:59:54.019691Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[33] with size 5.03 KiB; 161.38 KiB total
+[2m2026-08-20T09:59:54.019989Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[34] with size 5.02 KiB; 166.40 KiB total
+[2m2026-08-20T09:59:54.020284Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[35] with size 5.03 KiB; 171.42 KiB total
+[2m2026-08-20T09:59:54.020304Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[27]
+[2m2026-08-20T09:59:54.020313Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[32]
+[2m2026-08-20T09:59:54.020320Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[33]
+[2m2026-08-20T09:59:54.020337Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[34]
+[2m2026-08-20T09:59:54.020344Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[29]
+[2m2026-08-20T09:59:54.020593Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[36] with size 5.03 KiB; 176.45 KiB total
+[2m2026-08-20T09:59:54.020860Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[37] with size 5.01 KiB; 181.46 KiB total
+[2m2026-08-20T09:59:54.020908Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[37]
+[2m2026-08-20T09:59:54.020922Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[30]
+[2m2026-08-20T09:59:54.020930Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[31]
+[2m2026-08-20T09:59:54.020937Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[35]
+[2m2026-08-20T09:59:54.020956Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[36]
+[2m2026-08-20T09:59:54.021218Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[38] with size 5.03 KiB; 186.49 KiB total
+[2m2026-08-20T09:59:54.021469Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[39] with size 5.03 KiB; 191.51 KiB total
+[2m2026-08-20T09:59:54.026001Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[40] with size 5.03 KiB; 196.54 KiB total
+[2m2026-08-20T09:59:54.026358Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[41] with size 5.03 KiB; 201.57 KiB total
+[2m2026-08-20T09:59:54.026384Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[38]
+[2m2026-08-20T09:59:54.026628Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[42] with size 5.02 KiB; 206.59 KiB total
+[2m2026-08-20T09:59:54.026904Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[43] with size 5.02 KiB; 211.60 KiB total
+[2m2026-08-20T09:59:54.027182Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[44] with size 5.03 KiB; 216.63 KiB total
+[2m2026-08-20T09:59:54.027448Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[45] with size 5.03 KiB; 221.66 KiB total
+[2m2026-08-20T09:59:54.027473Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[40]
+[2m2026-08-20T09:59:54.027481Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[44]
+[2m2026-08-20T09:59:54.027489Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[45]
+[2m2026-08-20T09:59:54.027733Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[46] with size 5.03 KiB; 226.69 KiB total
+[2m2026-08-20T09:59:54.028027Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[47] with size 5.03 KiB; 231.71 KiB total
+[2m2026-08-20T09:59:54.028298Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[48] with size 5.02 KiB; 236.73 KiB total
+[2m2026-08-20T09:59:54.028553Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[49] with size 5.03 KiB; 241.76 KiB total
+[2m2026-08-20T09:59:54.028572Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[41]
+[2m2026-08-20T09:59:54.028832Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[50] with size 5.03 KiB; 246.79 KiB total
+[2m2026-08-20T09:59:54.029133Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[51] with size 5.03 KiB; 251.81 KiB total
+[2m2026-08-20T09:59:54.029158Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[39]
+[2m2026-08-20T09:59:54.029167Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[47]
+[2m2026-08-20T09:59:54.029413Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[52] with size 5.03 KiB; 256.84 KiB total
+[2m2026-08-20T09:59:54.029430Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[50]
+[2m2026-08-20T09:59:54.029437Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[51]
+[2m2026-08-20T09:59:54.029445Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[49]
+[2m2026-08-20T09:59:54.037889Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[53] with size 5.02 KiB; 261.86 KiB total
+[2m2026-08-20T09:59:54.038259Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[54] with size 5.03 KiB; 266.89 KiB total
+[2m2026-08-20T09:59:54.038301Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[46]
+[2m2026-08-20T09:59:54.038311Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[48]
+[2m2026-08-20T09:59:54.038575Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[55] with size 5.03 KiB; 271.91 KiB total
+[2m2026-08-20T09:59:54.038603Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[43]
+[2m2026-08-20T09:59:54.038865Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[56] with size 5.03 KiB; 276.94 KiB total
+[2m2026-08-20T09:59:54.038899Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[54]
+[2m2026-08-20T09:59:54.038909Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[53]
+[2m2026-08-20T09:59:54.039172Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[57] with size 5.01 KiB; 281.95 KiB total
+[2m2026-08-20T09:59:54.039505Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[58] with size 5.03 KiB; 286.98 KiB total
+[2m2026-08-20T09:59:54.039540Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[57]
+[2m2026-08-20T09:59:54.039552Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[42]
+[2m2026-08-20T09:59:54.039817Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[59] with size 5.03 KiB; 292.00 KiB total
+[2m2026-08-20T09:59:54.040113Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[60] with size 5.03 KiB; 297.03 KiB total
+[2m2026-08-20T09:59:54.040133Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[55]
+[2m2026-08-20T09:59:54.040142Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[52]
+[2m2026-08-20T09:59:54.040149Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[56]
+[2m2026-08-20T09:59:54.040156Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[59]
+[2m2026-08-20T09:59:54.040163Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[60]
+[2m2026-08-20T09:59:54.040462Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[61] with size 5.02 KiB; 302.05 KiB total
+[2m2026-08-20T09:59:54.040764Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[62] with size 5.03 KiB; 307.08 KiB total
+[2m2026-08-20T09:59:54.040780Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[61]
+[2m2026-08-20T09:59:54.040789Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[62]
+[2m2026-08-20T09:59:54.041095Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[63] with size 5.03 KiB; 312.10 KiB total
+[2m2026-08-20T09:59:54.041361Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[64] with size 5.03 KiB; 317.13 KiB total
+[2m2026-08-20T09:59:54.041396Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[58]
+[2m2026-08-20T09:59:54.045903Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[65] with size 5.03 KiB; 322.16 KiB total
+[2m2026-08-20T09:59:54.046274Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[66] with size 5.02 KiB; 327.17 KiB total
+[2m2026-08-20T09:59:54.046543Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[67] with size 5.02 KiB; 332.19 KiB total
+[2m2026-08-20T09:59:54.046798Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[68] with size 5.03 KiB; 337.22 KiB total
+[2m2026-08-20T09:59:54.047103Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[69] with size 5.03 KiB; 342.25 KiB total
+[2m2026-08-20T09:59:54.047370Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[70] with size 5.02 KiB; 347.26 KiB total
+[2m2026-08-20T09:59:54.047645Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[71] with size 5.03 KiB; 352.29 KiB total
+[2m2026-08-20T09:59:54.047937Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[72] with size 5.03 KiB; 357.32 KiB total
+[2m2026-08-20T09:59:54.048237Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[73] with size 5.03 KiB; 362.35 KiB total
+[2m2026-08-20T09:59:54.048515Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[74] with size 5.03 KiB; 367.37 KiB total
+[2m2026-08-20T09:59:54.048790Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[75] with size 5.03 KiB; 372.40 KiB total
+[2m2026-08-20T09:59:54.055800Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[76] with size 5.03 KiB; 377.43 KiB total
+[2m2026-08-20T09:59:54.056198Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[77] with size 5.01 KiB; 382.44 KiB total
+[2m2026-08-20T09:59:54.056500Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[78] with size 5.03 KiB; 387.46 KiB total
+[2m2026-08-20T09:59:54.056781Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[79] with size 5.03 KiB; 392.49 KiB total
+[2m2026-08-20T09:59:54.057100Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[80] with size 5.02 KiB; 397.51 KiB total
+[2m2026-08-20T09:59:54.057416Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[81] with size 5.03 KiB; 402.54 KiB total
+[2m2026-08-20T09:59:54.057754Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[82] with size 5.03 KiB; 407.56 KiB total
+[2m2026-08-20T09:59:54.057794Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[64]
+[2m2026-08-20T09:59:54.057805Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[63]
+[2m2026-08-20T09:59:54.057813Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[72]
+[2m2026-08-20T09:59:54.057824Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[80]
+[2m2026-08-20T09:59:54.057832Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[67]
+[2m2026-08-20T09:59:54.057839Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[68]
+[2m2026-08-20T09:59:54.057846Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[76]
+[2m2026-08-20T09:59:54.057861Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[69]
+[2m2026-08-20T09:59:54.057894Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[74]
+[2m2026-08-20T09:59:54.057910Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[79]
+[2m2026-08-20T09:59:54.057920Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[71]
+[2m2026-08-20T09:59:54.057928Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[73]
+[2m2026-08-20T09:59:54.057935Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[75]
+[2m2026-08-20T09:59:54.057953Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[78]
+[2m2026-08-20T09:59:54.057964Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[82]
+[2m2026-08-20T09:59:54.057972Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[70]
+[2m2026-08-20T09:59:54.057979Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[66]
+[2m2026-08-20T09:59:54.057987Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[81]
+[2m2026-08-20T09:59:54.057994Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[77]
+[2m2026-08-20T09:59:54.058255Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[83] with size 5.03 KiB; 412.59 KiB total
+[2m2026-08-20T09:59:54.058272Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[65]
+[2m2026-08-20T09:59:54.058280Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[83]
+[2m2026-08-20T09:59:54.058532Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[84] with size 5.03 KiB; 417.62 KiB total
+[2m2026-08-20T09:59:54.058800Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[85] with size 5.03 KiB; 422.65 KiB total
+[2m2026-08-20T09:59:54.059100Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[86] with size 5.02 KiB; 427.66 KiB total
+[2m2026-08-20T09:59:54.059379Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[87] with size 5.03 KiB; 432.69 KiB total
+[2m2026-08-20T09:59:54.059657Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[88] with size 5.03 KiB; 437.72 KiB total
+[2m2026-08-20T09:59:54.059964Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[89] with size 5.02 KiB; 442.74 KiB total
+[2m2026-08-20T09:59:54.059997Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[84]
+[2m2026-08-20T09:59:54.060281Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[90] with size 5.03 KiB; 447.76 KiB total
+[2m2026-08-20T09:59:54.060314Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[87]
+[2m2026-08-20T09:59:54.060322Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[86]
+[2m2026-08-20T09:59:54.060330Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[85]
+[2m2026-08-20T09:59:54.060619Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[91] with size 5.03 KiB; 452.79 KiB total
+[2m2026-08-20T09:59:54.060923Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[92] with size 5.03 KiB; 457.82 KiB total
+[2m2026-08-20T09:59:54.061203Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[93] with size 5.03 KiB; 462.84 KiB total
+[2m2026-08-20T09:59:54.061468Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[94] with size 5.02 KiB; 467.86 KiB total
+[2m2026-08-20T09:59:54.061775Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[95] with size 5.03 KiB; 472.89 KiB total
+[2m2026-08-20T09:59:54.062089Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[96] with size 5.03 KiB; 477.92 KiB total
+[2m2026-08-20T09:59:54.062367Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[97] with size 5.02 KiB; 482.93 KiB total
+[2m2026-08-20T09:59:54.062637Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[98] with size 5.03 KiB; 487.96 KiB total
+[2m2026-08-20T09:59:54.062660Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[90]
+[2m2026-08-20T09:59:54.062985Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[99] with size 5.03 KiB; 492.99 KiB total
+[2m2026-08-20T09:59:54.063271Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[100] with size 5.01 KiB; 498.00 KiB total
+[2m2026-08-20T09:59:54.063294Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[97]
+[2m2026-08-20T09:59:54.063303Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[99]
+[2m2026-08-20T09:59:54.063320Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[88]
+[2m2026-08-20T09:59:54.063334Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[89]
+[2m2026-08-20T09:59:54.063624Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[101] with size 5.03 KiB; 503.02 KiB total
+[2m2026-08-20T09:59:54.063645Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[101]
+[2m2026-08-20T09:59:54.063947Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[102] with size 5.03 KiB; 508.05 KiB total
+[2m2026-08-20T09:59:54.063973Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[93]
+[2m2026-08-20T09:59:54.063982Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[98]
+[2m2026-08-20T09:59:54.063989Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[96]
+[2m2026-08-20T09:59:54.063997Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[102]
+[2m2026-08-20T09:59:54.064276Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[103] with size 5.03 KiB; 513.08 KiB total
+[2m2026-08-20T09:59:54.064299Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[100]
+[2m2026-08-20T09:59:54.064307Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[94]
+[2m2026-08-20T09:59:54.064319Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[95]
+[2m2026-08-20T09:59:54.064333Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[91]
+[2m2026-08-20T09:59:54.064340Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[92]
+[2m2026-08-20T09:59:54.064347Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[103]
+[2m2026-08-20T09:59:54.064608Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[104] with size 5.03 KiB; 518.11 KiB total
+[2m2026-08-20T09:59:54.064950Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[105] with size 5.02 KiB; 523.12 KiB total
+[2m2026-08-20T09:59:54.065241Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[106] with size 5.03 KiB; 528.15 KiB total
+[2m2026-08-20T09:59:54.065270Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[105]
+[2m2026-08-20T09:59:54.065279Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[106]
+[2m2026-08-20T09:59:54.065287Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[104]
+[2m2026-08-20T09:59:54.065546Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[107] with size 5.03 KiB; 533.18 KiB total
+[2m2026-08-20T09:59:54.065567Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[107]
+[2m2026-08-20T09:59:54.065898Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[108] with size 5.03 KiB; 538.21 KiB total
+[2m2026-08-20T09:59:54.066192Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[109] with size 5.03 KiB; 543.23 KiB total
+[2m2026-08-20T09:59:54.066475Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[110] with size 5.03 KiB; 548.26 KiB total
+[2m2026-08-20T09:59:54.066770Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[111] with size 5.03 KiB; 553.29 KiB total
+[2m2026-08-20T09:59:54.067098Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[112] with size 5.02 KiB; 558.31 KiB total
+[2m2026-08-20T09:59:54.067388Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[113] with size 5.03 KiB; 563.33 KiB total
+[2m2026-08-20T09:59:54.067668Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[114] with size 5.03 KiB; 568.36 KiB total
+[2m2026-08-20T09:59:54.067967Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[115] with size 5.01 KiB; 573.37 KiB total
+[2m2026-08-20T09:59:54.068251Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[116] with size 5.03 KiB; 578.40 KiB total
+[2m2026-08-20T09:59:54.068540Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[117] with size 5.02 KiB; 583.41 KiB total
+[2m2026-08-20T09:59:54.068851Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[118] with size 5.03 KiB; 588.44 KiB total
+[2m2026-08-20T09:59:54.069192Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[119] with size 5.03 KiB; 593.47 KiB total
+[2m2026-08-20T09:59:54.069222Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[115]
+[2m2026-08-20T09:59:54.069231Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[113]
+[2m2026-08-20T09:59:54.069239Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[111]
+[2m2026-08-20T09:59:54.069491Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[120] with size 5.03 KiB; 598.50 KiB total
+[2m2026-08-20T09:59:54.069505Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[112]
+[2m2026-08-20T09:59:54.069513Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[110]
+[2m2026-08-20T09:59:54.069520Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[109]
+[2m2026-08-20T09:59:54.069527Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[108]
+[2m2026-08-20T09:59:54.069816Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[121] with size 5.02 KiB; 603.51 KiB total
+[2m2026-08-20T09:59:54.069843Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[114]
+[2m2026-08-20T09:59:54.070135Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[122] with size 5.02 KiB; 608.53 KiB total
+[2m2026-08-20T09:59:54.070406Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[123] with size 5.03 KiB; 613.56 KiB total
+[2m2026-08-20T09:59:54.070423Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[118]
+[2m2026-08-20T09:59:54.070431Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[119]
+[2m2026-08-20T09:59:54.070439Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[117]
+[2m2026-08-20T09:59:54.070446Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[121]
+[2m2026-08-20T09:59:54.070453Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[122]
+[2m2026-08-20T09:59:54.070460Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[123]
+[2m2026-08-20T09:59:54.070467Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[120]
+[2m2026-08-20T09:59:54.070758Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[124] with size 5.03 KiB; 618.58 KiB total
+[2m2026-08-20T09:59:54.071066Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[125] with size 5.03 KiB; 623.61 KiB total
+[2m2026-08-20T09:59:54.071339Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[126] with size 5.03 KiB; 628.64 KiB total
+[2m2026-08-20T09:59:54.071358Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[125]
+[2m2026-08-20T09:59:54.071629Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[127] with size 5.01 KiB; 633.65 KiB total
+[2m2026-08-20T09:59:54.071652Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[124]
+[2m2026-08-20T09:59:54.071660Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[116]
+[2m2026-08-20T09:59:54.071948Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[128] with size 5.03 KiB; 638.67 KiB total
+[2m2026-08-20T09:59:54.071980Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[127]
+[2m2026-08-20T09:59:54.071988Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[126]
+[2m2026-08-20T09:59:54.071996Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[128]
+[2m2026-08-20T09:59:54.072255Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[129] with size 5.03 KiB; 643.70 KiB total
+[2m2026-08-20T09:59:54.072547Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[130] with size 5.03 KiB; 648.73 KiB total
+[2m2026-08-20T09:59:54.072858Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[131] with size 5.03 KiB; 653.76 KiB total
+[2m2026-08-20T09:59:54.072908Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[130]
+[2m2026-08-20T09:59:54.073189Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[132] with size 5.03 KiB; 658.78 KiB total
+[2m2026-08-20T09:59:54.073481Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[133] with size 5.03 KiB; 663.81 KiB total
+[2m2026-08-20T09:59:54.073504Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[129]
+[2m2026-08-20T09:59:54.073513Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[132]
+[2m2026-08-20T09:59:54.073810Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[134] with size 5.03 KiB; 668.84 KiB total
+[2m2026-08-20T09:59:54.073838Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[134]
+[2m2026-08-20T09:59:54.073847Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[133]
+[2m2026-08-20T09:59:54.074137Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[135] with size 5.03 KiB; 673.87 KiB total
+[2m2026-08-20T09:59:54.074409Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[136] with size 5.03 KiB; 678.89 KiB total
+[2m2026-08-20T09:59:54.074670Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[137] with size 5.02 KiB; 683.91 KiB total
+[2m2026-08-20T09:59:54.074686Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[136]
+[2m2026-08-20T09:59:54.075006Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[138] with size 5.03 KiB; 688.94 KiB total
+[2m2026-08-20T09:59:54.075036Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[138]
+[2m2026-08-20T09:59:54.075327Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[139] with size 5.03 KiB; 693.97 KiB total
+[2m2026-08-20T09:59:54.075360Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[139]
+[2m2026-08-20T09:59:54.075628Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[140] with size 5.02 KiB; 698.98 KiB total
+[2m2026-08-20T09:59:54.076060Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[141] with size 5.03 KiB; 704.01 KiB total
+[2m2026-08-20T09:59:54.076397Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[142] with size 5.02 KiB; 709.03 KiB total
+[2m2026-08-20T09:59:54.076703Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[143] with size 5.03 KiB; 714.06 KiB total
+[2m2026-08-20T09:59:54.077043Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[144] with size 5.03 KiB; 719.08 KiB total
+[2m2026-08-20T09:59:54.077327Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[145] with size 5.03 KiB; 724.11 KiB total
+[2m2026-08-20T09:59:54.077632Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[146] with size 5.03 KiB; 729.14 KiB total
+[2m2026-08-20T09:59:54.077946Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[147] with size 5.03 KiB; 734.17 KiB total
+[2m2026-08-20T09:59:54.078222Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[148] with size 5.03 KiB; 739.19 KiB total
+[2m2026-08-20T09:59:54.078502Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[149] with size 5.03 KiB; 744.22 KiB total
+[2m2026-08-20T09:59:54.078782Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[150] with size 5.03 KiB; 749.25 KiB total
+[2m2026-08-20T09:59:54.079141Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[151] with size 5.03 KiB; 754.27 KiB total
+[2m2026-08-20T09:59:54.079168Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[131]
+[2m2026-08-20T09:59:54.079177Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[135]
+[2m2026-08-20T09:59:54.079447Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[152] with size 5.02 KiB; 759.29 KiB total
+[2m2026-08-20T09:59:54.079471Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[137]
+[2m2026-08-20T09:59:54.079738Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[153] with size 5.03 KiB; 764.32 KiB total
+[2m2026-08-20T09:59:54.080041Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[154] with size 5.03 KiB; 769.35 KiB total
+[2m2026-08-20T09:59:54.080309Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[155] with size 5.03 KiB; 774.37 KiB total
+[2m2026-08-20T09:59:54.080568Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[156] with size 5.02 KiB; 779.39 KiB total
+[2m2026-08-20T09:59:54.080593Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[142]
+[2m2026-08-20T09:59:54.080603Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[146]
+[2m2026-08-20T09:59:54.080612Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[148]
+[2m2026-08-20T09:59:54.080623Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[141]
+[2m2026-08-20T09:59:54.080947Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[157] with size 5.02 KiB; 784.41 KiB total
+[2m2026-08-20T09:59:54.080980Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[153]
+[2m2026-08-20T09:59:54.080989Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[149]
+[2m2026-08-20T09:59:54.080997Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[156]
+[2m2026-08-20T09:59:54.081004Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[151]
+[2m2026-08-20T09:59:54.081011Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[150]
+[2m2026-08-20T09:59:54.081025Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[143]
+[2m2026-08-20T09:59:54.081032Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[155]
+[2m2026-08-20T09:59:54.081039Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[154]
+[2m2026-08-20T09:59:54.081046Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[145]
+[2m2026-08-20T09:59:54.081054Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[147]
+[2m2026-08-20T09:59:54.081064Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[144]
+[2m2026-08-20T09:59:54.081071Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[152]
+[2m2026-08-20T09:59:54.081078Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[140]
+[2m2026-08-20T09:59:54.081368Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[158] with size 5.03 KiB; 789.44 KiB total
+[2m2026-08-20T09:59:54.081686Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[159] with size 5.03 KiB; 794.46 KiB total
+[2m2026-08-20T09:59:54.081997Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[160] with size 5.03 KiB; 799.49 KiB total
+[2m2026-08-20T09:59:54.082283Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[161] with size 5.03 KiB; 804.52 KiB total
+[2m2026-08-20T09:59:54.082555Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[162] with size 5.03 KiB; 809.55 KiB total
+[2m2026-08-20T09:59:54.082881Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[163] with size 5.03 KiB; 814.57 KiB total
+[2m2026-08-20T09:59:54.083182Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[164] with size 5.02 KiB; 819.59 KiB total
+[2m2026-08-20T09:59:54.083471Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[165] with size 5.03 KiB; 824.62 KiB total
+[2m2026-08-20T09:59:54.083735Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[166] with size 5.03 KiB; 829.65 KiB total
+[2m2026-08-20T09:59:54.084037Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[167] with size 5.02 KiB; 834.66 KiB total
+[2m2026-08-20T09:59:54.084323Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[168] with size 5.03 KiB; 839.69 KiB total
+[2m2026-08-20T09:59:54.084616Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[169] with size 5.03 KiB; 844.72 KiB total
+[2m2026-08-20T09:59:54.084928Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[170] with size 5.03 KiB; 849.75 KiB total
+[2m2026-08-20T09:59:54.084972Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[159]
+[2m2026-08-20T09:59:54.084984Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[157]
+[2m2026-08-20T09:59:54.084992Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[168]
+[2m2026-08-20T09:59:54.084999Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[170]
+[2m2026-08-20T09:59:54.085006Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[158]
+[2m2026-08-20T09:59:54.085014Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[162]
+[2m2026-08-20T09:59:54.085028Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[165]
+[2m2026-08-20T09:59:54.085035Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[164]
+[2m2026-08-20T09:59:54.085304Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[171] with size 5.02 KiB; 854.76 KiB total
+[2m2026-08-20T09:59:54.085625Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[172] with size 5.03 KiB; 859.79 KiB total
+[2m2026-08-20T09:59:54.085658Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[169]
+[2m2026-08-20T09:59:54.085667Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[163]
+[2m2026-08-20T09:59:54.085676Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[160]
+[2m2026-08-20T09:59:54.086002Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[173] with size 5.02 KiB; 864.81 KiB total
+[2m2026-08-20T09:59:54.086029Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[167]
+[2m2026-08-20T09:59:54.086038Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[166]
+[2m2026-08-20T09:59:54.086046Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[172]
+[2m2026-08-20T09:59:54.086053Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[173]
+[2m2026-08-20T09:59:54.086060Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[171]
+[2m2026-08-20T09:59:54.086333Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[174] with size 5.03 KiB; 869.83 KiB total
+[2m2026-08-20T09:59:54.086363Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[174]
+[2m2026-08-20T09:59:54.086379Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[161]
+[2m2026-08-20T09:59:54.086657Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[175] with size 5.03 KiB; 874.86 KiB total
+[2m2026-08-20T09:59:54.086958Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[176] with size 5.03 KiB; 879.89 KiB total
+[2m2026-08-20T09:59:54.086982Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[175]
+[2m2026-08-20T09:59:54.087249Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[177] with size 5.03 KiB; 884.92 KiB total
+[2m2026-08-20T09:59:54.087277Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[176]
+[2m2026-08-20T09:59:54.087545Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[178] with size 5.02 KiB; 889.93 KiB total
+[2m2026-08-20T09:59:54.087827Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[179] with size 5.03 KiB; 894.96 KiB total
+[2m2026-08-20T09:59:54.087851Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[177]
+[2m2026-08-20T09:59:54.087860Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[178]
+[2m2026-08-20T09:59:54.087881Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[179]
+[2m2026-08-20T09:59:54.088184Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[180] with size 5.03 KiB; 899.99 KiB total
+[2m2026-08-20T09:59:54.088214Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[180]
+[2m2026-08-20T09:59:54.088470Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[181] with size 5.03 KiB; 905.02 KiB total
+[2m2026-08-20T09:59:54.088487Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[181]
+[2m2026-08-20T09:59:54.088763Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[182] with size 5.03 KiB; 910.04 KiB total
+[2m2026-08-20T09:59:54.089074Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[183] with size 5.03 KiB; 915.07 KiB total
+[2m2026-08-20T09:59:54.089364Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[184] with size 5.03 KiB; 920.10 KiB total
+[2m2026-08-20T09:59:54.089388Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[182]
+[2m2026-08-20T09:59:54.089677Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[185] with size 5.03 KiB; 925.13 KiB total
+[2m2026-08-20T09:59:54.089991Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[186] with size 5.03 KiB; 930.15 KiB total
+[2m2026-08-20T09:59:54.090017Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[184]
+[2m2026-08-20T09:59:54.090026Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[183]
+[2m2026-08-20T09:59:54.090033Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[186]
+[2m2026-08-20T09:59:54.090304Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[187] with size 5.03 KiB; 935.18 KiB total
+[2m2026-08-20T09:59:54.090577Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[188] with size 5.02 KiB; 940.20 KiB total
+[2m2026-08-20T09:59:54.090596Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[187]
+[2m2026-08-20T09:59:54.090605Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[188]
+[2m2026-08-20T09:59:54.090931Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[189] with size 5.03 KiB; 945.23 KiB total
+[2m2026-08-20T09:59:54.091225Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[190] with size 5.03 KiB; 950.25 KiB total
+[2m2026-08-20T09:59:54.091247Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[189]
+[2m2026-08-20T09:59:54.091499Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[191] with size 5.02 KiB; 955.27 KiB total
+[2m2026-08-20T09:59:54.091768Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[192] with size 5.03 KiB; 960.30 KiB total
+[2m2026-08-20T09:59:54.092097Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[193] with size 5.03 KiB; 965.33 KiB total
+[2m2026-08-20T09:59:54.092401Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[194] with size 5.02 KiB; 970.34 KiB total
+[2m2026-08-20T09:59:54.092678Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[195] with size 5.03 KiB; 975.37 KiB total
+[2m2026-08-20T09:59:54.093022Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[196] with size 5.03 KiB; 980.40 KiB total
+[2m2026-08-20T09:59:54.093320Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[197] with size 5.03 KiB; 985.42 KiB total
+[2m2026-08-20T09:59:54.093650Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[198] with size 5.03 KiB; 990.45 KiB total
+[2m2026-08-20T09:59:54.093951Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[199] with size 5.03 KiB; 995.48 KiB total
+[2m2026-08-20T09:59:54.094225Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[200] with size 5.02 KiB; 1000.50 KiB total
+[2m2026-08-20T09:59:54.094503Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[201] with size 5.03 KiB; 1005.52 KiB total
+[2m2026-08-20T09:59:54.094532Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[185]
+[2m2026-08-20T09:59:54.094796Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[202] with size 5.02 KiB; 1010.54 KiB total
+[2m2026-08-20T09:59:54.095119Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[203] with size 5.03 KiB; 1015.57 KiB total
+[2m2026-08-20T09:59:54.095385Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[204] with size 5.03 KiB; 1020.60 KiB total
+[2m2026-08-20T09:59:54.095637Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[205] with size 5.02 KiB; 1.00 MiB total
+[2m2026-08-20T09:59:54.096022Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[206] with size 5.03 KiB; 1.01 MiB total
+[2m2026-08-20T09:59:54.096291Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[207] with size 5.03 KiB; 1.01 MiB total
+[2m2026-08-20T09:59:54.096313Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[190]
+[2m2026-08-20T09:59:54.096582Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[208] with size 5.03 KiB; 1.02 MiB total
+[2m2026-08-20T09:59:54.096608Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[201]
+[2m2026-08-20T09:59:54.096853Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[209] with size 5.03 KiB; 1.02 MiB total
+[2m2026-08-20T09:59:54.096888Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[200]
+[2m2026-08-20T09:59:54.096908Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[198]
+[2m2026-08-20T09:59:54.096917Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[194]
+[2m2026-08-20T09:59:54.096925Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[199]
+[2m2026-08-20T09:59:54.096932Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[195]
+[2m2026-08-20T09:59:54.096944Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[191]
+[2m2026-08-20T09:59:54.096958Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[192]
+[2m2026-08-20T09:59:54.096965Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[197]
+[2m2026-08-20T09:59:54.096972Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[209]
+[2m2026-08-20T09:59:54.096979Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[204]
+[2m2026-08-20T09:59:54.096986Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[193]
+[2m2026-08-20T09:59:54.096993Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[196]
+[2m2026-08-20T09:59:54.097010Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[207]
+[2m2026-08-20T09:59:54.097017Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[206]
+[2m2026-08-20T09:59:54.097024Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[205]
+[2m2026-08-20T09:59:54.097031Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[203]
+[2m2026-08-20T09:59:54.097037Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[202]
+[2m2026-08-20T09:59:54.097044Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[208]
+[2m2026-08-20T09:59:54.097298Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[210] with size 5.03 KiB; 1.03 MiB total
+[2m2026-08-20T09:59:54.097318Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[210]
+[2m2026-08-20T09:59:54.097570Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[211] with size 5.03 KiB; 1.03 MiB total
+[2m2026-08-20T09:59:54.097904Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[212] with size 5.03 KiB; 1.04 MiB total
+[2m2026-08-20T09:59:54.098202Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[213] with size 5.02 KiB; 1.04 MiB total
+[2m2026-08-20T09:59:54.098480Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[214] with size 5.02 KiB; 1.05 MiB total
+[2m2026-08-20T09:59:54.098502Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[213]
+[2m2026-08-20T09:59:54.098510Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[211]
+[2m2026-08-20T09:59:54.098517Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[212]
+[2m2026-08-20T09:59:54.098792Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[215] with size 5.03 KiB; 1.05 MiB total
+[2m2026-08-20T09:59:54.099093Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[216] with size 5.02 KiB; 1.06 MiB total
+[2m2026-08-20T09:59:54.099409Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[217] with size 5.03 KiB; 1.06 MiB total
+[2m2026-08-20T09:59:54.099453Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[214]
+[2m2026-08-20T09:59:54.099463Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[217]
+[2m2026-08-20T09:59:54.099743Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[218] with size 5.03 KiB; 1.07 MiB total
+[2m2026-08-20T09:59:54.099770Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[216]
+[2m2026-08-20T09:59:54.099779Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[215]
+[2m2026-08-20T09:59:54.100072Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[219] with size 5.03 KiB; 1.07 MiB total
+[2m2026-08-20T09:59:54.100364Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[220] with size 5.03 KiB; 1.08 MiB total
+[2m2026-08-20T09:59:54.100646Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[221] with size 5.03 KiB; 1.08 MiB total
+[2m2026-08-20T09:59:54.100977Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[222] with size 5.03 KiB; 1.09 MiB total
+[2m2026-08-20T09:59:54.101292Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[223] with size 5.03 KiB; 1.09 MiB total
+[2m2026-08-20T09:59:54.101570Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[224] with size 5.02 KiB; 1.09 MiB total
+[2m2026-08-20T09:59:54.101931Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[225] with size 5.03 KiB; 1.10 MiB total
+[2m2026-08-20T09:59:54.102368Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[226] with size 5.03 KiB; 1.10 MiB total
+[2m2026-08-20T09:59:54.102667Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[227] with size 5.03 KiB; 1.11 MiB total
+[2m2026-08-20T09:59:54.103022Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[228] with size 5.03 KiB; 1.11 MiB total
+[2m2026-08-20T09:59:54.103054Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[218]
+[2m2026-08-20T09:59:54.103326Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[229] with size 5.03 KiB; 1.12 MiB total
+[2m2026-08-20T09:59:54.103619Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[230] with size 5.03 KiB; 1.12 MiB total
+[2m2026-08-20T09:59:54.103915Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[231] with size 5.02 KiB; 1.13 MiB total
+[2m2026-08-20T09:59:54.104200Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[232] with size 5.03 KiB; 1.13 MiB total
+[2m2026-08-20T09:59:54.104480Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[233] with size 5.03 KiB; 1.14 MiB total
+[2m2026-08-20T09:59:54.104762Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[234] with size 5.03 KiB; 1.14 MiB total
+[2m2026-08-20T09:59:54.105079Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[235] with size 5.02 KiB; 1.15 MiB total
+[2m2026-08-20T09:59:54.105389Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[236] with size 5.02 KiB; 1.15 MiB total
+[2m2026-08-20T09:59:54.105419Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[227]
+[2m2026-08-20T09:59:54.105429Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[223]
+[2m2026-08-20T09:59:54.105437Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[232]
+[2m2026-08-20T09:59:54.105444Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[221]
+[2m2026-08-20T09:59:54.105451Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[231]
+[2m2026-08-20T09:59:54.105458Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[236]
+[2m2026-08-20T09:59:54.105466Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[229]
+[2m2026-08-20T09:59:54.105473Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[225]
+[2m2026-08-20T09:59:54.105480Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[233]
+[2m2026-08-20T09:59:54.105487Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[234]
+[2m2026-08-20T09:59:54.105494Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[224]
+[2m2026-08-20T09:59:54.105509Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[230]
+[2m2026-08-20T09:59:54.105516Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[222]
+[2m2026-08-20T09:59:54.105524Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[226]
+[2m2026-08-20T09:59:54.105532Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[235]
+[2m2026-08-20T09:59:54.105542Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[220]
+[2m2026-08-20T09:59:54.105550Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[228]
+[2m2026-08-20T09:59:54.105979Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[237] with size 5.03 KiB; 1.16 MiB total
+[2m2026-08-20T09:59:54.106014Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[237]
+[2m2026-08-20T09:59:54.106285Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[238] with size 5.03 KiB; 1.16 MiB total
+[2m2026-08-20T09:59:54.106347Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[238]
+[2m2026-08-20T09:59:54.106629Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[239] with size 5.02 KiB; 1.17 MiB total
+[2m2026-08-20T09:59:54.106663Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[239]
+[2m2026-08-20T09:59:54.106677Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[219]
+[2m2026-08-20T09:59:54.106975Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[240] with size 5.03 KiB; 1.17 MiB total
+[2m2026-08-20T09:59:54.107280Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[241] with size 5.02 KiB; 1.18 MiB total
+[2m2026-08-20T09:59:54.107306Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[241]
+[2m2026-08-20T09:59:54.107314Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[240]
+[2m2026-08-20T09:59:54.107580Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[242] with size 5.03 KiB; 1.18 MiB total
+[2m2026-08-20T09:59:54.107882Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[243] with size 5.03 KiB; 1.19 MiB total
+[2m2026-08-20T09:59:54.107915Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[243]
+[2m2026-08-20T09:59:54.107929Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[242]
+[2m2026-08-20T09:59:54.108267Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[244] with size 5.03 KiB; 1.19 MiB total
+[2m2026-08-20T09:59:54.108535Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[245] with size 5.03 KiB; 1.20 MiB total
+[2m2026-08-20T09:59:54.108814Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[246] with size 5.03 KiB; 1.20 MiB total
+[2m2026-08-20T09:59:54.108837Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[246]
+[2m2026-08-20T09:59:54.108846Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[244]
+[2m2026-08-20T09:59:54.109158Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[247] with size 5.02 KiB; 1.21 MiB total
+[2m2026-08-20T09:59:54.109453Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[248] with size 5.03 KiB; 1.21 MiB total
+[2m2026-08-20T09:59:54.109772Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[249] with size 5.03 KiB; 1.22 MiB total
+[2m2026-08-20T09:59:54.110097Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[250] with size 5.02 KiB; 1.22 MiB total
+[2m2026-08-20T09:59:54.110387Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[251] with size 5.03 KiB; 1.23 MiB total
+[2m2026-08-20T09:59:54.110415Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[251]
+[2m2026-08-20T09:59:54.110682Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[252] with size 5.03 KiB; 1.23 MiB total
+[2m2026-08-20T09:59:54.110997Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[253] with size 5.03 KiB; 1.24 MiB total
+[2m2026-08-20T09:59:54.111031Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[250]
+[2m2026-08-20T09:59:54.111043Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[253]
+[2m2026-08-20T09:59:54.111336Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[254] with size 5.02 KiB; 1.24 MiB total
+[2m2026-08-20T09:59:54.111364Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[252]
+[2m2026-08-20T09:59:54.111373Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[248]
+[2m2026-08-20T09:59:54.111381Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[249]
+[2m2026-08-20T09:59:54.111388Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[254]
+[2m2026-08-20T09:59:54.111661Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[255] with size 5.03 KiB; 1.25 MiB total
+[2m2026-08-20T09:59:54.112043Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[256] with size 5.03 KiB; 1.25 MiB total
+[2m2026-08-20T09:59:54.112068Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[255]
+[2m2026-08-20T09:59:54.112077Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[247]
+[2m2026-08-20T09:59:54.112085Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[256]
+[2m2026-08-20T09:59:54.112347Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[257] with size 5.03 KiB; 1.26 MiB total
+[2m2026-08-20T09:59:54.112362Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[245]
+[2m2026-08-20T09:59:54.112370Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[257]
+[2m2026-08-20T09:59:54.112626Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[258] with size 5.02 KiB; 1.26 MiB total
+[2m2026-08-20T09:59:54.112643Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[258]
+[2m2026-08-20T09:59:54.112948Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[259] with size 5.02 KiB; 1.27 MiB total
+[2m2026-08-20T09:59:54.112974Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[259]
+[2m2026-08-20T09:59:54.113235Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[260] with size 5.03 KiB; 1.27 MiB total
+[2m2026-08-20T09:59:54.113262Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[260]
+[2m2026-08-20T09:59:54.113522Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[261] with size 5.03 KiB; 1.28 MiB total
+[2m2026-08-20T09:59:54.113546Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[261]
+[2m2026-08-20T09:59:54.113853Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[262] with size 5.03 KiB; 1.28 MiB total
+[2m2026-08-20T09:59:54.114162Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[263] with size 5.03 KiB; 1.29 MiB total
+[2m2026-08-20T09:59:54.114428Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[264] with size 5.03 KiB; 1.29 MiB total
+[2m2026-08-20T09:59:54.114448Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[263]
+[2m2026-08-20T09:59:54.114714Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[265] with size 5.03 KiB; 1.30 MiB total
+[2m2026-08-20T09:59:54.114733Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[265]
+[2m2026-08-20T09:59:54.115027Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[266] with size 5.03 KiB; 1.30 MiB total
+[2m2026-08-20T09:59:54.115366Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[267] with size 5.03 KiB; 1.31 MiB total
+[2m2026-08-20T09:59:54.115663Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[268] with size 5.03 KiB; 1.31 MiB total
+[2m2026-08-20T09:59:54.115979Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[269] with size 5.02 KiB; 1.32 MiB total
+[2m2026-08-20T09:59:54.116257Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[270] with size 5.03 KiB; 1.32 MiB total
+[2m2026-08-20T09:59:54.116530Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[271] with size 5.03 KiB; 1.33 MiB total
+[2m2026-08-20T09:59:54.116825Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[272] with size 5.02 KiB; 1.33 MiB total
+[2m2026-08-20T09:59:54.117144Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[273] with size 5.03 KiB; 1.34 MiB total
+[2m2026-08-20T09:59:54.117422Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[274] with size 5.03 KiB; 1.34 MiB total
+[2m2026-08-20T09:59:54.117447Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[262]
+[2m2026-08-20T09:59:54.117753Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[275] with size 5.02 KiB; 1.35 MiB total
+[2m2026-08-20T09:59:54.118062Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[276] with size 5.03 KiB; 1.35 MiB total
+[2m2026-08-20T09:59:54.118348Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[277] with size 5.03 KiB; 1.35 MiB total
+[2m2026-08-20T09:59:54.118374Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[270]
+[2m2026-08-20T09:59:54.118383Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[269]
+[2m2026-08-20T09:59:54.118391Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[267]
+[2m2026-08-20T09:59:54.118399Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[274]
+[2m2026-08-20T09:59:54.118406Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[271]
+[2m2026-08-20T09:59:54.118420Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[273]
+[2m2026-08-20T09:59:54.118427Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[276]
+[2m2026-08-20T09:59:54.118434Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[277]
+[2m2026-08-20T09:59:54.118442Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[275]
+[2m2026-08-20T09:59:54.118722Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[278] with size 5.02 KiB; 1.36 MiB total
+[2m2026-08-20T09:59:54.118748Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[272]
+[2m2026-08-20T09:59:54.118760Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[278]
+[2m2026-08-20T09:59:54.118768Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[266]
+[2m2026-08-20T09:59:54.118776Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[264]
+[2m2026-08-20T09:59:54.118783Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[268]
+[2m2026-08-20T09:59:54.119093Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[279] with size 5.02 KiB; 1.36 MiB total
+[2m2026-08-20T09:59:54.119116Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[279]
+[2m2026-08-20T09:59:54.119402Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[280] with size 5.03 KiB; 1.37 MiB total
+[2m2026-08-20T09:59:54.119695Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[281] with size 5.03 KiB; 1.37 MiB total
+[2m2026-08-20T09:59:54.120005Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[282] with size 5.03 KiB; 1.38 MiB total
+[2m2026-08-20T09:59:54.120297Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[283] with size 5.03 KiB; 1.38 MiB total
+[2m2026-08-20T09:59:54.120580Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[284] with size 5.03 KiB; 1.39 MiB total
+[2m2026-08-20T09:59:54.120606Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[284]
+[2m2026-08-20T09:59:54.120867Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[285] with size 5.03 KiB; 1.39 MiB total
+[2m2026-08-20T09:59:54.121188Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[286] with size 5.02 KiB; 1.40 MiB total
+[2m2026-08-20T09:59:54.121472Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[287] with size 5.02 KiB; 1.40 MiB total
+[2m2026-08-20T09:59:54.121787Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[288] with size 5.03 KiB; 1.41 MiB total
+[2m2026-08-20T09:59:54.122101Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[289] with size 5.02 KiB; 1.41 MiB total
+[2m2026-08-20T09:59:54.122515Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[290] with size 5.03 KiB; 1.42 MiB total
+[2m2026-08-20T09:59:54.122816Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[291] with size 5.03 KiB; 1.42 MiB total
+[2m2026-08-20T09:59:54.122843Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[283]
+[2m2026-08-20T09:59:54.123156Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[292] with size 5.03 KiB; 1.43 MiB total
+[2m2026-08-20T09:59:54.123436Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[293] with size 5.03 KiB; 1.43 MiB total
+[2m2026-08-20T09:59:54.123712Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[294] with size 5.03 KiB; 1.44 MiB total
+[2m2026-08-20T09:59:54.124025Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[295] with size 5.03 KiB; 1.44 MiB total
+[2m2026-08-20T09:59:54.124057Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[288]
+[2m2026-08-20T09:59:54.124070Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[280]
+[2m2026-08-20T09:59:54.124078Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[287]
+[2m2026-08-20T09:59:54.124086Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[285]
+[2m2026-08-20T09:59:54.124360Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[296] with size 5.02 KiB; 1.45 MiB total
+[2m2026-08-20T09:59:54.124633Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[297] with size 5.03 KiB; 1.45 MiB total
+[2m2026-08-20T09:59:54.124659Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[282]
+[2m2026-08-20T09:59:54.124672Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[286]
+[2m2026-08-20T09:59:54.124682Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[281]
+[2m2026-08-20T09:59:54.124691Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[289]
+[2m2026-08-20T09:59:54.124997Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[298] with size 5.02 KiB; 1.46 MiB total
+[2m2026-08-20T09:59:54.125274Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[299] with size 5.03 KiB; 1.46 MiB total
+[2m2026-08-20T09:59:54.125576Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[300] with size 5.03 KiB; 1.47 MiB total
+[2m2026-08-20T09:59:54.125637Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[298]
+[2m2026-08-20T09:59:54.125655Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[292]
+[2m2026-08-20T09:59:54.125663Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[295]
+[2m2026-08-20T09:59:54.125670Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[297]
+[2m2026-08-20T09:59:54.125678Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[291]
+[2m2026-08-20T09:59:54.125687Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[290]
+[2m2026-08-20T09:59:54.125694Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[293]
+[2m2026-08-20T09:59:54.125702Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[296]
+[2m2026-08-20T09:59:54.126165Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[301] with size 5.03 KiB; 1.47 MiB total
+[2m2026-08-20T09:59:54.126499Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[302] with size 5.02 KiB; 1.48 MiB total
+[2m2026-08-20T09:59:54.126803Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[303] with size 5.03 KiB; 1.48 MiB total
+[2m2026-08-20T09:59:54.126833Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[294]
+[2m2026-08-20T09:59:54.126842Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[302]
+[2m2026-08-20T09:59:54.126850Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[303]
+[2m2026-08-20T09:59:54.127181Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[304] with size 5.03 KiB; 1.49 MiB total
+[2m2026-08-20T09:59:54.127463Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[305] with size 5.03 KiB; 1.49 MiB total
+[2m2026-08-20T09:59:54.127485Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[304]
+[2m2026-08-20T09:59:54.127494Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[305]
+[2m2026-08-20T09:59:54.127757Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[306] with size 5.02 KiB; 1.50 MiB total
+[2m2026-08-20T09:59:54.127774Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[306]
+[2m2026-08-20T09:59:54.128066Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[307] with size 5.03 KiB; 1.50 MiB total
+[2m2026-08-20T09:59:54.128092Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[307]
+[2m2026-08-20T09:59:54.128371Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[308] with size 5.03 KiB; 1.51 MiB total
+[2m2026-08-20T09:59:54.128667Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[309] with size 5.03 KiB; 1.51 MiB total
+[2m2026-08-20T09:59:54.128692Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[308]
+[2m2026-08-20T09:59:54.128994Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[310] with size 5.02 KiB; 1.52 MiB total
+[2m2026-08-20T09:59:54.129020Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[300]
+[2m2026-08-20T09:59:54.129029Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[299]
+[2m2026-08-20T09:59:54.129305Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[311] with size 5.03 KiB; 1.52 MiB total
+[2m2026-08-20T09:59:54.129330Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[311]
+[2m2026-08-20T09:59:54.129683Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[312] with size 5.02 KiB; 1.53 MiB total
+[2m2026-08-20T09:59:54.130038Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[313] with size 5.03 KiB; 1.53 MiB total
+[2m2026-08-20T09:59:54.130068Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[312]
+[2m2026-08-20T09:59:54.130364Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[314] with size 5.03 KiB; 1.54 MiB total
+[2m2026-08-20T09:59:54.130643Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[315] with size 5.03 KiB; 1.54 MiB total
+[2m2026-08-20T09:59:54.130953Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[316] with size 5.02 KiB; 1.55 MiB total
+[2m2026-08-20T09:59:54.131250Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[317] with size 5.03 KiB; 1.55 MiB total
+[2m2026-08-20T09:59:54.131555Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[318] with size 5.02 KiB; 1.56 MiB total
+[2m2026-08-20T09:59:54.131851Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[319] with size 5.03 KiB; 1.56 MiB total
+[2m2026-08-20T09:59:54.132163Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[320] with size 5.02 KiB; 1.57 MiB total
+[2m2026-08-20T09:59:54.132193Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[301]
+[2m2026-08-20T09:59:54.132203Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[310]
+[2m2026-08-20T09:59:54.132214Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[309]
+[2m2026-08-20T09:59:54.132470Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[321] with size 5.03 KiB; 1.57 MiB total
+[2m2026-08-20T09:59:54.132492Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[313]
+[2m2026-08-20T09:59:54.132507Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[320]
+[2m2026-08-20T09:59:54.132795Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[322] with size 5.02 KiB; 1.58 MiB total
+[2m2026-08-20T09:59:54.132818Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[322]
+[2m2026-08-20T09:59:54.133125Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[323] with size 5.03 KiB; 1.58 MiB total
+[2m2026-08-20T09:59:54.133152Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[323]
+[2m2026-08-20T09:59:54.133423Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[324] with size 5.02 KiB; 1.59 MiB total
+[2m2026-08-20T09:59:54.133451Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[324]
+[2m2026-08-20T09:59:54.133772Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[325] with size 5.03 KiB; 1.59 MiB total
+[2m2026-08-20T09:59:54.133801Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[325]
+[2m2026-08-20T09:59:54.134097Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[326] with size 5.03 KiB; 1.60 MiB total
+[2m2026-08-20T09:59:54.134408Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[327] with size 5.03 KiB; 1.60 MiB total
+[2m2026-08-20T09:59:54.134448Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[327]
+[2m2026-08-20T09:59:54.134456Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[326]
+[2m2026-08-20T09:59:54.134464Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[314]
+[2m2026-08-20T09:59:54.134724Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[328] with size 5.03 KiB; 1.61 MiB total
+[2m2026-08-20T09:59:54.134741Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[328]
+[2m2026-08-20T09:59:54.135045Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[329] with size 5.02 KiB; 1.61 MiB total
+[2m2026-08-20T09:59:54.135070Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[329]
+[2m2026-08-20T09:59:54.135079Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[315]
+[2m2026-08-20T09:59:54.135352Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[330] with size 5.03 KiB; 1.61 MiB total
+[2m2026-08-20T09:59:54.135375Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[319]
+[2m2026-08-20T09:59:54.135384Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[330]
+[2m2026-08-20T09:59:54.135674Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[331] with size 5.03 KiB; 1.62 MiB total
+[2m2026-08-20T09:59:54.135703Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[317]
+[2m2026-08-20T09:59:54.135712Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[321]
+[2m2026-08-20T09:59:54.136001Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[332] with size 5.03 KiB; 1.62 MiB total
+[2m2026-08-20T09:59:54.136270Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[333] with size 5.03 KiB; 1.63 MiB total
+[2m2026-08-20T09:59:54.136523Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[334] with size 5.03 KiB; 1.63 MiB total
+[2m2026-08-20T09:59:54.136774Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[335] with size 5.02 KiB; 1.64 MiB total
+[2m2026-08-20T09:59:54.136809Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[333]
+[2m2026-08-20T09:59:54.136834Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[316]
+[2m2026-08-20T09:59:54.136841Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[318]
+[2m2026-08-20T09:59:54.136848Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[334]
+[2m2026-08-20T09:59:54.137154Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[336] with size 5.03 KiB; 1.64 MiB total
+[2m2026-08-20T09:59:54.137441Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[337] with size 5.03 KiB; 1.65 MiB total
+[2m2026-08-20T09:59:54.137467Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[336]
+[2m2026-08-20T09:59:54.137758Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[338] with size 5.03 KiB; 1.65 MiB total
+[2m2026-08-20T09:59:54.138068Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[339] with size 5.03 KiB; 1.66 MiB total
+[2m2026-08-20T09:59:54.138094Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[338]
+[2m2026-08-20T09:59:54.138363Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[340] with size 5.03 KiB; 1.66 MiB total
+[2m2026-08-20T09:59:54.138389Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[340]
+[2m2026-08-20T09:59:54.138647Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[341] with size 5.02 KiB; 1.67 MiB total
+[2m2026-08-20T09:59:54.138932Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[342] with size 5.03 KiB; 1.67 MiB total
+[2m2026-08-20T09:59:54.138965Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[335]
+[2m2026-08-20T09:59:54.138975Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[337]
+[2m2026-08-20T09:59:54.138983Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[332]
+[2m2026-08-20T09:59:54.139247Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[343] with size 5.03 KiB; 1.68 MiB total
+[2m2026-08-20T09:59:54.139266Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[339]
+[2m2026-08-20T09:59:54.139545Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[344] with size 5.02 KiB; 1.68 MiB total
+[2m2026-08-20T09:59:54.139815Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[345] with size 5.03 KiB; 1.69 MiB total
+[2m2026-08-20T09:59:54.140106Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[346] with size 5.03 KiB; 1.69 MiB total
+[2m2026-08-20T09:59:54.140368Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[347] with size 5.03 KiB; 1.70 MiB total
+[2m2026-08-20T09:59:54.140388Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[331]
+[2m2026-08-20T09:59:54.140636Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[348] with size 5.02 KiB; 1.70 MiB total
+[2m2026-08-20T09:59:54.140921Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[349] with size 5.03 KiB; 1.71 MiB total
+[2m2026-08-20T09:59:54.140952Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[345]
+[2m2026-08-20T09:59:54.140964Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[346]
+[2m2026-08-20T09:59:54.140972Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[344]
+[2m2026-08-20T09:59:54.140980Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[341]
+[2m2026-08-20T09:59:54.140990Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[349]
+[2m2026-08-20T09:59:54.140997Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[348]
+[2m2026-08-20T09:59:54.141269Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[350] with size 5.03 KiB; 1.71 MiB total
+[2m2026-08-20T09:59:54.141290Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[342]
+[2m2026-08-20T09:59:54.141298Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[347]
+[2m2026-08-20T09:59:54.141635Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[351] with size 5.03 KiB; 1.72 MiB total
+[2m2026-08-20T09:59:54.141944Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[352] with size 5.02 KiB; 1.72 MiB total
+[2m2026-08-20T09:59:54.142218Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[353] with size 5.03 KiB; 1.73 MiB total
+[2m2026-08-20T09:59:54.142246Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[351]
+[2m2026-08-20T09:59:54.142254Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[352]
+[2m2026-08-20T09:59:54.142262Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[353]
+[2m2026-08-20T09:59:54.142269Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[350]
+[2m2026-08-20T09:59:54.142276Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[343]
+[2m2026-08-20T09:59:54.142532Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[354] with size 5.03 KiB; 1.73 MiB total
+[2m2026-08-20T09:59:54.142842Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[355] with size 5.03 KiB; 1.74 MiB total
+[2m2026-08-20T09:59:54.142866Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[355]
+[2m2026-08-20T09:59:54.142901Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[354]
+[2m2026-08-20T09:59:54.143184Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[356] with size 5.03 KiB; 1.74 MiB total
+[2m2026-08-20T09:59:54.143472Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[357] with size 5.03 KiB; 1.75 MiB total
+[2m2026-08-20T09:59:54.144022Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[358] with size 5.02 KiB; 1.75 MiB total
+[2m2026-08-20T09:59:54.144307Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[359] with size 5.03 KiB; 1.76 MiB total
+[2m2026-08-20T09:59:54.144343Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[358]
+[2m2026-08-20T09:59:54.144609Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[360] with size 5.03 KiB; 1.76 MiB total
+[2m2026-08-20T09:59:54.144905Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[361] with size 5.02 KiB; 1.77 MiB total
+[2m2026-08-20T09:59:54.144938Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[357]
+[2m2026-08-20T09:59:54.144959Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[360]
+[2m2026-08-20T09:59:54.145243Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[362] with size 5.03 KiB; 1.77 MiB total
+[2m2026-08-20T09:59:54.145269Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[362]
+[2m2026-08-20T09:59:54.145537Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[363] with size 5.03 KiB; 1.78 MiB total
+[2m2026-08-20T09:59:54.145562Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[363]
+[2m2026-08-20T09:59:54.147328Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[364] with size 5.03 KiB; 1.78 MiB total
+[2m2026-08-20T09:59:54.147416Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[364]
+[2m2026-08-20T09:59:54.147723Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[365] with size 5.02 KiB; 1.79 MiB total
+[2m2026-08-20T09:59:54.147748Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[365]
+[2m2026-08-20T09:59:54.148059Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[366] with size 5.03 KiB; 1.79 MiB total
+[2m2026-08-20T09:59:54.148329Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[367] with size 5.03 KiB; 1.80 MiB total
+[2m2026-08-20T09:59:54.148349Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[356]
+[2m2026-08-20T09:59:54.148619Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[368] with size 5.03 KiB; 1.80 MiB total
+[2m2026-08-20T09:59:54.148650Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[361]
+[2m2026-08-20T09:59:54.148662Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[368]
+[2m2026-08-20T09:59:54.148977Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[369] with size 5.03 KiB; 1.81 MiB total
+[2m2026-08-20T09:59:54.149007Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[369]
+[2m2026-08-20T09:59:54.149024Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[359]
+[2m2026-08-20T09:59:54.149284Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[370] with size 5.02 KiB; 1.81 MiB total
+[2m2026-08-20T09:59:54.149304Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[367]
+[2m2026-08-20T09:59:54.149578Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[371] with size 5.03 KiB; 1.82 MiB total
+[2m2026-08-20T09:59:54.149637Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[366]
+[2m2026-08-20T09:59:54.149654Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[370]
+[2m2026-08-20T09:59:54.150139Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[372] with size 5.03 KiB; 1.82 MiB total
+[2m2026-08-20T09:59:54.150541Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[373] with size 5.03 KiB; 1.83 MiB total
+[2m2026-08-20T09:59:54.150571Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[373]
+[2m2026-08-20T09:59:54.150847Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[374] with size 5.03 KiB; 1.83 MiB total
+[2m2026-08-20T09:59:54.150888Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[371]
+[2m2026-08-20T09:59:54.150905Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[372]
+[2m2026-08-20T09:59:54.151182Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[375] with size 5.02 KiB; 1.84 MiB total
+[2m2026-08-20T09:59:54.151205Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[375]
+[2m2026-08-20T09:59:54.151478Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[376] with size 5.02 KiB; 1.84 MiB total
+[2m2026-08-20T09:59:54.151767Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[377] with size 5.03 KiB; 1.85 MiB total
+[2m2026-08-20T09:59:54.151790Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[377]
+[2m2026-08-20T09:59:54.152089Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[378] with size 5.03 KiB; 1.85 MiB total
+[2m2026-08-20T09:59:54.152368Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[379] with size 5.02 KiB; 1.86 MiB total
+[2m2026-08-20T09:59:54.152649Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[380] with size 5.03 KiB; 1.86 MiB total
+[2m2026-08-20T09:59:54.154185Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[381] with size 5.03 KiB; 1.87 MiB total
+[2m2026-08-20T09:59:54.154529Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[382] with size 5.03 KiB; 1.87 MiB total
+[2m2026-08-20T09:59:54.154562Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[378]
+[2m2026-08-20T09:59:54.154571Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[379]
+[2m2026-08-20T09:59:54.154579Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[382]
+[2m2026-08-20T09:59:54.154860Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[383] with size 5.03 KiB; 1.88 MiB total
+[2m2026-08-20T09:59:54.154907Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[381]
+[2m2026-08-20T09:59:54.154920Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[383]
+[2m2026-08-20T09:59:54.154929Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[374]
+[2m2026-08-20T09:59:54.155198Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[384] with size 5.03 KiB; 1.88 MiB total
+[2m2026-08-20T09:59:54.155218Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[376]
+[2m2026-08-20T09:59:54.155226Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[380]
+[2m2026-08-20T09:59:54.155234Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[384]
+[2m2026-08-20T09:59:54.155498Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[385] with size 5.03 KiB; 1.88 MiB total
+[2m2026-08-20T09:59:54.155795Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[386] with size 5.03 KiB; 1.89 MiB total
+[2m2026-08-20T09:59:54.155938Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[386]
+[2m2026-08-20T09:59:54.155964Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[385]
+[2m2026-08-20T09:59:54.156239Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[387] with size 5.02 KiB; 1.89 MiB total
+[2m2026-08-20T09:59:54.156533Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[388] with size 5.03 KiB; 1.90 MiB total
+[2m2026-08-20T09:59:54.156816Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[389] with size 5.03 KiB; 1.90 MiB total
+[2m2026-08-20T09:59:54.157372Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[390] with size 5.02 KiB; 1.91 MiB total
+[2m2026-08-20T09:59:54.158179Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[391] with size 5.02 KiB; 1.91 MiB total
+[2m2026-08-20T09:59:54.158526Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[392] with size 5.03 KiB; 1.92 MiB total
+[2m2026-08-20T09:59:54.158563Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[388]
+[2m2026-08-20T09:59:54.158574Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[389]
+[2m2026-08-20T09:59:54.158584Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[387]
+[2m2026-08-20T09:59:54.158857Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[393] with size 5.03 KiB; 1.92 MiB total
+[2m2026-08-20T09:59:54.158906Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[393]
+[2m2026-08-20T09:59:54.159189Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[394] with size 5.03 KiB; 1.93 MiB total
+[2m2026-08-20T09:59:54.159488Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[395] with size 5.03 KiB; 1.93 MiB total
+[2m2026-08-20T09:59:54.159527Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[391]
+[2m2026-08-20T09:59:54.159536Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[390]
+[2m2026-08-20T09:59:54.159550Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[392]
+[2m2026-08-20T09:59:54.159557Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[395]
+[2m2026-08-20T09:59:54.159564Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[394]
+[2m2026-08-20T09:59:54.159832Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[396] with size 5.03 KiB; 1.94 MiB total
+[2m2026-08-20T09:59:54.160157Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[397] with size 5.03 KiB; 1.94 MiB total
+[2m2026-08-20T09:59:54.160423Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[398] with size 5.03 KiB; 1.95 MiB total
+[2m2026-08-20T09:59:54.160675Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[399] with size 5.03 KiB; 1.95 MiB total
+[2m2026-08-20T09:59:54.160694Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[396]
+[2m2026-08-20T09:59:54.160702Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[397]
+[2m2026-08-20T09:59:54.160709Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[399]
+[2m2026-08-20T09:59:54.160717Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[398]
+[2m2026-08-20T09:59:54.161003Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[400] with size 5.03 KiB; 1.96 MiB total
+[2m2026-08-20T09:59:54.161317Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[401] with size 5.03 KiB; 1.96 MiB total
+[2m2026-08-20T09:59:54.161348Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[400]
+[2m2026-08-20T09:59:54.161357Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[401]
+[2m2026-08-20T09:59:54.321939Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Applying recovered commits
+[2m2026-08-20T09:59:54.360798Z[0m [35mTRACE[0m [2mstorage[0m[2m:[0m Finished applying commits from WAL.
+[2m2026-08-20T09:59:54.367585Z[0m [35mTRACE[0m [2mdatabase::database[0m[2m:[0m Finding last database 'stats-recovery' statistics WAL entry
+[2m2026-08-20T09:59:54.373046Z[0m [35mTRACE[0m [2mdatabase::database[0m[2m:[0m Synchronising database 'stats-recovery' statistics from seq nr 'SeqNr[355]'
+[2m2026-08-20T09:59:54.378270Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[347] with size 5.03 KiB; 5.03 KiB total
+[2m2026-08-20T09:59:54.378613Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[348] with size 5.02 KiB; 10.04 KiB total
+[2m2026-08-20T09:59:54.378993Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[349] with size 5.03 KiB; 15.07 KiB total
+[2m2026-08-20T09:59:54.379065Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[349]
+[2m2026-08-20T09:59:54.379078Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[348]
+[2m2026-08-20T09:59:54.379495Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[350] with size 5.03 KiB; 20.10 KiB total
+[2m2026-08-20T09:59:54.379547Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[347]
+[2m2026-08-20T09:59:54.380114Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[351] with size 5.03 KiB; 25.13 KiB total
+[2m2026-08-20T09:59:54.380547Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[352] with size 5.02 KiB; 30.14 KiB total
+[2m2026-08-20T09:59:54.381021Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[353] with size 5.03 KiB; 35.17 KiB total
+[2m2026-08-20T09:59:54.381080Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[351]
+[2m2026-08-20T09:59:54.381098Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[352]
+[2m2026-08-20T09:59:54.381107Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[353]
+[2m2026-08-20T09:59:54.381117Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[350]
+[2m2026-08-20T09:59:54.381514Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[354] with size 5.03 KiB; 40.20 KiB total
+[2m2026-08-20T09:59:54.382074Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[355] with size 5.03 KiB; 45.23 KiB total
+[2m2026-08-20T09:59:54.382131Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[355]
+[2m2026-08-20T09:59:54.382146Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[354]
+[2m2026-08-20T09:59:54.382529Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[356] with size 5.03 KiB; 50.25 KiB total
+[2m2026-08-20T09:59:54.382979Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[357] with size 5.03 KiB; 55.28 KiB total
+[2m2026-08-20T09:59:54.383448Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[358] with size 5.02 KiB; 60.30 KiB total
+[2m2026-08-20T09:59:54.383912Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[359] with size 5.03 KiB; 65.33 KiB total
+[2m2026-08-20T09:59:54.383971Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[358]
+[2m2026-08-20T09:59:54.393671Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[360] with size 5.03 KiB; 70.35 KiB total
+[2m2026-08-20T09:59:54.394298Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[361] with size 5.02 KiB; 75.37 KiB total
+[2m2026-08-20T09:59:54.394357Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[357]
+[2m2026-08-20T09:59:54.394373Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[360]
+[2m2026-08-20T09:59:54.394781Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[362] with size 5.03 KiB; 80.40 KiB total
+[2m2026-08-20T09:59:54.394812Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[362]
+[2m2026-08-20T09:59:54.395259Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[363] with size 5.03 KiB; 85.43 KiB total
+[2m2026-08-20T09:59:54.395305Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[363]
+[2m2026-08-20T09:59:54.395711Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[364] with size 5.03 KiB; 90.45 KiB total
+[2m2026-08-20T09:59:54.395740Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[364]
+[2m2026-08-20T09:59:54.396190Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[365] with size 5.02 KiB; 95.47 KiB total
+[2m2026-08-20T09:59:54.396231Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[365]
+[2m2026-08-20T09:59:54.396656Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[366] with size 5.03 KiB; 100.50 KiB total
+[2m2026-08-20T09:59:54.397107Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[367] with size 5.03 KiB; 105.53 KiB total
+[2m2026-08-20T09:59:54.397154Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[356]
+[2m2026-08-20T09:59:54.397537Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[368] with size 5.03 KiB; 110.55 KiB total
+[2m2026-08-20T09:59:54.397559Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[361]
+[2m2026-08-20T09:59:54.397571Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[368]
+[2m2026-08-20T09:59:54.398120Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[369] with size 5.03 KiB; 115.58 KiB total
+[2m2026-08-20T09:59:54.398179Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[369]
+[2m2026-08-20T09:59:54.398199Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[359]
+[2m2026-08-20T09:59:54.398568Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[370] with size 5.02 KiB; 120.60 KiB total
+[2m2026-08-20T09:59:54.398596Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[367]
+[2m2026-08-20T09:59:54.399060Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[371] with size 5.03 KiB; 125.62 KiB total
+[2m2026-08-20T09:59:54.399109Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[366]
+[2m2026-08-20T09:59:54.399124Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[370]
+[2m2026-08-20T09:59:54.399508Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[372] with size 5.03 KiB; 130.65 KiB total
+[2m2026-08-20T09:59:54.405968Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[373] with size 5.03 KiB; 135.68 KiB total
+[2m2026-08-20T09:59:54.406070Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[373]
+[2m2026-08-20T09:59:54.406489Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[374] with size 5.03 KiB; 140.71 KiB total
+[2m2026-08-20T09:59:54.406651Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[371]
+[2m2026-08-20T09:59:54.406682Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[372]
+[2m2026-08-20T09:59:54.407154Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[375] with size 5.02 KiB; 145.72 KiB total
+[2m2026-08-20T09:59:54.407203Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[375]
+[2m2026-08-20T09:59:54.407579Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[376] with size 5.02 KiB; 150.74 KiB total
+[2m2026-08-20T09:59:54.408028Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[377] with size 5.03 KiB; 155.77 KiB total
+[2m2026-08-20T09:59:54.408075Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[377]
+[2m2026-08-20T09:59:54.408456Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[378] with size 5.03 KiB; 160.80 KiB total
+[2m2026-08-20T09:59:54.408861Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[379] with size 5.02 KiB; 165.81 KiB total
+[2m2026-08-20T09:59:54.409321Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[380] with size 5.03 KiB; 170.84 KiB total
+[2m2026-08-20T09:59:54.409863Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[381] with size 5.03 KiB; 175.87 KiB total
+[2m2026-08-20T09:59:54.410331Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[382] with size 5.03 KiB; 180.90 KiB total
+[2m2026-08-20T09:59:54.410374Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[378]
+[2m2026-08-20T09:59:54.410387Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[379]
+[2m2026-08-20T09:59:54.410406Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[382]
+[2m2026-08-20T09:59:54.410819Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[383] with size 5.03 KiB; 185.92 KiB total
+[2m2026-08-20T09:59:54.410860Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[381]
+[2m2026-08-20T09:59:54.410918Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[383]
+[2m2026-08-20T09:59:54.410937Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[374]
+[2m2026-08-20T09:59:54.411375Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[384] with size 5.03 KiB; 190.95 KiB total
+[2m2026-08-20T09:59:54.411413Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[376]
+[2m2026-08-20T09:59:54.411426Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[380]
+[2m2026-08-20T09:59:54.411436Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[384]
+[2m2026-08-20T09:59:54.411820Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[385] with size 5.03 KiB; 195.98 KiB total
+[2m2026-08-20T09:59:54.412270Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[386] with size 5.03 KiB; 201.01 KiB total
+[2m2026-08-20T09:59:54.412309Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[386]
+[2m2026-08-20T09:59:54.412337Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[385]
+[2m2026-08-20T09:59:54.412746Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[387] with size 5.02 KiB; 206.02 KiB total
+[2m2026-08-20T09:59:54.413193Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[388] with size 5.03 KiB; 211.05 KiB total
+[2m2026-08-20T09:59:54.413495Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[389] with size 5.03 KiB; 216.08 KiB total
+[2m2026-08-20T09:59:54.413817Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[390] with size 5.02 KiB; 221.10 KiB total
+[2m2026-08-20T09:59:54.414184Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[391] with size 5.02 KiB; 226.11 KiB total
+[2m2026-08-20T09:59:54.414450Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[392] with size 5.03 KiB; 231.14 KiB total
+[2m2026-08-20T09:59:54.414473Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[388]
+[2m2026-08-20T09:59:54.414483Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[389]
+[2m2026-08-20T09:59:54.414513Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[387]
+[2m2026-08-20T09:59:54.414783Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[393] with size 5.03 KiB; 236.17 KiB total
+[2m2026-08-20T09:59:54.414799Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[393]
+[2m2026-08-20T09:59:54.415113Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[394] with size 5.03 KiB; 241.20 KiB total
+[2m2026-08-20T09:59:54.415397Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[395] with size 5.03 KiB; 246.22 KiB total
+[2m2026-08-20T09:59:54.415414Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[391]
+[2m2026-08-20T09:59:54.415422Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[390]
+[2m2026-08-20T09:59:54.415430Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[392]
+[2m2026-08-20T09:59:54.415437Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[395]
+[2m2026-08-20T09:59:54.415446Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[394]
+[2m2026-08-20T09:59:54.415698Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[396] with size 5.03 KiB; 251.25 KiB total
+[2m2026-08-20T09:59:54.416009Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[397] with size 5.03 KiB; 256.28 KiB total
+[2m2026-08-20T09:59:54.416280Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[398] with size 5.03 KiB; 261.30 KiB total
+[2m2026-08-20T09:59:54.416550Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[399] with size 5.03 KiB; 266.33 KiB total
+[2m2026-08-20T09:59:54.416573Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[396]
+[2m2026-08-20T09:59:54.416581Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[397]
+[2m2026-08-20T09:59:54.416589Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[399]
+[2m2026-08-20T09:59:54.416596Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[398]
+[2m2026-08-20T09:59:54.416850Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[400] with size 5.03 KiB; 271.36 KiB total
+[2m2026-08-20T09:59:54.417149Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[401] with size 5.03 KiB; 276.39 KiB total
+[2m2026-08-20T09:59:54.417170Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[400]
+[2m2026-08-20T09:59:54.417178Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[401]
+[2m2026-08-20T09:59:54.427307Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[401]
+[2m2026-08-20T09:59:54.427384Z[0m [35mTRACE[0m [2mconcept::thing::statistics[0m[2m:[0m Statistics sync finished in 54 ms. Storage watermark was initially: SeqNr[401]. Current statistics sequence is from: SeqNr[401]
+[2m2026-08-20T09:59:54.428282Z[0m [35mTRACE[0m [2mdatabase::database[0m[2m:[0m Thing statistics: Statistics {
+ encoding_version: 0, sequence_number: 401, last_durable_write_sequence_number: DurabilitySequenceNumber { number: 401 }, last_durable_write_total_count: 12000, total_count: 12000, total_thing_count: 12000, total_entity_count: 4000, total_relation_count: 0, total_attribute_count: 8000, total_role_count: 0, total_has_count: 8000, entity_counts: { Entity[0000]: 4000, }, relation_counts: { }, attribute_counts: { Attribute[0001]: 4000, Attribute[0000]: 4000, }, role_counts: { }, has_attribute_counts: { Entity[0000]: {Attribute[0000]: 4000, Attribute[0001]: 4000}, }, attribute_owner_counts: { Attribute[0000]: {Entity[0000]: 4000}, Attribute[0001]: {Entity[0000]: 4000}, }, role_player_counts: { }, relation_role_counts: { }, relation_role_player_counts: { }, player_role_relation_counts: { }, links_index_counts: { }, }
+[2m2026-08-20T09:59:54.430267Z[0m [34mDEBUG[0m [2mdatabase::database[0m[2m:[0m Starting checkpoint for database stats-recovery
+[2m2026-08-20T09:59:54.508166Z[0m [34mDEBUG[0m [2mdatabase::database[0m[2m:[0m Finished checkpoint for database stats-recovery
+[2m2026-08-20T09:59:54.508649Z[0m [35mTRACE[0m [2mdatabase::database[0m[2m:[0m Finished loading database 'stats-recovery'
+test statistics_synchronization_under_concurrent_load ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.13s
+

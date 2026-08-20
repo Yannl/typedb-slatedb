@@ -327,12 +327,22 @@ const TERMINAL_USE_STATES = new Set(["RESOLVED_SUCCESS", "RESOLVED_REJECTED"]);
  *                       use's nonce as its operationId;
  *   INCARNATION_BUMP    the journaled CONTROLLER_INCARNATION_BUMPED
  *                       command carrying this use's nonce;
- *   IDEMPOTENT_REEXECUTE  the procedure is idempotent BY ITS OWN identity
- *                       (session lifecycle transitions, outbox ack,
- *                       content-addressed PUT_PAYLOAD): re-executing the
- *                       identical request converges on the original
- *                       physical outcome, so the reducer's answer is
- *                       "execute again", not an effect query.
+ *   OPERATION_RECEIPT   the mutation has no reconstructible projection of
+ *                       its own (a lease deadline, an acked count, a
+ *                       fenced count, a published object are outcomes, not
+ *                       queryable identities), so it writes a DURABLE
+ *                       RECEIPT keyed by this use's nonce - in the SAME
+ *                       transaction as the physical effect wherever the
+ *                       effect is local SQLite (R6-CTRL-02).
+ *
+ * R6-CTRL-01: there is NO generic "re-execute" variant any more. The
+ * round-5 union carried `IDEMPOTENT_REEXECUTE` as the DEFAULT of every
+ * mutation wrapper, so three routes that had authoritative queries
+ * implemented for them (batch finalize, checkpoint open, checkpoint
+ * activate) never reached them, and seven lifecycle/outbox routes silently
+ * claimed a convergence they did not have. Every mutation route now names
+ * an authoritative effect; the string survives only as a LEGACY ROW value
+ * (see deriveEffectOutcome), never as something a route can construct.
  */
 export type CapabilityEffect =
   | { kind: "WAL_FINALIZE"; databaseId: string; generation: number; operationId: string; requestDigest: string }
@@ -342,7 +352,39 @@ export type CapabilityEffect =
   | { kind: "CHECKPOINT_ACTIVATE"; databaseId: string; cutId: string; logicalDigest: string }
   | { kind: "BUDGETS_SET"; databaseId: string }
   | { kind: "INCARNATION_BUMP" }
-  | { kind: "IDEMPOTENT_REEXECUTE" };
+  | { kind: "OPERATION_RECEIPT"; databaseId: string; method: ReceiptMethod };
+
+/** The pre-R6 generic effect. No route can construct it (it is not part of
+ *  `CapabilityEffect`); rows written by an older build still carry it and
+ *  are answered exactly as that build answered them - re-execute. */
+export const LEGACY_REEXECUTE_EFFECT = "IDEMPOTENT_REEXECUTE";
+
+/**
+ * R6-CTRL-02: the mutating methods whose authoritative effect is a durable
+ * OPERATION RECEIPT rather than a projection query.
+ *
+ * The round-5 design assumed these were "idempotent by their own identity".
+ * They are not: re-executing a renew moves the lease deadline again, a
+ * re-executed legacy register refreshes the lease, a re-executed activation
+ * reports `fencedPredecessors: 0` when the original fenced N, and a
+ * re-executed outbox ack reports `acked: 0` when the original acked N. Each
+ * therefore records the canonical {status, body} it produced, keyed by the
+ * capability nonce, inside the transaction that performs the effect.
+ */
+export const RECEIPT_METHODS = [
+  "SESSION_REGISTER", "SESSION_RESERVE", "SESSION_ATTEST", "SESSION_ACTIVATE",
+  "SESSION_RENEW", "SESSION_DRAIN", "SESSION_REVOKE", "SESSION_FENCE",
+  "OUTBOX_ACK", "PUT_PAYLOAD",
+] as const;
+export type ReceiptMethod = (typeof RECEIPT_METHODS)[number];
+
+/** How long a durable operation receipt is retained. A receipt is only ever
+ *  consulted while the capability use that produced it is still claimable,
+ *  and a use is pruned at token expiry; the issuer clamps a token TTL to one
+ *  hour, so twice that is a strict upper bound on the window in which a
+ *  retry can still arrive. Bounded retention keeps the table from becoming
+ *  an unbounded log of every mutation the authority ever served. */
+const OPERATION_RECEIPT_RETENTION_MS = 2 * 3_600_000;
 
 /** The recovery reducer's verdict for one unresolved use (R5-SEC-04). */
 export type AmbiguityResolution =
@@ -952,6 +994,46 @@ export class ControllerCore {
         sql.exec(`CREATE INDEX IF NOT EXISTS read_lease_expiry ON read_leases(expires_at)`);
       },
     },
+    {
+      version: 16,
+      up: (sql) => {
+        // R6-CTRL-02: durable OPERATION RECEIPTS. Seven mutation routes
+        // (session register/reserve/attest/activate/renew/drain/revoke/
+        // fence, outbox ack, payload publication) produce outcomes that no
+        // projection can reconstruct - a lease deadline, a fenced count, an
+        // acked count, a publication verdict. They were declared "idempotent
+        // by their own identity", which was false: re-executing a renew
+        // advanced the deadline AGAIN, and a re-executed ack reported 0.
+        // Each such mutation now writes the canonical {status, body} it
+        // produced, keyed by the capability nonce, in the SAME transaction
+        // as the physical effect (local effects) or immediately on
+        // convergence (the R2 publication, which cannot share this
+        // transaction). The recovery reducer replays it verbatim.
+        sql.exec(`CREATE TABLE IF NOT EXISTS operation_receipts(
+          operation_id TEXT PRIMARY KEY,
+          database_id TEXT NOT NULL,
+          method TEXT NOT NULL,
+          status INTEGER NOT NULL,
+          body TEXT NOT NULL,
+          recorded_at_ms INTEGER NOT NULL
+        )`);
+        // retention is bounded by the live-token window; the sweep deletes
+        // by age, so it must be a range walk, not a table scan
+        sql.exec(`CREATE INDEX IF NOT EXISTS operation_receipt_age
+                  ON operation_receipts(recorded_at_ms)`);
+        // R6-CTRL-02: the ORIGINAL fenced-predecessor count of an activation
+        // becomes durable state. Without it the "already ACTIVE, same
+        // process nonce" retry answered `fencedPredecessors: 0` while the
+        // original takeover had fenced N - the same request, two different
+        // answers, which is exactly the property activation is supposed to
+        // give a starting process.
+        const present = sql.exec(`PRAGMA table_info(startup_sessions)`)
+          .some((r) => String(r.name) === "fenced_predecessors");
+        if (!present) {
+          sql.exec(`ALTER TABLE startup_sessions ADD COLUMN fenced_predecessors INTEGER`);
+        }
+      },
+    },
   ];
 
   /** Declared type of a column, uppercased, or null when the column (or the
@@ -1072,53 +1154,70 @@ export class ControllerCore {
   /** Reserve a session id. Grants nothing; single-use per id (a reused id
    *  is a permanent refusal - ids are identities, not slots). Idempotent
    *  for an exact repeat of the same reservation while still RESERVED. */
-  reserveSession(databaseId: string, generation: number, startupSessionId: string, holder: string):
+  reserveSession(databaseId: string, generation: number, startupSessionId: string, holder: string,
+                 /** R6-CTRL-02: the capability nonce this call is the one
+                  *  authorized use of; the receipt is written in THIS
+                  *  transaction so effect and answer commit together. */
+                 operationId?: string):
     Typed<{ state: "RESERVED" }> | TypedErr {
     if (typeof startupSessionId !== "string" || startupSessionId.length === 0
         || typeof holder !== "string" || holder.length === 0) {
+      // a pure input refusal: no effect, so no receipt - an identical retry
+      // recomputes the identical refusal from the request alone
       return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
     }
-    return this.sql.transaction(() => {
-      const row = this.startupSession(databaseId, startupSessionId);
-      if (row) {
-        if (String(row.state) === "RESERVED" && Number(row.generation) === generation
-            && String(row.holder) === holder) {
-          return { ok: true as const, state: "RESERVED" as const }; // idempotent retry
-        }
-        return { ok: false as const, error: "SESSION_ID_ALREADY_USED" as const };
+    return this.sql.transaction(() => this.recordStep(operationId, databaseId, "SESSION_RESERVE",
+      this.reserveSessionStep(databaseId, generation, startupSessionId, holder)));
+  }
+
+  /** One reservation step; the caller holds the transaction. */
+  private reserveSessionStep(databaseId: string, generation: number, startupSessionId: string, holder: string):
+    Typed<{ state: "RESERVED" }> | TypedErr {
+    const row = this.startupSession(databaseId, startupSessionId);
+    if (row) {
+      if (String(row.state) === "RESERVED" && Number(row.generation) === generation
+          && String(row.holder) === holder) {
+        return { ok: true as const, state: "RESERVED" as const }; // idempotent retry
       }
-      this.sql.exec(
-        `INSERT INTO startup_sessions(database_id, startup_session_id, generation, incarnation,
-           holder, state, reserved_at_ms) VALUES (?,?,?,?,?,'RESERVED',?)`,
-        databaseId, startupSessionId, generation, this.currentIncarnation(), holder,
-        this.controllerNow());
-      return { ok: true as const, state: "RESERVED" as const };
-    });
+      return { ok: false as const, error: "SESSION_ID_ALREADY_USED" as const };
+    }
+    this.sql.exec(
+      `INSERT INTO startup_sessions(database_id, startup_session_id, generation, incarnation,
+         holder, state, reserved_at_ms) VALUES (?,?,?,?,?,'RESERVED',?)`,
+      databaseId, startupSessionId, generation, this.currentIncarnation(), holder,
+      this.controllerNow());
+    return { ok: true as const, state: "RESERVED" as const };
   }
 
   /** Bind the reservation to one process. Still grants nothing. A second
    *  process presenting a different nonce finds the reservation no longer
    *  RESERVED and is refused (SESSION_NOT_RESERVED - the id is spent for
    *  it); it never becomes a race winner. */
-  attestSession(databaseId: string, startupSessionId: string, processNonce: string):
+  attestSession(databaseId: string, startupSessionId: string, processNonce: string,
+                operationId?: string):
     Typed<{ state: "ATTESTED" }> | TypedErr {
     if (typeof processNonce !== "string" || processNonce.length === 0) {
       return { ok: false as const, error: "PROCESS_NONCE_MISMATCH" as const };
     }
-    return this.sql.transaction(() => {
-      const row = this.startupSession(databaseId, startupSessionId);
-      if (!row) return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
-      const state = String(row.state);
-      if (state === "ATTESTED" && String(row.process_nonce) === processNonce) {
-        return { ok: true as const, state: "ATTESTED" as const }; // idempotent retry
-      }
-      if (state !== "RESERVED") return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
-      this.sql.exec(
-        `UPDATE startup_sessions SET state='ATTESTED', process_nonce=?
-         WHERE database_id=? AND startup_session_id=?`,
-        processNonce, databaseId, startupSessionId);
-      return { ok: true as const, state: "ATTESTED" as const };
-    });
+    return this.sql.transaction(() => this.recordStep(operationId, databaseId, "SESSION_ATTEST",
+      this.attestSessionStep(databaseId, startupSessionId, processNonce)));
+  }
+
+  /** One attestation step; the caller holds the transaction. */
+  private attestSessionStep(databaseId: string, startupSessionId: string, processNonce: string):
+    Typed<{ state: "ATTESTED" }> | TypedErr {
+    const row = this.startupSession(databaseId, startupSessionId);
+    if (!row) return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
+    const state = String(row.state);
+    if (state === "ATTESTED" && String(row.process_nonce) === processNonce) {
+      return { ok: true as const, state: "ATTESTED" as const }; // idempotent retry
+    }
+    if (state !== "RESERVED") return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
+    this.sql.exec(
+      `UPDATE startup_sessions SET state='ATTESTED', process_nonce=?
+       WHERE database_id=? AND startup_session_id=?`,
+      processNonce, databaseId, startupSessionId);
+    return { ok: true as const, state: "ATTESTED" as const };
   }
 
   /**
@@ -1132,107 +1231,137 @@ export class ControllerCore {
   activateSession(
     databaseId: string, startupSessionId: string,
     proof: { processNonce: string; generation: number; leaseMs: number },
+    operationId?: string,
   ): Typed<{ leaseDeadlineMs: number; fencedPredecessors: number }> | TypedErr {
     const badLease = invalidLease(proof.leaseMs);
     if (badLease) return badLease;
-    return this.sql.transaction(() => {
-      const row = this.startupSession(databaseId, startupSessionId);
-      if (!row) return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
-      const state = String(row.state);
-      const now = this.controllerNow();
-      if (state === "ACTIVE" && String(row.process_nonce) === proof.processNonce) {
-        // lost-response retry of a completed activation: same outcome again
-        return { ok: true as const, leaseDeadlineMs: Number(row.lease_deadline_ms),
-                 fencedPredecessors: 0 };
-      }
-      if (state !== "ATTESTED") return { ok: false as const, error: "SESSION_NOT_ATTESTED" as const };
-      if (String(row.process_nonce) !== proof.processNonce) {
-        return { ok: false as const, error: "PROCESS_NONCE_MISMATCH" as const };
-      }
-      const currentIncarnation = this.currentIncarnation();
-      if (Number(row.incarnation) !== currentIncarnation) {
-        // the controller moved on since this reservation: the reservation is
-        // evidence about a superseded authority, not this one
-        return { ok: false as const, error: "STALE_INCARNATION" as const, current: currentIncarnation };
-      }
-      if (Number(row.generation) !== proof.generation) {
-        return { ok: false as const, error: "GENERATION_MISMATCH" as const, reserved: Number(row.generation) };
-      }
-      const leaseDeadlineMs = now + proof.leaseMs;
-      // fence-and-establish: exactly the legacy takeover semantics, but
-      // reachable ONLY through the verified protocol above
-      const fencedCount = Number(this.sql.exec(
-        `SELECT COUNT(*) AS n FROM sessions WHERE database_id=? AND startup_session_id<>? AND fenced=0`,
-        databaseId, startupSessionId)[0].n);
-      this.sql.exec(
-        `UPDATE sessions SET fenced=1 WHERE database_id=? AND startup_session_id<>?`,
-        databaseId, startupSessionId);
-      this.sql.exec(
-        `UPDATE startup_sessions SET state='ACTIVE', lease_deadline_ms=?, activated_at_ms=?
-         WHERE database_id=? AND startup_session_id=?`,
-        leaseDeadlineMs, now, databaseId, startupSessionId);
-      this.sql.exec(
-        `INSERT OR IGNORE INTO sessions(database_id, generation, startup_session_id) VALUES (?,?,?)`,
-        databaseId, proof.generation, startupSessionId);
-      this.sql.exec(
-        `UPDATE startup_sessions SET state='REVOKED'
-         WHERE database_id=? AND startup_session_id<>? AND state IN ('ACTIVE','DRAINING')`,
-        databaseId, startupSessionId);
-      this.appendCommand(databaseId, "SESSION_ACTIVATED", {
-        databaseId, generation: proof.generation, startupSessionId,
-        fencedPredecessors: fencedCount, leaseDeadlineMs,
-      });
-      return { ok: true as const, leaseDeadlineMs, fencedPredecessors: fencedCount };
+    return this.sql.transaction(() => this.recordStep(operationId, databaseId, "SESSION_ACTIVATE",
+      this.activateSessionStep(databaseId, startupSessionId, proof)));
+  }
+
+  /** One activation step; the caller holds the transaction. */
+  private activateSessionStep(
+    databaseId: string, startupSessionId: string,
+    proof: { processNonce: string; generation: number; leaseMs: number },
+  ): Typed<{ leaseDeadlineMs: number; fencedPredecessors: number }> | TypedErr {
+    const row = this.startupSession(databaseId, startupSessionId);
+    if (!row) return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
+    const state = String(row.state);
+    const now = this.controllerNow();
+    if (state === "ACTIVE" && String(row.process_nonce) === proof.processNonce) {
+      // R6-CTRL-02: a lost-response retry answers the ORIGINAL outcome,
+      // including the count this activation actually fenced. Reporting 0
+      // here (round 5) told a restarting process "you superseded nobody"
+      // when it had in fact superseded N - the one fact activation exists
+      // to establish. The count is durable on the lifecycle row, so the
+      // answer is the same at every later instant.
+      return { ok: true as const, leaseDeadlineMs: Number(row.lease_deadline_ms),
+               fencedPredecessors: Number(row.fenced_predecessors ?? 0) };
+    }
+    if (state !== "ATTESTED") return { ok: false as const, error: "SESSION_NOT_ATTESTED" as const };
+    if (String(row.process_nonce) !== proof.processNonce) {
+      return { ok: false as const, error: "PROCESS_NONCE_MISMATCH" as const };
+    }
+    const currentIncarnation = this.currentIncarnation();
+    if (Number(row.incarnation) !== currentIncarnation) {
+      // the controller moved on since this reservation: the reservation is
+      // evidence about a superseded authority, not this one
+      return { ok: false as const, error: "STALE_INCARNATION" as const, current: currentIncarnation };
+    }
+    if (Number(row.generation) !== proof.generation) {
+      return { ok: false as const, error: "GENERATION_MISMATCH" as const, reserved: Number(row.generation) };
+    }
+    const leaseDeadlineMs = now + proof.leaseMs;
+    // fence-and-establish: exactly the legacy takeover semantics, but
+    // reachable ONLY through the verified protocol above
+    const fencedCount = Number(this.sql.exec(
+      `SELECT COUNT(*) AS n FROM sessions WHERE database_id=? AND startup_session_id<>? AND fenced=0`,
+      databaseId, startupSessionId)[0].n);
+    this.sql.exec(
+      `UPDATE sessions SET fenced=1 WHERE database_id=? AND startup_session_id<>?`,
+      databaseId, startupSessionId);
+    this.sql.exec(
+      `UPDATE startup_sessions SET state='ACTIVE', lease_deadline_ms=?, activated_at_ms=?,
+         fenced_predecessors=?
+       WHERE database_id=? AND startup_session_id=?`,
+      leaseDeadlineMs, now, fencedCount, databaseId, startupSessionId);
+    this.sql.exec(
+      `INSERT OR IGNORE INTO sessions(database_id, generation, startup_session_id) VALUES (?,?,?)`,
+      databaseId, proof.generation, startupSessionId);
+    this.sql.exec(
+      `UPDATE startup_sessions SET state='REVOKED'
+       WHERE database_id=? AND startup_session_id<>? AND state IN ('ACTIVE','DRAINING')`,
+      databaseId, startupSessionId);
+    this.appendCommand(databaseId, "SESSION_ACTIVATED", {
+      databaseId, generation: proof.generation, startupSessionId,
+      fencedPredecessors: fencedCount, leaseDeadlineMs,
     });
+    return { ok: true as const, leaseDeadlineMs, fencedPredecessors: fencedCount };
   }
 
   /** Extend an unexpired lease from controller time. An expired lease is
    *  TERMINAL: renewal refuses and the state moves to EXPIRED - a backward
    *  clock jump cannot resurrect it because controllerNow never decreases. */
-  renewLease(databaseId: string, startupSessionId: string, leaseMs: number):
+  renewLease(databaseId: string, startupSessionId: string, leaseMs: number,
+             /** R6-CTRL-02: the chosen deadline is RECORDED against this
+              *  operation identity in the same transaction that sets it, so
+              *  an identical retry replays that deadline instead of
+              *  computing `controllerNow() + leaseMs` a second time and
+              *  extending durable authority again. */
+             operationId?: string):
     Typed<{ leaseDeadlineMs: number }> | TypedErr {
     const badLease = invalidLease(leaseMs);
     if (badLease) return badLease;
-    return this.sql.transaction(() => {
-      const row = this.startupSession(databaseId, startupSessionId);
-      if (!row) return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
-      const state = String(row.state);
-      if (state !== "ACTIVE" && state !== "DRAINING") {
-        return { ok: false as const, error: "SESSION_NOT_ACTIVE" as const, state };
-      }
-      const now = this.controllerNow();
-      if (Number(row.lease_deadline_ms) <= now) {
-        this.expireSession(databaseId, startupSessionId);
-        return { ok: false as const, error: "SESSION_LEASE_EXPIRED" as const };
-      }
-      const leaseDeadlineMs = now + leaseMs;
-      // deliberately NOT journaled: renewals are high-volume heartbeats that
-      // change no authority relationship (same holder, same scope); the
-      // journaled transitions are the ones that create, move or end
-      // authority (activate/drain/revoke/expire/fence)
-      this.sql.exec(
-        `UPDATE startup_sessions SET lease_deadline_ms=? WHERE database_id=? AND startup_session_id=?`,
-        leaseDeadlineMs, databaseId, startupSessionId);
-      return { ok: true as const, leaseDeadlineMs };
-    });
+    return this.sql.transaction(() => this.recordStep(operationId, databaseId, "SESSION_RENEW",
+      this.renewLeaseStep(databaseId, startupSessionId, leaseMs)));
+  }
+
+  /** One renewal step; the caller holds the transaction. */
+  private renewLeaseStep(databaseId: string, startupSessionId: string, leaseMs: number):
+    Typed<{ leaseDeadlineMs: number }> | TypedErr {
+    const row = this.startupSession(databaseId, startupSessionId);
+    if (!row) return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
+    const state = String(row.state);
+    if (state !== "ACTIVE" && state !== "DRAINING") {
+      return { ok: false as const, error: "SESSION_NOT_ACTIVE" as const, state };
+    }
+    const now = this.controllerNow();
+    if (Number(row.lease_deadline_ms) <= now) {
+      this.expireSession(databaseId, startupSessionId);
+      return { ok: false as const, error: "SESSION_LEASE_EXPIRED" as const };
+    }
+    const leaseDeadlineMs = now + leaseMs;
+    // deliberately NOT journaled: renewals are high-volume heartbeats that
+    // change no authority relationship (same holder, same scope); the
+    // journaled transitions are the ones that create, move or end
+    // authority (activate/drain/revoke/expire/fence)
+    this.sql.exec(
+      `UPDATE startup_sessions SET lease_deadline_ms=? WHERE database_id=? AND startup_session_id=?`,
+      leaseDeadlineMs, databaseId, startupSessionId);
+    return { ok: true as const, leaseDeadlineMs };
   }
 
   /** ACTIVE -> DRAINING: authority retained for in-flight work under the
    *  existing lease; a successor's activation (or revoke/expiry) ends it. */
-  beginDrain(databaseId: string, startupSessionId: string):
+  beginDrain(databaseId: string, startupSessionId: string, operationId?: string):
     Typed<{ state: "DRAINING" }> | TypedErr {
-    return this.sql.transaction(() => {
-      const row = this.startupSession(databaseId, startupSessionId);
-      if (!row) return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
-      const state = String(row.state);
-      if (state === "DRAINING") return { ok: true as const, state: "DRAINING" as const };
-      if (state !== "ACTIVE") return { ok: false as const, error: "SESSION_NOT_ACTIVE" as const, state };
-      this.sql.exec(
-        `UPDATE startup_sessions SET state='DRAINING' WHERE database_id=? AND startup_session_id=?`,
-        databaseId, startupSessionId);
-      this.appendCommand(databaseId, "SESSION_DRAINING", { databaseId, startupSessionId });
-      return { ok: true as const, state: "DRAINING" as const };
-    });
+    return this.sql.transaction(() => this.recordStep(operationId, databaseId, "SESSION_DRAIN",
+      this.beginDrainStep(databaseId, startupSessionId)));
+  }
+
+  /** One drain step; the caller holds the transaction. */
+  private beginDrainStep(databaseId: string, startupSessionId: string):
+    Typed<{ state: "DRAINING" }> | TypedErr {
+    const row = this.startupSession(databaseId, startupSessionId);
+    if (!row) return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
+    const state = String(row.state);
+    if (state === "DRAINING") return { ok: true as const, state: "DRAINING" as const };
+    if (state !== "ACTIVE") return { ok: false as const, error: "SESSION_NOT_ACTIVE" as const, state };
+    this.sql.exec(
+      `UPDATE startup_sessions SET state='DRAINING' WHERE database_id=? AND startup_session_id=?`,
+      databaseId, startupSessionId);
+    this.appendCommand(databaseId, "SESSION_DRAINING", { databaseId, startupSessionId });
+    return { ok: true as const, state: "DRAINING" as const };
   }
 
   /**
@@ -1274,22 +1403,28 @@ export class ControllerCore {
   }
 
   /** Revoke a session's authority outright (terminal). */
-  revokeSession(databaseId: string, startupSessionId: string): Typed<{ state: "REVOKED" }> | TypedErr {
-    return this.sql.transaction(() => {
-      const row = this.startupSession(databaseId, startupSessionId);
-      if (!row) return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
-      if (String(row.state) === "REVOKED") return { ok: true as const, state: "REVOKED" as const };
-      this.sql.exec(
-        `UPDATE startup_sessions SET state='REVOKED' WHERE database_id=? AND startup_session_id=?`,
-        databaseId, startupSessionId);
-      this.sql.exec(
-        `UPDATE sessions SET fenced=1 WHERE database_id=? AND startup_session_id=?`,
-        databaseId, startupSessionId);
-      // R5-SEC-05: revocation is a fence; outstanding read grants die with it
-      this.revokeReadLeases(databaseId, startupSessionId);
-      this.appendCommand(databaseId, "SESSION_REVOKED", { databaseId, startupSessionId });
-      return { ok: true as const, state: "REVOKED" as const };
-    });
+  revokeSession(databaseId: string, startupSessionId: string, operationId?: string):
+    Typed<{ state: "REVOKED" }> | TypedErr {
+    return this.sql.transaction(() => this.recordStep(operationId, databaseId, "SESSION_REVOKE",
+      this.revokeSessionStep(databaseId, startupSessionId)));
+  }
+
+  /** One revocation step; the caller holds the transaction. */
+  private revokeSessionStep(databaseId: string, startupSessionId: string):
+    Typed<{ state: "REVOKED" }> | TypedErr {
+    const row = this.startupSession(databaseId, startupSessionId);
+    if (!row) return { ok: false as const, error: "SESSION_NOT_RESERVED" as const };
+    if (String(row.state) === "REVOKED") return { ok: true as const, state: "REVOKED" as const };
+    this.sql.exec(
+      `UPDATE startup_sessions SET state='REVOKED' WHERE database_id=? AND startup_session_id=?`,
+      databaseId, startupSessionId);
+    this.sql.exec(
+      `UPDATE sessions SET fenced=1 WHERE database_id=? AND startup_session_id=?`,
+      databaseId, startupSessionId);
+    // R5-SEC-05: revocation is a fence; outstanding read grants die with it
+    this.revokeReadLeases(databaseId, startupSessionId);
+    this.appendCommand(databaseId, "SESSION_REVOKED", { databaseId, startupSessionId });
+    return { ok: true as const, state: "REVOKED" as const };
   }
 
   /** Terminal expiry, journaled. Caller holds the transaction. */
@@ -1368,9 +1503,19 @@ export class ControllerCore {
    * generations is the documented rollover case) - handled by treating an
    * ACTIVE self re-register as a lease renewal + generation update.
    */
-  registerSession(databaseId: string, generation: number, startupSessionId: string): void {
+  registerSession(databaseId: string, generation: number, startupSessionId: string,
+                  /** R6-CTRL-02: the legacy macro REFRESHES the lease to
+                   *  `controllerNow + 15m` on every call, so a re-execution
+                   *  after a lost response moved durable authority again.
+                   *  The receipt is written in the same transaction; an
+                   *  identical retry replays `{ok:true}` and touches
+                   *  nothing. */
+                  operationId?: string): void {
     const LEGACY_LEASE_MS = 15 * 60 * 1000;
     this.sql.transaction(() => {
+      // the route's answer is unconditional, so the receipt can be recorded
+      // up front: it commits with the work below, or not at all
+      this.recordReceiptInTx(operationId, databaseId, "SESSION_REGISTER", 200, { ok: true });
       // a superseded (fenced) actor can never re-take authority - the
       // models' session counter only moves forward
       const fencedRows = this.sql.exec(
@@ -1401,23 +1546,28 @@ export class ControllerCore {
         }
         return;
       }
-      const reserved = this.reserveSession(databaseId, generation, startupSessionId, "legacy-register");
+      // the STEP forms: one transaction, and exactly ONE receipt (this
+      // macro's own) under the operation identity - never three
+      const reserved = this.reserveSessionStep(databaseId, generation, startupSessionId, "legacy-register");
       if (!reserved.ok) throw new Error(`legacy register: reserve failed: ${reserved.error}`);
-      const attested = this.attestSession(databaseId, startupSessionId, nonce);
+      const attested = this.attestSessionStep(databaseId, startupSessionId, nonce);
       if (!attested.ok) throw new Error(`legacy register: attest failed: ${attested.error}`);
-      const activated = this.activateSession(databaseId, startupSessionId, {
+      const activated = this.activateSessionStep(databaseId, startupSessionId, {
         processNonce: nonce, generation, leaseMs: LEGACY_LEASE_MS,
       });
       if (!activated.ok) throw new Error(`legacy register: activate failed: ${activated.error}`);
     });
   }
 
-  fenceSession(databaseId: string, startupSessionId: string): void {
+  fenceSession(databaseId: string, startupSessionId: string, operationId?: string): void {
     // The authority unit is the ACTOR (see registerSession): fencing revokes
     // the actor's append authority across every generation it registered —
     // a per-generation fence would leave a rollover-spanning actor half
     // fenced (blocked from re-registering, still able to append elsewhere).
     this.sql.transaction(() => {
+      // R6-CTRL-02: the fence route answers `{ok:true}` unconditionally, so
+      // its receipt commits with the fence itself
+      this.recordReceiptInTx(operationId, databaseId, "SESSION_FENCE", 200, { ok: true });
       const live = Number(this.sql.exec(
         `SELECT COUNT(*) AS n FROM sessions WHERE database_id=? AND startup_session_id=? AND fenced=0`,
         databaseId, startupSessionId,
@@ -1838,7 +1988,14 @@ export class ControllerCore {
     return rows.length ? Number(rows[0].value) : 1;
   }
 
-  bumpIncarnation(): number {
+  bumpIncarnation(/** R6-CTRL-01: the capability-use nonce. The
+                   *  INCARNATION_BUMP effect query looks for a
+                   *  CONTROLLER_INCARNATION_BUMPED command carrying THIS
+                   *  nonce as its operation identity; round 5 declared the
+                   *  effect on the route but never journaled the id, so the
+                   *  query could not match and a lost response bumped a
+                   *  SECOND time. Optional for direct/test callers. */
+                  operationId?: string): number {
     return this.sql.transaction(() => {
       const current = this.currentIncarnation();
       const next = current + 1;
@@ -1869,9 +2026,73 @@ export class ControllerCore {
       this.sql.exec(`DELETE FROM read_leases`);
       this.appendCommand("@controller", "CONTROLLER_INCARNATION_BUMPED", {
         incarnation: next, revokedSessions: revoked, fencedActors: fenced,
+        ...(operationId !== undefined ? { operationId } : {}),
       });
       return next;
     });
+  }
+
+  /**
+   * R6-CTRL-02: record the canonical response envelope of ONE single-use
+   * mutation, keyed by its operation identity (the capability nonce).
+   *
+   * FIRST WRITER WINS (`INSERT OR IGNORE`): two identical retries that both
+   * re-executed converge on the receipt the first one recorded, so the
+   * canonical answer never oscillates. The caller MUST already hold the
+   * transaction that performs the physical effect - that is the whole
+   * point: either both the effect and its receipt commit, or neither does.
+   */
+  private recordReceiptInTx(
+    operationId: string | undefined, databaseId: string, method: ReceiptMethod,
+    status: number, body: Record<string, unknown>,
+  ): void {
+    if (operationId === undefined || operationId.length === 0) return;
+    this.sql.exec(
+      `INSERT OR IGNORE INTO operation_receipts(operation_id, database_id, method, status, body, recorded_at_ms)
+       VALUES (?,?,?,?,?,?)`,
+      operationId, databaseId, method, status,
+      JSON.stringify(body, (_k, v) => (typeof v === "bigint" ? v.toString() : v)),
+      this.controllerNow());
+  }
+
+  /**
+   * The same receipt for an effect this core CANNOT enclose in its own
+   * transaction: the content-addressed R2 publication (R6-CTRL-02). The
+   * claim row written before the upload is the durable controller-side
+   * INTENT; this is the convergence evidence, recorded before the response
+   * is ever handed to the client, so every cut at which a client could have
+   * observed a response has a receipt that reproduces it byte for byte.
+   */
+  recordOperationReceipt(
+    operationId: string, databaseId: string, method: ReceiptMethod,
+    status: number, body: Record<string, unknown>,
+  ): void {
+    this.sql.transaction(() => this.recordReceiptInTx(operationId, databaseId, method, status, body));
+  }
+
+  /** The recorded receipt of one operation identity, or null. */
+  operationReceipt(operationId: string):
+    { databaseId: string; method: string; status: number; body: Record<string, unknown> } | null {
+    const rows = this.sql.exec(
+      `SELECT database_id, method, status, body FROM operation_receipts WHERE operation_id=?`, operationId);
+    if (!rows.length) return null;
+    return {
+      databaseId: String(rows[0].database_id), method: String(rows[0].method),
+      status: Number(rows[0].status),
+      body: JSON.parse(String(rows[0].body)) as Record<string, unknown>,
+    };
+  }
+
+  /** Record `result` as this operation's receipt and return it unchanged.
+   *  The HTTP status is the one every lifecycle/outbox route derives from
+   *  the typed result, so the stored envelope is byte-identical to the one
+   *  the route sent (and to the one `resolveCapabilityUse` stores). */
+  private recordStep<T extends Record<string, unknown>>(
+    operationId: string | undefined, databaseId: string, method: ReceiptMethod, result: T,
+  ): T {
+    this.recordReceiptInTx(operationId, databaseId, method,
+      result.ok === true ? 200 : 409, result);
+    return result;
   }
 
   /**
@@ -1905,6 +2126,11 @@ export class ControllerCore {
     | { ok: false; error: "CAPABILITY_REPLAYED" | "CAPABILITY_USE_QUARANTINED" } {
     return this.sql.transaction(() => {
       this.sql.exec(`DELETE FROM capability_uses WHERE expires_at <= ?`, nowMs);
+      // R6-CTRL-02: a receipt outlives its use row by the retention window
+      // and no longer; the table is bounded by the live-token window, not
+      // by the authority's lifetime.
+      this.sql.exec(`DELETE FROM operation_receipts WHERE recorded_at_ms <= ?`,
+        nowMs - OPERATION_RECEIPT_RETENTION_MS);
       const prior = this.sql.exec(
         `SELECT use_digest, state, response FROM capability_uses WHERE nonce=?`, nonce);
       if (prior.length) {
@@ -2067,11 +2293,18 @@ export class ControllerCore {
     }
     const outcome = this.deriveEffectOutcome(nonce, effect);
     if (outcome.kind === "present") {
-      const response = JSON.stringify({ status: 200, body: outcome.body });
-      this.sql.exec(`UPDATE capability_uses SET state='RESOLVED_SUCCESS', response=? WHERE nonce=?`,
-        response, nonce);
-      return { ok: true as const, disposition: "SETTLED" as const,
-               state: "RESOLVED_SUCCESS" as const, response };
+      // R6-CTRL-02: a reconstructed projection is always a success receipt,
+      // but a durable OPERATION RECEIPT also covers the refusals that
+      // MUTATED (an ack whose lease had expired, a renew that expired the
+      // session). The stored status decides the terminal, exactly as
+      // resolveUse derives it on the live path.
+      const status = outcome.status ?? 200;
+      const state = status >= 200 && status < 300
+        ? "RESOLVED_SUCCESS" as const : "RESOLVED_REJECTED" as const;
+      const response = JSON.stringify({ status, body: outcome.body });
+      this.sql.exec(`UPDATE capability_uses SET state=?, response=? WHERE nonce=?`,
+        state, response, nonce);
+      return { ok: true as const, disposition: "SETTLED" as const, state, response };
     }
     if (outcome.kind === "contradicted") {
       this.sql.exec(`UPDATE capability_uses SET state='QUARANTINED', outcome=? WHERE nonce=?`,
@@ -2106,10 +2339,15 @@ export class ControllerCore {
    * over this core's own durable tables; caller holds the transaction.
    */
   private deriveEffectOutcome(nonce: string, effect: CapabilityEffect):
-    | { kind: "present"; body: Record<string, unknown> }
+    | { kind: "present"; body: Record<string, unknown>; status?: number }
     | { kind: "absent" }
     | { kind: "reexecute" }
     | { kind: "contradicted"; reason: string } {
+    // A row written by a PRE-R6 build carries the retired generic effect.
+    // It has no authoritative query - that was the finding - so it is
+    // answered exactly as that build answered it, and the union below stays
+    // free of any variant a route could use to avoid naming its policy.
+    if ((effect as { kind: string }).kind === LEGACY_REEXECUTE_EFFECT) return { kind: "reexecute" };
     switch (effect.kind) {
       case "WAL_FINALIZE": {
         const direct = this.sql.exec(
@@ -2237,10 +2475,36 @@ export class ControllerCore {
         const body = JSON.parse(String(journaled[0].canonical_body)) as { incarnation: number };
         return { kind: "present", body: { ok: true, incarnation: body.incarnation } };
       }
-      case "IDEMPOTENT_REEXECUTE":
+      case "OPERATION_RECEIPT": {
+        // R6-CTRL-02: the authoritative query is the durable receipt this
+        // operation identity wrote in the SAME transaction as its physical
+        // effect (or, for the R2 publication, on convergence and before any
+        // response could be delivered). Absent => the effect transaction
+        // never committed, so the identical request may execute again.
+        const rows = this.sql.exec(
+          `SELECT database_id, method, status, body FROM operation_receipts WHERE operation_id=?`, nonce);
+        if (!rows.length) return { kind: "absent" };
+        if (String(rows[0].database_id) !== effect.databaseId) {
+          return { kind: "contradicted",
+                   reason: `operation ${nonce} was receipted under database ${String(rows[0].database_id)}` };
+        }
+        if (String(rows[0].method) !== effect.method) {
+          return { kind: "contradicted",
+                   reason: `operation ${nonce} was receipted as ${String(rows[0].method)}, not ${effect.method}` };
+        }
+        return { kind: "present", status: Number(rows[0].status),
+                 body: JSON.parse(String(rows[0].body)) as Record<string, unknown> };
+      }
+      default: {
+        // R6-CTRL-01 exhaustiveness: adding a variant to CapabilityEffect
+        // without an authoritative query here is a COMPILE error, not a
+        // silent fall-through to "just run it again". The runtime arm is
+        // reached only by a row a NEWER build wrote, which this build cannot
+        // interpret and therefore must not treat as evidence.
+        const unhandled: never = effect;
+        void unhandled;
         return { kind: "reexecute" };
-      default:
-        return { kind: "reexecute" };
+      }
     }
   }
 
@@ -2618,15 +2882,21 @@ export class ControllerCore {
       }));
   }
 
-  outboxAck(databaseId: string, upToControlSeq: bigint, startupSessionId: string):
+  outboxAck(databaseId: string, upToControlSeq: bigint, startupSessionId: string,
+            /** R6-CTRL-02: the acknowledged COUNT and the bound upper
+             *  sequence are recorded against this operation identity in the
+             *  acking transaction. Re-executing an ack reports `acked: 0`
+             *  (the rows are already published) - the original N is
+             *  unrecoverable from the projection, so it is stored. */
+            operationId?: string):
     Typed<{ acked: number }> | TypedErr {
     const bound = u64Blob(upToControlSeq, "up_to_control_seq");
     return this.sql.transaction(() => {
       // guards INSIDE the transaction: lease expiry mutates (see setBudgets)
       const authority = this.requireLiveSession(databaseId, startupSessionId);
-      if (!authority.ok) return authority;
+      if (!authority.ok) return this.recordStep(operationId, databaseId, "OUTBOX_ACK", authority);
       const leasedAck = this.requireLeasedAuthority(databaseId, startupSessionId);
-      if (!leasedAck.ok) return leasedAck;
+      if (!leasedAck.ok) return this.recordStep(operationId, databaseId, "OUTBOX_ACK", leasedAck);
       // bounded by the ack window, not by history: the partial index over
       // unpublished rows makes this a range walk, and the counter it
       // maintains is what admission reads
@@ -2641,6 +2911,11 @@ export class ControllerCore {
         `UPDATE control_outbox SET published=1
          WHERE database_id=? AND published=0 AND control_seq <= ?`, databaseId, bound);
       if (before > 0) this.bumpUsage(databaseId, OUTBOX_GENERATION, "outbox_unpublished", -before);
+      // the receipt carries the bound as well as the count: the two together
+      // are what a consumer needs to decide whether to repeat higher-level
+      // work, and the bound is what a conflicting retry would have changed
+      this.recordReceiptInTx(operationId, databaseId, "OUTBOX_ACK", 200,
+        { ok: true, acked: before });
       return { ok: true as const, acked: before };
     });
   }

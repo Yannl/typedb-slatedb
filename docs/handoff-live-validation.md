@@ -12,7 +12,7 @@ prose:
 ```sh
 cd control-plane
 npm run probes:preflight        # exit 3 = RED = STOP. No credential goes near the runner.
-npm run probes:selftest         # 24 controls; anything nonzero = STOP.
+npm run probes:selftest         # 26 controls; anything nonzero = STOP.
 ```
 
 The current blockers (ledger `G2.blockers`) are structural, not

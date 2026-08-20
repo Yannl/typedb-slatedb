@@ -1,0 +1,640 @@
+name: nightly and pre-live (tier 2)
+
+# R6-CI-01, tier 2 of three. See .github/workflows/gates.yml for the tier map.
+#
+# Before this file existed, everything below was either dispatch-only (the
+# storage integration and bench-compile lanes) or ran nowhere at all (the full
+# feature-off/feature-on SlateDB suites, the full S3 crash/fault corpus, the
+# MinIO comparator, the managed local E2Es, the dependency scans). The round-6
+# audit's exact wording was that "no required job currently establishes" any of
+# them. This workflow is the required set, on a schedule, plus a manual
+# dispatch so a pre-live run can be triggered on demand.
+#
+# The two binding rules from §11 hold here as well:
+#
+#   * No `continue-on-error:` key appears on any job or step in this file.
+#     A lane that cannot pass must turn the run red.
+#   * ENVIRONMENT-BLOCKED is a distinct non-green state, implemented with a
+#     capability probe + a dedicated `*-environment-blocked` job that fails
+#     with exit 75 and an `::error title=ENVIRONMENT-BLOCKED::` annotation.
+#     Several tier-2 lanes genuinely cannot run on every runner (a 9 GB build,
+#     a Docker daemon, source-locked provider binaries), and the honest answer
+#     to "we could not run it here" is BLOCKED - never a pass, never SKIPPED,
+#     and never a source failure.
+#
+# Nothing in this workflow may be used as a release predicate on its own; tier
+# 3 (release-qualification.yml) re-runs what a release depends on in a clean
+# hermetic environment.
+#
+# Added with the agentic code-quality specification (§14.3, tier C):
+#   * `quality-full` - `cargo xtask quality full`, the broad campaign a
+#     diff-scoped PR gate cannot substitute for. A differential mutation run
+#     is ideal for PR latency but cannot see effects outside the changed
+#     source ranges (§5.6); only a scheduled full campaign can prove those
+#     absent. What "full" covers is decided by `.quality/policy.toml`, never
+#     by this file.
+#   * `workflow-security-audit` - the tier-2 twin of the zizmor job in
+#     gates.yml. It is in both tiers for the same reason the dependency scan
+#     is: tier 1 sees workflow DIFFS, this tier sees newly-published audit
+#     rules firing against workflows nobody touched.
+
+on:
+  schedule:
+    # 02:30 UTC daily. Cron here is a schedule, not a deadline: a missed
+    # nightly is a missing observation, and the ledger must not treat the
+    # last successful run as current for a later commit.
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "why this pre-live run was triggered (recorded in the summary)"
+        required: false
+        default: "manual pre-live run"
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never cancel a nightly in favour of a newer one: a half-executed corpus is
+  # worse than a late one, and the evidence bundles are per-run.
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+# pinned action SHAs (resolved 2026-08-18, same set as gates.yml):
+#   actions/checkout v4.4.0       11d5960a326750d5838078e36cf38b85af677262
+#   actions/setup-python v5.6.0   a26af69be951a213d495a4c3e4e4022e16d87065
+#   actions/setup-node v4.4.0     49933ea5288caeca8642d1e84afbd3f7d6820020
+#   dtolnay/rust-toolchain        6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+
+jobs:
+  storage-integration:
+    # §11 rows "storage integration + bench compile" and "SlateDB feature-off
+    # full". Both were dispatch-only before R6-CI-01, i.e. effectively never.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11.15"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: "1.93.0"
+      - name: native prerequisites (bounded by the pinned runner image)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler cmake pkg-config libclang-dev
+      - name: materialise and stage the fork
+        run: |
+          python3 tools/source-lock/materialize_sources.py
+          python3 tools/fork/materialize_slatedb.py
+          python3 tools/fork/stage.py
+      - name: storage unit + integration tests
+        # R5-QUAL-01: `--tests --lib`, never `--all-targets` - the latter also
+        # EXECUTES benches/bench_rocks.rs, a CLI that panics without a database
+        # argument, which made the lane deterministically red after every real
+        # test had passed.
+        working-directory: sources/typedb
+        run: cargo +1.93.0 test -p storage --tests --lib --locked
+      - name: durability unit + integration tests
+        working-directory: sources/typedb
+        run: cargo +1.93.0 test -p durability --tests --lib --locked
+      - name: storage benches still COMPILE (never executed)
+        working-directory: sources/typedb
+        run: cargo +1.93.0 bench -p storage --no-run --locked
+      - name: the full SlateDB fence suite - feature-off oracle, feature-on, reconciliation
+        # The only invocation that can print PASS. Four clauses, all enforced:
+        # feature-OFF every target green (the fork must not change upstream
+        # semantics outside its patch series); feature-ON every target green;
+        # the negative fence suite green AND matching its declared membership;
+        # and a leaf reconciliation over executed test IDENTITIES qualified by
+        # binary, which is the clause that proves the upstream bodies ran by
+        # name rather than being counted.
+        #
+        # This comment previously said the feature-on suite was "deliberately
+        # NOT expected to be all-green" because hundreds of upstream tests
+        # open epoch-less databases. That was true and is now false: R6-FORK-01
+        # gave the harness a controller-issued epoch seam, so feature-on is
+        # 2012/0 with an EMPTY exclusion list. The gate rejects a stale
+        # exclusion (a name that does execute), so the list cannot rot back
+        # into a skip list.
+        run: python3 tools/fork/check_strict_epoch_suite.py
+      - name: the storage crate's warning count did not regress (R6-HYGIENE-01)
+        # The ratchet only turns one way. `storage` cannot be held at
+        # `-D warnings` yet - it carries upstream warnings we do not own - so
+        # the gate is: no new lint, no increased count, and improvements must
+        # be re-recorded in the same commit that makes them.
+        working-directory: sources/typedb
+        run: |
+          PROTOC=$(command -v protoc) cargo +1.93.0 check -p storage --lib --locked \
+            --message-format=json > "$RUNNER_TEMP/storage-check.json" || true
+          python3 ../../tools/ci/warning_ratchet.py \
+            --input "$RUNNER_TEMP/storage-check.json" --crate storage
+
+  catalogue-drift:
+    # The pristine (unstaged) catalogue rebuild + drift check. Same commands a
+    # release qualification starts from, so "fresh evidence" keeps one meaning.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11.15"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: "1.93.0"
+      - name: native prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler cmake pkg-config libclang-dev
+      - name: materialise sources
+        run: python3 tools/source-lock/materialize_sources.py
+      - name: pristine catalogue build + regeneration + drift check
+        run: |
+          PROTOC=$(command -v protoc) CARGO_TARGET_DIR="$PWD/pristine-target" \
+            cargo +1.93.0 test --manifest-path sources/typedb/Cargo.toml --workspace --locked --no-run
+          CARGO_TARGET_DIR="$PWD/pristine-target" \
+            python3 tools/catalog/generate_catalog.py --tree sources/typedb
+          python3 tools/catalog/validate_catalog.py
+          git diff --exit-code -- docs/evidence/G1/upstream-test-catalog.json || {
+            echo "catalogue drifted from the committed one - regenerate and review" >&2
+            exit 1
+          }
+
+  provider-corpus-capability:
+    # One probe, two consumers: the full RustFS corpus and the MinIO
+    # comparator both need source-locked binaries and real disk.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      blocked: ${{ steps.probe.outputs.blocked }}
+      missing: ${{ steps.probe.outputs.missing }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11.15"
+      - name: materialise the pinned source graph
+        run: python3 tools/source-lock/materialize_sources.py
+      - id: probe
+        name: can this runner execute the full provider corpus and the comparator?
+        run: |
+          python3 tools/ci/capability_probe.py \
+            --require rustfs --require minio --require cargo \
+            --require "disk:40" --require "mem:8" \
+            --lane provider-corpus-full \
+            --runner-hint "a runner with the source-locked RustFS and MinIO binaries, >=40 GiB disk and >=8 GiB RAM" \
+            --github-output --out blocked.json --json
+      - name: record the verdict in the job summary
+        if: always()
+        run: |
+          {
+            echo "### provider-corpus capability verdict"
+            echo '```json'
+            cat blocked.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  provider-corpus-full:
+    # §11 rows "RustFS full CAS/crash/fault/U2S3" and "MinIO comparator".
+    needs: provider-corpus-capability
+    if: needs.provider-corpus-capability.outputs.blocked != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11.15"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: "1.93.0"
+      - name: materialise the pinned source graph
+        run: python3 tools/source-lock/materialize_sources.py
+      - name: full RustFS corpus (semantics, multi-process CAS, crash/restart)
+        # Default tunables: 100 CAS rounds x 16 writers, 50 update rounds,
+        # 20 multi-process rounds x 8 processes, plus the kill -9 crash
+        # barrier and the post-restart witness re-read.
+        env:
+          S3_CERT_PROVIDER: rustfs
+          S3_CERT_EVIDENCE_DIR: ${{ runner.temp }}/s3-cert-rustfs
+        run: tools/s3-cert-corpus/run-corpus.sh
+      - name: the RustFS bundle verifies independently
+        run: python3 tools/s3-cert-corpus/verify-bundle.py "${{ runner.temp }}/s3-cert-rustfs"
+      - name: MinIO comparator (provider-diversity regression)
+        env:
+          S3_CERT_PROVIDER: minio
+          S3_CERT_EVIDENCE_DIR: ${{ runner.temp }}/s3-cert-minio
+        run: tools/s3-cert-corpus/run-corpus.sh
+      - name: the MinIO bundle verifies independently
+        run: python3 tools/s3-cert-corpus/verify-bundle.py "${{ runner.temp }}/s3-cert-minio"
+      - name: the evidence tooling still kills its own mutants
+        run: python3 tools/s3-cert-corpus/evidence_mutants.py
+
+  provider-corpus-environment-blocked:
+    # The distinct non-green state, again. Same reasoning as tier 1: a lane
+    # that could not run is not a lane that passed, and it is not a defect in
+    # the source either. Exit 75, classified annotation, named capability.
+    needs: provider-corpus-capability
+    if: needs.provider-corpus-capability.outputs.blocked == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11.15"
+      - name: report ENVIRONMENT-BLOCKED as a classified nonzero outcome
+        run: |
+          python3 tools/ci/capability_probe.py \
+            --require rustfs --require minio --require cargo \
+            --require "disk:40" --require "mem:8" \
+            --lane provider-corpus-full \
+            --runner-hint "a runner with the source-locked RustFS and MinIO binaries, >=40 GiB disk and >=8 GiB RAM" \
+            --gate --out blocked.json --json
+      - name: publish the blocked verdict into the job summary
+        if: always()
+        run: |
+          {
+            echo "### ENVIRONMENT-BLOCKED (not a pass, not a source failure)"
+            echo '```json'
+            cat blocked.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  managed-local-e2e:
+    # §11 row "combined managed-local Node/Rust E2E".
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11.15"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22.22.2"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: "1.93.0"
+      - name: install both npm workspaces from their locks
+        run: |
+          (cd control-plane && npm ci)
+          (cd stack && npm ci)
+      - name: canonical stack graph + wrangler consistency
+        run: |
+          (cd stack && node cli.mjs graph)
+          (cd stack && node cli.mjs check-wrangler)
+      - name: canonical stack suite
+        run: (cd stack && npm test)
+      - name: node managed-stack E2E
+        run: (cd control-plane && npm run e2e:managed)
+      - name: rust managed-client contract against the same surface
+        run: |
+          cargo +1.93.0 test --manifest-path tools/Cargo.toml -p remote-wal-spike \
+            --test l1_client_contract --locked
+          cargo +1.93.0 test --manifest-path tools/Cargo.toml -p remote-wal-spike \
+            --test l1_managed_stack --locked
+
+  dependency-and-security-scan:
+    # §11 row "dependency/advisory/license scan" - required in every tier, so
+    # it is here too, on a schedule, where a newly-published advisory against
+    # an unchanged lockfile is actually noticed. A PR-tier-only scan can only
+    # ever see advisories that existed when someone happened to open a PR.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11.15"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22.22.2"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: "1.93.0"
+      - name: install both npm workspaces from their locks
+        run: |
+          (cd stack && npm ci)
+          (cd control-plane && npm ci)
+      - name: npm advisory policy + lockfile provenance
+        run: python3 tools/ci/check_npm_advisories.py --lockfile
+      - name: raw npm audit output for the record
+        # The DECISION is the step above; this one exists so the nightly log
+        # contains the unfiltered vendor output next to it.
+        if: always()
+        run: |
+          {
+            echo "### npm audit --omit=dev"
+            echo '```'
+            (cd stack && npm audit --omit=dev) || true
+            (cd control-plane && npm audit --omit=dev) || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: rust advisory audit
+        # cargo-audit is installed from the pinned registry at a pinned
+        # version; --locked keeps its own dependency resolution reproducible.
+        run: |
+          cargo +1.93.0 install cargo-audit --version 0.21.2 --locked
+          cargo audit --file tools/Cargo.lock
+          cargo audit --file fork/typedb/Cargo.lock
+      - name: materialise sources, then re-check the dependency-source truth gate
+        run: |
+          python3 tools/source-lock/materialize_sources.py
+          python3 tools/fork/materialize_slatedb.py
+          python3 tools/fork/stage.py
+          python3 tools/ci/check_dependency_sources.py
+
+  official-drivers-honesty:
+    # §11 marks "official drivers and full leaf plan" as `selected` for tier 2
+    # and REQUIRED for tier 3. There is no driver harness in this repository
+    # yet. A permanently-failing placeholder would just train everyone to
+    # ignore a red nightly, so this job asserts the honest thing instead: as
+    # long as no harness exists, the LEDGER must keep saying NOT_IMPLEMENTED.
+    # The moment someone claims driver coverage without adding a harness -
+    # or adds a harness without wiring it into a lane - this turns red.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11.15"
+      - name: the ledger's driver lane matches whether a harness exists
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, sys
+          ledger = json.loads(pathlib.Path("docs/ledger/gates.json").read_text())
+          lanes = {l["id"]: l for l in ledger.get("lanes", [])}
+          lane = lanes.get("OFFICIAL_DRIVERS")
+          if lane is None:
+              sys.exit("docs/ledger/gates.json has no OFFICIAL_DRIVERS lane - the gap stopped being recorded")
+          harness = list(pathlib.Path("tools").glob("drivers/**/*")) if pathlib.Path("tools/drivers").exists() else []
+          state = lane.get("state") or lane.get("status")
+          if not harness and state != "NOT_IMPLEMENTED":
+              sys.exit(f"no driver harness exists under tools/drivers, but the ledger records OFFICIAL_DRIVERS={state!r}")
+          if harness and state == "NOT_IMPLEMENTED":
+              sys.exit("a driver harness exists under tools/drivers but the ledger still records NOT_IMPLEMENTED - wire it into a lane and update the ledger")
+          print(f"OFFICIAL_DRIVERS lane state {state!r} matches harness presence ({len(harness)} file(s))")
+          PY
+      - name: the ledger and its rendered status still agree
+        run: |
+          python3 tools/ledger/lint_ledger.py
+          python3 tools/ledger/ledger_mutants.py
+
+  bazel-test-graph-parity:
+    # R6-QUAL-01 fidelity question: are the cargo test runs equivalent to
+    # TypeDB's NATIVE Bazel tests, or a parallel reality? This job answers it
+    # from Bazel's own graph rather than by argument. It needs only Bazel's
+    # LOADING phase (`bazel query`), not analysis, so it does not depend on
+    # fetching toolchain externals.
+    #
+    # Honest scope, restated by the tool itself on every run: this proves
+    # STRUCTURAL equivalence — every Bazel rust_test target maps 1:1 onto a
+    # cargo target, the catalogue's cargo set equals the live workspace, and
+    # the fork dropped zero upstream #[test] functions. It does NOT prove
+    # identical outcomes, because no test is executed under Bazel here.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          # R5-CI-01 / spec §19: this job only reads the tree and queries
+          # Bazel's loading phase - it pushes nothing, so it must not carry
+          # the repo token into the workspace. This was the one pair of
+          # checkouts in the three workflows that still did (found by the
+          # zizmor `artipacked` audit added in this change).
+          persist-credentials: false
+      - name: install the pinned Bazel and verify its digest
+        run: |
+          set -euo pipefail
+          version="$(cat sources/typedb/.bazelversion)"
+          url="https://github.com/bazelbuild/bazel/releases/download/${version}/bazel-${version}-linux-x86_64"
+          curl -fsSL -o /tmp/bazel "$url"
+          curl -fsSL -o /tmp/bazel.sha256 "${url}.sha256"
+          ( cd /tmp && sha256sum -c bazel.sha256 )
+          install -m 0755 /tmp/bazel /usr/local/bin/bazel
+          bazel --version
+      - name: the cargo test graph is a faithful superset of the Bazel one
+        run: python3 tools/bazel/bazel_parity.py
+
+  leaf-granularity-coverage:
+    # R6-QUAL-01: the denominator is only meaningful if something measures it.
+    # This runs the two reachable plan lanes at LEAF granularity (one recorded
+    # outcome per individual test case, not a per-target summary) and then the
+    # U1-classic vs U2-SlateDB differential, which is the evidence that the
+    # storage adapter changes no upstream per-case outcome.
+    #
+    # It is expected to exit NONZERO: the plan is not satisfied and must not
+    # be reported as satisfied. What is enforced is that coverage does not go
+    # BACKWARDS and that the differential stays clean.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          # R5-CI-01 / spec §19: read-only leaf verification, no push.
+          persist-credentials: false
+      - name: every archived leaf bundle re-verifies from its own bytes
+        run: |
+          set -euo pipefail
+          for b in docs/evidence/G3/leaf/u1-full-1 \
+                   docs/evidence/G3/leaf/u1-http-2 \
+                   docs/evidence/G3/leaf/u2-full-1; do
+            python3 tools/qualification/verify_leaf.py "$b"
+          done
+      - name: the leaf evidence cannot be forged
+        run: |
+          python3 tools/qualification/leaf_mutants.py --bundle docs/evidence/G3/leaf/u1-full-1
+          python3 tools/qualification/leaf_mutants.py --bundle docs/evidence/G3/leaf/u2-full-1
+      - name: leaf-aware coverage does not regress
+        # Exit 1 is the CORRECT and expected outcome: the plan is NOT satisfied
+        # and must never be reported as satisfied. So the exit code cannot be
+        # the regression signal — exit 2 is, and it means the recorded floor
+        # was breached. Anything else is an unexpected failure.
+        run: |
+          set +e
+          python3 tools/qualification/leaf_coverage.py \
+            --leaf docs/evidence/G3/leaf/u1-full-1 \
+            --leaf docs/evidence/G3/leaf/u1-http-2 \
+            --leaf docs/evidence/G3/leaf/u2-full-1 \
+            --min-covered 914
+          rc=$?
+          set -e
+          case "$rc" in
+            0|1) echo "coverage floor held (exit $rc; 1 = plan not satisfied, as expected)" ;;
+            2)   echo "::error::leaf coverage regressed below the recorded floor"; exit 1 ;;
+            *)   echo "::error::leaf_coverage.py failed unexpectedly (exit $rc)"; exit 1 ;;
+          esac
+      - name: the SlateDB backend changes no upstream per-case outcome
+        # BOTH u1 bundles are the oracle: u1-full-1 refused four HTTP targets on
+        # a loaded machine and u1-http-2 is their clean re-run. Passing only the
+        # first makes those four look candidate-only and the differential goes
+        # red for a reason that is not a regression.
+        run: |
+          python3 tools/qualification/leaf_diff.py \
+            --oracle docs/evidence/G3/leaf/u1-full-1 \
+            --oracle docs/evidence/G3/leaf/u1-http-2 \
+            --candidate docs/evidence/G3/leaf/u2-full-1 \
+            --require-clean
+
+  quality-full:
+    # Spec §14.3 (tier C) of the agentic code-quality specification: the
+    # expensive checks a per-PR gate deliberately does not pay for, and that
+    # an implementation agent would otherwise skip.
+    #
+    #     cargo xtask quality full
+    #
+    # What "full" is expected to cover, per §14.3, is decided by
+    # `.quality/policy.toml` and NOT by this file: broad or package-sharded
+    # `cargo-mutants` rather than diff-scoped, longer fuzz budgets, Miri over
+    # the supported critical packages, a broader feature powerset, the full
+    # duplication scan, a CRAP trend report, and a dependency/advisory
+    # refresh. Encoding any of that here would put policy in two places and
+    # let a workflow edit change a verdict.
+    #
+    # WHY IT IS A SEPARATE TIER AND NOT A BIGGER PR GATE: a diff-scoped
+    # mutation run is ideal for PR latency but cannot see effects outside the
+    # changed source ranges (spec §5.6). A scheduled full campaign is the
+    # only thing that can prove those absent, which is exactly the argument
+    # this repository already makes for the full S3 corpus and the feature-on
+    # SlateDB suites living in this tier.
+    #
+    # STATUS, same as the tier-1 job: `cargo xtask` and its alias land in the
+    # same change set as this job and were verified to resolve before it was
+    # written. If either is ever removed this job goes RED rather than
+    # skipping, because a gate that did not run must never be
+    # indistinguishable from a gate that passed. Nothing here may be cited as
+    # a release predicate on its own - tier 3 re-runs what a release depends
+    # on in a clean hermetic environment.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11.15"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22.22.2"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: "nightly-2026-04-15"
+          components: rustfmt
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: "1.93.0"
+          components: clippy, llvm-tools-preview
+      - name: native prerequisites (bounded by the pinned runner image)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler cmake pkg-config libclang-dev
+      - name: install the npm workspaces from their locks
+        run: |
+          (cd stack && npm ci)
+          (cd control-plane && npm ci)
+      - name: materialise and stage the fork
+        run: |
+          python3 tools/source-lock/materialize_sources.py
+          python3 tools/fork/materialize_slatedb.py
+          python3 tools/fork/stage.py
+      - name: full quality campaign
+        run: cargo xtask quality full
+      - name: publish the quality report into the job summary
+        # runs even when the campaign failed - that is when the report is
+        # worth reading. Reading a file cannot turn a failed gate green.
+        if: always()
+        run: |
+          report=artifacts/quality/quality-report.json
+          {
+            echo "### quality report (tier C, full)"
+            if [ -f "$report" ]; then
+              echo '```json'
+              cat "$report"
+              echo '```'
+            else
+              echo "No \`$report\` was produced. A missing report is not a pass."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  workflow-security-audit:
+    # Spec §14.3 row "workflow security checks", and the tier-2 twin of the
+    # job of the same name in gates.yml.
+    #
+    # It is in BOTH tiers on purpose, for exactly the reason the npm advisory
+    # scan is in every tier: the tier-1 run sees workflow DIFFS, while this
+    # one sees newly-published audit rules firing against workflows nobody
+    # touched. A PR-tier-only audit can only ever apply the rules that
+    # existed when someone happened to open a PR.
+    #
+    # Same fail-closed posture: default persona, no severity or confidence
+    # floor, findings fixed or ignored by exact line in `.github/zizmor.yml`
+    # with the reason recorded. No `continue-on-error:`.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11.15"
+      - name: install zizmor from a digest-pinned wheel
+        # identical provenance to the tier-1 job: curl + `sha256sum -c` +
+        # `--no-deps`, never an unpinned action and never install-time
+        # version resolution. zizmor 1.29.0, resolved from PyPI 2026-08-20,
+        # declares no runtime dependencies.
+        env:
+          ZIZMOR_VERSION: "1.29.0"
+          ZIZMOR_WHEEL: "zizmor-1.29.0-py3-none-manylinux_2_28_x86_64.whl"
+          ZIZMOR_URL: "https://files.pythonhosted.org/packages/b4/f0/dfa67018b76bc4f2f50e265e8cbd1293833d1b1de5f3f02fbbb7487ae9c6/zizmor-1.29.0-py3-none-manylinux_2_28_x86_64.whl"
+          ZIZMOR_SHA256: "587b99c2e1b34575c6c8565c2bfde415ca8bc0310f5589f19bc948c8dea10a20"
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fsSL -o "$ZIZMOR_WHEEL" "$ZIZMOR_URL"
+          echo "${ZIZMOR_SHA256}  ${ZIZMOR_WHEEL}" | sha256sum -c -
+          python3 -m pip install --no-deps --no-index "./${ZIZMOR_WHEEL}"
+          bin="$(python3 -c 'import os,sysconfig;print(os.path.join(sysconfig.get_path("scripts"),"zizmor"))')"
+          "$bin" --version | grep -qx "zizmor ${ZIZMOR_VERSION}"
+          echo "ZIZMOR_BIN=$bin" >> "$GITHUB_ENV"
+      - name: audit every workflow
+        run: |
+          "$ZIZMOR_BIN" --offline --no-progress --color never .github/workflows/
+      - name: every checkout drops its credentials (§19, artipacked)
+        # zizmor does NOT protect this at the persona this gate runs at.
+        # Measured, with one guard flipped to `persist-credentials: true`:
+        #   --persona=auditor  -> artipacked fires
+        #   --persona=pedantic -> 0
+        #   --persona=regular  -> 0    <- what runs above
+        # At `regular` the finding is counted "suppressed" and a regression
+        # would pass green. Raising the whole gate to `auditor` is not the
+        # fix either: the clean tree yields 52 findings there, so the gate
+        # would be permanently red or would need a severity floor - and a
+        # floor silently swallows unrelated future findings. So this one
+        # invariant gets its own exact, fail-closed check instead.
+        run: python3 tools/ci/check_workflow_checkouts.py
+      - name: the checkout gate can actually fail
+        run: python3 tools/ci/check_workflow_checkouts.py --self-test

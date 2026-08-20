@@ -1,0 +1,9 @@
+ok   LICENSE (16726 bytes, executable=False)
+ok   admin/typedb_admin_bin (13534928 bytes, executable=True)
+ok   console/typedb_console_bin (18056720 bytes, executable=True)
+ok   loader/typedb_loader_bin (12803040 bytes, executable=True)
+ok   server/config.yml (856 bytes, executable=False)
+ok   server/typedb_server_bin (159008616 bytes, executable=True)
+ok   typedb (2480 bytes, executable=True)
+members inspected: 7
+layout: PASS

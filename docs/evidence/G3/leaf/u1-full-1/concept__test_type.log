@@ -1,0 +1,13 @@
+
+running 6 tests
+[2m2026-08-20T09:59:49.502626Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-20T09:59:49.504491Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+test entity_usage ... ok
+test annotations_with_range_arguments ... ok
+test annotations_with_value_arguments ... ok
+test role_usage ... ok
+test test_struct_definition ... ok
+test test_struct_definition_updates ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+

@@ -39,8 +39,9 @@ import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { ProviderConfigError, realConfigFromEnv } from "./provider.ts";
+import { resolveReleaseCommit } from "../../tools/release/release-identity.mts";
 import {
-  checkEnvelopeBinding, computeProbesSourceRoot, isRunIdConsumed, verifyEnvelopeSignature,
+  checkEnvelopeBinding, claimIdentity, computeProbesSourceRoot, isRunClaimed, verifyEnvelopeSignature,
   type SignedEnvelope,
 } from "./approval.ts";
 
@@ -193,13 +194,36 @@ function checkEnvelope(
         `ttlSeconds=${PROBE_CREDENTIAL_TTL_SECONDS} — the owner must approve the exact TTL`,
     });
   }
+  // R6-CF-03: the checks above compare the TTL against the APPROVED WINDOW
+  // LENGTH, not against the time actually LEFT. The round-6 audit passed a
+  // valid envelope with 60 seconds remaining and still got GREEN, so a
+  // 900-second credential could outlive its own authorization by ~14
+  // minutes. The remaining window is what matters at acquisition time.
+  const untilMs = Date.parse(doc.valid_until ?? "");
+  if (!Number.isNaN(untilMs)) {
+    const remainingSeconds = Math.floor((untilMs - Date.now()) / 1000);
+    if (remainingSeconds < PROBE_CREDENTIAL_TTL_SECONDS) {
+      reasons.push({
+        code: "REFUSED",
+        detail:
+          `envelope has ${remainingSeconds}s of signed validity left but the probes mint ` +
+          `${PROBE_CREDENTIAL_TTL_SECONDS}s credentials — a credential would outlive the approval ` +
+          "that permits minting it. Re-sign the envelope for the window you intend to run in.",
+      });
+    }
+  }
 
   // --- binding: this envelope authorizes exactly THIS run ---
+  // R6-PORT-01: a source archive has no .git, and the envelope is BOUND to
+  // the release commit — so resolving identity by shelling out to git made
+  // the approval path unusable outside a checkout. resolveReleaseCommit reads
+  // git where it exists and the digest-bound RELEASE-IDENTITY.json where it
+  // does not; it refuses rather than inventing an identity.
   let releaseCommit = "";
   try {
-    releaseCommit = execFileSync("git", ["-C", REPO_ROOT, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+    releaseCommit = resolveReleaseCommit(REPO_ROOT);
   } catch {
-    reasons.push({ code: "PREREQUISITE_MISSING", detail: "cannot resolve git HEAD for release-commit binding" });
+    reasons.push({ code: "PREREQUISITE_MISSING", detail: "cannot resolve the release commit for envelope binding" });
   }
   const probesSourceRoot = computeProbesSourceRoot(
     PROBES_DIR,
@@ -216,16 +240,21 @@ function checkEnvelope(
     reasons.push({ code: "REFUSED", detail });
   }
 
-  // --- one-time use ---
+  // --- one-time use (R6-CF-01) ---
+  // A read-only look at the durable claim state. The ACQUISITION itself is
+  // the runner's atomic O_EXCL claim at authority-acquisition time; this
+  // only reports an already-spent envelope early, so a doomed run refuses
+  // in preflight instead of after constructing a provider.
   try {
-    if (typeof doc.binding?.run_id === "string" && isRunIdConsumed(path, doc.binding.run_id)) {
+    if (typeof doc.binding?.run_id === "string"
+        && isRunClaimed(path, claimIdentity(doc, publicKeyPem), env)) {
       reasons.push({
         code: "REFUSED",
-        detail: `envelope run_id ${doc.binding.run_id} has already been consumed — an envelope authorizes exactly one run`,
+        detail: `envelope run_id ${doc.binding.run_id} has already been claimed — an envelope authorizes exactly one run`,
       });
     }
   } catch (err) {
-    reasons.push({ code: "REFUSED", detail: `consumed-run journal unreadable: ${String(err)}` });
+    reasons.push({ code: "REFUSED", detail: `approval claim state unreadable: ${String(err)}` });
   }
 
   return doc;

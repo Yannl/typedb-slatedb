@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Provider-neutral S3 certification corpus runner (round-4 §6.4, OD-009;
-# hardened round-5 R5-LOCAL-01/03).
+# hardened round-5 R5-LOCAL-01/03; evidence hardened round-6 R6-EVID-01).
 #
 # Orchestrates the full corpus against ONE candidate native S3 server:
 #
@@ -23,8 +23,21 @@
 # R5-LOCAL-03: the run emits a STRUCTURED, SEALED evidence bundle —
 # provider binary digest + version, config, source identity, toolchain,
 # per-phase raw logs with digests, restart receipt, and a root seal —
-# verifiable independently by verify-bundle.py. Grep-gated stdout remains
-# as a belt, but the bundle is the evidence.
+# verifiable independently by verify-bundle.py.
+#
+# R6-EVID-01 hardening:
+#   * CLEAN-TREE GATE runs BEFORE execution (not only before sealing).
+#     Any tracked or untracked dirt refuses the run. S3_CERT_ALLOW_DIRTY=1
+#     is an explicit opt-out that STAMPS the bundle qualification=false.
+#   * The cas_racer path is resolved from `cargo build --message-format=json`
+#     (falling back to `cargo metadata`'s target_directory), NEVER from a
+#     hardcoded tools/s3-cert-corpus/target/debug path. A custom
+#     CARGO_TARGET_DIR therefore works, and an unresolvable/absent racer
+#     refuses the run instead of degrading to "0 winners, N process errors".
+#   * Every multi-process CAS round is recorded STRUCTURALLY in
+#     phase1b.json (per-round winners/losers/overwrites/errors), and a
+#     nonzero process-error count is a hard failure of its own.
+#   * Every significant command is logged to commands.jsonl (argv + cwd).
 #
 # Provider selection (provider-neutral by construction):
 #   S3_CERT_PROVIDER=minio   (default) — the locked transition-baseline
@@ -34,6 +47,7 @@
 # Tunables: S3_CERT_CAS_ROUNDS (100) S3_CERT_CAS_WRITERS (16)
 #           S3_CERT_UPDATE_ROUNDS (50) S3_CERT_MP_ROUNDS (20)
 #           S3_CERT_MP_PROCS (8) S3_CERT_EVIDENCE_DIR
+#           S3_CERT_ALLOW_DIRTY (unset) — non-qualification escape hatch
 #
 # Exit 0 ONLY when every phase passes AND the executed-test count matches
 # the expected corpus size (a skipped corpus can never read as green).
@@ -58,10 +72,23 @@ SEMANTICS_EXPECTED=11
 MP_ROUNDS="${S3_CERT_MP_ROUNDS:-20}"
 MP_PROCS="${S3_CERT_MP_PROCS:-8}"
 
+ALLOW_DIRTY_ARG=()
+if [ -n "${S3_CERT_ALLOW_DIRTY:-}" ]; then
+  ALLOW_DIRTY_ARG=(--allow-dirty)
+fi
+
+# --- R6-EVID-01: clean-tree gate BEFORE any execution ---------------------
+# Evidence must be produced from a checkout whose executable inputs are
+# committed. The same gate runs again inside seal-bundle.py.
+python3 "$HERE/seal-bundle.py" --preflight --repo "$REPO" "${ALLOW_DIRTY_ARG[@]}"
+
 EVIDENCE_DIR="${S3_CERT_EVIDENCE_DIR:-$HERE/evidence/run-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 mkdir -p "$EVIDENCE_DIR"
+EVIDENCE_DIR="$(cd "$EVIDENCE_DIR" && pwd)"
 PHASES_TSV="$EVIDENCE_DIR/phases.tsv"
 : > "$PHASES_TSV"
+COMMANDS="$EVIDENCE_DIR/commands.jsonl"
+: > "$COMMANDS"
 
 SERVER_PID=""
 cleanup() {
@@ -74,6 +101,17 @@ trap cleanup EXIT
 
 record_phase() { # name exit_code log_file detail
   printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "$PHASES_TSV"
+}
+
+# record_cmd LABEL argv... — the argv log the bundle binds (R6-EVID-01)
+record_cmd() {
+  local label="$1"; shift
+  python3 - "$COMMANDS" "$label" "$PWD" "$@" <<'PY'
+import json, sys
+out, label, cwd, *argv = sys.argv[1:]
+with open(out, "a") as fh:
+    fh.write(json.dumps({"label": label, "cwd": cwd, "argv": argv}) + "\n")
+PY
 }
 
 server_bin() {
@@ -117,12 +155,14 @@ start_server() {
   local bin; bin="$(server_bin)"
   case "$PROVIDER" in
     minio)
+      record_cmd start-server "$bin" server "$DATA" --address "127.0.0.1:$PORT" --console-address "127.0.0.1:0"
       MINIO_ROOT_USER="$ACCESS" MINIO_ROOT_PASSWORD="$SECRET" \
         setsid "$bin" server "$DATA" --address "127.0.0.1:$PORT" --console-address "127.0.0.1:0" \
         > "$WORK/server.log" 2>&1 &
       SERVER_PID=$!
       ;;
     rustfs)
+      record_cmd start-server "$bin" --address "127.0.0.1:$PORT" "$DATA"
       RUSTFS_ACCESS_KEY="$ACCESS" RUSTFS_SECRET_KEY="$SECRET" \
         setsid "$bin" --address "127.0.0.1:$PORT" "$DATA" > "$WORK/server.log" 2>&1 &
       SERVER_PID=$!
@@ -147,6 +187,7 @@ SERVER_BIN_SHA256="$(sha256sum "$SERVER_BIN_PATH" | cut -d' ' -f1)"
 
 echo "corpus: provider=$PROVIDER port=$PORT work=$WORK evidence=$EVIDENCE_DIR"
 start_server
+record_cmd create-bucket python3 "$HERE/s3op.py" "http://127.0.0.1:$PORT" create-bucket "$BUCKET"
 AWS_ACCESS_KEY_ID="$ACCESS" AWS_SECRET_ACCESS_KEY="$SECRET" \
   python3 "$HERE/s3op.py" "http://127.0.0.1:$PORT" create-bucket "$BUCKET"
 
@@ -156,11 +197,47 @@ export S3_CERT_ACCESS_KEY="$ACCESS"
 export S3_CERT_SECRET_KEY="$SECRET"
 
 echo "corpus: building test + racer binaries"
+record_cmd build-tests cargo +1.93.0 test --manifest-path "$HERE/Cargo.toml" --locked --no-run
 cargo +1.93.0 test --manifest-path "$HERE/Cargo.toml" --locked --no-run >/dev/null 2>&1
-cargo +1.93.0 build --manifest-path "$HERE/Cargo.toml" --bin cas_racer --locked >/dev/null 2>&1
-RACER="$HERE/target/debug/cas_racer"
+
+# --- R6-EVID-01: resolve cargo output paths from cargo, never hardcoded ---
+CARGO_TARGET_DIR_EFFECTIVE="$(cargo +1.93.0 metadata --format-version 1 --no-deps \
+  --manifest-path "$HERE/Cargo.toml" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')"
+record_cmd build-racer cargo +1.93.0 build --manifest-path "$HERE/Cargo.toml" --bin cas_racer --locked --message-format=json
+RACER="$(cargo +1.93.0 build --manifest-path "$HERE/Cargo.toml" --bin cas_racer --locked \
+  --message-format=json 2>/dev/null \
+  | python3 -c '
+import json, sys
+exe = ""
+for line in sys.stdin:
+    line = line.strip()
+    if not line.startswith("{"):
+        continue
+    try:
+        msg = json.loads(line)
+    except ValueError:
+        continue
+    if (msg.get("reason") == "compiler-artifact" and msg.get("executable")
+            and msg.get("target", {}).get("name") == "cas_racer"):
+        exe = msg["executable"]
+print(exe)
+')"
+if [ -z "$RACER" ]; then
+  # cargo emitted no artifact message (e.g. an older cargo): fall back to the
+  # metadata-reported target directory — still never a hardcoded path.
+  RACER="$CARGO_TARGET_DIR_EFFECTIVE/debug/cas_racer"
+fi
+if [ ! -x "$RACER" ]; then
+  echo "corpus: cas_racer not executable at '$RACER' (effective CARGO_TARGET_DIR=$CARGO_TARGET_DIR_EFFECTIVE)" >&2
+  echo "corpus: refusing to run the multi-process CAS phase without the racer — a missing racer would report 0 winners / N process errors and read as a provider failure" >&2
+  exit 2
+fi
+RACER_SHA256="$(sha256sum "$RACER" | cut -d' ' -f1)"
+echo "corpus: cas_racer $RACER ($RACER_SHA256, target_dir=$CARGO_TARGET_DIR_EFFECTIVE)"
 
 echo "corpus: phase 1 (semantics incl. hardened barrier races)"
+record_cmd phase1-semantics cargo +1.93.0 test --manifest-path "$HERE/Cargo.toml" --locked -- --test-threads=4
 set +e
 S3_CERT_PHASE=semantics cargo +1.93.0 test --manifest-path "$HERE/Cargo.toml" --locked -- --test-threads=4 \
   > "$EVIDENCE_DIR/phase1.log" 2>&1
@@ -175,7 +252,10 @@ record_phase semantics "$PH1" phase1.log "$SEMANTICS_EXPECTED tests"
 
 echo "corpus: phase 1b (multi-process CAS: $MP_ROUNDS rounds x $MP_PROCS processes)"
 MP_LOG="$EVIDENCE_DIR/phase1b.log"
+MP_ROUNDS_TSV="$WORK/mp-rounds.tsv"
 : > "$MP_LOG"
+: > "$MP_ROUNDS_TSV"
+record_cmd phase1b-racer "$RACER" '<key>' '<worker>' '<barrier-file>'
 for r in $(seq 1 "$MP_ROUNDS"); do
   KEY="cert/mp-cas/round-$r-$RANDOM"
   START="$WORK/start-$r"
@@ -198,9 +278,16 @@ for r in $(seq 1 "$MP_ROUNDS"); do
     esac
   done
   echo "round $r: winners=$winners losers=$losers overwrites=$overwrites errors=$errors" >> "$MP_LOG"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$r" "$KEY" "$winners" "$losers" "$overwrites" "$errors" \
+    >> "$MP_ROUNDS_TSV"
   if [ "$overwrites" -ne 0 ]; then
     echo "corpus: CHANGED-BYTE OVERWRITE in multi-process CAS round $r — provider fails conditional create" >&2
     record_phase mp-cas 1 phase1b.log "overwrite at round $r"
+    exit 1
+  fi
+  if [ "$errors" -ne 0 ]; then
+    echo "corpus: $errors racer PROCESS ERRORS in round $r — the CAS evidence is degraded, not a provider verdict (racer=$RACER)" >&2
+    record_phase mp-cas 1 phase1b.log "round $r process errors=$errors"
     exit 1
   fi
   if [ "$winners" -ne 1 ] || [ "$losers" -ne $((MP_PROCS-1)) ]; then
@@ -209,7 +296,25 @@ for r in $(seq 1 "$MP_ROUNDS"); do
     exit 1
   fi
 done
-record_phase mp-cas 0 phase1b.log "$MP_ROUNDS rounds x $MP_PROCS procs, one winner each, zero overwrites"
+
+# structured mp-cas result (R6-EVID-01: not a grep over prose)
+python3 - "$MP_ROUNDS_TSV" "$EVIDENCE_DIR/phase1b.json" "$MP_PROCS" "$RACER" "$RACER_SHA256" <<'PY'
+import json, sys
+tsv, out, procs, racer, racer_sha = sys.argv[1:6]
+rounds = []
+with open(tsv) as fh:
+    for line in fh:
+        if not line.strip():
+            continue
+        r, key, w, l, o, e = line.rstrip("\n").split("\t")
+        rounds.append({"round": int(r), "key": key, "winners": int(w), "losers": int(l),
+                       "overwrites": int(o), "errors": int(e)})
+with open(out, "w") as fh:
+    json.dump({"kind": "mp-cas", "procs": int(procs), "racer_path": racer,
+               "racer_sha256": racer_sha, "rounds": rounds}, fh, indent=1)
+    fh.write("\n")
+PY
+record_phase mp-cas 0 phase1b.log "$MP_ROUNDS rounds x $MP_PROCS procs, one winner each, zero overwrites, zero process errors"
 
 echo "corpus: CRASH BARRIER (kill -9 the server process group)"
 CRASH_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -225,6 +330,7 @@ record_phase crash-restart 0 server.log "kill -9 pid=$OLD_PID at $CRASH_AT; rest
 cp "$WORK/server.log" "$EVIDENCE_DIR/server.log" 2>/dev/null || true
 
 echo "corpus: phase 2 (post-restart persistence)"
+record_cmd phase2-post-restart cargo +1.93.0 test --manifest-path "$HERE/Cargo.toml" --locked persisted_objects_survive_server_crash_restart -- --test-threads=1
 set +e
 S3_CERT_PHASE=post-restart cargo +1.93.0 test --manifest-path "$HERE/Cargo.toml" --locked \
   persisted_objects_survive_server_crash_restart -- --test-threads=1 \
@@ -238,14 +344,23 @@ grep -q "test result: ok. 1 passed" "$EVIDENCE_DIR/phase2.log" || {
   exit 1; }
 record_phase post-restart "$PH2" phase2.log "witnesses byte-exact after kill -9"
 
-# --- R5-LOCAL-03: sealed evidence bundle ----------------------------------
+# --- R5-LOCAL-03 + R6-EVID-01: sealed, source-bound evidence bundle -------
+record_cmd seal python3 "$HERE/seal-bundle.py" "$EVIDENCE_DIR" --provider "$PROVIDER"
 python3 "$HERE/seal-bundle.py" "$EVIDENCE_DIR" \
   --provider "$PROVIDER" \
   --server-bin "$SERVER_BIN_PATH" --server-sha256 "$SERVER_BIN_SHA256" \
   --endpoint "http://127.0.0.1:$PORT" \
   --repo "$REPO" \
+  --racer "$RACER" \
+  --cargo-target-dir "$CARGO_TARGET_DIR_EFFECTIVE" \
   --semantics-expected "$SEMANTICS_EXPECTED" \
-  --mp-rounds "$MP_ROUNDS" --mp-procs "$MP_PROCS"
-python3 "$HERE/verify-bundle.py" "$EVIDENCE_DIR"
+  --mp-rounds "$MP_ROUNDS" --mp-procs "$MP_PROCS" \
+  "${ALLOW_DIRTY_ARG[@]}"
+
+VERIFY_ARGS=()
+if [ -n "${S3_CERT_ALLOW_DIRTY:-}" ]; then
+  VERIFY_ARGS=(--allow-non-qualification)
+fi
+python3 "$HERE/verify-bundle.py" "$EVIDENCE_DIR" "${VERIFY_ARGS[@]}"
 
 echo "CORPUS: PASS (provider=$PROVIDER — $SEMANTICS_EXPECTED semantic tests incl. hardened races, $MP_ROUNDS multi-process CAS rounds, crash/restart persistence; sealed bundle: $EVIDENCE_DIR)"

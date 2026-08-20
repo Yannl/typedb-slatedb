@@ -1,9 +1,20 @@
 # Architecture
 
 TypeDB, semantically identical to the pinned upstream commit, with its
-keyspace storage on an object-store engine (SlateDB, consumed unmodified
-from crates.io) and its durability on TypeDB's own WAL — locally today,
-on Cloudflare (R2 + Durable Objects) once the platform-fact gate closes.
+keyspace storage on an object-store engine (SlateDB, consumed as an in-repo
+**soft fork** of the digest-pinned 0.15.0 crate — ADR-0012) and its
+durability on TypeDB's own WAL — locally today, on Cloudflare (R2 + Durable
+Objects) once the platform-fact gate closes.
+
+The SlateDB posture is workspace-global and shipped, not conditional:
+`sources/typedb/Cargo.toml` redirects `slatedb` to `sources/slatedb-fork`
+through `[patch.crates-io]`, and `fork/typedb/storage/Cargo.toml` enables
+`external_epoch_required` unconditionally, so every build that links
+`storage` carries controller-issued writer/compactor epochs and refuses an
+epoch-less writer open. ADR-0001's original consume-only decision is
+SUPERSEDED; `tools/ci/check_dependency_sources.py` re-derives this claim from
+the resolved `cargo metadata` graph on every PR so the sentence above cannot
+drift from the build again.
 The one-sentence design stance: **the upstream test corpus is the oracle,
 the WAL is the only durable truth, and every authority boundary is
 explicit and fenced.**
@@ -33,8 +44,9 @@ configuration **items**. Each document carries its layer of that thread.
 Why the architecture is this way — context, alternatives, consequences —
 is recorded as decision records, indexed at
 [architecture/ADR/README.md](architecture/ADR/README.md). Highlights:
-consume-only SlateDB (ADR-0001), the keyspace-layer engine seam
-(ADR-0002), WAL-only durability (ADR-0003), the sync bridge (ADR-0004),
+the SlateDB soft fork carrying externally issued epochs (ADR-0012,
+which supersedes ADR-0001's consume-only stance), the keyspace-layer
+engine seam (ADR-0002), WAL-only durability (ADR-0003), the sync bridge (ADR-0004),
 the U2 engine posture and manifest-pinned checkpoints (ADR-0005),
 fence-before-replay (ADR-0006), conditional-create payload immutability
 (ADR-0007), the corpus-as-oracle method (ADR-0008), the local-first

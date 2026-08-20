@@ -1,0 +1,94 @@
+{
+ "schema": "typedb-r2-coverage-ceiling/v1",
+ "statement": "What fraction of the 23,138-row qualification plan can EVER be covered from this environment, and what needs a different one. Computed as leaves x runnable profiles, which is an UPPER BOUND: it does not model the plan's 43 predeclared exclusion rows nor per-profile applicability, so the plan's own row count is 23,132 + 6 driver rows while this arithmetic yields 23,700. Treat the percentages as approximate ceilings, not as a second denominator.",
+ "plan_root": "72020aa01fafebddc41321e0c6100c158f80ae997037430871212049054a7a41",
+ "profiles": {
+  "U0": {
+   "cfg": [],
+   "controller": "upstream-local",
+   "durability": "file-wal",
+   "features": [],
+   "kv_backend": "rocksdb-pristine",
+   "object_store": "none"
+  },
+  "U1": {
+   "cfg": [],
+   "controller": "fork-local",
+   "durability": "file-wal",
+   "features": [],
+   "kv_backend": "rocksdb-adapter",
+   "object_store": "none"
+  },
+  "U2": {
+   "cfg": [],
+   "controller": "local",
+   "durability": "file-wal",
+   "features": [],
+   "kv_backend": "slatedb-localfs",
+   "object_store": "localfs"
+  },
+  "U3": {
+   "cfg": [],
+   "controller": "deterministic-model",
+   "durability": "remote-wal",
+   "features": [],
+   "kv_backend": "slatedb-localfs",
+   "object_store": "localfs"
+  },
+  "U4": {
+   "cfg": [],
+   "controller": "real-do",
+   "durability": "remote-wal",
+   "features": [],
+   "kv_backend": "slatedb-r2",
+   "object_store": "r2"
+  }
+ },
+ "runnable_profiles": [
+  "U1",
+  "U2"
+ ],
+ "blocked_profiles": {
+  "U0": "pristine (unstaged) checkout: needs a SECOND full build tree alongside the existing 16 GB one. Disk-blocked here, measured. Unblocked by a bigger runner, not by any code change.",
+  "U3": "storage factory refuses at runtime: ProfileUnavailable { profile: \"U3\" }. The product profile is not implemented; this is a product gap, not an environment limit.",
+  "U4": "storage factory refuses at runtime: ProfileUnavailable { profile: \"U4\" }. Same: a product gap."
+ },
+ "by_kind": {
+  "CUCUMBER": {
+   "leaves": 4099,
+   "reachable_rows": 8198,
+   "unreachable_rows": 12297,
+   "note": "all 47 catalogued feature files and all 4,099 scenarios are reachable via cargo, and per-scenario outcomes already exist in the sealed U1/U2 bundles. The blocker is the Scenario Outline name join, not execution."
+  },
+  "FAILPOINT": {
+   "leaves": 44,
+   "reachable_rows": 0,
+   "unreachable_rows": 220,
+   "note": "not observable per leaf: 22 fail points are iterated INSIDE a single #[test] and libtest prints one line for the case. Covering these needs an upstream change that emits one case per fail point, not a harness change here. Deriving 44 passes from one passing loop is inference, not evidence."
+  },
+  "LIBTEST": {
+   "leaves": 455,
+   "reachable_rows": 910,
+   "unreachable_rows": 1365,
+   "note": null
+  },
+  "SCRIPT": {
+   "leaves": 1,
+   "reachable_rows": 0,
+   "unreachable_rows": 5,
+   "note": "//tool/test:simulate-crash has no referent in the pinned upstream tree (confirmed against Bazel's own graph). This is a catalogue defect, kept rather than deleted: silently removing a plan row is how a denominator shrinks."
+  },
+  "STATIC_CHECK": {
+   "leaves": 141,
+   "reachable_rows": 282,
+   "unreachable_rows": 423,
+   "note": "63 of the 141 are rustfmt_test and ARE faithfully runnable with the same tool; the other 78 are checkstyle/checkstyle_license, which run TypeDB's Java Checkstyle with an MPL header config fetched by Bazel. A Python reimplementation of the header property would be a SUBSTITUTE, not the upstream tool, so those rows are not claimed on one."
+  }
+ },
+ "covered_today": 914,
+ "total_rows": 23138,
+ "reachable_ceiling_rows": 9396,
+ "reachable_ceiling_pct": 40.6,
+ "covered_today_pct": 4.0,
+ "needs_a_different_environment_or_product_work": 14310
+}

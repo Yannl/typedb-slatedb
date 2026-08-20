@@ -1,8 +1,59 @@
 # ADR-0012 — Production lane: SlateDB soft fork carrying exact external epochs
 
-**Status:** accepted-as-plan (V16 convergence audit F4/F5); supersedes
-ADR-0001's consume-only rule **for the production R2 lane only** once the
-fork lands. Local conformance lanes (U2/U2S3) stay on crates.io SlateDB.
+**Status:** accepted (shipped, ratified 2026-08-20 in response to round-6
+finding R6-TRUTH-01). Fully supersedes ADR-0001's consume-only rule for the
+**whole product workspace**, not only the production R2 lane. Originally
+recorded as accepted-as-plan (V16 convergence audit F4/F5).
+
+> **What actually shipped, and why the scope widened.** The plan above
+> scoped the fork to the production lane and left the conformance lanes on
+> the registry crate. The implementation used
+> `[patch.crates-io]`, which is **workspace-global by construction** — Cargo
+> offers no per-lane patch table. So the moment the redirect landed, every
+> lane in `sources/typedb` began resolving the fork. That is the right
+> outcome (one SlateDB, one fenced open path, no lane silently linking a
+> different engine than the one under test), but it is a *wider* decision
+> than this ADR originally ratified, and it was in force before the
+> documents said so. This status block ratifies it explicitly.
+>
+> **Scope, as shipped:**
+>
+> | Workspace | Resolved `slatedb` | Why |
+> |---|---|---|
+> | `sources/typedb` (product: U0–U4, all profiles) | `path` → `sources/slatedb-fork` @ 0.15.0, `external_epoch_required` + `aws` + `wal_disable` | workspace-global `[patch.crates-io]`; the fenced open path must be the only one |
+> | `tools/` (spikes, protocol models) | `registry` → crates.io 0.15.0 | no patch table, on purpose: `tools/storage-diff-spike` measures the **unmodified** crate as the fork's differential oracle |
+>
+> **The oracle property is preserved, differently than planned.** Decision 3
+> below kept the conformance lanes on crates.io so the unmodified dependency
+> would preserve the oracle. That is no longer how it is preserved. It is
+> preserved by (a) the upstream TypeDB corpus remaining the conformance
+> oracle across profiles, and (b) `tools/storage-diff-spike` linking the
+> registry crate from a workspace with no patch table, so a semantics
+> differential against unmodified 0.15.0 is still executable at will.
+> Decision 3 is superseded by this block.
+>
+> **The fence is default-on.** `fork/typedb/storage/Cargo.toml` enables
+> `slatedb/external_epoch_required` unconditionally; feature unification
+> carries it to every crate that links `storage`. Attested by
+> `tools/fork/check_strict_epoch.py` and executed by
+> `check_strict_epoch_suite.py`. Removing it is release-blocking.
+>
+> **Fork identity, upgrade and rebase.** The fork is a five-patch series over
+> the digest-pinned crate (`fork/slatedb/patches/`, `UPSTREAM-PROVENANCE`,
+> `PATCH-LEDGER.md`), reconstructed by `tools/fork/materialize_slatedb.py`
+> and digest-verified by `--check`. The rebase procedure and the standing
+> maintenance liability are recorded in
+> [development.md](../../development.md#upgrading--rebasing-the-fork-onto-a-new-slatedb-release).
+>
+> **Risk ownership.** Carrying a storage-engine fork is owned by the storage
+> lane owner jointly with this ADR: rebase cost per upstream release, a
+> divergence surface no upstream CI covers, and the obligation to propose
+> every carryable patch upstream first. Bounded by the minimal-patch rule.
+>
+> **Enforcement.** `tools/ci/check_dependency_sources.py` re-derives the
+> resolved source from `cargo metadata` on every PR and fails when any
+> registered document contradicts it. Prose alone cannot restore the old
+> story.
 
 ## Context
 
@@ -45,7 +96,9 @@ defects, audit F12).
    - typed fenced outcomes on every rejected publication.
 2. Each patch is source-mapped in the source lock (fork base commit +
    patch series), mirroring how `fork/typedb` is managed today.
-3. The conformance lanes keep crates.io SlateDB: semantics under test
+3. *(SUPERSEDED by the round-6 ratification in the status block above —
+   `[patch.crates-io]` is workspace-global, so this is not what shipped.)*
+   The conformance lanes keep crates.io SlateDB: semantics under test
    there (storage contract, checkpoint shape, read contract) are
    epoch-independent, and keeping the unmodified dependency preserves the
    oracle property of those lanes.

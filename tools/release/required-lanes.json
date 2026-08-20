@@ -1,0 +1,9 @@
+{
+  "note": "The lanes every promotion of an artifact requires. Ids may only SELECT implementations from tools/release/lanes.py - a manifest cannot introduce a lane by naming a command, so this file cannot weaken what a promotion means. These lanes qualify the ARTIFACT (it is the layout it claims, its binaries load and run, the shipped server boots from the shipped config and serves /health). They are NOT product qualification: the 23,138-row leaf plan, Mode Q and the official driver lanes are separate and remain red.",
+  "required": [
+    "artifact-layout",
+    "artifact-exec",
+    "artifact-health"
+  ],
+  "schema": "release-lanes/v1"
+}

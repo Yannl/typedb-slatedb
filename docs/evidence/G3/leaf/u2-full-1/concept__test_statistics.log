@@ -1,0 +1,21 @@
+
+running 9 tests
+[2m2026-08-20T11:17:48.656874Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-20T11:17:48.658245Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+[2m2026-08-20T11:17:48.658455Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[1] with size 310 bytes; 310 bytes total
+[2m2026-08-20T11:17:48.658491Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[1]
+[2m2026-08-20T11:17:48.658512Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[2] with size 151 bytes; 461 bytes total
+[2m2026-08-20T11:17:48.658521Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[2]
+[2m2026-08-20T11:17:48.658671Z[0m [35mTRACE[0m [2mconcept::thing::statistics[0m[2m:[0m Statistics sync finished in 0 ms. Storage watermark was initially: SeqNr[2]. Current statistics sequence is from: SeqNr[2]
+test delete_relation ... ok
+test delete_attribute ... ok
+test create_entity ... ok
+test delete_twice ... ok
+test remove_player ... ok
+test relation_index_counts ... ok
+test put_plays ... ok
+test put_has_twice ... ok
+test unset_has ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
+

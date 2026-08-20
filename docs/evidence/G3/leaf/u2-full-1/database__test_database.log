@@ -1,0 +1,8 @@
+
+running 2 tests
+[2m2026-08-20T11:17:50.651296Z[0m [35mTRACE[0m [2mdatabase::database[0m[2m:[0m Deleting database 'create_delete'.
+test create_delete_database ... ok
+test prepare_for_writes_iterates_every_loaded_database ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
+

@@ -1,0 +1,230 @@
+{
+ "schema": "driver-lane-mutants-v1",
+ "bundle": "docs/evidence/G1/drivers/rust-slatedb-fork",
+ "baseline": {
+  "exit_code": 0,
+  "anomalies": [],
+  "rederived_verdict": "GREEN",
+  "qualification_pass": true
+ },
+ "mutants": [
+  {
+   "mutant": "backend_witness_stripped",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "server[test_cluster]: no backend witness - the backend the server built was never observed, only requested",
+    "recorded verdict is GREEN but this verifier re-derives RED from the archived bytes"
+   ],
+   "anomaly_count": 2,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "dropped_leaf_rows",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "test_concept: recorded leaf ids do not equal an independent re-enumeration of driver/concept.feature (0 recorded vs 74 enumerated)",
+    "test_concept: 0 leaf row(s) claim an executed outcome but the log carries 74 scenario block(s) - fabricated or lost rows",
+    "74 plan leaf/leaves in scope have no leaf row (['cucumber:driver/concept.feature::Driver processes attribute types with value type <value-type> correctly#ex1', 'cucumber:driver/concept.feature::Driver processes attribute types with value type <value-type> correctly#ex2', 'cucumber:driver/concept.feature::Driver processes attribute types with value type <value-type> correctly#ex3'])"
+   ],
+   "anomaly_count": 4,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "empty_log",
+   "sophistication": "NAIVE",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "suite test_concept: log docs/evidence/G1/drivers/rust-slatedb-fork/test_concept.log hashes to e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 but the row records b989813d28cbc2e46c7654344c2532ddb87238ceafe1fa110ba532279a9feec7 - the bytes changed after the run",
+    "test_concept: raw log is empty - an empty log is never evidence",
+    "test_concept: re-parse finds ZERO cucumber scenarios in the log - a suite that ran nothing proves nothing"
+   ],
+   "anomaly_count": 10,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "empty_result_file",
+   "sophistication": "NAIVE",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "driver-results.json does not parse: Expecting value: line 1 column 1 (char 0)"
+   ],
+   "anomaly_count": 1,
+   "rederived_verdict": null,
+   "qualification_pass": false
+  },
+  {
+   "mutant": "fabricated_leaf_row",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "test_concept: recorded leaf ids do not equal an independent re-enumeration of driver/concept.feature (75 recorded vs 74 enumerated)",
+    "test_concept: 75 leaf row(s) claim an executed outcome but the log carries 74 scenario block(s) - fabricated or lost rows",
+    "leaf cucumber:driver/concept.feature::Driver processes empty concepts correctly#FABRICATED claims in_plan but the plan has no such leaf - fabricated plan membership"
+   ],
+   "anomaly_count": 4,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "flipped_leaf_status",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "test_concept: leaf cucumber:driver/concept.feature::Driver processes empty concepts correctly records status FAILED but the log re-parses to PASSED",
+    "recorded verdict is GREEN but this verifier re-derives RED from the archived bytes"
+   ],
+   "anomaly_count": 2,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "forged_backend_kind",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "server[test_cluster]: archived backend-spec marker says kind='classic' but profile U2 requires 'slatedb-r2'",
+    "recorded verdict is GREEN but this verifier re-derives RED from the archived bytes"
+   ],
+   "anomaly_count": 2,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "forged_feature_hash",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "test_concept: driver/concept.feature hashes to f3c4783f94d23b66acc2ad2856ee3962b992077672edcf70c4603a7f3f530d2a but the row records 0000000000000000000000000000000000000000000000000000000000000000",
+    "recorded verdict is GREEN but this verifier re-derives RED from the archived bytes"
+   ],
+   "anomaly_count": 2,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "forged_plan_membership",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "leaf cucumber:driver/cluster.feature::Driver can discover servers in a cluster claims in_plan but the plan has no such leaf - fabricated plan membership",
+    "recorded verdict is GREEN but this verifier re-derives RED from the archived bytes"
+   ],
+   "anomaly_count": 2,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "forged_step_counts",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "test_concept: leaf cucumber:driver/concept.feature::Driver processes empty concepts correctly records steps_passed=21 but the log re-parses to 14",
+    "recorded verdict is GREEN but this verifier re-derives RED from the archived bytes"
+   ],
+   "anomaly_count": 2,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "forged_verdict_enum",
+   "sophistication": "NAIVE",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "verdict policy_verdict is 'TOTAL_QUALITY_PASS', not in {GREEN,RED} - forged or foreign verdict"
+   ],
+   "anomaly_count": 1,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "server_never_booted",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "server[test_cluster]: no readiness probes recorded - readiness was assumed, not observed",
+    "recorded verdict is GREEN but this verifier re-derives RED from the archived bytes"
+   ],
+   "anomaly_count": 2,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "server_probe_failed",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "server[test_cluster]: the last readiness probe is not a success ({\"t\": 1.0, \"error\": \"ConnectionRefusedError: [Errno 111]\"}) - the suite ran against a server that was never proven up",
+    "recorded verdict is GREEN but this verifier re-derives RED from the archived bytes"
+   ],
+   "anomaly_count": 2,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "suite_never_started",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "test_concept: re-parse finds ZERO cucumber scenarios in the log - a suite that ran nothing proves nothing",
+    "test_concept: re-parse finds no [Summary] - truncated run",
+    "test_concept: no libtest result line - the process never finished its test case"
+   ],
+   "anomaly_count": 5,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "truncated_run",
+   "sophistication": "RESEALED",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "test_concept: re-parse finds no [Summary] - truncated run",
+    "test_concept: no libtest result line - the process never finished its test case",
+    "test_concept: leaf cucumber:driver/concept.feature::Driver processes datetime-tz values in different user time-zones identically records steps_passed=37 but the log re-parses to 17"
+   ],
+   "anomaly_count": 4,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  },
+  {
+   "mutant": "unsealed_edit",
+   "sophistication": "NAIVE",
+   "verifier_exit_code": 1,
+   "outcome": "KILLED",
+   "first_anomalies": [
+    "recomputed bundle root 2a07f51d1a5e75bffb6d5ccef152b050d0744af8a1a9322093dce19e7aabbf11 != sidecar manifest root 9484dd7ec1c947445d78f659fb3049320af7635d04f802e9bd20d80e3d289db3 - a consumed file changed after sealing",
+    "verdict records bundle_root 9484dd7ec1c947445d78f659fb3049320af7635d04f802e9bd20d80e3d289db3 but the bundle recomputes to 2a07f51d1a5e75bffb6d5ccef152b050d0744af8a1a9322093dce19e7aabbf11",
+    "COMPLETE binds root 9484dd7ec1c947445d78f659fb3049320af7635d04f802e9bd20d80e3d289db3 but the bundle recomputes to 2a07f51d1a5e75bffb6d5ccef152b050d0744af8a1a9322093dce19e7aabbf11 - modified after sealing"
+   ],
+   "anomaly_count": 4,
+   "rederived_verdict": "RED",
+   "qualification_pass": false
+  }
+ ],
+ "summary": {
+  "total": 16,
+  "killed": 16,
+  "survived": 0,
+  "errored": 0
+ }
+}

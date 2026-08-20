@@ -18,11 +18,12 @@
 //! Exit code 0 only when every check passed AND at least one check ran
 //! (fail-closed: an empty run is a failure).
 
-use std::process::ExitCode;
-use std::time::Duration;
+use std::{process::ExitCode, time::Duration};
 
-use remote_wal_spike::l1_client::{L1Client, L1Config};
-use remote_wal_spike::l1_suite;
+use remote_wal_spike::{
+    l1_client::{L1Client, L1Config},
+    l1_suite,
+};
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
@@ -32,8 +33,10 @@ fn main() -> ExitCode {
         .or_else(|| std::env::var("L1_ISSUER_URL").ok())
         .unwrap_or_else(|| "http://127.0.0.1:8799".to_string());
     let Ok(issuer_bearer) = std::env::var("L1_ISSUER_BEARER") else {
-        eprintln!("FAIL  L1_ISSUER_BEARER is required: the client bears issuer-granted tokens and \
-                   the private issuer refuses anonymous issuance (no default credential exists)");
+        eprintln!(
+            "FAIL  L1_ISSUER_BEARER is required: the client bears issuer-granted tokens and \
+                   the private issuer refuses anonymous issuance (no default credential exists)"
+        );
         return ExitCode::FAILURE;
     };
     let tenant_id = std::env::var("L1_TENANT").unwrap_or_else(|_| "tenant-a".to_string());
@@ -52,10 +55,8 @@ fn main() -> ExitCode {
     }
 
     // unique namespace per run: wrangler dev persists local DO state on disk
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or_default();
+    let nanos =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or_default();
     let database_id = format!("l1-e2e-{}-{nanos}", std::process::id());
     println!("L1 client e2e against {base} (issuer {issuer_base}, database {database_id})");
 
@@ -66,5 +67,9 @@ fn main() -> ExitCode {
         report.failed,
         if report.all_passed() { " — ALL PASS" } else { " — FAILURE" }
     );
-    if report.all_passed() { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if report.all_passed() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }

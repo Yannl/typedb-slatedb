@@ -1,0 +1,512 @@
+[
+ {
+  "bazel_target": "//admin:test_admin_assembly",
+  "form": "srcs",
+  "cargo": "typedb_admin_bin:test:test_admin_assembly",
+  "note": ""
+ },
+ {
+  "bazel_target": "//admin/client:test_crate_client",
+  "form": "crate",
+  "cargo": "typedb-admin:lib:typedb_admin",
+  "note": ""
+ },
+ {
+  "bazel_target": "//common/cache:test_crate_cache",
+  "form": "crate",
+  "cargo": "cache:lib:cache",
+  "note": ""
+ },
+ {
+  "bazel_target": "//common/concurrency:test_crate_concurrency",
+  "form": "crate",
+  "cargo": "concurrency:lib:concurrency",
+  "note": ""
+ },
+ {
+  "bazel_target": "//common/lending_iterator:test_crate_lending_iterator",
+  "form": "crate",
+  "cargo": "lending_iterator:lib:lending_iterator",
+  "note": ""
+ },
+ {
+  "bazel_target": "//common/logger:test_crate_logger",
+  "form": "crate",
+  "cargo": "logger:lib:logger",
+  "note": ""
+ },
+ {
+  "bazel_target": "//common/options:test_crate_options",
+  "form": "crate",
+  "cargo": "options:lib:options",
+  "note": ""
+ },
+ {
+  "bazel_target": "//compiler:test_crate_compiler",
+  "form": "crate",
+  "cargo": "compiler:lib:compiler",
+  "note": ""
+ },
+ {
+  "bazel_target": "//compiler/tests:transformation",
+  "form": "srcs",
+  "cargo": "compiler:test:transformation",
+  "note": ""
+ },
+ {
+  "bazel_target": "//concept:test_crate_concept",
+  "form": "crate",
+  "cargo": "concept:lib:concept",
+  "note": ""
+ },
+ {
+  "bazel_target": "//concept/benches:bench_thing_write",
+  "form": "srcs",
+  "cargo": "concept:bench:bench_thing_write",
+  "note": ""
+ },
+ {
+  "bazel_target": "//concept/tests:test_statistics",
+  "form": "srcs",
+  "cargo": "concept:test:test_statistics",
+  "note": ""
+ },
+ {
+  "bazel_target": "//concept/tests:test_thing",
+  "form": "srcs",
+  "cargo": "concept:test:test_thing",
+  "note": ""
+ },
+ {
+  "bazel_target": "//concept/tests:test_type",
+  "form": "srcs",
+  "cargo": "concept:test:test_type",
+  "note": ""
+ },
+ {
+  "bazel_target": "//database:test_crate_database",
+  "form": "crate",
+  "cargo": "database:lib:database",
+  "note": ""
+ },
+ {
+  "bazel_target": "//database/tests:test_database",
+  "form": "srcs",
+  "cargo": "database:test:test_database",
+  "note": ""
+ },
+ {
+  "bazel_target": "//database/tests:test_diagnostics_posthog_pii",
+  "form": "srcs",
+  "cargo": "database:test:test_diagnostics_posthog_pii",
+  "note": ""
+ },
+ {
+  "bazel_target": "//database/tests:test_statistics_synchronization",
+  "form": "srcs",
+  "cargo": "database:test:test_statistics_synchronization",
+  "note": ""
+ },
+ {
+  "bazel_target": "//database/tests:test_transaction",
+  "form": "srcs",
+  "cargo": "database:test:test_transaction",
+  "note": ""
+ },
+ {
+  "bazel_target": "//database/tests:test_transaction_isolation",
+  "form": "srcs",
+  "cargo": "database:test:test_transaction_isolation",
+  "note": ""
+ },
+ {
+  "bazel_target": "//diagnostics:test_crate_diagnostics",
+  "form": "crate",
+  "cargo": "diagnostics:lib:diagnostics",
+  "note": ""
+ },
+ {
+  "bazel_target": "//durability:test_crate_durability",
+  "form": "crate",
+  "cargo": "durability:lib:durability",
+  "note": ""
+ },
+ {
+  "bazel_target": "//durability/benches:throughput",
+  "form": "srcs",
+  "cargo": "durability:bench:throughput",
+  "note": ""
+ },
+ {
+  "bazel_target": "//durability/tests:basic",
+  "form": "srcs",
+  "cargo": "durability:test:basic",
+  "note": ""
+ },
+ {
+  "bazel_target": "//durability/tests:crash",
+  "form": "srcs",
+  "cargo": "durability:test:crash",
+  "note": ""
+ },
+ {
+  "bazel_target": "//encoding:test_crate_encoding",
+  "form": "crate",
+  "cargo": "encoding:lib:encoding",
+  "note": ""
+ },
+ {
+  "bazel_target": "//encoding/benches:benchmark",
+  "form": "srcs",
+  "cargo": "encoding:bench:benchmark",
+  "note": ""
+ },
+ {
+  "bazel_target": "//encoding/tests:test_attribute_vertex",
+  "form": "srcs",
+  "cargo": "encoding:test:test_attribute_vertex",
+  "note": ""
+ },
+ {
+  "bazel_target": "//encoding/tests:test_definitions",
+  "form": "srcs",
+  "cargo": "encoding:test:test_definitions",
+  "note": ""
+ },
+ {
+  "bazel_target": "//encoding/tests:test_type_vertex",
+  "form": "srcs",
+  "cargo": "encoding:test:test_type_vertex",
+  "note": ""
+ },
+ {
+  "bazel_target": "//executor:test_crate_executor",
+  "form": "crate",
+  "cargo": "executor:lib:executor",
+  "note": ""
+ },
+ {
+  "bazel_target": "//executor/benches:bench_instructions",
+  "form": "srcs",
+  "cargo": "executor:bench:bench_instructions",
+  "note": ""
+ },
+ {
+  "bazel_target": "//executor/tests:test_compile_execute",
+  "form": "srcs",
+  "cargo": "executor:test:test_compile_execute",
+  "note": ""
+ },
+ {
+  "bazel_target": "//executor/tests:test_efficiency",
+  "form": "srcs",
+  "cargo": "executor:test:test_efficiency",
+  "note": ""
+ },
+ {
+  "bazel_target": "//executor/tests:test_execute_expression",
+  "form": "srcs",
+  "cargo": "executor:test:test_execute_expression",
+  "note": ""
+ },
+ {
+  "bazel_target": "//executor/tests:test_execute_has",
+  "form": "srcs",
+  "cargo": "executor:test:test_execute_has",
+  "note": ""
+ },
+ {
+  "bazel_target": "//executor/tests:test_execute_isa",
+  "form": "srcs",
+  "cargo": "executor:test:test_execute_isa",
+  "note": ""
+ },
+ {
+  "bazel_target": "//executor/tests:test_execute_links",
+  "form": "srcs",
+  "cargo": "executor:test:test_execute_links",
+  "note": ""
+ },
+ {
+  "bazel_target": "//executor/tests:test_execute_relation_index",
+  "form": "srcs",
+  "cargo": "executor:test:test_execute_relation_index",
+  "note": ""
+ },
+ {
+  "bazel_target": "//executor/tests:test_functions",
+  "form": "srcs",
+  "cargo": "executor:test:test_functions",
+  "note": ""
+ },
+ {
+  "bazel_target": "//executor/tests:test_pipelines",
+  "form": "srcs",
+  "cargo": "executor:test:test_pipelines",
+  "note": ""
+ },
+ {
+  "bazel_target": "//executor/tests:test_select",
+  "form": "srcs",
+  "cargo": "executor:test:test_select",
+  "note": ""
+ },
+ {
+  "bazel_target": "//executor/tests:test_writes",
+  "form": "srcs",
+  "cargo": "executor:test:test_writes",
+  "note": ""
+ },
+ {
+  "bazel_target": "//function:test_crate_function",
+  "form": "crate",
+  "cargo": "function:lib:function",
+  "note": ""
+ },
+ {
+  "bazel_target": "//function/tests:test_definition",
+  "form": "srcs",
+  "cargo": "function:test:test_definition",
+  "note": ""
+ },
+ {
+  "bazel_target": "//ir:test_crate_ir",
+  "form": "crate",
+  "cargo": "ir:lib:ir",
+  "note": ""
+ },
+ {
+  "bazel_target": "//ir/tests:binding_modes",
+  "form": "srcs",
+  "cargo": "ir:test:binding_modes",
+  "note": ""
+ },
+ {
+  "bazel_target": "//ir/tests:pattern",
+  "form": "srcs",
+  "cargo": "ir:test:pattern",
+  "note": ""
+ },
+ {
+  "bazel_target": "//ir/tests:pipeline",
+  "form": "srcs",
+  "cargo": "ir:test:pipeline",
+  "note": ""
+ },
+ {
+  "bazel_target": "//ir/tests:test_structural_equality",
+  "form": "srcs",
+  "cargo": "ir:test:test_structural_equality",
+  "note": ""
+ },
+ {
+  "bazel_target": "//query:test_crate_query",
+  "form": "crate",
+  "cargo": "query:lib:query",
+  "note": ""
+ },
+ {
+  "bazel_target": "//query/benches:bench_insert_queries",
+  "form": "srcs",
+  "cargo": "query:bench:bench_insert_queries",
+  "note": ""
+ },
+ {
+  "bazel_target": "//query/benches:bench_insert_queries_multithreaded",
+  "form": "srcs",
+  "cargo": "query:bench:bench_insert_queries_multithreaded",
+  "note": ""
+ },
+ {
+  "bazel_target": "//query/tests:test_define",
+  "form": "srcs",
+  "cargo": "query:test:test_define",
+  "note": ""
+ },
+ {
+  "bazel_target": "//query/tests:test_fetch",
+  "form": "srcs",
+  "cargo": "query:test:test_fetch",
+  "note": ""
+ },
+ {
+  "bazel_target": "//query/tests:test_pipeline_stages_limit",
+  "form": "srcs",
+  "cargo": "query:test:test_pipeline_stages_limit",
+  "note": ""
+ },
+ {
+  "bazel_target": "//query/tests:test_query_cache",
+  "form": "srcs",
+  "cargo": "query:test:test_query_cache",
+  "note": ""
+ },
+ {
+  "bazel_target": "//query/tests:test_query_profile",
+  "form": "srcs",
+  "cargo": "query:test:test_query_profile",
+  "note": ""
+ },
+ {
+  "bazel_target": "//query/tests:test_unimplemented",
+  "form": "srcs",
+  "cargo": "query:test:test_unimplemented",
+  "note": ""
+ },
+ {
+  "bazel_target": "//server:test_admin_service",
+  "form": "srcs",
+  "cargo": "server:test:test_admin_service",
+  "note": ""
+ },
+ {
+  "bazel_target": "//server:test_crate_server",
+  "form": "crate",
+  "cargo": "server:lib:server",
+  "note": ""
+ },
+ {
+  "bazel_target": "//storage:test_crate_storage",
+  "form": "crate",
+  "cargo": "storage:lib:storage",
+  "note": ""
+ },
+ {
+  "bazel_target": "//storage/benches:bench_mvcc_storage",
+  "form": "srcs",
+  "cargo": "storage:bench:bench_mvcc_storage",
+  "note": ""
+ },
+ {
+  "bazel_target": "//storage/benches:bench_rocks",
+  "form": "srcs",
+  "cargo": "storage:bench:bench_rocks",
+  "note": ""
+ },
+ {
+  "bazel_target": "//storage/tests:test_isolation",
+  "form": "srcs",
+  "cargo": "storage:test:test_isolation",
+  "note": ""
+ },
+ {
+  "bazel_target": "//storage/tests:test_mvcc",
+  "form": "srcs",
+  "cargo": "storage:test:test_mvcc",
+  "note": ""
+ },
+ {
+  "bazel_target": "//storage/tests:test_recovery",
+  "form": "srcs",
+  "cargo": "storage:test:test_recovery",
+  "note": ""
+ },
+ {
+  "bazel_target": "//storage/tests:test_snapshot",
+  "form": "srcs",
+  "cargo": "storage:test:test_snapshot",
+  "note": ""
+ },
+ {
+  "bazel_target": "//storage/tests:test_storage",
+  "form": "srcs",
+  "cargo": "storage:test:test_storage",
+  "note": ""
+ },
+ {
+  "bazel_target": "//tests/assembly:test_assembly",
+  "form": "srcs",
+  "cargo": "typedb_server_bin:test:test_assembly",
+  "note": ""
+ },
+ {
+  "bazel_target": "//tests/assembly:test_fail_points",
+  "form": "srcs",
+  "cargo": "typedb_server_bin:test:test_fail_points",
+  "note": ""
+ },
+ {
+  "bazel_target": "//tests/behaviour/concept:test_concept",
+  "form": "srcs",
+  "cargo": "typedb_server_bin:test:test_concept",
+  "note": ""
+ },
+ {
+  "bazel_target": "//tests/behaviour/connection:test_connection",
+  "form": "srcs",
+  "cargo": "typedb_server_bin:test:test_connection",
+  "note": ""
+ },
+ {
+  "bazel_target": "//tests/behaviour/debug:test_debug",
+  "form": "srcs",
+  "cargo": "typedb_server_bin:test:test_debug",
+  "note": ""
+ },
+ {
+  "bazel_target": "//tests/behaviour/query:test_query",
+  "form": "srcs",
+  "cargo": "typedb_server_bin:test:test_query",
+  "note": ""
+ },
+ {
+  "bazel_target": "//tests/behaviour/service/http/connection:test_http_database",
+  "form": "srcs",
+  "cargo": "typedb_server_bin:test:test_http_database",
+  "note": ""
+ },
+ {
+  "bazel_target": "//tests/behaviour/service/http/connection:test_http_transaction",
+  "form": "srcs",
+  "cargo": "typedb_server_bin:test:test_http_transaction",
+  "note": ""
+ },
+ {
+  "bazel_target": "//tests/behaviour/service/http/debug:test_http_debug",
+  "form": "srcs",
+  "cargo": "typedb_server_bin:test:test_http_debug",
+  "note": ""
+ },
+ {
+  "bazel_target": "//tests/behaviour/service/http/driver:test_http_driver_concept",
+  "form": "srcs",
+  "cargo": "typedb_server_bin:test:test_http_driver_concept",
+  "note": ""
+ },
+ {
+  "bazel_target": "//tests/behaviour/service/http/driver:test_http_driver_connection",
+  "form": "srcs",
+  "cargo": "typedb_server_bin:test:test_http_driver_connection",
+  "note": ""
+ },
+ {
+  "bazel_target": "//tests/behaviour/service/http/driver:test_http_driver_http",
+  "form": "srcs",
+  "cargo": "typedb_server_bin:test:test_http_driver_http",
+  "note": ""
+ },
+ {
+  "bazel_target": "//tests/behaviour/service/http/driver:test_http_driver_query",
+  "form": "srcs",
+  "cargo": "typedb_server_bin:test:test_http_driver_query",
+  "note": ""
+ },
+ {
+  "bazel_target": "//tests/behaviour/service/http/driver:test_http_driver_user",
+  "form": "srcs",
+  "cargo": "typedb_server_bin:test:test_http_driver_user",
+  "note": ""
+ },
+ {
+  "bazel_target": "//tests/benchmarks/concurrent_ops:bench_concurrency",
+  "form": "srcs",
+  "cargo": "typedb_server_bin:test:bench_concurrency",
+  "note": ""
+ },
+ {
+  "bazel_target": "//tests/benchmarks/iam:bench_iam",
+  "form": "srcs",
+  "cargo": "typedb_server_bin:test:bench_iam",
+  "note": ""
+ }
+]

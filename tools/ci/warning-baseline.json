@@ -1,0 +1,14 @@
+{
+  "crates": {
+    "storage": {
+      "lints": {
+        "dead_code": 9,
+        "private_interfaces": 2,
+        "unused_imports": 2
+      },
+      "reason": "R6-HYGIENE-01 baseline recorded 2026-08-20 at commit 3ac9ae9 from `cargo +1.93.0 check -p storage --lib --locked --message-format=json` on the STAGED fork. Composition: 9 dead_code (7 upstream-inherited in diagnostics/ and storage/, 1 in the SlateDB fork's manifest/store.rs where patch 0001 replaced init_writer with init_writer_with_epoch and left the internal-allocation constructor unused - that one is INTENTIONAL and is what the fence exists to make unreachable), 2 unused_imports and 2 private_interfaces, all in upstream diagnostics/. None is in the SlateDB adapter or the recovery path. `storage` cannot be flipped to -D warnings without editing upstream code we do not own, so the gate is a one-way ratchet: no new lint, no increased count, and any improvement must be re-recorded here in the same commit."
+    }
+  },
+  "document": "R6-HYGIENE-01. The one-way warning ratchet's baseline, enforced by tools/ci/warning_ratchet.py. Crates that CAN be held at `-D warnings` are not listed here - they are denied outright in the CI hygiene job (protocol-models, storage-diff-spike, remote-wal-spike). This file exists only for crates whose warnings we do not own yet; every entry is a debt with a stated composition, and the number may only ever go down. Regenerate with: cargo +1.93.0 check -p <crate> --lib --locked --message-format=json | python3 tools/ci/warning_ratchet.py --crate <crate> --record --reason '...'",
+  "schema": "typedb-r2/warning-baseline@1"
+}

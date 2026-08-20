@@ -1,0 +1,737 @@
+{
+ "schema": "typedb-r2-cucumber-feasibility-v1",
+ "toolchain": {
+  "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+  "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+  "target_triple": "x86_64-unknown-linux-gnu",
+  "requested": "1.93.0"
+ },
+ "executed_tree": {
+  "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+  "dirty": true,
+  "tree_state": "FORK_STAGED_EXACT",
+  "stage_check": "MIXED: 0 fork patches unstaged, 4 stale staged files, 37 paths diverge from the locked revision",
+  "unstaged_fork_patches": [],
+  "unstaged_fork_patches_affecting_cargo": [],
+  "unexplained_paths": [],
+  "runtime_output_paths": [
+   "typedb-logs/"
+  ],
+  "non_cargo_input_paths": [],
+  "diverging_paths": [
+   {
+    "path": "Cargo.lock",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "Cargo.toml",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "common/concurrency/interval_runner.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "concept/tests/test_statistics.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "concept/thing/thing_manager.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "database/Cargo.toml",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "database/database.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "durability/durability.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "durability/tests/basic.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "durability/tests/common/test_common.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "durability/wal.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "encoding/Cargo.toml",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "encoding/encoding.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "encoding/tests/test_type_vertex.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/Cargo.toml",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/durability_client.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/isolation_manager.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/iterator.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/keyspace.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/mod.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/raw_iterator.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/rocks_resources.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/checkpoint.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/commit_recovery.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/mod.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/storage.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/tests/test_recovery.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/tests/test_utils_storage/lib.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/write_batches.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/factory.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/cursor.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/engine.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/slate.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/post_wal_guard.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/sha256.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/status_resolver.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "typedb-logs/",
+    "class": "RUNTIME_OUTPUT"
+   }
+  ],
+  "staged_delta_files": 36,
+  "staged_delta_sha256": "2b386f13aa2e689256cffb87053b97cfa2cd4a9ea7716d5a72cef322fe99ab53",
+  "fork": {
+   "files": 778,
+   "fork_tree_sha256": "4a163c9be3b103787e4ab025a641abc7424e55769c463a4bbd31b17c462db220",
+   "outer_repo_commit": "c6275609c9dac517be9e08183cfa31c57b5e9d91",
+   "outer_repo_dirty": true,
+   "outer_repo_fork_paths_modified": []
+  }
+ },
+ "catalog_sha256": "569448d1a259c64c789ad8b6e65973f51c7e9a678b89079592b9ca450c41c57e",
+ "plan_root": "72020aa01fafebddc41321e0c6100c158f80ae997037430871212049054a7a41",
+ "inventory": {
+  "behaviour_cases_mapped_to_a_feature": 49,
+  "behaviour_cases_unmapped": [
+   {
+    "runner_row_id": "typedb_server_bin:test_debug",
+    "case": "test"
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_http_debug",
+    "case": "test"
+   }
+  ],
+  "catalogued_features": 47,
+  "catalogued_scenarios": 4099,
+  "catalogued_features_reachable_via_cargo": 47,
+  "catalogued_scenarios_reachable_via_cargo": 4099,
+  "catalogued_features_with_no_cargo_case": [],
+  "cases": [
+   {
+    "runner_row_id": "typedb_server_bin:test_concept",
+    "case": "migration::data_validation::test_data_validation",
+    "features": [
+     "concept/migration/data-validation.feature"
+    ],
+    "catalogued_scenarios": 122
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_concept",
+    "case": "migration::migration::test_migration",
+    "features": [
+     "concept/migration/migration.feature"
+    ],
+    "catalogued_scenarios": 17
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_concept",
+    "case": "r#type::attribute_type::test_attribute_type",
+    "features": [
+     "concept/type/attributetype.feature"
+    ],
+    "catalogued_scenarios": 557
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_concept",
+    "case": "r#type::entity_type::test_entity_type",
+    "features": [
+     "concept/type/entitytype.feature"
+    ],
+    "catalogued_scenarios": 16
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_concept",
+    "case": "r#type::owns::test_owns",
+    "features": [
+     "concept/type/owns.feature"
+    ],
+    "catalogued_scenarios": 109
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_concept",
+    "case": "r#type::owns_annotations::test_owns_annotations",
+    "features": [
+     "concept/type/owns-annotations.feature"
+    ],
+    "catalogued_scenarios": 725
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_concept",
+    "case": "r#type::plays::test_plays",
+    "features": [
+     "concept/type/plays.feature"
+    ],
+    "catalogued_scenarios": 114
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_concept",
+    "case": "r#type::relation_type::test_relation_type",
+    "features": [
+     "concept/type/relationtype.feature"
+    ],
+    "catalogued_scenarios": 143
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_concept",
+    "case": "thing::attribute::test_attribute",
+    "features": [
+     "concept/thing/attribute.feature"
+    ],
+    "catalogued_scenarios": 99
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_concept",
+    "case": "thing::entity::test_entity",
+    "features": [
+     "concept/thing/entity.feature"
+    ],
+    "catalogued_scenarios": 15
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_concept",
+    "case": "thing::has::test_has",
+    "features": [
+     "concept/thing/has.feature"
+    ],
+    "catalogued_scenarios": 76
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_concept",
+    "case": "thing::links::test_links",
+    "features": [
+     "concept/thing/links.feature"
+    ],
+    "catalogued_scenarios": 12
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_concept",
+    "case": "thing::relation::test_relation",
+    "features": [
+     "concept/thing/relation.feature"
+    ],
+    "catalogued_scenarios": 11
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_connection",
+    "case": "database::test_database",
+    "features": [
+     "connection/database.feature"
+    ],
+    "catalogued_scenarios": 16
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_connection",
+    "case": "transaction::test_transaction",
+    "features": [
+     "connection/transaction.feature"
+    ],
+    "catalogued_scenarios": 43
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_http_database",
+    "case": "test",
+    "features": [
+     "connection/database.feature"
+    ],
+    "catalogued_scenarios": 16
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_http_driver_concept",
+    "case": "test",
+    "features": [
+     "driver/concept.feature"
+    ],
+    "catalogued_scenarios": 74
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_http_driver_connection",
+    "case": "test",
+    "features": [
+     "driver/connection.feature"
+    ],
+    "catalogued_scenarios": 20
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_http_driver_http",
+    "case": "test",
+    "features": [
+     "driver/http/http.feature"
+    ],
+    "catalogued_scenarios": 40
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_http_driver_query",
+    "case": "test",
+    "features": [
+     "driver/query.feature"
+    ],
+    "catalogued_scenarios": 33
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_http_driver_user",
+    "case": "test",
+    "features": [
+     "driver/user.feature"
+    ],
+    "catalogued_scenarios": 27
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_http_transaction",
+    "case": "test",
+    "features": [
+     "connection/transaction.feature"
+    ],
+    "catalogued_scenarios": 43
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "analyze::annotations::test_analyze_annotations",
+    "features": [
+     "query/analyze/annotations.feature"
+    ],
+    "catalogued_scenarios": 5
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "analyze::structure::test_analyze_structure",
+    "features": [
+     "query/analyze/structure.feature"
+    ],
+    "catalogued_scenarios": 7
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "functions::basic::test_functions_basic",
+    "features": [
+     "query/functions/basic.feature"
+    ],
+    "catalogued_scenarios": 9
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "functions::definition::test_functions_definition",
+    "features": [
+     "query/functions/definition.feature"
+    ],
+    "catalogued_scenarios": 31
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "functions::recursion::test_functions_recursion",
+    "features": [
+     "query/functions/recursion.feature"
+    ],
+    "catalogued_scenarios": 14
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "functions::signature::test_functions_signature",
+    "features": [
+     "query/functions/signature.feature"
+    ],
+    "catalogued_scenarios": 7
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "functions::structure::test_functions_structure",
+    "features": [
+     "query/functions/structure.feature"
+    ],
+    "catalogued_scenarios": 5
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "functions::usage::test_functions_usage",
+    "features": [
+     "query/functions/usage.feature"
+    ],
+    "catalogued_scenarios": 8
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "language::define::test_definable_define",
+    "features": [
+     "query/language/define.feature"
+    ],
+    "catalogued_scenarios": 475
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "language::delete::test_write_delete",
+    "features": [
+     "query/language/delete.feature"
+    ],
+    "catalogued_scenarios": 50
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "language::disjunction::test_read_disjunction",
+    "features": [
+     "query/language/disjunction.feature"
+    ],
+    "catalogued_scenarios": 8
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "language::expressions::test_read_expressions",
+    "features": [
+     "query/language/expression.feature"
+    ],
+    "catalogued_scenarios": 122
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "language::fetch::test_read_fetch",
+    "features": [
+     "query/language/fetch.feature"
+    ],
+    "catalogued_scenarios": 66
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "language::given::test_write_given",
+    "features": [
+     "query/language/given.feature"
+    ],
+    "catalogued_scenarios": 22
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "language::insert::test_write_insert",
+    "features": [
+     "query/language/insert.feature"
+    ],
+    "catalogued_scenarios": 138
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "language::metadata::test_metadata_annotations",
+    "features": [
+     "query/language/metadata.feature"
+    ],
+    "catalogued_scenarios": 123
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "language::modifiers::test_read_modifiers",
+    "features": [
+     "query/language/modifiers.feature"
+    ],
+    "catalogued_scenarios": 34
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "language::negation::test_read_negation",
+    "features": [
+     "query/language/negation.feature"
+    ],
+    "catalogued_scenarios": 17
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "language::optional::test_read_optional",
+    "features": [
+     "query/language/optional.feature"
+    ],
+    "catalogued_scenarios": 10
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "language::pipelines::test_write_pipelines",
+    "features": [
+     "query/language/pipelines.feature"
+    ],
+    "catalogued_scenarios": 12
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "language::put::test_write_put",
+    "features": [
+     "query/language/put.feature"
+    ],
+    "catalogued_scenarios": 17
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "language::r#match::test_read_match",
+    "features": [
+     "query/language/match.feature"
+    ],
+    "catalogued_scenarios": 132
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "language::redefine::test_definable_redefine",
+    "features": [
+     "query/language/redefine.feature"
+    ],
+    "catalogued_scenarios": 197
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "language::reduce::test_read_reduce",
+    "features": [
+     "query/language/reduce.feature"
+    ],
+    "catalogued_scenarios": 65
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "language::undefine::test_definable_undefine",
+    "features": [
+     "query/language/undefine.feature"
+    ],
+    "catalogued_scenarios": 176
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "language::update::test_write_update",
+    "features": [
+     "query/language/update.feature"
+    ],
+    "catalogued_scenarios": 68
+   },
+   {
+    "runner_row_id": "typedb_server_bin:test_query",
+    "case": "language::variables::test_read_variables",
+    "features": [
+     "query/language/variables.feature"
+    ],
+    "catalogued_scenarios": 12
+   }
+  ]
+ },
+ "measurements": [
+  {
+   "command": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_connection-1f7ef74eb5aca1a3 database::test_database --exact --nocapture --test-threads 1",
+   "cwd": "sources/typedb",
+   "env": {
+    "TYPEDB_STORAGE_PROFILE": "U1",
+    "RUST_MIN_STACK": "67108864"
+   },
+   "exit_code": 0,
+   "wall_seconds": 6.16,
+   "raw_log": "docs/evidence/G3/leaf/cucumber-probe/typedb_server_bin__test_connection__database_test_database.log",
+   "log_sha256": "1b4a18d58377d91f59b796f7102d0fccaa8c9466d16edcbed1955671be7240e0",
+   "libtest_counts": {
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 1
+   },
+   "features": [
+    "connection/database.feature"
+   ],
+   "cucumber_summary": {
+    "features": 16,
+    "scenarios": 16,
+    "scenario_detail": "16 passed",
+    "steps": 137,
+    "step_detail": "137 passed"
+   },
+   "scenario_lines_parsed": 16,
+   "catalogued_scenarios_for_these_features": 16,
+   "reconciles": true,
+   "names_matching_catalogue_exactly": 9,
+   "names_not_matching": 7,
+   "catalogue_names_not_observed": 7,
+   "unobserved_catalogue_name_templates": [
+    "create one database with name <name>",
+    "database can be deleted and recreated immediately after closing <type> transactions"
+   ],
+   "scenarios_per_second": 2.597
+  },
+  {
+   "command": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/test_concept-85b05f468c04bfd3 r#type::owns_annotations::test_owns_annotations --exact --nocapture --test-threads 1",
+   "cwd": "sources/typedb",
+   "env": {
+    "TYPEDB_STORAGE_PROFILE": "U1",
+    "RUST_MIN_STACK": "67108864"
+   },
+   "exit_code": 0,
+   "wall_seconds": 306.39,
+   "raw_log": "docs/evidence/G3/leaf/cucumber-probe/typedb_server_bin__test_concept__r#type_owns_annotations_test_owns_annotations.log",
+   "log_sha256": "622e84b2ff212cc5993206caab399e52a9c2c7bf945b3a707fa6b428489bed64",
+   "libtest_counts": {
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 12
+   },
+   "features": [
+    "concept/type/owns-annotations.feature"
+   ],
+   "cucumber_summary": {
+    "features": 725,
+    "scenarios": 725,
+    "scenario_detail": "725 passed",
+    "steps": 44550,
+    "step_detail": "44550 passed"
+   },
+   "scenario_lines_parsed": 725,
+   "catalogued_scenarios_for_these_features": 725,
+   "reconciles": true,
+   "names_matching_catalogue_exactly": 15,
+   "names_not_matching": 710,
+   "catalogue_names_not_observed": 710,
+   "unobserved_catalogue_name_templates": [
+    "<root-type> subtypes can specialise owns with @<annotation>",
+    "<root-type> type can set \"redundant\" duplicated @<annotation> on plays while it inherits it",
+    "<root-type> types can have owns with @<annotation> alongside pure owns",
+    "<root-type> types can inherit owns with @<annotation>s alongside pure owns",
+    "<root-type> types can inherit owns with @<annotation>s and pure owns that are subtypes of each other",
+    "<root-type> types can re-specialise owns with <annotation>s",
+    "<root-type> types can redeclare owns and save its @<annotation>",
+    "<root-type> types can redeclare owns as owns with @<annotation>",
+    "<root-type> types can redeclare owns as owns with @distinct",
+    "<root-type> types can redeclare owns with @<annotation>s as owns with @<annotation>s"
+   ],
+   "scenarios_per_second": 2.366
+  }
+ ],
+ "costing": {
+  "measured_rate_scenarios_per_second": 2.366,
+  "rate_basis": [
+   {
+    "case": "database::test_database",
+    "scenarios": 16,
+    "wall_seconds": 6.16,
+    "rate": 2.597
+   },
+   {
+    "case": "r#type::owns_annotations::test_owns_annotations",
+    "scenarios": 725,
+    "wall_seconds": 306.39,
+    "rate": 2.366
+   }
+  ],
+  "catalogued_scenarios": 4099,
+  "scenarios_reachable_via_cargo": 4099,
+  "cores_assumed": 4,
+  "serial_seconds_per_lane": 1732,
+  "parallel_seconds_per_lane": 440,
+  "longest_single_case_seconds": 306,
+  "longest_single_case_scenarios": 725,
+  "archived_lane_behaviour_cost": [
+   {
+    "bundle": "docs/evidence/G3/leaf/u1-full-1",
+    "profile": "U1",
+    "behaviour_target_seconds_as_archived": 674.0,
+    "note": "measured in THIS repository's own archived lane run, with libtest's default per-case parallelism inside each target"
+   },
+   {
+    "bundle": "docs/evidence/G3/leaf/u2-full-1",
+    "profile": "U2",
+    "behaviour_target_seconds_as_archived": 749.3,
+    "note": "measured in THIS repository's own archived lane run, with libtest's default per-case parallelism inside each target"
+   }
+  ],
+  "plan_rows_this_would_cover": {
+   "rows_per_profile": 4099,
+   "profiles_runnable_here": [
+    "U1",
+    "U2"
+   ],
+   "profiles_not_runnable_here": {
+    "U0": "requires the PRISTINE upstream checkout; the fork must be unstaged (tools/fork/stage.py --restore), which would break every other build in flight on this machine",
+    "U3": "storage factory refuses: ProfileUnavailable { profile: \"U3\" }",
+    "U4": "storage factory refuses: ProfileUnavailable { profile: \"U4\" }"
+   },
+   "rows_reachable_here": 8198,
+   "rows_in_plan": 20495
+  }
+ }
+}

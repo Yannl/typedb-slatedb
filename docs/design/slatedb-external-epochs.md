@@ -5,11 +5,20 @@
 `docs/evidence/G3/slatedb-external-epoch-spike.json`. The patch series
 builds against the pinned crate, its qualifying matrix passes (34/34 in
 `manifest::store`, five of them new), and the observe-and-bind mutant is
-killed. F4/F5 are **no longer unbuilt**, but they are also **not decided**:
-ADR-0012 requires this candidate to be compared against a
-provider-enforced publication firewall over stock SlateDB before either is
-normative, and the production lane stays on crates.io until that decision
-and a real G2 pass.
+killed. F4/F5 are **no longer unbuilt**.
+
+> **Round-6 status correction (2026-08-20, R6-TRUTH-01).** The paragraph
+> that used to end here said the candidate was "not decided" and that the
+> production lane stayed on the registry crate pending a comparison and a
+> G2 pass. That is no longer the state of the repository: the fork **is
+> shipped and linked workspace-globally** by `[patch.crates-io]` in
+> `sources/typedb/Cargo.toml`, with `external_epoch_required` enabled by
+> default, ratified in the ADR-0012 status block. Candidate B (the
+> publication firewall) remains measured and unselected, and its
+> provider-enforced credential rotation remains a sound backstop — but it
+> is not what ships. Everything below is the *design rationale* for the
+> shipped patch series; where it describes lane scoping it is superseded by
+> ADR-0012's round-6 ratification.
 
 **Correction to §"What upstream already has" below.** This document
 originally described external issuance as something upstream lacks. That is
@@ -40,7 +49,7 @@ that fencing composes with the controller's own fencing story
 (startup-session/incarnation) instead of racing it. Internal allocation is
 observe-and-bind — prohibited as a release-gate stop condition (ADR-0012).
 
-## The fork diff (production lane only; local lanes stay on crates.io)
+## The fork diff *(as designed: production-lane-scoped — as shipped: workspace-global, see the round-6 correction above)*
 
 1. `manifest/store.rs` — add
    `FenceableManifest::init_writer_with_epoch(stored, timeout, clock, external_epoch: u64)`
@@ -75,9 +84,11 @@ observe-and-bind — prohibited as a release-gate stop condition (ADR-0012).
    upstream tag + this diff as a patch series (same model as
    `tools/fork/materialize.sh` uses for `fork/typedb`);
    `sources/typedb/Cargo.toml` gains a `[patch.crates-io] slatedb = { path
-   = ... }` activated only by the production-lane profile. Local conformance
-   lanes (U2/U2S3) keep crates.io — single-actor by construction, epoch
-   semantics not exercised (ADR-0012).
+   = ... }`. *As designed, this was to be scoped to the production-lane
+   profile; Cargo has no per-profile patch table, so as shipped the redirect
+   applies to the whole workspace and every profile resolves the fork. See
+   the round-6 correction at the top of this document and the ADR-0012
+   status block.*
 
 ## The qualifying matrix (lands with the fork, SL-P1/SL-P2)
 

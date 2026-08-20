@@ -13,7 +13,7 @@ mechanically.
 | CI | Kind | Identity |
 |---|---|---|
 | `TB` TypeDB | git checkout | commit `2256711ab…` + tree hash; clean-tree enforced at rest |
-| `SL` SlateDB | **crates.io registry** | `slatedb =0.15.0` + sha256 checksums (incl. companions `slatedb-common`, `slatedb-txn-obj`), verified in *every* consumer lockfile (fork + tools) — consume-only per ADR-0001 |
+| `SL` SlateDB | **crates.io registry base + in-repo patch series** | Base: `slatedb =0.15.0` + sha256 checksums (incl. companions `slatedb-common`, `slatedb-txn-obj`), verified in *every* consumer lockfile. Fork: `fork/slatedb/patches/0001..0005` + `UPSTREAM-PROVENANCE` (post-patch tree digest), materialised to `sources/slatedb-fork` and linked **workspace-globally** by `[patch.crates-io]` — soft fork per **ADR-0012** (supersedes ADR-0001). The `tools/` workspace resolves the unpatched registry crate as the differential oracle. |
 | `BH` typedb-behaviour | git checkout | pinned commit (Cucumber corpus) |
 | `TBD`/`TBDIST`/`TQL`/`TPROTO`/`TDRIVER` | git checkouts | the proof-critical TypeDB dependency graph, pinned atomically with `TB` |
 | `CF_WORKERS_SDK`, `CF_CTR_SOURCE` | git checkouts | workerd/wrangler & containers sources backing the L1+ rungs |

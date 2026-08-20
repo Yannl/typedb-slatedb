@@ -1,0 +1,46 @@
+# Quality waivers (spec §13).
+#
+# PROTECTED FILE. Adding a waiver is a quality-policy change and is refused in
+# an ordinary implementation diff by `cargo xtask quality policy-check`.
+#
+# Every waiver is schema-validated by `cargo xtask quality fast|pr|full`. A
+# waiver that is malformed, incomplete or expired is a QualityFailure, not a
+# warning. Waiver count is tracked as debt and surfaced in every report.
+#
+# Required fields (enforced; see [exceptions] in .quality/policy.toml):
+#   id           unique, "QW-NNNN"
+#   kind         mutation-equivalent | coverage-exclusion | duplication |
+#                lint-allow | architecture-edge | crap-hotspot | flaky-test |
+#                dependency-advisory
+#   path         narrow path; wildcards require `wildcard_justification`
+#   reason       mandatory, non-empty, must not be boilerplate
+#   owner        accountable role or person
+#   issue        tracking issue / ADR reference
+#   created      YYYY-MM-DD
+#   review_after YYYY-MM-DD, in the future at creation time, at most
+#                [exceptions].max_waiver_lifetime_days after `created`
+#   approved_by  independent approver; MUST differ from `owner`
+#
+# Optional:
+#   symbol                    function / symbol the waiver is narrowed to
+#   wildcard_justification    required if `path` or `symbol` contains a wildcard
+#
+# There are intentionally no waivers at Phase 0. A PR that adds one must never
+# look like an ordinary green change.
+
+schema = 1
+
+# Example of the required shape, kept commented so the file parses to zero
+# active waivers:
+#
+# [[waiver]]
+# id = "QW-0042"
+# kind = "mutation-equivalent"
+# path = "tools/remote-wal-spike/src/bar.rs"
+# symbol = "normalize_legacy_header"
+# reason = "Mutant changes an internal representation with no observable semantic difference; the observable WAL frame bytes are identical under both branches."
+# owner = "architecture"
+# approved_by = "human-technical-owner"
+# issue = "#1234"
+# created = "2026-08-20"
+# review_after = "2026-11-20"

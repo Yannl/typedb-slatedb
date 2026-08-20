@@ -11,21 +11,22 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import {
-  computeProbesSourceRoot, consumedJournalPath, ENVELOPE_SCHEMA, isRunIdConsumed, markRunIdConsumed,
-  signEnvelope, verifyEnvelopeSignature,
+  acquireRunClaim, claimIdentity, claimPath, claimStateDir, computeProbesSourceRoot, ENVELOPE_SCHEMA,
+  isRunClaimed, signEnvelope, verifyEnvelopeSignature,
 } from "./approval.ts";
 import { runPreflight } from "./preflight.ts";
+import { resolveReleaseCommit } from "../../tools/release/release-identity.mts";
 
 const PROBES_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(PROBES_DIR, "..", "..");
-const HEAD = execFileSync("git", ["-C", REPO_ROOT, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+const HEAD = resolveReleaseCommit(REPO_ROOT);
 const SOURCE_ROOT = computeProbesSourceRoot(PROBES_DIR, join(REPO_ROOT, "control-plane", "wrangler.probe-harness.toml"));
 
 const owner = generateKeyPairSync("ed25519");
@@ -194,16 +195,65 @@ test("MUTANT: a validity window longer than 7 days is refused", () => {
   assert.match(reasonsText(result), /exceeds 7 days/);
 });
 
-test("MUTANT: a CONSUMED run id is refused (one-time use)", () => {
+test("MUTANT: a CLAIMED run id is refused (one-time use)", () => {
   const signed = signEnvelope(OWNER_PRIVATE, draft());
   const path = writeEnvelope(signed);
-  markRunIdConsumed(path, signed.binding.run_id);
-  assert.ok(isRunIdConsumed(path, signed.binding.run_id));
+  const identity = claimIdentity(signed, OWNER_PUBLIC);
+  assert.equal(acquireRunClaim(path, identity).ok, true);
+  assert.ok(isRunClaimed(path, identity));
   const result = runPreflight({ mode: "real", env: realEnv(), envelopePath: path });
   assert.equal(result.verdict, "RED");
-  assert.match(reasonsText(result), /already been consumed/);
-  // double-consume throws — the journal is append-once per id
-  assert.throws(() => markRunIdConsumed(path, signed.binding.run_id), /already consumed/);
+  assert.match(reasonsText(result), /already been claimed/);
+  // R6-CF-01: a second acquisition is refused by the KERNEL (O_EXCL), not
+  // by a read-check the caller could race.
+  const second = acquireRunClaim(path, identity);
+  assert.equal(second.ok, false);
+  assert.equal((second as { error: string }).error, "ALREADY_CLAIMED");
+});
+
+test("R6-CF-01 MUTANT: two DIFFERENT signed envelopes naming one run id conflict", () => {
+  // An attacker-chosen run id must not let a second envelope ride, or be
+  // blocked into a confusing state by, the first envelope's claim.
+  const first = signEnvelope(OWNER_PRIVATE, draft({}, { run_id: "shared-run-id-1" }));
+  const path = writeEnvelope(first);
+  assert.equal(acquireRunClaim(path, claimIdentity(first, OWNER_PUBLIC)).ok, true);
+  // same run id, different body (different approver ⇒ different signed bytes)
+  const second = signEnvelope(OWNER_PRIVATE, draft({ approved_by: "someone-else" }, { run_id: "shared-run-id-1" }));
+  const outcome = acquireRunClaim(path, claimIdentity(second, OWNER_PUBLIC));
+  assert.equal(outcome.ok, false);
+  assert.equal((outcome as { error: string }).error, "BINDING_CONFLICT");
+});
+
+test("R6-CF-01 MUTANT: a CORRUPT claim fails closed — never treated as absent", () => {
+  const signed = signEnvelope(OWNER_PRIVATE, draft());
+  const path = writeEnvelope(signed);
+  const identity = claimIdentity(signed, OWNER_PUBLIC);
+  assert.equal(acquireRunClaim(path, identity).ok, true);
+  // truncate the claim record: we can no longer prove what it authorized
+  writeFileSync(claimPath(path, identity), "{ truncated");
+  const outcome = acquireRunClaim(path, identity);
+  assert.equal(outcome.ok, false);
+  assert.equal((outcome as { error: string }).error, "BINDING_CONFLICT");
+  assert.ok(isRunClaimed(path, identity), "a corrupt claim must read as CLAIMED, not absent");
+});
+
+test("R6-CF-01: the claim state dir is 0700 and the claim file 0600", () => {
+  const signed = signEnvelope(OWNER_PRIVATE, draft());
+  const path = writeEnvelope(signed);
+  const identity = claimIdentity(signed, OWNER_PUBLIC);
+  assert.equal(acquireRunClaim(path, identity).ok, true);
+  assert.equal(statSync(claimStateDir(path)).mode & 0o777, 0o700);
+  assert.equal(statSync(claimPath(path, identity)).mode & 0o777, 0o600);
+});
+
+test("R6-CF-01 MUTANT: a group/world-writable state dir is refused", () => {
+  const signed = signEnvelope(OWNER_PRIVATE, draft());
+  const path = writeEnvelope(signed);
+  const identity = claimIdentity(signed, OWNER_PUBLIC);
+  const dir = claimStateDir(path);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  chmodSync(dir, 0o777);
+  assert.throws(() => acquireRunClaim(path, identity), /group\/world writable/);
 });
 
 test("MUTANT: a wrong credential TTL approval is refused", () => {
@@ -234,11 +284,27 @@ test("verifyEnvelopeSignature refuses unknown alg and non-object docs", () => {
   assert.equal(verifyEnvelopeSignature(OWNER_PUBLIC, null).ok, false);
 });
 
-test("consumed journal is a strict string array — garbage refuses, never guesses", () => {
-  const signed = signEnvelope(OWNER_PRIVATE, draft());
-  const path = writeEnvelope(signed);
-  writeFileSync(consumedJournalPath(path), JSON.stringify({ nope: true }));
-  const result = runPreflight({ mode: "real", env: realEnv(), envelopePath: path });
+test("R6-CF-04 MUTANT: a tampered public-key fingerprint is refused", () => {
+  // The fingerprint is display metadata OUTSIDE the signature, so an
+  // attacker can rewrite it without breaking verification. Metadata that
+  // lies about which key approved a spend is worse than absent metadata.
+  const signed = signEnvelope(OWNER_PRIVATE, draft()) as unknown as
+    { signature: { public_key_fingerprint: string } };
+  signed.signature.public_key_fingerprint = "attacker-controlled";
+  const verdict = verifyEnvelopeSignature(OWNER_PUBLIC, signed);
+  assert.equal(verdict.ok, false);
+  assert.match((verdict as { reason: string }).reason, /does not match the trusted verification key/);
+});
+
+test("R6-CF-03 MUTANT: an envelope with less validity left than the credential TTL is refused", () => {
+  // 60 seconds of signed validity left, but the probes mint 900s
+  // credentials: the credential would outlive its own authorization.
+  const now = Date.now();
+  const signed = signEnvelope(OWNER_PRIVATE, draft({
+    valid_from: new Date(now - 3_600_000).toISOString(),
+    valid_until: new Date(now + 60_000).toISOString(),
+  }));
+  const result = preflightWith(signed);
   assert.equal(result.verdict, "RED");
-  assert.match(reasonsText(result), /consumed-run journal unreadable/);
+  assert.match(reasonsText(result), /of signed validity left but the probes mint/);
 });

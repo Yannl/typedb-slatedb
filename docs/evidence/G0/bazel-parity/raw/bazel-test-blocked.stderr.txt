@@ -1,0 +1,39 @@
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: target //storage:test_crate_storage (0 packages loaded, 0 targets configured)
+Analyzing: target //storage:test_crate_storage (0 packages loaded, 0 targets configured)
+
+Analyzing: target //storage:test_crate_storage (0 packages loaded, 0 targets configured)
+
+Analyzing: target //storage:test_crate_storage (0 packages loaded, 0 targets configured)
+
+Analyzing: target //storage:test_crate_storage (0 packages loaded, 0 targets configured)
+
+Analyzing: target //storage:test_crate_storage (0 packages loaded, 0 targets configured)
+
+Analyzing: target //storage:test_crate_storage (0 packages loaded, 0 targets configured)
+
+Analyzing: target //storage:test_crate_storage (0 packages loaded, 0 targets configured)
+
+Analyzing: target //storage:test_crate_storage (0 packages loaded, 0 targets configured)
+
+WARNING: Download from https://github.com/bats-core/bats-core/archive/v1.10.0.tar.gz failed: class java.io.IOException GET returned 403 Forbidden
+INFO: Repository bazel_lib++toolchains+bats_toolchains instantiated at:
+  <builtin>: in <toplevel>
+Repository rule http_archive defined at:
+  /home/user/.bazel-out/d4b4afd956fddeab58d915cbd4a185c8/external/bazel_tools/tools/build_defs/repo/http.bzl:431:31: in <toplevel>
+ERROR: /home/user/.bazel-out/d4b4afd956fddeab58d915cbd4a185c8/external/bazel_tools/tools/build_defs/repo/http.bzl:156:45: An error occurred during the fetch of repository 'bazel_lib++toolchains+bats_toolchains':
+   Traceback (most recent call last):
+	File "/home/user/.bazel-out/d4b4afd956fddeab58d915cbd4a185c8/external/bazel_tools/tools/build_defs/repo/http.bzl", line 156, column 45, in _http_archive_impl
+		download_info = ctx.download_and_extract(
+Error in download_and_extract: java.io.IOException: Error downloading [https://github.com/bats-core/bats-core/archive/v1.10.0.tar.gz] to /home/user/.bazel-out/d4b4afd956fddeab58d915cbd4a185c8/external/bazel_lib++toolchains+bats_toolchains/temp107971627350462117/v1.10.0.tar.gz: GET returned 403 Forbidden
+WARNING: Download from https://github.com/bats-core/bats-core/archive/v1.10.0.tar.gz failed: class java.net.SocketException Closed by interrupt
+WARNING: failed to create one or more convenience symlinks for prefix 'bazel-':
+  cannot create symbolic link bazel-typedb -> /home/user/.bazel-out/d4b4afd956fddeab58d915cbd4a185c8/execroot/_main:  /home/user/typedb-slatedb/sources/typedb/bazel-typedb (File exists)
+ERROR: Analysis of target '//storage:test_crate_storage' failed; build aborted: java.io.IOException: Error downloading [https://github.com/bats-core/bats-core/archive/v1.10.0.tar.gz] to /home/user/.bazel-out/d4b4afd956fddeab58d915cbd4a185c8/external/bazel_lib++toolchains+bats_toolchains/temp107971627350462117/v1.10.0.tar.gz: GET returned 403 Forbidden
+INFO: Elapsed time: 15.196s, Critical Path: 0.04s
+INFO: 1 process: 1 internal.
+ERROR: Build did NOT complete successfully
+FAILED: 
+ERROR: No test targets were found, yet testing was requested

@@ -52,7 +52,15 @@
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::{hex, sha256};
+use crate::{
+    hex,
+    l1_stream::{
+        self, IntegrityFault, PayloadSource, RecordMeta, ReplayBounds, ReplayReport, SpoolPolicy, StreamError,
+        StreamOptions, VerifiedPayload, VerifyingReader, MAX_RECORD_BYTES, MAX_SCAN_PAGE_BYTES, MAX_SCAN_PAGE_RECORDS,
+        PAYLOAD_STREAM_MEDIA_TYPE,
+    },
+    sha256,
+};
 
 #[derive(Debug)]
 pub enum L1Error {
@@ -70,6 +78,16 @@ pub enum L1Error {
     /// exact session and generation first - there is deliberately no default
     /// and no zero fallback for either field (R4-SEC-05)
     ActorUnbound,
+    /// R6-PERF-01: a streaming transfer was refused. NOTHING was applied,
+    /// nothing was acknowledged, and every byte the transfer had already
+    /// absorbed was destroyed with the spool that held it.
+    Stream(StreamError),
+}
+
+impl From<StreamError> for L1Error {
+    fn from(error: StreamError) -> L1Error {
+        L1Error::Stream(error)
+    }
 }
 
 impl std::fmt::Display for L1Error {
@@ -82,6 +100,7 @@ impl std::fmt::Display for L1Error {
             L1Error::ActorUnbound => {
                 write!(f, "no bound actor (session + generation): activate_session or bind_actor first")
             }
+            L1Error::Stream(error) => write!(f, "streaming refusal: {error}"),
         }
     }
 }
@@ -398,6 +417,15 @@ pub struct ExactReadOutcome {
     pub payload_base64: Option<String>,
 }
 
+/// One record delivered by the STREAMING exact read. `payload` is the only
+/// way bytes leave that path, and it exists only after the full digest and
+/// length were proven.
+#[derive(Debug)]
+pub struct StreamedRead {
+    pub meta: RecordMeta,
+    pub payload: VerifiedPayload,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HeadOutcome {
@@ -434,6 +462,13 @@ pub struct ScanRecord {
 
 /// Parameters of one `/scan` page request. The cut is the server-minted
 /// `snapshot_id`; there is deliberately no way to express `throughLsn`.
+///
+/// R6-PERF-01 bounded pagination: BOTH page axes are explicit and
+/// client-validated against the authority's own ceilings
+/// (`MAX_SCAN_PAGE_RECORDS`, `MAX_SCAN_PAGE_BYTES`). The Worker CLAMPS an
+/// over-wide request silently; this client REFUSES it, because a caller
+/// that believes it asked for 5000 records and quietly got 1000 will read
+/// the missing 4000 as end-of-stream.
 #[derive(Debug, Clone)]
 pub struct ScanQuery<'a> {
     pub snapshot_id: &'a str,
@@ -441,6 +476,32 @@ pub struct ScanQuery<'a> {
     pub from_lsn: u64,
     pub record_type: Option<u8>,
     pub limit: u32,
+    /// per-page payload byte budget (pre-base64). `None` lets the authority
+    /// apply its own ceiling; `Some(n)` must be within it.
+    pub max_bytes: Option<u64>,
+}
+
+impl ScanQuery<'_> {
+    /// A page request with the crate's default bounds.
+    pub fn new(snapshot_id: &str, from_lsn: u64, limit: u32) -> ScanQuery<'_> {
+        ScanQuery { snapshot_id, from_ts: 0, from_lsn, record_type: None, limit, max_bytes: None }
+    }
+
+    /// Refuse - never clamp - an out-of-bounds page request.
+    pub fn validate(&self) -> Result<(), StreamError> {
+        if self.limit == 0 || self.limit > MAX_SCAN_PAGE_RECORDS {
+            return Err(StreamError::Oversize {
+                declared: u64::from(self.limit),
+                limit: u64::from(MAX_SCAN_PAGE_RECORDS),
+            });
+        }
+        if let Some(max_bytes) = self.max_bytes {
+            if max_bytes == 0 || max_bytes > MAX_SCAN_PAGE_BYTES {
+                return Err(StreamError::Oversize { declared: max_bytes, limit: MAX_SCAN_PAGE_BYTES });
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -554,27 +615,19 @@ impl L1Client {
     /// the session's CURRENT generation - exactly like its commit
     /// authority does at the controller.
     pub fn bind_actor(&self, session: &str, generation: u64) {
-        *self.actor.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) =
-            Some((session.to_string(), generation));
+        *self.actor.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some((session.to_string(), generation));
     }
 
     /// The bound (session, generation) pair, or the typed refusal. No
     /// default and no zero fallback: an unbound actor cannot request an
     /// actor-bound capability.
     fn actor(&self) -> Result<(String, u64), L1Error> {
-        self.actor
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
-            .ok_or(L1Error::ActorUnbound)
+        self.actor.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone().ok_or(L1Error::ActorUnbound)
     }
 
     pub fn health(&self) -> Result<(), L1Error> {
-        let mut response = self
-            .agent
-            .get(format!("{}/health", self.config.base))
-            .call()
-            .map_err(|e| L1Error::Http(e.to_string()))?;
+        let mut response =
+            self.agent.get(format!("{}/health", self.config.base)).call().map_err(|e| L1Error::Http(e.to_string()))?;
         let status = response.status().as_u16();
         let body: serde_json::Value = response.body_mut().read_json().map_err(|e| L1Error::Decode(e.to_string()))?;
         if status == 200 && body["ok"] == serde_json::Value::Bool(true) {
@@ -719,8 +772,7 @@ impl L1Client {
             .send_json(body)
             .map_err(|e| L1Error::Http(e.to_string()))?;
         let status = response.status().as_u16();
-        let parsed: serde_json::Value =
-            response.body_mut().read_json().map_err(|e| L1Error::Decode(e.to_string()))?;
+        let parsed: serde_json::Value = response.body_mut().read_json().map_err(|e| L1Error::Decode(e.to_string()))?;
         if status != 200 || parsed["ok"] != serde_json::Value::Bool(true) {
             return Err(L1Error::Protocol { status, body: parsed.to_string() });
         }
@@ -900,7 +952,12 @@ impl L1Client {
     /// generation being read. The Worker revalidates live authority at use
     /// time, so a fenced/unknown session gets a typed 409 regardless of an
     /// unexpired token.
-    fn read_get(&self, database_id: &str, path: &str, query: &[(&str, String)]) -> Result<ureq::http::Response<ureq::Body>, L1Error> {
+    fn read_get(
+        &self,
+        database_id: &str,
+        path: &str,
+        query: &[(&str, String)],
+    ) -> Result<ureq::http::Response<ureq::Body>, L1Error> {
         let (session, generation) = self.actor()?;
         let cap = self.issue(
             database_id,
@@ -964,7 +1021,15 @@ impl L1Client {
     /// One ordered replay page (physical order, `type_sequence >= from_ts`,
     /// bounded by the pinned snapshot), payloads inline and digest-verified
     /// server-side. Follow `next_from_lsn` until `None`.
-    pub fn scan(&self, database_id: &str, generation: u64, query: &ScanQuery<'_>) -> Result<(u16, ScanOutcome), L1Error> {
+    pub fn scan(
+        &self,
+        database_id: &str,
+        generation: u64,
+        query: &ScanQuery<'_>,
+    ) -> Result<(u16, ScanOutcome), L1Error> {
+        // bounded pagination is enforced BEFORE the request leaves: an
+        // over-wide page is a typed client refusal, not a silent clamp
+        query.validate()?;
         let mut params = vec![
             ("snapshotId", query.snapshot_id.to_string()),
             ("fromTs", query.from_ts.to_string()),
@@ -973,6 +1038,9 @@ impl L1Client {
         ];
         if let Some(record_type) = query.record_type {
             params.push(("recordType", record_type.to_string()));
+        }
+        if let Some(max_bytes) = query.max_bytes {
+            params.push(("maxBytes", max_bytes.to_string()));
         }
         let mut response = self.read_get(database_id, &format!("/wal/{database_id}/{generation}/scan"), &params)?;
         let status = response.status().as_u16();
@@ -1032,6 +1100,296 @@ impl L1Client {
             .as_u64()
             .ok_or_else(|| L1Error::Decode(format!("journal verdict without length: {body}")))?;
         Ok(JournalOutcome { ok: true, length })
+    }
+
+    // -----------------------------------------------------------------
+    // R6-PERF-01: the STREAMING data path.
+    //
+    // Two rules hold across everything below.
+    //
+    //   1. Nothing here is the default. `read_exact` and `upload_payload`
+    //      keep their exact buffered behaviour; a caller switches over by
+    //      NAMING a streaming method, never by configuration drift.
+    //   2. No streamed byte reaches a consumer before its full digest and
+    //      length are proven. The only value carrying streamed bytes out of
+    //      this module is `VerifiedPayload`, and `l1_stream` provides no way
+    //      to build one that was not verified.
+    // -----------------------------------------------------------------
+
+    /// One capability-bearing GET that EXPLICITLY negotiates the streaming
+    /// exact-read variant (`accept: application/octet-stream`). A wildcard
+    /// accept does not select it at the Worker, and this client never sends
+    /// one: the shape it parses is the shape it asked for.
+    fn read_get_stream(&self, database_id: &str, path: &str) -> Result<ureq::http::Response<ureq::Body>, L1Error> {
+        let (session, generation) = self.actor()?;
+        let cap = self.issue(
+            database_id,
+            CapabilityMethod::WalRead,
+            MintRestrictions { session: Some(&session), generation: Some(generation), ..Default::default() },
+        )?;
+        self.agent
+            .get(format!("{}{}", self.config.base, path))
+            .header("x-capability", &cap.token)
+            .header("accept", PAYLOAD_STREAM_MEDIA_TYPE)
+            .call()
+            .map_err(|e| L1Error::Http(e.to_string()))
+    }
+
+    /// Streaming exact read. The record's catalogued identity travels in
+    /// headers and the payload IS the body: no JSON envelope, no base64
+    /// expansion, no whole-record buffer on either side.
+    ///
+    /// The order of operations is the safety property:
+    ///
+    ///   1. every declared bound is checked against the response METADATA
+    ///      first - content type, digest shape, the length against both the
+    ///      caller's spool policy and `MAX_RECORD_BYTES`, `content-digest`
+    ///      against `x-payload-sha256`, the echoed lsn against the one
+    ///      asked for. An oversize or self-contradicting response is
+    ///      refused with the body unread and unallocated;
+    ///   2. bytes are pumped into a WRITE-ONLY spool;
+    ///   3. only after the full length and full SHA-256 match does the
+    ///      spool publish a `VerifiedPayload`.
+    ///
+    /// The Worker's documented residual hazard - a consumer observing a
+    /// corrupt prefix before the in-band abort - therefore cannot be
+    /// realised through this API: the prefix exists only inside a spool
+    /// that has no reader and is destroyed on every refusal path.
+    pub fn read_exact_streaming(
+        &self,
+        database_id: &str,
+        generation: u64,
+        lsn: u64,
+        policy: SpoolPolicy<'_>,
+        options: &mut StreamOptions<'_>,
+    ) -> Result<StreamedRead, L1Error> {
+        let mut response = self.read_get_stream(database_id, &format!("/wal/{database_id}/{generation}/{lsn}"))?;
+        let status = response.status().as_u16();
+        if status != 200 {
+            // every refusal - 404 NOT_FOUND, 409 SESSION_NOT_ACTIVE from a
+            // fence, 413 over-cap, 500 integrity - is still a JSON body, and
+            // it carries NO payload bytes
+            let body = response.body_mut().read_to_string().unwrap_or_default();
+            return Err(L1Error::Protocol { status, body });
+        }
+        let header =
+            |name: &str| response.headers().get(name).and_then(|value| value.to_str().ok()).map(str::to_string);
+        let inconsistent =
+            |detail: String| L1Error::Stream(StreamError::Integrity(IntegrityFault::HeaderInconsistent(detail)));
+        // content negotiation must have ACTUALLY happened: a JSON answer to
+        // an octet-stream request is a protocol change, never a silent
+        // fallback into the buffered shape
+        let content_type = header("content-type").unwrap_or_default();
+        if content_type.split(';').next().unwrap_or_default().trim() != PAYLOAD_STREAM_MEDIA_TYPE {
+            return Err(inconsistent(format!("content-type {content_type:?} is not the negotiated stream")));
+        }
+        let digest = header("x-payload-sha256").ok_or_else(|| inconsistent("no x-payload-sha256".into()))?;
+        let declared = header("x-payload-length")
+            .ok_or_else(|| inconsistent("no x-payload-length".into()))
+            .and_then(|raw| parse_wire_u64(&raw).map_err(inconsistent))?;
+        if let Some(content_length) = header("content-length") {
+            let framed = parse_wire_u64(&content_length).map_err(inconsistent)?;
+            if framed != declared {
+                return Err(inconsistent(format!("content-length {framed} contradicts x-payload-length {declared}")));
+            }
+        }
+        // RFC 9530 content-digest must agree with the hex header: two
+        // independent statements of the same fact, and a server that
+        // disagrees with itself is refused before its bytes are touched
+        let content_digest = header("content-digest").ok_or_else(|| inconsistent("no content-digest".into()))?;
+        let encoded = content_digest
+            .strip_prefix("sha-256=:")
+            .and_then(|rest| rest.strip_suffix(':'))
+            .ok_or_else(|| inconsistent(format!("content-digest {content_digest:?} is not RFC 9530 sha-256")))?;
+        let decoded = base64_decode(encoded).map_err(inconsistent)?;
+        if hex(&<[u8; 32]>::try_from(decoded.as_slice())
+            .map_err(|_| inconsistent(format!("content-digest carries {} bytes, not 32", decoded.len())))?)
+            != digest
+        {
+            return Err(inconsistent(format!("content-digest {content_digest} contradicts x-payload-sha256 {digest}")));
+        }
+        let echoed_lsn = header("x-append-lsn")
+            .ok_or_else(|| inconsistent("no x-append-lsn".into()))
+            .and_then(|raw| parse_wire_u64(&raw).map_err(inconsistent))?;
+        if echoed_lsn != lsn {
+            return Err(inconsistent(format!("response is for lsn {echoed_lsn}, not {lsn}")));
+        }
+        let type_sequence = header("x-type-sequence")
+            .ok_or_else(|| inconsistent("no x-type-sequence".into()))
+            .and_then(|raw| parse_wire_u64(&raw).map_err(inconsistent))?;
+        let record_type: u8 = header("x-record-type")
+            .ok_or_else(|| inconsistent("no x-record-type".into()))?
+            .parse()
+            .map_err(|_| inconsistent("x-record-type is not a u8".into()))?;
+        let meta = RecordMeta {
+            append_lsn: echoed_lsn,
+            type_sequence,
+            record_type,
+            payload_digest: digest.clone(),
+            payload_length: declared,
+        };
+        // bound check BEFORE the body: an over-cap record is refused with
+        // nothing allocated and nothing read
+        let limit = policy.max_bytes();
+        if declared > limit {
+            return Err(L1Error::Stream(StreamError::Oversize { declared, limit }));
+        }
+        // `declared + 1` so a server that sends MORE than it declared is
+        // caught as an overrun instead of being silently truncated into a
+        // matching prefix
+        let mut reader = response.body_mut().with_config().limit(declared.saturating_add(1)).reader();
+        let payload = l1_stream::ingest(&mut reader, policy, &digest, declared, options)?;
+        Ok(StreamedRead { meta, payload })
+    }
+
+    /// Upload one payload from a REWINDABLE source: the process never holds
+    /// the record, and nothing is base64-expanded in either direction.
+    ///
+    /// Two passes are structural, not a shortcut. The PUT_PAYLOAD
+    /// capability binds the exact content digest and a byte budget, and the
+    /// issuer refuses a spec without them, so the digest must exist before
+    /// the token does. Pass one measures the source in `STREAM_CHUNK_BYTES`
+    /// of memory and REFUSES an over-bound record before issuance; pass two
+    /// transmits under a `VerifyingReader` that re-proves the same digest
+    /// and length as the bytes leave, so a source that changed between the
+    /// passes aborts the request rather than storing bytes the receipt does
+    /// not describe.
+    ///
+    /// `content-length` is sent explicitly: the Worker refuses an
+    /// undeclared body with 411 CONTENT_LENGTH_REQUIRED (an unbounded
+    /// stream cannot be admitted against a byte budget), so a chunked
+    /// upload is not a thing this client may attempt.
+    pub fn upload_payload_streaming(
+        &self,
+        database_id: &str,
+        source: &dyn PayloadSource,
+        max_bytes: u64,
+    ) -> Result<UploadReceipt, L1Error> {
+        let measured = l1_stream::fingerprint(source, max_bytes.min(MAX_RECORD_BYTES))?;
+        let cap = self.issue(
+            database_id,
+            CapabilityMethod::PutPayload,
+            MintRestrictions { digest: Some(&measured.digest), max_bytes: Some(measured.length), ..Default::default() },
+        )?;
+        let canonical = format!("p/{database_id}/{}", measured.digest);
+        let key = match cap.key {
+            Some(key) if key == canonical => key,
+            other => {
+                return Err(L1Error::Decode(format!(
+                    "issuer key {other:?} is not the canonical {canonical:?}; refusing to upload"
+                )));
+            }
+        };
+        let body = VerifyingReader::new(source.open().map_err(StreamError::io_public)?, measured.clone());
+        let mut response = self
+            .agent
+            .put(format!("{}/payload/{}", self.config.base, encode_path(&key)))
+            .header("x-capability", &cap.token)
+            .header("content-type", PAYLOAD_STREAM_MEDIA_TYPE)
+            .header("content-length", measured.length.to_string())
+            .send(ureq::SendBody::from_owned_reader(body))
+            .map_err(|e| L1Error::Http(e.to_string()))?;
+        let status = response.status().as_u16();
+        let raw: serde_json::Value = response.body_mut().read_json().map_err(|e| L1Error::Decode(e.to_string()))?;
+        if status != 200 {
+            return Err(L1Error::Protocol { status, body: raw.to_string() });
+        }
+        let outcome: UploadWireOutcome =
+            serde_json::from_value(raw.clone()).map_err(|e| L1Error::Decode(e.to_string()))?;
+        match outcome {
+            UploadWireOutcome { key: Some(k), sha256hex: Some(d), length: Some(l), deduplicated }
+                if k == key && d == measured.digest && l == measured.length =>
+            {
+                Ok(UploadReceipt {
+                    key,
+                    digest: measured.digest,
+                    length: l,
+                    deduplicated: deduplicated.unwrap_or(false),
+                })
+            }
+            _ => Err(L1Error::Protocol { status, body: format!("upload receipt disagrees: {raw}") }),
+        }
+    }
+
+    /// BOUNDED streaming replay: walk the physical LSN range of one
+    /// generation, stream each record through a spool, and hand the
+    /// consumer only PROVEN bytes - apply first, acknowledge second, both
+    /// strictly after verification.
+    ///
+    /// The walk is bounded on every axis (`ReplayBounds`) and the cut is
+    /// the authority's own head at entry, so it cannot chase a moving tail.
+    /// Any refusal - integrity, cancellation, fence, transport - returns
+    /// the report of what HAD been applied plus the typed error, and the
+    /// record in flight is reported in `aborted_at_lsn` having been neither
+    /// applied nor acknowledged.
+    ///
+    /// NOTE on shape: this walks exact reads rather than `/scan`, because
+    /// `/scan` has no metadata-only variant - its wire contract inlines
+    /// base64 payloads, so driving a streaming replay from it would make
+    /// the authority buffer and base64-expand exactly the bytes the
+    /// streaming path exists to avoid.
+    pub fn replay_streaming(
+        &self,
+        database_id: &str,
+        generation: u64,
+        from_lsn: u64,
+        bounds: ReplayBounds,
+        policy: SpoolPolicy<'_>,
+        consumer: &mut dyn crate::l1_stream::RecordConsumer,
+    ) -> Result<ReplayReport, (ReplayReport, L1Error)> {
+        let mut report = ReplayReport::default();
+        if let Err(error) = bounds.validate() {
+            return Err((report, L1Error::Stream(error)));
+        }
+        let head = match self.head(database_id, generation) {
+            Ok(head) => head,
+            Err(error) => return Err((report, error)),
+        };
+        let head_lsn = match head.head_lsn {
+            WalPosition::Empty => return Ok(report),
+            WalPosition::At(lsn) => lsn,
+        };
+        let mut lsn = from_lsn;
+        while lsn <= head_lsn {
+            if report.applied >= bounds.max_records {
+                break;
+            }
+            report.aborted_at_lsn = Some(lsn);
+            let mut options = StreamOptions::default();
+            let read = match self.read_exact_streaming(database_id, generation, lsn, policy, &mut options) {
+                Ok(read) => read,
+                Err(error) => return Err((report, error)),
+            };
+            if read.meta.payload_length > bounds.max_record_bytes {
+                return Err((
+                    report,
+                    L1Error::Stream(StreamError::Oversize {
+                        declared: read.meta.payload_length,
+                        limit: bounds.max_record_bytes,
+                    }),
+                ));
+            }
+            // FIRST proven, THEN applied, THEN acknowledged. A consumer
+            // refusal leaves the record unacknowledged.
+            if let Err(detail) = consumer.apply(&read.meta, &read.payload) {
+                return Err((report, L1Error::Stream(StreamError::Io(detail))));
+            }
+            report.applied += 1;
+            report.bytes += read.meta.payload_length;
+            report.last_applied_lsn = Some(lsn);
+            if let Err(detail) = consumer.acknowledge(&read.meta) {
+                return Err((report, L1Error::Stream(StreamError::Io(detail))));
+            }
+            report.acknowledged += 1;
+            report.aborted_at_lsn = None;
+            // O(record), not O(stream): the cache entry goes as soon as the
+            // record it held has been applied and acknowledged
+            if let Err(error) = read.payload.discard() {
+                return Err((report, L1Error::Stream(StreamError::Io(error.to_string()))));
+            }
+            lsn += 1;
+        }
+        Ok(report)
     }
 
     /// Raw probe against the WORKER surface: exact method/path/body/headers,
@@ -1113,7 +1471,10 @@ mod tests {
             "db-1",
             CapabilityMethod::PutPayload,
             &MintRestrictions {
-                digest: Some("ab"), max_bytes: Some(7), tenant_id: Some("tenant-b"), ..Default::default()
+                digest: Some("ab"),
+                max_bytes: Some(7),
+                tenant_id: Some("tenant-b"),
+                ..Default::default()
             },
         );
         assert_eq!(spec["method"], "PUT_PAYLOAD");

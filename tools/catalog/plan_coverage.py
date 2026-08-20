@@ -27,8 +27,18 @@ Honesty rules, all deliberate:
     exclusion rows;
   - CUCUMBER / STATIC_CHECK / SCRIPT leaves have no leaf-level runner
     lanes producing archived evidence at all: UNCOVERED, stated as such;
-  - driver namespace rows (E-05) are NOT_IMPLEMENTED: uncovered by
-    definition until an official-driver harness exists;
+  - driver namespace rows (E-05) are NOT_IMPLEMENTED until an
+    official-driver harness has actually EXECUTED their suite. That harness
+    now exists for the Rust driver (tools/drivers/run_rust_behaviour.py), so
+    a driver row's status is read from the RESULT-side ledger
+    docs/evidence/G1/drivers/driver-row-status.json - never from the plan,
+    which is the immutable denominator and whose body feeds plan_root. The
+    ledger is not trusted either: this reporter RE-DERIVES the bundle seal
+    (every file the sidecar manifest names is re-hashed here, the root is
+    recomputed, and the COMPLETE marker and the verdict must both bind that
+    exact root) before it will honour any status other than
+    NOT_IMPLEMENTED. A row whose suite set was only partly executable is
+    PARTIAL and names the blocked suites' preconditions - never covered;
   - the terminal line always states the plan is NOT SATISFIED unless every
     row is covered-at-leaf-granularity or excluded - which today none are.
 
@@ -49,6 +59,14 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import common  # noqa: E402
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
+
+
+def common_rel(p):
+    try:
+        return pathlib.Path(p).resolve().relative_to(REPO).as_posix()
+    except ValueError:
+        return str(p)
+
 PLAN = REPO / "docs" / "evidence" / "G1" / "qualification-plan-v2.json"
 CATALOG = REPO / "docs" / "evidence" / "G1" / "upstream-test-catalog.json"
 DEFAULT_EVIDENCE = [
@@ -56,6 +74,39 @@ DEFAULT_EVIDENCE = [
     "docs/evidence/G1/u0-results-pass2-fixedenv",
     "docs/evidence/G3/u2s3-full-3",
 ]
+
+# Leaf-granularity evidence bundles (tools/qualification/run_leaf.py). NONE
+# are consumed unless named with --leaf: this reporter never discovers
+# evidence it was not pointed at.
+DEFAULT_LEAF_EVIDENCE = []
+
+
+def load_leaf_evidence(dirs, plan, catalog):
+    """(leaf_index, notes) for verified leaf bundles.
+
+    A leaf bundle records the outcome of every INDIVIDUAL libtest case of a
+    cargo target, which is the granularity this reporter's first honesty rule
+    says the evidence never had. The bundle is not trusted for saying so:
+    tools/qualification/verify_leaf.py re-hashes every archived log, reparses
+    every count, and reads every leaf outcome BACK OUT of its own log line
+    before a single row is counted. A bundle with any anomaly, a profile the
+    plan does not require, a toolchain the plan does not name, a DIRTY tree
+    or no COMPLETE seal contributes NOTHING and is reported with its reason.
+
+    The index is keyed (profile, leaf_case_id); each ref carries the fixture
+    set and toolchain it was produced under, so a row is only covered by
+    evidence from ITS OWN (fixture-set, toolchain) column.
+    """
+    if not dirs:
+        return {}, []
+    sys.path.insert(0, str(REPO / "tools" / "qualification"))
+    import leaf_coverage  # noqa: E402
+    catalog_leaves = {}
+    for lc in catalog["leaf_cases"]:
+        if lc["kind"] == "LIBTEST":
+            catalog_leaves.setdefault(lc["target_id"], {})[lc["display_name"]] = lc
+    targets = {t["target_id"]: t for t in catalog["targets"]}
+    return leaf_coverage.load_leaf_evidence(dirs, plan, catalog_leaves, targets)
 
 
 def load_evidence(dirs, plan_profiles):
@@ -124,6 +175,140 @@ def load_evidence(dirs, plan_profiles):
     return same_lane, other_lane, notes
 
 
+DRIVER_STATUS = (REPO / "docs" / "evidence" / "G1" / "drivers"
+                 / "driver-row-status.json")
+
+
+def _sha256_file(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def driver_row_status(plan):
+    """row_id -> (status, reason). NOT_IMPLEMENTED unless a sealed, verified
+    driver-lane bundle re-derives here.
+
+    The seal is recomputed from the BYTES: every file the bundle's sidecar
+    manifest names is re-hashed now, the root is recomputed over the same
+    documented `rel\0sha\n` algorithm the rest of the chain uses, and the
+    COMPLETE marker, the verdict and the ledger must all bind that same root.
+    A ledger that merely asserts a status buys nothing.
+    """
+    import hashlib
+    out = {}
+    for dr in plan["driver_rows"]:
+        out[dr["row_id"]] = ("NOT_IMPLEMENTED", dr.get("reason", ""))
+    if not DRIVER_STATUS.is_file():
+        return out
+    try:
+        ledger = json.loads(DRIVER_STATUS.read_text())
+    except json.JSONDecodeError as e:
+        return {k: ("NOT_IMPLEMENTED",
+                    f"driver row status ledger does not parse: {e}")
+                for k in out}
+    if ledger.get("schema") != "typedb-r2-driver-row-status-v1":
+        return {k: ("NOT_IMPLEMENTED",
+                    f"driver row status ledger has unexpected schema "
+                    f"{ledger.get('schema')!r}") for k in out}
+    for row_id, entry in (ledger.get("rows") or {}).items():
+        if row_id not in out:
+            continue
+        status = entry.get("status", "NOT_IMPLEMENTED")
+        if status == "NOT_IMPLEMENTED":
+            out[row_id] = ("NOT_IMPLEMENTED",
+                           entry.get("blocked_precondition")
+                           or "no precondition recorded")
+            continue
+        bdir = entry.get("evidence_bundle")
+        problem = None
+        if not bdir:
+            problem = "ledger claims execution but names no evidence bundle"
+        else:
+            b = REPO / bdir
+            man = b / "bundle-manifest.json"
+            if not man.is_file():
+                problem = f"{bdir}: no bundle-manifest.json"
+            else:
+                m = json.loads(man.read_text())
+                pairs, missing, changed = {}, [], []
+                for rel, sha in (m.get("files") or {}).items():
+                    f = (b / rel[len("<out>/"):]) if rel.startswith("<out>/") \
+                        else (REPO / rel)
+                    if not f.is_file():
+                        # bundles verify wherever they are checked out
+                        alt = b / pathlib.Path(rel).name
+                        f = alt if alt.is_file() else f
+                    if not f.is_file():
+                        missing.append(rel)
+                        continue
+                    got = _sha256_file(f)
+                    pairs[rel] = got
+                    if got != sha:
+                        changed.append(rel)
+                h = hashlib.sha256()
+                for rel in sorted(pairs):
+                    h.update(rel.encode() + b"\0" + pairs[rel].encode() + b"\n")
+                root = h.hexdigest()
+                marker = b / "COMPLETE"
+                verdict = b / "verdict.json"
+                if missing:
+                    problem = (f"{bdir}: {len(missing)} file(s) the manifest "
+                               f"names are absent, e.g. {missing[:2]}")
+                elif changed:
+                    problem = (f"{bdir}: {len(changed)} consumed file(s) no "
+                               f"longer hash to the manifest, e.g. {changed[:2]}")
+                elif root != m.get("bundle_root"):
+                    problem = (f"{bdir}: recomputed root {root} != manifest "
+                               f"root {m.get('bundle_root')}")
+                elif not marker.is_file():
+                    problem = f"{bdir}: no COMPLETE marker - never sealed green"
+                elif marker.read_text().strip() != f"COMPLETE {root}":
+                    problem = (f"{bdir}: COMPLETE does not bind the recomputed "
+                               f"root {root}")
+                elif not verdict.is_file():
+                    problem = f"{bdir}: no verdict.json"
+                else:
+                    v = json.loads(verdict.read_text())
+                    if v.get("policy_verdict") != "GREEN":
+                        problem = (f"{bdir}: verdict is "
+                                   f"{v.get('policy_verdict')!r}")
+                    elif v.get("bundle_root") != root:
+                        problem = (f"{bdir}: verdict binds root "
+                                   f"{v.get('bundle_root')}, not {root}")
+                    elif entry.get("bundle_root") != root:
+                        problem = (f"{bdir}: ledger records root "
+                                   f"{entry.get('bundle_root')}, not {root}")
+        if problem:
+            out[row_id] = ("NOT_IMPLEMENTED",
+                           f"driver row status claimed {status} but the seal "
+                           f"does not re-derive: {problem}")
+            continue
+        klass = entry.get("coverage_class")
+        if klass == "COVERED":
+            out[row_id] = ("COVERED",
+                           f"official driver suite executed at leaf "
+                           f"granularity; {entry.get('plan_leaves_with_outcome')} "
+                           f"plan leaves carry a per-scenario outcome "
+                           f"({bdir})")
+        else:
+            blocked = dict(entry.get("suites_blocked") or {})
+            for c in (entry.get("caveats") or []):
+                blocked[f"caveat:{c.get('id')}"] = c.get("detail")
+            out[row_id] = ("PARTIAL",
+                           f"official driver suite executed at leaf "
+                           f"granularity for "
+                           f"{entry.get('suites_executed')}/"
+                           f"{entry.get('suites_selected')} suites "
+                           f"({entry.get('plan_leaves_with_outcome')} plan "
+                           f"leaves with a per-scenario outcome); blocked: "
+                           + "; ".join(f"{k}: {v}" for k, v in blocked.items()))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--plan", type=pathlib.Path, default=PLAN)
@@ -131,6 +316,10 @@ def main():
     ap.add_argument("--evidence", action="append", default=None,
                     help="results dir (repeatable); default: the three "
                          "committed bundles")
+    ap.add_argument("--leaf", action="append", default=None,
+                    help="leaf-granularity evidence bundle dir (repeatable); "
+                         "each is re-verified from its own bytes before any "
+                         "row of it is counted")
     ap.add_argument("--out", type=pathlib.Path, default=None,
                     help="also write the JSON report here")
     args = ap.parse_args()
@@ -142,6 +331,8 @@ def main():
 
     same_lane, other_lane, notes = load_evidence(
         args.evidence or DEFAULT_EVIDENCE, plan_profiles)
+    leaf_index, leaf_notes = load_leaf_evidence(
+        args.leaf or DEFAULT_LEAF_EVIDENCE, plan, catalog)
 
     def runner_rid(target_id):
         # the one shared join (common.runner_row_id) so this reporter's
@@ -150,13 +341,29 @@ def main():
 
     leaves = plan["leaves"]
     counts = {}   # (family, status) -> n
+    outcome_counts = {}  # (family, leaf outcome) -> n, for covered rows
     uncovered_reasons = {}
     partial_examples = []
+    covered_examples = []
     for leaf_id, profile_id, _fs, _tc in plan["rows"]:
         leaf = leaves[leaf_id]
         kind = leaf["kind"]
         rid = runner_rid(leaf["target_id"])
-        if rid is None:
+        # leaf-granularity evidence, for THIS row's own fixture set and
+        # toolchain, is the only thing that can make a row COVERED
+        leaf_refs = [r for r in leaf_index.get((profile_id, leaf_id), [])
+                     if r["fixture_set_id"] == _fs and r["toolchain_id"] == _tc]
+        if leaf_refs:
+            family = ("cargo-" + kind.lower()) if rid else \
+                {"CUCUMBER": "cucumber", "STATIC_CHECK": "static",
+                 "SCRIPT": "script"}.get(kind, kind.lower())
+            status, reason = "COVERED", None
+            for o in {r["outcome"] for r in leaf_refs}:
+                outcome_counts[(family, o)] = outcome_counts.get((family, o), 0) + 1
+            if len(covered_examples) < 3:
+                covered_examples.append({"row": [leaf_id, profile_id],
+                                         "evidence": leaf_refs[:1]})
+        elif rid is None:
             family = {"CUCUMBER": "cucumber", "STATIC_CHECK": "static",
                       "SCRIPT": "script"}.get(kind, kind.lower())
             status = "UNCOVERED"
@@ -192,12 +399,23 @@ def main():
             key = (family, reason)
             uncovered_reasons[key] = uncovered_reasons.get(key, 0) + 1
 
+    driver_status = driver_row_status(plan)
+    driver_rows_report = []
     for dr in plan["driver_rows"]:
-        counts[("driver", "NOT_IMPLEMENTED")] = \
-            counts.get(("driver", "NOT_IMPLEMENTED"), 0) + 1
+        status, reason = driver_status[dr["row_id"]]
+        counts[("driver", status)] = counts.get(("driver", status), 0) + 1
+        driver_rows_report.append({"row_id": dr["row_id"], "status": status,
+                                   "reason": reason})
+        if status != "COVERED":
+            key = ("driver", reason)
+            uncovered_reasons[key] = uncovered_reasons.get(key, 0) + 1
 
     total_rows = len(plan["rows"]) + len(plan["driver_rows"])
-    covered = 0  # by construction: leaf-granularity evidence does not exist
+    # cargo/cucumber/static/script rows: covered is 0 by construction - no
+    # leaf-granularity evidence exists for them. Driver rows are the only
+    # rows that can be covered today, and only through a bundle whose seal
+    # re-derived above.
+    covered = sum(n for (f, s), n in counts.items() if s == "COVERED")
     partial = sum(n for (f, s), n in counts.items() if s == "PARTIAL")
     uncovered = sum(n for (f, s), n in counts.items()
                     if s in ("UNCOVERED", "NOT_IMPLEMENTED"))
@@ -221,11 +439,28 @@ def main():
             {"family": f, "reason": r, "rows": n}
             for (f, r), n in sorted(uncovered_reasons.items())],
         "partial_examples": partial_examples,
+        "covered_examples": covered_examples,
+        "covered_row_outcomes": {
+            f: {o: n for (ff, o), n in sorted(outcome_counts.items()) if ff == f}
+            for f in sorted({ff for ff, _ in outcome_counts})},
+        "covered_meaning": (
+            "COVERED = a re-verified leaf bundle carries an OUTCOME for exactly "
+            "this (leaf, profile, fixture-set, toolchain) row. It does NOT mean "
+            "the leaf passed: see covered_row_outcomes for the split. Coverage "
+            "is denominator progress, never a pass."),
         "evidence_bundles": notes,
+        "leaf_evidence_bundles": leaf_notes,
+        "driver_rows_detail": driver_rows_report,
+        "driver_row_status_ledger": common_rel(DRIVER_STATUS),
         "partial_meaning": (
-            "PARTIAL = the leaf's cargo target produced an aggregate libtest "
-            "row in the required lane; the individual leaf outcome was never "
-            "recorded. PARTIAL rows are NOT covered."),
+            "PARTIAL (cargo families) = the leaf's cargo target produced an "
+            "aggregate libtest row in the required lane; the individual leaf "
+            "outcome was never recorded. PARTIAL (driver family) = the "
+            "official driver suite really executed at leaf granularity and "
+            "its seal re-derived here, but at least one declared suite of "
+            "that driver's official corpus could not run in this environment "
+            "and names its exact external precondition. PARTIAL rows are NOT "
+            "covered in either family."),
         "plan_satisfied": False,
         "statement": (
             f"THE PLAN IS NOT SATISFIED. {covered} of {total_rows} denominator "
@@ -233,7 +468,10 @@ def main():
             f"(target-granularity aggregate evidence only); "
             f"{uncovered} are uncovered (including "
             f"{counts.get(('driver', 'NOT_IMPLEMENTED'), 0)} NOT_IMPLEMENTED "
-            f"official-driver rows required by v17-A17.5). The plan is the "
+            f"official-driver rows required by v17-A17.5; "
+            f"{counts.get(('driver', 'COVERED'), 0)} driver row(s) are covered "
+            f"and {counts.get(('driver', 'PARTIAL'), 0)} partial on executed, "
+            f"independently re-derived leaf evidence). The plan is the "
             f"denominator of qualification, not a pass, and no claim of "
             f"qualification may cite this report as green."),
     }

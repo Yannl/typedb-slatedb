@@ -233,6 +233,26 @@ else
   failures=$((failures + 1))
 fi
 
+# --- control 7d: R6-CF-01/02/03/04 live-authority mutants ------------------
+# The round-6 audit released 64 barrier-synchronised processes against ONE
+# signed run id and 41 acquired it; it also showed the signed cost ceiling
+# was never priced, probe/cleanup carried two independent byte allowances,
+# a 900s credential could be minted with 60s of approval left, and the
+# displayed key fingerprint was attacker-controlled. These suites hold the
+# repairs: an O_EXCL claim the kernel arbitrates, ONE shared budget ledger
+# with enforced integer-micro-cent cost, deadlines clamped to the signed
+# validity, and a fingerprint derived from the trusted key.
+out="$EVIDENCE_ROOT/control7d.log"
+controls=$((controls + 1))
+if "${NODE[@]}" --test budget-enforcement.test.ts >"$out" 2>&1 \
+   && "${NODE[@]}" --test claim-concurrency.test.ts >>"$out" 2>&1; then
+  echo "control 7d ok: live-authority mutants (atomic claim under process race, global budget+cost, TTL clamp)"
+else
+  echo "CONTROL FAILED: live-authority mutants failed"
+  sed 's/^/    | /' "$out"
+  failures=$((failures + 1))
+fi
+
 # --- control 8: P-06 preflight CLI ----------------------------------------
 out="$EVIDENCE_ROOT/control8.log"
 controls=$((controls + 1))

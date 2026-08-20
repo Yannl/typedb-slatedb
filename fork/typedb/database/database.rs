@@ -588,12 +588,11 @@ impl Database<WALClient> {
         // function is a conformance fixture that must never be wired into a
         // production path, and cuts are controller-owned.
         let policy = BackgroundTaskPolicy::for_backend(context.spec());
-        let catchup_outcome = run_startup_catchup_checkpoint(
-            &policy,
-            checkpoint_sequence_number < wal_last_sequence_number,
-            || database.checkpoint(),
-        )
-        .map_err(|err| CheckpointCreate { name: name.to_string(), source: err })?;
+        let catchup_outcome =
+            run_startup_catchup_checkpoint(&policy, checkpoint_sequence_number < wal_last_sequence_number, || {
+                database.checkpoint()
+            })
+            .map_err(|err| CheckpointCreate { name: name.to_string(), source: err })?;
         if catchup_outcome == StartupCatchup::DeferredToController {
             // Correctness-safe: recovery has already replayed the WAL into
             // the live keyspaces, so skipping the cut loses no durability —
@@ -1316,10 +1315,7 @@ mod backend_seam_ordering_tests {
             Err(std::io::Error::other("injected marker-write failure"))
         });
         assert!(failed.is_err(), "the marker failure must surface as the typed open error");
-        assert!(
-            !path.exists(),
-            "R4-STOR-02: a pre-WAL marker failure must remove the directory this attempt created",
-        );
+        assert!(!path.exists(), "R4-STOR-02: a pre-WAL marker failure must remove the directory this attempt created",);
     }
 
     #[test]

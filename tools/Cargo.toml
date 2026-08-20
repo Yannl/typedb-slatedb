@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "../xtask",
     "protocol-models",
     "remote-wal-spike",
     "storage-diff-spike",

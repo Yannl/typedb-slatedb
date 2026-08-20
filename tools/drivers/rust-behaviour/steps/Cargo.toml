@@ -1,0 +1,25 @@
+# Projection of Bazel target //rust/tests/behaviour/steps:steps.
+# deps mirror rust/tests/behaviour/steps/BUILD (which depends on the ASYNC
+# //rust:typedb_driver, not the sync library).
+[package]
+name = "steps"
+version = "0.0.0"
+edition = "2024"
+
+[lib]
+name = "steps"
+path = "../../../../sources/typedb-driver/rust/tests/behaviour/steps/lib.rs"
+
+[dependencies]
+tokio = { workspace = true }
+smol = { workspace = true }
+regex = { workspace = true }
+cucumber = { workspace = true }
+async-std = { workspace = true }
+macro_rules_attribute = { workspace = true }
+typedb-driver = { workspace = true }
+futures = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+itertools = { workspace = true }
+serde_json = { workspace = true }

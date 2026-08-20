@@ -1,0 +1,15 @@
+
+running 9 tests
+[2m2026-08-20T10:00:46.998280Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+test traverse_isa_bounded_thing ... ok
+test traverse_isa_reverse_bounded_type_exact ... ok
+test traverse_isa_reverse_fixed_type_exact ... ok
+test traverse_isa_reverse_bounded_type_subtype ... ok
+test traverse_isa_reverse_fixed_type_subtype ... ok
+test traverse_isa_reverse_unbounded_sorted_thing ... ok
+test traverse_isa_unbounded_sorted_thing ... ok
+test traverse_isa_reverse_unbounded_sorted_type ... ok
+test traverse_isa_unbounded_sorted_type ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+

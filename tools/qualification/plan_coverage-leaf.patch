@@ -1,0 +1,111 @@
+--- a/tools/catalog/plan_coverage.py
++++ b/tools/catalog/plan_coverage.py
+@@ -74,6 +74,39 @@
+     "docs/evidence/G1/u0-results-pass2-fixedenv",
+     "docs/evidence/G3/u2s3-full-3",
+ ]
++
++# Leaf-granularity evidence bundles (tools/qualification/run_leaf.py). NONE
++# are consumed unless named with --leaf: this reporter never discovers
++# evidence it was not pointed at.
++DEFAULT_LEAF_EVIDENCE = []
++
++
++def load_leaf_evidence(dirs, plan, catalog):
++    """(leaf_index, notes) for verified leaf bundles.
++
++    A leaf bundle records the outcome of every INDIVIDUAL libtest case of a
++    cargo target, which is the granularity this reporter's first honesty rule
++    says the evidence never had. The bundle is not trusted for saying so:
++    tools/qualification/verify_leaf.py re-hashes every archived log, reparses
++    every count, and reads every leaf outcome BACK OUT of its own log line
++    before a single row is counted. A bundle with any anomaly, a profile the
++    plan does not require, a toolchain the plan does not name, a DIRTY tree
++    or no COMPLETE seal contributes NOTHING and is reported with its reason.
++
++    The index is keyed (profile, leaf_case_id); each ref carries the fixture
++    set and toolchain it was produced under, so a row is only covered by
++    evidence from ITS OWN (fixture-set, toolchain) column.
++    """
++    if not dirs:
++        return {}, []
++    sys.path.insert(0, str(REPO / "tools" / "qualification"))
++    import leaf_coverage  # noqa: E402
++    catalog_leaves = {}
++    for lc in catalog["leaf_cases"]:
++        if lc["kind"] == "LIBTEST":
++            catalog_leaves.setdefault(lc["target_id"], {})[lc["display_name"]] = lc
++    targets = {t["target_id"]: t for t in catalog["targets"]}
++    return leaf_coverage.load_leaf_evidence(dirs, plan, catalog_leaves, targets)
+ 
+ 
+ def load_evidence(dirs, plan_profiles):
+@@ -283,6 +316,10 @@
+     ap.add_argument("--evidence", action="append", default=None,
+                     help="results dir (repeatable); default: the three "
+                          "committed bundles")
++    ap.add_argument("--leaf", action="append", default=None,
++                    help="leaf-granularity evidence bundle dir (repeatable); "
++                         "each is re-verified from its own bytes before any "
++                         "row of it is counted")
+     ap.add_argument("--out", type=pathlib.Path, default=None,
+                     help="also write the JSON report here")
+     args = ap.parse_args()
+@@ -294,6 +331,8 @@
+ 
+     same_lane, other_lane, notes = load_evidence(
+         args.evidence or DEFAULT_EVIDENCE, plan_profiles)
++    leaf_index, leaf_notes = load_leaf_evidence(
++        args.leaf or DEFAULT_LEAF_EVIDENCE, plan, catalog)
+ 
+     def runner_rid(target_id):
+         # the one shared join (common.runner_row_id) so this reporter's
+@@ -302,13 +341,29 @@
+ 
+     leaves = plan["leaves"]
+     counts = {}   # (family, status) -> n
++    outcome_counts = {}  # (family, leaf outcome) -> n, for covered rows
+     uncovered_reasons = {}
+     partial_examples = []
++    covered_examples = []
+     for leaf_id, profile_id, _fs, _tc in plan["rows"]:
+         leaf = leaves[leaf_id]
+         kind = leaf["kind"]
+         rid = runner_rid(leaf["target_id"])
+-        if rid is None:
++        # leaf-granularity evidence, for THIS row's own fixture set and
++        # toolchain, is the only thing that can make a row COVERED
++        leaf_refs = [r for r in leaf_index.get((profile_id, leaf_id), [])
++                     if r["fixture_set_id"] == _fs and r["toolchain_id"] == _tc]
++        if leaf_refs:
++            family = ("cargo-" + kind.lower()) if rid else \
++                {"CUCUMBER": "cucumber", "STATIC_CHECK": "static",
++                 "SCRIPT": "script"}.get(kind, kind.lower())
++            status, reason = "COVERED", None
++            for o in {r["outcome"] for r in leaf_refs}:
++                outcome_counts[(family, o)] = outcome_counts.get((family, o), 0) + 1
++            if len(covered_examples) < 3:
++                covered_examples.append({"row": [leaf_id, profile_id],
++                                         "evidence": leaf_refs[:1]})
++        elif rid is None:
+             family = {"CUCUMBER": "cucumber", "STATIC_CHECK": "static",
+                       "SCRIPT": "script"}.get(kind, kind.lower())
+             status = "UNCOVERED"
+@@ -384,7 +439,17 @@
+             {"family": f, "reason": r, "rows": n}
+             for (f, r), n in sorted(uncovered_reasons.items())],
+         "partial_examples": partial_examples,
++        "covered_examples": covered_examples,
++        "covered_row_outcomes": {
++            f: {o: n for (ff, o), n in sorted(outcome_counts.items()) if ff == f}
++            for f in sorted({ff for ff, _ in outcome_counts})},
++        "covered_meaning": (
++            "COVERED = a re-verified leaf bundle carries an OUTCOME for exactly "
++            "this (leaf, profile, fixture-set, toolchain) row. It does NOT mean "
++            "the leaf passed: see covered_row_outcomes for the split. Coverage "
++            "is denominator progress, never a pass."),
+         "evidence_bundles": notes,
++        "leaf_evidence_bundles": leaf_notes,
+         "driver_rows_detail": driver_rows_report,
+         "driver_row_status_ledger": common_rel(DRIVER_STATUS),
+         "partial_meaning": (

@@ -1,0 +1,17 @@
+=== TYPEDB_STORAGE_PROFILE=U0  (target/debug/deps/test_storage-bd980cc020e2a571 create_delete --exact) ===
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.01s
+=== TYPEDB_STORAGE_PROFILE=U1  (target/debug/deps/test_storage-bd980cc020e2a571 create_delete --exact) ===
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+=== TYPEDB_STORAGE_PROFILE=U2  (target/debug/deps/test_storage-bd980cc020e2a571 create_delete --exact) ===
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+=== TYPEDB_STORAGE_PROFILE=U2S3  (target/debug/deps/test_storage-bd980cc020e2a571 create_delete --exact) ===
+thread 'create_delete' (23474) panicked at storage/tests/test_storage.rs:32:5:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.08s
+=== TYPEDB_STORAGE_PROFILE=U3  (target/debug/deps/test_storage-bd980cc020e2a571 create_delete --exact) ===
+thread 'create_delete' (23480) panicked at /home/user/typedb-slatedb/sources/typedb/storage/tests/test_utils_storage/lib.rs:51:10:
+factory failed to create WAL: ProfileUnavailable { profile: "U3" }
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.07s
+=== TYPEDB_STORAGE_PROFILE=U4  (target/debug/deps/test_storage-bd980cc020e2a571 create_delete --exact) ===
+thread 'create_delete' (23485) panicked at /home/user/typedb-slatedb/sources/typedb/storage/tests/test_utils_storage/lib.rs:51:10:
+factory failed to create WAL: ProfileUnavailable { profile: "U4" }
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.08s

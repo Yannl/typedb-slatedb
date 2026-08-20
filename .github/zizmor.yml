@@ -1,0 +1,71 @@
+# zizmor configuration - GitHub Actions workflow security audit (spec §19).
+#
+# The gate is `.github/workflows/gates.yml` -> job `workflow-security-audit`
+# (and its tier-2 twin in nightly.yml). It runs zizmor at the DEFAULT
+# `regular` persona over `.github/workflows/`, and the job fails on any
+# finding. There is no `continue-on-error:` and no severity floor: a finding
+# is either fixed or ignored HERE, by exact line, with the reason written
+# down. That is the same posture the npm advisory policy already uses.
+#
+# What was FIXED rather than ignored when this audit was introduced
+# (2026-08-20, zizmor 1.29.0):
+# IMPORTANT, MEASURED AFTER THE FACT: this gate runs at the `regular`
+# persona, and `artipacked` DOES NOT FIRE THERE. Flipping one
+# `persist-credentials` to true yields 0 findings at `regular`, 0 at
+# `pedantic`, and only fires at `auditor`. So the two artipacked fixes below
+# are NOT protected by this file. That invariant is enforced separately and
+# exactly by `tools/ci/check_workflow_checkouts.py`, which the same job runs.
+# Do not delete that step believing zizmor covers it.
+#
+#   * artipacked x2 - nightly.yml's bazel-test-graph-parity and
+#     leaf-granularity-coverage checkouts did not set
+#     `persist-credentials: false`; they do now.
+#   * template-injection x2 - release-qualification.yml interpolated
+#     `needs.release-identity.outputs.*` directly into a `run:` block; the
+#     values now arrive through `env:`.
+
+rules:
+  cache-poisoning:
+    ignore:
+      # release-qualification.yml, the `actions/setup-node` step of the
+      # `supply-chain-attestation` job.
+      #
+      # WHY THIS IS NOT A REAL FINDING: the audit fires because this
+      # workflow publishes release attestations and `setup-node` is capable
+      # of populating a restorable cache. This step sets no `cache:` input,
+      # so setup-node neither saves nor restores anything, and every
+      # dependency in that job is installed by `npm ci` from a committed
+      # lockfile whose registry provenance is separately enforced by
+      # `tools/ci/check_npm_advisories.py --lockfile`. There is no cache for
+      # a poisoned entry to live in.
+      #
+      # THE IGNORES ARE SCOPED TO ONE LINE EACH ON PURPOSE. If a line moves,
+      # the audit re-fires and the job goes red - that is the intended
+      # re-review trigger, not a defect. Re-verify that the step still sets
+      # no `cache:` input and then update the line number. Do NOT widen this
+      # to the whole file, and do NOT add a `--min-severity` or
+      # `--min-confidence` floor to the gate: either would silently swallow
+      # a future real finding rather than making this one visible.
+      - release-qualification.yml:215
+      # release-qualification.yml, the `actions/setup-node` step of the
+      # `quality-full-hermetic` job. Identical situation and identical
+      # reason: no `cache:` input, `npm ci` from committed lockfiles, no
+      # cache for a poisoned entry to live in. It is listed separately
+      # rather than by widening the entry above, so that each suppressed
+      # occurrence is individually accounted for.
+      - release-qualification.yml:305
+
+      # OBSERVED COST OF LINE-SCOPING, recorded rather than discovered later:
+      # these numbers drifted twice while this change was being written, once
+      # per edit above them, and each time the audit went red until they were
+      # re-derived. That is the trade being made deliberately - a stale line
+      # number FAILS, it never silently suppresses something else. Re-derive
+      # with:
+      #
+      #     grep -n 'setup-node@' .github/workflows/release-qualification.yml
+      #
+      # and confirm each hit is still a step with no `cache:` input before
+      # updating. If the churn ever becomes the reason someone reaches for a
+      # severity floor or a whole-file ignore, widen to file scope with that
+      # argument written down instead - but never to a floor, which would
+      # hide unrelated findings too.

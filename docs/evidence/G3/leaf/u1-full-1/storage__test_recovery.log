@@ -1,0 +1,25 @@
+
+running 18 tests
+test a_corrupt_cut_fails_in_scratch_and_leaves_the_predecessor_byte_identical ... ok
+test a_checkpoint_bound_to_a_different_backend_identity_refuses_restore ... ok
+[2m2026-08-20T10:01:25.003564Z[0m [35mTRACE[0m [2mstorage::recovery::checkpoint[0m[2m:[0m Scratch keyspaces opened, replaying the fixed WAL head into scratch
+test a_hash_consistent_but_unopenable_cut_fails_in_scratch_not_on_live ... ok
+[2m2026-08-20T10:01:25.018347Z[0m [35mTRACE[0m [2mstorage::recovery::checkpoint[0m[2m:[0m scratch materialisation verified post-replay (root e5770116d71252d86113a8c8f5d6d5a4c96e782de3b81d3e6107af74ac71a89a), activating
+test a_checkpoint_bound_to_the_same_backend_identity_restores ... ok
+test ahead_of_durability_checkpoint_falls_back_to_full_wal_replay ... ok
+test no_wal_and_checkpoint_illegal ... ok
+test no_wal_and_no_checkpoint_and_keyspaces_illegal ... ok
+test no_wal_and_no_checkpoint_and_no_keyspaces_illegal ... ok
+test a_legacy_cut_without_identity_refuses_recovery_until_explicitly_imported ... ok
+test newest_unverifiable_checkpoint_falls_back_to_the_older_valid_one ... ok
+test restart_after_crash_after_activation_converges_with_successor_active ... ok
+test restart_after_crash_between_activation_renames_converges ... ok
+test restart_after_crash_before_activation_converges_with_predecessor_intact ... ok
+test restore_leaves_no_scratch_residue_on_success ... ok
+test wal_missing_records_entire_replay_fails ... ok
+test wal_and_no_checkpoint_ok ... ok
+test wal_missing_records_for_checkpoint_replay_fails ... ok
+test wal_and_checkpoint_ok ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+

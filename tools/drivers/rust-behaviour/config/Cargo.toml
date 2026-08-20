@@ -1,0 +1,14 @@
+# Projection of Bazel target //rust/tests/behaviour/config:config.
+# Crate root is the locked upstream file; nothing is copied.
+[package]
+name = "config"
+version = "0.0.0"
+edition = "2024"
+
+[features]
+bazel = []
+cluster = []
+
+[lib]
+name = "config"
+path = "../../../../sources/typedb-driver/rust/tests/behaviour/config/lib.rs"

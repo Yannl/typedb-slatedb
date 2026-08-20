@@ -1,0 +1,31 @@
+# Repository-wide git attributes.
+#
+# R6-PORT-01 — build-generated immutable release identity.
+# RELEASE-IDENTITY.json carries `$Format:` placeholders that `git archive`
+# expands at export time. In a git CHECKOUT the placeholders stay literal and
+# tools/release/release_identity.py falls back to `git rev-parse`; in a
+# `git archive` materialisation (no `.git`) the expanded values are the only
+# source identity that exists, which is exactly the posture that made two
+# probe controls fail in the round-6 audit.
+RELEASE-IDENTITY.json export-subst
+
+# R6-HYGIENE-01 — patch files are verbatim material, not source we format.
+# A unified diff represents an empty context/added line as a single space, so
+# `git diff --check` reports "trailing whitespace" for a patch that is byte-
+# correct. Stripping that space would CORRUPT the patch. Disabling git's
+# whitespace checks for the patch series is the deterministic-tooling fix the
+# audit asks for; the patch bodies themselves stay untouched and keep being
+# verified by tools/fork/materialize_slatedb.py --check (post-patch tree
+# digest), which is a far stronger check than whitespace linting.
+fork/slatedb/patches/*.patch -whitespace
+fork/typedb/**/*.patch -whitespace
+
+# R6-HYGIENE-01 — captured evidence is verbatim bytes, not source we format.
+# Raw run logs under docs/evidence/ are the RECORD of what a tool printed; a
+# server that emitted a trailing space emitted a trailing space. Editing it to
+# satisfy a whitespace linter would falsify evidence whose digest is bound into
+# a sealed bundle. Their integrity gate is the bundle seal + the independent
+# verifiers (tools/evidence/verify_all.py, tools/s3-cert-corpus/verify-bundle.py),
+# which re-derive from the raw bytes - a far stronger check than whitespace.
+docs/evidence/**/*.log -whitespace
+docs/evidence/**/*.jsonl -whitespace

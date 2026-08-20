@@ -23,8 +23,9 @@
  * ObjectStore trait exposes none — capability by construction).
  */
 
-use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+
+use sha2::{Digest, Sha256};
 
 pub type Bytes = Vec<u8>;
 
@@ -374,8 +375,16 @@ impl RemoteWalClient {
         }
         // step 2: finalize (late atomic allocation)
         match controller.finalize(
-            self.session, operation_id, sequenced, status_key, verdict,
-            &key, digest, payload.len() as u64, request_digest, store,
+            self.session,
+            operation_id,
+            sequenced,
+            status_key,
+            verdict,
+            &key,
+            digest,
+            payload.len() as u64,
+            request_digest,
+            store,
         ) {
             Ok(d) => {
                 if kill_after == Some(2) {
@@ -396,11 +405,7 @@ impl RemoteWalClient {
 /// Fixed iterator over finalized history (§9.7).
 pub fn iterate_fixed(controller: &Controller, from_sequence: u64) -> Vec<Descriptor> {
     let head = controller.tail.len();
-    controller.tail[..head]
-        .iter()
-        .filter(|d| d.type_sequence >= from_sequence)
-        .cloned()
-        .collect()
+    controller.tail[..head].iter().filter(|d| d.type_sequence >= from_sequence).cloned().collect()
 }
 
 #[cfg(test)]
@@ -421,9 +426,7 @@ mod tests {
                 for op in 0..4usize {
                     let payload = format!("payload-{op}");
                     let kill = if op == kill_op { Some(kill_step) } else { None };
-                    let r = client
-                        .append(&mut c, &mut s, payload.as_bytes(), true, None, None, kill)
-                        .unwrap();
+                    let r = client.append(&mut c, &mut s, payload.as_bytes(), true, None, None, kill).unwrap();
                     match r {
                         Some(_) => finalized += 1,
                         None => {
@@ -477,10 +480,7 @@ mod tests {
         let mut c = Controller::new();
         let mut s = FaultyStore::new(vec![Fault::FailNotStored]);
         let mut client = RemoteWalClient::open(&mut c);
-        assert_eq!(
-            client.append(&mut c, &mut s, b"pay", true, None, None, None),
-            Err(WriteError::UploadFailed)
-        );
+        assert_eq!(client.append(&mut c, &mut s, b"pay", true, None, None, None), Err(WriteError::UploadFailed));
         assert_eq!(c.tail.len(), 0);
         assert_eq!(c.next_lsn_probe(), 0);
     }
@@ -498,13 +498,9 @@ mod tests {
         let mut s = MemStore::default();
         let mut client = RemoteWalClient::open(&mut c);
         client.append(&mut c, &mut s, b"commit-1", true, None, None, None).unwrap().unwrap();
-        let st1 = client
-            .append(&mut c, &mut s, b"status-1", false, Some((1, 1)), Some(true), None)
-            .unwrap().unwrap();
+        let st1 = client.append(&mut c, &mut s, b"status-1", false, Some((1, 1)), Some(true), None).unwrap().unwrap();
         // duplicate status (repair retry, same verdict, different payload op):
-        let st2 = client
-            .append(&mut c, &mut s, b"status-1", false, Some((1, 1)), Some(true), None)
-            .unwrap().unwrap();
+        let st2 = client.append(&mut c, &mut s, b"status-1", false, Some((1, 1)), Some(true), None).unwrap().unwrap();
         assert_eq!(st1.append_lsn, st2.append_lsn, "no second physical record");
         // conflicting verdict: corruption
         assert_eq!(
@@ -562,10 +558,7 @@ mod tests {
         let mut old = RemoteWalClient::open(&mut c);
         old.append(&mut c, &mut s, b"before", true, None, None, None).unwrap().unwrap();
         let mut new = RemoteWalClient::open(&mut c); // restart fences old
-        assert_eq!(
-            old.append(&mut c, &mut s, b"stale", true, None, None, None),
-            Err(WriteError::Fenced)
-        );
+        assert_eq!(old.append(&mut c, &mut s, b"stale", true, None, None, None), Err(WriteError::Fenced));
         assert_eq!(c.tail.len(), 1, "durable history intact");
         new.append(&mut c, &mut s, b"after", true, None, None, None).unwrap().unwrap();
         assert_eq!(c.tail.len(), 2);
@@ -582,4 +575,5 @@ mod tests {
     }
 }
 pub mod l1_client;
+pub mod l1_stream;
 pub mod l1_suite;

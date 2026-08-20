@@ -1,0 +1,10 @@
+
+running 5 tests
+test traverse_has_bounded_sorted_from_chain_intersect ... ok
+test traverse_has_unbounded_sorted_from_intersect ... ok
+test traverse_has_reverse_unbounded_sorted_from ... ok
+test traverse_has_unbounded_sorted_from ... ok
+test traverse_has_unbounded_sorted_to_merged ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+

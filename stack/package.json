@@ -15,5 +15,14 @@
     "@effect/platform-node": "4.0.0-rc.110",
     "alchemy": "2.0.0-beta.72",
     "effect": "4.0.0-rc.110"
+  },
+  "overridesRationale": "R6-SUPPLY-01. These pins remediate 14 npm advisories (9 high, 5 moderate) that had no fix at the direct dependency: alchemy@2.0.0-beta.72 IS the newest published line (dist-tags latest and next), so `npm audit fix --force` would have DOWNGRADED to the four-months-older 2.0.0-pipeline-v2-test. Overriding the transitive packages instead took the tree from 14 advisories to 0 with a byte-identical `node cli.mjs graph`. @puppeteer/browsers 3.x additionally drops extract-zip, the one package with no fixed version at any release. Full rationale, review record and the gate that enforces it: tools/ci/dependency-advisory-policy.json + tools/ci/check_npm_advisories.py.",
+  "overrides": {
+    "@hono/node-server": "1.19.17",
+    "@puppeteer/browsers": "3.2.1",
+    "hono": "4.13.3",
+    "lodash": "4.18.1",
+    "sharp": "0.35.3",
+    "valibot": "1.4.2"
   }
 }

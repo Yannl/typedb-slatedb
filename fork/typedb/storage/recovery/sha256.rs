@@ -29,6 +29,7 @@ const K: [u32; 64] = [
 const H0: [u32; 8] = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
 
 /// Incremental SHA-256 state. `update` any number of times, then `finalize`.
+#[derive(Clone)]
 pub(crate) struct Sha256 {
     state: [u32; 8],
     buffer: [u8; 64],
@@ -130,7 +131,9 @@ impl Sha256 {
 
 /// One-shot convenience over the streaming state (test-vector pinning only;
 /// production callers stream through [`Sha256`]).
-#[cfg(test)]
+/// One-shot digest of an in-memory slice (the incremental API above is what
+/// multi-gigabyte inputs must use). R6-STOR-01 uses it to bind a probed
+/// record's value into the post-replay witness.
 pub(crate) fn digest(data: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(data);
@@ -157,19 +160,13 @@ mod tests {
             "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
         );
         // exactly one block of 'a' padding boundary (64 bytes)
-        assert_eq!(
-            hex(&digest(&[b'a'; 64])),
-            "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb"
-        );
+        assert_eq!(hex(&digest(&[b'a'; 64])), "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb");
         // the classic million-'a' vector, exercised through many streamed updates
         let mut hasher = Sha256::new();
         for _ in 0..1_000_000 / 8 {
             hasher.update(b"aaaaaaaa");
         }
-        assert_eq!(
-            hex(&hasher.finalize()),
-            "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"
-        );
+        assert_eq!(hex(&hasher.finalize()), "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
     }
 
     #[test]

@@ -1,0 +1,50 @@
+{
+  "bazel_test_targets_upstream": 228,
+  "by_kind": {
+    "_release_validate_deps_script_test": 1,
+    "checkstyle_test": 78,
+    "kt_jvm_test": 1,
+    "rustfmt_test": 63,
+    "rust_test": 85
+  },
+  "catalogue_only_labels": [
+    "//tool/test:simulate-crash"
+  ],
+  "bazel_only_labels_non_rust_test": [
+    "//:Release_validate_deps_gen",
+    "//:release-validate-deps"
+  ],
+  "bazel_only_rust_test_count": 85,
+  "rust_test_total": 85,
+  "rust_test_matched_to_cargo": 85,
+  "rust_test_unmatched": [],
+  "crosswalk_is_bijective": true,
+  "cargo_only_targets": [
+    "answer:lib:answer",
+    "bytes:lib:bytes",
+    "concept:test:test_utils_concept",
+    "durability_test_common:lib:durability_test_common",
+    "encoding:test:test_utils_encoding",
+    "error:lib:error",
+    "executor:test:execute_comparison_check",
+    "fail_point:lib:fail_point",
+    "http_steps:lib:http_steps",
+    "iterator:lib:iterator",
+    "params:lib:params",
+    "primitive:lib:primitive",
+    "project:lib:project",
+    "resource:lib:resource",
+    "server_admin_proto:lib:server_admin_proto",
+    "steps:lib:steps",
+    "structural_equality:lib:structural_equality",
+    "system:lib:system",
+    "test_utils:lib:test_utils",
+    "test_utils_concept:lib:test_utils_concept",
+    "test_utils_encoding:lib:test_utils_encoding",
+    "test_utils_storage:lib:test_utils_storage",
+    "user:lib:user"
+  ],
+  "catalogue_cargo_equals_live_cargo": true,
+  "upstream_tests_dropped_by_fork": {},
+  "tests_added_by_fork": 253
+}

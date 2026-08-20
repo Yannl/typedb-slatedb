@@ -1,0 +1,239 @@
+
+running 1 test
+test database::test_database ... Feature: Connection Database :: create one database with name alice
+  Scenario Outline: create one database with name alice
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: alice
+   ✔  Then connection has database: alice
+Feature: Connection Database :: create one database with name ALICE
+  Scenario Outline: create one database with name ALICE
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: ALICE
+   ✔  Then connection has database: ALICE
+Feature: Connection Database :: create one database with name cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile
+  Scenario Outline: create one database with name cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile
+   ✔  Then connection has database: cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile
+Feature: Connection Database :: create one database with name 資料庫
+  Scenario Outline: create one database with name 資料庫
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: 資料庫
+   ✔  Then connection has database: 資料庫
+Feature: Connection Database :: create many databases
+  Scenario: create many databases
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create databases:
+       | alice   |
+       | bob     |
+       | charlie |
+       | dylan   |
+       | eve     |
+       | frank   |
+   ✔  Then connection has databases:
+       | alice   |
+       | bob     |
+       | charlie |
+       | dylan   |
+       | eve     |
+       | frank   |
+Feature: Connection Database :: create many databases in parallel
+  Scenario: create many databases in parallel
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create databases in parallel:
+       | alice   |
+       | bob     |
+       | charlie |
+       | dylan   |
+       | eve     |
+       | frank   |
+   ✔  Then connection has databases:
+       | alice   |
+       | bob     |
+       | charlie |
+       | dylan   |
+       | eve     |
+       | frank   |
+Feature: Connection Database :: cannot create database with an incorrect name
+  Scenario: cannot create database with an incorrect name
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Then connection create database with empty name; fails
+   ✔  Then connection create database: .; fails
+   ✔  Then connection create database: !; fails
+   ✔  Then connection create database: ...; fails
+   ✔  Then connection create database: ·‿·; fails
+   ✔  Then connection create database: 😎; fails
+   ✔  Then connection create database: my😎database; fails
+Feature: Connection Database :: delete one database
+  Scenario: delete one database
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create database: alice
+   ✔  When connection delete database: alice
+   ✔  Then connection does not have database: alice
+   ✔  Then connection has 0 databases
+Feature: Connection Database :: connection can delete many databases
+  Scenario: connection can delete many databases
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create databases:
+       | alice   |
+       | bob     |
+       | charlie |
+       | dylan   |
+       | eve     |
+       | frank   |
+   ✔  When connection delete databases:
+       | alice   |
+       | bob     |
+       | charlie |
+       | dylan   |
+       | eve     |
+       | frank   |
+   ✔  Then connection does not have databases:
+       | alice   |
+       | bob     |
+       | charlie |
+       | dylan   |
+       | eve     |
+       | frank   |
+   ✔  Then connection has 0 databases
+Feature: Connection Database :: delete many databases in parallel
+  Scenario: delete many databases in parallel
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  Given connection create databases in parallel:
+       | alice   |
+       | bob     |
+       | charlie |
+       | dylan   |
+       | eve     |
+       | frank   |
+   ✔  When connection delete databases in parallel:
+       | alice   |
+       | bob     |
+       | charlie |
+       | dylan   |
+       | eve     |
+       | frank   |
+   ✔  Then connection does not have databases:
+       | alice   |
+       | bob     |
+       | charlie |
+       | dylan   |
+       | eve     |
+       | frank   |
+   ✔  Then connection has 0 databases
+Feature: Connection Database :: create delete and recreate a database
+  Scenario: create delete and recreate a database
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: alice
+   ✔  Then connection has database: alice
+   ✔  When connection delete database: alice
+   ✔  Then connection does not have database: alice
+   ✔  When connection create database: alice
+   ✔  Then connection has database: alice
+Feature: Connection Database :: delete a nonexistent database fails
+  Scenario: delete a nonexistent database fails
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection delete database: typedb; fails
+Feature: Connection Database :: database cannot be deleted if it has open transactions
+  Scenario: database cannot be deleted if it has open transactions
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  Then connection has database: typedb
+   ✔  When connection open schema transaction for database: typedb
+   ✔  Then transaction is open: true
+   ✔  Then connection delete database: typedb; fails
+   ✔  Then typeql schema query
+   ✔  Then connection delete database: typedb; fails
+   ✔  Then transaction rollbacks
+   ✔  Then transaction is open: true
+   ✔  Then connection delete database: typedb; fails
+   ✔  Then typeql schema query
+   ✔  Then transaction commits
+   ✔  Then connection delete database: typedb
+   ✔  Then connection does not have database: typedb
+Feature: Connection Database :: database can be deleted and recreated immediately after closing schema transactions
+  Scenario Outline: database can be deleted and recreated immediately after closing schema transactions
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  When connection open schema transaction for database: typedb
+   ✔  Then transaction closes
+   ✔  Then connection delete database: typedb
+   ✔  Then connection does not have database: typedb
+   ✔  When connection create database: typedb
+   ✔  Then connection has database: typedb
+Feature: Connection Database :: database can be deleted and recreated immediately after closing write transactions
+  Scenario Outline: database can be deleted and recreated immediately after closing write transactions
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  When connection open write transaction for database: typedb
+   ✔  Then transaction closes
+   ✔  Then connection delete database: typedb
+   ✔  Then connection does not have database: typedb
+   ✔  When connection create database: typedb
+   ✔  Then connection has database: typedb
+Feature: Connection Database :: database can be deleted and recreated immediately after closing read transactions
+  Scenario Outline: database can be deleted and recreated immediately after closing read transactions
+   ✔> Given typedb starts
+   ✔> Given connection opens with default authentication
+   ✔> Given connection is open: true
+   ✔> Given connection has 0 databases
+   ✔  When connection create database: typedb
+   ✔  When connection open read transaction for database: typedb
+   ✔  Then transaction closes
+   ✔  Then connection delete database: typedb
+   ✔  Then connection does not have database: typedb
+   ✔  When connection create database: typedb
+   ✔  Then connection has database: typedb
+[Summary]
+16 features
+16 scenarios (16 passed)
+137 steps (137 passed)
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 6.14s
+

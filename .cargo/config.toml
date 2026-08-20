@@ -1,0 +1,18 @@
+# `cargo xtask` alias for the deterministic quality controller (spec §3).
+#
+# PROTECTED FILE (.quality/policy.toml -> [protected].paths): the alias is the
+# single stable interface agents and CI use, so redirecting it is a quality
+# policy change.
+#
+# The `xtask` package lives at the repository root but is a member of the
+# `tools/` workspace, so it shares that workspace's lockfile and target
+# directory instead of introducing a third Rust build tree. The alias therefore
+# names the manifest explicitly and must be run from the repository root; the
+# controller itself re-derives the repository root with
+# `git rev-parse --show-toplevel`, so every path it reports is root-relative
+# regardless of where the process started.
+#
+# This file contains no policy semantics, only the alias.
+
+[alias]
+xtask = ["run", "--quiet", "--manifest-path", "tools/Cargo.toml", "--package", "xtask", "--"]

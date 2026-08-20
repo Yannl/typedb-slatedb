@@ -1,0 +1,356 @@
+Feature: Driver User
+
+  Scenario: Users can be created and deleted, connection is only available for existing users
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.323s
+    Then connection has 1 user ... passed in 0.013s
+    Then get all users contains: admin ... passed in 0.005s
+    Then get all users does not contain: user ... passed in 0.004s
+    When create user with username 'user', password 'password' ... passed in 0.194s
+    When create user with username 'user2', password 'password2' ... passed in 0.179s
+    When create user with username 'user3', password 'password3' ... passed in 0.235s
+    Then get all users contains: user ... passed in 0.020s
+    Then get all users contains: user2 ... passed in 0.022s
+    Then get all users contains: user3 ... passed in 0.010s
+    When delete user: user2 ... passed in 0.032s
+    Then get all users contains: user ... passed in 0.005s
+    Then get all users does not contain: user2 ... passed in 0.005s
+    Then get all users contains: user3 ... passed in 0.004s
+    Then connection has 3 user ... passed in 0.004s
+    Then get all users ... passed in 0.005s
+      | admin |
+      | user  |
+      | user3 |
+    When connection closes ... passed in 0.000s
+    Then connection opens with username 'user2', password 'password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.017s
+    Then connection opens with username 'user2', password 'password2'; fails with a message containing: "Invalid credential supplied" ... passed in 0.021s
+    Then connection opens with username 'user2', password 'password3'; fails with a message containing: "Invalid credential supplied" ... passed in 0.020s
+    Then connection opens with username 'user', password 'password2'; fails with a message containing: "Invalid credential supplied" ... passed in 0.507s
+    Then connection opens with username 'user', password 'password3'; fails with a message containing: "Invalid credential supplied" ... passed in 0.626s
+    Then connection opens with username 'user', password 'password' ... passed in 0.233s
+    When connection closes ... passed in 0.000s
+    Then connection opens with username 'user3', password 'password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.338s
+    Then connection opens with username 'user3', password 'password3' ... passed in 0.209s
+    When connection closes ... passed in 0.000s
+    Then connection opens with username 'admin', password 'password2'; fails with a message containing: "Invalid credential supplied" ... passed in 0.391s
+    Then connection opens with username 'admin', password 'password3'; fails with a message containing: "Invalid credential supplied" ... passed in 0.395s
+    Then connection opens with username 'admin', password 'password' ... passed in 0.171s
+    When delete user: user ... passed in 0.032s
+    Then get all users does not contain: user ... passed in 0.008s
+
+  Scenario Outline: User names can contain valid identifier characters, the validation is case-sensitive (bob) -- @1.1 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.209s
+    When create user with username 'bob', password 'password' ... passed in 0.224s
+    Then get user(bob) get name: bob ... passed in 0.028s
+    Then get all users contains: bob ... passed in 0.011s
+    Then get all users does not contain: BoB ... passed in 0.015s
+    Then get all users ... passed in 0.011s
+      | admin |
+      | bob   |
+    Then get user(bob) get name: bob ... passed in 0.014s
+    When connection closes ... passed in 0.000s
+    Then connection opens with username 'BoB', password 'password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.019s
+    Then connection opens with username 'bob', password 'password' ... passed in 0.256s
+
+  Scenario Outline: User names can contain valid identifier characters, the validation is case-sensitive (BoB) -- @1.2 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.190s
+    When create user with username 'BoB', password 'password' ... passed in 0.189s
+    Then get user(BoB) get name: BoB ... passed in 0.018s
+    Then get all users contains: BoB ... passed in 0.009s
+    Then get all users does not contain: Bob ... passed in 0.005s
+    Then get all users ... passed in 0.008s
+      | admin |
+      | BoB   |
+    Then get user(BoB) get name: BoB ... passed in 0.008s
+    When connection closes ... passed in 0.000s
+    Then connection opens with username 'Bob', password 'password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.019s
+    Then connection opens with username 'BoB', password 'password' ... passed in 0.175s
+
+  Scenario Outline: User names can contain valid identifier characters, the validation is case-sensitive (Bob) -- @1.3 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.297s
+    When create user with username 'Bob', password 'password' ... passed in 0.356s
+    Then get user(Bob) get name: Bob ... passed in 0.010s
+    Then get all users contains: Bob ... passed in 0.011s
+    Then get all users does not contain: bob ... passed in 0.015s
+    Then get all users ... passed in 0.008s
+      | admin |
+      | Bob   |
+    Then get user(Bob) get name: Bob ... passed in 0.033s
+    When connection closes ... passed in 0.000s
+    Then connection opens with username 'bob', password 'password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.021s
+    Then connection opens with username 'Bob', password 'password' ... passed in 0.268s
+
+  Scenario Outline: User names can contain valid identifier characters, the validation is case-sensitive (cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile) -- @1.4 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.274s
+    When create user with username 'cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile', password 'password' ... passed in 0.287s
+    Then get user(cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile) get name: cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile ... passed in 0.009s
+    Then get all users contains: cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile ... passed in 0.010s
+    Then get all users does not contain: c ... passed in 0.007s
+    Then get all users ... passed in 0.007s
+      | admin                                                                 |
+      | cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile |
+    Then get user(cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile) get name: cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile ... passed in 0.008s
+    When connection closes ... passed in 0.000s
+    Then connection opens with username 'c', password 'password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.135s
+    Then connection opens with username 'cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile', password 'password' ... passed in 0.234s
+
+  Scenario Outline: User names can contain valid identifier characters, the validation is case-sensitive (資料庫) -- @1.5 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.220s
+    When create user with username '資料庫', password 'password' ... passed in 0.250s
+    Then get user(資料庫) get name: 資料庫 ... passed in 0.011s
+    Then get all users contains: 資料庫 ... passed in 0.012s
+    Then get all users does not contain: 資料 ... passed in 0.015s
+    Then get all users ... passed in 0.010s
+      | admin |
+      | 資料庫   |
+    Then get user(資料庫) get name: 資料庫 ... passed in 0.011s
+    When connection closes ... passed in 0.000s
+    Then connection opens with username '資料', password 'password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.023s
+    Then connection opens with username '資料庫', password 'password' ... passed in 0.194s
+
+  Scenario Outline: Cannot create user with an emoji in its name (·‿·) -- @1.1 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.315s
+    When create user with username '·‿·', password 'password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.250s
+    Then get all users does not contain: ·‿· ... passed in 0.016s
+    When connection closes ... passed in 0.013s
+    Then connection opens with username '·‿·', password 'password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.023s
+
+  Scenario Outline: Cannot create user with an emoji in its name (😎) -- @1.2 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.214s
+    When create user with username '😎', password 'password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.226s
+    Then get all users does not contain: 😎 ... passed in 0.009s
+    When connection closes ... passed in 0.000s
+    Then connection opens with username '😎', password 'password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.016s
+
+  Scenario Outline: Cannot create user with an emoji in its name (my😎user) -- @1.3 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.255s
+    When create user with username 'my😎user', password 'password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.193s
+    Then get all users does not contain: my😎user ... passed in 0.014s
+    When connection closes ... passed in 0.000s
+    Then connection opens with username 'my😎user', password 'password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.016s
+
+  Scenario Outline: User passwords can contain any UTF symbols, the validation is case-sensitive (bob) -- @1.1 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.275s
+    When create user with username 'user', password 'bob' ... passed in 0.282s
+    When connection closes ... passed in 0.000s
+    Then connection opens with username 'user', password 'BoB'; fails with a message containing: "Invalid credential supplied" ... passed in 0.420s
+    Then connection opens with username 'user', password 'bob' ... passed in 0.247s
+
+  Scenario Outline: User passwords can contain any UTF symbols, the validation is case-sensitive (BoB) -- @1.2 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.244s
+    When create user with username 'user', password 'BoB' ... passed in 0.280s
+    When connection closes ... passed in 0.000s
+    Then connection opens with username 'user', password 'Bob'; fails with a message containing: "Invalid credential supplied" ... passed in 0.377s
+    Then connection opens with username 'user', password 'BoB' ... passed in 0.176s
+
+  Scenario Outline: User passwords can contain any UTF symbols, the validation is case-sensitive (Bob) -- @1.3 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.186s
+    When create user with username 'user', password 'Bob' ... passed in 0.186s
+    When connection closes ... passed in 0.000s
+    Then connection opens with username 'user', password 'bob'; fails with a message containing: "Invalid credential supplied" ... passed in 0.471s
+    Then connection opens with username 'user', password 'Bob' ... passed in 0.233s
+
+  Scenario Outline: User passwords can contain any UTF symbols, the validation is case-sensitive (cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile) -- @1.4 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.240s
+    When create user with username 'user', password 'cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile' ... passed in 0.282s
+    When connection closes ... passed in 0.000s
+    Then connection opens with username 'user', password 'c'; fails with a message containing: "Invalid credential supplied" ... passed in 0.678s
+    Then connection opens with username 'user', password 'cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile' ... passed in 0.326s
+
+  Scenario Outline: User passwords can contain any UTF symbols, the validation is case-sensitive (資料庫) -- @1.5 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.293s
+    When create user with username 'user', password '資料庫' ... passed in 0.352s
+    When connection closes ... passed in 0.000s
+    Then connection opens with username 'user', password '資料'; fails with a message containing: "Invalid credential supplied" ... passed in 0.460s
+    Then connection opens with username 'user', password '資料庫' ... passed in 0.273s
+
+  Scenario Outline: User passwords can contain any UTF symbols, the validation is case-sensitive (·‿·) -- @1.6 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.260s
+    When create user with username 'user', password '·‿·' ... passed in 0.390s
+    When connection closes ... passed in 0.001s
+    Then connection opens with username 'user', password '=)'; fails with a message containing: "Invalid credential supplied" ... passed in 0.419s
+    Then connection opens with username 'user', password '·‿·' ... passed in 0.169s
+
+  Scenario Outline: User passwords can contain any UTF symbols, the validation is case-sensitive (😎) -- @1.7 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.173s
+    When create user with username 'user', password '😎' ... passed in 0.198s
+    When connection closes ... passed in 0.000s
+    Then connection opens with username 'user', password 'B)'; fails with a message containing: "Invalid credential supplied" ... passed in 0.337s
+    Then connection opens with username 'user', password '😎' ... passed in 0.170s
+
+  Scenario: User cannot be created multiple times
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.174s
+    When create user with username 'user', password 'password' ... passed in 0.198s
+    Then create user with username 'user', password 'password'; fails with a message containing: "User already exists" ... passed in 0.177s
+    Then create user with username 'user', password 'new-password'; fails with a message containing: "User already exists" ... passed in 0.164s
+    Then create user with username 'admin', password 'password'; fails with a message containing: "User already exists" ... passed in 0.169s
+    Then create user with username 'admin', password 'new-password'; fails with a message containing: "User already exists" ... passed in 0.170s
+
+  Scenario: User can be created after deletion
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.176s
+    When create user with username 'user', password 'password' ... passed in 0.230s
+    When delete user: user ... passed in 0.044s
+    When connection closes ... passed in 0.000s
+    Then connection opens with username 'user', password 'password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.031s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.191s
+    Then create user with username 'user', password 'password' ... passed in 0.205s
+    When delete user: user ... passed in 0.048s
+    Then create user with username 'user', password 'new-password' ... passed in 0.186s
+    When connection closes ... passed in 0.000s
+    Then connection opens with username 'user', password 'password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.433s
+    Then connection opens with username 'user', password 'new-password' ... passed in 0.201s
+
+  Scenario: Admin user cannot be deleted
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.163s
+    Then delete user: admin; fails with a message containing: "Default user cannot be deleted" ... passed in 0.016s
+    When create user with username 'user', password 'password' ... passed in 0.202s
+    Then delete user: admin; fails with a message containing: "Default user cannot be deleted" ... passed in 0.015s
+    Then delete user: user ... passed in 0.040s
+    When create user with username 'user2', password 'password' ... passed in 0.181s
+    When connection closes ... passed in 0.000s
+    When connection opens with username 'user2', password 'password' ... passed in 0.178s
+    Then delete user: admin; fails with a message containing: "The user is not permitted to execute the operation" ... passed in 0.003s
+
+  Scenario: User cannot be deleted multiple times
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.180s
+    When create user with username 'user', password 'password' ... passed in 0.264s
+    When delete user: user ... passed in 0.060s
+    Then delete user: user; fails with a message containing: "User not found" ... passed in 0.012s
+    Then delete user: user2; fails with a message containing: "User not found" ... passed in 0.005s
+    Then delete user: surely-non-existing-user; fails with a message containing: "User not found" ... passed in 0.004s
+
+  Scenario: Updating the password of a non-existent user fails
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.202s
+    Then get user(surely-non-existing-user) update password to 'anything'; fails with a message containing: "User not found" ... passed in 0.011s
+
+  Scenario: User's name is retrievable only by admin
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.179s
+    When create user with username 'user', password 'password' ... passed in 0.224s
+    When create user with username 'user2', password 'password' ... passed in 0.237s
+    Then get user(user) get name: user ... passed in 0.008s
+    Then get user(user2) get name: user2 ... passed in 0.007s
+    Then get user(admin) get name: admin ... passed in 0.006s
+    When connection closes ... passed in 0.000s
+    When connection opens with username 'user', password 'password' ... passed in 0.214s
+    Then get user(user) get name: user ... passed in 0.011s
+    Then get user: user2; fails with a message containing: "The user is not permitted to execute the operation" ... passed in 0.003s
+    Then get user: admin; fails with a message containing: "The user is not permitted to execute the operation" ... passed in 0.001s
+
+  Scenario: All users are retrievable only by admin
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.186s
+    When create user with username 'user', password 'password' ... passed in 0.239s
+    When create user with username 'user2', password 'password' ... passed in 0.248s
+    Then get all users ... passed in 0.028s
+      | admin |
+      | user  |
+      | user2 |
+    When connection closes ... passed in 0.000s
+    When connection opens with username 'user', password 'password' ... passed in 0.209s
+    Then get all users; fails with a message containing: "The user is not permitted to execute the operation" ... passed in 0.002s
+
+  Scenario: Users can be created only by admin
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.193s
+    Then create user with username 'user', password 'password' ... passed in 0.232s
+    Then create user with username 'user2', password 'password' ... passed in 0.193s
+    When connection closes ... passed in 0.000s
+    When connection opens with username 'user', password 'password' ... passed in 0.183s
+    Then create user with username 'user3', password 'password'; fails with a message containing: "The user is not permitted to execute the operation" ... passed in 0.187s
+    Then create user with username 'user2', password 'password'; fails with a message containing: "The user is not permitted to execute the operation" ... passed in 0.230s
+    Then create user with username 'user', password 'password'; fails with a message containing: "The user is not permitted to execute the operation" ... passed in 0.179s
+    When connection closes ... passed in 0.000s
+    When connection opens with username 'admin', password 'password' ... passed in 0.201s
+    Then create user with username 'user3', password 'password' ... passed in 0.194s
+    Then get all users ... passed in 0.013s
+      | admin |
+      | user  |
+      | user2 |
+      | user3 |
+
+  Scenario: Users can be deleted only by admin
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.179s
+    When create user with username 'user', password 'password' ... passed in 0.207s
+    When create user with username 'user2', password 'password' ... passed in 0.206s
+    When create user with username 'user3', password 'password' ... passed in 0.222s
+    When create user with username 'user4', password 'password' ... passed in 0.199s
+    When create user with username 'user5', password 'password' ... passed in 0.196s
+    Then delete user: user4 ... passed in 0.036s
+    When connection closes ... passed in 0.001s
+    When connection opens with username 'user', password 'password' ... passed in 0.181s
+    Then delete user: user5; fails with a message containing: "The user is not permitted to execute the operation" ... passed in 0.002s
+    Then delete user: user4; fails with a message containing: "The user is not permitted to execute the operation" ... passed in 0.002s
+    When connection closes ... passed in 0.000s
+    When connection opens with username 'admin', password 'password' ... passed in 0.210s
+    Then delete user: user5 ... passed in 0.054s
+
+  Scenario: User's password can be changed through user only by admin or by this user
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.222s
+    Given create user with username 'user', password 'password' ... passed in 0.227s
+    Given create user with username 'user2', password 'password2' ... passed in 0.194s
+    When get user(user) update password to 'password' ... passed in 0.216s
+    When connection closes ... passed in 0.000s
+    Then connection opens with username 'user', password 'password' ... passed in 0.216s
+    When connection closes ... passed in 0.001s
+    When connection opens with username 'admin', password 'password' ... passed in 0.195s
+    When get user(user) update password to 'new-password' ... passed in 0.243s
+    When connection closes ... passed in 0.000s
+    Then connection opens with username 'admin', password 'new-password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.415s
+    Then connection opens with username 'user', password 'password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.421s
+    Then connection opens with username 'user', password 'new-password' ... passed in 0.211s
+    Then get user(admin) update password to 'password'; fails with a message containing: "The user is not permitted to execute the operation" ... passed in 0.004s
+    Then get user(admin) update password to 'new-password'; fails with a message containing: "The user is not permitted to execute the operation" ... passed in 0.002s
+    Then get user(admin) update password to 'password'; fails with a message containing: "The user is not permitted to execute the operation" ... passed in 0.002s
+    Then get user(user2) update password to 'new-password'; fails with a message containing: "The user is not permitted to execute the operation" ... passed in 0.001s
+    Then get user(user2) update password to 'password'; fails with a message containing: "The user is not permitted to execute the operation" ... passed in 0.003s
+    Then get user(user) update password to 'password' ... passed in 0.230s
+    Then connection closes ... passed in 0.000s
+    Then connection opens with username 'admin', password 'new-password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.424s
+    Then connection opens with username 'user2', password 'new-password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.431s
+    Then connection opens with username 'user', password 'new-password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.425s
+    Then connection opens with username 'user', password 'password' ... passed in 0.236s
+    Then connection closes ... passed in 0.000s
+    When connection opens with username 'admin', password 'password' ... passed in 0.225s
+    Then get user(admin) update password to 'new-password' ... passed in 0.192s
+    Then connection closes ... passed in 0.000s
+    Then connection opens with username 'admin', password 'password'; fails with a message containing: "Invalid credential supplied" ... passed in 0.395s
+    Then connection opens with username 'admin', password 'new-password' ... passed in 0.194s
+    Then connection opens with username 'admin', password 'new-password' ... passed in 0.172s
+    Then get user(admin) update password to 'password' ... passed in 0.219s
+
+  Scenario: Connected username is retrievable
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with username 'admin', password 'password' ... passed in 0.193s
+    When create user with username 'user', password 'password' ... passed in 0.198s
+    Then get current username: admin ... passed in 0.017s
+    When connection closes ... passed in 0.000s
+    When connection opens with username 'user', password 'password' ... passed in 0.199s
+    Then get current username: user ... passed in 0.008s
+
+1 feature passed, 0 failed, 0 skipped
+27 scenarios passed, 0 failed, 0 skipped
+276 steps passed, 0 failed, 0 skipped, 0 undefined
+Took 0m34.100s

@@ -1,0 +1,10 @@
+{
+  "schema": "typedb-r2/release-identity@1",
+  "provenance": "git-archive-export-subst",
+  "release_commit": "$Format:%H$",
+  "release_commit_short": "$Format:%h$",
+  "committed_at": "$Format:%cI$",
+  "refnames": "$Format:%D$",
+  "identity_digest": null,
+  "note": "R6-PORT-01. In a git CHECKOUT the $Format: tokens above are LITERAL and this file carries no identity: tools/release/release_identity.py (and its TypeScript twin) detect the unexpanded placeholder and resolve the release commit from git, which is the authoritative source when .git exists. In a `git archive` materialisation the tokens are expanded by git at export time (see .gitattributes `export-subst`), so this file is the ONLY source identity present and the resolver uses it. For a signed release tarball or an installed package, `python3 tools/release/release_identity.py --generate --out <dir>` OVERWRITES this file with a fully-populated body plus an `identity_digest` over its canonical form; that digest is recorded in the release artifact manifest, so tampering with the identity file invalidates the artifact."
+}

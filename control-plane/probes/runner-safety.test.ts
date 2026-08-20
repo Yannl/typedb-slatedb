@@ -20,7 +20,7 @@ import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from "no
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { main } from "./run-platform-probes.ts";
-import { budgetFromEnvelope, EnvelopeExceededError, MeteredProvider, RefusedProvider, ZeroAuthorityError } from "./envelope.ts";
+import { budgetFromEnvelope, EnvelopeExceededError, MeteredProvider, RefusedProvider, RunBudgetLedger, ZeroAuthorityError } from "./envelope.ts";
 import { captureLockBaseline, restoreLockBaseline } from "./lock-baseline.ts";
 import { EvidenceBundle, RecordingProvider, SealViolationError } from "./evidence.ts";
 import type { PlatformProvider, SeamRequest, SeamResponse } from "./provider.ts";
@@ -30,6 +30,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { computeProbesSourceRoot, ENVELOPE_SCHEMA, signEnvelope } from "./approval.ts";
+import { resolveReleaseCommit } from "../../tools/release/release-identity.mts";
 
 const PROBES_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -77,7 +78,7 @@ afterEach(() => {
 const testOwner = generateKeyPairSync("ed25519");
 const TEST_OWNER_PRIVATE = testOwner.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
 export const TEST_OWNER_PUBLIC = testOwner.publicKey.export({ type: "spki", format: "pem" }).toString();
-const GIT_HEAD = execFileSync("git", ["-C", join(PROBES_DIR, "..", ".."), "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+const GIT_HEAD = resolveReleaseCommit(join(PROBES_DIR, "..", ".."));
 const PROBES_SOURCE_ROOT = computeProbesSourceRoot(
   PROBES_DIR,
   join(PROBES_DIR, "..", "wrangler.probe-harness.toml"),
@@ -238,12 +239,13 @@ test("a concurrent operator rule change is a CONFLICT: restore refuses to overwr
 
 test("MeteredProvider refuses over-budget requests BEFORE dispatch", async () => {
   const inner = new ScriptedProvider(() => jsonRes(200, {}));
-  const meter = new MeteredProvider(inner, {
+  const meter = new MeteredProvider(inner, new RunBudgetLedger({
     maxTotalRequests: 1,
     maxTotalBytesWritten: 1000,
     runDeadlineAtMs: Date.now() + 60_000,
     maxRequestMs: 1000,
-  });
+    maxCostMicroCents: 100_000_000,
+  }), { requestShare: Number.MAX_SAFE_INTEGER, label: "probe" });
   await meter.fetch({ service: "r2", method: "GET", path: "/b/x" });
   await assert.rejects(meter.fetch({ service: "r2", method: "GET", path: "/b/y" }), EnvelopeExceededError);
   assert.equal(inner.calls.length, 1, "the over-budget call never reached the provider");
@@ -251,12 +253,13 @@ test("MeteredProvider refuses over-budget requests BEFORE dispatch", async () =>
 
 test("MeteredProvider refuses a write that would exceed the byte budget", async () => {
   const inner = new ScriptedProvider(() => jsonRes(200, {}));
-  const meter = new MeteredProvider(inner, {
+  const meter = new MeteredProvider(inner, new RunBudgetLedger({
     maxTotalRequests: 10,
     maxTotalBytesWritten: 4,
     runDeadlineAtMs: Date.now() + 60_000,
     maxRequestMs: 1000,
-  });
+    maxCostMicroCents: 100_000_000,
+  }), { requestShare: Number.MAX_SAFE_INTEGER, label: "probe" });
   await assert.rejects(
     meter.fetch({ service: "r2", method: "PUT", path: "/b/x", body: utf8("12345") }),
     EnvelopeExceededError,
@@ -266,12 +269,13 @@ test("MeteredProvider refuses a write that would exceed the byte budget", async 
 
 test("MeteredProvider refuses every call after the run deadline", async () => {
   const inner = new ScriptedProvider(() => jsonRes(200, {}));
-  const meter = new MeteredProvider(inner, {
+  const meter = new MeteredProvider(inner, new RunBudgetLedger({
     maxTotalRequests: 10,
     maxTotalBytesWritten: 1000,
     runDeadlineAtMs: Date.now() - 1, // already past
     maxRequestMs: 1000,
-  });
+    maxCostMicroCents: 100_000_000,
+  }), { requestShare: Number.MAX_SAFE_INTEGER, label: "probe" });
   await assert.rejects(meter.fetch({ service: "r2", method: "GET", path: "/b/x" }), EnvelopeExceededError);
   assert.equal(inner.calls.length, 0, "post-deadline calls never dispatch");
 });
@@ -280,12 +284,13 @@ test("MeteredProvider journals write INTENT before dispatch (timeout-after-commi
   const inner = new ScriptedProvider(() => {
     throw new Error("simulated network loss after possible commit");
   });
-  const meter = new MeteredProvider(inner, {
+  const meter = new MeteredProvider(inner, new RunBudgetLedger({
     maxTotalRequests: 10,
     maxTotalBytesWritten: 1000,
     runDeadlineAtMs: Date.now() + 60_000,
     maxRequestMs: 1000,
-  });
+    maxCostMicroCents: 100_000_000,
+  }), { requestShare: Number.MAX_SAFE_INTEGER, label: "probe" });
   await assert.rejects(meter.fetch({ service: "r2", method: "PUT", path: "/b/probes/r/k?x=1", body: utf8("v") }));
   assert.ok(meter.attemptedWrites.has("/b/probes/r/k"), "the lost-response write is journaled for cleanup");
 });

@@ -16,9 +16,9 @@ is historical observation, not evidence for this commit.
 
 | Gate / lane | State | Why |
 |---|---|---|
-| **G0** Source graph, identities, tools, fixtures, document truth | **OPEN_RED** | Mandatory Mode-Q Bazel cquery evidence is ABSENT (SI-G0-1 reopened; the static avoidance proof is a lower-authority substitution and cannot amend v17). The source-lock validator previously accepted forged metadata and carried a real OBJECT_STORE version mismatch (repaired; validators + mutants added). Raw source/tool evidence is not yet durably retrievable by digest. |
+| **G0** Source graph, identities, tools, fixtures, document truth | **OPEN_RED** | Mandatory Mode-Q Bazel cquery evidence is ABSENT (SI-G0-1). Round 6 installed the pinned Bazel 8.5.1 (binary sha256 61d89402f0368e64b6c827be5de79d8e65382e8124c3cbb97325611a1851392e, verified against the release .sha256) and measured the blocker exactly rather than restating it: Bazel's LOADING phase works here and answers the test-graph question (see the bazel-parity evidence and the nightly gate), but the ANALYSIS phase cannot run, because aspect_bazel_lib registers bats_toolchains fetched from github.com/bats-core and this environment's egress policy denies that fetch with 403 - reproduced directly with curl on both github.com and codeload.github.com. A registered toolchain must load before Bazel resolves toolchains for any configured target, so even a single-target cquery aborts. A second, independent wall exists for the whole-universe form: //:deploy-mac-installer-pkg is an upstream mac-only alias whose select() has no default, so it fails analysis on Linux regardless of network; tools/modeq/produce_modeq.py works around that legitimately by enumerating in the loading phase and configuring only the resulting test labels, which keeps all 228 targets instead of the 223 a narrowed universe would leave. The producer exists and is wired into the release-qualification workflow, where egress is not restricted; it writes NOTHING when cquery fails, so Mode-Q stays ABSENT and this gate stays honestly open rather than being broken by a half-written bundle. G0 closes when that job runs and validate_modeq.py reports VALID. |
 | **G1** Models, catalogue as qualification denominator, platform contracts, budgets, controller/container separation | **OPEN** | The DENOMINATOR exists: catalogue v2 with canonical shared identity and the immutable leaf/profile/fixture qualification plan v2 (23,132 rows + 6 driver rows) landed with R3-H, and the leaf-level evidence producer/validator chain landed with PR3/R4-D. What keeps G1 open is EXECUTION and the remaining models: plan coverage is honestly RED (0 rows fully covered), the Mode-Q crosswalk side of the plan is Bazel-blocked (SI-G0-1), the six official driver rows are NOT_IMPLEMENTED (E-P0-08), and the ContainerDO is advisory-only - no real Container resource/process or controller lifecycle integration exists (R3-F remainder; round-5 R5-SEC-06/07). |
-| **G2** Real-platform probe run under an owner-approved envelope | **NOT_READY_TO_EXECUTE** | Round-4: the runner's destructive RED-preflight cleanup (R4-CF-00) is repaired with zero-authority refusal, lock-baseline restore and an enforced envelope meter (R4-CF-01), redaction is a serialization invariant (R4-CF-03), the nine /do|/ctr|/worker probes now have a deployable in-repo harness whose source digest is bound into the bundle (R4-CF-02, probes/harness-worker.ts + wrangler.probe-harness.toml), and every assertion is classified provider-fact vs product-conformance by the obligation manifest with three product obligations honestly OPEN so the product_conformance sub-verdict cannot overclaim (R4-CF-04) — all mutant-proved locally (24 self-test controls). Still blocking: no owner-approved envelope; no credentials; the production issuer/registry seam (R4-SEC-01) is now implemented and proven locally (R4-PR1: opaque registry, provisioning transaction, mint/verify separation, managed-surface E2E) - what remains for live is provisioning real managed keys, under the credentials blocker; the three OPEN product obligations (ambiguity-resolution-real, runtime-cannot-delete, attempt-identity-changed-bytes-real). |
+| **G2** Real-platform probe run under an owner-approved envelope | **NOT_READY_TO_EXECUTE** | Round-4: the runner's destructive RED-preflight cleanup (R4-CF-00) is repaired with zero-authority refusal, lock-baseline restore and an enforced envelope meter (R4-CF-01), redaction is a serialization invariant (R4-CF-03), the nine /do|/ctr|/worker probes now have a deployable in-repo harness whose source digest is bound into the bundle (R4-CF-02, probes/harness-worker.ts + wrangler.probe-harness.toml), and every assertion is classified provider-fact vs product-conformance by the obligation manifest. ROUND-6 (R6-TRUTH-01 semantic pass, 2026-08-20 — what changed and what did NOT): (a) SELF-TEST COUNT: the harness now executes 26 controls, not 24. Executed 2026-08-20 on this branch: `bash probes/self-test.sh` → 'self-test: all 26 controls passed'. The 24 figure predated controls 7c and 7d. (b) ENVELOPE LIMITS: as of 09ce01e every signed envelope field now has an enforced global counter, including `max_cost_usd_cents`, which was previously signed and never priced; preflight refuses when the REMAINING signed validity is shorter than the credential TTL it would mint, and the displayed key fingerprint must equal the one derived from the trusted verification key. The claim 'all envelope limits are enforced' is TRUE for the LOCAL enforcement path, proved by budget-enforcement 9/9 including a schema-to-counter exhaustiveness test that fails when a signed field gains no counter. It is NOT a claim about provider-side enforcement: no credentialed run has ever occurred, so nothing here is attested against a real Cloudflare account. (c) AMBIGUITY: as of 3ac9ae9 all 16 mutation routes bind an explicit authoritative effect, IDEMPOTENT_REEXECUTE is gone from the union, and `deriveEffectOutcome` ends in `const unhandled: never` so a new variant cannot compile without an authoritative query. The four ambiguity cuts, restart resumption, one-physical-effect and byte-equal canonical replay are EXECUTED for every route. What that closes is the CODE-LEVEL obligation; the probe obligation `ambiguity-resolution-real` stays OPEN because it asks for the behaviour against a real Durable Object under real faults, which needs credentials. Recorded honestly with it: CUT_EXISTS/CUT_NOT_PENDING remain the typed refusals for a DIFFERENT token, and a reconstructed WAL receipt still differs in its `replayed` flag. (d) S3 EVIDENCE: as of 21780b0 the corpus bundle is schema v2 — clean-tree refusal BEFORE execution, provider digest RECOMPUTED from bytes and matched against the source lock, sealed lock bytes, structured per-phase results, and a path-independent stable root; evidence_mutants.py kills 28 of 28. The bundle is therefore SOURCE-AUTHENTIC and independently re-derivable. It is NOT 'qualification-grade' for the product: it certifies an S3 PROVIDER against the object-store corpus, not TypeDB against the upstream test corpus, and the two round-5 bundles are schema v1 and are REJECTED by the new verifier. The MinIO comparator bundle has not been regenerated. 'Attested' here means recorded-and-recomputable, not signed: there is no key infrastructure in that territory. Still blocking: no owner-approved envelope; no credentials; the production issuer/registry seam (R4-SEC-01) is implemented and proven locally (R4-PR1: opaque registry, provisioning transaction, mint/verify separation, managed-surface E2E) - what remains for live is provisioning real managed keys, under the credentials blocker; the three OPEN product-conformance obligations (ambiguity-resolution-real, runtime-cannot-delete, attempt-identity-changed-bytes-real). |
 | **G3_PLUS** Conformance / release gates beyond G2 | **NOT_REACHABLE** | Earlier gates are open. |
 | U0 | **OPEN** | Baseline is a stale 104-row identity-weak archive; no fresh pristine U0 over the current tree. |
 | U1 | **OPEN** | 104 rows, weak target-name identity, no current per-row provenance; oracle joins on name (CD-003). |
@@ -26,7 +26,7 @@ is historical observation, not evidence for this commit.
 | U2S3 | **HISTORICAL_EXPERIMENTAL_NON_QUALIFYING** | Classification: historical-dirty-tree-aggregate-smoke (label sidecar: docs/evidence/G3/u2s3-full-3/CLASSIFICATION.json). Archived run used a dirty 23-file staged tree (digest cc0d283a...); the current staged tree has 24 files and a different digest, and critical storage (cursor.rs, slate.rs, post_wal_guard.rs, storage.rs) changed after the run. Raw observation: 106 unique executable rows, 105 exited 0, 1 exited 101, 0 timeouts, 462 parsed passed, 2 parsed failed, 1 parsed ignored, 34 zero-case rows. That observation is preserved; it is NOT current-tree conformance and is never to be summarised as '105 green'. |
 | U3.0 | **RED** | C-P0-01 is CLOSED: the Rust remote-WAL client was rewritten to the current protocol (PR4b 99038fc), threads the exact generation through every mint (R4-SEC-03 b53fd35) and speaks the R4-PR1 v2 provisioning protocol (e434761; live workerd suite 28/28). The lane stays RED because it is still a spike-level client lane: no product (TypeDB) integration consumes it (R4-F open item), the managed-surface lifecycle (reserve/attest/activate) is unimplemented (round-5 R5-SEC-02), and no current-tree U3.0 evidence bundle exists. Any prior U3.0 pass claim is stale. |
 | U3_U4_PRODUCT | **TYPED_UNAVAILABLE_BY_DESIGN** | Product profiles fail closed; the v17 per-database classic|slatedb-r2 seam is being built as refusal-first (S-P0-06). No product E2E exists. |
-| OFFICIAL_DRIVERS | **NOT_IMPLEMENTED** | v17 requires official Rust/Python/TS driver suites on pristine and fork-classic now (post-G2 for slatedb-r2). Catalogue rows are in-repo wrappers only. |
+| OFFICIAL_DRIVERS | **OPEN** | EXECUTING; 4 of 6 rows COVERED (R6-QUAL-01 + OD-010, 2026-08-20). All six official-driver rows run: 1,132 behaviour scenarios across Rust/Python/TypeScript on fork-classic (U1) and fork-slatedb (U2), 1,102 in-plan leaf outcomes, 0 failures, each bundle independently re-derived from its archived bytes by tools/evidence/verify_drivers.py, 99/99 mutants killed. The SlateDB backend passes the full official suites of all three drivers identically to RocksDB, evidenced by the archived on-disk witness _system/backend-spec.marker (kind slatedb-r2 / object-store local-fs vs kind classic), not by an environment-variable claim. OD-010 scopes the claim to single-node semantic parity: the cluster suites exercise multi-node replication, in which the storage adapter does not participate, so they are a DECLARED exclusion - still enumerated, still reported as not executed, with the authority named on every row - rather than a precondition holding rows partial for a reason unrelated to the property being qualified. No clustered, replicated or highly-available operation may be claimed on the strength of this. The four Rust and Python rows are therefore COVERED; the two TypeScript rows remain PARTIAL for genuine in-scope reasons: dependencies resolved by npm because the shipped pnpm-lock.yaml is v8 while local pnpm is 10.x, so the transitive closure is not the one the committed lockfile names, and upstream's http-ts emits no index.d.cts by its own BUILD TODO, so the Bazel type surface is not reproducible outside Bazel. Also recorded and NOT closed: driver/migration.feature and driver/cluster.feature have no plan leaves at all, because generate_catalog.py only enumerates feature files referenced from sources/typedb, so 18 executed migration scenarios cover nothing and are recorded as leaves_outside_plan. |
 
 Adopted audit: TypeDB × SlateDB × Cloudflare R2 round-5 deep audit and implementation directive, 2026-08-19 at `29fd0038c0fe` — decision: NO-GO for a live qualification run and NO-GO for a production claim; continue local implementation (R5 program adopted).
 
@@ -57,7 +57,9 @@ Every gate claim is backed by a machine-readable artifact under
 - per-run corpus results: one JSON row per executable (exit code,
   pass/fail/ignored counts, duration, log path, binary sha256)
 - differential/model evidence: e.g. `slatedb-differential-registry.json`
-  (the crates.io 0.15.0 semantics re-validation)
+  (the crates.io 0.15.0 semantics re-validation — the *unpatched* registry
+  crate is the oracle the shipped soft fork is measured against; see
+  ADR-0012)
 - negative controls are part of evidence: checkers must be shown to fail
   when the protected invariant is deliberately broken.
 
@@ -111,7 +113,7 @@ Every producer now returns a terminal verdict:
   into each profile, and requires every classification to declare the exact
   expected profiles on both sides.
 
-### Reconstruct the SlateDB fork (ADR-0012 Candidate A)
+### Reconstruct the SlateDB fork (ADR-0012, shipped)
 
 ```sh
 python3 tools/fork/materialize_slatedb.py          # crate + patches -> sources/slatedb-fork
@@ -120,8 +122,55 @@ python3 tools/fork/materialize_slatedb.py --check  # verify without materialisin
 
 The fork is a patch series over the digest-pinned crate, not a vendored
 tree; the check fails if a patch was edited without re-recording the tree
-digest. It is **not** wired into any lane: `sources/typedb` consumes
-crates.io until ADR-0012 is decided and G2 passes.
+digest.
+
+**It is wired into every lane, and it is required to build.** The product
+workspace carries a workspace-global redirect:
+
+```toml
+# sources/typedb/Cargo.toml (authored in fork/typedb/Cargo.toml, staged by tools/fork/stage.py)
+[patch.crates-io]
+slatedb = { path = "../../sources/slatedb-fork" }
+```
+
+Operational consequences, stated plainly:
+
+- **Materialisation is a build prerequisite, not an option.** Without
+  `sources/slatedb-fork` present, `cargo` cannot resolve the path
+  dependency and *no* product lane builds — including the RocksDB oracle
+  lanes, which link `storage`.
+- **The fence is shipped default behaviour.** `fork/typedb/storage/Cargo.toml`
+  enables `slatedb/external_epoch_required` unconditionally; via feature
+  unification every crate that links `storage` gets it. An epoch-less
+  writer open is refused, never silently fed by internal allocation.
+  Attested by `python3 tools/fork/check_strict_epoch.py`
+  (`cargo tree -e features`) and executed by
+  `python3 tools/fork/check_strict_epoch_suite.py`.
+- **`tools/` is the exception, on purpose.** That workspace has no patch
+  table, so `tools/storage-diff-spike` still resolves the unmodified
+  registry crate — which is what lets it act as an oracle for the fork.
+- **Truth gate.** `python3 tools/ci/check_dependency_sources.py` re-derives
+  the resolved source from `cargo metadata` on every PR and fails when the
+  documentation and the graph disagree. It is a semantic check over the
+  resolve graph, not a grep over prose.
+- **Upgrade/rebase procedure and risk ownership** live in
+  [development.md](development.md#upgrading--rebasing-the-fork-onto-a-new-slatedb-release).
+
+### Dependency and advisory hygiene
+
+```sh
+python3 tools/ci/check_npm_advisories.py --lockfile   # both npm workspaces
+python3 tools/ci/check_npm_advisories.py --self-test  # the gate's own mutants
+```
+
+`npm audit` prints a number; the gate above turns it into a decision against
+`tools/ci/dependency-advisory-policy.json`. A reported advisory needs an
+**unexpired** exception row (advisory id, package, affected range,
+reachability analysis, reason, compensating control, owner, expiry ≤ 90
+days); an expired row, an unbounded expiry, a stale row and a brand-new
+unlisted advisory each fail the build. `--lockfile` additionally requires
+every locked package to resolve from an allowed registry with an
+`integrity` digest.
 
 ### Re-run the full corpus on a profile
 

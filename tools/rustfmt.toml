@@ -1,0 +1,15 @@
+# R6-HYGIENE-01: the tools workspace is formatted with the SAME style the
+# TypeDB fork uses (fork/typedb/rustfmt.toml), differing only in `edition`,
+# which follows this workspace's own `edition = "2021"`. Before this file
+# existed, `cargo fmt --manifest-path tools/Cargo.toml --all -- --check` was
+# checking code written in the 120-column project style against rustfmt's
+# 100-column defaults, so the gate was permanently red for ~180 hunks that
+# were not actually wrong. Pinning the style here makes the check meaningful
+# and keeps diffs between this workspace and the fork reviewable side by side.
+
+edition = "2021"
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
+use_small_heuristics = "Max"
+max_width = 120
+match_arm_leading_pipes = "Preserve"

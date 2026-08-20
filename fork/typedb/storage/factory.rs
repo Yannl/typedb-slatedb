@@ -267,9 +267,8 @@ fn verify_s3_runtime_witness(
 /// off, garbage = typed refusal). Secrets are wrapped as opaque handles at
 /// the moment they are read and never rendered anywhere.
 fn resolve_s3_runtime_from_env() -> Result<S3RuntimeConfig, StorageFactoryError> {
-    let require = |variable: &'static str| {
-        env::var(variable).map_err(|_| StorageFactoryError::S3ConfigMissing { variable })
-    };
+    let require =
+        |variable: &'static str| env::var(variable).map_err(|_| StorageFactoryError::S3ConfigMissing { variable });
     let cache_raw = env::var(S3_CACHE_BYTES_ENV).ok();
     let cache_bytes = validate_cache_config(cache_raw.as_deref())
         .map_err(|CacheConfigError::Invalid { value }| StorageFactoryError::S3CacheBudgetInvalid { value })?;
@@ -330,9 +329,7 @@ impl BackendContext {
     /// R5-STOR-02: the operator's selection and the lane must AGREE.
     /// Disagreement is a typed refusal at admission — neither the test
     /// profile nor the product setting silently wins.
-    pub fn verify_product_backend(
-        &self, requested: Option<ProductBackend>,
-    ) -> Result<(), StorageFactoryError> {
+    pub fn verify_product_backend(&self, requested: Option<ProductBackend>) -> Result<(), StorageFactoryError> {
         let Some(requested) = requested else { return Ok(()) };
         let running = self.product_backend();
         if requested == running {
@@ -587,9 +584,7 @@ impl ProductBackend {
     /// U2/U2S3/U3/U4 are the slatedb-r2 lanes at increasing remoteness.
     pub fn of_profile(profile: StorageBackendProfile) -> Self {
         match profile {
-            StorageBackendProfile::U0PristineUpstream | StorageBackendProfile::U1ForkRocksFileWal => {
-                Self::Classic
-            }
+            StorageBackendProfile::U0PristineUpstream | StorageBackendProfile::U1ForkRocksFileWal => Self::Classic,
             StorageBackendProfile::U2SlateLocalFs
             | StorageBackendProfile::U2S3SlateS3FileWal
             | StorageBackendProfile::U3SlateRemoteSim
@@ -812,7 +807,9 @@ impl BackendIdentity {
         // v2: the digest line is last and seals every byte before it.
         let digest_marker = "\ndigest ";
         let Some(index) = text.rfind(digest_marker) else {
-            return Err(StorageFactoryError::BackendMarkerUnrecognised { value: "<v2 marker without digest>".to_owned() });
+            return Err(StorageFactoryError::BackendMarkerUnrecognised {
+                value: "<v2 marker without digest>".to_owned(),
+            });
         };
         let body = &text[..index + 1]; // keep the newline that ends the body
         let persisted_digest = text[index + digest_marker.len()..].trim();
@@ -860,10 +857,21 @@ impl BackendIdentity {
             }
         }
         let Some(kind) = kind else {
-            return Err(StorageFactoryError::BackendMarkerUnrecognised { value: "<v2 marker without kind>".to_owned() });
+            return Err(StorageFactoryError::BackendMarkerUnrecognised {
+                value: "<v2 marker without kind>".to_owned(),
+            });
         };
-        let [object_store_profile, materialisation_policy, cache_policy, protocol_versions, endpoint, bucket, root_prefix, region, cache_budget] =
-            optionals;
+        let [
+            object_store_profile,
+            materialisation_policy,
+            cache_policy,
+            protocol_versions,
+            endpoint,
+            bucket,
+            root_prefix,
+            region,
+            cache_budget,
+        ] = optionals;
         Ok(PersistedBackendMarker::V2(BackendIdentity {
             kind,
             durability: durability.unwrap_or_default(),
@@ -1113,10 +1121,7 @@ pub fn verify_backend_marker(
                 // operator asserts the full target identity — upgrades it.
                 Err(StorageFactoryError::LegacyMarkerRequiresExplicitImport { kind: kind.tag() })
             } else {
-                Err(StorageFactoryError::BackendMarkerMismatch {
-                    persisted: kind.tag(),
-                    resolved: resolved.kind.tag(),
-                })
+                Err(StorageFactoryError::BackendMarkerMismatch { persisted: kind.tag(), resolved: resolved.kind.tag() })
             }
         }
         Some(PersistedBackendMarker::V2(identity)) => {
@@ -1425,10 +1430,7 @@ impl fmt::Display for StorageFactoryError {
                 )
             }
             Self::LegacyMarkerImportRefused { reason } => {
-                write!(
-                    f,
-                    "legacy backend marker import refused (R5-STOR-10): {reason}; the marker is untouched"
-                )
+                write!(f, "legacy backend marker import refused (R5-STOR-10): {reason}; the marker is untouched")
             }
             Self::BackendMarkerMissing => {
                 write!(
@@ -1640,7 +1642,9 @@ mod product_backend_tests {
             matches!(
                 refused,
                 Err(StorageFactoryError::ProductBackendProfileMismatch {
-                    requested: "classic", profile: "U2", profile_implies: "slatedb-r2"
+                    requested: "classic",
+                    profile: "U2",
+                    profile_implies: "slatedb-r2"
                 })
             ),
             "{refused:?}"
@@ -1652,7 +1656,9 @@ mod product_backend_tests {
             matches!(
                 refused,
                 Err(StorageFactoryError::ProductBackendProfileMismatch {
-                    requested: "slatedb-r2", profile: "U1", profile_implies: "classic"
+                    requested: "slatedb-r2",
+                    profile: "U1",
+                    profile_implies: "classic"
                 })
             ),
             "{refused:?}"
@@ -1665,16 +1671,14 @@ mod product_backend_tests {
         // The persisted identity refuses the reinterpretation at open,
         // BEFORE any engine touches the bytes.
         let classic = BackendIdentity::from_spec(&BackendSpec::Classic);
-        let slate_marker = PersistedBackendMarker::V2(
-            BackendIdentity::from_spec(&BackendSpec::from_profile(StorageBackendProfile::U2SlateLocalFs).unwrap()),
-        );
+        let slate_marker = PersistedBackendMarker::V2(BackendIdentity::from_spec(
+            &BackendSpec::from_profile(StorageBackendProfile::U2SlateLocalFs).unwrap(),
+        ));
         let refused = verify_backend_marker(&classic, Some(&slate_marker));
         assert!(
             matches!(
                 refused,
-                Err(StorageFactoryError::BackendMarkerMismatch {
-                    persisted: "slatedb-r2", resolved: "classic"
-                })
+                Err(StorageFactoryError::BackendMarkerMismatch { persisted: "slatedb-r2", resolved: "classic" })
             ),
             "{refused:?}"
         );
@@ -1719,9 +1723,9 @@ mod backend_identity_tests {
     use test_utils::create_tmp_dir;
 
     use super::{
-        BackendIdentity, BackendMarker, BackendSpec, MarkerVerification, PersistedBackendMarker,
-        StorageBackendProfile, StorageFactoryError, import_legacy_backend_marker, read_backend_marker,
-        verify_backend_marker, write_backend_marker,
+        BackendIdentity, BackendMarker, BackendSpec, MarkerVerification, PersistedBackendMarker, StorageBackendProfile,
+        StorageFactoryError, import_legacy_backend_marker, read_backend_marker, verify_backend_marker,
+        write_backend_marker,
     };
 
     fn slate_s3_identity() -> BackendIdentity {
@@ -1757,11 +1761,17 @@ mod backend_identity_tests {
         let persisted_identity = slate_s3_identity();
         let persisted = PersistedBackendMarker::V2(persisted_identity.clone());
         for (field, mutate) in [
-            ("endpoint", Box::new(|id: &mut BackendIdentity| id.endpoint = Some("https://other:9000".into()))
-                as Box<dyn Fn(&mut BackendIdentity)>),
+            (
+                "endpoint",
+                Box::new(|id: &mut BackendIdentity| id.endpoint = Some("https://other:9000".into()))
+                    as Box<dyn Fn(&mut BackendIdentity)>,
+            ),
             ("bucket", Box::new(|id: &mut BackendIdentity| id.bucket = Some("other-bucket".into()))),
             ("root-prefix", Box::new(|id: &mut BackendIdentity| id.root_prefix = Some("elsewhere".into()))),
-            ("materialisation", Box::new(|id: &mut BackendIdentity| id.materialisation_policy = Some("in-place".into()))),
+            (
+                "materialisation",
+                Box::new(|id: &mut BackendIdentity| id.materialisation_policy = Some("in-place".into())),
+            ),
             ("protocol", Box::new(|id: &mut BackendIdentity| id.protocol_versions = Some("fv2".into()))),
             ("object-store", Box::new(|id: &mut BackendIdentity| id.object_store_profile = Some("local-fs".into()))),
             ("durability", Box::new(|id: &mut BackendIdentity| id.durability = "remote-wal".into())),

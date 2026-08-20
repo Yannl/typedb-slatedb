@@ -1,0 +1,25 @@
+[package]
+name = "xtask"
+workspace = "../tools"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Deterministic quality controller for typedb-slatedb (spec §3): the single stable interface for agents and CI. Agents repair; this crate decides."
+
+[lib]
+name = "xtask"
+path = "src/lib.rs"
+
+[[bin]]
+name = "xtask"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+toml = "0.8"
+
+[dev-dependencies]
+serde_json = "1"

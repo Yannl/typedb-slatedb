@@ -1,0 +1,598 @@
+Feature: Driver Connection
+  Background: Open connection, create driver, create database
+
+  Scenario: Driver can close connection
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.164s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.050s
+    Given connection has database: typedb ... passed in 0.002s
+    When connection closes ... passed in 0.000s
+    Then connection is open: false ... passed in 0.000s
+
+  Scenario: Driver can connect after an unsuccessful connection attempt
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.160s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.048s
+    Given connection has database: typedb ... passed in 0.002s
+    When connection closes ... passed in 0.000s
+    When connection opens with a wrong port; fails ... passed in 0.000s
+    Then connection is open: false ... passed in 0.000s
+    When connection opens with a wrong host; fails with a message containing: "failed to lookup address information" ... passed in 0.003s
+    Then connection is open: false ... passed in 0.000s
+    When connection opens with default authentication ... passed in 0.147s
+    Then connection is open: true ... passed in 0.000s
+
+  Scenario: Driver can reconnect multiple times
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.188s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.056s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has database: typedb ... passed in 0.002s
+    When connection opens with default authentication ... passed in 0.175s
+    Then connection is open: true ... passed in 0.000s
+    Then connection has database: typedb ... passed in 0.002s
+    When connection opens with default authentication ... passed in 0.163s
+    Then connection is open: true ... passed in 0.000s
+    Then connection has database: typedb ... passed in 0.002s
+    When connection closes ... passed in 0.000s
+    Then connection is open: false ... passed in 0.000s
+    When connection closes ... passed in 0.000s
+    Then connection is open: false ... passed in 0.000s
+    When connection opens with default authentication ... passed in 0.172s
+    Then connection is open: true ... passed in 0.000s
+    Then connection has database: typedb ... passed in 0.002s
+
+  Scenario: Driver can configure request timeout
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.176s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.054s
+    Given connection has database: typedb ... passed in 0.002s
+    When connection closes ... passed in 0.000s
+    When set driver option request_timeout_millis to: 7200000 ... passed in 0.000s
+    When connection opens with default authentication ... passed in 0.155s
+    Then connection is open: true ... passed in 0.000s
+    Then connection has database: typedb ... passed in 0.002s
+
+  Scenario: Driver fails to connect with impossibly short request timeout
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.175s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.042s
+    Given connection has database: typedb ... passed in 0.002s
+    When connection closes ... passed in 0.000s
+    When set driver option request_timeout_millis to: 1 ... passed in 0.000s
+    Then connection opens with default authentication; fails with a message containing: "timed out" ... passed in 0.005s
+
+  Scenario: Driver cannot delete non-existing database
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.172s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.043s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection does not have database: does-not-exist ... passed in 0.002s
+    Then connection delete database: does-not-exist; fails with a message containing: "Database 'does-not-exist' not found" ... passed in 0.002s
+    Then connection does not have database: does-not-exist ... passed in 0.001s
+
+  Scenario: Driver can create and delete databases
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.164s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.003s
+    Given connection create database: typedb ... passed in 0.041s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection does not have database: An0ther-database_with-1onG-Name ... passed in 0.001s
+    When connection create database: An0ther-database_with-1onG-Name ... passed in 0.049s
+    Then connection has 2 databases ... passed in 0.002s
+    Then connection has databases ... passed in 0.003s
+      | typedb                          |
+      | An0ther-database_with-1onG-Name |
+    Then connection does not have databases ... passed in 0.001s
+      | typedB                          |
+      | Typedb                          |
+      | TYPEDB                          |
+      | An0ther_database_with-1onG-Name |
+      | An0ther-database-with-1onG-Name |
+      | an0ther-database_with-1onG-Name |
+    When connection closes ... passed in 0.000s
+    Then connection is open: false ... passed in 0.000s
+    When connection opens with default authentication ... passed in 0.151s
+    Then connection is open: true ... passed in 0.000s
+    Then connection has 2 databases ... passed in 0.002s
+    Then connection has databases ... passed in 0.003s
+      | typedb                          |
+      | An0ther-database_with-1onG-Name |
+    Then connection does not have databases ... passed in 0.001s
+      | typedB                          |
+      | Typedb                          |
+      | TYPEDB                          |
+      | An0ther_database_with-1onG-Name |
+      | An0ther-database-with-1onG-Name |
+      | an0ther-database_with-1onG-Name |
+    When connection delete database: typedb ... passed in 0.005s
+    Then connection has 1 database ... passed in 0.001s
+    Then connection does not have database: typedb ... passed in 0.002s
+    Then connection has database: An0ther-database_with-1onG-Name ... passed in 0.001s
+    When connection closes ... passed in 0.000s
+    Then connection is open: false ... passed in 0.000s
+    When connection opens with default authentication ... passed in 0.160s
+    Then connection is open: true ... passed in 0.000s
+    Then connection has 1 database ... passed in 0.002s
+    Then connection does not have database: typedb ... passed in 0.001s
+    Then connection has database: An0ther-database_with-1onG-Name ... passed in 0.002s
+    When connection delete database: An0ther-database_with-1onG-Name ... passed in 0.005s
+    Then connection has 0 databases ... passed in 0.001s
+    Then connection does not have database: An0ther-database_with-1onG-Name ... passed in 0.001s
+    Then connection does not have database: typedb ... passed in 0.001s
+    Then connection has 0 databases ... passed in 0.001s
+    When connection closes ... passed in 0.000s
+    Then connection is open: false ... passed in 0.000s
+    When connection opens with default authentication ... passed in 0.162s
+    Then connection is open: true ... passed in 0.000s
+    Then connection has 0 databases ... passed in 0.002s
+    When connection create database: typedb ... passed in 0.035s
+    Then connection has database: typedb ... passed in 0.002s
+
+  Scenario: Driver can acquire database schema
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.143s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.037s
+    Given connection has database: typedb ... passed in 0.001s
+    Given connection has database: typedb ... passed in 0.001s
+    Then connection get database(typedb) has schema ... passed in 0.043s
+      """
+      define
+      """
+    Then connection get database(typedb) has type schema ... passed in 0.044s
+      """
+      define
+      """
+    When connection open schema transaction for database: typedb ... passed in 0.002s
+    When typeql schema query ... passed in 0.007s
+      """
+      define
+        entity person @abstract, owns age @card(1..1);
+        entity real-person sub person;
+        entity not-real-person @abstract, sub person;
+        attribute age, value integer @range(0..150);
+        relation friendship, relates friend;
+        relation best-friendship sub friendship, relates best-friend as friend;
+      
+        fun age($person: person) -> age:
+          match
+            $person has $age;
+            $age isa age;
+          return first $age;
+      """
+    Then connection get database(typedb) has schema ... passed in 0.039s
+      """
+      define
+      """
+    Then connection get database(typedb) has type schema ... passed in 0.042s
+      """
+      define
+      """
+    When transaction commits ... passed in 0.018s
+    Then connection get database(typedb) has schema ... passed in 0.073s
+      """
+      define
+        entity person @abstract, owns age @card(1..1);
+        entity real-person sub person;
+        entity not-real-person @abstract, sub person;
+        attribute age, value integer @range(0..150);
+        relation friendship, relates friend;
+        relation best-friendship sub friendship, relates best-friend as friend;
+      
+        fun age($person: person) -> age:
+          match
+            $person has $age;
+            $age isa age;
+          return first $age;
+      """
+    Then connection get database(typedb) has type schema ... passed in 0.062s
+      """
+      define
+        entity person @abstract, owns age @card(1..1);
+        entity real-person sub person;
+        entity not-real-person @abstract, sub person;
+        attribute age, value integer @range(0..150);
+        relation friendship, relates friend;
+        relation best-friendship sub friendship, relates best-friend as friend;
+      """
+    When connection open schema transaction for database: typedb ... passed in 0.002s
+    When typeql schema query ... passed in 0.004s
+      """
+      redefine
+        attribute age value integer @range(0..);
+      
+        fun age($person: real-person) -> age:
+          match
+            $person has age $age;
+          return first $age;
+      """
+    Then connection get database(typedb) has schema ... passed in 0.075s
+      """
+      define
+        entity person @abstract, owns age @card(1..1);
+        entity real-person sub person;
+        entity not-real-person @abstract, sub person;
+        attribute age, value integer @range(0..150);
+        relation friendship, relates friend;
+        relation best-friendship sub friendship, relates best-friend as friend;
+      
+        fun age($person: person) -> age:
+          match
+            $person has $age;
+            $age isa age;
+          return first $age;
+      """
+    Then connection get database(typedb) has type schema ... passed in 0.076s
+      """
+      define
+        entity person @abstract, owns age @card(1..1);
+        entity real-person sub person;
+        entity not-real-person @abstract, sub person;
+        attribute age, value integer @range(0..150);
+        relation friendship, relates friend;
+        relation best-friendship sub friendship, relates best-friend as friend;
+      """
+    When transaction commits ... passed in 0.014s
+    Then connection get database(typedb) has schema ... passed in 0.105s
+      """
+      define
+        entity person @abstract, owns age @card(1..1);
+        entity real-person sub person;
+        entity not-real-person @abstract, sub person;
+        attribute age, value integer @range(0..);
+        relation friendship, relates friend;
+        relation best-friendship sub friendship, relates best-friend as friend;
+      
+        fun age($person: real-person) -> age:
+          match
+            $person has age $age;
+          return first $age;
+      """
+    Then connection get database(typedb) has type schema ... passed in 0.083s
+      """
+      define
+        entity person @abstract, owns age @card(1..1);
+        entity real-person sub person;
+        entity not-real-person @abstract, sub person;
+        attribute age, value integer @range(0..);
+        relation friendship, relates friend;
+        relation best-friendship sub friendship, relates best-friend as friend;
+      """
+
+  Scenario: Driver sees databases updates done by other drivers in background
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.158s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.046s
+    Given connection has database: typedb ... passed in 0.001s
+    Then connection does not have database: newbie ... passed in 0.001s
+    Then connection open schema transaction for database: newbie; fails with a message containing: "Database 'newbie' not found" ... passed in 0.002s
+    When in background, connection create database: newbie ... passed in 0.209s
+    Then connection has databases ... passed in 0.003s
+      | newbie |
+      | typedb |
+    Then connection open schema transaction for database: newbie ... passed in 0.003s
+    Then transaction commits ... passed in 0.002s
+    When connection closes ... passed in 0.000s
+    When connection opens with default authentication ... passed in 0.141s
+    Then connection has databases ... passed in 0.004s
+      | newbie |
+      | typedb |
+    Then connection open schema transaction for database: newbie ... passed in 0.002s
+    When transaction closes ... passed in 0.001s
+    Then connection has databases ... passed in 0.002s
+      | newbie |
+      | typedb |
+    When in background, connection delete database: newbie ... passed in 0.151s
+    Then connection does not have database: newbie ... passed in 0.002s
+    Then connection open schema transaction for database: newbie; fails with a message containing: "Database 'newbie' not found" ... passed in 0.002s
+    When connection closes ... passed in 0.000s
+    When connection opens with default authentication ... passed in 0.160s
+    Then connection does not have database: newbie ... passed in 0.002s
+    Then connection open schema transaction for database: newbie; fails with a message containing: "Database 'newbie' not found" ... passed in 0.002s
+
+  Scenario: Driver processes database management errors correctly
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.139s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.042s
+    Given connection has database: typedb ... passed in 0.001s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Then connection create database with empty name; fails with a message containing: "is not a valid database name" ... passed in 0.002s
+
+  Scenario: Driver cannot open transaction to non-existing database
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.161s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.047s
+    Given connection has database: typedb ... passed in 0.001s
+    Given connection does not have database: does-not-exist ... passed in 0.001s
+    Then transaction is open: false ... passed in 0.000s
+    Then connection open schema transaction for database: does-not-exist; fails with a message containing: "Database 'does-not-exist' not found" ... passed in 0.002s
+    Then transaction is open: false ... passed in 0.000s
+    Then connection open write transaction for database: does-not-exist; fails with a message containing: "Database 'does-not-exist' not found" ... passed in 0.002s
+    Then transaction is open: false ... passed in 0.000s
+    Then connection open read transaction for database: does-not-exist; fails with a message containing: "Database 'does-not-exist' not found" ... passed in 0.002s
+    Then transaction is open: false ... passed in 0.000s
+
+  Scenario: Driver can open and close transactions of different types
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.160s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.047s
+    Given connection has database: typedb ... passed in 0.002s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open schema transaction for database: typedb ... passed in 0.002s
+    Then transaction has type: schema ... passed in 0.000s
+    Then transaction is open: true ... passed in 0.000s
+    When transaction closes ... passed in 0.001s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    Then transaction has type: write ... passed in 0.000s
+    Then transaction is open: true ... passed in 0.000s
+    When transaction closes ... passed in 0.001s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open read transaction for database: typedb ... passed in 0.002s
+    Then transaction has type: read ... passed in 0.000s
+    Then transaction is open: true ... passed in 0.000s
+    When transaction closes ... passed in 0.001s
+    Then transaction is open: false ... passed in 0.000s
+
+  Scenario: Driver can commit transactions of schema and write types, cannot commit transaction of type read
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.159s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.038s
+    Given connection has database: typedb ... passed in 0.002s
+    When connection open schema transaction for database: typedb ... passed in 0.002s
+    Then transaction has type: schema ... passed in 0.000s
+    Then transaction is open: true ... passed in 0.000s
+    When transaction commits ... passed in 0.001s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    Then transaction has type: write ... passed in 0.000s
+    Then transaction is open: true ... passed in 0.000s
+    When transaction commits ... passed in 0.001s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open read transaction for database: typedb ... passed in 0.002s
+    Then transaction has type: read ... passed in 0.000s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction commits; fails with a message containing: "Read transactions cannot be committed" ... passed in 0.001s
+    Then transaction is open: false ... passed in 0.000s
+
+  Scenario: Driver can rollback transactions of schema and write types, cannot rollback transaction of type read
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.158s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.034s
+    Given connection has database: typedb ... passed in 0.001s
+    When connection open schema transaction for database: typedb ... passed in 0.003s
+    Then transaction has type: schema ... passed in 0.000s
+    Then transaction is open: true ... passed in 0.000s
+    When transaction rollbacks ... passed in 0.001s
+    Then transaction is open: true ... passed in 0.000s
+    When transaction closes ... passed in 0.001s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    Then transaction has type: write ... passed in 0.000s
+    Then transaction is open: true ... passed in 0.000s
+    When transaction rollbacks ... passed in 0.001s
+    Then transaction is open: true ... passed in 0.000s
+    When transaction closes ... passed in 0.001s
+    When connection open read transaction for database: typedb ... passed in 0.002s
+    Then transaction has type: read ... passed in 0.000s
+    Then transaction is open: true ... passed in 0.002s
+    Then transaction rollbacks; fails with a message containing: "Read transactions cannot be rolled back" ... passed in 0.001s
+    Then transaction is open: false ... passed in 0.000s
+
+  Scenario Outline: Driver can open schema transactions with different transaction timeouts -- @1.1 
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.161s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.040s
+    Given connection has database: typedb ... passed in 0.001s
+    When set transaction option transaction_timeout_millis to: 6000 ... passed in 0.000s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open schema transaction for database: typedb ... passed in 0.002s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: schema ... passed in 0.000s
+    When wait 3 seconds ... passed in 3.000s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: schema ... passed in 0.000s
+    Then typeql read query ... passed in 0.004s
+      """
+      match entity $x;
+      """
+    When wait 4 seconds ... passed in 4.000s
+    Then transaction is open: false ... passed in 0.000s
+    Then typeql read query; fails ... passed in 0.000s
+      """
+      match entity $x;
+      """
+
+  Scenario Outline: Driver can open write transactions with different transaction timeouts -- @1.2 
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.152s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.039s
+    Given connection has database: typedb ... passed in 0.002s
+    When set transaction option transaction_timeout_millis to: 6000 ... passed in 0.001s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: write ... passed in 0.000s
+    When wait 3 seconds ... passed in 3.000s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: write ... passed in 0.000s
+    Then typeql read query ... passed in 0.006s
+      """
+      match entity $x;
+      """
+    When wait 4 seconds ... passed in 4.000s
+    Then transaction is open: false ... passed in 0.001s
+    Then typeql read query; fails ... passed in 0.000s
+      """
+      match entity $x;
+      """
+
+  Scenario Outline: Driver can open read transactions with different transaction timeouts -- @1.3 
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.162s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.104s
+    Given connection has database: typedb ... passed in 0.002s
+    When set transaction option transaction_timeout_millis to: 6000 ... passed in 0.000s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open read transaction for database: typedb ... passed in 0.005s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: read ... passed in 0.000s
+    When wait 3 seconds ... passed in 3.000s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: read ... passed in 0.000s
+    Then typeql read query ... passed in 0.005s
+      """
+      match entity $x;
+      """
+    When wait 4 seconds ... passed in 4.000s
+    Then transaction is open: false ... passed in 0.000s
+    Then typeql read query; fails ... passed in 0.000s
+      """
+      match entity $x;
+      """
+
+  Scenario: Driver can open a schema transaction when a parallel schema lock is released
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.140s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.037s
+    Given connection has database: typedb ... passed in 0.002s
+    When set transaction option transaction_timeout_millis to: 5000 ... passed in 0.000s
+    When set transaction option schema_lock_acquire_timeout_millis to: 1000 ... passed in 0.000s
+    When in background, connection open schema transaction for database: typedb ... passed in 0.176s
+    Then transaction is open: false ... passed in 0.000s
+    Then connection open schema transaction for database: typedb; fails with a message containing: "timeout" ... passed in 1.004s
+    Then transaction is open: false ... passed in 0.000s
+    When wait 5 seconds ... passed in 5.000s
+    When set transaction option transaction_timeout_millis to: 1000 ... passed in 0.000s
+    When set transaction option schema_lock_acquire_timeout_millis to: 5000 ... passed in 0.000s
+    When in background, connection open schema transaction for database: typedb ... passed in 0.162s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open schema transaction for database: typedb ... passed in 1.001s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: schema ... passed in 0.000s
+    Then typeql read query ... passed in 0.003s
+      """
+      match entity $x;
+      """
+
+  Scenario: Driver processes transaction commit errors correctly
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.154s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.037s
+    Given connection has database: typedb ... passed in 0.001s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    When typeql schema query ... passed in 0.002s
+      """
+      define attribute name;
+      """
+    Then transaction commits; fails with a message containing: "Schema transaction commit failed" ... passed in 0.002s
+
+  Scenario: Driver processes multiple failing schema and write transactions correctly
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.156s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.037s
+    Given connection has database: typedb ... passed in 0.001s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    When typeql schema query; fails ... passed in 0.003s
+      """
+      define entity new-entity sub unknown-entity;
+      """
+    Then transaction is open: false ... passed in 0.000s
+    Then connection open schema transaction for database: typedb ... passed in 0.002s
+    Then typeql schema query; fails ... passed in 0.005s
+      """
+      define entity new-entity sub unknown-entity;
+      """
+    Then transaction is open: false ... passed in 0.000s
+    Then connection open schema transaction for database: typedb ... passed in 0.002s
+    Then typeql schema query ... passed in 0.002s
+      """
+      define entity new-entity;
+      """
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction commits ... passed in 0.005s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    When typeql write query; fails ... passed in 0.004s
+      """
+      insert $e isa unknown-entity;
+      """
+    Then connection open write transaction for database: typedb ... passed in 0.003s
+    Then typeql write query ... passed in 0.005s
+      """
+      insert $e isa new-entity;
+      """
+    Then transaction commits ... passed in 0.004s
+    Then connection open schema transaction for database: typedb ... passed in 0.006s
+    Then typeql schema query; fails ... passed in 0.002s
+      """
+      define new-entity sub unknown-entity;
+      """
+    Then connection open write transaction for database: typedb ... passed in 0.002s
+    Then typeql write query ... passed in 0.002s
+      """
+      insert $e isa new-entity;
+      """
+
+1 feature passed, 0 failed, 0 skipped
+20 scenarios passed, 0 failed, 0 skipped
+377 steps passed, 0 failed, 0 skipped, 0 undefined
+Took 0m35.492s

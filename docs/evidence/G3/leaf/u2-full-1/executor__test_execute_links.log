@@ -1,0 +1,13 @@
+
+running 8 tests
+test traverse_links_bounded_relation_player ... ok
+test traverse_links_bounded_relation ... ok
+test traverse_links_reverse_bounded_player ... ok
+test traverse_links_reverse_bounded_player_relation ... ok
+test traverse_links_reverse_unbounded_sorted_from ... ok
+test traverse_links_reverse_unbounded_sorted_to ... ok
+test traverse_links_unbounded_sorted_from ... ok
+test traverse_links_unbounded_sorted_to ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+

@@ -1,0 +1,14 @@
+{
+  "artifact_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+  "member_root": "dc226c520095ccd96f5aa7f5b8cff9f0b899192851c2e5279b8030437dd108cb",
+  "profile": "RELEASE",
+  "promotion_class": "DEVELOPMENT",
+  "required_lanes": [
+    "artifact-exec",
+    "artifact-health",
+    "artifact-layout"
+  ],
+  "schema": "release-promotion/v1",
+  "signing_key_class": "development-public",
+  "signing_key_id": "dev-public"
+}

@@ -26,7 +26,16 @@ until now. This tool freezes the DENOMINATOR as a first-class artifact:
     rocksdb/slatedb backends) are recorded with status NOT_IMPLEMENTED and
     required_by v17-A17.5, so the denominator INCLUDES the driver suites and
     any coverage report must show them uncovered - absence is recorded, not
-    hidden;
+    hidden. NOTE: that NOT_IMPLEMENTED is the plan's SEED value and stays
+    that way by design, because the plan body feeds plan_root and archived
+    verdicts pin that root (see the paragraph below). Whether a driver row
+    has since been EXECUTED is a RESULT-side fact and lives in
+    docs/evidence/G1/drivers/driver-row-status.json, written by
+    tools/drivers/row_status.py only for rows whose evidence bundle
+    tools/evidence/verify_drivers.py accepts, and re-checked independently
+    by tools/catalog/plan_coverage.py. Do not "fix" the seed here: changing
+    it re-roots the plan and turns every bundle that pinned the old root
+    red for a reason that has nothing to do with its bytes;
   - a content-addressed `plan_root` (sha256 over the canonical JSON of the
     whole body) makes the plan pin-able: verdicts record it (policy_roots)
     and a silent plan edit becomes a root mismatch, never a reinterpretation.
@@ -284,6 +293,9 @@ def build_body(catalog, catalog_sha):
     if len({tuple(r) for r in rows}) != len(rows):
         error("plan: duplicate (leaf, profile, fixture-set, toolchain) row")
 
+    # SEED status only - see the module docstring. The result side is
+    # docs/evidence/G1/drivers/driver-row-status.json; editing the value
+    # below changes the plan body and therefore plan_root.
     driver_rows = [
         {"row_id": f"driver:{d}:{b}",
          "driver": d,

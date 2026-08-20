@@ -23,6 +23,7 @@ import {
   ControllerCore,
   type AmbiguityResolution,
   type CapabilityEffect,
+  type ReceiptMethod,
   type FinalizeRequest,
   type FinalizeResult,
   type ReadLeaseRedemption,
@@ -275,50 +276,85 @@ export class DatabaseControllerDO extends DurableObject {
     return this.controllerCore.finalizeBatch(reqs, envelope);
   }
 
-  registerSession(databaseId: string, generation: number, startupSessionId: string): void {
+  // R6-CTRL-02: every lifecycle RPC below takes the OPERATION IDENTITY of
+  // the single capability use that authorized it (the token's nonce). The
+  // core writes the canonical {status, body} it produced under that id in
+  // the SAME transaction as the state transition, so a retry that lands on
+  // an unresolved claim replays the original answer instead of transitioning
+  // again. `operationId` is optional ONLY for the direct-core callers that
+  // predate the capability layer (bootstrap, tests); every HTTP route
+  // supplies it.
+
+  registerSession(databaseId: string, generation: number, startupSessionId: string,
+                  operationId?: string): void {
     this.bind(databaseId);
-    this.controllerCore.registerSession(databaseId, generation, startupSessionId);
+    this.controllerCore.registerSession(databaseId, generation, startupSessionId, operationId);
   }
 
-  reserveSession(databaseId: string, generation: number, startupSessionId: string, holder: string):
-    ReturnType<ControllerCore["reserveSession"]> {
+  reserveSession(databaseId: string, generation: number, startupSessionId: string, holder: string,
+                 operationId?: string): ReturnType<ControllerCore["reserveSession"]> {
     this.bind(databaseId);
-    return this.controllerCore.reserveSession(databaseId, generation, startupSessionId, holder);
+    return this.controllerCore.reserveSession(databaseId, generation, startupSessionId, holder, operationId);
   }
 
-  attestSession(databaseId: string, startupSessionId: string, processNonce: string):
-    ReturnType<ControllerCore["attestSession"]> {
+  attestSession(databaseId: string, startupSessionId: string, processNonce: string,
+                operationId?: string): ReturnType<ControllerCore["attestSession"]> {
     this.bind(databaseId);
-    return this.controllerCore.attestSession(databaseId, startupSessionId, processNonce);
+    return this.controllerCore.attestSession(databaseId, startupSessionId, processNonce, operationId);
   }
 
   activateSession(
     databaseId: string, startupSessionId: string,
     proof: Parameters<ControllerCore["activateSession"]>[2],
+    operationId?: string,
   ): ReturnType<ControllerCore["activateSession"]> {
     this.bind(databaseId);
-    return this.controllerCore.activateSession(databaseId, startupSessionId, proof);
+    return this.controllerCore.activateSession(databaseId, startupSessionId, proof, operationId);
   }
 
-  renewLease(databaseId: string, startupSessionId: string, leaseMs: number):
-    ReturnType<ControllerCore["renewLease"]> {
+  renewLease(databaseId: string, startupSessionId: string, leaseMs: number,
+             operationId?: string): ReturnType<ControllerCore["renewLease"]> {
     this.bind(databaseId);
-    return this.controllerCore.renewLease(databaseId, startupSessionId, leaseMs);
+    return this.controllerCore.renewLease(databaseId, startupSessionId, leaseMs, operationId);
   }
 
-  beginDrain(databaseId: string, startupSessionId: string): ReturnType<ControllerCore["beginDrain"]> {
+  beginDrain(databaseId: string, startupSessionId: string,
+             operationId?: string): ReturnType<ControllerCore["beginDrain"]> {
     this.bind(databaseId);
-    return this.controllerCore.beginDrain(databaseId, startupSessionId);
+    return this.controllerCore.beginDrain(databaseId, startupSessionId, operationId);
   }
 
-  revokeSession(databaseId: string, startupSessionId: string): ReturnType<ControllerCore["revokeSession"]> {
+  revokeSession(databaseId: string, startupSessionId: string,
+                operationId?: string): ReturnType<ControllerCore["revokeSession"]> {
     this.bind(databaseId);
-    return this.controllerCore.revokeSession(databaseId, startupSessionId);
+    return this.controllerCore.revokeSession(databaseId, startupSessionId, operationId);
   }
 
-  fenceSession(databaseId: string, startupSessionId: string): void {
+  fenceSession(databaseId: string, startupSessionId: string, operationId?: string): void {
     this.bind(databaseId);
-    this.controllerCore.fenceSession(databaseId, startupSessionId);
+    this.controllerCore.fenceSession(databaseId, startupSessionId, operationId);
+  }
+
+  /**
+   * R6-CTRL-02: record the canonical response of a mutation whose physical
+   * effect lives OUTSIDE this authority's SQLite - today only the
+   * content-addressed R2 payload publication. The controller cannot enclose
+   * an object-store write in its transaction, so the protocol is: the CLAIM
+   * row (written before the upload starts, carrying the OPERATION_RECEIPT
+   * effect) is the durable intent, and this call is the convergence
+   * evidence, made durable BEFORE the response is handed to the client.
+   */
+  recordOperationReceipt(
+    operationId: string, databaseId: string, method: ReceiptMethod,
+    status: number, body: Record<string, unknown>,
+  ): void {
+    this.bind(databaseId);
+    this.controllerCore.recordOperationReceipt(operationId, databaseId, method, status, body);
+  }
+
+  /** R6-CTRL-02 (tests/forensics): the recorded receipt of one operation. */
+  operationReceipt(operationId: string): ReturnType<ControllerCore["operationReceipt"]> {
+    return this.controllerCore.operationReceipt(operationId);
   }
 
   /** R4-SEC-05: use-time revalidation for read authority (see core). */
@@ -389,10 +425,10 @@ export class DatabaseControllerDO extends DurableObject {
   }
 
   outboxAck(
-    databaseId: string, upToControlSeq: bigint, startupSessionId: string,
+    databaseId: string, upToControlSeq: bigint, startupSessionId: string, operationId?: string,
   ): ReturnType<ControllerCore["outboxAck"]> {
     this.bind(databaseId);
-    return this.controllerCore.outboxAck(databaseId, upToControlSeq, startupSessionId);
+    return this.controllerCore.outboxAck(databaseId, upToControlSeq, startupSessionId, operationId);
   }
 
   verifyJournal(): ReturnType<ControllerCore["verifyJournal"]> {
@@ -511,10 +547,13 @@ export class DatabaseControllerDO extends DurableObject {
     expect: { method: string; databaseId: string; tenantId?: string; session?: string; generation?: string;
               key?: string; bodyDigest?: string; bodyLength?: number },
     useDigest: string,
-    // R5-SEC-04: the authoritative effect this use is bound to, recorded
-    // durably with the claim so a lost response can be settled later by
-    // querying the effect rather than wedging the nonce at 409 forever.
-    effect: CapabilityEffect = { kind: "IDEMPOTENT_REEXECUTE" },
+    // R5-SEC-04/R6-CTRL-01: the authoritative effect this use is bound to,
+    // recorded durably with the claim so a lost response can be settled
+    // later by querying the effect rather than wedging the nonce at 409
+    // forever. MANDATORY: the round-5 default silently bound every caller
+    // that forgot it to a convergence claim it did not have, which is how
+    // three implemented effect queries became unreachable code.
+    effect: CapabilityEffect,
   ): Promise<
     (CapabilityCheck & { claim?: { fresh: boolean; terminal: boolean; response: string | null } })
     // R5-SEC-04: a use whose durable evidence contradicts its recorded
@@ -738,8 +777,8 @@ export class DatabaseControllerDO extends DurableObject {
     this.controllerCore.resolveCapabilityUse(nonce, state, response);
   }
 
-  bumpIncarnation(): number {
-    return this.controllerCore.bumpIncarnation();
+  bumpIncarnation(operationId?: string): number {
+    return this.controllerCore.bumpIncarnation(operationId);
   }
 
   openCheckpointCut(databaseId: string, generation: number, cutId: string): ReturnType<ControllerCore["openCheckpointCut"]> {

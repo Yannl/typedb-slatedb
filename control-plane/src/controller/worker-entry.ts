@@ -84,6 +84,45 @@ import { devOnlyRoute } from "./surface.ts";
 import { canonicalJson } from "./core/journal-crypto.ts";
 import { verifyCapabilityToken, type CapabilityPayload } from "./core/capability.ts";
 import type { CapabilityEffect } from "./core/procedures.ts";
+
+/**
+ * R6-CTRL-01: THE MUTATION ROUTE TABLE.
+ *
+ * Every mutating HTTP route names itself here and `withMutation` takes that
+ * name together with a mandatory `CapabilityEffect`. Two things follow, and
+ * both are the point:
+ *
+ *  - a new mutation cannot COMPILE without an explicit ambiguity policy —
+ *    there is no default effect to fall into, and no unnamed route;
+ *  - the route -> effect binding is machine-readable from this source, so
+ *    the coverage matrix is a TEST (core/route-effects.test.ts) rather than
+ *    a paragraph that drifts.
+ *
+ * The round-5 code had neither: `withMutation`'s fifth parameter defaulted
+ * to `{kind:"IDEMPOTENT_REEXECUTE"}`, so `/wal/finalize-batch`, checkpoint
+ * open and checkpoint activation stored a convergence claim instead of the
+ * authoritative effect that was already implemented for them, and seven
+ * lifecycle/outbox routes claimed a convergence they never had.
+ */
+export const MUTATION_ROUTES = {
+  INCARNATION_BUMP: "POST /admin/:databaseId/incarnation/bump",
+  PAYLOAD_PUT: "PUT /payload/:key",
+  SESSION_REGISTER: "POST /session/register",
+  SESSION_RESERVE: "POST /session/reserve",
+  SESSION_ATTEST: "POST /session/attest",
+  SESSION_ACTIVATE: "POST /session/activate",
+  SESSION_RENEW: "POST /session/renew",
+  SESSION_DRAIN: "POST /session/drain",
+  SESSION_REVOKE: "POST /session/revoke",
+  SESSION_FENCE: "POST /session/fence",
+  BUDGETS_SET: "POST /budgets",
+  WAL_FINALIZE: "POST /wal/finalize",
+  WAL_FINALIZE_BATCH: "POST /wal/finalize-batch",
+  OUTBOX_ACK: "POST /outbox/:databaseId/ack",
+  CHECKPOINT_OPEN: "POST /checkpoint/:databaseId/:generation/cut",
+  CHECKPOINT_ACTIVATE: "POST /checkpoint/:databaseId/cut/:cutId/activate",
+} as const;
+export type MutationRouteId = keyof typeof MUTATION_ROUTES;
 import { resolveKeyConfig, type ResolvedKeys } from "./core/key-config.ts";
 import { checkBinding, verifyProvisionToken, controllerDoName, type ProvisionBinding } from "./core/registry.ts";
 
@@ -248,6 +287,14 @@ async function stageStreamedObject(
  */
 async function promoteStagedObject(
   env: Env, stagingKey: string, key: string, digest: string, length: number,
+  /** R6-CTRL-02 ATTEMPT IDENTITY. True when the capability nonce that
+   *  authorizes this publication has already been claimed once — i.e. this
+   *  is a retry of an upload that may itself have published the object. A
+   *  create-only collision is then OUR OWN prior attempt, not somebody
+   *  else's upload, so the answer is the first attempt's answer and NOT
+   *  `deduplicated: true`. Without this the same nonce produced two
+   *  different canonical bodies for one physical effect. */
+  priorAttempt: boolean,
 ): Promise<{ status: number; body: unknown }> {
   for (let attempt = 0; attempt < 3; attempt++) {
     const staged = await env.PAYLOADS.get(stagingKey);
@@ -262,7 +309,9 @@ async function promoteStagedObject(
     // check never materialises the existing object either
     const existing = await fetchVerified(env, key, digest, undefined, false);
     if ("bytes" in existing) {
-      return { status: 200, body: { key, sha256hex: digest, length, deduplicated: true } };
+      return priorAttempt
+        ? { status: 200, body: { key, sha256hex: digest, length } }
+        : { status: 200, body: { key, sha256hex: digest, length, deduplicated: true } };
     }
     if (existing.error === "MISSING") continue; // lost a delete/create race; retry
     if (existing.error === "OVER_CAP") {
@@ -284,6 +333,9 @@ async function promoteStagedObject(
 export async function streamedPayloadPut(
   env: Env, body: ReadableStream<Uint8Array>, databaseId: string, key: string,
   declaredDigest: string, declaredLength: number,
+  /** see promoteStagedObject: false for a first claim of the authorizing
+   *  nonce, true for a retry of one that was already claimed. */
+  priorAttempt = false,
 ): Promise<{ status: number; body: unknown }> {
   // a top-level prefix the payload route can never address (its keys must
   // be `p/<db>/<sha256hex>`), so a staging object is unreachable through
@@ -298,7 +350,7 @@ export async function streamedPayloadPut(
       return { status: 422, body: { ok: false, error: "PAYLOAD_DIGEST_MISMATCH",
                                     key, declared: declaredDigest, observed: staged.digest } };
     }
-    return await promoteStagedObject(env, stagingKey, key, declaredDigest, declaredLength);
+    return await promoteStagedObject(env, stagingKey, key, declaredDigest, declaredLength, priorAttempt);
   } finally {
     await env.PAYLOADS.delete(stagingKey).catch(() => {});
   }
@@ -1006,8 +1058,9 @@ export default {
      *  terminal use replays its stored response instead of re-executing. */
     const verifyCapability = async (
       databaseId: string, expect: CapExpect, useDigest: string,
-      // R5-SEC-04: bound with the claim so an unresolved use is settleable
-      effect: CapabilityEffect = { kind: "IDEMPOTENT_REEXECUTE" },
+      // R5-SEC-04/R6-CTRL-01: bound with the claim so an unresolved use is
+      // settleable. MANDATORY — there is no generic default to inherit.
+      effect: CapabilityEffect,
     ) => {
       const framed = await frameCheck(databaseId, expect);
       if ("denied" in framed) return { authorized: false as const, denied: framed.denied };
@@ -1082,38 +1135,71 @@ export default {
         JSON.stringify({ status, body }, (_k, v) => (typeof v === "bigint" ? v.toString() : v)));
     };
 
-    /** A mutating route in one wrapper (C-02): frame-check + claim, replay a
-     *  terminal use, else execute and resolve. `execute` returns the
-     *  {status, body} to send; the wrapper stores it as the use outcome. */
-    const withMutation = async (
-      databaseId: string, expect: CapExpect, useDigest: string,
-      execute: (payload: { session?: string; generation?: string }) => Promise<{ status: number; body: unknown }>,
-      // R5-SEC-04: the AUTHORITATIVE EFFECT this use is bound to. Recorded
-      // durably with the claim, so a use left unresolved by a lost response
-      // can be settled later by querying the effect instead of wedging at
-      // 409 forever. Methods that are idempotent by their own operation
-      // identity declare IDEMPOTENT_REEXECUTE (the default).
-      effect: CapabilityEffect = { kind: "IDEMPOTENT_REEXECUTE" },
-    ): Promise<Response> => {
+    /** What a mutation route body is handed (R6-CTRL-02): the verified
+     *  capability restrictions, the OPERATION IDENTITY of this one
+     *  authorized use (the token nonce, which the DO records receipts
+     *  under), and whether this claim is the first one for that identity. */
+    type MutationContext = {
+      session?: string;
+      generation?: string;
+      /** the token nonce: the operation identity every durable receipt for
+       *  this mutation is keyed by */
+      operationId: string;
+      /** false when a previous claim of the same nonce already ran: a route
+       *  whose physical effect is remote (the R2 publication) uses it to
+       *  tell "somebody else already published this content" from "I
+       *  already published it and lost the answer". */
+      firstAttempt: boolean;
+    };
+
+    /**
+     * A mutating route in one wrapper (C-02, R5-SEC-04, R6-CTRL-01/02):
+     * frame-check + claim, replay a terminal use, else execute and resolve.
+     *
+     * Every field is REQUIRED, and that is the finding's fix. `route` names
+     * the mutation in MUTATION_ROUTES so the coverage matrix can be a test;
+     * `effect` is the AUTHORITATIVE EFFECT this use is bound to, recorded
+     * durably with the claim so a use left unresolved by a lost response is
+     * settled later by querying the effect instead of wedging at 409
+     * forever. There is no default: a new mutation does not compile until
+     * its author states what a lost response to it means.
+     */
+    const withMutation = async (spec: {
+      route: MutationRouteId;
+      databaseId: string;
+      expect: CapExpect;
+      useDigest: string;
+      effect: CapabilityEffect;
+      execute: (context: MutationContext) => Promise<{ status: number; body: unknown }>;
+    }): Promise<Response> => {
+      const { route, databaseId, expect, useDigest, effect, execute } = spec;
       const auth = await verifyCapability(databaseId, expect, useDigest, effect);
       if (!auth.authorized) return auth.denied;
+      const claim = auth.verdict.claim;
       const replay = await replayTerminal(databaseId, auth.verdict);
       if (replay !== null) return replay;
       const nonce = auth.verdict.payload?.nonce;
+      if (typeof nonce !== "string" || nonce.length === 0) {
+        // a verified payload always carries a nonce (capability.ts refuses
+        // one that does not); failing closed here keeps the receipt/resolve
+        // path from being silently skipped if that ever stops being true
+        return json({ ok: false, error: "CAPABILITY_MALFORMED", field: "nonce" }, 403);
+      }
       try {
-        const result = await execute(auth.verdict.payload);
-        if (typeof nonce === "string") {
-          const ok = result.status >= 200 && result.status < 300;
-          await resolveUse(databaseId, nonce, ok, result.status, result.body);
-        }
+        const result = await execute({
+          ...auth.verdict.payload, operationId: nonce,
+          // an absent claim means the authority did not run the use machine
+          // at all; treat that as a first attempt, which is what it is
+          firstAttempt: claim === undefined || claim.fresh,
+        });
+        const ok = result.status >= 200 && result.status < 300;
+        await resolveUse(databaseId, nonce, ok, result.status, result.body);
         return json(result.body, result.status);
       } catch (error) {
         // C-02: infrastructure/transport uncertainty is recorded AMBIGUOUS
         // and stays retryable - never silently converted into a burned token
-        if (typeof nonce === "string") {
-          await stubFor(databaseId).resolveCapabilityUse(nonce, "AMBIGUOUS",
-            JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
-        }
+        await stubFor(databaseId).resolveCapabilityUse(nonce, "AMBIGUOUS",
+          JSON.stringify({ route, error: error instanceof Error ? error.message : String(error) }));
         throw error;
       }
     };
@@ -1306,14 +1392,21 @@ export default {
     if (request.method === "POST" && adminBump) {
       // incarnation bump is NOT idempotent (each call increments), so it is a
       // single-request mutation: a replayed token returns the stored result
-      return withMutation(adminBump[1], { method: "INCARNATION_BUMP" }, await routeUseDigest(), async () => ({
-        status: 200, body: { ok: true, incarnation: await stubFor(adminBump[1]).bumpIncarnation() },
-      }),
-      // R5-SEC-04: a bump is NOT idempotent (each call increments), so its
-      // effect is the journaled CONTROLLER_INCARNATION_BUMPED command
-      // carrying this use's nonce — a lost response settles from that row
-      // instead of double-bumping on retry.
-      { kind: "INCARNATION_BUMP" });
+      return withMutation({
+        route: "INCARNATION_BUMP",
+        databaseId: adminBump[1],
+        expect: { method: "INCARNATION_BUMP" },
+        useDigest: await routeUseDigest(),
+        // R5-SEC-04: a bump is NOT idempotent (each call increments), so its
+        // effect is the journaled CONTROLLER_INCARNATION_BUMPED command
+        // carrying this use's nonce — a lost response settles from that row
+        // instead of double-bumping on retry.
+        effect: { kind: "INCARNATION_BUMP" },
+        execute: async ({ operationId }) => ({
+          status: 200,
+          body: { ok: true, incarnation: await stubFor(adminBump[1]).bumpIncarnation(operationId) },
+        }),
+      });
     }
 
     if (request.method === "PUT" && path.startsWith("/payload/")) {
@@ -1362,10 +1455,31 @@ export default {
       // concurrent uploads of different bytes can never both win a key.
       // withMutation records the terminal outcome so an identical retry
       // replays it, and a thrown provider error is recorded AMBIGUOUS.
-      return withMutation(parts[1], {
-        method: "PUT_PAYLOAD", key, bodyDigest: declaredDigest, bodyLength: declaredLength,
-      }, await useDigestOf({ method: "PUT_PAYLOAD", key, digest: declaredDigest, length: declaredLength }),
-      async () => streamedPayloadPut(env, body, parts[1], key, declaredDigest, declaredLength));
+      return withMutation({
+        route: "PAYLOAD_PUT",
+        databaseId: parts[1],
+        expect: { method: "PUT_PAYLOAD", key, bodyDigest: declaredDigest, bodyLength: declaredLength },
+        useDigest: await useDigestOf(
+          { method: "PUT_PAYLOAD", key, digest: declaredDigest, length: declaredLength }),
+        // R6-CTRL-02: the ONE effect on this branch is remote (an R2
+        // object), so it cannot commit inside the controller's transaction.
+        // The protocol is two durable controller-side steps instead: the
+        // CLAIM row carrying this effect is the intent, written before a
+        // byte is uploaded, and `recordOperationReceipt` below is the
+        // convergence evidence, written before the response can be
+        // delivered. Between the two, attempt identity (`firstAttempt`)
+        // keeps a re-executed publication from answering `deduplicated:
+        // true` for an object this very nonce published.
+        effect: { kind: "OPERATION_RECEIPT", databaseId: parts[1], method: "PUT_PAYLOAD" },
+        execute: async ({ operationId, firstAttempt }) => {
+          const result = await streamedPayloadPut(
+            env, body, parts[1], key, declaredDigest, declaredLength, !firstAttempt);
+          await stubFor(parts[1]).recordOperationReceipt(
+            operationId, parts[1], "PUT_PAYLOAD", result.status,
+            result.body as Record<string, unknown>);
+          return result;
+        },
+      });
     }
 
     if (request.method === "POST" && path === "/session/register") {
@@ -1374,12 +1488,21 @@ export default {
       const b = parsed.body as unknown as { databaseId: string; generation: number; startupSessionId: string };
       const gen = generationOr(b.generation);
       if (gen instanceof Response) return gen;
-      return withMutation(b.databaseId,
-        { method: "SESSION_REGISTER", session: b.startupSessionId, generation: String(gen) },
-        await useDigestOf({ path, body: parsed.body }), async () => {
-          await stubFor(b.databaseId).registerSession(b.databaseId, gen, b.startupSessionId);
+      return withMutation({
+        route: "SESSION_REGISTER",
+        databaseId: b.databaseId,
+        expect: { method: "SESSION_REGISTER", session: b.startupSessionId, generation: String(gen) },
+        useDigest: await useDigestOf({ path, body: parsed.body }),
+        // R6-CTRL-02: the legacy macro refreshes the lease to
+        // `controllerNow + 15m` every time it runs, so re-execution after a
+        // lost response moved durable authority again. The receipt commits
+        // with the registration.
+        effect: { kind: "OPERATION_RECEIPT", databaseId: b.databaseId, method: "SESSION_REGISTER" },
+        execute: async ({ operationId }) => {
+          await stubFor(b.databaseId).registerSession(b.databaseId, gen, b.startupSessionId, operationId);
           return { status: 200, body: { ok: true } };
-        });
+        },
+      });
     }
 
     // ---- Q-03 / 12.4 lifecycle routes (exact per-action capabilities, ----
@@ -1394,25 +1517,41 @@ export default {
       };
       const gen = generationOr(b.generation);
       if (gen instanceof Response) return gen;
-      return withMutation(b.databaseId,
-        { method: "SESSION_RESERVE", session: b.startupSessionId, generation: String(gen) },
-        await useDigestOf({ path, body: parsed.body }), async () => {
+      return withMutation({
+        route: "SESSION_RESERVE",
+        databaseId: b.databaseId,
+        expect: { method: "SESSION_RESERVE", session: b.startupSessionId, generation: String(gen) },
+        useDigest: await useDigestOf({ path, body: parsed.body }),
+        // R6-CTRL-02: a reservation is single-use per id, so a re-execution
+        // that arrives after the session has moved on answers
+        // SESSION_ID_ALREADY_USED where the original answered RESERVED.
+        effect: { kind: "OPERATION_RECEIPT", databaseId: b.databaseId, method: "SESSION_RESERVE" },
+        execute: async ({ operationId }) => {
           const result = await stubFor(b.databaseId)
-            .reserveSession(b.databaseId, gen, b.startupSessionId, b.holder);
+            .reserveSession(b.databaseId, gen, b.startupSessionId, b.holder, operationId);
           return { status: result.ok ? 200 : 409, body: result };
-        });
+        },
+      });
     }
 
     if (request.method === "POST" && path === "/session/attest") {
       const parsed = await readJson(request);
       if ("errorResponse" in parsed) return parsed.errorResponse;
       const b = parsed.body as unknown as { databaseId: string; startupSessionId: string; processNonce: string };
-      return withMutation(b.databaseId, { method: "SESSION_ATTEST", session: b.startupSessionId },
-        await useDigestOf({ path, body: parsed.body }), async () => {
+      return withMutation({
+        route: "SESSION_ATTEST",
+        databaseId: b.databaseId,
+        expect: { method: "SESSION_ATTEST", session: b.startupSessionId },
+        useDigest: await useDigestOf({ path, body: parsed.body }),
+        // R6-CTRL-02: attestation is a state transition out of RESERVED; a
+        // re-execution after activation answers SESSION_NOT_RESERVED.
+        effect: { kind: "OPERATION_RECEIPT", databaseId: b.databaseId, method: "SESSION_ATTEST" },
+        execute: async ({ operationId }) => {
           const result = await stubFor(b.databaseId)
-            .attestSession(b.databaseId, b.startupSessionId, b.processNonce);
+            .attestSession(b.databaseId, b.startupSessionId, b.processNonce, operationId);
           return { status: result.ok ? 200 : 409, body: result };
-        });
+        },
+      });
     }
 
     if (request.method === "POST" && path === "/session/activate") {
@@ -1423,36 +1562,66 @@ export default {
       };
       const gen = generationOr(b.generation);
       if (gen instanceof Response) return gen;
-      return withMutation(b.databaseId,
-        { method: "SESSION_ACTIVATE", session: b.startupSessionId, generation: String(gen) },
-        await useDigestOf({ path, body: parsed.body }), async () => {
+      return withMutation({
+        route: "SESSION_ACTIVATE",
+        databaseId: b.databaseId,
+        expect: { method: "SESSION_ACTIVATE", session: b.startupSessionId, generation: String(gen) },
+        useDigest: await useDigestOf({ path, body: parsed.body }),
+        // R6-CTRL-02: activation is the ONE fencing transition, and its
+        // receipt carries the count it fenced and the lease it granted —
+        // neither of which a re-execution can recompute (the ACTIVE-self
+        // path used to answer `fencedPredecessors: 0`).
+        effect: { kind: "OPERATION_RECEIPT", databaseId: b.databaseId, method: "SESSION_ACTIVATE" },
+        execute: async ({ operationId }) => {
           const result = await stubFor(b.databaseId).activateSession(b.databaseId, b.startupSessionId, {
             processNonce: b.processNonce, generation: gen, leaseMs: b.leaseMs,
-          });
+          }, operationId);
           return { status: result.ok ? 200 : 409, body: result };
-        });
+        },
+      });
     }
 
     if (request.method === "POST" && path === "/session/renew") {
       const parsed = await readJson(request);
       if ("errorResponse" in parsed) return parsed.errorResponse;
       const b = parsed.body as unknown as { databaseId: string; startupSessionId: string; leaseMs: number };
-      return withMutation(b.databaseId, { method: "SESSION_RENEW", session: b.startupSessionId },
-        await useDigestOf({ path, body: parsed.body }), async () => {
-          const result = await stubFor(b.databaseId).renewLease(b.databaseId, b.startupSessionId, b.leaseMs);
+      return withMutation({
+        route: "SESSION_RENEW",
+        databaseId: b.databaseId,
+        expect: { method: "SESSION_RENEW", session: b.startupSessionId },
+        useDigest: await useDigestOf({ path, body: parsed.body }),
+        // R6-CTRL-02, the audit's headline case: `deadline = controllerNow +
+        // leaseMs` on EVERY call, so an identical retry both extended
+        // durable authority a second time and answered a different deadline
+        // (the auditor measured 1,061,000 then 1,062,000). The chosen
+        // deadline is now recorded with the UPDATE that sets it.
+        effect: { kind: "OPERATION_RECEIPT", databaseId: b.databaseId, method: "SESSION_RENEW" },
+        execute: async ({ operationId }) => {
+          const result = await stubFor(b.databaseId)
+            .renewLease(b.databaseId, b.startupSessionId, b.leaseMs, operationId);
           return { status: result.ok ? 200 : 409, body: result };
-        });
+        },
+      });
     }
 
     if (request.method === "POST" && path === "/session/drain") {
       const parsed = await readJson(request);
       if ("errorResponse" in parsed) return parsed.errorResponse;
       const b = parsed.body as unknown as { databaseId: string; startupSessionId: string };
-      return withMutation(b.databaseId, { method: "SESSION_DRAIN", session: b.startupSessionId },
-        await useDigestOf({ path, body: parsed.body }), async () => {
-          const result = await stubFor(b.databaseId).beginDrain(b.databaseId, b.startupSessionId);
+      return withMutation({
+        route: "SESSION_DRAIN",
+        databaseId: b.databaseId,
+        expect: { method: "SESSION_DRAIN", session: b.startupSessionId },
+        useDigest: await useDigestOf({ path, body: parsed.body }),
+        // R6-CTRL-02: ACTIVE -> DRAINING is one-way; a re-execution after a
+        // successor activated answers SESSION_NOT_ACTIVE.
+        effect: { kind: "OPERATION_RECEIPT", databaseId: b.databaseId, method: "SESSION_DRAIN" },
+        execute: async ({ operationId }) => {
+          const result = await stubFor(b.databaseId)
+            .beginDrain(b.databaseId, b.startupSessionId, operationId);
           return { status: result.ok ? 200 : 409, body: result };
-        });
+        },
+      });
     }
 
     if (request.method === "POST" && path === "/session/revoke") {
@@ -1461,11 +1630,20 @@ export default {
       const b = parsed.body as unknown as { databaseId: string; startupSessionId: string };
       // The token names the TARGET session (its minter decides which actor
       // may be revoked); the revocation power is not a generic bearer right.
-      return withMutation(b.databaseId, { method: "SESSION_REVOKE", session: b.startupSessionId },
-        await useDigestOf({ path, body: parsed.body }), async () => {
-          const result = await stubFor(b.databaseId).revokeSession(b.databaseId, b.startupSessionId);
+      return withMutation({
+        route: "SESSION_REVOKE",
+        databaseId: b.databaseId,
+        expect: { method: "SESSION_REVOKE", session: b.startupSessionId },
+        useDigest: await useDigestOf({ path, body: parsed.body }),
+        // R6-CTRL-02: revocation is terminal and journals a command; the
+        // receipt is what a lost response replays.
+        effect: { kind: "OPERATION_RECEIPT", databaseId: b.databaseId, method: "SESSION_REVOKE" },
+        execute: async ({ operationId }) => {
+          const result = await stubFor(b.databaseId)
+            .revokeSession(b.databaseId, b.startupSessionId, operationId);
           return { status: result.ok ? 200 : 409, body: result };
-        });
+        },
+      });
     }
 
     if (request.method === "POST" && path === "/session/fence") {
@@ -1476,11 +1654,20 @@ export default {
       if (gen instanceof Response) return gen;
       // the fence is actor-wide: any `generation` in the body is accepted for
       // wire compatibility but does not scope the revocation
-      return withMutation(b.databaseId, { method: "SESSION_FENCE", session: b.startupSessionId },
-        await useDigestOf({ path, body: parsed.body }), async () => {
-          await stubFor(b.databaseId).fenceSession(b.databaseId, b.startupSessionId);
+      return withMutation({
+        route: "SESSION_FENCE",
+        databaseId: b.databaseId,
+        expect: { method: "SESSION_FENCE", session: b.startupSessionId },
+        useDigest: await useDigestOf({ path, body: parsed.body }),
+        // R6-CTRL-02: a fence revokes read leases and journals SESSION_FENCED
+        // only when it actually fenced something; the receipt makes the
+        // route's answer stable across a retry.
+        effect: { kind: "OPERATION_RECEIPT", databaseId: b.databaseId, method: "SESSION_FENCE" },
+        execute: async ({ operationId }) => {
+          await stubFor(b.databaseId).fenceSession(b.databaseId, b.startupSessionId, operationId);
           return { status: 200, body: { ok: true } };
-        });
+        },
+      });
     }
 
     if (request.method === "POST" && path === "/budgets") {
@@ -1492,8 +1679,15 @@ export default {
       // BUDGETS_SET appends a journal row per call, so budgets is a
       // single-request mutation: the audit's "reuse one token twice -> two
       // BUDGETS_SET rows" mutant is killed by the terminal replay (C-02).
-      return withMutation(b.databaseId, { method: "BUDGETS_SET" },
-        await useDigestOf({ path, body: parsed.body }), async (payload) => {
+      return withMutation({
+        route: "BUDGETS_SET",
+        databaseId: b.databaseId,
+        expect: { method: "BUDGETS_SET" },
+        useDigest: await useDigestOf({ path, body: parsed.body }),
+        // R5-SEC-04: the effect is the journaled BUDGETS_SET command
+        // carrying this use's nonce as its operation identity.
+        effect: { kind: "BUDGETS_SET", databaseId: b.databaseId },
+        execute: async (payload) => {
           const session = payload.session;
           if (typeof session !== "string" || session.length === 0) {
             return { status: 403, body: { ok: false, error: "CAPABILITY_RESTRICTION_MISSING", restriction: "session" } };
@@ -1505,9 +1699,7 @@ export default {
           }, session);
           return { status: result.ok ? 200 : 409, body: result.ok ? { ok: true } : result };
         },
-        // R5-SEC-04: the effect is the journaled BUDGETS_SET command
-        // carrying this use's nonce as its operation identity.
-        { kind: "BUDGETS_SET", databaseId: b.databaseId });
+      });
     }
 
     // data-path receipt verification BEFORE the DO's synchronous
@@ -1574,28 +1766,34 @@ export default {
       // the finalize capability MUST be bound to the request's session AND
       // generation (donor A3 + audit C-05): neither a session id in the body
       // nor a token from another generation is write authority
-      return withMutation(req.databaseId, {
-        method: "WAL_FINALIZE",
-        session: String((req as { startupSessionId?: unknown }).startupSessionId ?? ""),
-        generation: String(gen),
-      }, computedDigest, async () => {
-        const receiptError = await verifyReceipt(req);
-        if (receiptError !== null) return receiptError;
-        // the wire body is validated field-by-field above and again in the
-        // core; the cast is the JSON boundary, not a trust statement
-        const result = await stubFor(req.databaseId)
-          .finalizeWalRecord({ ...req, requestDigest: computedDigest } as unknown as FinalizeRequest);
-        return { status: result.ok ? 200 : 409, body: result };
-      },
-      // R5-SEC-04: the authoritative effect of a finalize is its wal_tail
-      // row under this operation identity. If the response is lost, the
-      // resolver finds that row (or its status-singleton alias) and
-      // replays the exact original receipt; a row under the same operation
-      // id but a DIFFERENT request digest is contradictory evidence and
-      // quarantines the use.
-      { kind: "WAL_FINALIZE", databaseId: req.databaseId, generation: gen,
-        operationId: String((req as { operationId?: unknown }).operationId ?? ""),
-        requestDigest: computedDigest });
+      return withMutation({
+        route: "WAL_FINALIZE",
+        databaseId: req.databaseId,
+        expect: {
+          method: "WAL_FINALIZE",
+          session: String((req as { startupSessionId?: unknown }).startupSessionId ?? ""),
+          generation: String(gen),
+        },
+        useDigest: computedDigest,
+        // R5-SEC-04: the authoritative effect of a finalize is its wal_tail
+        // row under this operation identity. If the response is lost, the
+        // resolver finds that row (or its status-singleton alias) and
+        // replays the exact original receipt; a row under the same operation
+        // id but a DIFFERENT request digest is contradictory evidence and
+        // quarantines the use.
+        effect: { kind: "WAL_FINALIZE", databaseId: req.databaseId, generation: gen,
+                  operationId: String((req as { operationId?: unknown }).operationId ?? ""),
+                  requestDigest: computedDigest },
+        execute: async () => {
+          const receiptError = await verifyReceipt(req);
+          if (receiptError !== null) return receiptError;
+          // the wire body is validated field-by-field above and again in the
+          // core; the cast is the JSON boundary, not a trust statement
+          const result = await stubFor(req.databaseId)
+            .finalizeWalRecord({ ...req, requestDigest: computedDigest } as unknown as FinalizeRequest);
+          return { status: result.ok ? 200 : 409, body: result };
+        },
+      });
     }
 
     if (request.method === "POST" && path === "/wal/finalize-batch") {
@@ -1670,12 +1868,34 @@ export default {
       // the capability use binds the batch identity AND the generation (all
       // members share one generation, checked above): same batch retries,
       // any other batch under the same token replays (audit C-02/C-05)
-      const batchGeneration = String(exactGeneration(body.requests[0].generation));
+      const batchGen = exactGeneration(body.requests[0].generation);
+      if (batchGen === null) {
+        // unreachable: every member's generation passed generationOr above.
+        // Stated explicitly because the effect binding is built from this
+        // number, and a binding must never be built from an unvalidated one.
+        return json({ ok: false, error: "INVALID_GENERATION" }, 400);
+      }
+      const batchGeneration = String(batchGen);
       const batchOperationId = body.batchOperationId; // narrowed to string above
       const batchDigest = body.batchDigest;
-      return withMutation(databaseId,
-        { method: "WAL_FINALIZE", session: batchSession, generation: batchGeneration },
-        await useDigestOf({ batchOperationId, members: memberDigests }), async () => {
+      return withMutation({
+        route: "WAL_FINALIZE_BATCH",
+        databaseId,
+        expect: { method: "WAL_FINALIZE", session: batchSession, generation: batchGeneration },
+        useDigest: await useDigestOf({ batchOperationId, members: memberDigests }),
+        // R6-CTRL-01: the batch's authoritative effect is its ENVELOPE row
+        // plus each member's wal_tail receipt — implemented since round 5
+        // but unreachable, because this route stored the generic default
+        // instead of binding it. The binding is constructed HERE: after
+        // every untrusted field (member count, byte budget, database and
+        // session agreement, record types, canonical payload refs, per-member
+        // digests) has been structurally validated, and BEFORE the claim.
+        // The ordered member digests are part of the binding, so the same
+        // batch id under different members is contradictory evidence and
+        // quarantines rather than replaying somebody else's receipt.
+        effect: { kind: "WAL_FINALIZE_BATCH", databaseId, generation: batchGen,
+                  batchOperationId, memberDigests },
+        execute: async () => {
           const receiptErrors = await mapBounded(body.requests, PAYLOAD_FETCH_CONCURRENCY, verifyReceipt);
           const firstReceiptError = receiptErrors.find((error) => error !== null);
           if (firstReceiptError) return firstReceiptError;
@@ -1688,7 +1908,8 @@ export default {
           return Array.isArray(result)
             ? { status: 200, body: { ok: true, results: result } }
             : { status: 409, body: result };
-        });
+        },
+      });
     }
 
     const walRead = path.match(/^\/wal\/([^/]+)\/(\d+)\/(\d+)$/);
@@ -1886,17 +2107,28 @@ export default {
         return json({ ok: false, error: "INVALID_PARAMETER", field: "upToControlSeq" }, 400);
       }
       // ack marks rows published (a mutation): single-request via withMutation
-      return withMutation(outboxAck[1], { method: "OUTBOX" },
-        await useDigestOf({ path, body: parsedAck.body }), async (payload) => {
-          const session = payload.session;
+      return withMutation({
+        route: "OUTBOX_ACK",
+        databaseId: outboxAck[1],
+        expect: { method: "OUTBOX" },
+        useDigest: await useDigestOf({ path, body: parsedAck.body }),
+        // R6-CTRL-02: the acknowledged COUNT is destroyed by the ack itself
+        // — the rows are published, so a re-execution reports `acked: 0`
+        // where the original reported N. The count and the bound are
+        // recorded in the acking transaction; the bound is part of the use
+        // digest, so an ack of a DIFFERENT bound under the same token is
+        // CAPABILITY_REPLAYED, not a second ack.
+        effect: { kind: "OPERATION_RECEIPT", databaseId: outboxAck[1], method: "OUTBOX_ACK" },
+        execute: async ({ operationId, session }) => {
           if (typeof session !== "string" || session.length === 0) {
             return { status: 403, body: { ok: false, error: "CAPABILITY_RESTRICTION_MISSING", restriction: "session" } };
           }
-          const result = await stubFor(outboxAck[1]).outboxAck(outboxAck[1], upTo, session);
+          const result = await stubFor(outboxAck[1]).outboxAck(outboxAck[1], upTo, session, operationId);
           return result.ok
             ? { status: 200, body: { ok: true, acked: result.acked } }
             : { status: 409, body: result };
-        });
+        },
+      });
     }
 
     const cutOpen = path.match(/^\/checkpoint\/([^/]+)\/(\d+)\/cut$/);
@@ -1908,8 +2140,23 @@ export default {
       const parsedCut = await readJson(request);
       if ("errorResponse" in parsedCut) return parsedCut.errorResponse;
       const b = parsedCut.body as unknown as { cutId: string };
-      return withMutation(cutOpen[1], { method: "CHECKPOINT_OPEN", generation: String(cutGen) },
-        await useDigestOf({ path, body: parsedCut.body }), async (payload) => {
+      if (typeof b.cutId !== "string" || b.cutId.length === 0 || b.cutId.length > 128) {
+        // the cut id is part of the effect binding, so it is structurally
+        // validated BEFORE authority is claimed, not inside the route body
+        return json({ ok: false, error: "INVALID_PARAMETER", field: "cutId" }, 400);
+      }
+      return withMutation({
+        route: "CHECKPOINT_OPEN",
+        databaseId: cutOpen[1],
+        expect: { method: "CHECKPOINT_OPEN", generation: String(cutGen) },
+        useDigest: await useDigestOf({ path, body: parsedCut.body }),
+        // R6-CTRL-01: the authoritative effect is the checkpoint_cuts row
+        // keyed by this cut id — implemented since round 5 and never
+        // reached, so a lost response re-executed and answered CUT_EXISTS
+        // instead of the original cut receipt. The binding is built from the
+        // validated database, generation and cut id, before the claim.
+        effect: { kind: "CHECKPOINT_OPEN", databaseId: cutOpen[1], generation: cutGen, cutId: b.cutId },
+        execute: async (payload) => {
           // R4-SEC-04/06: the acting session must hold LIVE authority in
           // this generation at use time - a fenced/stale actor cannot open
           // a cut with a still-valid token.
@@ -1918,7 +2165,8 @@ export default {
           if (!live.ok) return { status: 409, body: live };
           const result = await stubFor(cutOpen[1]).openCheckpointCut(cutOpen[1], cutGen, b.cutId);
           return { status: result.ok ? 200 : 409, body: result };
-        });
+        },
+      });
     }
 
     const cutActivate = path.match(/^\/checkpoint\/([^/]+)\/cut\/([^/]+)\/activate$/);
@@ -1932,8 +2180,49 @@ export default {
       // R4-SEC-06: the body is the versioned restore-evidence manifest,
       // validated MATERIALLY by the core (schema, cut id, recorded WAL
       // head, 64-hex digests, scratch-restore verifier) - never cast.
-      return withMutation(cutActivate[1], { method: "CHECKPOINT_ACTIVATE" },
-        await useDigestOf({ path, body: parsedEvidence.body }), async (payload) => {
+      // R6-CTRL-01: the activation's effect BINDS the manifest's logical
+      // digest, so the fields the binding is built from are validated here,
+      // before authority is claimed — a manifest that cannot produce a
+      // binding refuses without burning the token. Only the binding's own
+      // fields are checked at the worker: the MATERIAL validation (walHead
+      // against the recorded cut head, keyspace roots, scratch-restore
+      // proof) needs the authority's durable cut row and stays in the core,
+      // which re-validates everything regardless.
+      const evidenceBody = parsedEvidence.body as {
+        schema?: unknown; cutId?: unknown; logicalDigest?: unknown;
+      };
+      // the refusal keeps the core's typed verdict AND its 409 status: this
+      // is the same CUT_EVIDENCE_INVALID answer the authority gives, moved
+      // earlier so that a manifest which cannot produce a binding also
+      // cannot burn a token. The reason strings are the core's, verbatim.
+      if (evidenceBody.schema !== "checkpoint-restore-evidence/v2") {
+        return json({ ok: false, error: "CUT_EVIDENCE_INVALID",
+                      reason: "schema must be checkpoint-restore-evidence/v2" }, 409);
+      }
+      if (evidenceBody.cutId !== decodedCut.value) {
+        return json({ ok: false, error: "CUT_EVIDENCE_INVALID",
+                      reason: "evidence.cutId does not name the cut being activated" }, 409);
+      }
+      if (invalidSha256Hex(evidenceBody.logicalDigest)) {
+        return json({ ok: false, error: "CUT_EVIDENCE_INVALID",
+                      reason: "logicalDigest is not 64-hex" }, 409);
+      }
+      const boundLogicalDigest = evidenceBody.logicalDigest as string;
+      return withMutation({
+        route: "CHECKPOINT_ACTIVATE",
+        databaseId: cutActivate[1],
+        expect: { method: "CHECKPOINT_ACTIVATE" },
+        useDigest: await useDigestOf({ path, body: parsedEvidence.body }),
+        // R6-CTRL-01: the authoritative effect is the cut's
+        // ACTIVE/SUPERSEDED transition plus the journaled
+        // CHECKPOINT_CUT_ACTIVATED command — implemented since round 5 and
+        // never reached, so a lost response re-executed and answered
+        // CUT_NOT_PENDING instead of the original success. Binding the
+        // logical digest makes an activation of the same cut under DIFFERENT
+        // evidence contradictory rather than replayable.
+        effect: { kind: "CHECKPOINT_ACTIVATE", databaseId: cutActivate[1], cutId: decodedCut.value,
+                  logicalDigest: boundLogicalDigest },
+        execute: async (payload) => {
           const actor = typeof payload.session === "string" ? payload.session : "";
           const gen = exactGeneration(
             typeof payload.generation === "string" ? Number(payload.generation) : undefined);
@@ -1945,7 +2234,8 @@ export default {
           const result = await stubFor(cutActivate[1])
             .activateCheckpointCut(cutActivate[1], decodedCut.value, parsedEvidence.body);
           return { status: result.ok ? 200 : 409, body: result };
-        });
+        },
+      });
     }
 
     const cutActive = path.match(/^\/checkpoint\/([^/]+)\/(\d+)\/active$/);

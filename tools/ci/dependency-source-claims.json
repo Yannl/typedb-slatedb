@@ -1,0 +1,170 @@
+{
+  "schema": "typedb-r2/dependency-source-claims@1",
+  "document": "R6-TRUTH-01. Documentation makes claims about WHERE a dependency comes from ('unmodified from crates.io', 'a soft fork consumed by path'). Those claims are only true if the RESOLVED cargo graph says so - a manifest line can say `registry` while `[patch.crates-io]` silently redirects the whole workspace to a path, which is exactly the contradiction the round-6 audit found. This file binds each documented claim to a machine-checkable assertion over `cargo metadata`'s resolve graph; tools/ci/check_dependency_sources.py fails when the graph contradicts the claim, and fails when a document still carries prose the graph has made false.",
+  "workspaces": {
+    "typedb": {
+      "manifest": "sources/typedb/Cargo.toml",
+      "materialize": [
+        "python3 tools/source-lock/materialize_sources.py",
+        "python3 tools/fork/materialize_slatedb.py",
+        "python3 tools/fork/stage.py"
+      ],
+      "note": "The STAGED product workspace: fork/typedb copied over the pinned upstream checkout. This is the tree every product build resolves, so it is the only tree whose resolved graph can settle a documentation claim about the product."
+    },
+    "tools": {
+      "manifest": "tools/Cargo.toml",
+      "materialize": [],
+      "note": "The repo-owned spike/protocol workspace. It carries NO [patch.crates-io], so it is the lane where the registry crate is still the resolved identity - and documentation must not conflate the two."
+    }
+  },
+  "claims": [
+    {
+      "id": "DS-01",
+      "title": "The product workspace resolves slatedb to the in-repo soft fork, not to crates.io",
+      "workspace": "typedb",
+      "package": "slatedb",
+      "assert": {
+        "version": "0.15.0",
+        "resolved_source_kind": "path",
+        "resolved_path_suffix": "sources/slatedb-fork",
+        "enabled_features_include": [
+          "external_epoch_required",
+          "aws",
+          "wal_disable"
+        ]
+      },
+      "why": "sources/typedb/Cargo.toml carries a workspace-global `[patch.crates-io] slatedb = { path = \"../../sources/slatedb-fork\" }`, and fork/typedb/storage/Cargo.toml enables `external_epoch_required` unconditionally. Feature unification means EVERY crate in the workspace that links storage carries the fenced fork. A reader grepping storage/Cargo.toml sees `source = registry+...crates.io-index` on the dependency declaration and concludes 'crates.io' - only the resolve graph shows the patch.",
+      "ratified_by": [
+        "docs/architecture/ADR/ADR-0001-slatedb-consume-only.md",
+        "docs/architecture/ADR/ADR-0012-slatedb-soft-fork-external-epochs.md"
+      ],
+      "documents": [
+        "README.md",
+        "docs/architecture.md",
+        "docs/development.md",
+        "docs/operations.md",
+        "docs/architecture/ADR/README.md",
+        "docs/architecture/ADR/ADR-0001-slatedb-consume-only.md",
+        "docs/architecture/ADR/ADR-0012-slatedb-soft-fork-external-epochs.md",
+        "docs/architecture/arcadia/epbs.md",
+        "docs/architecture/arcadia/physical-architecture.md",
+        "docs/design/slatedb-external-epochs.md",
+        "docs/spec-delivery-comparison.md",
+        "docs/user-guide.md"
+      ],
+      "prose": {
+        "forbidden_when_assert_holds": [
+          {
+            "pattern": "SlateDB is consumed \\*\\*unmodified from crates\\.io\\*\\*",
+            "reason": "the product workspace resolves slatedb to sources/slatedb-fork; 'unmodified from crates.io' is false for every build that links storage"
+          },
+          {
+            "pattern": "SlateDB, consumed unmodified\\s*\\n?\\s*from crates\\.io",
+            "reason": "same claim in prose form"
+          },
+          {
+            "pattern": "deliberately no fork",
+            "reason": "a fork exists (fork/slatedb/patches, five patches) and is what the product links"
+          },
+          {
+            "pattern": "SlateDB is never edited",
+            "reason": "SlateDB IS patched: fork/slatedb/patches/0001..0005 are applied by tools/fork/materialize_slatedb.py"
+          },
+          {
+            "pattern": "consumes\\s*\\n?\\s*crates\\.io until ADR-0012 is decided",
+            "reason": "the patch is already global in sources/typedb/Cargo.toml; ADR-0012 must be recorded as decided, not pending"
+          },
+          {
+            "pattern": "[Ll]ocal (conformance )?lanes (stay|remain) (on )?crates\\.io",
+            "reason": "the patch is workspace-global; U2/U2S3 resolve the fork like every other lane"
+          },
+          {
+            "pattern": "local lanes stay crates\\.io",
+            "reason": "same claim, ADR index form"
+          },
+          {
+            "pattern": "no fork; SL-P\\* patch obligations relocated",
+            "reason": "the ADR index still advertises ADR-0001's superseded no-fork posture as the current one"
+          },
+          {
+            "pattern": "consume-only per ADR-0001",
+            "reason": "the EPBS/physical dependency tables described the configuration item as consume-only; the resolved graph links the fork"
+          },
+          {
+            "pattern": "consume-only \\(ADR-0001\\)",
+            "reason": "same claim in the physical-architecture dependency table"
+          },
+          {
+            "pattern": "\\*\\*No fork at all\\*\\*",
+            "reason": "the delivery comparison recorded 'no fork' as the delivered state; five patches ship"
+          }
+        ],
+        "required_when_assert_holds": [
+          {
+            "file": "README.md",
+            "pattern": "sources/slatedb-fork",
+            "reason": "the README's storage-profile section must name the tree the product actually links"
+          },
+          {
+            "file": "docs/architecture.md",
+            "pattern": "soft fork",
+            "reason": "the architecture entry point must state the fork posture it describes"
+          },
+          {
+            "file": "docs/development.md",
+            "pattern": "fork/slatedb/patches",
+            "reason": "patch discipline must point contributors at the SlateDB patch series that exists"
+          },
+          {
+            "file": "docs/operations.md",
+            "pattern": "\\[patch\\.crates-io\\]",
+            "reason": "operations must describe the mechanism that makes production consume the fork"
+          },
+          {
+            "file": "docs/architecture/ADR/ADR-0012-slatedb-soft-fork-external-epochs.md",
+            "pattern": "\\*\\*Status:\\*\\* accepted \\(shipped",
+            "reason": "the ADR that governs the shipped posture may not stay 'accepted-as-plan' once the plan has shipped: the status line must record that the fork IS what the product links"
+          },
+          {
+            "file": "docs/architecture/ADR/ADR-0001-slatedb-consume-only.md",
+            "pattern": "\\*\\*Status:\\*\\* SUPERSEDED",
+            "reason": "ADR-0001's decision no longer describes any lane; its status line, not only a banner, must say so"
+          },
+          {
+            "file": "docs/architecture/ADR/README.md",
+            "pattern": "ADR-0012.*soft fork.*(shipped|ratified)",
+            "reason": "the ADR index is the first thing a reader sees; it must not advertise a superseded posture as current"
+          },
+          {
+            "file": "docs/architecture/arcadia/epbs.md",
+            "pattern": "fork/slatedb/patches",
+            "reason": "the configuration-item table must name the patch series that is part of the shipped product identity"
+          },
+          {
+            "file": "docs/architecture/arcadia/physical-architecture.md",
+            "pattern": "soft fork",
+            "reason": "the physical dependency table must describe the component the product actually links"
+          }
+        ]
+      }
+    },
+    {
+      "id": "DS-02",
+      "title": "The tools workspace still resolves slatedb from the crates.io registry",
+      "workspace": "tools",
+      "package": "slatedb",
+      "optional": true,
+      "assert": {
+        "version": "0.15.0",
+        "resolved_source_kind": "registry",
+        "resolved_registry": "https://github.com/rust-lang/crates.io-index"
+      },
+      "why": "tools/Cargo.toml carries no [patch.crates-io]. The differential spike (tools/storage-diff-spike) deliberately measures the UNPATCHED registry crate, which is what makes it an oracle for the fork. Documentation that says 'the repo consumes the fork everywhere' would be false here, so the claim is checked in both directions.",
+      "documents": [],
+      "prose": {
+        "forbidden_when_assert_holds": [],
+        "required_when_assert_holds": []
+      }
+    }
+  ]
+}

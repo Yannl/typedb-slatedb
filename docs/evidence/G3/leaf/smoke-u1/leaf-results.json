@@ -1,0 +1,1750 @@
+{
+ "schema": "typedb-r2-leaf-evidence-v1",
+ "profile": "U1",
+ "profile_in_plan": true,
+ "toolchain": {
+  "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+  "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+  "target_triple": "x86_64-unknown-linux-gnu",
+  "requested": "1.93.0"
+ },
+ "toolchain_id": "rust-1.93.0:x86_64-unknown-linux-gnu",
+ "plan_root": "72020aa01fafebddc41321e0c6100c158f80ae997037430871212049054a7a41",
+ "catalog_sha256": "569448d1a259c64c789ad8b6e65973f51c7e9a678b89079592b9ca450c41c57e",
+ "source_lock_digest": "837d52fbac8f47ab7a72a6d8921cd7e2d8509e01243a7dc92c73132b7178b8c4",
+ "selection": {
+  "package": [
+   "storage",
+   "durability"
+  ],
+  "filter": null,
+  "skip": [],
+  "complete": false,
+  "aborted": null,
+  "targets_selected": 9,
+  "targets_executed": 9
+ },
+ "fixtures": {
+  "fixture:typedb-behaviour": {
+   "present": true,
+   "checkout": "sources/typedb-behaviour",
+   "checkout_revision": "ac5d5733a484cea1d8809a2968029a818fdae24f",
+   "checkout_dirty": false,
+   "link_paths_serving_features": [
+    "sources/typedb/bazel-typedb/external/typedb_behaviour+",
+    "sources/typedb/bazel-typedb/external/typedb_behaviour",
+    "sources/typedb/bazel-typedb/external/typedb_behaviour++",
+    "sources/typedb_behaviour+"
+   ]
+  },
+  "fixture:assembly-script.tql": {
+   "present": true,
+   "sha256": "83b44cf02e52074a14c2ec334999dd8f3c52263a4dc669bc8d37530ab9bf5e24"
+  },
+  "assembly_archive": {
+   "present": true,
+   "sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a"
+  }
+ },
+ "executed_tree": {
+  "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+  "dirty": true,
+  "tree_state": "FORK_STAGED_EXACT",
+  "stage_check": "MIXED: 0 fork patches unstaged, 1 stale staged files, 37 paths diverge from the locked revision",
+  "unstaged_fork_patches": [],
+  "unexplained_paths": [],
+  "runtime_output_paths": [
+   "typedb-logs/"
+  ],
+  "diverging_paths": [
+   {
+    "path": "Cargo.lock",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "Cargo.toml",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "common/concurrency/interval_runner.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "concept/tests/test_statistics.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "concept/thing/thing_manager.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "database/Cargo.toml",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "database/database.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "durability/durability.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "durability/tests/basic.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "durability/tests/common/test_common.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "durability/wal.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "encoding/Cargo.toml",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "encoding/encoding.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "encoding/tests/test_type_vertex.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/Cargo.toml",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/durability_client.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/isolation_manager.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/iterator.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/keyspace.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/mod.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/raw_iterator.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/rocks_resources.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/checkpoint.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/commit_recovery.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/mod.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/storage.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/tests/test_recovery.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/tests/test_utils_storage/lib.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/write_batches.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/factory.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/cursor.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/engine.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/slate.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/post_wal_guard.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/sha256.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/status_resolver.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "typedb-logs/",
+    "class": "RUNTIME_OUTPUT"
+   }
+  ],
+  "staged_delta_files": 36,
+  "staged_delta_sha256": "2b386f13aa2e689256cffb87053b97cfa2cd4a9ea7716d5a72cef322fe99ab53",
+  "fork": {
+   "files": 778,
+   "fork_tree_sha256": "4a163c9be3b103787e4ab025a641abc7424e55769c463a4bbd31b17c462db220",
+   "outer_repo_commit": "58a91747c8b4191445a4501a6a249dec3861f26d",
+   "outer_repo_dirty": true,
+   "outer_repo_fork_paths_modified": [
+    "fork/slatedb/PATCH-LEDGER.md",
+    "fork/slatedb/UPSTREAM-PROVENANCE",
+    "fork/slatedb/patches/0006-upstream-suite-executes-under-the-shipped-fence.patch"
+   ]
+  }
+ },
+ "executed_tree_after_run": {
+  "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+  "dirty": true,
+  "tree_state": "FORK_STAGED_EXACT",
+  "stage_check": "MIXED: 0 fork patches unstaged, 1 stale staged files, 37 paths diverge from the locked revision",
+  "unstaged_fork_patches": [],
+  "unexplained_paths": [],
+  "runtime_output_paths": [
+   "typedb-logs/"
+  ],
+  "diverging_paths": [
+   {
+    "path": "Cargo.lock",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "Cargo.toml",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "common/concurrency/interval_runner.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "concept/tests/test_statistics.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "concept/thing/thing_manager.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "database/Cargo.toml",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "database/database.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "durability/durability.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "durability/tests/basic.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "durability/tests/common/test_common.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "durability/wal.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "encoding/Cargo.toml",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "encoding/encoding.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "encoding/tests/test_type_vertex.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/Cargo.toml",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/durability_client.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/isolation_manager.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/iterator.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/keyspace.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/mod.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/raw_iterator.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/rocks_resources.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/checkpoint.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/commit_recovery.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/mod.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/storage.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/tests/test_recovery.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/tests/test_utils_storage/lib.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/write_batches.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/factory.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/cursor.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/engine.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/slate.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/post_wal_guard.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/sha256.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/status_resolver.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "typedb-logs/",
+    "class": "RUNTIME_OUTPUT"
+   }
+  ],
+  "staged_delta_files": 36,
+  "staged_delta_sha256": "2b386f13aa2e689256cffb87053b97cfa2cd4a9ea7716d5a72cef322fe99ab53",
+  "fork": {
+   "files": 778,
+   "fork_tree_sha256": "4a163c9be3b103787e4ab025a641abc7424e55769c463a4bbd31b17c462db220",
+   "outer_repo_commit": "58a91747c8b4191445a4501a6a249dec3861f26d",
+   "outer_repo_dirty": true,
+   "outer_repo_fork_paths_modified": [
+    "fork/slatedb/PATCH-LEDGER.md",
+    "fork/slatedb/UPSTREAM-PROVENANCE",
+    "fork/slatedb/patches/0006-upstream-suite-executes-under-the-shipped-fence.patch"
+   ]
+  }
+ },
+ "tree_stable_across_run": true,
+ "fork_worktree_changed_during_run": false,
+ "started_utc": null,
+ "targets": [
+  {
+   "runner_row_id": "durability:basic",
+   "cargo_package": "durability",
+   "cargo_target": "basic",
+   "executable_sha256": "da1dad62d22c7390b4691217edb39574271dcd0a97cf366a4153b003500982e4",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.11,
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/durability__basic.log",
+   "log_sha256": "990bc15656d899b3fab1aa549f379ac273e3f02c26fdfc10e25522120672f3f1",
+   "log_bytes": 247,
+   "catalog_target_id": "cargo:durability:test:basic",
+   "counts": {
+    "passed": 5,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+   },
+   "parsed_cases": 5,
+   "catalog_leaf_cases": 5,
+   "extra_cases": [],
+   "missing_cases": [],
+   "refusals": [],
+   "publishable": true
+  },
+  {
+   "runner_row_id": "durability:crash",
+   "cargo_package": "durability",
+   "cargo_target": "crash",
+   "executable_sha256": "b1a52f77a0339322b7ea3abeed4284b8408480ae8604c91420b9b8abebfd9c47",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.0,
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/durability__crash.log",
+   "log_sha256": "df166913f47ff1f04202cae9b31df67ed272d692d99a0023a8117dc3029100dd",
+   "log_bytes": 113,
+   "catalog_target_id": "cargo:durability:test:crash",
+   "counts": {
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+   },
+   "parsed_cases": 0,
+   "catalog_leaf_cases": 0,
+   "extra_cases": [],
+   "missing_cases": [],
+   "refusals": [],
+   "publishable": true
+  },
+  {
+   "runner_row_id": "durability:durability",
+   "cargo_package": "durability",
+   "cargo_target": "durability",
+   "executable_sha256": "09a77eaf720cbe89654313e1eece4c277896dcd054721e52bf92160d3ea97308",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 6.59,
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/durability__durability.log",
+   "log_sha256": "846ae0efbbc18d4de1e44e4dc0372c223cad3bdd6222b59c5496418110cff67c",
+   "log_bytes": 2952,
+   "catalog_target_id": "cargo:durability:unit:durability",
+   "counts": {
+    "passed": 34,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+   },
+   "parsed_cases": 34,
+   "catalog_leaf_cases": 12,
+   "extra_cases": [
+    "sequence_boundary_tests::add_across_max_is_a_hard_fault_not_a_wrap",
+    "sequence_boundary_tests::add_assign_and_sub_are_exact_at_the_boundary",
+    "sequence_boundary_tests::checked_window_end_matrix_at_the_four_boundary_points",
+    "sequence_boundary_tests::next_at_max_is_a_hard_fault_not_a_wrap",
+    "sequence_boundary_tests::next_is_exact_up_to_the_last_representable_sequence_number",
+    "sequence_boundary_tests::previous_at_min_is_a_hard_fault_not_a_wrap",
+    "sequence_boundary_tests::subtracting_a_later_sequence_number_is_a_hard_fault_not_a_wrap",
+    "sequence_boundary_tests::try_next_matrix_at_the_four_boundary_points",
+    "sequence_boundary_tests::try_next_reports_exhaustion_at_max_instead_of_wrapping",
+    "sequence_boundary_tests::try_previous_matrix_at_the_four_boundary_points",
+    "wal::frame_integrity_tests::a_damaged_sealed_file_is_a_quarantine_never_a_repair",
+    "wal::frame_integrity_tests::a_file_renamed_to_the_wrong_range_is_a_typed_quarantine",
+    "wal::frame_integrity_tests::a_flipped_header_bit_mid_file_is_a_typed_quarantine",
+    "wal::frame_integrity_tests::a_flipped_payload_bit_mid_file_is_a_checksum_quarantine_not_a_repair",
+    "wal::frame_integrity_tests::a_lying_declared_length_is_a_typed_budget_refusal",
+    "wal::frame_integrity_tests::a_sequence_regression_between_frames_is_a_typed_quarantine",
+    "wal::frame_integrity_tests::a_torn_v0_tail_is_repaired_but_a_nonterminal_v0_defect_quarantines",
+    "wal::frame_integrity_tests::garbage_between_frames_is_a_typed_quarantine",
+    "wal::frame_integrity_tests::legacy_v0_frames_still_load_and_new_appends_are_authenticated_v1",
+    "wal::frame_integrity_tests::truncation_at_several_offsets_in_the_final_record_repairs_to_the_authenticated_prefix",
+    "wal::test::record_over_the_frame_budget_is_a_typed_refusal_with_no_mutation",
+    "wal::test::sequence_exhaustion_is_a_typed_terminal_error_with_no_mutation"
+   ],
+   "missing_cases": [],
+   "refusals": [],
+   "publishable": true
+  },
+  {
+   "runner_row_id": "storage:storage",
+   "cargo_package": "storage",
+   "cargo_target": "storage",
+   "executable_sha256": "155465475cd01ca7abd9f190891264bde5b2513c92dda13f03a937fb5f17babc",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 30.15,
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__storage.log",
+   "log_sha256": "850b12c2f227785cc78f859a1261d856970d98f23ef35b2b0a626afd0cc7b56b",
+   "log_bytes": 22911,
+   "catalog_target_id": "cargo:storage:unit:storage",
+   "counts": {
+    "passed": 209,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+   },
+   "parsed_cases": 209,
+   "catalog_leaf_cases": 8,
+   "extra_cases": [
+    "backend_context_barrier_tests::a_mid_process_profile_change_is_a_typed_refusal_that_leaves_the_tree_untouched",
+    "factory::backend_identity_tests::a_kind_mismatch_is_the_cross_engine_refusal",
+    "factory::backend_identity_tests::a_symlink_at_the_marker_path_is_refused_by_write_and_read",
+    "factory::backend_identity_tests::a_tampered_marker_digest_is_a_typed_refusal",
+    "factory::backend_identity_tests::a_tampered_provenance_line_breaks_the_marker_seal",
+    "factory::backend_identity_tests::a_v2_identity_round_trips_through_the_marker",
+    "factory::backend_identity_tests::an_existing_marker_is_never_overwritten",
+    "factory::backend_identity_tests::an_explicit_import_upgrades_a_v1_marker_and_records_provenance",
+    "factory::backend_identity_tests::an_import_never_follows_a_symlink_at_the_marker_path",
+    "factory::backend_identity_tests::an_import_refuses_when_there_is_nothing_legacy_to_import",
+    "factory::backend_identity_tests::an_import_with_a_mismatched_kind_is_refused_and_the_marker_is_untouched",
+    "factory::backend_identity_tests::an_ordinary_open_on_a_v1_marker_is_a_typed_refusal_that_touches_nothing",
+    "factory::backend_identity_tests::every_differing_identity_field_is_a_typed_refusal_naming_the_field",
+    "factory::backend_marker_tests::a_classic_database_cannot_be_opened_as_slatedb_and_vice_versa",
+    "factory::backend_marker_tests::a_missing_marker_on_an_existing_database_is_a_migration_refusal",
+    "factory::backend_marker_tests::an_unrecognised_marker_value_is_a_typed_refusal_not_a_silent_default",
+    "factory::backend_marker_tests::the_marker_round_trips_atomically",
+    "factory::backend_marker_tests::the_profile_maps_to_a_typed_backend_identity_not_the_u_star_conformance_label",
+    "factory::backend_seam_tests::a_context_for_a_not_yet_available_lane_refuses_at_construction",
+    "factory::backend_seam_tests::a_not_yet_available_lane_is_a_typed_refusal_never_a_default_engine",
+    "factory::backend_seam_tests::an_unknown_profile_value_is_a_typed_error_not_a_silent_default",
+    "factory::backend_seam_tests::every_available_profile_resolves_to_its_exact_backend",
+    "factory::product_backend_tests::agreeing_product_selection_and_profile_admit",
+    "factory::product_backend_tests::every_conformance_profile_declares_which_product_backend_it_exercises",
+    "factory::product_backend_tests::mutant_a_database_created_under_one_product_backend_is_not_openable_under_the_other",
+    "factory::product_backend_tests::mutant_a_test_profile_can_never_silently_decide_the_product_backend",
+    "factory::product_backend_tests::mutant_an_unparseable_product_selection_refuses_rather_than_defaulting",
+    "factory::product_backend_tests::the_controller_fenced_lanes_refuse_so_the_local_epoch_source_cannot_impersonate_them",
+    "factory::product_backend_tests::the_product_backend_wire_spelling_is_exact_and_never_defaulted",
+    "factory::product_backend_tests::the_running_product_backend_is_derived_from_the_resolved_backend",
+    "factory::s3_admission_tests::a_missing_required_variable_is_a_typed_refusal_naming_it",
+    "factory::s3_admission_tests::every_behavior_affecting_s3_input_changes_the_identity_digest",
+    "factory::s3_admission_tests::secrets_never_enter_identity_serialisation_debug_or_fingerprint",
+    "factory::s3_admission_tests::the_captured_context_survives_a_post_admission_environment_change",
+    "factory::s3_admission_tests::the_slate_adapter_reads_no_environment_below_the_admission_point",
+    "factory::s3_admission_tests::two_different_s3_configs_in_one_process_are_a_typed_refusal",
+    "factory::sha256_tests::the_standard_test_vectors_hold",
+    "isolation_manager::predecessor_wait_tests::a_pending_predecessor_that_never_resolves_is_a_typed_timeout_within_the_deadline",
+    "isolation_manager::predecessor_wait_tests::a_predecessor_that_resolves_is_observed_exactly",
+    "isolation_manager::predecessor_wait_tests::an_empty_slot_that_never_fills_is_a_typed_timeout_within_the_deadline",
+    "isolation_manager::predecessor_wait_tests::the_default_predecessor_wait_is_promptly_bounded_not_the_global_storage_deadline",
+    "keyspace::cursor::rocks_cursor_tests::a_cursor_keeps_its_database_alive_after_every_other_handle_is_gone",
+    "keyspace::slate::admission_bound_tests::at_or_above_the_envelope_a_write_is_refused_with_the_typed_error",
+    "keyspace::slate::admission_bound_tests::at_the_real_write_boundary_the_lane_refuses_over_its_envelope_and_the_refusal_is_a_no_op",
+    "keyspace::slate::admission_bound_tests::below_the_envelope_a_write_is_admitted",
+    "keyspace::slate::admission_bound_tests::the_experimental_envelope_is_a_named_bounded_default",
+    "keyspace::slate::checkpoint_pin_tests::a_broken_manifest_entry_fails_the_whole_checkpoint",
+    "keyspace::slate::checkpoint_pin_tests::a_nonempty_manifest_dir_with_no_pinnable_manifest_is_an_error_not_a_silent_none",
+    "keyspace::slate::checkpoint_pin_tests::an_erroring_manifest_entry_fails_the_pin_instead_of_pinning_an_older_manifest",
+    "keyspace::slate::checkpoint_pin_tests::pin_newest_manifest_orders_and_tolerates_the_empty_dir",
+    "keyspace::slate::checkpoint_root_tests::a_fresh_empty_keyspace_checkpoints_through_its_manifest_root_not_through_silence",
+    "keyspace::slate::checkpoint_root_tests::a_live_keyspace_with_a_removed_manifest_dir_refuses_the_checkpoint_and_copies_nothing",
+    "keyspace::slate::checkpoint_root_tests::a_live_keyspace_with_an_emptied_manifest_dir_refuses_the_checkpoint",
+    "keyspace::slate::checkpoint_root_tests::an_empty_remote_manifest_listing_refuses_the_checkpoint_and_downloads_nothing",
+    "keyspace::slate::cursor_seek_error_tests::a_data_error_poisons_the_cursor_and_surfaces_through_status",
+    "keyspace::slate::cursor_seek_error_tests::positioning_and_transient_errors_are_recovered_by_a_fresh_scan",
+    "keyspace::slate::immutability_boundary_tests::a_committed_multipart_cannot_be_completed_a_second_time",
+    "keyspace::slate::immutability_boundary_tests::a_completion_after_the_namespace_is_quarantined_is_refused_and_the_upload_is_reclaimed",
+    "keyspace::slate::immutability_boundary_tests::a_different_bytes_overwrite_of_an_immutable_key_is_refused_and_quarantines",
+    "keyspace::slate::immutability_boundary_tests::a_first_write_to_an_immutable_key_is_admitted_and_an_identical_replay_is_idempotent",
+    "keyspace::slate::immutability_boundary_tests::a_manifest_key_is_exempt_and_may_be_republished",
+    "keyspace::slate::immutability_boundary_tests::a_manifest_multipart_completion_cannot_silently_overwrite_the_manifest",
+    "keyspace::slate::immutability_boundary_tests::a_multipart_completion_onto_an_existing_immutable_key_is_refused_and_quarantines",
+    "keyspace::slate::immutability_boundary_tests::a_quarantined_namespace_refuses_multipart_initiation",
+    "keyspace::slate::immutability_boundary_tests::a_restart_between_publication_and_a_replayed_completion_cannot_overwrite",
+    "keyspace::slate::immutability_boundary_tests::a_stale_multipart_completion_is_refused_but_the_active_attempt_completes",
+    "keyspace::slate::immutability_boundary_tests::an_explicit_create_mode_overwrite_attempt_is_also_refused",
+    "keyspace::slate::immutability_boundary_tests::manifest_keys_are_classified_apart_from_immutable_data_keys",
+    "keyspace::slate::immutability_boundary_tests::once_quarantined_every_further_write_fails_closed",
+    "keyspace::slate::immutability_boundary_tests::the_attempt_journal_supersedes_the_earlier_attempt",
+    "keyspace::slate::immutability_boundary_tests::the_ledger_witness_is_a_stable_content_addressed_digest",
+    "keyspace::slate::immutability_boundary_tests::when_the_active_attempt_commits_first_the_superseded_attempt_is_refused_but_can_abort",
+    "keyspace::slate::materialisation_namespace_tests::a_different_controller_identity_changes_the_namespace",
+    "keyspace::slate::materialisation_namespace_tests::opaque_identifiers_are_injectively_encoded",
+    "keyspace::slate::materialisation_namespace_tests::the_namespace_derives_from_controller_ids_and_is_independent_of_any_local_path",
+    "keyspace::slate::materialization_tests::a_blocked_rename_leaves_no_copy_behind",
+    "keyspace::slate::materialization_tests::a_failed_object_cache_wipe_is_propagated_not_discarded",
+    "keyspace::slate::materialization_tests::copies_through_the_runtime_principal_are_create_only",
+    "keyspace::slate::materialization_tests::remote_key_count_memo_is_populated_and_bounds_the_scan",
+    "keyspace::slate::materialization_tests::reopen_mints_fresh_materialization_and_never_deletes_the_previous_one",
+    "keyspace::slate::materialization_tests::runtime_store_principal_has_no_delete_authority",
+    "keyspace::slate::materialization_tests::stale_actor_cannot_alter_the_active_materialization",
+    "keyspace::slate::metrics_budget_tests::a_failed_scan_is_never_cached",
+    "keyspace::slate::metrics_budget_tests::a_second_call_inside_the_ttl_performs_zero_remote_io",
+    "keyspace::slate::metrics_budget_tests::an_expired_memo_triggers_exactly_one_rescan",
+    "keyspace::slate::metrics_budget_tests::invalid_cache_config_is_a_typed_refusal_not_a_silent_disable",
+    "keyspace::slate::metrics_budget_tests::remote_key_count_freshness_boundary",
+    "keyspace::slate::metrics_budget_tests::the_local_lane_never_caches",
+    "keyspace::slate::multipart_journal_budget_tests::abandoned_attempts_reach_a_typed_admission_refusal_not_unbounded_growth",
+    "keyspace::slate::multipart_journal_budget_tests::multipart_budget_arithmetic_is_exact_at_the_boundary",
+    "keyspace::slate::multipart_journal_budget_tests::terminal_attempts_are_retired_to_a_bounded_receipt_window_and_budgets_release",
+    "keyspace::slate::multipart_journal_budget_tests::the_byte_budget_is_reserved_while_streaming_and_released_on_abort",
+    "keyspace::slate::multipart_promote_tests::a_timeout_after_promote_replay_converges_idempotently",
+    "keyspace::slate::multipart_promote_tests::promote_falls_back_to_a_create_only_put_when_conditional_copy_is_unsupported",
+    "keyspace::slate::multipart_promote_tests::two_independent_completers_publish_exactly_one_winner_and_no_changed_bytes",
+    "keyspace::slate::object_prefix_tests::ascii_paths_keep_their_established_encoding",
+    "keyspace::slate::object_prefix_tests::byte_distinct_non_utf8_paths_never_share_a_prefix",
+    "keyspace::slate::posture_tests::compliant_settings_pass",
+    "keyspace::slate::posture_tests::each_violation_is_a_typed_refusal_naming_the_clause",
+    "keyspace::slate::r6_multipart_integrity_tests::a_committed_attempt_cannot_abort_its_published_object_away",
+    "keyspace::slate::r6_multipart_integrity_tests::a_failed_staging_reclaim_records_a_durable_orphan",
+    "keyspace::slate::r6_multipart_integrity_tests::a_single_object_over_the_per_object_maximum_is_refused_while_the_aggregate_budget_is_free",
+    "keyspace::slate::r6_multipart_integrity_tests::a_weak_checksum_admits_a_collision_the_production_digest_kills",
+    "keyspace::slate::r6_multipart_integrity_tests::an_occupied_target_holding_different_bytes_is_still_refused_and_quarantines",
+    "keyspace::slate::r6_multipart_integrity_tests::an_orphan_that_cannot_be_made_durable_is_counted_not_swallowed",
+    "keyspace::slate::r6_multipart_integrity_tests::an_untampered_upload_still_publishes",
+    "keyspace::slate::r6_multipart_integrity_tests::completion_reads_are_bounded_by_the_window_and_never_whole_object",
+    "keyspace::slate::r6_multipart_integrity_tests::dropped_staged_chunks_are_refused",
+    "keyspace::slate::r6_multipart_integrity_tests::duplicated_staged_chunks_are_refused",
+    "keyspace::slate::r6_multipart_integrity_tests::reordered_staged_chunks_are_refused",
+    "keyspace::slate::r6_multipart_integrity_tests::staged_bytes_mutated_without_changing_length_are_refused",
+    "keyspace::slate::r6_multipart_integrity_tests::the_authoritative_handle_cannot_overwrite_or_copy_over_a_published_name",
+    "keyspace::slate::r6_multipart_integrity_tests::the_completion_gate_admits_exactly_its_budget_at_once",
+    "keyspace::slate::r6_multipart_integrity_tests::the_fallback_refuses_an_object_over_the_materialised_promote_maximum",
+    "keyspace::slate::r6_multipart_integrity_tests::the_ledger_witness_stores_full_digest_bytes",
+    "keyspace::slate::r6_multipart_integrity_tests::the_occupied_target_settlement_also_streams",
+    "keyspace::slate::r6_multipart_integrity_tests::the_size_ceilings_are_named_independent_and_ordered",
+    "keyspace::slate::r6_multipart_integrity_tests::the_staging_authority_cannot_address_an_authoritative_name",
+    "keyspace::slate::r6_multipart_integrity_tests::the_streaming_fallback_publishes_without_a_contiguous_copy",
+    "keyspace::slate::r6_multipart_integrity_tests::the_witness_comparison_is_exact_on_length_and_digest",
+    "keyspace::slate::read_contract_tests::paused_precommit_write_is_invisible_to_committed_frontier_reads",
+    "keyspace::slate::retry_channel_tests::non_transient_kinds_fail_closed_immediately",
+    "keyspace::slate::retry_channel_tests::the_retry_budget_is_bounded",
+    "keyspace::slate::retry_channel_tests::unavailable_is_retried_within_the_budget",
+    "post_wal_guard::tests::a_deterministic_abort_resolves_the_obligation",
+    "post_wal_guard::tests::a_guard_dropped_while_armed_is_the_defect_this_type_exists_to_catch",
+    "post_wal_guard::tests::a_guard_is_armed_until_it_is_resolved",
+    "post_wal_guard::tests::a_second_terminal_transition_is_illegal_and_observable",
+    "post_wal_guard::tests::every_unresolved_reason_is_terminal_and_named",
+    "post_wal_guard::tests::known_not_appended_is_the_only_pre_obligation_exit",
+    "recovery::checkpoint::complete_marker_tests::a_legacy_or_forged_64bit_manifest_is_refused_as_unknown_version",
+    "recovery::checkpoint::complete_marker_tests::a_manifest_with_duplicate_normalized_keys_does_not_parse",
+    "recovery::checkpoint::complete_marker_tests::a_missing_complete_marker_is_not_selectable",
+    "recovery::checkpoint::complete_marker_tests::a_renamed_attempt_directory_is_not_selectable",
+    "recovery::checkpoint::complete_marker_tests::a_truncated_file_after_complete_is_rejected",
+    "recovery::checkpoint::complete_marker_tests::a_verified_complete_checkpoint_is_selectable",
+    "recovery::checkpoint::complete_marker_tests::an_added_file_after_complete_is_rejected",
+    "recovery::checkpoint::complete_marker_tests::an_in_flight_tmp_attempt_is_never_selected",
+    "recovery::checkpoint::complete_marker_tests::candidates_are_enumerated_newest_to_oldest_by_full_attempt_id",
+    "recovery::checkpoint::complete_marker_tests::distinct_invalid_utf8_names_stay_distinct_and_tampering_is_detected",
+    "recovery::checkpoint::complete_marker_tests::selection_prefers_a_verified_older_over_an_unverified_newer",
+    "recovery::checkpoint::concurrent_checkpoint_tests::a_foreign_directory_is_never_a_deletion_target",
+    "recovery::checkpoint::concurrent_checkpoint_tests::a_newer_finalized_sibling_is_never_a_deletion_target",
+    "recovery::checkpoint::concurrent_checkpoint_tests::an_active_tmp_attempt_is_never_a_deletion_target",
+    "recovery::checkpoint::concurrent_checkpoint_tests::attempt_suffixes_are_unique_even_under_rapid_scheduling",
+    "recovery::checkpoint::concurrent_checkpoint_tests::equal_sequence_prefix_ids_are_ordered_by_the_counter_component",
+    "recovery::checkpoint::concurrent_checkpoint_tests::retention_orders_by_checkpoint_sequence_never_by_wall_clock",
+    "recovery::checkpoint::finish_barrier_tests::a_cleanup_failure_does_not_affect_the_published_cut",
+    "recovery::checkpoint::finish_barrier_tests::an_unparseable_watermark_refuses_publication",
+    "recovery::checkpoint::finish_barrier_tests::equal_sequence_reverse_completion_preserves_the_newer_cut",
+    "recovery::checkpoint::finish_barrier_tests::forward_completion_reclaims_the_older_cut",
+    "recovery::checkpoint::finish_barrier_tests::published_names_are_keyed_by_sequence_not_wall_clock",
+    "recovery::checkpoint::finish_barrier_tests::reverse_completion_preserves_the_newer_published_cut",
+    "recovery::checkpoint::metadata_tests::a_parseable_watermark_round_trips",
+    "recovery::checkpoint::metadata_tests::a_watermark_with_no_successor_is_typed_exhaustion_not_a_wrap",
+    "recovery::checkpoint::metadata_tests::an_unparseable_watermark_is_a_typed_error_not_a_panic",
+    "recovery::checkpoint::metadata_tests::replay_bounds_are_exact_up_to_the_last_representable_sequence_number",
+    "recovery::checkpoint::restore_durability_barrier_tests::a_materialisation_whose_flush_never_ran_fails_the_reopen_witness",
+    "recovery::checkpoint::restore_durability_barrier_tests::a_proven_flush_and_reproduced_witness_activates_and_advances",
+    "recovery::checkpoint::restore_durability_barrier_tests::a_witness_that_does_not_reproduce_after_reopen_renames_nothing",
+    "recovery::checkpoint::restore_durability_barrier_tests::an_unproven_flush_renames_nothing_and_advances_no_sequence",
+    "recovery::checkpoint::restore_durability_barrier_tests::probes_are_selected_from_the_replay_frontier_and_are_bounded",
+    "recovery::checkpoint::restore_durability_barrier_tests::the_explicit_barrier_covers_the_rocks_lane_too",
+    "recovery::checkpoint::restore_durability_barrier_tests::the_explicit_barrier_makes_the_replay_readable_after_a_reopen",
+    "recovery::checkpoint::restore_durability_barrier_tests::the_root_check_refuses_a_keyspace_that_materialised_nothing",
+    "recovery::checkpoint::restore_safety_tests::a_corrupt_watermark_leaves_live_state_untouched",
+    "recovery::checkpoint::restore_safety_tests::a_symlink_checkpoint_entry_is_refused_without_following_it",
+    "recovery::checkpoint::restore_safety_tests::a_valid_checkpoint_restores_and_replaces_live_bytes",
+    "recovery::checkpoint::restore_safety_tests::an_ahead_watermark_is_a_typed_refusal_not_a_panic_and_leaves_live_untouched",
+    "recovery::checkpoint::scratch_restore_tests::a_failed_swap_rolls_the_predecessor_back",
+    "recovery::checkpoint::scratch_restore_tests::activation_swaps_scratch_into_live_and_reclaims_the_retired_predecessor",
+    "recovery::checkpoint::scratch_restore_tests::convergence_is_a_no_op_on_a_clean_tree",
+    "recovery::checkpoint::scratch_restore_tests::convergence_reclaims_pre_activation_scratch_residue",
+    "recovery::checkpoint::scratch_restore_tests::convergence_reclaims_the_retired_predecessor_after_a_completed_swap",
+    "recovery::checkpoint::scratch_restore_tests::convergence_rolls_back_a_crash_between_the_activation_renames",
+    "recovery::commit_recovery::status_replay_tests::committed_then_rejected_is_a_typed_quarantine_not_last_write_wins",
+    "recovery::commit_recovery::status_replay_tests::rejected_then_committed_is_the_identical_quarantine",
+    "recovery::commit_recovery::status_replay_tests::repeated_committed_status_is_idempotent",
+    "recovery::commit_recovery::status_replay_tests::repeated_rejected_status_subtracts_the_size_exactly_once",
+    "recovery::commit_recovery::status_replay_tests::rerunning_the_handler_over_the_same_records_converges",
+    "recovery::commit_recovery::status_replay_tests::status_without_loaded_commit_data_is_skipped",
+    "recovery::commit_recovery::strict_parser_tests::a_contiguous_prefix_with_statuses_parses_completely",
+    "recovery::commit_recovery::strict_parser_tests::a_duplicate_commit_record_is_a_typed_refusal_not_a_silent_overwrite",
+    "recovery::commit_recovery::strict_parser_tests::a_malformed_commit_record_is_a_typed_refusal",
+    "recovery::commit_recovery::strict_parser_tests::a_missing_first_record_is_a_typed_refusal",
+    "recovery::commit_recovery::strict_parser_tests::a_record_beyond_the_captured_head_is_a_typed_refusal",
+    "recovery::commit_recovery::strict_parser_tests::a_status_certifying_an_unwritten_commit_is_a_typed_refusal",
+    "recovery::commit_recovery::strict_parser_tests::a_trailing_gap_is_a_typed_refusal",
+    "recovery::commit_recovery::strict_parser_tests::an_internal_gap_is_a_typed_refusal",
+    "recovery::commit_recovery::strict_parser_tests::an_unknown_type_claiming_a_fresh_sequence_is_refused_but_a_proper_unsequenced_one_passes",
+    "recovery::commit_recovery::strict_parser_tests::conflicting_duplicate_statuses_quarantine_through_the_shared_resolver",
+    "recovery::commit_recovery::strict_parser_tests::empty_is_legal_exactly_when_start_exceeds_the_head",
+    "recovery::sha256::tests::fips_vectors",
+    "recovery::sha256::tests::streamed_updates_equal_one_shot",
+    "recovery::status_resolver::tests::both_paths_produce_byte_identical_verdicts_for_one_history",
+    "recovery::status_resolver::tests::both_paths_produce_the_identical_typed_conflict_in_either_order",
+    "recovery::status_resolver::tests::fold_adopts_converges_and_conflicts",
+    "sync_confirmation_tests::a_dead_sync_worker_is_typed_acknowledgement_loss_never_success",
+    "sync_confirmation_tests::a_wedged_sync_worker_times_out_with_a_typed_error_within_the_deadline",
+    "sync_confirmation_tests::an_acknowledged_sync_returns_its_outcome",
+    "tests::a_historical_write_snapshot_request_is_a_typed_error_not_a_panic"
+   ],
+   "missing_cases": [],
+   "refusals": [],
+   "publishable": true
+  },
+  {
+   "runner_row_id": "storage:test_isolation",
+   "cargo_package": "storage",
+   "cargo_target": "test_isolation",
+   "executable_sha256": "2cc5e89c1d000e923c0597002971ec7c2b9bb4856d3d807d158712e778927c79",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.22,
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_isolation.log",
+   "log_sha256": "94a680e98c6f4445dc0cc030d9acbab4b5cf7186c12c2d9cb13854e13ba6f0db",
+   "log_bytes": 1040,
+   "catalog_target_id": "cargo:storage:test:test_isolation",
+   "counts": {
+    "passed": 14,
+    "failed": 0,
+    "ignored": 1,
+    "measured": 0,
+    "filtered_out": 0
+   },
+   "parsed_cases": 15,
+   "catalog_leaf_cases": 15,
+   "extra_cases": [],
+   "missing_cases": [],
+   "refusals": [],
+   "publishable": true
+  },
+  {
+   "runner_row_id": "storage:test_mvcc",
+   "cargo_package": "storage",
+   "cargo_target": "test_mvcc",
+   "executable_sha256": "77fa923d01407dfa1a12d93ecf3e0bc51e08471be9af2e334d8e0e0c4cb1f830",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.11,
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_mvcc.log",
+   "log_sha256": "080b1f307a5ff2f078fa51dccbc2b320e951ad5b20b4cb2359ee1a7b5cf42571",
+   "log_bytes": 282,
+   "catalog_target_id": "cargo:storage:test:test_mvcc",
+   "counts": {
+    "passed": 4,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+   },
+   "parsed_cases": 4,
+   "catalog_leaf_cases": 4,
+   "extra_cases": [],
+   "missing_cases": [],
+   "refusals": [],
+   "publishable": true
+  },
+  {
+   "runner_row_id": "storage:test_recovery",
+   "cargo_package": "storage",
+   "cargo_target": "test_recovery",
+   "executable_sha256": "c71a2d04a90d8b6423c7639ea5ced4f7197d927590b8a345e15d529474d97c4f",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.37,
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_recovery.log",
+   "log_sha256": "7fec165bba9158cd691286325e8e6f2228a63dee4d0f0bda1d23dc8f5e3dd171",
+   "log_bytes": 1298,
+   "catalog_target_id": "cargo:storage:test:test_recovery",
+   "counts": {
+    "passed": 18,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+   },
+   "parsed_cases": 18,
+   "catalog_leaf_cases": 7,
+   "extra_cases": [
+    "a_checkpoint_bound_to_a_different_backend_identity_refuses_restore",
+    "a_checkpoint_bound_to_the_same_backend_identity_restores",
+    "a_corrupt_cut_fails_in_scratch_and_leaves_the_predecessor_byte_identical",
+    "a_hash_consistent_but_unopenable_cut_fails_in_scratch_not_on_live",
+    "a_legacy_cut_without_identity_refuses_recovery_until_explicitly_imported",
+    "ahead_of_durability_checkpoint_falls_back_to_full_wal_replay",
+    "newest_unverifiable_checkpoint_falls_back_to_the_older_valid_one",
+    "restart_after_crash_after_activation_converges_with_successor_active",
+    "restart_after_crash_before_activation_converges_with_predecessor_intact",
+    "restart_after_crash_between_activation_renames_converges",
+    "restore_leaves_no_scratch_residue_on_success"
+   ],
+   "missing_cases": [],
+   "refusals": [],
+   "publishable": true
+  },
+  {
+   "runner_row_id": "storage:test_snapshot",
+   "cargo_package": "storage",
+   "cargo_target": "test_snapshot",
+   "executable_sha256": "480e3bfa760eb5922364c6a17dcb6a703235bde776311ec8e298b893445c24d2",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.22,
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_snapshot.log",
+   "log_sha256": "723e16398b6b905306e6c794b56513f7705850c291171f0d5a6e98a5f6ba18aa",
+   "log_bytes": 572,
+   "catalog_target_id": "cargo:storage:test:test_snapshot",
+   "counts": {
+    "passed": 10,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+   },
+   "parsed_cases": 10,
+   "catalog_leaf_cases": 10,
+   "extra_cases": [],
+   "missing_cases": [],
+   "refusals": [],
+   "publishable": true
+  },
+  {
+   "runner_row_id": "storage:test_storage",
+   "cargo_package": "storage",
+   "cargo_target": "test_storage",
+   "executable_sha256": "5b21dfe18ea1973f27bc582697d23b6227fcf7b9a3f2f7f823a2a010d69023fb",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 0.17,
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_storage.log",
+   "log_sha256": "8b1c59f32f9be5a919f97c5420935376ed386a56bffe0f8340208799a6ce69fa",
+   "log_bytes": 320,
+   "catalog_target_id": "cargo:storage:test:test_storage",
+   "counts": {
+    "passed": 6,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+   },
+   "parsed_cases": 6,
+   "catalog_leaf_cases": 6,
+   "extra_cases": [],
+   "missing_cases": [],
+   "refusals": [],
+   "publishable": true
+  }
+ ],
+ "leaves": [
+  {
+   "leaf_case_id": "cargo:durability:test:basic::added_junk",
+   "catalog_target_id": "cargo:durability:test:basic",
+   "runner_row_id": "durability:basic",
+   "case_name": "added_junk",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/durability__basic.log",
+   "log_sha256": "990bc15656d899b3fab1aa549f379ac273e3f02c26fdfc10e25522120672f3f1",
+   "log_line": 3,
+   "outcome_line": 3,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:durability:test:basic::added_zeros",
+   "catalog_target_id": "cargo:durability:test:basic",
+   "runner_row_id": "durability:basic",
+   "case_name": "added_zeros",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/durability__basic.log",
+   "log_sha256": "990bc15656d899b3fab1aa549f379ac273e3f02c26fdfc10e25522120672f3f1",
+   "log_line": 5,
+   "outcome_line": 5,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:durability:test:basic::basic",
+   "catalog_target_id": "cargo:durability:test:basic",
+   "runner_row_id": "durability:basic",
+   "case_name": "basic",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/durability__basic.log",
+   "log_sha256": "990bc15656d899b3fab1aa549f379ac273e3f02c26fdfc10e25522120672f3f1",
+   "log_line": 4,
+   "outcome_line": 4,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:durability:test:basic::corrupted_record_junk",
+   "catalog_target_id": "cargo:durability:test:basic",
+   "runner_row_id": "durability:basic",
+   "case_name": "corrupted_record_junk",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/durability__basic.log",
+   "log_sha256": "990bc15656d899b3fab1aa549f379ac273e3f02c26fdfc10e25522120672f3f1",
+   "log_line": 6,
+   "outcome_line": 6,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:durability:test:basic::corrupted_record_zeros",
+   "catalog_target_id": "cargo:durability:test:basic",
+   "runner_row_id": "durability:basic",
+   "case_name": "corrupted_record_zeros",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/durability__basic.log",
+   "log_sha256": "990bc15656d899b3fab1aa549f379ac273e3f02c26fdfc10e25522120672f3f1",
+   "log_line": 7,
+   "outcome_line": 7,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:durability:unit:durability::wal::test::test_wal_find_last",
+   "catalog_target_id": "cargo:durability:unit:durability",
+   "runner_row_id": "durability:durability",
+   "case_name": "wal::test::test_wal_find_last",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/durability__durability.log",
+   "log_sha256": "846ae0efbbc18d4de1e44e4dc0372c223cad3bdd6222b59c5496418110cff67c",
+   "log_line": 23,
+   "outcome_line": 23,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:durability:unit:durability::wal::test::test_wal_iterate_from",
+   "catalog_target_id": "cargo:durability:unit:durability",
+   "runner_row_id": "durability:durability",
+   "case_name": "wal::test::test_wal_iterate_from",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/durability__durability.log",
+   "log_sha256": "846ae0efbbc18d4de1e44e4dc0372c223cad3bdd6222b59c5496418110cff67c",
+   "log_line": 26,
+   "outcome_line": 26,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:durability:unit:durability::wal::test::test_wal_load",
+   "catalog_target_id": "cargo:durability:unit:durability",
+   "runner_row_id": "durability:durability",
+   "case_name": "wal::test::test_wal_load",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/durability__durability.log",
+   "log_sha256": "846ae0efbbc18d4de1e44e4dc0372c223cad3bdd6222b59c5496418110cff67c",
+   "log_line": 24,
+   "outcome_line": 24,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:durability:unit:durability::wal::test::test_wal_open_multiple",
+   "catalog_target_id": "cargo:durability:unit:durability",
+   "runner_row_id": "durability:durability",
+   "case_name": "wal::test::test_wal_open_multiple",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/durability__durability.log",
+   "log_sha256": "846ae0efbbc18d4de1e44e4dc0372c223cad3bdd6222b59c5496418110cff67c",
+   "log_line": 25,
+   "outcome_line": 25,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:durability:unit:durability::wal::test::test_wal_truncate_from_across_multiple_files_deletes_newer_files",
+   "catalog_target_id": "cargo:durability:unit:durability",
+   "runner_row_id": "durability:durability",
+   "case_name": "wal::test::test_wal_truncate_from_across_multiple_files_deletes_newer_files",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/durability__durability.log",
+   "log_sha256": "846ae0efbbc18d4de1e44e4dc0372c223cad3bdd6222b59c5496418110cff67c",
+   "log_line": 36,
+   "outcome_line": 36,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:durability:unit:durability::wal::test::test_wal_truncate_from_beginning_clears_everything",
+   "catalog_target_id": "cargo:durability:unit:durability",
+   "runner_row_id": "durability:durability",
+   "case_name": "wal::test::test_wal_truncate_from_beginning_clears_everything",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/durability__durability.log",
+   "log_sha256": "846ae0efbbc18d4de1e44e4dc0372c223cad3bdd6222b59c5496418110cff67c",
+   "log_line": 27,
+   "outcome_line": 27,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:durability:unit:durability::wal::test::test_wal_truncate_from_is_idempotent_for_same_cut",
+   "catalog_target_id": "cargo:durability:unit:durability",
+   "runner_row_id": "durability:durability",
+   "case_name": "wal::test::test_wal_truncate_from_is_idempotent_for_same_cut",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/durability__durability.log",
+   "log_sha256": "846ae0efbbc18d4de1e44e4dc0372c223cad3bdd6222b59c5496418110cff67c",
+   "log_line": 28,
+   "outcome_line": 28,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:durability:unit:durability::wal::test::test_wal_truncate_from_middle_of_single_file_and_continue",
+   "catalog_target_id": "cargo:durability:unit:durability",
+   "runner_row_id": "durability:durability",
+   "case_name": "wal::test::test_wal_truncate_from_middle_of_single_file_and_continue",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/durability__durability.log",
+   "log_sha256": "846ae0efbbc18d4de1e44e4dc0372c223cad3bdd6222b59c5496418110cff67c",
+   "log_line": 29,
+   "outcome_line": 29,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:durability:unit:durability::wal::test::test_wal_write_read",
+   "catalog_target_id": "cargo:durability:unit:durability",
+   "runner_row_id": "durability:durability",
+   "case_name": "wal::test::test_wal_write_read",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/durability__durability.log",
+   "log_sha256": "846ae0efbbc18d4de1e44e4dc0372c223cad3bdd6222b59c5496418110cff67c",
+   "log_line": 30,
+   "outcome_line": 30,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:durability:unit:durability::wal::test::test_wal_write_read_lots",
+   "catalog_target_id": "cargo:durability:unit:durability",
+   "runner_row_id": "durability:durability",
+   "case_name": "wal::test::test_wal_write_read_lots",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/durability__durability.log",
+   "log_sha256": "846ae0efbbc18d4de1e44e4dc0372c223cad3bdd6222b59c5496418110cff67c",
+   "log_line": 31,
+   "outcome_line": 31,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:durability:unit:durability::wal::test::truncate_from_beyond_end_does_not_skip_sequence_numbers",
+   "catalog_target_id": "cargo:durability:unit:durability",
+   "runner_row_id": "durability:durability",
+   "case_name": "wal::test::truncate_from_beyond_end_does_not_skip_sequence_numbers",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/durability__durability.log",
+   "log_sha256": "846ae0efbbc18d4de1e44e4dc0372c223cad3bdd6222b59c5496418110cff67c",
+   "log_line": 32,
+   "outcome_line": 32,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:durability:unit:durability::wal::test::truncate_from_keeps_prior_unsequenced_records_with_same_seq",
+   "catalog_target_id": "cargo:durability:unit:durability",
+   "runner_row_id": "durability:durability",
+   "case_name": "wal::test::truncate_from_keeps_prior_unsequenced_records_with_same_seq",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/durability__durability.log",
+   "log_sha256": "846ae0efbbc18d4de1e44e4dc0372c223cad3bdd6222b59c5496418110cff67c",
+   "log_line": 33,
+   "outcome_line": 33,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_isolation::commits_isolated",
+   "catalog_target_id": "cargo:storage:test:test_isolation",
+   "runner_row_id": "storage:test_isolation",
+   "case_name": "commits_isolated",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_isolation.log",
+   "log_sha256": "94a680e98c6f4445dc0cc030d9acbab4b5cf7186c12c2d9cb13854e13ba6f0db",
+   "log_line": 8,
+   "outcome_line": 8,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_isolation::g0_dirty_writes",
+   "catalog_target_id": "cargo:storage:test:test_isolation",
+   "runner_row_id": "storage:test_isolation",
+   "case_name": "g0_dirty_writes",
+   "outcome": "IGNORED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_isolation.log",
+   "log_sha256": "94a680e98c6f4445dc0cc030d9acbab4b5cf7186c12c2d9cb13854e13ba6f0db",
+   "log_line": 3,
+   "outcome_line": 3,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_isolation::g0_update_conflicts_fail",
+   "catalog_target_id": "cargo:storage:test:test_isolation",
+   "runner_row_id": "storage:test_isolation",
+   "case_name": "g0_update_conflicts_fail",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_isolation.log",
+   "log_sha256": "94a680e98c6f4445dc0cc030d9acbab4b5cf7186c12c2d9cb13854e13ba6f0db",
+   "log_line": 10,
+   "outcome_line": 10,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_isolation::g1a_aborted_writes",
+   "catalog_target_id": "cargo:storage:test:test_isolation",
+   "runner_row_id": "storage:test_isolation",
+   "case_name": "g1a_aborted_writes",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_isolation.log",
+   "log_sha256": "94a680e98c6f4445dc0cc030d9acbab4b5cf7186c12c2d9cb13854e13ba6f0db",
+   "log_line": 7,
+   "outcome_line": 7,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_isolation::g1b_intermediate_read",
+   "catalog_target_id": "cargo:storage:test:test_isolation",
+   "runner_row_id": "storage:test_isolation",
+   "case_name": "g1b_intermediate_read",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_isolation.log",
+   "log_sha256": "94a680e98c6f4445dc0cc030d9acbab4b5cf7186c12c2d9cb13854e13ba6f0db",
+   "log_line": 9,
+   "outcome_line": 9,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_isolation::g1c_circular_info_flow",
+   "catalog_target_id": "cargo:storage:test:test_isolation",
+   "runner_row_id": "storage:test_isolation",
+   "case_name": "g1c_circular_info_flow",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_isolation.log",
+   "log_sha256": "94a680e98c6f4445dc0cc030d9acbab4b5cf7186c12c2d9cb13854e13ba6f0db",
+   "log_line": 11,
+   "outcome_line": 11,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_isolation::g2_antidependency_cycles_fekete",
+   "catalog_target_id": "cargo:storage:test:test_isolation",
+   "runner_row_id": "storage:test_isolation",
+   "case_name": "g2_antidependency_cycles_fekete",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_isolation.log",
+   "log_sha256": "94a680e98c6f4445dc0cc030d9acbab4b5cf7186c12c2d9cb13854e13ba6f0db",
+   "log_line": 13,
+   "outcome_line": 13,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_isolation::g2_item_write_skew_disjoint_read",
+   "catalog_target_id": "cargo:storage:test:test_isolation",
+   "runner_row_id": "storage:test_isolation",
+   "case_name": "g2_item_write_skew_disjoint_read",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_isolation.log",
+   "log_sha256": "94a680e98c6f4445dc0cc030d9acbab4b5cf7186c12c2d9cb13854e13ba6f0db",
+   "log_line": 12,
+   "outcome_line": 12,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_isolation::g2_predicate_anti_dependency_cycles",
+   "catalog_target_id": "cargo:storage:test:test_isolation",
+   "runner_row_id": "storage:test_isolation",
+   "case_name": "g2_predicate_anti_dependency_cycles",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_isolation.log",
+   "log_sha256": "94a680e98c6f4445dc0cc030d9acbab4b5cf7186c12c2d9cb13854e13ba6f0db",
+   "log_line": 14,
+   "outcome_line": 14,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_isolation::g_single_read_skew",
+   "catalog_target_id": "cargo:storage:test:test_isolation",
+   "runner_row_id": "storage:test_isolation",
+   "case_name": "g_single_read_skew",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_isolation.log",
+   "log_sha256": "94a680e98c6f4445dc0cc030d9acbab4b5cf7186c12c2d9cb13854e13ba6f0db",
+   "log_line": 15,
+   "outcome_line": 15,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_isolation::imp_commit_delete_first",
+   "catalog_target_id": "cargo:storage:test:test_isolation",
+   "runner_row_id": "storage:test_isolation",
+   "case_name": "imp_commit_delete_first",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_isolation.log",
+   "log_sha256": "94a680e98c6f4445dc0cc030d9acbab4b5cf7186c12c2d9cb13854e13ba6f0db",
+   "log_line": 16,
+   "outcome_line": 16,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_isolation::imp_commit_update_first",
+   "catalog_target_id": "cargo:storage:test:test_isolation",
+   "runner_row_id": "storage:test_isolation",
+   "case_name": "imp_commit_update_first",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_isolation.log",
+   "log_sha256": "94a680e98c6f4445dc0cc030d9acbab4b5cf7186c12c2d9cb13854e13ba6f0db",
+   "log_line": 17,
+   "outcome_line": 17,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_isolation::isolation_manager_correctly_recovers_from_disk",
+   "catalog_target_id": "cargo:storage:test:test_isolation",
+   "runner_row_id": "storage:test_isolation",
+   "case_name": "isolation_manager_correctly_recovers_from_disk",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_isolation.log",
+   "log_sha256": "94a680e98c6f4445dc0cc030d9acbab4b5cf7186c12c2d9cb13854e13ba6f0db",
+   "log_line": 19,
+   "outcome_line": 19,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_isolation::otv",
+   "catalog_target_id": "cargo:storage:test:test_isolation",
+   "runner_row_id": "storage:test_isolation",
+   "case_name": "otv",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_isolation.log",
+   "log_sha256": "94a680e98c6f4445dc0cc030d9acbab4b5cf7186c12c2d9cb13854e13ba6f0db",
+   "log_line": 20,
+   "outcome_line": 20,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_isolation::p4_g_cursor_lost_update",
+   "catalog_target_id": "cargo:storage:test:test_isolation",
+   "runner_row_id": "storage:test_isolation",
+   "case_name": "p4_g_cursor_lost_update",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_isolation.log",
+   "log_sha256": "94a680e98c6f4445dc0cc030d9acbab4b5cf7186c12c2d9cb13854e13ba6f0db",
+   "log_line": 18,
+   "outcome_line": 18,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_mvcc::test_commit_increments_watermark",
+   "catalog_target_id": "cargo:storage:test:test_mvcc",
+   "runner_row_id": "storage:test_mvcc",
+   "case_name": "test_commit_increments_watermark",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_mvcc.log",
+   "log_sha256": "080b1f307a5ff2f078fa51dccbc2b320e951ad5b20b4cb2359ee1a7b5cf42571",
+   "log_line": 3,
+   "outcome_line": 3,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_mvcc::test_concurrent_writes_to_same_key",
+   "catalog_target_id": "cargo:storage:test:test_mvcc",
+   "runner_row_id": "storage:test_mvcc",
+   "case_name": "test_concurrent_writes_to_same_key",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_mvcc.log",
+   "log_sha256": "080b1f307a5ff2f078fa51dccbc2b320e951ad5b20b4cb2359ee1a7b5cf42571",
+   "log_line": 4,
+   "outcome_line": 4,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_mvcc::test_conflicting_update_fails",
+   "catalog_target_id": "cargo:storage:test:test_mvcc",
+   "runner_row_id": "storage:test_mvcc",
+   "case_name": "test_conflicting_update_fails",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_mvcc.log",
+   "log_sha256": "080b1f307a5ff2f078fa51dccbc2b320e951ad5b20b4cb2359ee1a7b5cf42571",
+   "log_line": 6,
+   "outcome_line": 6,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_mvcc::test_reading_snapshots",
+   "catalog_target_id": "cargo:storage:test:test_mvcc",
+   "runner_row_id": "storage:test_mvcc",
+   "case_name": "test_reading_snapshots",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_mvcc.log",
+   "log_sha256": "080b1f307a5ff2f078fa51dccbc2b320e951ad5b20b4cb2359ee1a7b5cf42571",
+   "log_line": 5,
+   "outcome_line": 5,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_recovery::no_wal_and_checkpoint_illegal",
+   "catalog_target_id": "cargo:storage:test:test_recovery",
+   "runner_row_id": "storage:test_recovery",
+   "case_name": "no_wal_and_checkpoint_illegal",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_recovery.log",
+   "log_sha256": "7fec165bba9158cd691286325e8e6f2228a63dee4d0f0bda1d23dc8f5e3dd171",
+   "log_line": 7,
+   "outcome_line": 7,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_recovery::no_wal_and_no_checkpoint_and_keyspaces_illegal",
+   "catalog_target_id": "cargo:storage:test:test_recovery",
+   "runner_row_id": "storage:test_recovery",
+   "case_name": "no_wal_and_no_checkpoint_and_keyspaces_illegal",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_recovery.log",
+   "log_sha256": "7fec165bba9158cd691286325e8e6f2228a63dee4d0f0bda1d23dc8f5e3dd171",
+   "log_line": 9,
+   "outcome_line": 9,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_recovery::no_wal_and_no_checkpoint_and_no_keyspaces_illegal",
+   "catalog_target_id": "cargo:storage:test:test_recovery",
+   "runner_row_id": "storage:test_recovery",
+   "case_name": "no_wal_and_no_checkpoint_and_no_keyspaces_illegal",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_recovery.log",
+   "log_sha256": "7fec165bba9158cd691286325e8e6f2228a63dee4d0f0bda1d23dc8f5e3dd171",
+   "log_line": 10,
+   "outcome_line": 10,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_recovery::wal_and_checkpoint_ok",
+   "catalog_target_id": "cargo:storage:test:test_recovery",
+   "runner_row_id": "storage:test_recovery",
+   "case_name": "wal_and_checkpoint_ok",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_recovery.log",
+   "log_sha256": "7fec165bba9158cd691286325e8e6f2228a63dee4d0f0bda1d23dc8f5e3dd171",
+   "log_line": 20,
+   "outcome_line": 20,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_recovery::wal_and_no_checkpoint_ok",
+   "catalog_target_id": "cargo:storage:test:test_recovery",
+   "runner_row_id": "storage:test_recovery",
+   "case_name": "wal_and_no_checkpoint_ok",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_recovery.log",
+   "log_sha256": "7fec165bba9158cd691286325e8e6f2228a63dee4d0f0bda1d23dc8f5e3dd171",
+   "log_line": 17,
+   "outcome_line": 17,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_recovery::wal_missing_records_entire_replay_fails",
+   "catalog_target_id": "cargo:storage:test:test_recovery",
+   "runner_row_id": "storage:test_recovery",
+   "case_name": "wal_missing_records_entire_replay_fails",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_recovery.log",
+   "log_sha256": "7fec165bba9158cd691286325e8e6f2228a63dee4d0f0bda1d23dc8f5e3dd171",
+   "log_line": 18,
+   "outcome_line": 18,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_recovery::wal_missing_records_for_checkpoint_replay_fails",
+   "catalog_target_id": "cargo:storage:test:test_recovery",
+   "runner_row_id": "storage:test_recovery",
+   "case_name": "wal_missing_records_for_checkpoint_replay_fails",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_recovery.log",
+   "log_sha256": "7fec165bba9158cd691286325e8e6f2228a63dee4d0f0bda1d23dc8f5e3dd171",
+   "log_line": 19,
+   "outcome_line": 19,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_snapshot::preloaded_snapshot_load_from_at_sequence_number",
+   "catalog_target_id": "cargo:storage:test:test_snapshot",
+   "runner_row_id": "storage:test_snapshot",
+   "case_name": "preloaded_snapshot_load_from_at_sequence_number",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_snapshot.log",
+   "log_sha256": "723e16398b6b905306e6c794b56513f7705850c291171f0d5a6e98a5f6ba18aa",
+   "log_line": 6,
+   "outcome_line": 6,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_snapshot::preloaded_snapshot_matches_source_over_mixed_writes",
+   "catalog_target_id": "cargo:storage:test:test_snapshot",
+   "runner_row_id": "storage:test_snapshot",
+   "case_name": "preloaded_snapshot_matches_source_over_mixed_writes",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_snapshot.log",
+   "log_sha256": "723e16398b6b905306e6c794b56513f7705850c291171f0d5a6e98a5f6ba18aa",
+   "log_line": 5,
+   "outcome_line": 5,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_snapshot::preloaded_snapshot_multi_keyspace",
+   "catalog_target_id": "cargo:storage:test:test_snapshot",
+   "runner_row_id": "storage:test_snapshot",
+   "case_name": "preloaded_snapshot_multi_keyspace",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_snapshot.log",
+   "log_sha256": "723e16398b6b905306e6c794b56513f7705850c291171f0d5a6e98a5f6ba18aa",
+   "log_line": 4,
+   "outcome_line": 4,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_snapshot::snapshot_buffered_delete",
+   "catalog_target_id": "cargo:storage:test:test_snapshot",
+   "runner_row_id": "storage:test_snapshot",
+   "case_name": "snapshot_buffered_delete",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_snapshot.log",
+   "log_sha256": "723e16398b6b905306e6c794b56513f7705850c291171f0d5a6e98a5f6ba18aa",
+   "log_line": 3,
+   "outcome_line": 3,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_snapshot::snapshot_buffered_put_get",
+   "catalog_target_id": "cargo:storage:test:test_snapshot",
+   "runner_row_id": "storage:test_snapshot",
+   "case_name": "snapshot_buffered_put_get",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_snapshot.log",
+   "log_sha256": "723e16398b6b905306e6c794b56513f7705850c291171f0d5a6e98a5f6ba18aa",
+   "log_line": 7,
+   "outcome_line": 7,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_snapshot::snapshot_buffered_put_iterate",
+   "catalog_target_id": "cargo:storage:test:test_snapshot",
+   "runner_row_id": "storage:test_snapshot",
+   "case_name": "snapshot_buffered_put_iterate",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_snapshot.log",
+   "log_sha256": "723e16398b6b905306e6c794b56513f7705850c291171f0d5a6e98a5f6ba18aa",
+   "log_line": 8,
+   "outcome_line": 8,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_snapshot::snapshot_delete_reinserted",
+   "catalog_target_id": "cargo:storage:test:test_snapshot",
+   "runner_row_id": "storage:test_snapshot",
+   "case_name": "snapshot_delete_reinserted",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_snapshot.log",
+   "log_sha256": "723e16398b6b905306e6c794b56513f7705850c291171f0d5a6e98a5f6ba18aa",
+   "log_line": 9,
+   "outcome_line": 9,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_snapshot::snapshot_generated_new_id",
+   "catalog_target_id": "cargo:storage:test:test_snapshot",
+   "runner_row_id": "storage:test_snapshot",
+   "case_name": "snapshot_generated_new_id",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_snapshot.log",
+   "log_sha256": "723e16398b6b905306e6c794b56513f7705850c291171f0d5a6e98a5f6ba18aa",
+   "log_line": 10,
+   "outcome_line": 10,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_snapshot::snapshot_read_buffered_delete_of_persisted_key",
+   "catalog_target_id": "cargo:storage:test:test_snapshot",
+   "runner_row_id": "storage:test_snapshot",
+   "case_name": "snapshot_read_buffered_delete_of_persisted_key",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_snapshot.log",
+   "log_sha256": "723e16398b6b905306e6c794b56513f7705850c291171f0d5a6e98a5f6ba18aa",
+   "log_line": 11,
+   "outcome_line": 11,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_snapshot::snapshot_read_through",
+   "catalog_target_id": "cargo:storage:test:test_snapshot",
+   "runner_row_id": "storage:test_snapshot",
+   "case_name": "snapshot_read_through",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_snapshot.log",
+   "log_sha256": "723e16398b6b905306e6c794b56513f7705850c291171f0d5a6e98a5f6ba18aa",
+   "log_line": 12,
+   "outcome_line": 12,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_storage::create_delete",
+   "catalog_target_id": "cargo:storage:test:test_storage",
+   "runner_row_id": "storage:test_storage",
+   "case_name": "create_delete",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_storage.log",
+   "log_sha256": "8b1c59f32f9be5a919f97c5420935376ed386a56bffe0f8340208799a6ce69fa",
+   "log_line": 3,
+   "outcome_line": 3,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_storage::create_keyspaces",
+   "catalog_target_id": "cargo:storage:test:test_storage",
+   "runner_row_id": "storage:test_storage",
+   "case_name": "create_keyspaces",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_storage.log",
+   "log_sha256": "8b1c59f32f9be5a919f97c5420935376ed386a56bffe0f8340208799a6ce69fa",
+   "log_line": 6,
+   "outcome_line": 6,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_storage::create_keyspaces_duplicate_id_error",
+   "catalog_target_id": "cargo:storage:test:test_storage",
+   "runner_row_id": "storage:test_storage",
+   "case_name": "create_keyspaces_duplicate_id_error",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_storage.log",
+   "log_sha256": "8b1c59f32f9be5a919f97c5420935376ed386a56bffe0f8340208799a6ce69fa",
+   "log_line": 5,
+   "outcome_line": 5,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_storage::create_keyspaces_duplicate_name_error",
+   "catalog_target_id": "cargo:storage:test:test_storage",
+   "runner_row_id": "storage:test_storage",
+   "case_name": "create_keyspaces_duplicate_name_error",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_storage.log",
+   "log_sha256": "8b1c59f32f9be5a919f97c5420935376ed386a56bffe0f8340208799a6ce69fa",
+   "log_line": 4,
+   "outcome_line": 4,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_storage::create_reopen",
+   "catalog_target_id": "cargo:storage:test:test_storage",
+   "runner_row_id": "storage:test_storage",
+   "case_name": "create_reopen",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_storage.log",
+   "log_sha256": "8b1c59f32f9be5a919f97c5420935376ed386a56bffe0f8340208799a6ce69fa",
+   "log_line": 8,
+   "outcome_line": 8,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:test:test_storage::get_put_iterate",
+   "catalog_target_id": "cargo:storage:test:test_storage",
+   "runner_row_id": "storage:test_storage",
+   "case_name": "get_put_iterate",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__test_storage.log",
+   "log_sha256": "8b1c59f32f9be5a919f97c5420935376ed386a56bffe0f8340208799a6ce69fa",
+   "log_line": 7,
+   "outcome_line": 7,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:unit:storage::isolation_manager::tests::test_highly_concurrent_correctness",
+   "catalog_target_id": "cargo:storage:unit:storage",
+   "runner_row_id": "storage:storage",
+   "case_name": "isolation_manager::tests::test_highly_concurrent_correctness",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__storage.log",
+   "log_sha256": "850b12c2f227785cc78f859a1261d856970d98f23ef35b2b0a626afd0cc7b56b",
+   "log_line": 48,
+   "outcome_line": 48,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:unit:storage::isolation_manager::tests::unused_windows_are_cleaned_up",
+   "catalog_target_id": "cargo:storage:unit:storage",
+   "runner_row_id": "storage:storage",
+   "case_name": "isolation_manager::tests::unused_windows_are_cleaned_up",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__storage.log",
+   "log_sha256": "850b12c2f227785cc78f859a1261d856970d98f23ef35b2b0a626afd0cc7b56b",
+   "log_line": 42,
+   "outcome_line": 42,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:unit:storage::isolation_manager::tests::watermark_is_updated",
+   "catalog_target_id": "cargo:storage:unit:storage",
+   "runner_row_id": "storage:storage",
+   "case_name": "isolation_manager::tests::watermark_is_updated",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__storage.log",
+   "log_sha256": "850b12c2f227785cc78f859a1261d856970d98f23ef35b2b0a626afd0cc7b56b",
+   "log_line": 43,
+   "outcome_line": 43,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:unit:storage::isolation_manager::tests::watermark_keeps_window_pinned",
+   "catalog_target_id": "cargo:storage:unit:storage",
+   "runner_row_id": "storage:storage",
+   "case_name": "isolation_manager::tests::watermark_keeps_window_pinned",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__storage.log",
+   "log_sha256": "850b12c2f227785cc78f859a1261d856970d98f23ef35b2b0a626afd0cc7b56b",
+   "log_line": 44,
+   "outcome_line": 44,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:unit:storage::isolation_manager::tests::windows_are_dropped",
+   "catalog_target_id": "cargo:storage:unit:storage",
+   "runner_row_id": "storage:storage",
+   "case_name": "isolation_manager::tests::windows_are_dropped",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__storage.log",
+   "log_sha256": "850b12c2f227785cc78f859a1261d856970d98f23ef35b2b0a626afd0cc7b56b",
+   "log_line": 46,
+   "outcome_line": 46,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:unit:storage::tests::test_mixed_legacy_and_current_commit_records",
+   "catalog_target_id": "cargo:storage:unit:storage",
+   "runner_row_id": "storage:storage",
+   "case_name": "tests::test_mixed_legacy_and_current_commit_records",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__storage.log",
+   "log_sha256": "850b12c2f227785cc78f859a1261d856970d98f23ef35b2b0a626afd0cc7b56b",
+   "log_line": 206,
+   "outcome_line": 206,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:unit:storage::tests::test_storage_recovery_from_partial_write",
+   "catalog_target_id": "cargo:storage:unit:storage",
+   "runner_row_id": "storage:storage",
+   "case_name": "tests::test_storage_recovery_from_partial_write",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__storage.log",
+   "log_sha256": "850b12c2f227785cc78f859a1261d856970d98f23ef35b2b0a626afd0cc7b56b",
+   "log_line": 210,
+   "outcome_line": 210,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:storage:unit:storage::tests::test_storage_snapshot_id_search",
+   "catalog_target_id": "cargo:storage:unit:storage",
+   "runner_row_id": "storage:storage",
+   "case_name": "tests::test_storage_snapshot_id_search",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/smoke-u1/storage__storage.log",
+   "log_sha256": "850b12c2f227785cc78f859a1261d856970d98f23ef35b2b0a626afd0cc7b56b",
+   "log_line": 209,
+   "outcome_line": 209,
+   "fixture_set_id": "fs:none",
+   "fixture_set_satisfied": true
+  }
+ ],
+ "failpoint_leaves_not_observable": {
+  "count": 44,
+  "reason": "the catalogue's FAILPOINT leaves are (fail point x libtest case) products enumerated inside a `for fail_point in fail_point::ALL` loop within two #[test] functions; libtest prints one line for the case and none for the iterations, so no per-failpoint outcome exists in the log. Claiming them from a passing loop would be inference presented as observation, so they are left UNCOVERED."
+ }
+}

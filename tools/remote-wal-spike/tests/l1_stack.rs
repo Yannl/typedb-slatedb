@@ -66,14 +66,10 @@ fn rust_client_full_protocol_against_workerd_local_dev() {
     // touches it, which is why the suite runs identically on both lanes.
     // The suite left the client bound to the successor actor in generation
     // 2, which holds exactly its own first record.
-    let audit = client
-        .audit(&db, 2)
-        .expect("the developer-convenience posture must still serve the dev-only audit route");
+    let audit =
+        client.audit(&db, 2).expect("the developer-convenience posture must still serve the dev-only audit route");
     println!("PASS  dev-only audit route is SERVED on the local-dev posture ({audit:?})");
-    assert!(
-        audit.ok && audit.contiguous && audit.count == 1,
-        "dev-only audit route answered {audit:?}",
-    );
+    assert!(audit.ok && audit.contiguous && audit.count == 1, "dev-only audit route answered {audit:?}",);
 
     assert!(
         report.all_passed(),

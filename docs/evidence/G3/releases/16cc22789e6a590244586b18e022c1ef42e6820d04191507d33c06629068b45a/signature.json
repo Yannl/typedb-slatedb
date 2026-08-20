@@ -1,0 +1,10 @@
+{
+  "artifact_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+  "key_id": "dev-public",
+  "public_key": "8ac0ca5feff5eb1017e4ddfce8f3a951cf7af33ca17b86940d0a4ec437c6cc18",
+  "root": "27bfd58fbf3519f07206c9e0b47c985f0cfa1f2d4783695ca0f2a238bc916d84",
+  "root_files": 11,
+  "schema": "release-signature/v1",
+  "signature": "eb6820eae5771a56c0a50255fc1a44cc7d1e8714a67845f2cf254335bee48960eb2d61d23862a11968a8d2692dd2d9d43c7eff264e4ed9303c3f2e8be679c607",
+  "signed_message": "typedb-r2/release-root/v1\n16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a\n27bfd58fbf3519f07206c9e0b47c985f0cfa1f2d4783695ca0f2a238bc916d84\n"
+}

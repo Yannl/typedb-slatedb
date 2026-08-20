@@ -55,8 +55,8 @@ import { DO_PROBES } from "./probes-do.ts";
 import { CTR_PROBES, WORKER_PROBES } from "./probes-ctr.ts";
 import { DEFAULT_ENVELOPE_PATH, runPreflight } from "./preflight.ts";
 import type { PreflightResult } from "./preflight.ts";
-import { markRunIdConsumed } from "./approval.ts";
-import { budgetFromEnvelope, MeteredProvider, RefusedProvider } from "./envelope.ts";
+import { acquireRunClaim, claimIdentity } from "./approval.ts";
+import { budgetFromEnvelope, MeteredProvider, RefusedProvider, RunBudgetLedger } from "./envelope.ts";
 import { captureLockBaseline, restoreLockBaseline } from "./lock-baseline.ts";
 import type { LockBaseline } from "./lock-baseline.ts";
 import { SealViolationError } from "./evidence.ts";
@@ -604,6 +604,7 @@ export async function main(argv: string[]): Promise<number> {
   let provider: PlatformProvider;
   let refused: RefusedProvider | null = null;
   let metered: MeteredProvider | null = null;
+  let budgetLedger: RunBudgetLedger | null = null;
   let cleanupProvider: PlatformProvider | null = null;
   let bucket: string;
   let parentAccessKeyId: string;
@@ -639,29 +640,51 @@ export async function main(argv: string[]): Promise<number> {
     // before the first possible spend. A crash later in this run still
     // leaves the envelope spent (re-running requires a fresh owner
     // signature), which is the safe direction.
+    //
+    // R6-CF-01: the claim is ATOMIC. The round-5 read-check-append-rename
+    // let 41 of 64 barrier-synchronised processes acquire the same signed
+    // run id; O_EXCL makes the kernel arbitrate so exactly one can win,
+    // and the claim is keyed by the signed BODY digest and trusted key,
+    // not by the run-id string an attacker could choose.
     const envelopeRunId = preflight.envelope?.binding?.run_id;
     if (typeof envelopeRunId !== "string") {
       console.error("preflight GREEN without a bound envelope run id — runner bug, refusing");
       return 3;
     }
-    markRunIdConsumed(opts.envelopePath ?? DEFAULT_ENVELOPE_PATH, envelopeRunId);
+    const trustedKeyPem = (process.env.PROBE_ENVELOPE_PUBLIC_KEY ?? "").replace(/\\n/g, "\n");
+    const claim = acquireRunClaim(
+      opts.envelopePath ?? DEFAULT_ENVELOPE_PATH,
+      claimIdentity(preflight.envelope!, trustedKeyPem),
+    );
+    if (!claim.ok) {
+      console.error(
+        `APPROVAL CLAIM REFUSED (${claim.error}): this signed envelope authorizes exactly one run and ` +
+          "another run already holds it. No provider is constructed and no call is made.",
+      );
+      return 3;
+    }
     const cfg = realConfigFromEnv(process.env);
     for (const s of [cfg.r2?.secret, cfg.cfapi?.adminApiToken, cfg.cfapi?.runtimeApiToken, cfg.harness?.apiToken]) {
       if (s !== undefined) knownSecrets.push(s);
     }
     const real = new RealPlatformProvider(cfg);
     const limits = (preflight.envelope?.limits ?? {}) as Record<string, unknown>;
-    const budget = budgetFromEnvelope(limits, Date.now());
+    // R6-CF-03: the run deadline is clamped to the SIGNED validity end.
+    const validUntilMs = Date.parse(preflight.envelope?.valid_until ?? "");
+    const budget = budgetFromEnvelope(
+      limits, Date.now(), Number.isNaN(validUntilMs) ? undefined : validUntilMs,
+    );
+    // R6-CF-02: ONE ledger for the whole run. The request count is
+    // PARTITIONED (probe share + cleanup reserve === the signed total);
+    // bytes and cost are drawn from the single shared pool, so probe and
+    // cleanup can never sum past what the owner signed.
+    budgetLedger = new RunBudgetLedger(budget);
     const cleanupRequestReserve = Math.min(64, Math.max(1, Math.ceil(budget.maxTotalRequests / 5)));
-    metered = new MeteredProvider(real, {
-      ...budget,
-      maxTotalRequests: Math.max(0, budget.maxTotalRequests - cleanupRequestReserve),
-    });
-    cleanupProvider = new MeteredProvider(real, {
-      ...budget,
-      maxTotalRequests: cleanupRequestReserve,
-      maxTotalBytesWritten: Math.min(65_536, budget.maxTotalBytesWritten),
-    });
+    const probeRequestShare = Math.max(0, budget.maxTotalRequests - cleanupRequestReserve);
+    metered = new MeteredProvider(real, budgetLedger,
+      { requestShare: probeRequestShare, label: "probe" });
+    cleanupProvider = new MeteredProvider(real, budgetLedger,
+      { requestShare: cleanupRequestReserve, label: "cleanup" });
     provider = metered;
     bucket = real.bucket ?? "";
     parentAccessKeyId = real.parentAccessKeyId ?? "";

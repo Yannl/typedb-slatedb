@@ -30,11 +30,7 @@ pub struct Journal {
 impl Journal {
     pub fn append(&mut self, body: u64) -> &ControlEvent {
         let seq = self.events.len() as u64 + 1;
-        let ev = ControlEvent {
-            seq,
-            body,
-            prev_digest: self.head_digest,
-        };
+        let ev = ControlEvent { seq, body, prev_digest: self.head_digest };
         self.head_digest = digest(seq, body, self.head_digest);
         self.events.push(ev);
         self.events.last().unwrap()
@@ -57,10 +53,7 @@ pub enum RecoveryError {
 
 /// Validate a candidate history against the digest chain and the newest
 /// trusted anchor (brief §7.10 steps 3–5).
-pub fn validate_history(
-    events: &[ControlEvent],
-    anchor: Option<RecoveryAnchor>,
-) -> Result<u64, RecoveryError> {
+pub fn validate_history(events: &[ControlEvent], anchor: Option<RecoveryAnchor>) -> Result<u64, RecoveryError> {
     let mut prev = 0u64;
     let mut last_seq = 0u64;
     for (i, ev) in events.iter().enumerate() {
@@ -76,10 +69,7 @@ pub fn validate_history(
     }
     if let Some(a) = anchor {
         if last_seq < a.minimum_seq {
-            return Err(RecoveryError::BelowAnchor {
-                head: last_seq,
-                anchor: a.minimum_seq,
-            });
+            return Err(RecoveryError::BelowAnchor { head: last_seq, anchor: a.minimum_seq });
         }
         // digest at the anchor position must match the anchored digest
         if digest_of_prefix(events, a.minimum_seq as usize) != a.minimum_head_digest {
@@ -139,17 +129,11 @@ mod tests {
             let j = journal(10);
             let mut ev = j.events.clone();
             ev.remove(hole);
-            assert!(
-                validate_history(&ev, None).is_err(),
-                "hole at {hole} must fail"
-            );
+            assert!(validate_history(&ev, None).is_err(), "hole at {hole} must fail");
         }
         // tail truncation: caught only by the anchor
         let j = journal(10);
-        let anchor = RecoveryAnchor {
-            minimum_seq: 10,
-            minimum_head_digest: j.head_digest,
-        };
+        let anchor = RecoveryAnchor { minimum_seq: 10, minimum_head_digest: j.head_digest };
         let truncated = &j.events[..9];
         assert!(validate_history(truncated, Some(anchor)).is_err());
         assert_eq!(
@@ -173,10 +157,7 @@ mod tests {
                 // the chain to 9 is intact and event 10's own digest is only
                 // checked by the NEXT link or the anchor. Anchor-at-head
                 // catches it:
-                let anchor = RecoveryAnchor {
-                    minimum_seq: 10,
-                    minimum_head_digest: j.head_digest,
-                };
+                let anchor = RecoveryAnchor { minimum_seq: 10, minimum_head_digest: j.head_digest };
                 assert!(validate_history(&ev, Some(anchor)).is_err());
             } else {
                 assert!(r.is_err(), "tamper at {pos} must fail");
@@ -190,18 +171,12 @@ mod tests {
     #[test]
     fn rollback_below_anchor_is_rejected() {
         let j = journal(10);
-        let anchor = RecoveryAnchor {
-            minimum_seq: 8,
-            minimum_head_digest: digest_of_prefix(&j.events, 8),
-        };
+        let anchor = RecoveryAnchor { minimum_seq: 8, minimum_head_digest: digest_of_prefix(&j.events, 8) };
         for keep in 0..8usize {
             let ev = &j.events[..keep];
             assert_eq!(
                 validate_history(ev, Some(anchor)),
-                Err(RecoveryError::BelowAnchor {
-                    head: keep as u64,
-                    anchor: 8
-                }),
+                Err(RecoveryError::BelowAnchor { head: keep as u64, anchor: 8 }),
                 "truncation to {keep} must be rejected"
             );
         }
@@ -217,10 +192,7 @@ mod tests {
         let a = journal(6).events;
         let mut b = a.clone();
         b[3].body ^= 7;
-        assert_eq!(
-            detect_competition(&a, &b),
-            Err(RecoveryError::CompetingBodies { at: 4 })
-        );
+        assert_eq!(detect_competition(&a, &b), Err(RecoveryError::CompetingBodies { at: 4 }));
     }
 
     // negative control: the validator itself must be falsifiable — feeding
@@ -229,13 +201,7 @@ mod tests {
     #[test]
     fn forged_anchor_digest_is_caught() {
         let j = journal(5);
-        let forged = RecoveryAnchor {
-            minimum_seq: 5,
-            minimum_head_digest: 0xDEAD,
-        };
-        assert_eq!(
-            validate_history(&j.events, Some(forged)),
-            Err(RecoveryError::ChainMismatch { at: 5 })
-        );
+        let forged = RecoveryAnchor { minimum_seq: 5, minimum_head_digest: 0xDEAD };
+        assert_eq!(validate_history(&j.events, Some(forged)), Err(RecoveryError::ChainMismatch { at: 5 }));
     }
 }

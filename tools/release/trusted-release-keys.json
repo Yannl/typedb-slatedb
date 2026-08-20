@@ -1,0 +1,14 @@
+{
+  "keys": [
+    {
+      "class": "development-public",
+      "key_id": "dev-public",
+      "note": "The seed is committed in the clear and is derived from a published label, so anyone can forge this signature. That is the point: it lets the build/test/promote/verify pipeline execute end to end in tests and CI while every promotion it signs is recorded as DEVELOPMENT class and refused by `verify --release-grade`.",
+      "public_key": "8ac0ca5feff5eb1017e4ddfce8f3a951cf7af33ca17b86940d0a4ec437c6cc18",
+      "seed_derivation": "sha256(b\"typedb-r2 release development key -- publicly known, carries no authority\")",
+      "seed_file": "tools/release/dev-signing-seed.hex"
+    }
+  ],
+  "note": "Keys allowed to sign a release evidence root. A 'production' key's seed is NEVER read from this repository - tools/release/release.py requires it from RELEASE_SIGNING_SEED_FILE[_<KEY_ID>] and refuses a world/group readable seed file. There is deliberately NO production key here yet: release-grade promotion is therefore structurally impossible today, which is the true state of this repository (round-6 R6-QUAL-01), not a gap in the tool. Adding one is an owner action that must land with the ledger entry naming the holder, the storage of the seed, and the rotation procedure.",
+  "schema": "release-trusted-keys/v1"
+}

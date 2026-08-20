@@ -1,0 +1,404 @@
+{
+ "schema": "typedb-r2-driver-row-status-v1",
+ "statement": "RESULT-side status of the plan's six official-driver rows. The plan itself is the immutable denominator and is NOT edited: its driver_rows keep their NOT_IMPLEMENTED seed, because the plan body feeds plan_root and archived verdicts pin that root. A row here is EXECUTED only because tools/evidence/verify_drivers.py re-derived its leaf outcomes from the archived bytes and returned zero anomalies; every other row names the exact external precondition that blocks it.",
+ "plan": {
+  "path": "docs/evidence/G1/qualification-plan-v2.json",
+  "plan_root": "72020aa01fafebddc41321e0c6100c158f80ae997037430871212049054a7a41",
+  "driver_rows_in_plan": 6
+ },
+ "rows": {
+  "driver:rust:rocksdb": {
+   "row_id": "driver:rust:rocksdb",
+   "plan_seed_status": "NOT_IMPLEMENTED",
+   "required_by": "v17-A17.5",
+   "status": "EXECUTED_LEAF",
+   "coverage_class": "COVERED",
+   "bundles": [
+    {
+     "bundle": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic",
+     "bundle_root": "030e46942da1ed9c21857d63c6d001bbb473402b7c01be792dc2ea004c188268",
+     "sealed_complete": true,
+     "anomalies": [],
+     "rederived_verdict": "GREEN",
+     "qualification_pass": true,
+     "plan_leaves_with_outcome": 213,
+     "plan_leaves_passed": 213,
+     "lane": "fork-classic",
+     "suites_selected": 8,
+     "suites_executed": 7,
+     "plan_leaves_in_scope": 213,
+     "suites_blocked": {
+      "test_cluster": "requires a multi-node TypeDB cluster: the upstream test self-skips unless the `cluster` cargo feature is on (rust/tests/behaviour/driver/cluster.rs calls config::is_cluster()), and the steps then connect to Context::DEFAULT_CLUSTER_ADDRESSES 127.0.0.1:{11729,21729,31729}. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here. Executed and observed: the binary prints 'Skipping Cluster tests in a non-clustered environment' and runs zero scenarios."
+     },
+     "leaves_outside_plan": 18,
+     "harness": "rust-cucumber-basic",
+     "caveats": [],
+     "suites_out_of_scope": {
+      "test_cluster": "requires a multi-node TypeDB cluster: the upstream test self-skips unless the `cluster` cargo feature is on (rust/tests/behaviour/driver/cluster.rs calls config::is_cluster()), and the steps then connect to Context::DEFAULT_CLUSTER_ADDRESSES 127.0.0.1:{11729,21729,31729}. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here. Executed and observed: the binary prints 'Skipping Cluster tests in a non-clustered environment' and runs zero scenarios."
+     }
+    }
+   ],
+   "evidence_bundle": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic",
+   "bundle_root": "030e46942da1ed9c21857d63c6d001bbb473402b7c01be792dc2ea004c188268",
+   "plan_leaves_in_scope": 213,
+   "plan_leaves_with_outcome": 213,
+   "plan_leaves_passed": 213,
+   "suites_executed": 7,
+   "suites_selected": 8,
+   "suites_blocked": {
+    "test_cluster": "requires a multi-node TypeDB cluster: the upstream test self-skips unless the `cluster` cargo feature is on (rust/tests/behaviour/driver/cluster.rs calls config::is_cluster()), and the steps then connect to Context::DEFAULT_CLUSTER_ADDRESSES 127.0.0.1:{11729,21729,31729}. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here. Executed and observed: the binary prints 'Skipping Cluster tests in a non-clustered environment' and runs zero scenarios."
+   },
+   "harness": "rust-cucumber-basic",
+   "caveats": [],
+   "suites_out_of_scope": {
+    "test_cluster": "requires a multi-node TypeDB cluster: the upstream test self-skips unless the `cluster` cargo feature is on (rust/tests/behaviour/driver/cluster.rs calls config::is_cluster()), and the steps then connect to Context::DEFAULT_CLUSTER_ADDRESSES 127.0.0.1:{11729,21729,31729}. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here. Executed and observed: the binary prints 'Skipping Cluster tests in a non-clustered environment' and runs zero scenarios."
+   },
+   "out_of_scope_authority": "OD-010 (docs/owner-decisions.json): single-node semantic parity is the claim; cluster/HA is not in scope for the storage adapter and may not be claimed on the strength of it.",
+   "not_covered_because": [],
+   "status_meaning": "EXECUTED_LEAF: the official driver suite ran against a real TypeDB server and EVERY plan leaf in its scope carries a per-scenario outcome, verified independently from the archived bytes."
+  },
+  "driver:rust:slatedb": {
+   "row_id": "driver:rust:slatedb",
+   "plan_seed_status": "NOT_IMPLEMENTED",
+   "required_by": "v17-A17.5",
+   "status": "EXECUTED_LEAF",
+   "coverage_class": "COVERED",
+   "bundles": [
+    {
+     "bundle": "docs/evidence/G1/drivers/rust-slatedb-fork",
+     "bundle_root": "9484dd7ec1c947445d78f659fb3049320af7635d04f802e9bd20d80e3d289db3",
+     "sealed_complete": true,
+     "anomalies": [],
+     "rederived_verdict": "GREEN",
+     "qualification_pass": true,
+     "plan_leaves_with_outcome": 213,
+     "plan_leaves_passed": 213,
+     "lane": "fork-slatedb",
+     "suites_selected": 8,
+     "suites_executed": 7,
+     "plan_leaves_in_scope": 213,
+     "suites_blocked": {
+      "test_cluster": "requires a multi-node TypeDB cluster: the upstream test self-skips unless the `cluster` cargo feature is on (rust/tests/behaviour/driver/cluster.rs calls config::is_cluster()), and the steps then connect to Context::DEFAULT_CLUSTER_ADDRESSES 127.0.0.1:{11729,21729,31729}. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here. Executed and observed: the binary prints 'Skipping Cluster tests in a non-clustered environment' and runs zero scenarios."
+     },
+     "leaves_outside_plan": 18,
+     "harness": "rust-cucumber-basic",
+     "caveats": [],
+     "suites_out_of_scope": {
+      "test_cluster": "requires a multi-node TypeDB cluster: the upstream test self-skips unless the `cluster` cargo feature is on (rust/tests/behaviour/driver/cluster.rs calls config::is_cluster()), and the steps then connect to Context::DEFAULT_CLUSTER_ADDRESSES 127.0.0.1:{11729,21729,31729}. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here. Executed and observed: the binary prints 'Skipping Cluster tests in a non-clustered environment' and runs zero scenarios."
+     }
+    }
+   ],
+   "evidence_bundle": "docs/evidence/G1/drivers/rust-slatedb-fork",
+   "bundle_root": "9484dd7ec1c947445d78f659fb3049320af7635d04f802e9bd20d80e3d289db3",
+   "plan_leaves_in_scope": 213,
+   "plan_leaves_with_outcome": 213,
+   "plan_leaves_passed": 213,
+   "suites_executed": 7,
+   "suites_selected": 8,
+   "suites_blocked": {
+    "test_cluster": "requires a multi-node TypeDB cluster: the upstream test self-skips unless the `cluster` cargo feature is on (rust/tests/behaviour/driver/cluster.rs calls config::is_cluster()), and the steps then connect to Context::DEFAULT_CLUSTER_ADDRESSES 127.0.0.1:{11729,21729,31729}. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here. Executed and observed: the binary prints 'Skipping Cluster tests in a non-clustered environment' and runs zero scenarios."
+   },
+   "harness": "rust-cucumber-basic",
+   "caveats": [],
+   "suites_out_of_scope": {
+    "test_cluster": "requires a multi-node TypeDB cluster: the upstream test self-skips unless the `cluster` cargo feature is on (rust/tests/behaviour/driver/cluster.rs calls config::is_cluster()), and the steps then connect to Context::DEFAULT_CLUSTER_ADDRESSES 127.0.0.1:{11729,21729,31729}. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here. Executed and observed: the binary prints 'Skipping Cluster tests in a non-clustered environment' and runs zero scenarios."
+   },
+   "out_of_scope_authority": "OD-010 (docs/owner-decisions.json): single-node semantic parity is the claim; cluster/HA is not in scope for the storage adapter and may not be claimed on the strength of it.",
+   "not_covered_because": [],
+   "status_meaning": "EXECUTED_LEAF: the official driver suite ran against a real TypeDB server and EVERY plan leaf in its scope carries a per-scenario outcome, verified independently from the archived bytes."
+  },
+  "driver:python:rocksdb": {
+   "row_id": "driver:python:rocksdb",
+   "plan_seed_status": "NOT_IMPLEMENTED",
+   "required_by": "v17-A17.5",
+   "status": "EXECUTED_LEAF",
+   "coverage_class": "COVERED",
+   "bundles": [
+    {
+     "bundle": "docs/evidence/G1/drivers/python-rocksdb-fork-classic",
+     "bundle_root": "a6dc3173fa364e193831ce26a59064a30520ff2fc6a56aabc30e7f49d02809bd",
+     "sealed_complete": true,
+     "anomalies": [],
+     "rederived_verdict": "GREEN",
+     "qualification_pass": true,
+     "plan_leaves_with_outcome": 213,
+     "plan_leaves_passed": 213,
+     "lane": "fork-classic",
+     "suites_selected": 7,
+     "suites_executed": 7,
+     "plan_leaves_in_scope": 213,
+     "suites_blocked": {
+      "driver/cluster": "declared upstream only as typedb_behaviour_py_test_cluster (python/tests/behaviour/driver/cluster/BUILD), i.e. the multi-node cluster lane: it targets 127.0.0.1:11729 and needs three TypeDB servers with replication. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+     },
+     "leaves_outside_plan": 18,
+     "harness": "python-behave-json",
+     "caveats": [],
+     "suites_out_of_scope": {
+      "driver/cluster": "declared upstream only as typedb_behaviour_py_test_cluster (python/tests/behaviour/driver/cluster/BUILD), i.e. the multi-node cluster lane: it targets 127.0.0.1:11729 and needs three TypeDB servers with replication. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+     }
+    }
+   ],
+   "evidence_bundle": "docs/evidence/G1/drivers/python-rocksdb-fork-classic",
+   "bundle_root": "a6dc3173fa364e193831ce26a59064a30520ff2fc6a56aabc30e7f49d02809bd",
+   "plan_leaves_in_scope": 213,
+   "plan_leaves_with_outcome": 213,
+   "plan_leaves_passed": 213,
+   "suites_executed": 7,
+   "suites_selected": 7,
+   "suites_blocked": {
+    "driver/cluster": "declared upstream only as typedb_behaviour_py_test_cluster (python/tests/behaviour/driver/cluster/BUILD), i.e. the multi-node cluster lane: it targets 127.0.0.1:11729 and needs three TypeDB servers with replication. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+   },
+   "harness": "python-behave-json",
+   "caveats": [],
+   "suites_out_of_scope": {
+    "driver/cluster": "declared upstream only as typedb_behaviour_py_test_cluster (python/tests/behaviour/driver/cluster/BUILD), i.e. the multi-node cluster lane: it targets 127.0.0.1:11729 and needs three TypeDB servers with replication. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+   },
+   "out_of_scope_authority": "OD-010 (docs/owner-decisions.json): single-node semantic parity is the claim; cluster/HA is not in scope for the storage adapter and may not be claimed on the strength of it.",
+   "not_covered_because": [],
+   "status_meaning": "EXECUTED_LEAF: the official driver suite ran against a real TypeDB server and EVERY plan leaf in its scope carries a per-scenario outcome, verified independently from the archived bytes."
+  },
+  "driver:python:slatedb": {
+   "row_id": "driver:python:slatedb",
+   "plan_seed_status": "NOT_IMPLEMENTED",
+   "required_by": "v17-A17.5",
+   "status": "EXECUTED_LEAF",
+   "coverage_class": "COVERED",
+   "bundles": [
+    {
+     "bundle": "docs/evidence/G1/drivers/python-slatedb-fork",
+     "bundle_root": "7de988fa57e24e7584e379ddc94e12fd5d7d8f49654102720657a72ef920462d",
+     "sealed_complete": true,
+     "anomalies": [],
+     "rederived_verdict": "GREEN",
+     "qualification_pass": true,
+     "plan_leaves_with_outcome": 213,
+     "plan_leaves_passed": 213,
+     "lane": "fork-slatedb",
+     "suites_selected": 7,
+     "suites_executed": 7,
+     "plan_leaves_in_scope": 213,
+     "suites_blocked": {
+      "driver/cluster": "declared upstream only as typedb_behaviour_py_test_cluster (python/tests/behaviour/driver/cluster/BUILD), i.e. the multi-node cluster lane: it targets 127.0.0.1:11729 and needs three TypeDB servers with replication. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+     },
+     "leaves_outside_plan": 18,
+     "harness": "python-behave-json",
+     "caveats": [],
+     "suites_out_of_scope": {
+      "driver/cluster": "declared upstream only as typedb_behaviour_py_test_cluster (python/tests/behaviour/driver/cluster/BUILD), i.e. the multi-node cluster lane: it targets 127.0.0.1:11729 and needs three TypeDB servers with replication. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+     }
+    }
+   ],
+   "evidence_bundle": "docs/evidence/G1/drivers/python-slatedb-fork",
+   "bundle_root": "7de988fa57e24e7584e379ddc94e12fd5d7d8f49654102720657a72ef920462d",
+   "plan_leaves_in_scope": 213,
+   "plan_leaves_with_outcome": 213,
+   "plan_leaves_passed": 213,
+   "suites_executed": 7,
+   "suites_selected": 7,
+   "suites_blocked": {
+    "driver/cluster": "declared upstream only as typedb_behaviour_py_test_cluster (python/tests/behaviour/driver/cluster/BUILD), i.e. the multi-node cluster lane: it targets 127.0.0.1:11729 and needs three TypeDB servers with replication. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+   },
+   "harness": "python-behave-json",
+   "caveats": [],
+   "suites_out_of_scope": {
+    "driver/cluster": "declared upstream only as typedb_behaviour_py_test_cluster (python/tests/behaviour/driver/cluster/BUILD), i.e. the multi-node cluster lane: it targets 127.0.0.1:11729 and needs three TypeDB servers with replication. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+   },
+   "out_of_scope_authority": "OD-010 (docs/owner-decisions.json): single-node semantic parity is the claim; cluster/HA is not in scope for the storage adapter and may not be claimed on the strength of it.",
+   "not_covered_because": [],
+   "status_meaning": "EXECUTED_LEAF: the official driver suite ran against a real TypeDB server and EVERY plan leaf in its scope carries a per-scenario outcome, verified independently from the archived bytes."
+  },
+  "driver:typescript:rocksdb": {
+   "row_id": "driver:typescript:rocksdb",
+   "plan_seed_status": "NOT_IMPLEMENTED",
+   "required_by": "v17-A17.5",
+   "status": "EXECUTED_LEAF_PARTIAL_SUITES",
+   "coverage_class": "PARTIAL",
+   "bundles": [
+    {
+     "bundle": "docs/evidence/G1/drivers/typescript-rocksdb-fork-classic",
+     "bundle_root": "a75968d7ecd81438fbea798ea4245448403d7dbc00a78f92cbc0e6ef305f1aa7",
+     "sealed_complete": true,
+     "anomalies": [],
+     "rederived_verdict": "GREEN",
+     "qualification_pass": true,
+     "plan_leaves_with_outcome": 149,
+     "plan_leaves_passed": 149,
+     "lane": "fork-classic",
+     "suites_selected": 4,
+     "suites_executed": 4,
+     "plan_leaves_in_scope": 154,
+     "suites_blocked": {
+      "cluster": "declared upstream only as typedb_behaviour_http_ts_cluster_test (http-ts/tests/behaviour/feature/BUILD), the multi-node cluster lane: it needs a replicated TypeDB deployment and the TLS certificates in //tool/test/resources:certificates. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+     },
+     "leaves_outside_plan": 9,
+     "harness": "typescript-cucumberjs-messages",
+     "caveats": [
+      {
+       "id": "npm-install-not-pnpm-lock",
+       "detail": "http-ts declares packageManager 'pnpm@8.15.9' and ships pnpm-lock.yaml (sha256 5617f6a91f82ae909edfba27c88001612149a63323eac4e9f52af9b41fbedf92), but the pnpm available here is 10.x, which does not honour a v8 lockfile without migrating it. Dependencies were therefore resolved by npm within package.json's ranges. Every exact pin was verified to have installed at its pinned version, and the full resolved tree is archived as npm-tree.json, but the transitive closure is NOT the closure the committed pnpm lockfile names."
+      },
+      {
+       "id": "steps-typecheck-not-clean",
+       "detail": "tsc exited 2 with 9 diagnostic(s) while compiling the behaviour steps, and still emitted JavaScript for every source. Upstream's Bazel target compiles the steps against //http-ts:driver-lib, which emits only dist/index.cjs and deliberately no index.d.cts (http-ts/BUILD: 'TODO: should also output index.d.cts (works in filesystem but not in bazel)'), so the upstream type surface is not reproducible outside bazel. The executed evidence below rests on the emitted JavaScript plus a zero-undefined/zero-ambiguous step check, not on a clean typecheck.",
+       "diagnostics": [
+        "tests/behaviour/steps/analyze.ts(29,5): error TS2724: '\"../../../dist/index.cjs\"' has no exported member named 'QueryConstraintAny'. Did you mean 'ConstraintAny'?",
+        "tests/behaviour/steps/analyze.ts(30,5): error TS2305: Module '\"../../../dist/index.cjs\"' has no exported member 'QueryVertex'.",
+        "tests/behaviour/steps/analyze.ts(45,43): error TS2339: Property 'err' does not exist on type 'ApiResponse<AnalyzeResponse>'.",
+        "tests/behaviour/steps/analyze.ts(46,34): error TS2339: Property 'ok' does not exist on type 'ApiResponse<AnalyzeResponse>'.",
+        "tests/behaviour/steps/analyze.ts(59,50): error TS2345: Argument of type 'AnalyzeResponse' is not assignable to parameter of type '{ query: AnalyzedPipeline; given: { variableAnnotations: { [name: string]: VariableAnnotations; }; }; }'.",
+        "tests/behaviour/steps/analyze.ts(277,17): error TS2367: This comparison appears to be unintentional because the types '\"Ascending\" | \"Descending\"' and '\"ascending\"' have no overlap.",
+        "tests/behaviour/steps/analyze.ts(285,54): error TS2339: Property 'map' does not exist on type 'string'.",
+        "tests/behaviour/steps/query.ts(398,40): error TS2345: Argument of type 'AnalyzedPipeline | QueryStructureLegacy' is not assignable to parameter of type 'AnalyzedPipeline'.",
+        "tests/behaviour/steps/query.ts(399,42): error TS2345: Argument of type 'AnalyzedPipeline | QueryStructureLegacy' is not assignable to parameter of type 'AnalyzedPipeline'."
+       ]
+      }
+     ],
+     "suites_out_of_scope": {
+      "cluster": "declared upstream only as typedb_behaviour_http_ts_cluster_test (http-ts/tests/behaviour/feature/BUILD), the multi-node cluster lane: it needs a replicated TypeDB deployment and the TLS certificates in //tool/test/resources:certificates. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+     }
+    }
+   ],
+   "evidence_bundle": "docs/evidence/G1/drivers/typescript-rocksdb-fork-classic",
+   "bundle_root": "a75968d7ecd81438fbea798ea4245448403d7dbc00a78f92cbc0e6ef305f1aa7",
+   "plan_leaves_in_scope": 154,
+   "plan_leaves_with_outcome": 149,
+   "plan_leaves_passed": 149,
+   "suites_executed": 4,
+   "suites_selected": 4,
+   "suites_blocked": {
+    "cluster": "declared upstream only as typedb_behaviour_http_ts_cluster_test (http-ts/tests/behaviour/feature/BUILD), the multi-node cluster lane: it needs a replicated TypeDB deployment and the TLS certificates in //tool/test/resources:certificates. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+   },
+   "harness": "typescript-cucumberjs-messages",
+   "caveats": [
+    {
+     "id": "npm-install-not-pnpm-lock",
+     "detail": "http-ts declares packageManager 'pnpm@8.15.9' and ships pnpm-lock.yaml (sha256 5617f6a91f82ae909edfba27c88001612149a63323eac4e9f52af9b41fbedf92), but the pnpm available here is 10.x, which does not honour a v8 lockfile without migrating it. Dependencies were therefore resolved by npm within package.json's ranges. Every exact pin was verified to have installed at its pinned version, and the full resolved tree is archived as npm-tree.json, but the transitive closure is NOT the closure the committed pnpm lockfile names."
+    },
+    {
+     "id": "steps-typecheck-not-clean",
+     "detail": "tsc exited 2 with 9 diagnostic(s) while compiling the behaviour steps, and still emitted JavaScript for every source. Upstream's Bazel target compiles the steps against //http-ts:driver-lib, which emits only dist/index.cjs and deliberately no index.d.cts (http-ts/BUILD: 'TODO: should also output index.d.cts (works in filesystem but not in bazel)'), so the upstream type surface is not reproducible outside bazel. The executed evidence below rests on the emitted JavaScript plus a zero-undefined/zero-ambiguous step check, not on a clean typecheck.",
+     "diagnostics": [
+      "tests/behaviour/steps/analyze.ts(29,5): error TS2724: '\"../../../dist/index.cjs\"' has no exported member named 'QueryConstraintAny'. Did you mean 'ConstraintAny'?",
+      "tests/behaviour/steps/analyze.ts(30,5): error TS2305: Module '\"../../../dist/index.cjs\"' has no exported member 'QueryVertex'.",
+      "tests/behaviour/steps/analyze.ts(45,43): error TS2339: Property 'err' does not exist on type 'ApiResponse<AnalyzeResponse>'.",
+      "tests/behaviour/steps/analyze.ts(46,34): error TS2339: Property 'ok' does not exist on type 'ApiResponse<AnalyzeResponse>'.",
+      "tests/behaviour/steps/analyze.ts(59,50): error TS2345: Argument of type 'AnalyzeResponse' is not assignable to parameter of type '{ query: AnalyzedPipeline; given: { variableAnnotations: { [name: string]: VariableAnnotations; }; }; }'.",
+      "tests/behaviour/steps/analyze.ts(277,17): error TS2367: This comparison appears to be unintentional because the types '\"Ascending\" | \"Descending\"' and '\"ascending\"' have no overlap.",
+      "tests/behaviour/steps/analyze.ts(285,54): error TS2339: Property 'map' does not exist on type 'string'.",
+      "tests/behaviour/steps/query.ts(398,40): error TS2345: Argument of type 'AnalyzedPipeline | QueryStructureLegacy' is not assignable to parameter of type 'AnalyzedPipeline'.",
+      "tests/behaviour/steps/query.ts(399,42): error TS2345: Argument of type 'AnalyzedPipeline | QueryStructureLegacy' is not assignable to parameter of type 'AnalyzedPipeline'."
+     ]
+    }
+   ],
+   "suites_out_of_scope": {
+    "cluster": "declared upstream only as typedb_behaviour_http_ts_cluster_test (http-ts/tests/behaviour/feature/BUILD), the multi-node cluster lane: it needs a replicated TypeDB deployment and the TLS certificates in //tool/test/resources:certificates. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+   },
+   "out_of_scope_authority": "OD-010 (docs/owner-decisions.json): single-node semantic parity is the claim; cluster/HA is not in scope for the storage adapter and may not be claimed on the strength of it.",
+   "not_covered_because": [
+    "caveat npm-install-not-pnpm-lock: http-ts declares packageManager 'pnpm@8.15.9' and ships pnpm-lock.yaml (sha256 5617f6a91f82ae909edfba27c88001612149a63323eac4e9f52af9b41fbedf92), but the pnpm available here is 10.x, which does not honour a v8 lockfile without migrating it. Dependencies were therefore resolved by npm within package.json's ranges. Every exact pin was verified to have installed at its pinned version, and the full resolved tree is archived as npm-tree.json, but the transitive closure is NOT the closure the committed pnpm lockfile names.",
+    "caveat steps-typecheck-not-clean: tsc exited 2 with 9 diagnostic(s) while compiling the behaviour steps, and still emitted JavaScript for every source. Upstream's Bazel target compiles the steps against //http-ts:driver-lib, which emits only dist/index.cjs and deliberately no index.d.cts (http-ts/BUILD: 'TODO: should also output index.d.cts (works in filesystem but not in bazel)'), so the upstream type surface is not reproducible outside bazel. The executed evidence below rests on the emitted JavaScript plus a zero-undefined/zero-ambiguous step check, not on a clean typecheck."
+   ],
+   "status_meaning": "EXECUTED_LEAF_PARTIAL_SUITES: the official driver suite ran and every plan leaf in the EXECUTED suites' scope carries a per-scenario outcome, but at least one declared suite of the official corpus could not run here; each such suite names its exact external precondition. The row is PARTIAL, never covered."
+  },
+  "driver:typescript:slatedb": {
+   "row_id": "driver:typescript:slatedb",
+   "plan_seed_status": "NOT_IMPLEMENTED",
+   "required_by": "v17-A17.5",
+   "status": "EXECUTED_LEAF_PARTIAL_SUITES",
+   "coverage_class": "PARTIAL",
+   "bundles": [
+    {
+     "bundle": "docs/evidence/G1/drivers/typescript-slatedb-fork",
+     "bundle_root": "48987613ab554be9dfa5ac35f475a1f9b606ba564515d5daa6c1d13a9a955eb8",
+     "sealed_complete": true,
+     "anomalies": [],
+     "rederived_verdict": "GREEN",
+     "qualification_pass": true,
+     "plan_leaves_with_outcome": 149,
+     "plan_leaves_passed": 149,
+     "lane": "fork-slatedb",
+     "suites_selected": 4,
+     "suites_executed": 4,
+     "plan_leaves_in_scope": 154,
+     "suites_blocked": {
+      "cluster": "declared upstream only as typedb_behaviour_http_ts_cluster_test (http-ts/tests/behaviour/feature/BUILD), the multi-node cluster lane: it needs a replicated TypeDB deployment and the TLS certificates in //tool/test/resources:certificates. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+     },
+     "leaves_outside_plan": 9,
+     "harness": "typescript-cucumberjs-messages",
+     "caveats": [
+      {
+       "id": "npm-install-not-pnpm-lock",
+       "detail": "http-ts declares packageManager 'pnpm@8.15.9' and ships pnpm-lock.yaml (sha256 5617f6a91f82ae909edfba27c88001612149a63323eac4e9f52af9b41fbedf92), but the pnpm available here is 10.x, which does not honour a v8 lockfile without migrating it. Dependencies were therefore resolved by npm within package.json's ranges. Every exact pin was verified to have installed at its pinned version, and the full resolved tree is archived as npm-tree.json, but the transitive closure is NOT the closure the committed pnpm lockfile names."
+      },
+      {
+       "id": "steps-typecheck-not-clean",
+       "detail": "tsc exited 2 with 9 diagnostic(s) while compiling the behaviour steps, and still emitted JavaScript for every source. Upstream's Bazel target compiles the steps against //http-ts:driver-lib, which emits only dist/index.cjs and deliberately no index.d.cts (http-ts/BUILD: 'TODO: should also output index.d.cts (works in filesystem but not in bazel)'), so the upstream type surface is not reproducible outside bazel. The executed evidence below rests on the emitted JavaScript plus a zero-undefined/zero-ambiguous step check, not on a clean typecheck.",
+       "diagnostics": [
+        "tests/behaviour/steps/analyze.ts(29,5): error TS2724: '\"../../../dist/index.cjs\"' has no exported member named 'QueryConstraintAny'. Did you mean 'ConstraintAny'?",
+        "tests/behaviour/steps/analyze.ts(30,5): error TS2305: Module '\"../../../dist/index.cjs\"' has no exported member 'QueryVertex'.",
+        "tests/behaviour/steps/analyze.ts(45,43): error TS2339: Property 'err' does not exist on type 'ApiResponse<AnalyzeResponse>'.",
+        "tests/behaviour/steps/analyze.ts(46,34): error TS2339: Property 'ok' does not exist on type 'ApiResponse<AnalyzeResponse>'.",
+        "tests/behaviour/steps/analyze.ts(59,50): error TS2345: Argument of type 'AnalyzeResponse' is not assignable to parameter of type '{ query: AnalyzedPipeline; given: { variableAnnotations: { [name: string]: VariableAnnotations; }; }; }'.",
+        "tests/behaviour/steps/analyze.ts(277,17): error TS2367: This comparison appears to be unintentional because the types '\"Ascending\" | \"Descending\"' and '\"ascending\"' have no overlap.",
+        "tests/behaviour/steps/analyze.ts(285,54): error TS2339: Property 'map' does not exist on type 'string'.",
+        "tests/behaviour/steps/query.ts(398,40): error TS2345: Argument of type 'AnalyzedPipeline | QueryStructureLegacy' is not assignable to parameter of type 'AnalyzedPipeline'.",
+        "tests/behaviour/steps/query.ts(399,42): error TS2345: Argument of type 'AnalyzedPipeline | QueryStructureLegacy' is not assignable to parameter of type 'AnalyzedPipeline'."
+       ]
+      }
+     ],
+     "suites_out_of_scope": {
+      "cluster": "declared upstream only as typedb_behaviour_http_ts_cluster_test (http-ts/tests/behaviour/feature/BUILD), the multi-node cluster lane: it needs a replicated TypeDB deployment and the TLS certificates in //tool/test/resources:certificates. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+     }
+    }
+   ],
+   "evidence_bundle": "docs/evidence/G1/drivers/typescript-slatedb-fork",
+   "bundle_root": "48987613ab554be9dfa5ac35f475a1f9b606ba564515d5daa6c1d13a9a955eb8",
+   "plan_leaves_in_scope": 154,
+   "plan_leaves_with_outcome": 149,
+   "plan_leaves_passed": 149,
+   "suites_executed": 4,
+   "suites_selected": 4,
+   "suites_blocked": {
+    "cluster": "declared upstream only as typedb_behaviour_http_ts_cluster_test (http-ts/tests/behaviour/feature/BUILD), the multi-node cluster lane: it needs a replicated TypeDB deployment and the TLS certificates in //tool/test/resources:certificates. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+   },
+   "harness": "typescript-cucumberjs-messages",
+   "caveats": [
+    {
+     "id": "npm-install-not-pnpm-lock",
+     "detail": "http-ts declares packageManager 'pnpm@8.15.9' and ships pnpm-lock.yaml (sha256 5617f6a91f82ae909edfba27c88001612149a63323eac4e9f52af9b41fbedf92), but the pnpm available here is 10.x, which does not honour a v8 lockfile without migrating it. Dependencies were therefore resolved by npm within package.json's ranges. Every exact pin was verified to have installed at its pinned version, and the full resolved tree is archived as npm-tree.json, but the transitive closure is NOT the closure the committed pnpm lockfile names."
+    },
+    {
+     "id": "steps-typecheck-not-clean",
+     "detail": "tsc exited 2 with 9 diagnostic(s) while compiling the behaviour steps, and still emitted JavaScript for every source. Upstream's Bazel target compiles the steps against //http-ts:driver-lib, which emits only dist/index.cjs and deliberately no index.d.cts (http-ts/BUILD: 'TODO: should also output index.d.cts (works in filesystem but not in bazel)'), so the upstream type surface is not reproducible outside bazel. The executed evidence below rests on the emitted JavaScript plus a zero-undefined/zero-ambiguous step check, not on a clean typecheck.",
+     "diagnostics": [
+      "tests/behaviour/steps/analyze.ts(29,5): error TS2724: '\"../../../dist/index.cjs\"' has no exported member named 'QueryConstraintAny'. Did you mean 'ConstraintAny'?",
+      "tests/behaviour/steps/analyze.ts(30,5): error TS2305: Module '\"../../../dist/index.cjs\"' has no exported member 'QueryVertex'.",
+      "tests/behaviour/steps/analyze.ts(45,43): error TS2339: Property 'err' does not exist on type 'ApiResponse<AnalyzeResponse>'.",
+      "tests/behaviour/steps/analyze.ts(46,34): error TS2339: Property 'ok' does not exist on type 'ApiResponse<AnalyzeResponse>'.",
+      "tests/behaviour/steps/analyze.ts(59,50): error TS2345: Argument of type 'AnalyzeResponse' is not assignable to parameter of type '{ query: AnalyzedPipeline; given: { variableAnnotations: { [name: string]: VariableAnnotations; }; }; }'.",
+      "tests/behaviour/steps/analyze.ts(277,17): error TS2367: This comparison appears to be unintentional because the types '\"Ascending\" | \"Descending\"' and '\"ascending\"' have no overlap.",
+      "tests/behaviour/steps/analyze.ts(285,54): error TS2339: Property 'map' does not exist on type 'string'.",
+      "tests/behaviour/steps/query.ts(398,40): error TS2345: Argument of type 'AnalyzedPipeline | QueryStructureLegacy' is not assignable to parameter of type 'AnalyzedPipeline'.",
+      "tests/behaviour/steps/query.ts(399,42): error TS2345: Argument of type 'AnalyzedPipeline | QueryStructureLegacy' is not assignable to parameter of type 'AnalyzedPipeline'."
+     ]
+    }
+   ],
+   "suites_out_of_scope": {
+    "cluster": "declared upstream only as typedb_behaviour_http_ts_cluster_test (http-ts/tests/behaviour/feature/BUILD), the multi-node cluster lane: it needs a replicated TypeDB deployment and the TLS certificates in //tool/test/resources:certificates. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here."
+   },
+   "out_of_scope_authority": "OD-010 (docs/owner-decisions.json): single-node semantic parity is the claim; cluster/HA is not in scope for the storage adapter and may not be claimed on the strength of it.",
+   "not_covered_because": [
+    "caveat npm-install-not-pnpm-lock: http-ts declares packageManager 'pnpm@8.15.9' and ships pnpm-lock.yaml (sha256 5617f6a91f82ae909edfba27c88001612149a63323eac4e9f52af9b41fbedf92), but the pnpm available here is 10.x, which does not honour a v8 lockfile without migrating it. Dependencies were therefore resolved by npm within package.json's ranges. Every exact pin was verified to have installed at its pinned version, and the full resolved tree is archived as npm-tree.json, but the transitive closure is NOT the closure the committed pnpm lockfile names.",
+    "caveat steps-typecheck-not-clean: tsc exited 2 with 9 diagnostic(s) while compiling the behaviour steps, and still emitted JavaScript for every source. Upstream's Bazel target compiles the steps against //http-ts:driver-lib, which emits only dist/index.cjs and deliberately no index.d.cts (http-ts/BUILD: 'TODO: should also output index.d.cts (works in filesystem but not in bazel)'), so the upstream type surface is not reproducible outside bazel. The executed evidence below rests on the emitted JavaScript plus a zero-undefined/zero-ambiguous step check, not on a clean typecheck."
+   ],
+   "status_meaning": "EXECUTED_LEAF_PARTIAL_SUITES: the official driver suite ran and every plan leaf in the EXECUTED suites' scope carries a per-scenario outcome, but at least one declared suite of the official corpus could not run here; each such suite names its exact external precondition. The row is PARTIAL, never covered."
+  }
+ },
+ "counts": {
+  "total": 6,
+  "executed_leaf": 6,
+  "covered": 4,
+  "partial": 2,
+  "not_implemented": 0
+ }
+}

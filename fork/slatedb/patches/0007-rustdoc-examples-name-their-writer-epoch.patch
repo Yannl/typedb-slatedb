@@ -1,0 +1,602 @@
+diff -ruN orig/src/admin.rs slatedb-0.15.0/src/admin.rs
+--- orig/src/admin.rs	2006-07-24 01:21:28.000000000 +0000
++++ slatedb-0.15.0/src/admin.rs	2026-08-20 10:26:04.458874687 +0000
+@@ -470,7 +470,11 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Box<dyn Error>> {
+     ///    let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///    let db = Db::open("parent_path", Arc::clone(&object_store)).await?;
++    ///    // Writer epochs are controller-issued in this fork; see `Db::builder`.
++    ///    let db = Db::builder("parent_path", Arc::clone(&object_store))
++    ///        .with_external_writer_epoch(1)
++    ///        .build()
++    ///        .await?;
+     ///    db.put(b"key", b"value").await?;
+     ///    db.close().await?;
+     ///
+@@ -651,7 +655,11 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Box<dyn Error>> {
+     ///    let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///    let db = Db::open("parent_path", Arc::clone(&object_store)).await?;
++    ///    // Writer epochs are controller-issued in this fork; see `Db::builder`.
++    ///    let db = Db::builder("parent_path", Arc::clone(&object_store))
++    ///        .with_external_writer_epoch(1)
++    ///        .build()
++    ///        .await?;
+     ///    db.put(b"key", b"value").await?;
+     ///    db.close().await?;
+     ///
+diff -ruN orig/src/db/builder.rs slatedb-0.15.0/src/db/builder.rs
+--- orig/src/db/builder.rs	2026-08-20 09:22:24.008279368 +0000
++++ slatedb-0.15.0/src/db/builder.rs	2026-08-20 10:25:48.650482988 +0000
+@@ -3,6 +3,15 @@
+ //! The `DbBuilder` struct is used to configure and open a SlateDB database.
+ //! It provides a fluent API for setting various options and components.
+ //!
++//! Every example below names the EXACT writer epoch its database is opened
++//! under, through [`DbBuilder::with_external_writer_epoch`]. This fork does not
++//! allocate that epoch internally: an external controller issues it and the
++//! manifest claims exactly it or refuses (ADR-0012). Each example creates a
++//! fresh in-memory database, so epoch 1 is the first epoch a controller would
++//! issue for it; a second open of the SAME database must name a strictly
++//! greater epoch. With the `external_epoch_required` feature - the posture this
++//! fork ships - an open that names no epoch is refused rather than defaulted.
++//!
+ //! # Examples
+ //!
+ //! Basic usage of the `DbBuilder` struct:
+@@ -16,6 +25,7 @@
+ //! async fn main() -> Result<(), Error> {
+ //!     let object_store = Arc::new(InMemory::new());
+ //!     let db = Db::builder("test_db", object_store)
++//!         .with_external_writer_epoch(1)
+ //!         .build()
+ //!         .await?;
+ //!     Ok(())
+@@ -37,6 +47,7 @@
+ //!             min_filter_keys: 2000,
+ //!             ..Default::default()
+ //!         })
++//!         .with_external_writer_epoch(1)
+ //!         .build()
+ //!         .await?;
+ //!     Ok(())
+@@ -56,6 +67,7 @@
+ //!     let object_store = Arc::new(InMemory::new());
+ //!     let db = Db::builder("test_db", object_store)
+ //!         .with_db_cache(Arc::new(FoyerCache::new()))
++//!         .with_external_writer_epoch(1)
+ //!         .build()
+ //!         .await?;
+ //!     Ok(())
+@@ -76,6 +88,7 @@
+ //!     let clock = Arc::new(DefaultSystemClock::new());
+ //!     let db = Db::builder("test_db", object_store)
+ //!         .with_system_clock(clock)
++//!         .with_external_writer_epoch(1)
+ //!         .build()
+ //!         .await?;
+ //!     Ok(())
+@@ -95,6 +108,7 @@
+ //!     let object_store = Arc::new(InMemory::new());
+ //!     let db = Db::builder("test_db", object_store)
+ //!         .with_sst_block_size(SstBlockSize::Block8Kib) // 8KiB blocks
++//!         .with_external_writer_epoch(1)
+ //!         .build()
+ //!         .await?;
+ //!     Ok(())
+@@ -1719,7 +1733,10 @@
+ /// async fn main() -> Result<(), Error> {
+ ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+ ///     // First create a database
+-///     let db = Db::open("test_db", Arc::clone(&object_store)).await?;
++///     let db = Db::builder("test_db", Arc::clone(&object_store))
++///         .with_external_writer_epoch(1)
++///         .build()
++///         .await?;
+ ///     db.close().await?;
+ ///     // Then open a reader
+ ///     let reader = DbReader::builder("test_db", object_store)
+@@ -1740,7 +1757,10 @@
+ /// async fn main() -> Result<(), Error> {
+ ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+ ///     // First create a database
+-///     let db = Db::open("test_db", Arc::clone(&object_store)).await?;
++///     let db = Db::builder("test_db", Arc::clone(&object_store))
++///         .with_external_writer_epoch(1)
++///         .build()
++///         .await?;
+ ///     db.close().await?;
+ ///     // Then open a reader with custom options
+ ///     let reader = DbReader::builder("test_db", object_store)
+diff -ruN orig/src/db.rs slatedb-0.15.0/src/db.rs
+--- orig/src/db.rs	2026-08-20 08:52:23.211562786 +0000
++++ slatedb-0.15.0/src/db.rs	2026-08-20 10:30:58.319068594 +0000
+@@ -3,6 +3,22 @@
+ //!
+ //! The `Db` struct represents a database.
+ //!
++//! # Writer epochs
++//!
++//! This fork does not allocate the writer epoch internally. Every open names an
++//! EXACT epoch issued by an external controller, through
++//! [`DbBuilder::with_external_writer_epoch`](crate::DbBuilder::with_external_writer_epoch):
++//! the manifest claims exactly that number or refuses the open before writing
++//! anything (ADR-0012). Built with the `external_epoch_required` feature - the
++//! posture this fork ships - an open that names no epoch is refused rather than
++//! defaulted, which is why the examples in this crate open through
++//! [`Db::builder`] rather than [`Db::open`].
++//!
++//! Each example creates a fresh in-memory database, so epoch 1 is the first
++//! epoch a controller would issue for it. Re-opening the SAME database needs a
++//! strictly greater epoch - replaying a spent one is precisely what the fence
++//! refuses.
++//!
+ //! # Examples
+ //!
+ //! Basic usage of the `Db` struct:
+@@ -15,7 +31,10 @@
+ //! #[tokio::main]
+ //! async fn main() -> Result<(), Error> {
+ //!     let object_store = Arc::new(InMemory::new());
+-//!     let db = Db::open("test_db", object_store).await?;
++//!     let db = Db::builder("test_db", object_store)
++//!         .with_external_writer_epoch(1)
++//!         .build()
++//!         .await?;
+ //!     Ok(())
+ //! }
+ //! ```
+@@ -627,6 +646,13 @@
+     }
+ }
+ 
++/// A handle to an open SlateDB database.
++///
++/// Every writer holds an EXACT, controller-issued writer epoch for as long as
++/// it is open; a later epoch claimed by another writer fences this one. The
++/// examples below therefore name the epoch they open under; see
++/// [`DbBuilder::with_external_writer_epoch`](crate::DbBuilder::with_external_writer_epoch)
++/// for where that number comes from and what happens when it is stale.
+ #[derive(Clone)]
+ pub struct Db {
+     pub(crate) inner: Arc<DbInner>,
+@@ -636,6 +662,14 @@
+ impl Db {
+     /// Open a new database with default options.
+     ///
++    /// This convenience names no writer epoch. Built with the
++    /// `external_epoch_required` feature - the posture this fork ships - an
++    /// epoch-less open is refused with an invalid-argument error, so a writer
++    /// opens through [`Db::builder`] and
++    /// [`DbBuilder::with_external_writer_epoch`](crate::DbBuilder::with_external_writer_epoch)
++    /// instead. The example below is that open: the same defaults this method
++    /// applies, with the controller-issued epoch named.
++    ///
+     /// ## Arguments
+     /// - `path`: the path to the database
+     /// - `object_store`: the object store to use for the database
+@@ -656,7 +690,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store).await?;
++    ///     let db = Db::builder("test_db", object_store)
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     Ok(())
+     /// }
+     /// ```
+@@ -670,6 +707,11 @@
+ 
+     /// Creates a new builder for a database at the given path.
+     ///
++    /// Name the writer epoch the controller issued for this incarnation with
++    /// [`DbBuilder::with_external_writer_epoch`](crate::DbBuilder::with_external_writer_epoch);
++    /// under the `external_epoch_required` posture an open that names none is
++    /// refused.
++    ///
+     /// ## Arguments
+     /// - `path`: the path to the database
+     /// - `object_store`: the object store to use for the database
+@@ -688,6 +730,7 @@
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store = Arc::new(InMemory::new());
+     ///     let db = Db::builder("/tmp/test_db", object_store)
++    ///         .with_external_writer_epoch(1)
+     ///         .build()
+     ///         .await?;
+     ///     Ok(())
+@@ -712,7 +755,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store).await?;
++    ///     let db = Db::builder("test_db", object_store)
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     db.close().await?;
+     ///     Ok(())
+     /// }
+@@ -801,7 +847,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store).await?;
++    ///     let db = Db::builder("test_db", object_store)
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///
+     ///     // Write some data and create a snapshot
+     ///     db.put(b"key1", b"value1").await?;
+@@ -855,7 +904,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store).await?;
++    ///     let db = Db::builder("test_db", object_store)
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     db.put(b"key", b"value").await?;
+     ///     assert_eq!(db.get(b"key").await?, Some("value".into()));
+     ///     Ok(())
+@@ -895,7 +947,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store).await?;
++    ///     let db = Db::builder("test_db", object_store)
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     db.put(b"key", b"value").await?;
+     ///     assert_eq!(db.get_with_options(b"key", &ReadOptions::default()).await?, Some("value".into()));
+     ///     Ok(())
+@@ -987,7 +1042,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store).await?;
++    ///     let db = Db::builder("test_db", object_store)
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     db.put(b"a", b"a_value").await?;
+     ///     db.put(b"b", b"b_value").await?;
+     ///
+@@ -1023,7 +1081,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store).await?;
++    ///     let db = Db::builder("test_db", object_store)
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     db.put(b"a", b"a_value").await?;
+     ///     db.put(b"b", b"b_value").await?;
+     ///
+@@ -1082,7 +1143,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store).await?;
++    ///     let db = Db::builder("test_db", object_store)
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     db.put(b"ab", b"v0").await?;
+     ///     db.put(b"aba", b"v1").await?;
+     ///     db.put(b"b", b"v2").await?;
+@@ -1142,7 +1206,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store).await?;
++    ///     let db = Db::builder("test_db", object_store)
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     db.put(b"x1", b"v1").await?;
+     ///     db.put(b"x2", b"v2").await?;
+     ///     db.put(b"y", b"v3").await?;
+@@ -1258,7 +1325,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store).await?;
++    ///     let db = Db::builder("test_db", object_store)
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     db.put(b"user:42", b"alice").await?;
+     ///     db.put(b"user:42", b"alice2").await?;
+     ///     db.put(b"user:99", b"bob").await?;
+@@ -1324,7 +1394,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store).await?;
++    ///     let db = Db::builder("test_db", object_store)
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     db.put(b"event:001", b"a").await?;
+     ///     db.put(b"event:002", b"b").await?;
+     ///
+@@ -1378,7 +1451,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store).await?;
++    ///     let db = Db::builder("test_db", object_store)
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     let handle = db.put(b"key", b"value").await?;
+     ///     Ok(())
+     /// }
+@@ -1414,7 +1490,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store).await?;
++    ///     let db = Db::builder("test_db", object_store)
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     let handle = db.put_with_options(b"key", b"value", &PutOptions::default(), &WriteOptions::default()).await?;
+     ///     Ok(())
+     /// }
+@@ -1478,7 +1557,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store).await?;
++    ///     let db = Db::builder("test_db", object_store)
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     let handle = db.delete(b"key").await?;
+     ///     Ok(())
+     /// }
+@@ -1508,7 +1590,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store).await?;
++    ///     let db = Db::builder("test_db", object_store)
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     let handle = db.delete_with_options(b"key", &WriteOptions::default()).await?;
+     ///     Ok(())
+     /// }
+@@ -1559,6 +1644,7 @@
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+     ///     let db = Db::builder("test_db", object_store)
+     ///         .with_merge_operator(Arc::new(StringConcatMergeOperator))
++    ///         .with_external_writer_epoch(1)
+     ///         .build()
+     ///         .await?;
+     ///     let handle = db.merge(b"key", b"value").await?;
+@@ -1617,6 +1703,7 @@
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+     ///     let db = Db::builder("test_db", object_store)
+     ///         .with_merge_operator(Arc::new(StringConcatMergeOperator))
++    ///         .with_external_writer_epoch(1)
+     ///         .build()
+     ///         .await?;
+     ///     let handle = db.merge_with_options(
+@@ -1668,7 +1755,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store).await?;
++    ///     let db = Db::builder("test_db", object_store)
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///
+     ///     let mut batch = WriteBatch::new();
+     ///     batch.put(b"key1", b"value1");
+@@ -1705,7 +1795,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store).await?;
++    ///     let db = Db::builder("test_db", object_store)
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///
+     ///     let mut batch = WriteBatch::new();
+     ///     batch.put(b"key1", b"value1");
+@@ -1749,7 +1842,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store).await?;
++    ///     let db = Db::builder("test_db", object_store)
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     db.flush().await?;
+     ///     Ok(())
+     /// }
+@@ -1793,7 +1889,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store).await?;
++    ///     let db = Db::builder("test_db", object_store)
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     db.flush_with_options(FlushOptions {
+     ///         flush_type: FlushType::Wal,
+     ///     })
+@@ -1847,7 +1946,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), slatedb::Error> {
+     ///     let object_store = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store).await?;
++    ///     let db = Db::builder("test_db", object_store)
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     let txn = db.begin(IsolationLevel::SerializableSnapshot).await?;
+     ///     Ok(())
+     /// }
+diff -ruN orig/src/db_cache/foyer.rs slatedb-0.15.0/src/db_cache/foyer.rs
+--- orig/src/db_cache/foyer.rs	2006-07-24 01:21:28.000000000 +0000
++++ slatedb-0.15.0/src/db_cache/foyer.rs	2026-08-20 10:26:04.460674547 +0000
+@@ -22,8 +22,10 @@
+ //! #[tokio::main]
+ //! async fn main() -> Result<(), Error> {
+ //!     let object_store = Arc::new(InMemory::new());
++//!     // Writer epochs are controller-issued in this fork; see `Db::builder`.
+ //!     let db = Db::builder("test_db", object_store)
+ //!         .with_db_cache(Arc::new(FoyerCache::new()))
++//!         .with_external_writer_epoch(1)
+ //!         .build()
+ //!         .await?;
+ //!     Ok(())
+diff -ruN orig/src/db_cache/foyer_hybrid.rs slatedb-0.15.0/src/db_cache/foyer_hybrid.rs
+--- orig/src/db_cache/foyer_hybrid.rs	2006-07-24 01:21:28.000000000 +0000
++++ slatedb-0.15.0/src/db_cache/foyer_hybrid.rs	2026-08-20 10:26:04.460938726 +0000
+@@ -61,8 +61,10 @@
+ //!         .await
+ //!         .unwrap();
+ //!     let cache = Arc::new(FoyerHybridCache::new_with_cache(cache));
++//!     // Writer epochs are controller-issued in this fork; see `Db::builder`.
+ //!     let db = Db::builder("path/to/db", object_store)
+ //!         .with_db_cache(cache)
++//!         .with_external_writer_epoch(1)
+ //!         .build()
+ //!         .await
+ //!         .unwrap();
+diff -ruN orig/src/db_reader.rs slatedb-0.15.0/src/db_reader.rs
+--- orig/src/db_reader.rs	2006-07-24 01:21:28.000000000 +0000
++++ slatedb-0.15.0/src/db_reader.rs	2026-08-20 10:25:48.650841038 +0000
+@@ -70,6 +70,11 @@
+ 
+ /// Read-only interface for accessing a database from either
+ /// the latest persistent state or from an arbitrary checkpoint.
++///
++/// A reader claims no epoch. The fence this fork adds (ADR-0012) governs
++/// WRITERS, so opening a `DbReader` is unchanged under the
++/// `external_epoch_required` posture; the examples below name an epoch only
++/// where they first create the database being read, which is a write.
+ pub struct DbReader {
+     inner: Arc<DbReaderInner>,
+     task_executor: MessageHandlerExecutor,
+@@ -867,7 +872,10 @@
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+     ///     // First create a database
+-    ///     let db = Db::open("test_db", Arc::clone(&object_store)).await?;
++    ///     let db = Db::builder("test_db", Arc::clone(&object_store))
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     db.close().await?;
+     ///     // Then open a reader
+     ///     let reader = DbReader::builder("test_db", object_store)
+@@ -966,7 +974,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", Arc::clone(&object_store)).await?;
++    ///     let db = Db::builder("test_db", Arc::clone(&object_store))
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     db.put(b"key", b"value").await?;
+     ///     db.flush().await?;
+     ///
+@@ -1014,7 +1025,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", Arc::clone(&object_store)).await?;
++    ///     let db = Db::builder("test_db", Arc::clone(&object_store))
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     db.put(b"key", b"value").await?;
+     ///     db.flush().await?;
+     ///
+@@ -1085,7 +1099,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", Arc::clone(&object_store)).await?;
++    ///     let db = Db::builder("test_db", Arc::clone(&object_store))
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     db.put(b"a", b"a_value").await?;
+     ///     db.put(b"b", b"b_value").await?;
+     ///     db.flush().await?;
+@@ -1136,7 +1153,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", Arc::clone(&object_store)).await?;
++    ///     let db = Db::builder("test_db", Arc::clone(&object_store))
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     db.put(b"a", b"a_value").await?;
+     ///     db.put(b"b", b"b_value").await?;
+     ///     db.flush().await?;
+@@ -1246,7 +1266,10 @@
+     /// #[tokio::main]
+     /// async fn main() -> Result<(), Error> {
+     ///     let object_store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+-    ///     let db = Db::open("test_db", object_store.clone()).await?;
++    ///     let db = Db::builder("test_db", object_store.clone())
++    ///         .with_external_writer_epoch(1)
++    ///         .build()
++    ///         .await?;
+     ///     let options = DbReaderOptions::default();
+     ///     let reader = DbReader::open(
+     ///         "test_db",
+diff -ruN orig/src/sst_reader.rs slatedb-0.15.0/src/sst_reader.rs
+--- orig/src/sst_reader.rs	2006-07-24 01:21:28.000000000 +0000
++++ slatedb-0.15.0/src/sst_reader.rs	2026-08-20 10:26:04.460314094 +0000
+@@ -17,7 +17,11 @@
+ //! async fn main() -> Result<(), slatedb::Error> {
+ //!     let object_store = Arc::new(InMemory::new());
+ //!     let path = "/sst_reader_example";
+-//!     let db = Db::open(path, object_store.clone()).await?;
++//!     // Writer epochs are controller-issued in this fork; see `Db::builder`.
++//!     let db = Db::builder(path, object_store.clone())
++//!         .with_external_writer_epoch(1)
++//!         .build()
++//!         .await?;
+ //!
+ //!     db.put_with_options(
+ //!         b"k1",
+diff -ruN orig/src/wal_reader.rs slatedb-0.15.0/src/wal_reader.rs
+--- orig/src/wal_reader.rs	2006-07-24 01:21:28.000000000 +0000
++++ slatedb-0.15.0/src/wal_reader.rs	2026-08-20 10:26:04.459654446 +0000
+@@ -40,7 +40,11 @@
+ //! async fn main() -> Result<(), Error> {
+ //!     let object_store = Arc::new(InMemory::new());
+ //!     let path = "/wal_reader_example";
+-//!     let db = Db::open(path, object_store.clone()).await?;
++//!     // Writer epochs are controller-issued in this fork; see `Db::builder`.
++//!     let db = Db::builder(path, object_store.clone())
++//!         .with_external_writer_epoch(1)
++//!         .build()
++//!         .await?;
+ //!
+ //!     db.put_with_options(
+ //!         b"k1",

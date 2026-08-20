@@ -1,0 +1,59 @@
+{
+ "executable": "/home/user/typedb-slatedb/sources/typedb/target/debug/deps/storage-a24784ef8fd269b2",
+ "toolchain": {
+  "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+  "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+  "target_triple": "x86_64-unknown-linux-gnu",
+  "requested": "1.93.0"
+ },
+ "formats": {
+  "pretty": {
+   "argv": [
+    "--format",
+    "pretty",
+    "--list"
+   ],
+   "returncode": 0,
+   "head": [
+    "backend_context_barrier_tests::a_mid_process_profile_change_is_a_typed_refusal_that_leaves_the_tree_untouched: test",
+    "factory::backend_identity_tests::a_kind_mismatch_is_the_cross_engine_refusal: test"
+   ]
+  },
+  "terse": {
+   "argv": [
+    "--format",
+    "terse",
+    "--list"
+   ],
+   "returncode": 0,
+   "head": [
+    "backend_context_barrier_tests::a_mid_process_profile_change_is_a_typed_refusal_that_leaves_the_tree_untouched: test",
+    "factory::backend_identity_tests::a_kind_mismatch_is_the_cross_engine_refusal: test"
+   ]
+  },
+  "json": {
+   "argv": [
+    "--format",
+    "json",
+    "--list"
+   ],
+   "returncode": 101,
+   "head": [
+    "error: The \"json\" format is only accepted on the nightly compiler with -Z unstable-options"
+   ]
+  },
+  "json+Z": {
+   "argv": [
+    "-Z",
+    "unstable-options",
+    "--format",
+    "json",
+    "--list"
+   ],
+   "returncode": 101,
+   "head": [
+    "error: the option `Z` is only accepted on the nightly compiler"
+   ]
+  }
+ }
+}

@@ -85,6 +85,119 @@ export interface EnvelopeBudget {
   /** Absolute wall-clock instant (ms since epoch) after which every call refuses. */
   runDeadlineAtMs: number;
   maxRequestMs: number;
+  /**
+   * R6-CF-02: the owner signs `max_cost_usd_cents` and the round-5 code
+   * never priced anything, so the economic ceiling was inert (the audit ran
+   * an envelope approving one billionth of a cent and still dispatched a
+   * Cloudflare API POST and a ~1 MB PUT). Cost is carried in INTEGER
+   * MICRO-CENTS: binary floating point must never decide whether a spend is
+   * within an owner's approval.
+   */
+  maxCostMicroCents: number;
+}
+
+/**
+ * R6-CF-02 pricing. Deliberately CONSERVATIVE and VERSIONED: when a
+ * request's true charge is unknowable before dispatch, reserve an upper
+ * bound. Reconciling downward would require trustworthy provider evidence,
+ * which we do not have mid-run, so nothing is ever refunded — including a
+ * request whose response was lost, which really did consume the resource.
+ *
+ * These are ceilings, not a billing model: they exist so a signed cost can
+ * be ENFORCED, and they are intentionally above published list prices.
+ */
+export const PRICING_MODEL_VERSION = "probe-pricing/v1-conservative";
+
+/** micro-cents (1 cent = 1_000_000 µ¢) reserved per request class. */
+export const PRICE_MICRO_CENTS = {
+  /** R2 Class A (mutating: PUT/POST/DELETE/multipart) — $4.50/million ⇒ 0.45 µ¢/op, reserved 10× */
+  r2ClassA: 5,
+  /** R2 Class B (GET/HEAD/LIST) — $0.36/million ⇒ 0.036 µ¢/op, reserved ~30× */
+  r2ClassB: 1,
+  /** Cloudflare API mutation: no per-call price, reserved as a nonzero floor */
+  cfApiMutation: 5,
+  cfApiRead: 1,
+  /** harness/worker call */
+  harness: 1,
+  /** per MiB of upload, reserved generously against egress/ops amplification */
+  perMebibyteWritten: 100,
+} as const;
+
+/** The conservative upper-bound charge of one request, in micro-cents. */
+export function priceOfRequest(req: { service: string; method: string; body?: Uint8Array | null }): number {
+  const isWrite = req.method === "PUT" || req.method === "POST" || req.method === "DELETE";
+  let micro: number;
+  if (req.service === "r2") micro = isWrite ? PRICE_MICRO_CENTS.r2ClassA : PRICE_MICRO_CENTS.r2ClassB;
+  else if (req.service === "harness") micro = PRICE_MICRO_CENTS.harness;
+  else micro = isWrite ? PRICE_MICRO_CENTS.cfApiMutation : PRICE_MICRO_CENTS.cfApiRead;
+  const bytes = req.body?.length ?? 0;
+  if (bytes > 0) {
+    micro += Math.ceil((bytes / (1024 * 1024)) * PRICE_MICRO_CENTS.perMebibyteWritten);
+  }
+  return micro;
+}
+
+/**
+ * R6-CF-02: ONE shared budget for the whole run.
+ *
+ * The round-5 runner built two independent meters over the same provider,
+ * so cleanup carried its own byte allowance ON TOP of the probe meter's
+ * full allowance — two meters configured from a signed 100-byte maximum
+ * dispatched 200 aggregate bytes. Every meter now reserves from this single
+ * object, and the request partition is explicit:
+ * `probeRequests + cleanupRequests === signed max_total_requests`.
+ */
+export class RunBudgetLedger {
+  readonly budget: EnvelopeBudget;
+  requestsUsed = 0;
+  bytesWritten = 0;
+  costMicroCentsUsed = 0;
+
+  constructor(budget: EnvelopeBudget) {
+    this.budget = budget;
+  }
+
+  /** Reserve one request's resources or throw. Never partially applied. */
+  reserve(kind: string, requests: number, bytes: number, costMicroCents: number): void {
+    if (this.requestsUsed + requests > this.budget.maxTotalRequests) {
+      throw new EnvelopeExceededError(
+        `max_total_requests=${this.budget.maxTotalRequests} exhausted across the whole run ` +
+          `(used ${this.requestsUsed}, ${kind} needs ${requests})`,
+      );
+    }
+    if (this.bytesWritten + bytes > this.budget.maxTotalBytesWritten) {
+      throw new EnvelopeExceededError(
+        `max_total_bytes_written=${this.budget.maxTotalBytesWritten} would be exceeded across the ` +
+          `whole run (written ${this.bytesWritten}, ${kind} needs ${bytes})`,
+      );
+    }
+    if (this.costMicroCentsUsed + costMicroCents > this.budget.maxCostMicroCents) {
+      throw new EnvelopeExceededError(
+        `max_cost_usd_cents budget exhausted across the whole run ` +
+          `(reserved ${this.costMicroCentsUsed}µ¢ of ${this.budget.maxCostMicroCents}µ¢, ` +
+          `${kind} needs ${costMicroCents}µ¢; pricing ${PRICING_MODEL_VERSION})`,
+      );
+    }
+    this.requestsUsed += requests;
+    this.bytesWritten += bytes;
+    this.costMicroCentsUsed += costMicroCents;
+  }
+
+  /** Non-secret accounting for the evidence bundle. */
+  report(): Record<string, number | string> {
+    return {
+      pricing_model: PRICING_MODEL_VERSION,
+      signed_max_requests: this.budget.maxTotalRequests,
+      signed_max_bytes_written: this.budget.maxTotalBytesWritten,
+      signed_max_cost_micro_cents: this.budget.maxCostMicroCents,
+      reserved_requests: this.requestsUsed,
+      reserved_bytes_written: this.bytesWritten,
+      reserved_cost_micro_cents: this.costMicroCentsUsed,
+      remaining_requests: this.budget.maxTotalRequests - this.requestsUsed,
+      remaining_bytes_written: this.budget.maxTotalBytesWritten - this.bytesWritten,
+      remaining_cost_micro_cents: this.budget.maxCostMicroCents - this.costMicroCentsUsed,
+    };
+  }
 }
 
 /**
@@ -93,7 +206,9 @@ export interface EnvelopeBudget {
  * was already validated positive-finite by preflight, but this re-checks
  * fail-closed because a budget must never be constructed from garbage.
  */
-export function budgetFromEnvelope(limits: Record<string, unknown>, nowMs: number): EnvelopeBudget {
+export function budgetFromEnvelope(
+  limits: Record<string, unknown>, nowMs: number, validUntilMs?: number,
+): EnvelopeBudget {
   const num = (key: string): number => {
     const v = limits[key];
     if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) {
@@ -101,11 +216,24 @@ export function budgetFromEnvelope(limits: Record<string, unknown>, nowMs: numbe
     }
     return v;
   };
+  // R6-CF-03: the run deadline may never exceed the SIGNED validity end.
+  // `nowMs + max_run_seconds` alone let a run plan past its own approval.
+  const runDeadlineAtMs = nowMs + num("max_run_seconds") * 1000;
+  const clamped = validUntilMs === undefined ? runDeadlineAtMs : Math.min(runDeadlineAtMs, validUntilMs);
+  const costCents = num("max_cost_usd_cents");
+  const maxCostMicroCents = Math.floor(costCents * 1_000_000);
+  if (!Number.isSafeInteger(maxCostMicroCents) || maxCostMicroCents <= 0) {
+    throw new EnvelopeExceededError(
+      `envelope limit 'max_cost_usd_cents'=${costCents} does not convert to a positive safe integer of ` +
+        "micro-cents; refusing (an unrepresentable ceiling cannot be enforced)",
+    );
+  }
   return {
     maxTotalRequests: num("max_total_requests"),
     maxTotalBytesWritten: num("max_total_bytes_written"),
-    runDeadlineAtMs: nowMs + num("max_run_seconds") * 1000,
+    runDeadlineAtMs: clamped,
     maxRequestMs: num("max_request_seconds") * 1000,
+    maxCostMicroCents,
   };
 }
 
@@ -123,12 +251,25 @@ export class MeteredProvider implements PlatformProvider {
   private closedReason: string | null = null;
   private readonly inner: PlatformProvider;
   private readonly budget: EnvelopeBudget;
+  /** R6-CF-02: the ONE shared run ledger. Every meter reserves here. */
+  private readonly ledger: RunBudgetLedger;
+  /** This meter's slice of the signed request count (the explicit
+   *  probe/cleanup partition), never an allowance ON TOP of the global. */
+  private readonly requestShare: number;
+  private readonly label: string;
 
-  constructor(inner: PlatformProvider, budget: EnvelopeBudget) {
+  constructor(
+    inner: PlatformProvider,
+    ledger: RunBudgetLedger,
+    options: { requestShare: number; label: string },
+  ) {
     this.inner = inner;
     this.mode = inner.mode;
     this.capabilities = inner.capabilities;
-    this.budget = budget;
+    this.ledger = ledger;
+    this.budget = ledger.budget;
+    this.requestShare = options.requestShare;
+    this.label = options.label;
   }
 
   /** After close(), every further call is a typed refusal. */
@@ -150,19 +291,18 @@ export class MeteredProvider implements PlatformProvider {
       throw new EnvelopeExceededError("run deadline reached; post-deadline provider calls are refused");
     }
     // --- reserve BEFORE dispatch: an over-budget call never leaves the process ---
-    if (this.requestsUsed + 1 > this.budget.maxTotalRequests) {
+    // This meter's own slice first (the probe/cleanup partition)...
+    if (this.requestsUsed + 1 > this.requestShare) {
       throw new EnvelopeExceededError(
-        `max_total_requests=${this.budget.maxTotalRequests} exhausted (used ${this.requestsUsed})`,
+        `${this.label} request share=${this.requestShare} exhausted (used ${this.requestsUsed})`,
       );
     }
     const bodyBytes = req.body?.length ?? 0;
     const isWrite = req.method === "PUT" || req.method === "POST";
-    if (isWrite && this.bytesWritten + bodyBytes > this.budget.maxTotalBytesWritten) {
-      throw new EnvelopeExceededError(
-        `max_total_bytes_written=${this.budget.maxTotalBytesWritten} would be exceeded ` +
-          `(written ${this.bytesWritten}, next ${bodyBytes})`,
-      );
-    }
+    // ...then the SHARED run ledger, which is what the owner actually
+    // signed. Requests, written bytes and conservative cost all come from
+    // one pool, so probe + cleanup can never sum past the approval.
+    this.ledger.reserve(this.label, 1, isWrite ? bodyBytes : 0, priceOfRequest(req));
     this.requestsUsed += 1;
     if (isWrite) this.bytesWritten += bodyBytes;
     // --- journal write intent BEFORE dispatch (timeout-after-commit safety) ---

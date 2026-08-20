@@ -1,0 +1,20 @@
+
+running 15 tests
+test attribute_string_write_read_delete ... ok
+test attribute_create ... ok
+test attribute_string_write_read_delete_with_has ... ok
+test attribute_cleanup_on_concurrent_detach ... ok
+test attribute_struct_errors ... ok
+test attribute_struct_write_read ... ok
+test get_has_reverse_in_range ... ok
+test has ... ok
+test read_attribute_struct_by_field ... ok
+test role_player_distinct ... ok
+test role_player_duplicates_ordered_default_card ... ok
+test role_player_duplicates_unordered ... ok
+test role_player_duplicates_ordered_small_card ... ok
+test schema_transactions_generate_role_player_indices ... ok
+test thing_create_iterate ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s
+

@@ -1,0 +1,421 @@
+name: release qualification (tier 3)
+
+# R6-CI-01, tier 3 of three. See .github/workflows/gates.yml for the tier map.
+#
+# This workflow is the only place a RELEASE PREDICATE may be established. It
+# does not run on push and it does not run on a schedule: it runs on an
+# explicit tag or dispatch, from a CLEAN HERMETIC materialisation, and every
+# job in it must be green before the release identity it produces means
+# anything.
+#
+# What tier 3 adds over tier 2 (§11's last four rows):
+#
+#   * clean hermetic environment - no reuse of a warm workspace, no cached
+#     target directory, the source graph materialised from the lock;
+#   * an IMMUTABLE release identity (R6-PORT-01) generated from the checkout
+#     and digest-bound, so an artifact without `.git` can still prove which
+#     commit it is - the exact failure the round-6 audit reproduced with
+#     `git archive`, where two probe controls could not resolve the release
+#     commit at all;
+#   * SBOM + provenance + tested-artifact digests, recorded against that
+#     identity so "tested" and "shipped" name the same bytes;
+#   * the full qualification plan and leaf evidence, and Mode Q.
+#
+# THE HONEST PART. Several tier-3 rows cannot be satisfied by this repository
+# today, and this workflow is built so that it CANNOT report otherwise:
+#
+#   * plan coverage is EXPECTED-RED. `plan_coverage.py` exits 1 because the
+#     23,138-row plan is not satisfied. Tier 3 asserts that exit code and the
+#     byte-identical committed report - a GREEN coverage result here would
+#     mean the plan or the report drifted, and fails the job.
+#   * Mode-Q evidence is ABSENT, so gate G0 is OPEN_RED. The validator
+#     enforces the two-directional rule (absent => G0 must be open), so a
+#     release attempt today fails at `release-predicate-summary` with the
+#     reason spelled out, rather than producing a signed artifact for a
+#     product that is not qualified.
+#   * upgrade / rollback / restore / disaster drills have no harness. They are
+#     named below as required predicates and asserted against the ledger, not
+#     silently omitted.
+#
+# The agentic code-quality specification adds one more tier-3 predicate:
+# `quality-full-hermetic` re-runs `cargo xtask quality full` from this tier's
+# clean materialisation and asserts, in plain shell against the report's own
+# `head_sha`, that the evidence was produced for the exact commit being
+# released. It is re-run rather than cited from the nightly for the reason
+# §19 gives: a green quality report for SHA `A` does not certify SHA `B`, and
+# a release is cut from a tag rather than from whatever `main` was at 02:30
+# UTC. `release-predicate-summary` needs it, so a failed or absent quality
+# campaign stops the release rather than being summarised around.
+#
+# No `continue-on-error:` key appears on any job or step in this file - see
+# §11's rule. A release predicate that "passed with errors" is not a predicate.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "why this qualification run was started"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-qualification-${{ github.ref }}
+  cancel-in-progress: false
+
+# pinned action SHAs (resolved 2026-08-18, same set as gates.yml):
+#   actions/checkout v4.4.0       11d5960a326750d5838078e36cf38b85af677262
+#   actions/setup-python v5.6.0   a26af69be951a213d495a4c3e4e4022e16d87065
+#   actions/setup-node v4.4.0     49933ea5288caeca8642d1e84afbd3f7d6820020
+#   dtolnay/rust-toolchain        6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+
+jobs:
+  release-identity:
+    # R6-PORT-01. Everything downstream is bound to what this job resolves.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      release_commit: ${{ steps.identity.outputs.release_commit }}
+      identity_digest: ${{ steps.identity.outputs.identity_digest }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11.15"
+      - name: the tree is CLEAN before anything is measured
+        # A release qualified from a dirty tree qualifies nothing: the bytes
+        # tested are not the bytes anyone can reproduce.
+        run: |
+          dirt="$(git status --porcelain)"
+          if [ -n "$dirt" ]; then
+            echo "::error title=DIRTY-TREE::a release may not be qualified from a dirty tree:"
+            echo "$dirt"
+            exit 1
+          fi
+      - name: the committed identity template is intact and export-subst is declared
+        run: python3 tools/release/release_identity.py --check
+      - name: the identity resolves in all four source postures
+        run: python3 tools/release/release_identity_selftest.py
+      - id: identity
+        name: generate the immutable, digest-bound release identity
+        run: |
+          python3 tools/release/release_identity.py --generate --out "$RUNNER_TEMP/release" --json
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os, pathlib
+          body = json.loads((pathlib.Path(os.environ["RUNNER_TEMP"]) / "release" / "RELEASE-IDENTITY.json").read_text())
+          assert not body["dirty_paths"], f"dirty paths recorded in the identity: {body['dirty_paths']}"
+          print(f"release_commit={body['release_commit']}")
+          print(f"identity_digest={body['identity_digest']}")
+          PY
+      - name: publish the identity into the job summary
+        run: |
+          {
+            echo "### release identity"
+            echo '```json'
+            cat "$RUNNER_TEMP/release/RELEASE-IDENTITY.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  hermetic-truth-plane:
+    # Everything tier 1 checks, re-executed from a cold checkout with no
+    # warm caches - "it passed on someone's incremental build" is not a
+    # release predicate.
+    needs: release-identity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11.15"
+      - name: source, tool and workspace locks
+        run: |
+          python3 tools/source-lock/materialize_sources.py
+          python3 tools/source-lock/lint_source_lock.py
+          python3 tools/source-lock/lock_mutants.py
+          python3 tools/source-lock/generate_workspace_lock.py --check
+          python3 tools/fork/materialize_slatedb.py --check
+      - name: ledger, catalogue and plan
+        run: |
+          python3 tools/ledger/lint_ledger.py
+          python3 tools/ledger/ledger_mutants.py
+          python3 tools/catalog/validate_catalog.py --require-current-lock
+          python3 tools/catalog/build_plan_v2.py --check --require-current-lock
+      - name: produce the Mode-Q bundle with the pinned Bazel
+        # SI-G0-1 / G0. The bundle is a real `bazel cquery` observation, and it
+        # can only be produced where egress to the Bazel module and toolchain
+        # externals is permitted. It is NOT producible in the agent sandbox:
+        # `aspect_bazel_lib` registers bats_toolchains, fetched from
+        # github.com/bats-core, and that fetch is denied 403 by the egress
+        # policy there. A registered toolchain must load before Bazel resolves
+        # toolchains for ANY configured target, so even a single-target cquery
+        # aborts. This job is where that constraint does not apply.
+        #
+        # Producing nothing is the correct outcome when it cannot run: an
+        # ABSENT bundle keeps G0 honestly OPEN_RED, whereas a non-conforming
+        # directory would make the validator report INVALID.
+        run: |
+          set -euo pipefail
+          version="$(cat sources/typedb/.bazelversion)"
+          url="https://github.com/bazelbuild/bazel/releases/download/${version}/bazel-${version}-linux-x86_64"
+          curl -fsSL -o /tmp/bazel "$url"
+          curl -fsSL -o /tmp/bazel.sha256 "${url}.sha256"
+          ( cd /tmp && sha256sum -c bazel.sha256 )
+          install -m 0755 /tmp/bazel /usr/local/bin/bazel
+          python3 tools/modeq/produce_modeq.py --out docs/evidence/G0/mode-q
+      - name: Mode-Q semantic validation and its mutants
+        run: |
+          python3 tools/modeq/validate_modeq.py --ledger docs/ledger/gates.json
+          python3 tools/modeq/modeq_mutants.py
+      - name: plan coverage is RED exactly as committed (expected-red)
+        # A release cannot be cut on a satisfied plan we do not have. Asserting
+        # exit 1 AND byte-identical regeneration is what stops "green coverage"
+        # from ever appearing by accident.
+        run: |
+          rc=0
+          python3 tools/catalog/plan_coverage.py --out docs/evidence/G1/plan-coverage-v2.json || rc=$?
+          if [ "$rc" -ne 1 ]; then
+            echo "::error title=UNEXPECTED-COVERAGE::plan_coverage.py exited $rc; the committed plan is NOT satisfied - expected exit 1"
+            exit 1
+          fi
+          git diff --exit-code -- docs/evidence/G1/plan-coverage-v2.json
+      - name: independent evidence verification
+        run: |
+          python3 tools/evidence/verify_all.py docs/evidence/G3/u2s3-full-3
+          python3 tools/evidence/evidence_v2_mutants.py
+
+  supply-chain-attestation:
+    # §11 row "SBOM/provenance/artifact digest", release-only.
+    needs: release-identity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11.15"
+      # zizmor `cache-poisoning` fires on the NEXT line and is ignored by
+      # exact line number in .github/zizmor.yml. The reason lives there:
+      # this step sets no `cache:` input, so setup-node populates and
+      # restores nothing, and `npm ci` resolves from the committed
+      # lockfiles. If a `cache:` input is ever added here, the ignore must
+      # be deleted rather than moved.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22.22.2"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: "1.93.0"
+      - name: install both npm workspaces from their locks
+        run: |
+          (cd stack && npm ci)
+          (cd control-plane && npm ci)
+      - name: advisory policy - zero unlisted, zero expired, registry-signed lockfiles
+        run: python3 tools/ci/check_npm_advisories.py --lockfile
+      - name: rust advisory audit over both Cargo locks
+        run: |
+          cargo +1.93.0 install cargo-audit --version 0.21.2 --locked
+          cargo audit --file tools/Cargo.lock
+          cargo audit --file fork/typedb/Cargo.lock
+      - name: npm SBOM (CycloneDX) for both workspaces
+        # npm's own SBOM generator: no extra action, no unpinned dependency.
+        run: |
+          mkdir -p "$RUNNER_TEMP/sbom"
+          (cd stack && npm sbom --sbom-format cyclonedx --omit dev) > "$RUNNER_TEMP/sbom/stack.cdx.json"
+          (cd control-plane && npm sbom --sbom-format cyclonedx --omit dev) > "$RUNNER_TEMP/sbom/control-plane.cdx.json"
+      - name: rust dependency inventory from the RESOLVED graph
+        # `cargo metadata`, not the manifests: the same reason the
+        # dependency-source linter uses it. A [patch.crates-io] redirect is
+        # invisible in a manifest-derived SBOM and would describe a component
+        # the release does not contain.
+        run: |
+          python3 tools/source-lock/materialize_sources.py
+          python3 tools/fork/materialize_slatedb.py
+          python3 tools/fork/stage.py
+          cargo +1.93.0 metadata --manifest-path sources/typedb/Cargo.toml \
+            --format-version 1 --locked > "$RUNNER_TEMP/sbom/typedb-cargo-metadata.json"
+          cargo +1.93.0 metadata --manifest-path tools/Cargo.toml \
+            --format-version 1 --locked > "$RUNNER_TEMP/sbom/tools-cargo-metadata.json"
+      - name: the documented dependency sources match the resolved graph
+        run: python3 tools/ci/check_dependency_sources.py
+      - name: digest every attestation and bind it to the release identity
+        # spec §19: the two identity values are consumed through `env:`, not
+        # interpolated into the shell text. They are produced by the
+        # release-identity job in this same repository, so the risk is
+        # theoretical - but a `${{ }}` expansion inside a `run:` block is a
+        # shell-injection shape regardless of today's producer, and the env
+        # indirection costs nothing. (zizmor `template-injection`.)
+        env:
+          RELEASE_COMMIT: ${{ needs.release-identity.outputs.release_commit }}
+          IDENTITY_DIGEST: ${{ needs.release-identity.outputs.identity_digest }}
+        run: |
+          cd "$RUNNER_TEMP/sbom"
+          sha256sum *.json | tee SHA256SUMS
+          {
+            echo "### release attestations"
+            echo "release_commit: \`${RELEASE_COMMIT}\`"
+            echo "identity_digest: \`${IDENTITY_DIGEST}\`"
+            echo '```'
+            cat SHA256SUMS
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  quality-full-hermetic:
+    # Spec §14.3 (tier C) as a RELEASE predicate: the full quality campaign,
+    # from the clean hermetic materialisation this tier already guarantees,
+    # bound to the exact commit being qualified.
+    #
+    #     cargo xtask quality full
+    #
+    # WHY IT IS RE-RUN HERE rather than cited from the nightly. §19: "a green
+    # quality report for SHA `A` does not certify SHA `B`". The nightly runs
+    # against whatever `main` was at 02:30 UTC; a release is cut from a tag.
+    # Citing the nightly would be exactly the substitution this workflow
+    # exists to prevent, and it is the same argument the header already makes
+    # for re-running tier 2's contents here.
+    #
+    # STATUS: `cargo xtask` and its alias land in the same change set as this
+    # job and were verified to resolve before it was written. If either is
+    # ever removed this job is RED, and because `release-predicate-summary`
+    # needs it, no release can be cut through this workflow. A missing
+    # controller is a missing predicate, not an absent one.
+    needs: release-identity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11.15"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22.22.2"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: "nightly-2026-04-15"
+          components: rustfmt
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: "1.93.0"
+          components: clippy, llvm-tools-preview
+      - name: native prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler cmake pkg-config libclang-dev
+      - name: install both npm workspaces from their locks
+        run: |
+          (cd stack && npm ci)
+          (cd control-plane && npm ci)
+      - name: materialise the pinned source graph and stage the fork
+        run: |
+          python3 tools/source-lock/materialize_sources.py
+          python3 tools/fork/materialize_slatedb.py
+          python3 tools/fork/stage.py
+      - name: full quality campaign
+        run: cargo xtask quality full
+      - name: the report was produced for THE COMMIT BEING RELEASED
+        # §19, stated as a check rather than as a hope. The binding is
+        # asserted here in plain shell against the report's own `head_sha`
+        # field, so it holds whatever the controller's CLI grows later. A
+        # report for another SHA, or no report at all, fails the predicate.
+        env:
+          RELEASE_COMMIT: ${{ needs.release-identity.outputs.release_commit }}
+        run: |
+          set -euo pipefail
+          report=artifacts/quality/quality-report.json
+          if [ ! -f "$report" ]; then
+            echo "::error title=QUALITY-REPORT-ABSENT::the full campaign produced no $report; a missing report is not a pass" >&2
+            exit 1
+          fi
+          python3 - "$report" <<'PY'
+          import json, os, sys
+          report = json.load(open(sys.argv[1]))
+          head = report.get("head_sha")
+          want = os.environ.get("RELEASE_COMMIT") or os.environ["GITHUB_SHA"]
+          decision = report.get("decision")
+          if head != want:
+              sys.exit(f"quality report head_sha {head!r} is not the commit being released ({want!r}); "
+                       "a green report for one SHA does not certify another")
+          if decision != "pass":
+              sys.exit(f"quality report decision is {decision!r}, not 'pass'")
+          print(f"quality report binds to {head} with decision {decision}")
+          PY
+      - name: publish the quality report into the job summary
+        if: always()
+        run: |
+          report=artifacts/quality/quality-report.json
+          {
+            echo "### quality report (tier 3, release)"
+            if [ -f "$report" ]; then
+              echo '```json'
+              cat "$report"
+              echo '```'
+            else
+              echo "No \`$report\` was produced. A missing report is not a pass."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release-predicate-summary:
+    # The last word. Every tier-3 predicate is listed here, including the ones
+    # this repository CANNOT satisfy today, and the job fails while any of them
+    # is unmet. This is the job that stops a release from being cut on the
+    # strength of a green-looking matrix.
+    # `quality-full-hermetic` is in this list because the code-quality
+    # contract is a release predicate, not advice: if the full campaign
+    # did not pass for THIS commit, there is nothing for this job to
+    # summarise. A needed job that fails or is skipped prevents this one
+    # from running at all, which is the intended fail-closed shape.
+    needs: [release-identity, hermetic-truth-plane, supply-chain-attestation, quality-full-hermetic]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11.15"
+      - name: every release predicate, evaluated against the ledger
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, sys
+
+          ledger = json.loads(pathlib.Path("docs/ledger/gates.json").read_text())
+          gates = {g["id"]: g for g in ledger["gates"]}
+          lanes = {l["id"]: l for l in ledger["lanes"]}
+
+          unmet = []
+          for gid in sorted(gates):
+              state = gates[gid]["state"]
+              if state not in ("CLOSED", "GREEN", "PASSED"):
+                  unmet.append(f"gate {gid} is {state}: {gates[gid]['title']}")
+          for lid, lane in sorted(lanes.items()):
+              state = lane.get("state") or lane.get("status")
+              if state in ("RED", "NOT_IMPLEMENTED"):
+                  unmet.append(f"lane {lid} is {state}")
+
+          print("release predicates evaluated against docs/ledger/gates.json:")
+          for u in unmet:
+              print(f"  UNMET  {u}")
+          if unmet:
+              print(f"::error title=RELEASE-PREDICATES-UNMET::{len(unmet)} predicate(s) are not satisfied; "
+                    f"this run produced a release IDENTITY and ATTESTATIONS, not a qualified release.")
+              sys.exit(1)
+          print("every gate is closed and no lane is red - the release predicates are satisfied")
+          PY

@@ -1,0 +1,39 @@
+{
+  "schema": "typedb-r2/dependency-advisory-policy@1",
+  "document": "R6-SUPPLY-01. The machine-readable advisory policy for every npm workspace in this repository. tools/ci/check_npm_advisories.py is the gate: it runs `npm audit --omit=dev --json` per workspace, requires an UNEXPIRED exception for every advisory the audit reports, fails when an exception is past its expiry, fails when an exception no longer corresponds to a live advisory (a risk we no longer carry must not stay accepted on paper), and fails when a NEW advisory appears with no exception at all. Prose in a review document is not an exception; only a row in this file is.",
+  "policy": {
+    "max_exception_days": 90,
+    "stale_exception": "fail",
+    "unlisted_advisory": "fail",
+    "expired_exception": "fail",
+    "allowed_registries": [
+      "https://registry.npmjs.org/"
+    ]
+  },
+  "workspaces": [
+    {
+      "id": "stack",
+      "path": "stack",
+      "audit_args": ["--omit=dev"],
+      "note": "Canonical local stack orchestration (Alchemy graph declaration + wrangler consistency + native S3 half). Runs credential-free: stack/no-cloud-guard.mjs refuses any lane that could reach a real Cloudflare account."
+    },
+    {
+      "id": "control-plane",
+      "path": "control-plane",
+      "audit_args": ["--omit=dev"],
+      "note": "Worker + DatabaseControllerDO + probe harness."
+    }
+  ],
+  "exceptions": [],
+  "history": [
+    {
+      "date": "2026-08-20",
+      "finding": "R6-SUPPLY-01",
+      "workspace": "stack",
+      "before": {"total": 14, "high": 9, "moderate": 5, "prod_dependencies": 307},
+      "after": {"total": 0, "high": 0, "moderate": 0, "prod_dependencies": 247},
+      "action": "alchemy is ALREADY on the newest published line (2.0.0-beta.72, dist-tags latest AND next, published 2026-08-12); the only semver-greater versions on the registry are April 2026 pipeline/CLI test tags, which is why `npm audit fix --force` proposed the four-months-older 2.0.0-pipeline-v2-test. Upgrading the direct dependency was therefore not available as a remedy. Every advisory was instead remediated at the transitive package with pinned npm `overrides` (see stack/package.json), which resolved all 14 to 0 without touching the emitted graph.",
+      "graph_equality": "node cli.mjs graph is BYTE-IDENTICAL before and after the override set; node cli.mjs check-wrangler PASS; stack suite 68/68."
+    }
+  ]
+}

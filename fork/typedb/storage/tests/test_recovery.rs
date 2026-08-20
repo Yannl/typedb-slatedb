@@ -331,10 +331,7 @@ fn newest_unverifiable_checkpoint_falls_back_to_the_older_valid_one() {
     let snapshot = storage.open_snapshot_read();
     for key in [&key_hello, &key_world] {
         assert!(
-            snapshot
-                .get_mapped(StorageKeyReference::from(key), |_| true, StorageCounters::DISABLED)
-                .unwrap()
-                .is_some(),
+            snapshot.get_mapped(StorageKeyReference::from(key), |_| true, StorageCounters::DISABLED).unwrap().is_some(),
             "every commit must be recovered from the older cut + WAL replay"
         );
     }
@@ -499,10 +496,10 @@ fn a_checkpoint_bound_to_a_different_backend_identity_refuses_restore() {
     let context = storage::factory::BackendContext::resolve_from_env().unwrap();
     // ...and a FOREIGN identity A: same cut format, different backend config.
     let foreign_spec = match context.spec() {
-        storage::factory::BackendSpec::Classic => storage::factory::BackendSpec::from_profile(
-            storage::factory::StorageBackendProfile::U2S3SlateS3FileWal,
-        )
-        .unwrap(),
+        storage::factory::BackendSpec::Classic => {
+            storage::factory::BackendSpec::from_profile(storage::factory::StorageBackendProfile::U2S3SlateS3FileWal)
+                .unwrap()
+        }
         storage::factory::BackendSpec::SlateDbR2(_) => storage::factory::BackendSpec::Classic,
     };
     let foreign_identity = storage::factory::BackendIdentity::from_spec(&foreign_spec);
@@ -520,8 +517,7 @@ fn a_checkpoint_bound_to_a_different_backend_identity_refuses_restore() {
 
         // a cut sealed under the FOREIGN identity A (as if copied in from a
         // database bound to another configuration)
-        let writer =
-            storage::recovery::checkpoint::CheckpointWriter::new(storage.path().parent().unwrap()).unwrap();
+        let writer = storage::recovery::checkpoint::CheckpointWriter::new(storage.path().parent().unwrap()).unwrap();
         storage.checkpoint(&writer).unwrap();
         writer.add_identity(&foreign_identity).unwrap();
         writer.finish().unwrap()
@@ -570,8 +566,7 @@ fn a_checkpoint_bound_to_the_same_backend_identity_restores() {
         snapshot.put(key_hello.clone());
         snapshot.commit(&mut CommitProfile::DISABLED).unwrap();
 
-        let writer =
-            storage::recovery::checkpoint::CheckpointWriter::new(storage.path().parent().unwrap()).unwrap();
+        let writer = storage::recovery::checkpoint::CheckpointWriter::new(storage.path().parent().unwrap()).unwrap();
         storage.checkpoint(&writer).unwrap();
         writer.add_identity(context.identity()).unwrap();
         (writer.finish().unwrap(), storage.snapshot_watermark())
@@ -693,10 +688,8 @@ fn restart_after_crash_before_activation_converges_with_predecessor_intact() {
     let checkpoint = storage_with_checkpoint(&storage_path, &key);
 
     // fabricate the mid-restore crash state
-    let scratch = storage_path.join(format!(
-        "restore-scratch-{}",
-        checkpoint.directory.file_name().unwrap().to_str().unwrap()
-    ));
+    let scratch =
+        storage_path.join(format!("restore-scratch-{}", checkpoint.directory.file_name().unwrap().to_str().unwrap()));
     copy_dir_tree(&checkpoint.directory, &scratch);
 
     let storage_dir = storage_path.join(MVCCStorage::<WALClient>::STORAGE_DIR_NAME);

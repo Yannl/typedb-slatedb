@@ -1,0 +1,9 @@
+
+running 4 tests
+test parameters::config::tests::server_toml_parser_properly ... ok
+test parameters::config::tests::config_file_accepts_old_and_new_address_names ... ok
+test parameters::config::tests::fields_can_be_overridden ... ok
+test parameters::config::tests::enabling_encryption_without_setting_cert_and_key_is_flagged ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

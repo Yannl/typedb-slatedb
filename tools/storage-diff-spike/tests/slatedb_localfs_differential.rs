@@ -5,8 +5,8 @@
 
 use std::{collections::BTreeMap, sync::Arc};
 
-use slatedb::{Db, WriteBatch, object_store::local::LocalFileSystem};
-use storage_diff_spike::{Op, Oracle, apply_to_oracle, generate_workload, prefix_bounds};
+use slatedb::{object_store::local::LocalFileSystem, Db, WriteBatch};
+use storage_diff_spike::{apply_to_oracle, generate_workload, prefix_bounds, Op, Oracle};
 
 async fn full_scan(db: &Db) -> BTreeMap<Vec<u8>, Vec<u8>> {
     let mut out = BTreeMap::new();
@@ -35,7 +35,14 @@ async fn slatedb_localfs_matches_ordered_oracle() {
     let db = Db::open("diff/db", store.clone()).await.expect("open slatedb");
     let mut oracle: Oracle = Oracle::new();
 
-    // seeded workload; mirror every op into both sides
+    // seeded workload; mirror every op into both sides.
+    // R6-HYGIENE-01, documented allowance: the seed is grouped to spell
+    // "slatedb", which is the point of a fixed differential seed - it is
+    // recognisable in logs and evidence. clippy's regrouping to `0x051a_7edb`
+    // is the same number and loses that. The VALUE is load-bearing (changing
+    // it changes the workload and therefore the archived evidence), the
+    // grouping is not.
+    #[allow(clippy::unusual_byte_groupings)]
     let workload = generate_workload(0x51a7ed_b, 1500);
     for (i, op) in workload.iter().enumerate() {
         match op {

@@ -92,7 +92,14 @@ pub struct GateResult {
 }
 
 impl GateResult {
-    pub fn new(id: &str, tier: &str, language: Option<&str>, advisory: bool, status: Status, detail: &str) -> GateResult {
+    pub fn new(
+        id: &str,
+        tier: &str,
+        language: Option<&str>,
+        advisory: bool,
+        status: Status,
+        detail: &str,
+    ) -> GateResult {
         GateResult {
             id: id.to_string(),
             tier: tier.to_string(),
@@ -247,8 +254,13 @@ const RUST_MAP: &[(&str, &str)] = &[
     ("rust.machete", "dependencies"),
 ];
 
-const TS_MAP: &[(&str, &str)] =
-    &[("ts.oxlint", "lint"), ("ts.typecheck", "typecheck"), ("ts.knip", "dead_code"), ("ts.crap", "crap"), ("ts.mutation", "mutation")];
+const TS_MAP: &[(&str, &str)] = &[
+    ("ts.oxlint", "lint"),
+    ("ts.typecheck", "typecheck"),
+    ("ts.knip", "dead_code"),
+    ("ts.crap", "crap"),
+    ("ts.mutation", "mutation"),
+];
 
 const PY_MAP: &[(&str, &str)] = &[
     ("py.ruff.check", "lint"),
@@ -308,7 +320,8 @@ pub fn build(
     gates: Vec<GateResult>,
 ) -> Report {
     let (decision, blocking) = decide(&gates, &scope.unclassified, &waivers);
-    let decision_code = if decision == Decision::PolicyViolation { Some(POLICY_VIOLATION_CODE.to_string()) } else { None };
+    let decision_code =
+        if decision == Decision::PolicyViolation { Some(POLICY_VIOLATION_CODE.to_string()) } else { None };
 
     let architecture = gates
         .iter()
@@ -380,7 +393,11 @@ pub struct ReportHeader {
 /// "A green quality report for SHA A does not certify SHA B" (§19), and
 /// "checking that machine artifacts correspond to HEAD" is the Verifier's job
 /// (§11.7).
-pub fn verify(header: &ReportHeader, expected_head: &str, expected_policy_digest: Option<&str>) -> Result<(), Vec<String>> {
+pub fn verify(
+    header: &ReportHeader,
+    expected_head: &str,
+    expected_policy_digest: Option<&str>,
+) -> Result<(), Vec<String>> {
     let mut problems = Vec::new();
     if header.schema != 1 {
         problems.push(format!("report schema {} is not supported", header.schema));
@@ -392,7 +409,8 @@ pub fn verify(header: &ReportHeader, expected_head: &str, expected_policy_digest
         ));
     }
     if !header.worktree_clean {
-        problems.push("report was produced from a dirty working tree, so it does not correspond to any commit".to_string());
+        problems
+            .push("report was produced from a dirty working tree, so it does not correspond to any commit".to_string());
     }
     if let Some(expected) = expected_policy_digest {
         if header.policy_digest != expected {
@@ -434,7 +452,8 @@ mod tests {
 
     #[test]
     fn an_infrastructure_failure_is_never_a_pass() {
-        let gates = vec![gate("rust.fmt", Status::Pass, false), gate("rust.tests", Status::InfrastructureFailure, false)];
+        let gates =
+            vec![gate("rust.fmt", Status::Pass, false), gate("rust.tests", Status::InfrastructureFailure, false)];
         let (d, b) = decide(&gates, &[], &empty_waivers());
         assert_eq!(d, Decision::InfrastructureFailure);
         assert_eq!(b.infrastructure_failures, 1);

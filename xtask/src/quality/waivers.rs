@@ -278,7 +278,7 @@ mod tests {
         Date::parse("2026-08-20").unwrap()
     }
 
-    const GOOD: &str = r#"
+    const GOOD: &str = r##"
 schema = 1
 [[waiver]]
 id = "QW-0042"
@@ -291,7 +291,7 @@ approved_by = "human-technical-owner"
 issue = "#1234"
 created = "2026-08-20"
 review_after = "2026-11-20"
-"#;
+"##;
 
     fn validate_text(text: &str) -> WaiverSummary {
         validate(&WaiverFile::parse(text).unwrap(), &exceptions(), today())
@@ -323,16 +323,18 @@ review_after = "2026-11-20"
         let s = validate_text(&text);
         assert_eq!(s.invalid, 1);
         assert_eq!(s.active, 0);
-        assert!(s.entries[0].problems.iter().any(|p| p.contains("missing mandatory field `reason`")), "{:?}", s.entries[0].problems);
+        assert!(
+            s.entries[0].problems.iter().any(|p| p.contains("missing mandatory field `reason`")),
+            "{:?}",
+            s.entries[0].problems
+        );
     }
 
     #[test]
     fn a_boilerplate_or_too_short_reason_is_refused() {
         for bad in ["TODO", "because", "n/a", "short"] {
-            let text = GOOD.replace(
-                "Mutant changes an internal representation with no observable semantic difference.",
-                bad,
-            );
+            let text =
+                GOOD.replace("Mutant changes an internal representation with no observable semantic difference.", bad);
             let s = validate_text(&text);
             assert_eq!(s.invalid, 1, "reason {bad:?} must be refused");
         }
@@ -340,7 +342,10 @@ review_after = "2026-11-20"
 
     #[test]
     fn an_expired_waiver_is_refused() {
-        let text = GOOD.replace(r#"review_after = "2026-11-20""#, r#"review_after = "2026-08-19""#);
+        // A well-formed waiver whose review date has simply passed.
+        let text = GOOD
+            .replace(r#"created = "2026-08-20""#, r#"created = "2026-01-20""#)
+            .replace(r#"review_after = "2026-11-20""#, r#"review_after = "2026-06-20""#);
         let s = validate_text(&text);
         assert_eq!(s.expired, 1);
         assert_eq!(s.active, 0);
@@ -364,7 +369,7 @@ review_after = "2026-11-20"
 
     #[test]
     fn missing_owner_issue_or_approver_is_refused() {
-        for field in [r#"owner = "architecture""#, r#"issue = "#1234""#, r#"approved_by = "human-technical-owner""#] {
+        for field in [r#"owner = "architecture""#, r##"issue = "#1234""##, r#"approved_by = "human-technical-owner""#] {
             let s = validate_text(&GOOD.replace(field, ""));
             assert_eq!(s.invalid, 1, "removing {field} must invalidate the waiver");
         }

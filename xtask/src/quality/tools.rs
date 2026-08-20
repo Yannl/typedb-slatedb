@@ -354,7 +354,8 @@ mod tests {
 
     #[test]
     fn repository_tools_lock_parses_and_pins_the_whole_stack() {
-        let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../.quality/tools.lock.toml")).unwrap();
+        let text =
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../.quality/tools.lock.toml")).unwrap();
         let lock = ToolsLock::parse(&text).unwrap();
         for required in [
             "cargo-nextest",

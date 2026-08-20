@@ -232,7 +232,11 @@ mod tests {
 
     #[test]
     fn output_is_captured_and_tailed() {
-        let r = run(Path::new("."), &Cmd::new("sh", &["-c", "printf 'a\\nb\\nc\\n'; printf 'e\\n' >&2"]), Duration::from_secs(10));
+        let r = run(
+            Path::new("."),
+            &Cmd::new("sh", &["-c", "printf 'a\\nb\\nc\\n'; printf 'e\\n' >&2"]),
+            Duration::from_secs(10),
+        );
         assert!(r.success());
         assert_eq!(r.tail(2), "c\ne");
     }

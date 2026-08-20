@@ -1,0 +1,14 @@
+# The quality controller is formatted in the same style as the rest of the
+# repository's Rust (tools/rustfmt.toml, itself mirroring fork/typedb).
+#
+# rustfmt resolves its configuration by walking up from each source file, and
+# `xtask/` is not under `tools/`, so without this file the controller would be
+# checked against rustfmt's 100-column defaults while the rest of the workspace
+# uses 120 — a permanently red gate for code that is not actually wrong.
+
+edition = "2021"
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
+use_small_heuristics = "Max"
+max_width = 120
+match_arm_leading_pipes = "Preserve"

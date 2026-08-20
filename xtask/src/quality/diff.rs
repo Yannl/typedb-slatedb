@@ -49,8 +49,7 @@ impl ChangeSet {
             let path_raw = fields.next().ok_or_else(|| format!("status {status:?} without a path"))?;
             let path = glob::normalize(&String::from_utf8_lossy(path_raw));
             if first == 'R' || first == 'C' {
-                let new_raw =
-                    fields.next().ok_or_else(|| format!("status {status:?} without a destination path"))?;
+                let new_raw = fields.next().ok_or_else(|| format!("status {status:?} without a destination path"))?;
                 let new_path = glob::normalize(&String::from_utf8_lossy(new_raw));
                 entries.push(ChangeEntry { status, path: new_path, previous_path: Some(path) });
             } else {
@@ -106,9 +105,10 @@ fn is_test_path(path: &str) -> bool {
         || p.contains("/behaviour/")
 }
 
-/// Derive the matrix facts. `added` is the concatenation of added diff lines,
-/// used for content triggers that a path alone cannot express.
-pub fn derive_facts(policy: &Policy, changes: &ChangeSet, added: &str) -> Facts {
+/// Derive the matrix facts. `added` carries the diff's added lines attributed
+/// to the file they landed in, for content triggers that a path alone cannot
+/// express.
+pub fn derive_facts(policy: &Policy, changes: &ChangeSet, added: &[(String, String)]) -> Facts {
     let mut facts = Facts { empty: changes.is_empty(), ..Default::default() };
     let mut source_paths: Vec<&str> = Vec::new();
 
@@ -184,10 +184,29 @@ pub fn derive_facts(policy: &Policy, changes: &ChangeSet, added: &str) -> Facts 
     facts.fuzz_critical = matches_any(&policy.triggers.fuzz_critical.globs);
     facts.architecture = matches_any(&policy.triggers.architecture.globs);
 
-    facts.unsafe_or_ffi = policy.triggers.unsafe_ffi.patterns.iter().any(|p| added.contains(p.as_str()));
-    facts.public_api = facts.rust_any && policy.triggers.public_api.patterns.iter().any(|p| added.contains(p.as_str()));
-    facts.features = matches_any(&policy.triggers.features.manifest_globs)
-        && added.contains(policy.triggers.features.section.as_str());
+    // Content triggers only consider added lines in files whose scope and
+    // language make them relevant. Prose about `unsafe`, or an `unsafe` token
+    // inside this controller's own test fixtures, is not a raw-pointer change.
+    let added_in = |pred: &dyn Fn(&str) -> bool| -> String {
+        added.iter().filter(|(p, _)| pred(p)).map(|(_, t)| t.as_str()).collect::<Vec<_>>().join("\n")
+    };
+    let is_rust_in_scope = |path: &str| {
+        policy.languages.of_path(path) == Some("rust")
+            && matches!(scope::classify(policy, path), Classification::Matched(r) if r.class != ScopeClass::Excluded)
+    };
+    let is_rust_production = |path: &str| {
+        policy.languages.of_path(path) == Some("rust")
+            && matches!(scope::classify(policy, path), Classification::Matched(r) if r.class == ScopeClass::Production)
+    };
+    let is_manifest = |path: &str| policy.triggers.features.manifest_globs.iter().any(|g| glob::matches(g, path));
+
+    let rust_added = added_in(&is_rust_in_scope);
+    let production_added = added_in(&is_rust_production);
+    let manifest_added = added_in(&is_manifest);
+
+    facts.unsafe_or_ffi = policy.triggers.unsafe_ffi.patterns.iter().any(|p| rust_added.contains(p.as_str()));
+    facts.public_api = policy.triggers.public_api.patterns.iter().any(|p| production_added.contains(p.as_str()));
+    facts.features = manifest_added.contains(policy.triggers.features.section.as_str());
 
     facts.tests_only = !source_paths.is_empty() && source_paths.iter().all(|p| is_test_path(p));
 
@@ -281,6 +300,12 @@ pub fn select_gates(mode: Mode, policy: &Policy, facts: &Facts) -> Vec<SelectedG
     if (facts.rust_production && mode == Mode::Pr) || mode == Mode::Full {
         let row = "rust production source";
         push(&mut out, "rust.coverage", row, "LCOV for the canonical CRAP input (§5.4)");
+        push(
+            &mut out,
+            "rust.crap.baseline",
+            row,
+            "trusted baseline generated from the base SHA, never the PR tree (§2.1)",
+        );
         push(&mut out, "rust.crap", row, "canonical cargo-crap against the trusted base (§5.5)");
         push(&mut out, "rust.crap_advice", row, "crap4rs advisory artefact for the Cleaner (§2.2)");
         if mode != Mode::Full {
@@ -387,6 +412,8 @@ mod tests {
         gates.iter().map(|g| g.id.as_str()).collect()
     }
 
+    /// Attribute `added` to the first path, which is how the real diff parser
+    /// behaves for a single-file change.
     fn select_for(paths: &[&str], added: &str, mode: Mode) -> Vec<SelectedGate> {
         let p = policy();
         let mut items: Vec<&str> = Vec::new();
@@ -395,20 +422,22 @@ mod tests {
             items.push(path);
         }
         let cs = ChangeSet::parse_z(&zstream(&items)).unwrap();
-        let facts = derive_facts(&p, &cs, added);
+        let added_by_file: Vec<(String, String)> =
+            if added.is_empty() { Vec::new() } else { vec![(paths[0].to_string(), added.to_string())] };
+        let facts = derive_facts(&p, &cs, &added_by_file);
         select_gates(mode, &p, &facts)
     }
 
     #[test]
     fn parses_plain_and_rename_records() {
-        let cs = ChangeSet::parse_z(&zstream(&["M", "a.rs", "A", "b/c.ts", "R100", "old/x.rs", "new/x.rs", "D", "d.py"]))
-            .unwrap();
+        let cs =
+            ChangeSet::parse_z(&zstream(&["M", "a.rs", "A", "b/c.ts", "R100", "old/x.rs", "new/x.rs", "D", "d.py"]))
+                .unwrap();
         assert_eq!(cs.entries.len(), 4);
-        assert_eq!(cs.entries[2], ChangeEntry {
-            status: "R100".into(),
-            path: "new/x.rs".into(),
-            previous_path: Some("old/x.rs".into())
-        });
+        assert_eq!(
+            cs.entries[2],
+            ChangeEntry { status: "R100".into(), path: "new/x.rs".into(), previous_path: Some("old/x.rs".into()) }
+        );
         assert_eq!(cs.all_paths(), vec!["a.rs", "b/c.ts", "d.py", "new/x.rs", "old/x.rs"]);
     }
 
@@ -454,6 +483,43 @@ mod tests {
 
         let g = select_for(&["fork/typedb/storage/src/lib.rs"], "let x = 1;", Mode::Pr);
         assert!(!ids(&g).contains(&"rust.miri"));
+    }
+
+    #[test]
+    fn content_triggers_are_attributed_to_the_file_that_carries_them() {
+        let p = policy();
+
+        // Prose about `unsafe` in a documentation file is not a raw-pointer
+        // surface, even though the tokens are present in the diff.
+        let cs = ChangeSet::parse_z(&zstream(&["M", "docs/ledger/a.md"])).unwrap();
+        let added =
+            vec![("docs/ledger/a.md".to_string(), "we must never write unsafe code with *mut pointers".to_string())];
+        assert!(!derive_facts(&p, &cs, &added).unsafe_or_ffi, "prose is not a raw-pointer surface");
+
+        // The same tokens in in-scope Rust do trigger Miri and fuzz. This holds
+        // for test code too: `unsafe` in a test is still UB-relevant, and
+        // excluding tests would be a real weakening rather than a precision fix.
+        let cs = ChangeSet::parse_z(&zstream(&["M", "fork/typedb/storage/src/lib.rs"])).unwrap();
+        let added = vec![("fork/typedb/storage/src/lib.rs".to_string(), "let p: *mut u8 = q;".to_string())];
+        assert!(derive_facts(&p, &cs, &added).unsafe_or_ffi);
+
+        // A public-API addition in tooling-class Rust does not arm the semver
+        // row; only production-class Rust does.
+        let cs = ChangeSet::parse_z(&zstream(&["M", "tools/protocol-models/src/lib.rs"])).unwrap();
+        let added = vec![("tools/protocol-models/src/lib.rs".to_string(), "pub fn added() {}".to_string())];
+        assert!(!derive_facts(&p, &cs, &added).public_api);
+
+        let cs = ChangeSet::parse_z(&zstream(&["M", "tools/remote-wal-spike/src/lib.rs"])).unwrap();
+        let added = vec![("tools/remote-wal-spike/src/lib.rs".to_string(), "pub fn added() {}".to_string())];
+        assert!(derive_facts(&p, &cs, &added).public_api);
+    }
+
+    #[test]
+    fn a_features_block_added_to_a_non_manifest_file_does_not_trigger_cargo_hack() {
+        let p = policy();
+        let cs = ChangeSet::parse_z(&zstream(&["M", "docs/ledger/a.md"])).unwrap();
+        let added = vec![("docs/ledger/a.md".to_string(), "[features]\nfoo = []".to_string())];
+        assert!(!derive_facts(&p, &cs, &added).features);
     }
 
     #[test]
@@ -529,7 +595,7 @@ mod tests {
     fn row_tests_only_recomputes_but_claims_nothing_about_mutation() {
         let p = policy();
         let cs = ChangeSet::parse_z(&zstream(&["M", "fork/typedb/storage/tests/mod.rs"])).unwrap();
-        let facts = derive_facts(&p, &cs, "");
+        let facts = derive_facts(&p, &cs, &[]);
         assert!(facts.tests_only, "a tests-only diff must be recognised as such");
     }
 
@@ -537,7 +603,7 @@ mod tests {
     fn row_docs_only_selects_no_language_gates_beyond_tier_a() {
         let p = policy();
         let cs = ChangeSet::parse_z(&zstream(&["M", "docs/ledger/a.md", "M", "README.md"])).unwrap();
-        let facts = derive_facts(&p, &cs, "");
+        let facts = derive_facts(&p, &cs, &[]);
         assert!(!facts.rust_production);
         assert!(!facts.typescript_any);
         assert!(!facts.python_any);
@@ -548,7 +614,7 @@ mod tests {
     fn a_rename_cannot_launder_production_code_into_docs() {
         let p = policy();
         let cs = ChangeSet::parse_z(&zstream(&["R090", "tools/remote-wal-spike/src/lib.rs", "docs/lib.rs"])).unwrap();
-        let facts = derive_facts(&p, &cs, "");
+        let facts = derive_facts(&p, &cs, &[]);
         assert!(facts.rust_production, "the production side of a rename still governs");
         assert_eq!(facts.classified[0].rule, "remote-wal-spike");
     }
@@ -557,7 +623,7 @@ mod tests {
     fn an_unclassified_source_path_is_reported_fail_closed() {
         let p = policy();
         let cs = ChangeSet::parse_z(&zstream(&["A", "newservice/src/main.rs"])).unwrap();
-        let facts = derive_facts(&p, &cs, "");
+        let facts = derive_facts(&p, &cs, &[]);
         assert_eq!(facts.unclassified, vec!["newservice/src/main.rs".to_string()]);
     }
 
@@ -565,14 +631,14 @@ mod tests {
     fn an_unclassified_non_source_path_is_not_fail_closed() {
         let p = policy();
         let cs = ChangeSet::parse_z(&zstream(&["A", "newthing/data.bin"])).unwrap();
-        let facts = derive_facts(&p, &cs, "");
+        let facts = derive_facts(&p, &cs, &[]);
         assert!(facts.unclassified.is_empty());
     }
 
     #[test]
     fn full_mode_runs_the_expensive_campaigns_without_a_diff() {
         let p = policy();
-        let facts = derive_facts(&p, &ChangeSet::default(), "");
+        let facts = derive_facts(&p, &ChangeSet::default(), &[]);
         let g = select_gates(Mode::Full, &p, &facts);
         for want in ["rust.mutation.full", "rust.hack.powerset", "rust.miri.full", "dup.jscpd_full", "rust.crap.trend"]
         {

@@ -15,3 +15,8 @@ control-plane/.wrangler/
 __pycache__/
 *.pyc
 tools/s3-cert-corpus/evidence/
+
+# Quality evidence produced by `cargo xtask quality` (spec §16: gitignored,
+# surfaced through CI job summaries). The corpus and staging tooling refuse
+# to run on a dirty tree, so a quality run must not dirty it.
+artifacts/

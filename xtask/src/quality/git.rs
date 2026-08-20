@@ -5,12 +5,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub fn run(repo_root: &Path, args: &[&str]) -> Result<String, String> {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(repo_root)
-        .args(args)
-        .output()
-        .map_err(|e| format!("git {args:?}: {e}"))?;
+    let out =
+        Command::new("git").arg("-C").arg(repo_root).args(args).output().map_err(|e| format!("git {args:?}: {e}"))?;
     if !out.status.success() {
         return Err(format!(
             "git {args:?} failed with {}: {}",
@@ -22,12 +18,8 @@ pub fn run(repo_root: &Path, args: &[&str]) -> Result<String, String> {
 }
 
 pub fn run_bytes(repo_root: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(repo_root)
-        .args(args)
-        .output()
-        .map_err(|e| format!("git {args:?}: {e}"))?;
+    let out =
+        Command::new("git").arg("-C").arg(repo_root).args(args).output().map_err(|e| format!("git {args:?}: {e}"))?;
     if !out.status.success() {
         return Err(format!("git {args:?} failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
     }
@@ -98,18 +90,78 @@ pub fn worktree_name_status(repo_root: &Path) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-/// Added lines of a diff, used for the content-based §15 triggers
-/// (`unsafe`, FFI, `[features]`, public API).
-pub fn added_lines(repo_root: &Path, base: Option<&str>) -> Result<String, String> {
+/// Added lines of a diff, attributed to the file they were added to, for the
+/// content-based §15 triggers (`unsafe`, FFI, `[features]`, public API).
+///
+/// Attribution matters: an `unsafe` token inside a documentation snippet or a
+/// controller test fixture must not make an unrelated diff look like a change
+/// to a raw-pointer surface.
+pub fn added_lines_by_file(repo_root: &Path, base: Option<&str>) -> Result<Vec<(String, String)>, String> {
     let range = match base {
         Some(b) => format!("{b}...HEAD"),
         None => "HEAD".to_string(),
     };
     let text = run(repo_root, &["diff", "--unified=0", "--no-color", &range])?;
-    Ok(text
-        .lines()
-        .filter(|l| l.starts_with('+') && !l.starts_with("+++"))
-        .map(|l| &l[1..])
-        .collect::<Vec<_>>()
-        .join("\n"))
+    Ok(parse_added_lines(&text))
+}
+
+/// Split `git diff --unified=0` output into (path, added text) pairs.
+pub fn parse_added_lines(diff: &str) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut current: Option<String> = None;
+    for line in diff.lines() {
+        if let Some(rest) = line.strip_prefix("+++ ") {
+            let path = rest.trim();
+            current = if path == "/dev/null" {
+                None
+            } else {
+                Some(super::glob::normalize(path.strip_prefix("b/").unwrap_or(path)))
+            };
+            continue;
+        }
+        if line.starts_with("--- ") || line.starts_with("diff --git ") {
+            continue;
+        }
+        if let (Some(path), Some(added)) = (current.as_ref(), line.strip_prefix('+')) {
+            match out.iter_mut().find(|(p, _)| p == path) {
+                Some((_, buf)) => {
+                    buf.push('\n');
+                    buf.push_str(added);
+                }
+                None => out.push((path.clone(), added.to_string())),
+            }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn added_lines_are_attributed_to_their_file() {
+        let diff = "diff --git a/src/a.rs b/src/a.rs\n\
+                    --- a/src/a.rs\n\
+                    +++ b/src/a.rs\n\
+                    @@ -1,0 +2 @@\n\
+                    +let p: *mut u8 = q;\n\
+                    diff --git a/docs/note.md b/docs/note.md\n\
+                    --- a/docs/note.md\n\
+                    +++ b/docs/note.md\n\
+                    @@ -1,0 +2 @@\n\
+                    +we should never write unsafe code\n";
+        let parsed = parse_added_lines(diff);
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].0, "src/a.rs");
+        assert!(parsed[0].1.contains("*mut u8"));
+        assert_eq!(parsed[1].0, "docs/note.md");
+        assert!(!parsed[0].1.contains("never write unsafe"));
+    }
+
+    #[test]
+    fn a_deleted_file_contributes_no_added_lines() {
+        let diff = "diff --git a/x.rs b/x.rs\n--- a/x.rs\n+++ /dev/null\n@@ -1 +0,0 @@\n-unsafe { }\n";
+        assert!(parse_added_lines(diff).is_empty());
+    }
 }

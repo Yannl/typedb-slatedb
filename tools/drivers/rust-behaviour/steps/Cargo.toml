@@ -6,6 +6,27 @@ name = "steps"
 version = "0.0.0"
 edition = "2024"
 
+[package.metadata.cargo-machete]
+# `cargo machete` is RIGHT that these three are unused — and they must stay.
+#
+# This crate is a projection of the Bazel target
+# //rust/tests/behaviour/steps:steps, and its dependency list deliberately
+# mirrors that target's BUILD file. Upstream declares all three there
+# (BUILD:29 async-std, :34 regex, :36 smol) while its own sources never use
+# them: `grep -rlE "async_std|\bsmol\b|regex::"` over
+# sources/typedb-driver/rust/tests/behaviour/steps/ matches only BUILD and
+# Cargo.toml, never a .rs file.
+#
+# So the unused dependencies are UPSTREAM's, not ours. Deleting them would
+# make the projection stop being a faithful projection — which is the exact
+# property tools/drivers/projection_check.py exists to enforce, and the
+# reason the driver-lane evidence can claim to run the official suite at
+# all. The right place to fix this is upstream's BUILD file.
+#
+# Owner: driver lane. Review condition: whenever the pinned TDRIVER revision
+# moves — re-check whether upstream still declares them.
+ignored = ["async-std", "regex", "smol"]
+
 [lib]
 name = "steps"
 path = "../../../../sources/typedb-driver/rust/tests/behaviour/steps/lib.rs"

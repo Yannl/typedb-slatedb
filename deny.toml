@@ -1,0 +1,63 @@
+# cargo-deny policy (quality spec §5.11).
+#
+# PROTECTED FILE (.quality/policy.toml -> [protected].paths). Widening the
+# allow list is a policy change, not an implementation fix.
+#
+# Before this file existed, `cargo deny check` ran on cargo-deny's defaults,
+# which allow nothing explicitly — so nine permissive license families were
+# rejected and the gate could never pass. The list below was not guessed: it
+# is the exact set present in the resolved graph, enumerated with
+# `cargo deny --manifest-path tools/Cargo.toml list`.
+
+[licenses]
+# Every entry is OSI-permissive or weak file-level copyleft we already ship
+# under. Deliberately NOT a blanket "allow everything that compiles".
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    # MPL-2.0 is TypeDB's own license and this repository is a TypeDB fork;
+    # the four crates carrying it here are OURS (protocol-models,
+    # remote-wal-spike, storage-diff-spike, xtask).
+    "MPL-2.0",
+    "0BSD",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "BSL-1.0",
+    # the ICU/unicode-ident family
+    "Unicode-3.0",
+    "Unlicense",
+    # webpki-roots
+    "CDLA-Permissive-2.0",
+]
+
+# NOT allowed, and the omission is the point:
+#
+#   LGPL-2.1-or-later shows up in the graph on r-efi 5.x/6.x. It is NOT
+#   allowed here, because r-efi is multi-licensed `MIT OR Apache-2.0 OR
+#   LGPL-2.1-or-later` and cargo-deny satisfies it from MIT/Apache-2.0
+#   above. Adding LGPL to the allow list would have been the one-line fix
+#   and would have silently blanket-permitted copyleft for every future
+#   dependency. If a crate ever appears whose ONLY license is LGPL or
+#   stronger, this gate SHOULD go red and a human should decide.
+#
+# GPL, AGPL and SSPL are absent from the graph and absent from this list.
+
+confidence-threshold = 0.93
+
+[bans]
+multiple-versions = "allow"   # the graph legitimately carries duplicate
+                              # major versions (syn 2/3, thiserror 1/2,
+                              # hashbrown, windows-*). Tightening this is a
+                              # separate, calibrated decision.
+wildcards = "deny"
+
+[advisories]
+yanked = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = []

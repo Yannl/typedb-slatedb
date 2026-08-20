@@ -183,6 +183,27 @@ impl Keyspaces {
         Ok(())
     }
 
+    /// R6-STOR-01: the EXPLICIT, FALLIBLE durability barrier.
+    ///
+    /// `Drop` on a keyspace engine closes best-effort and swallows both the
+    /// error and any panic from the bridged close task — deliberately, because
+    /// a drop can run during another panic's unwind. That makes `Drop` sound
+    /// for unwind safety and unsound as a COMMIT PROTOCOL: a caller that is
+    /// about to declare a materialisation active (checkpoint restore) must
+    /// learn that the flush failed BEFORE it renames anything.
+    ///
+    /// This barrier consumes the keyspaces, flushes and closes every engine,
+    /// and returns EVERY failure. `Drop` still runs afterwards (a second close
+    /// on an already-closed engine is a swallowed no-op), so the best-effort
+    /// path is preserved for the paths that legitimately want it.
+    pub(crate) fn flush_and_close(self) -> Result<(), Vec<KeyspaceCloseError>> {
+        let errors = self.keyspaces.into_iter().filter_map(|keyspace| keyspace.flush_and_close().err()).collect_vec();
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+        Ok(())
+    }
+
     pub(crate) fn reset(&mut self) -> Result<(), KeyspaceError> {
         for keyspace in self.keyspaces.iter_mut() {
             keyspace.reset()?
@@ -428,6 +449,29 @@ impl Keyspace {
         Ok(())
     }
 
+    /// R6-STOR-01: flush this keyspace's in-memory state and close its engine,
+    /// returning the failure instead of swallowing it. See
+    /// [`Keyspaces::flush_and_close`] for why `Drop` must never be the commit
+    /// protocol for a restore.
+    pub(crate) fn flush_and_close(self) -> Result<(), KeyspaceCloseError> {
+        match &self.engine {
+            KeyspaceEngine::Rocks { db, .. } => {
+                // RocksDB runs with the engine WAL disabled (TypeDB's WAL is
+                // the durability authority), so an unflushed memtable is the
+                // exact state a restore must not declare active: flush is the
+                // barrier, and its error is propagated.
+                db.flush().map_err(|source| KeyspaceCloseError::RocksFlush { name: self.name, source })?;
+            }
+            KeyspaceEngine::Slate(slate) => {
+                // `close` flushes and then closes; on the remote lane the
+                // flush is where pending object uploads and the manifest
+                // publication are completed.
+                slate.close().map_err(|source| KeyspaceCloseError::SlateFlush { name: self.name, source })?;
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn delete(self) -> Result<(), KeyspaceDeleteError> {
         // Dropping releases this keyspace's handle; any cursor still pooled in a
         // live snapshot keeps the engine open (and safe) until it is dropped. On
@@ -553,6 +597,35 @@ impl Error for KeyspaceCheckpointError {
             Self::CheckpointExists { .. } => None,
             Self::CreateRocksDBCheckpoint { source, .. } => Some(source),
             Self::CreateSlateDBCheckpoint { source, .. } => Some(source.as_ref()),
+        }
+    }
+}
+
+/// R6-STOR-01: the typed failure of the explicit flush/close barrier.
+#[derive(Debug, Clone)]
+pub enum KeyspaceCloseError {
+    RocksFlush { name: &'static str, source: rocksdb::Error },
+    SlateFlush { name: &'static str, source: Arc<slatedb::Error> },
+}
+
+impl fmt::Display for KeyspaceCloseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::RocksFlush { name, source } => {
+                write!(f, "keyspace '{name}' could not be flushed and closed (RocksDB): {source}")
+            }
+            Self::SlateFlush { name, source } => {
+                write!(f, "keyspace '{name}' could not be flushed and closed (SlateDB): {source}")
+            }
+        }
+    }
+}
+
+impl Error for KeyspaceCloseError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::RocksFlush { source, .. } => Some(source),
+            Self::SlateFlush { source, .. } => Some(source.as_ref()),
         }
     }
 }

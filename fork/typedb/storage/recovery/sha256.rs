@@ -29,6 +29,7 @@ const K: [u32; 64] = [
 const H0: [u32; 8] = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
 
 /// Incremental SHA-256 state. `update` any number of times, then `finalize`.
+#[derive(Clone)]
 pub(crate) struct Sha256 {
     state: [u32; 8],
     buffer: [u8; 64],
@@ -130,7 +131,9 @@ impl Sha256 {
 
 /// One-shot convenience over the streaming state (test-vector pinning only;
 /// production callers stream through [`Sha256`]).
-#[cfg(test)]
+/// One-shot digest of an in-memory slice (the incremental API above is what
+/// multi-gigabyte inputs must use). R6-STOR-01 uses it to bind a probed
+/// record's value into the post-replay witness.
 pub(crate) fn digest(data: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(data);

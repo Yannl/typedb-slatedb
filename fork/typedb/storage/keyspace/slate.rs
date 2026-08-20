@@ -47,11 +47,13 @@ use slatedb::{
     bytes::Bytes as SlateBytes,
     config::{ReadOptions, ScanOptions, Settings, WriteOptions},
     object_store::{
-        CopyMode, CopyOptions, GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, ObjectStore,
-        ObjectStoreExt, PutMode, PutMultipartOptions, PutOptions, PutPayload, PutResult, RenameOptions, UploadPart,
-        aws::AmazonS3Builder, local::LocalFileSystem, path::Path as ObjectPath, prefix::PrefixStore,
+        CopyMode, CopyOptions, GetOptions, GetRange, GetResult, ListResult, MultipartUpload, ObjectMeta, ObjectStore,
+        ObjectStoreExt, PutMode, PutMultipartOptions, PutOptions, PutPayload, PutPayloadMut, PutResult, RenameOptions,
+        UploadPart, aws::AmazonS3Builder, local::LocalFileSystem, path::Path as ObjectPath, prefix::PrefixStore,
     },
 };
+
+use crate::recovery::sha256::Sha256;
 
 /// One process-wide storage runtime for every SlateDB keyspace.
 fn runtime() -> &'static tokio::runtime::Runtime {
@@ -694,37 +696,104 @@ fn mint_attempt_location(location: &ObjectPath, attempt_id: u64) -> ObjectPath {
     ))
 }
 
-/// Compare an outgoing [`PutPayload`] against bytes already stored at an
-/// immutable key: an idempotent replay must match in length AND content
-/// (S-04: "exact same-key/same-length/same-digest replay"). Byte-exact
-/// comparison is strictly stronger than a digest match — no collision window.
-fn payload_matches_existing(payload: &PutPayload, existing: &[u8]) -> bool {
-    if payload.content_length() != existing.len() {
-        return false;
-    }
-    let mut offset = 0usize;
-    for chunk in payload {
-        let end = offset + chunk.len();
-        if &existing[offset..end] != chunk.as_ref() {
-            return false;
-        }
-        offset = end;
-    }
-    true
+/// R6-STOR-03: the domain-separation tag every object-content digest is
+/// framed with. A digest that decides whether bytes may be PROMOTED must not
+/// be confusable with a digest computed for any other purpose (the checkpoint
+/// manifest's per-file digest, the backend-identity digest), so the framing is
+/// `SHA-256(domain || content || big-endian content length)`. The trailing
+/// length also makes the digest injective over chunk boundaries: no
+/// concatenation of a shorter object plus a suffix can forge it.
+const OBJECT_DIGEST_DOMAIN: &[u8] = b"typedb.storage.object-content.v1\x00";
+
+/// R6-STOR-03: the content identity of one stored object — its length AND a
+/// full cryptographic digest, never a 64-bit checksum. This is the value the
+/// immutability ledger stores, the value multipart stage verification
+/// compares, and the value an occupied-target settlement is decided by.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct ContentWitness {
+    len: u64,
+    digest: [u8; 32],
 }
 
-/// A dependency-free content checksum (std SipHash) for the immutability
-/// LEDGER — the instrumentation that proves a referenced object's bytes never
-/// change over its lifetime (S-04). Not a security digest; the accept/reject
-/// decision uses byte-exact comparison, and this is only the recorded witness.
-fn content_checksum(bytes: &[u8]) -> u64 {
-    use std::hash::Hasher;
-    // DefaultHasher::new() uses FIXED keys (unlike RandomState), so the same
-    // bytes always produce the same checksum across calls — the property the
-    // immutability ledger needs to compare a key's checksum over its lifetime.
-    let mut hasher = std::hash::DefaultHasher::new();
-    hasher.write(bytes);
-    hasher.finish()
+impl ContentWitness {
+    /// Accept only on EXACT length and digest equality. The digest comparison
+    /// is constant-time: the decision is a promotion authority, and an
+    /// early-exit comparison leaks how much of a forged digest is right.
+    fn matches(&self, other: &Self) -> bool {
+        let mut difference = ((self.len ^ other.len) != 0) as u8;
+        for index in 0..32 {
+            difference |= self.digest[index] ^ other.digest[index];
+        }
+        difference == 0
+    }
+
+    fn hex(&self) -> String {
+        let mut out = String::with_capacity(64);
+        for byte in self.digest {
+            out.push_str(&format!("{byte:02x}"));
+        }
+        out
+    }
+}
+
+impl std::fmt::Debug for ContentWitness {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ContentWitness[len={}, sha256={}]", self.len, self.hex())
+    }
+}
+
+/// R6-STOR-02/R6-STOR-03: an INCREMENTAL object-content digest. Parts, staged
+/// readbacks and published readbacks all flow through this one type, so no
+/// path ever needs the whole object resident to learn its identity.
+#[derive(Clone)]
+struct ObjectDigest {
+    hasher: Sha256,
+    len: u64,
+}
+
+impl ObjectDigest {
+    fn new() -> Self {
+        let mut hasher = Sha256::new();
+        hasher.update(OBJECT_DIGEST_DOMAIN);
+        Self { hasher, len: 0 }
+    }
+
+    fn update(&mut self, bytes: &[u8]) {
+        self.hasher.update(bytes);
+        self.len = self.len.saturating_add(bytes.len() as u64);
+    }
+
+    fn len(&self) -> u64 {
+        self.len
+    }
+
+    /// The witness so far. Takes `&self` (the state is cloned) so a streaming
+    /// producer can be witnessed without being consumed.
+    fn witness(&self) -> ContentWitness {
+        let mut hasher = self.hasher.clone();
+        hasher.update(&self.len.to_be_bytes());
+        ContentWitness { len: self.len, digest: hasher.finalize() }
+    }
+}
+
+/// One-shot witness of an in-memory slice (tests and evidence only: every
+/// production path hashes incrementally).
+#[cfg(test)]
+fn content_witness(bytes: &[u8]) -> ContentWitness {
+    let mut digest = ObjectDigest::new();
+    digest.update(bytes);
+    digest.witness()
+}
+
+/// Witness of an outgoing payload, computed over its chunks WITHOUT
+/// materialising a contiguous copy (R6-STOR-02: the previous code built a
+/// `Vec` of the whole payload purely to checksum it).
+fn payload_witness(payload: &PutPayload) -> ContentWitness {
+    let mut digest = ObjectDigest::new();
+    for chunk in payload {
+        digest.update(chunk.as_ref());
+    }
+    digest.witness()
 }
 
 /// One journaled multipart upload attempt (S-04): completion is gated to the
@@ -756,12 +825,247 @@ const MULTIPART_MAX_JOURNALED_BYTES: u64 = 8 * 1024 * 1024 * 1024; // 8 GiB
 /// window N of R5-STOR-08.
 const MULTIPART_TERMINAL_RECEIPTS: usize = 128;
 
+/// R6-STOR-02: the PER-OBJECT maximum, deliberately independent of the
+/// aggregate journal budget above. The aggregate budget bounds how much the
+/// journal may ACCOUNT across all attempts; it says nothing about how large a
+/// SINGLE object may be, and a single object is what completion has to verify
+/// and (on providers without a conditional copy) re-upload. SlateDB freezes a
+/// memtable at `l0_sst_size_bytes` (64 MiB by default), so 512 MiB is eight
+/// times the largest object this lane legitimately produces — headroom, with a
+/// hard, typed ceiling instead of "whatever the caller streams".
+const MULTIPART_MAX_OBJECT_BYTES: u64 = 512 * 1024 * 1024;
+
+/// R6-STOR-02: the window every streaming read uses — staged verification,
+/// occupied-target settlement, checkpoint download. Peak buffer residency for
+/// those paths is this value per concurrent completion, NOT the object size.
+const MULTIPART_VERIFY_CHUNK_BYTES: u64 = 8 * 1024 * 1024;
+
+/// R6-STOR-02: how many completions may hold verification/promotion buffers at
+/// once. Peak heap for the bounded paths is therefore
+/// `MULTIPART_VERIFY_CHUNK_BYTES * MULTIPART_MAX_CONCURRENT_COMPLETIONS`.
+const MULTIPART_MAX_CONCURRENT_COMPLETIONS: usize = 4;
+
+/// R6-STOR-02, HONEST BOUND. The promote is a create-only conditional COPY
+/// wherever the provider supports one (`hard_link` on `LocalFileSystem`,
+/// copy-if-not-exists where configured); that path never materialises the
+/// object. Where the provider reports conditional copy unsupported — which
+/// includes the plain S3 builder this lane currently constructs, because
+/// enabling `copy_if_not_exists` for R2 is explicitly gated on qualification —
+/// the only create-only publication primitive left is a single conditional
+/// PUT, and `object_store`'s `PutPayload` is by definition resident. That path
+/// is therefore `O(min(object, this constant))` per concurrent completion and
+/// is capped here rather than left to the 8 GiB journal budget: an object
+/// above the cap is a TYPED refusal (fail closed), never an unbounded
+/// allocation. Four times the SlateDB L0 SST threshold.
+const MULTIPART_MAX_MATERIALISED_PROMOTE_BYTES: u64 = 256 * 1024 * 1024;
+
+/// R6-STOR-02 instrumentation: bytes of object payload currently held in
+/// completion buffers, plus the high-water mark. This accounting IS the
+/// evidence that admission is `O(chunk x concurrency)`: the audit is explicit
+/// that no test may allocate an 8 GiB object to prove the bound, so the bound
+/// is proven by observing that peak residency does not grow with object size.
+///
+/// Every charge is recorded against the process-wide meter (heap pressure is a
+/// process property) and, where one is in scope, against the materialisation's
+/// own meter (so a test observes only its own traffic).
+#[derive(Debug, Default)]
+struct BufferMeter {
+    live: AtomicU64,
+    peak: AtomicU64,
+}
+
+impl BufferMeter {
+    fn add(&self, bytes: u64) {
+        let live = self.live.fetch_add(bytes, Ordering::SeqCst).saturating_add(bytes);
+        self.peak.fetch_max(live, Ordering::SeqCst);
+    }
+
+    fn sub(&self, bytes: u64) {
+        self.live.fetch_sub(bytes, Ordering::SeqCst);
+    }
+
+    #[allow(dead_code)] // read by the R6-STOR-02 instrumentation tests
+    fn peak(&self) -> u64 {
+        self.peak.load(Ordering::SeqCst)
+    }
+
+    #[cfg(test)]
+    fn reset_peak(&self) {
+        self.peak.store(self.live.load(Ordering::SeqCst), Ordering::SeqCst);
+    }
+}
+
+/// R6-STOR-02: the effective streaming/size limits of one materialisation.
+/// The production values are the named constants; the fields exist so a test
+/// can drive every boundary at kilobyte scale instead of allocating the
+/// gigabytes the audit explicitly forbids a test from allocating.
+#[derive(Debug)]
+struct MultipartLimits {
+    verify_chunk_bytes: AtomicU64,
+    max_object_bytes: AtomicU64,
+    max_materialised_promote_bytes: AtomicU64,
+}
+
+impl Default for MultipartLimits {
+    fn default() -> Self {
+        Self {
+            verify_chunk_bytes: AtomicU64::new(MULTIPART_VERIFY_CHUNK_BYTES),
+            max_object_bytes: AtomicU64::new(MULTIPART_MAX_OBJECT_BYTES),
+            max_materialised_promote_bytes: AtomicU64::new(MULTIPART_MAX_MATERIALISED_PROMOTE_BYTES),
+        }
+    }
+}
+
+impl MultipartLimits {
+    fn verify_chunk(&self) -> u64 {
+        self.verify_chunk_bytes.load(Ordering::SeqCst)
+    }
+
+    fn max_object(&self) -> u64 {
+        self.max_object_bytes.load(Ordering::SeqCst)
+    }
+
+    fn max_materialised_promote(&self) -> u64 {
+        self.max_materialised_promote_bytes.load(Ordering::SeqCst)
+    }
+}
+
+/// Process-wide completion-buffer high-water mark.
+fn process_buffer_meter() -> &'static BufferMeter {
+    static METER: OnceLock<BufferMeter> = OnceLock::new();
+    METER.get_or_init(BufferMeter::default)
+}
+
+/// RAII charge against the completion buffer meters: the bytes are accounted
+/// while the buffer is live and released when it drops.
+struct BufferCharge {
+    meter: Option<Arc<BufferMeter>>,
+    bytes: u64,
+}
+
+fn charge_buffer(meter: Option<&Arc<BufferMeter>>, bytes: u64) -> BufferCharge {
+    process_buffer_meter().add(bytes);
+    if let Some(meter) = meter {
+        meter.add(bytes);
+    }
+    BufferCharge { meter: meter.cloned(), bytes }
+}
+
+impl Drop for BufferCharge {
+    fn drop(&mut self) {
+        process_buffer_meter().sub(self.bytes);
+        if let Some(meter) = &self.meter {
+            meter.sub(self.bytes);
+        }
+    }
+}
+
+/// R6-STOR-02: the process-wide completion gate. Heap pressure is a PROCESS
+/// property, so the semaphore is process-wide rather than per materialisation.
+fn completion_gate() -> &'static tokio::sync::Semaphore {
+    static GATE: OnceLock<tokio::sync::Semaphore> = OnceLock::new();
+    GATE.get_or_init(|| tokio::sync::Semaphore::new(MULTIPART_MAX_CONCURRENT_COMPLETIONS))
+}
+
+static COMPLETIONS_IN_FLIGHT: AtomicU64 = AtomicU64::new(0);
+static COMPLETIONS_PEAK: AtomicU64 = AtomicU64::new(0);
+
+/// A held completion permit, with the observed concurrency accounted so a test
+/// can prove the cap rather than trust it.
+struct CompletionPermit(#[allow(dead_code)] tokio::sync::SemaphorePermit<'static>);
+
+impl CompletionPermit {
+    async fn acquire() -> Self {
+        let permit = completion_gate().acquire().await.expect("the completion gate is never closed");
+        let live = COMPLETIONS_IN_FLIGHT.fetch_add(1, Ordering::SeqCst).saturating_add(1);
+        COMPLETIONS_PEAK.fetch_max(live, Ordering::SeqCst);
+        Self(permit)
+    }
+}
+
+impl Drop for CompletionPermit {
+    fn drop(&mut self) {
+        COMPLETIONS_IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// R6-STOR-04: the durable inventory of staging objects whose reclaim FAILED.
+///
+/// A swallowed `let _ = store.delete(..)` made orphan state invisible. Every
+/// failed reclaim now produces a record: appended to a durable, fsynced file
+/// inside the keyspace's lifecycle-marker directory (so it survives the
+/// process that produced it) and kept in memory for the same process's
+/// observability. A record that cannot be made durable is counted and logged
+/// at error level — never dropped silently.
+#[derive(Debug, Default)]
+struct OrphanInventory {
+    sink: Mutex<Option<PathBuf>>,
+    records: Mutex<Vec<String>>,
+    undurable: AtomicU64,
+}
+
+/// File name of the durable orphan inventory inside the keyspace directory.
+const MULTIPART_ORPHAN_FILE: &str = "MULTIPART-ORPHANS";
+
+impl OrphanInventory {
+    fn bind(&self, path: PathBuf) {
+        *self.sink.lock().unwrap() = Some(path);
+    }
+
+    fn record(&self, key: &str, reason: &str) {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_nanos())
+            .unwrap_or(0);
+        let line = format!("{nanos:039}\t{key}\t{reason}");
+        self.records.lock().unwrap().push(line.clone());
+        let sink = self.sink.lock().unwrap().clone();
+        let durable = match sink {
+            Some(path) => Self::append_durably(&path, &line),
+            None => Err(io::Error::other("no durable orphan sink is bound to this materialisation")),
+        };
+        if let Err(error) = durable {
+            self.undurable.fetch_add(1, Ordering::SeqCst);
+            logger::error!(
+                "R6-STOR-04: a multipart staging object could not be reclaimed AND its orphan record \
+                 could not be made durable ({error}). Orphan key: {key}; reason: {reason}"
+            );
+        }
+    }
+
+    fn append_durably(path: &Path, line: &str) -> io::Result<()> {
+        use std::io::Write;
+        let mut file = fs::OpenOptions::new().create(true).append(true).open(path)?;
+        writeln!(file, "{line}")?;
+        file.sync_all()?;
+        if let Some(parent) = path.parent() {
+            crate::fsync_path(parent)?;
+        }
+        Ok(())
+    }
+
+    /// The orphan records this process has produced — the observability
+    /// surface a supervisor or test reads.
+    #[allow(dead_code)]
+    fn records(&self) -> Vec<String> {
+        self.records.lock().unwrap().clone()
+    }
+
+    /// How many orphan records could NOT be made durable.
+    #[allow(dead_code)]
+    fn undurable(&self) -> u64 {
+        self.undurable.load(Ordering::SeqCst)
+    }
+}
+
 /// Typed budget refusal (R5-STOR-08): exceeding an admission budget refuses,
 /// it never grows the journal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MultipartBudgetRefused {
     Attempts { open: usize, max: usize },
     Bytes { reserved: u64, incoming: u64, max: u64 },
+    /// R6-STOR-02: the PER-OBJECT ceiling, independent of the aggregate.
+    Object { streamed: u64, incoming: u64, max: u64 },
 }
 
 impl MultipartBudgetRefused {
@@ -773,6 +1077,12 @@ impl MultipartBudgetRefused {
             Self::Bytes { reserved, incoming, max } => format!(
                 "{reserved} bytes already journaled and {incoming} more requested, over the admission \
                  budget of {max} journaled bytes"
+            ),
+            Self::Object { streamed, incoming, max } => format!(
+                "{streamed} bytes already streamed for THIS object and {incoming} more requested, over \
+                 the per-object maximum of {max} bytes (R6-STOR-02): one object is what completion must \
+                 verify and, where the provider has no conditional copy, re-upload, so its size is \
+                 bounded independently of the aggregate journal budget"
             ),
         };
         slatedb::object_store::Error::Precondition {
@@ -802,6 +1112,16 @@ fn admit_multipart_bytes(reserved: u64, incoming: u64, max: u64) -> Result<(), M
     match reserved.checked_add(incoming) {
         Some(total) if total <= max => Ok(()),
         _ => Err(MultipartBudgetRefused::Bytes { reserved, incoming, max }),
+    }
+}
+
+/// R6-STOR-02 per-object admission: ONE object may stream at most `max` bytes,
+/// no matter how much aggregate journal budget is free. Exactly at the maximum
+/// is still admitted; one byte over refuses; overflow refuses.
+fn admit_object_bytes(streamed: u64, incoming: u64, max: u64) -> Result<(), MultipartBudgetRefused> {
+    match streamed.checked_add(incoming) {
+        Some(total) if total <= max => Ok(()),
+        _ => Err(MultipartBudgetRefused::Object { streamed, incoming, max }),
     }
 }
 
@@ -907,6 +1227,469 @@ impl MultipartJournal {
     }
 }
 
+/// R6-STOR-04: authority separated by TYPE, not by convention.
+///
+/// The previous boundary was a wrapper: `NoDeleteStore` denied the public
+/// delete/rename verbs while HOLDING an `Arc<dyn ObjectStore>` and handing
+/// that raw handle to the multipart machinery, which called `store.delete`
+/// directly. Denial by convention is one confused code path away from
+/// deleting authoritative bytes.
+///
+/// This module splits one provider handle into two DISJOINT capability types
+/// at construction, after which the raw handle is unreachable:
+///
+/// - [`AuthoritativeStore`] wraps `Arc<dyn AuthoritativeIo>`. That trait has
+///   no delete, no rename, no overwrite-mode copy and no unconditional put in
+///   its vtable, so `authoritative.delete(..)` is not a runtime refusal — it
+///   is a name that does not exist, and no method returns the underlying
+///   store. Deleting an authoritative object through this handle cannot be
+///   written, let alone executed.
+/// - [`StagingAuthority`] wraps `Arc<dyn StagingIo>`, whose every method takes
+///   a [`StagingKey`]. A `StagingKey` is minted only from a target key plus an
+///   attempt id, always inside the `.mpa-` staging namespace, and the
+///   implementation re-checks the namespace before it acts — so the one handle
+///   that CAN delete can only ever address transient staging objects.
+///
+/// PROVIDER LIMITATION, recorded rather than papered over: SlateDB's builder
+/// takes an `Arc<dyn ObjectStore>`, and that trait carries delete in its
+/// vtable by definition. The handle SlateDB itself holds is therefore still an
+/// `ObjectStore` — `NoDeleteStore` — whose delete/rename/overwrite-copy verbs
+/// are TYPED refusals at the boundary rather than absent names. In-process
+/// structural separation stops exactly there; the remaining half is a
+/// provider-side credential/binding split (separate buckets or a service
+/// binding for staging), which is Worker/infrastructure territory and out of
+/// scope for this module.
+mod authority {
+    use super::*;
+
+    /// The ONE place a raw provider handle survives construction. Private to
+    /// this module and never returned: neither capability type exposes it.
+    #[derive(Debug)]
+    struct ProviderIo {
+        store: Arc<dyn ObjectStore>,
+    }
+
+    /// Non-destructive capability set over AUTHORITATIVE names. Note what is
+    /// absent: delete, rename, overwrite copy, unconditional put, multipart
+    /// abort of a published name.
+    #[async_trait]
+    pub(super) trait AuthoritativeIo: std::fmt::Debug + Send + Sync + 'static {
+        async fn get_opts(
+            &self,
+            location: &ObjectPath,
+            options: GetOptions,
+        ) -> slatedb::object_store::Result<GetResult>;
+        async fn head(&self, location: &ObjectPath) -> slatedb::object_store::Result<ObjectMeta>;
+        /// Create-only put: the caller's tags/attributes/extensions are
+        /// preserved, but the MODE is forced, so no caller can turn this into
+        /// an overwrite.
+        async fn put_create(
+            &self,
+            location: &ObjectPath,
+            payload: PutPayload,
+            options: PutOptions,
+        ) -> slatedb::object_store::Result<PutResult>;
+        /// The SOLE conditional-CAS publication path (S-04): refuses any
+        /// location that is not a manifest key, so the caller's `PutOptions`
+        /// can never be aimed at an immutable data key.
+        async fn put_manifest(
+            &self,
+            location: &ObjectPath,
+            payload: PutPayload,
+            options: PutOptions,
+        ) -> slatedb::object_store::Result<PutResult>;
+        /// Create-only copy: the caller's other options are preserved, the
+        /// MODE is forced.
+        async fn copy_create(
+            &self,
+            from: &ObjectPath,
+            to: &ObjectPath,
+            options: CopyOptions,
+        ) -> slatedb::object_store::Result<()>;
+        async fn list_with_delimiter(
+            &self,
+            prefix: Option<&ObjectPath>,
+        ) -> slatedb::object_store::Result<ListResult>;
+        fn list(&self, prefix: Option<&ObjectPath>) -> BoxStream<'static, slatedb::object_store::Result<ObjectMeta>>;
+    }
+
+    /// Create/read/reclaim inside the STAGING namespace, and nowhere else.
+    #[async_trait]
+    pub(super) trait StagingIo: std::fmt::Debug + Send + Sync + 'static {
+        async fn open_multipart(
+            &self,
+            key: &StagingKey,
+            options: PutMultipartOptions,
+        ) -> slatedb::object_store::Result<Box<dyn MultipartUpload>>;
+        async fn get_opts(&self, key: &StagingKey, options: GetOptions)
+        -> slatedb::object_store::Result<GetResult>;
+        async fn head(&self, key: &StagingKey) -> slatedb::object_store::Result<ObjectMeta>;
+        async fn reclaim(&self, key: &StagingKey) -> slatedb::object_store::Result<()>;
+    }
+
+    /// A key inside the multipart staging namespace. The only public
+    /// constructor mints one (always carrying [`MULTIPART_ATTEMPT_INFIX`]), so
+    /// no authoritative name can be spelled as a `StagingKey`.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub(super) struct StagingKey(ObjectPath);
+
+    impl StagingKey {
+        pub(super) fn mint(target: &ObjectPath, attempt_id: u64) -> Self {
+            Self(mint_attempt_location(target, attempt_id))
+        }
+
+        pub(super) fn path(&self) -> &ObjectPath {
+            &self.0
+        }
+
+        /// Test-only forgery, so the namespace re-check in [`StagingIo`] is an
+        /// EXERCISED boundary rather than an unreachable assertion.
+        #[cfg(test)]
+        pub(super) fn forged_for_test(path: ObjectPath) -> Self {
+            Self(path)
+        }
+    }
+
+    impl std::fmt::Display for StagingKey {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.0)
+        }
+    }
+
+    fn not_staging(key: &StagingKey) -> slatedb::object_store::Error {
+        slatedb::object_store::Error::Precondition {
+            path: key.0.to_string(),
+            source: format!(
+                "staging authority refused {} (R6-STOR-04): this principal may only address the \
+                 multipart staging namespace (keys carrying '{MULTIPART_ATTEMPT_INFIX}'); it has no \
+                 authority over any published name",
+                key.0
+            )
+            .into(),
+        }
+    }
+
+    #[async_trait]
+    impl AuthoritativeIo for ProviderIo {
+        async fn get_opts(
+            &self,
+            location: &ObjectPath,
+            options: GetOptions,
+        ) -> slatedb::object_store::Result<GetResult> {
+            self.store.get_opts(location, options).await
+        }
+
+        async fn head(&self, location: &ObjectPath) -> slatedb::object_store::Result<ObjectMeta> {
+            self.store.head(location).await
+        }
+
+        async fn put_create(
+            &self,
+            location: &ObjectPath,
+            payload: PutPayload,
+            options: PutOptions,
+        ) -> slatedb::object_store::Result<PutResult> {
+            let create = PutOptions { mode: PutMode::Create, ..options };
+            self.store.put_opts(location, payload, create).await
+        }
+
+        async fn put_manifest(
+            &self,
+            location: &ObjectPath,
+            payload: PutPayload,
+            options: PutOptions,
+        ) -> slatedb::object_store::Result<PutResult> {
+            if !is_manifest_key(location) {
+                return Err(slatedb::object_store::Error::Precondition {
+                    path: location.to_string(),
+                    source: "the conditional-CAS publication path is reserved for manifest keys \
+                             (S-04, R6-STOR-04)"
+                        .into(),
+                });
+            }
+            self.store.put_opts(location, payload, options).await
+        }
+
+        async fn copy_create(
+            &self,
+            from: &ObjectPath,
+            to: &ObjectPath,
+            options: CopyOptions,
+        ) -> slatedb::object_store::Result<()> {
+            let create = CopyOptions { mode: CopyMode::Create, ..options };
+            self.store.copy_opts(from, to, create).await
+        }
+
+        async fn list_with_delimiter(
+            &self,
+            prefix: Option<&ObjectPath>,
+        ) -> slatedb::object_store::Result<ListResult> {
+            self.store.list_with_delimiter(prefix).await
+        }
+
+        fn list(&self, prefix: Option<&ObjectPath>) -> BoxStream<'static, slatedb::object_store::Result<ObjectMeta>> {
+            self.store.list(prefix)
+        }
+    }
+
+    #[async_trait]
+    impl StagingIo for ProviderIo {
+        async fn open_multipart(
+            &self,
+            key: &StagingKey,
+            options: PutMultipartOptions,
+        ) -> slatedb::object_store::Result<Box<dyn MultipartUpload>> {
+            if !is_multipart_attempt_key(key.path()) {
+                return Err(not_staging(key));
+            }
+            self.store.put_multipart_opts(key.path(), options).await
+        }
+
+        async fn get_opts(
+            &self,
+            key: &StagingKey,
+            options: GetOptions,
+        ) -> slatedb::object_store::Result<GetResult> {
+            if !is_multipart_attempt_key(key.path()) {
+                return Err(not_staging(key));
+            }
+            self.store.get_opts(key.path(), options).await
+        }
+
+        async fn head(&self, key: &StagingKey) -> slatedb::object_store::Result<ObjectMeta> {
+            if !is_multipart_attempt_key(key.path()) {
+                return Err(not_staging(key));
+            }
+            self.store.head(key.path()).await
+        }
+
+        async fn reclaim(&self, key: &StagingKey) -> slatedb::object_store::Result<()> {
+            if !is_multipart_attempt_key(key.path()) {
+                return Err(not_staging(key));
+            }
+            self.store.delete(key.path()).await
+        }
+    }
+
+    /// The authoritative-namespace handle. No delete exists on it, and no raw
+    /// store can be recovered from it.
+    #[derive(Clone, Debug)]
+    pub(super) struct AuthoritativeStore(Arc<dyn AuthoritativeIo>);
+
+    /// The staging-namespace handle: the only one with reclaim authority, and
+    /// it can only address staging keys.
+    #[derive(Clone, Debug)]
+    pub(super) struct StagingAuthority(Arc<dyn StagingIo>);
+
+    /// Split one provider handle into the two disjoint authorities. After this
+    /// call the raw `Arc<dyn ObjectStore>` is owned solely by the private
+    /// `ProviderIo` and is reachable from neither returned value.
+    pub(super) fn split(store: Arc<dyn ObjectStore>) -> (AuthoritativeStore, StagingAuthority) {
+        let io = Arc::new(ProviderIo { store });
+        (AuthoritativeStore(io.clone()), StagingAuthority(io))
+    }
+
+    impl AuthoritativeStore {
+        pub(super) async fn get_opts(
+            &self,
+            location: &ObjectPath,
+            options: GetOptions,
+        ) -> slatedb::object_store::Result<GetResult> {
+            self.0.get_opts(location, options).await
+        }
+
+        pub(super) async fn head(&self, location: &ObjectPath) -> slatedb::object_store::Result<ObjectMeta> {
+            self.0.head(location).await
+        }
+
+        pub(super) async fn put_create(
+            &self,
+            location: &ObjectPath,
+            payload: PutPayload,
+            options: PutOptions,
+        ) -> slatedb::object_store::Result<PutResult> {
+            self.0.put_create(location, payload, options).await
+        }
+
+        pub(super) async fn put_manifest(
+            &self,
+            location: &ObjectPath,
+            payload: PutPayload,
+            options: PutOptions,
+        ) -> slatedb::object_store::Result<PutResult> {
+            self.0.put_manifest(location, payload, options).await
+        }
+
+        pub(super) async fn copy_create(
+            &self,
+            from: &ObjectPath,
+            to: &ObjectPath,
+            options: CopyOptions,
+        ) -> slatedb::object_store::Result<()> {
+            self.0.copy_create(from, to, options).await
+        }
+
+        pub(super) async fn list_with_delimiter(
+            &self,
+            prefix: Option<&ObjectPath>,
+        ) -> slatedb::object_store::Result<ListResult> {
+            self.0.list_with_delimiter(prefix).await
+        }
+
+        pub(super) fn list(
+            &self,
+            prefix: Option<&ObjectPath>,
+        ) -> BoxStream<'static, slatedb::object_store::Result<ObjectMeta>> {
+            self.0.list(prefix)
+        }
+    }
+
+    impl StagingAuthority {
+        pub(super) async fn open_multipart(
+            &self,
+            key: &StagingKey,
+            options: PutMultipartOptions,
+        ) -> slatedb::object_store::Result<Box<dyn MultipartUpload>> {
+            self.0.open_multipart(key, options).await
+        }
+
+        pub(super) async fn get_opts(
+            &self,
+            key: &StagingKey,
+            options: GetOptions,
+        ) -> slatedb::object_store::Result<GetResult> {
+            self.0.get_opts(key, options).await
+        }
+
+        pub(super) async fn head(&self, key: &StagingKey) -> slatedb::object_store::Result<ObjectMeta> {
+            self.0.head(key).await
+        }
+
+        pub(super) async fn reclaim(&self, key: &StagingKey) -> slatedb::object_store::Result<()> {
+            self.0.reclaim(key).await
+        }
+    }
+}
+
+use authority::{AuthoritativeStore, StagingAuthority, StagingKey};
+
+/// R6-STOR-02: what a streaming witness reads from.
+enum RangeSource<'a> {
+    Authoritative(&'a AuthoritativeStore, &'a ObjectPath),
+    Staging(&'a StagingAuthority, &'a StagingKey),
+}
+
+impl RangeSource<'_> {
+    fn name(&self) -> String {
+        match self {
+            Self::Authoritative(_, location) => location.to_string(),
+            Self::Staging(_, key) => key.to_string(),
+        }
+    }
+
+    async fn len(&self) -> slatedb::object_store::Result<u64> {
+        match self {
+            Self::Authoritative(store, location) => Ok(store.head(location).await?.size),
+            Self::Staging(staging, key) => Ok(staging.head(key).await?.size),
+        }
+    }
+
+    async fn range(&self, from: u64, to: u64) -> slatedb::object_store::Result<slatedb::bytes::Bytes> {
+        let options = GetOptions { range: Some(GetRange::Bounded(from..to)), ..Default::default() };
+        let result = match self {
+            Self::Authoritative(store, location) => store.get_opts(location, options).await?,
+            Self::Staging(staging, key) => staging.get_opts(key, options).await?,
+        };
+        result.bytes().await
+    }
+}
+
+/// R6-STOR-02/R6-STOR-03: the content witness of a stored object, computed by
+/// STREAMING fixed-size ranges through the incremental digest.
+///
+/// This replaces `get(..).bytes().await` — the call that made one admitted
+/// object cost its own size in live heap (twice, on the fallback path). Peak
+/// residency here is one `chunk`, whatever the object's size, which is what
+/// the completion-buffer meter records.
+async fn stream_witness(
+    source: RangeSource<'_>,
+    chunk: u64,
+    meter: &Arc<BufferMeter>,
+) -> slatedb::object_store::Result<ContentWitness> {
+    let chunk = chunk.max(1);
+    let len = source.len().await?;
+    let mut digest = ObjectDigest::new();
+    let mut offset = 0u64;
+    while offset < len {
+        let end = offset.saturating_add(chunk).min(len);
+        let bytes = source.range(offset, end).await?;
+        let _charge = charge_buffer(Some(meter), bytes.len() as u64);
+        if bytes.is_empty() {
+            return Err(slatedb::object_store::Error::Precondition {
+                path: source.name(),
+                source: format!(
+                    "a ranged read of {}..{end} returned no bytes while {len} were expected \
+                     (R6-STOR-02): refusing rather than looping or accepting a short object",
+                    offset
+                )
+                .into(),
+            });
+        }
+        digest.update(&bytes);
+        offset = offset.saturating_add(bytes.len() as u64);
+    }
+    Ok(digest.witness())
+}
+
+/// R6-STOR-02: byte-exact comparison of an outgoing payload against an object
+/// already stored at an immutable key, by STREAMING the stored object through
+/// fixed windows instead of pulling it whole into memory. Byte-exact is
+/// strictly stronger than a digest match, and it is affordable here because
+/// the payload is already the caller's own resident buffer.
+async fn payload_matches_object(
+    store: &AuthoritativeStore,
+    location: &ObjectPath,
+    payload: &PutPayload,
+    len: u64,
+    chunk: u64,
+    meter: &Arc<BufferMeter>,
+) -> slatedb::object_store::Result<bool> {
+    if payload.content_length() as u64 != len {
+        return Ok(false);
+    }
+    let chunk = chunk.max(1);
+    let mut chunks = payload.into_iter();
+    let mut pending: &[u8] = &[];
+    let mut offset = 0u64;
+    while offset < len {
+        let end = offset.saturating_add(chunk).min(len);
+        let options = GetOptions { range: Some(GetRange::Bounded(offset..end)), ..Default::default() };
+        let stored = store.get_opts(location, options).await?.bytes().await?;
+        let _charge = charge_buffer(Some(meter), stored.len() as u64);
+        if stored.is_empty() {
+            return Ok(false);
+        }
+        let mut window = &stored[..];
+        while !window.is_empty() {
+            if pending.is_empty() {
+                match chunks.next() {
+                    Some(next) => pending = next.as_ref(),
+                    None => return Ok(false),
+                }
+                continue;
+            }
+            let take = pending.len().min(window.len());
+            if pending[..take] != window[..take] {
+                return Ok(false);
+            }
+            pending = &pending[take..];
+            window = &window[take..];
+        }
+        offset = offset.saturating_add(stored.len() as u64);
+    }
+    Ok(true)
+}
+
 /// The runtime storage principal and immutability boundary (V16 inv. 81–84,
 /// S-04). Delete authority is structurally removed AND ordinary conditional
 /// puts / multipart completions can no longer replace bytes at an existing
@@ -938,7 +1721,14 @@ impl MultipartJournal {
 /// probe exercises, not a compile-time convention.
 #[derive(Debug)]
 struct NoDeleteStore {
-    inner: Arc<dyn ObjectStore>,
+    /// R6-STOR-04: the AUTHORITATIVE-namespace handle. It has no delete,
+    /// rename, overwrite-copy or unconditional-put method, and no way back to
+    /// a raw `ObjectStore` — the wrapper no longer holds one.
+    authoritative: AuthoritativeStore,
+    /// R6-STOR-04: the disjoint STAGING-namespace handle. The only handle in
+    /// the process with reclaim (delete) authority, and it can only address
+    /// keys inside the multipart staging namespace.
+    staging: StagingAuthority,
     /// Raised the first time a different-bytes overwrite of an immutable key
     /// is refused: the materialisation is no longer trustworthy and a
     /// supervisor should quarantine it (S-04). Shared so wrappers derived from
@@ -949,22 +1739,59 @@ struct NoDeleteStore {
     /// still-uncommitted attempt, superseded included.
     multipart_journal: Arc<Mutex<MultipartJournal>>,
     next_attempt_id: Arc<AtomicU64>,
-    /// Immutability ledger (S-04 instrumentation): the recorded checksum of
-    /// every immutable key this principal has admitted. Re-admitting a key
-    /// whose checksum differs is the very overwrite the boundary refuses; the
-    /// ledger lets a test prove bytes+checksum never change over a lifetime.
-    immutable_ledger: Arc<Mutex<HashMap<String, u64>>>,
+    /// Immutability ledger (S-04 instrumentation, R6-STOR-03): the recorded
+    /// length + FULL SHA-256 digest of every immutable key this principal has
+    /// admitted — never a 64-bit checksum. Re-admitting a key whose witness
+    /// differs is the very overwrite the boundary refuses.
+    immutable_ledger: Arc<Mutex<HashMap<String, ContentWitness>>>,
+    /// R6-STOR-04: durable inventory of staging objects whose reclaim failed.
+    orphans: Arc<OrphanInventory>,
+    /// R6-STOR-02: the streaming window and the object-size ceilings this
+    /// materialisation admits under.
+    limits: Arc<MultipartLimits>,
+    /// R6-STOR-02: this materialisation's completion-buffer high-water mark.
+    buffers: Arc<BufferMeter>,
 }
 
 impl NoDeleteStore {
     fn new(inner: Arc<dyn ObjectStore>) -> Self {
+        // R6-STOR-04: the raw handle is consumed HERE and is unreachable from
+        // either capability afterwards.
+        let (authoritative, staging) = authority::split(inner);
         Self {
-            inner,
+            authoritative,
+            staging,
             quarantined: Arc::new(AtomicBool::new(false)),
             multipart_journal: Arc::new(Mutex::new(MultipartJournal::default())),
             next_attempt_id: Arc::new(AtomicU64::new(1)),
             immutable_ledger: Arc::new(Mutex::new(HashMap::new())),
+            orphans: Arc::new(OrphanInventory::default()),
+            limits: Arc::new(MultipartLimits::default()),
+            buffers: Arc::new(BufferMeter::default()),
         }
+    }
+
+    /// R6-STOR-04: bind the durable orphan sink to this materialisation's
+    /// lifecycle-marker directory, so a failed staging reclaim leaves a record
+    /// that outlives the process.
+    fn bind_orphan_sink(&self, keyspace_dir: &Path) {
+        self.orphans.bind(keyspace_dir.join(MULTIPART_ORPHAN_FILE));
+    }
+
+    fn verify_chunk(&self) -> u64 {
+        self.limits.verify_chunk()
+    }
+
+    /// Lower the R6-STOR-02 streaming window and size ceilings so a test can
+    /// reach every boundary without multi-gigabyte objects. Production values
+    /// are the named constants ([`MULTIPART_VERIFY_CHUNK_BYTES`],
+    /// [`MULTIPART_MAX_OBJECT_BYTES`],
+    /// [`MULTIPART_MAX_MATERIALISED_PROMOTE_BYTES`]).
+    #[cfg(test)]
+    fn set_limits_for_test(&self, verify_chunk: u64, max_object: u64, max_materialised_promote: u64) {
+        self.limits.verify_chunk_bytes.store(verify_chunk, Ordering::SeqCst);
+        self.limits.max_object_bytes.store(max_object, Ordering::SeqCst);
+        self.limits.max_materialised_promote_bytes.store(max_materialised_promote, Ordering::SeqCst);
     }
 
     /// Whether a different-bytes overwrite of an immutable key was ever
@@ -985,15 +1812,16 @@ impl NoDeleteStore {
         journal.max_terminal_receipts = receipts;
     }
 
-    /// Record (or verify) an immutable key's checksum in the ledger. Returns
-    /// `Err` if the key is already recorded with a DIFFERENT checksum — the
-    /// witnessed proof that a referenced object's bytes changed.
-    fn ledger_admit(&self, location: &ObjectPath, checksum: u64) -> Result<(), ()> {
+    /// Record (or verify) an immutable key's content witness in the ledger.
+    /// Returns `Err` if the key is already recorded with a DIFFERENT witness —
+    /// the proof that a referenced object's bytes changed. R6-STOR-03: the
+    /// stored witness is the full digest, not a `u64`.
+    fn ledger_admit(&self, location: &ObjectPath, witness: ContentWitness) -> Result<(), ()> {
         let mut ledger = self.immutable_ledger.lock().unwrap();
         match ledger.get(location.as_ref()) {
-            Some(previous) if *previous != checksum => Err(()),
+            Some(previous) if !previous.matches(&witness) => Err(()),
             _ => {
-                ledger.insert(location.to_string(), checksum);
+                ledger.insert(location.to_string(), witness);
                 Ok(())
             }
         }
@@ -1008,33 +1836,40 @@ impl NoDeleteStore {
         payload: PutPayload,
         opts: PutOptions,
     ) -> slatedb::object_store::Result<PutResult> {
-        let checksum = {
-            // materialise once for the ledger witness + comparison fallback
-            let mut bytes = Vec::with_capacity(payload.content_length());
-            for chunk in &payload {
-                bytes.extend_from_slice(chunk.as_ref());
-            }
-            content_checksum(&bytes)
-        };
+        // R6-STOR-02/R6-STOR-03: the witness is computed INCREMENTALLY over
+        // the payload's own chunks. The previous code copied every payload
+        // into a fresh `Vec` solely to checksum it — a full extra copy of
+        // every admitted object, for a 64-bit hash.
+        let witness = payload_witness(&payload);
         // Force create semantics regardless of the caller's requested mode: an
         // immutable key may only be written once (SlateDB names SSTs by unique
-        // ULID, so a legitimate first write always creates).
-        let create = PutOptions { mode: PutMode::Create, ..opts };
-        match self.inner.put_opts(location, payload.clone(), create).await {
+        // ULID, so a legitimate first write always creates). R6-STOR-04: the
+        // create-only mode is now a property of the authoritative handle's
+        // API, not a `PutOptions` field this wrapper remembers to set.
+        match self.authoritative.put_create(location, payload.clone(), opts).await {
             Ok(result) => {
-                // ledger records the admitted checksum; a create cannot
+                // ledger records the admitted witness; a create cannot
                 // collide with a differing prior (the key was absent).
-                let _ = self.ledger_admit(location, checksum);
+                let _ = self.ledger_admit(location, witness);
                 Ok(result)
             }
             Err(slatedb::object_store::Error::AlreadyExists { .. }) => {
                 // an object is already here: allowed ONLY if byte-identical.
-                let existing = self.inner.get(location).await?;
-                let meta = existing.meta.clone();
-                let existing_bytes = existing.bytes().await?;
-                if payload_matches_existing(&payload, &existing_bytes) {
+                // R6-STOR-02: the stored object is compared by STREAMING
+                // windows, never pulled whole into memory.
+                let meta = self.authoritative.head(location).await?;
+                let identical = payload_matches_object(
+                    &self.authoritative,
+                    location,
+                    &payload,
+                    meta.size,
+                    self.verify_chunk(),
+                    &self.buffers,
+                )
+                .await?;
+                if identical {
                     // idempotent replay of identical bytes: success, no rewrite
-                    let _ = self.ledger_admit(location, checksum);
+                    let _ = self.ledger_admit(location, witness);
                     Ok(PutResult { e_tag: meta.e_tag, version: meta.version, extensions: Default::default() })
                 } else {
                     self.quarantined.store(true, Ordering::SeqCst);
@@ -1056,7 +1891,7 @@ impl NoDeleteStore {
 
 impl std::fmt::Display for NoDeleteStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "NoDeleteStore({})", self.inner)
+        write!(f, "NoDeleteStore(authoritative={:?})", self.authoritative)
     }
 }
 
@@ -1082,8 +1917,10 @@ impl ObjectStore for NoDeleteStore {
         }
         if is_manifest_key(location) {
             // the sole typed conditional-CAS publication path (S-04): its own
-            // PutMode carries the CAS precondition; pass through unchanged.
-            return self.inner.put_opts(location, payload, opts).await;
+            // PutMode carries the CAS precondition; passed through the
+            // authoritative handle's manifest-only method (R6-STOR-04), which
+            // refuses any non-manifest location.
+            return self.authoritative.put_manifest(location, payload, opts).await;
         }
         self.put_immutable(location, payload, opts).await
     }
@@ -1110,16 +1947,18 @@ impl ObjectStore for NoDeleteStore {
         // bytes under this attempt's own unique key, and the mutation decision
         // is the atomic promote (R5-STOR-05), never an overwrite.
         let attempt_id = self.next_attempt_id.fetch_add(1, Ordering::SeqCst);
-        let attempt_location = mint_attempt_location(location, attempt_id);
+        let attempt_location = StagingKey::mint(location, attempt_id);
         // R5-STOR-08: budget admission BEFORE the provider upload is opened —
         // a refused attempt journals nothing and touches no provider state.
         {
             let mut journal = self.multipart_journal.lock().unwrap();
             journal.initiate(location, attempt_id).map_err(|refused| refused.into_store_error(location))?;
         }
-        // The provider upload streams to the ATTEMPT key (R5-STOR-05): two
-        // racing completers can never collide before the promote.
-        let inner = match self.inner.put_multipart_opts(&attempt_location, opts).await {
+        // The provider upload streams to the ATTEMPT key (R5-STOR-05) through
+        // the STAGING authority (R6-STOR-04): two racing completers can never
+        // collide before the promote, and this handle cannot address a
+        // published name at all.
+        let inner = match self.staging.open_multipart(&attempt_location, opts).await {
             Ok(upload) => upload,
             Err(error) => {
                 // release the reservation: the attempt never opened
@@ -1129,29 +1968,32 @@ impl ObjectStore for NoDeleteStore {
         };
         Ok(Box::new(JournaledMultipart {
             inner,
-            store: self.inner.clone(),
+            authoritative: self.authoritative.clone(),
+            staging: self.staging.clone(),
+            orphans: self.orphans.clone(),
             quarantined: self.quarantined.clone(),
             location: location.clone(),
             attempt_location,
             attempt_id,
             attempt_object_completed: false,
-            streamed_len: 0,
-            streamed_hasher: std::hash::DefaultHasher::new(),
+            streamed: ObjectDigest::new(),
+            limits: self.limits.clone(),
+            buffers: self.buffers.clone(),
             journal: self.multipart_journal.clone(),
             manifest_key: is_manifest_key(location),
         }))
     }
 
     async fn get_opts(&self, location: &ObjectPath, options: GetOptions) -> slatedb::object_store::Result<GetResult> {
-        self.inner.get_opts(location, options).await
+        self.authoritative.get_opts(location, options).await
     }
 
     fn list(&self, prefix: Option<&ObjectPath>) -> BoxStream<'static, slatedb::object_store::Result<ObjectMeta>> {
-        self.inner.list(prefix)
+        self.authoritative.list(prefix)
     }
 
     async fn list_with_delimiter(&self, prefix: Option<&ObjectPath>) -> slatedb::object_store::Result<ListResult> {
-        self.inner.list_with_delimiter(prefix).await
+        self.authoritative.list_with_delimiter(prefix).await
     }
 
     async fn copy_opts(
@@ -1177,7 +2019,9 @@ impl ObjectStore for NoDeleteStore {
                 implementer: "NoDeleteStore".to_owned(),
             });
         }
-        self.inner.copy_opts(from, to, options).await
+        // R6-STOR-04: forwarded through the authoritative handle, whose copy
+        // is create-only by TYPE — an overwrite-mode copy cannot be expressed.
+        self.authoritative.copy_create(from, to, options).await
     }
 
     /// Q-27: refuse the composite BEFORE its copy half runs.
@@ -1275,21 +2119,35 @@ impl ObjectStore for NoDeleteStore {
 struct JournaledMultipart {
     /// Provider upload streaming to [`Self::attempt_location`].
     inner: Box<dyn MultipartUpload>,
-    /// The RAW inner store, for stage-verify-promote at completion.
-    store: Arc<dyn ObjectStore>,
+    /// R6-STOR-04: read/create-only authority over the TARGET namespace. No
+    /// delete exists on this handle, and no raw store can be recovered from
+    /// it — the previous field was the raw `Arc<dyn ObjectStore>`, which is
+    /// what let `cleanup_attempt_object` call `store.delete` directly.
+    authoritative: AuthoritativeStore,
+    /// R6-STOR-04: the disjoint staging authority — the only reclaim path, and
+    /// it can only address this attempt's own staging namespace.
+    staging: StagingAuthority,
+    /// R6-STOR-04: where a FAILED reclaim is recorded durably.
+    orphans: Arc<OrphanInventory>,
     /// The materialisation's shared quarantine flag, re-checked at completion.
     quarantined: Arc<AtomicBool>,
     /// The TARGET key this attempt publishes to (via the promote).
     location: ObjectPath,
     /// This attempt's globally unique staging key (R5-STOR-05).
-    attempt_location: ObjectPath,
+    attempt_location: StagingKey,
     attempt_id: u64,
     /// Whether the provider upload has completed to the staging key (so a
     /// later abort must clean the staged OBJECT, not the provider upload).
     attempt_object_completed: bool,
-    /// Streamed-part accounting for stage verification.
-    streamed_len: u64,
-    streamed_hasher: std::hash::DefaultHasher,
+    /// R6-STOR-03: the domain-separated SHA-256 of the streamed parts, hashed
+    /// INCREMENTALLY as they flow, plus their exact length. This is the
+    /// authoritative expected identity the staged object is verified against
+    /// and the occupied target is settled by.
+    streamed: ObjectDigest,
+    /// R6-STOR-02: the streaming window and object-size ceilings in force.
+    limits: Arc<MultipartLimits>,
+    /// R6-STOR-02: the materialisation's completion-buffer meter.
+    buffers: Arc<BufferMeter>,
     journal: Arc<Mutex<MultipartJournal>>,
     /// Manifest multipart (should not occur — manifests are small single
     /// puts): gated exactly like data, except an occupied-target refusal does
@@ -1357,28 +2215,114 @@ impl JournaledMultipart {
         slatedb::object_store::Error::Precondition { path: self.location.to_string(), source: message.into() }
     }
 
-    /// Best-effort cleanup of THIS attempt's own staging object (R5-STOR-05).
-    /// Scoped to the exact staging key this instance minted — never a listing,
-    /// never another attempt's key — which is why this is a sound named
-    /// exception to the no-delete posture: the staging object never became
-    /// authoritative state. A failure leaves an inert `.mpa-` orphan for the
-    /// maintenance principal.
-    async fn cleanup_attempt_object(&mut self) {
-        let _ = self.store.delete(&self.attempt_location).await;
+    fn verify_chunk(&self) -> u64 {
+        self.limits.verify_chunk()
+    }
+
+    /// Reclaim THIS attempt's own staging object (R5-STOR-05, R6-STOR-04).
+    ///
+    /// It goes through the STAGING authority, which structurally cannot
+    /// address a published name, and it is scoped to the exact staging key
+    /// this instance minted — never a listing, never another attempt's key.
+    /// A FAILED reclaim is no longer a swallowed `let _ = ..`: it produces a
+    /// durable orphan record naming the key and the reason, so the inert
+    /// `.mpa-` object left behind is visible to the separated maintenance
+    /// principal instead of being invisible state.
+    async fn reclaim_staged(&mut self) {
+        if let Err(error) = self.staging.reclaim(&self.attempt_location).await {
+            self.orphans.record(
+                self.attempt_location.path().as_ref(),
+                &format!(
+                    "staging reclaim failed for multipart attempt {} targeting {}: {error}",
+                    self.attempt_id, self.location
+                ),
+            );
+        }
     }
 
     /// The published target's metadata as a [`PutResult`].
     async fn published_result(&mut self) -> slatedb::object_store::Result<PutResult> {
-        let meta = self.store.head(&self.location).await?;
+        let meta = self.authoritative.head(&self.location).await?;
         Ok(PutResult { e_tag: meta.e_tag, version: meta.version, extensions: Default::default() })
+    }
+
+    /// R6-STOR-02 fallback promote: a create-only single PUT, used only where
+    /// the provider reports conditional copy unsupported.
+    ///
+    /// The staged bytes are streamed in through fixed windows and pushed onto
+    /// a CHUNKED `PutPayload` — there is no contiguous `Vec` and no second
+    /// copy (the previous code did `bytes().await` and then `to_vec()`). The
+    /// object is nevertheless resident for the duration of the PUT, because
+    /// `object_store` has no create-only streaming publication primitive, so
+    /// this path is capped at [`MULTIPART_MAX_MATERIALISED_PROMOTE_BYTES`]:
+    /// above it the completion is a typed refusal, never an unbounded
+    /// allocation. The bytes are re-hashed on the way through and must still
+    /// match the expected witness, so a staged object mutated between
+    /// verification and promotion cannot be published.
+    async fn promote_by_streaming_put(
+        &mut self,
+        expected: &ContentWitness,
+    ) -> slatedb::object_store::Result<PromoteOutcome> {
+        let maximum = self.limits.max_materialised_promote();
+        if expected.len > maximum {
+            return Err(self.refusal(format!(
+                "multipart completion refused for {} (R6-STOR-02): the provider reports conditional \
+                 copy unsupported, so the only create-only publication primitive left is a single \
+                 conditional PUT, which is resident for its whole payload; this object is {} bytes, \
+                 over the {maximum}-byte materialised-promote maximum. Refusing rather than \
+                 allocating without bound.",
+                self.location, expected.len
+            )));
+        }
+        let chunk = self.verify_chunk();
+        let mut payload = PutPayloadMut::new();
+        let mut digest = ObjectDigest::new();
+        let mut charges = Vec::new();
+        let mut offset = 0u64;
+        while offset < expected.len {
+            let end = offset.saturating_add(chunk).min(expected.len);
+            let options = GetOptions { range: Some(GetRange::Bounded(offset..end)), ..Default::default() };
+            let bytes = self.staging.get_opts(&self.attempt_location, options).await?.bytes().await?;
+            if bytes.is_empty() {
+                return Err(self.refusal(format!(
+                    "the staged object for {} returned no bytes at offset {offset} (R6-STOR-02)",
+                    self.location
+                )));
+            }
+            charges.push(charge_buffer(Some(&self.buffers), bytes.len() as u64));
+            digest.update(&bytes);
+            offset = offset.saturating_add(bytes.len() as u64);
+            payload.push(bytes);
+        }
+        if !digest.witness().matches(expected) {
+            return Err(self.refusal(format!(
+                "the staged object for {} changed between verification and promotion (R6-STOR-03): \
+                 expected {}, streamed {}",
+                self.location,
+                expected.hex(),
+                digest.witness().hex()
+            )));
+        }
+        match self.authoritative.put_create(&self.location, payload.freeze(), PutOptions::default()).await {
+            Ok(_) => Ok(PromoteOutcome::Won),
+            Err(slatedb::object_store::Error::AlreadyExists { .. }) => Ok(PromoteOutcome::Occupied),
+            Err(other) => Err(other),
+        }
     }
 }
 
 #[async_trait]
 impl MultipartUpload for JournaledMultipart {
     fn put_part(&mut self, data: PutPayload) -> UploadPart {
-        use std::hash::Hasher;
         let len = data.content_length() as u64;
+        // R6-STOR-02: the PER-OBJECT ceiling is checked FIRST and is
+        // independent of the aggregate journal budget — a single object that
+        // would be too large to verify and promote is refused even when the
+        // aggregate budget is entirely free.
+        if let Err(refused) = admit_object_bytes(self.streamed.len(), len, self.limits.max_object()) {
+            let error = refused.into_store_error(&self.location);
+            return Box::pin(async move { Err(error) });
+        }
         // R5-STOR-08: streamed bytes are reserved against the journal's byte
         // budget as they arrive; a refusal reserves nothing and streams
         // nothing — typed admission, not growth.
@@ -1387,23 +2331,23 @@ impl MultipartUpload for JournaledMultipart {
             let error = refused.into_store_error(&self.location);
             return Box::pin(async move { Err(error) });
         }
-        // account the exact byte stream for stage verification (R5-STOR-05)
+        // R6-STOR-02/R6-STOR-03: hash INCREMENTALLY while the parts flow, into
+        // the same domain-separated digest the staged object is verified with.
+        // Nothing is retained beyond the digest state.
         for chunk in &data {
-            self.streamed_hasher.write(chunk.as_ref());
+            self.streamed.update(chunk.as_ref());
         }
-        self.streamed_len += len;
         self.inner.put_part(data)
     }
 
     async fn complete(&mut self) -> slatedb::object_store::Result<PutResult> {
-        use std::hash::Hasher;
         // Quarantine, revalidated AT USE TIME (R4-STOR-04): a namespace
         // quarantined since initiation admits no completion. The staged
         // upload is reclaimed — and marked Aborted only when that reclaim
         // succeeds, so a failed reclaim stays retryable.
         if self.quarantined.load(Ordering::SeqCst) {
             if self.attempt_object_completed {
-                self.cleanup_attempt_object().await;
+                self.reclaim_staged().await;
                 self.retire(AttemptState::Aborted);
             } else if self.inner.abort().await.is_ok() {
                 self.retire(AttemptState::Aborted);
@@ -1428,57 +2372,93 @@ impl MultipartUpload for JournaledMultipart {
             self.inner.complete().await?;
             self.attempt_object_completed = true;
         }
-        // Verify the staged object against the streamed accounting before
-        // anything can be published under the target name.
-        let staged = self.store.get(&self.attempt_location).await?.bytes().await?;
-        if staged.len() as u64 != self.streamed_len || content_checksum(&staged) != self.streamed_hasher.finish() {
-            self.cleanup_attempt_object().await;
+        // R6-STOR-02: from here on the completion holds buffers, so it runs
+        // under the process-wide completion gate. Peak heap for the streaming
+        // paths is one window per permitted completion, not one object.
+        let _permit = CompletionPermit::acquire().await;
+        // R6-STOR-03: the authoritative expected identity of this attempt —
+        // exact length plus the domain-separated SHA-256 of the parts as they
+        // streamed. The previous predicate was length plus a 64-bit
+        // `DefaultHasher` value, which is a weaker authority than the
+        // content-addressed identity it is guarding.
+        let expected = self.streamed.witness();
+        // Verify the staged object by STREAMING it back through the same
+        // digest (R6-STOR-02: never `get(..).bytes()` of the whole object)
+        // before anything can be published under the target name.
+        let staged = match stream_witness(
+            RangeSource::Staging(&self.staging, &self.attempt_location),
+            self.verify_chunk(),
+            &self.buffers,
+        )
+        .await
+        {
+            Ok(staged) => staged,
+            Err(error) => {
+                self.reclaim_staged().await;
+                self.retire(AttemptState::Aborted);
+                return Err(error);
+            }
+        };
+        if !staged.matches(&expected) {
+            self.reclaim_staged().await;
             self.retire(AttemptState::Aborted);
             return Err(self.refusal(format!(
-                "multipart stage verification failed for {} (R5-STOR-05): the staged object does not \
-                 match the streamed parts (length/checksum); the staged upload has been reclaimed",
-                self.location
+                "multipart stage verification failed for {} (R5-STOR-05, R6-STOR-03): the staged \
+                 object does not match the streamed parts (expected length {} digest {}, staged \
+                 length {} digest {}); the staged upload has been reclaimed (a reclaim that itself \
+                 fails is recorded as a durable orphan, R6-STOR-04)",
+                self.location,
+                expected.len,
+                expected.hex(),
+                staged.len,
+                staged.hex()
             )));
         }
         // Atomic promote (R5-STOR-05): create-only conditional copy where the
-        // store supports it; create-only single PUT of the verified staged
+        // store supports it; create-only streaming PUT of the verified staged
         // bytes where it does not. Exactly one contender can win the target.
-        let create_copy = CopyOptions { mode: CopyMode::Create, ..Default::default() };
-        let outcome = match self.store.copy_opts(&self.attempt_location, &self.location, create_copy).await {
+        let outcome = match self
+            .authoritative
+            .copy_create(self.attempt_location.path(), &self.location, CopyOptions::default())
+            .await
+        {
             Ok(()) => PromoteOutcome::Won,
             Err(slatedb::object_store::Error::AlreadyExists { .. }) => PromoteOutcome::Occupied,
             Err(
                 slatedb::object_store::Error::NotSupported { .. }
                 | slatedb::object_store::Error::NotImplemented { .. },
-            ) => {
-                // documented fallback: one full re-upload of the verified bytes
-                let create_put = PutOptions { mode: PutMode::Create, ..Default::default() };
-                match self.store.put_opts(&self.location, PutPayload::from(staged.to_vec()), create_put).await {
-                    Ok(_) => PromoteOutcome::Won,
-                    Err(slatedb::object_store::Error::AlreadyExists { .. }) => PromoteOutcome::Occupied,
-                    Err(other) => {
-                        self.cleanup_attempt_object().await;
-                        return Err(other);
-                    }
+            ) => match self.promote_by_streaming_put(&expected).await {
+                Ok(outcome) => outcome,
+                Err(error) => {
+                    self.reclaim_staged().await;
+                    return Err(error);
                 }
-            }
+            },
             Err(other) => {
-                self.cleanup_attempt_object().await;
+                self.reclaim_staged().await;
                 return Err(other);
             }
         };
         match outcome {
             PromoteOutcome::Won => {
-                self.cleanup_attempt_object().await;
+                self.reclaim_staged().await;
                 self.retire(AttemptState::Committed);
                 self.published_result().await
             }
             PromoteOutcome::Occupied => {
-                // Loser settlement: idempotent on identical bytes, typed
-                // refusal (no overwrite, ever) on different bytes.
-                let published = self.store.get(&self.location).await?.bytes().await?;
-                self.cleanup_attempt_object().await;
-                if published == staged {
+                // Loser settlement: idempotent on identical content, typed
+                // refusal (no overwrite, ever) on different content. R6-STOR-02:
+                // the published object is compared by length + STREAMING
+                // cryptographic digest against this attempt's authoritative
+                // expected witness — never by pulling both objects into memory.
+                let published = stream_witness(
+                    RangeSource::Authoritative(&self.authoritative, &self.location),
+                    self.verify_chunk(),
+                    &self.buffers,
+                )
+                .await?;
+                self.reclaim_staged().await;
+                if published.matches(&expected) {
                     // a replayed/racing publication of the SAME bytes has
                     // already converged — settle as success (R5-STOR-05
                     // timeout-after-promote convergence).
@@ -1526,7 +2506,7 @@ impl MultipartUpload for JournaledMultipart {
         if self.attempt_object_completed {
             // the provider upload already became a staged object: reclaim is
             // the staging cleanup, not a provider abort
-            self.cleanup_attempt_object().await;
+            self.reclaim_staged().await;
         } else {
             self.inner.abort().await?;
         }
@@ -1616,12 +2596,15 @@ async fn download_remote_objects(
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent).map_err(io_error)?;
         }
-        let bytes = store.get(location).await.map_err(store_error)?.bytes().await.map_err(store_error)?;
+        // R6-STOR-02: STREAM the object into the file through fixed windows.
+        // `get(..).bytes()` here cost one whole object in live heap per
+        // downloaded file — a multi-GiB checkpoint restore was a multi-GiB
+        // allocation. Peak residency is now one window.
         // R-06: fsync the downloaded file AND its parent directory. A checkpoint
         // the caller goes on to declare COMPLETE must not lose a downloaded SST
         // (or its directory entry) to a crash that empties the page cache; a
         // bare `fs::write` leaves both only in the page cache.
-        write_and_fsync(&target, &bytes).map_err(io_error)?;
+        stream_object_to_file(store, location, &target, MULTIPART_VERIFY_CHUNK_BYTES).await?;
     }
     Ok(())
 }
@@ -1629,14 +2612,40 @@ async fn download_remote_objects(
 /// Write `bytes` to `path` and make the file AND its parent directory entry
 /// durable (R-06). Extracted so the write-then-fsync sequence is one auditable
 /// unit at every remote-download site.
-fn write_and_fsync(path: &Path, bytes: &[u8]) -> io::Result<()> {
+/// R6-STOR-02: copy one remote object into a local file through fixed
+/// windows, then fsync the file and its parent directory (R-06). Peak heap is
+/// one window, whatever the object's size.
+async fn stream_object_to_file(
+    store: &dyn ObjectStore,
+    location: &ObjectPath,
+    target: &Path,
+    chunk: u64,
+) -> Result<(), slatedb::Error> {
+    let chunk = chunk.max(1);
+    let size = store.head(location).await.map_err(store_error)?.size;
     {
-        let mut file = fs::File::create(path)?;
-        io::Write::write_all(&mut file, bytes)?;
-        file.sync_all()?;
+        let mut file = fs::File::create(target).map_err(io_error)?;
+        let mut offset = 0u64;
+        while offset < size {
+            let end = offset.saturating_add(chunk).min(size);
+            let options = GetOptions { range: Some(GetRange::Bounded(offset..end)), ..Default::default() };
+            let bytes =
+                store.get_opts(location, options).await.map_err(store_error)?.bytes().await.map_err(store_error)?;
+            let _charge = charge_buffer(None, bytes.len() as u64);
+            if bytes.is_empty() {
+                return Err(store_error(slatedb::object_store::Error::Precondition {
+                    path: location.to_string(),
+                    source: format!("a ranged read at offset {offset} returned no bytes of {size} (R6-STOR-02)")
+                        .into(),
+                }));
+            }
+            io::Write::write_all(&mut file, &bytes).map_err(io_error)?;
+            offset = offset.saturating_add(bytes.len() as u64);
+        }
+        file.sync_all().map_err(io_error)?;
     }
-    if let Some(parent) = path.parent() {
-        fs::File::open(parent)?.sync_all()?;
+    if let Some(parent) = target.parent() {
+        fs::File::open(parent).and_then(|dir| dir.sync_all()).map_err(io_error)?;
     }
     Ok(())
 }
@@ -1745,7 +2754,12 @@ impl SlateKeyspace {
         cache_bytes: Option<usize>,
     ) -> Result<Self, Arc<slatedb::Error>> {
         fs::create_dir_all(path).map_err(|error| Arc::new(io_error(error)))?;
-        let store: Arc<dyn ObjectStore> = Arc::new(NoDeleteStore::new(store));
+        let principal = NoDeleteStore::new(store);
+        // R6-STOR-04: bind the durable orphan inventory to the keyspace's
+        // lifecycle-marker directory BEFORE anything can be staged, so a
+        // failed staging reclaim always has somewhere durable to land.
+        principal.bind_orphan_sink(path);
+        let store: Arc<dyn ObjectStore> = Arc::new(principal);
         let materialization = mint_materialization_id();
         let prefix = base_prefix.join(FORMAT_VERSION_SEGMENT).join(materialization.as_str());
         let restored_root = path.join(DB_SUBDIR).is_dir().then(|| path.to_owned());
@@ -3200,7 +4214,9 @@ mod materialization_tests {
         // through (colliding safely on the inner store's precondition);
         // overwrite mode is refused before the inner store sees it.
         let (_store_dir, inner) = remote_fixture();
-        let store = Arc::new(NoDeleteStore::new(inner));
+        // R6-STOR-04: the test keeps its OWN raw handle to observe the
+        // provider directly; the principal no longer exposes one.
+        let store = Arc::new(NoDeleteStore::new(inner.clone()));
         let source = ObjectPath::from("copy/source");
         let occupied = ObjectPath::from("copy/occupied");
         bridge({
@@ -3222,7 +4238,7 @@ mod materialization_tests {
             "an overwrite-mode copy must be a typed denial, got: {overwrite:?}",
         );
         let survives = bridge({
-            let (inner, occupied) = (store.inner.clone(), occupied.clone());
+            let (inner, occupied) = (inner.clone(), occupied.clone());
             async move { inner.get(&occupied).await?.bytes().await }
         })
         .unwrap();
@@ -3258,7 +4274,7 @@ mod materialization_tests {
         // rename failed. The refusal must therefore come BEFORE the copy,
         // and the store must be byte-identical afterwards.
         let (_store_dir, inner) = remote_fixture();
-        let store = Arc::new(NoDeleteStore::new(inner));
+        let store = Arc::new(NoDeleteStore::new(inner.clone()));
         let from = ObjectPath::from("rename/source");
         let to = ObjectPath::from("rename/destination");
         bridge({
@@ -3279,13 +4295,13 @@ mod materialization_tests {
 
         // the source survives...
         let source = bridge({
-            let (from, inner) = (from.clone(), store.inner.clone());
+            let (from, inner) = (from.clone(), inner.clone());
             async move { inner.head(&from).await }
         });
         assert!(source.is_ok(), "the source must survive a denied rename");
         // ...and NOTHING was written at the destination
         let destination = bridge({
-            let (to, inner) = (to.clone(), store.inner.clone());
+            let (to, inner) = (to.clone(), inner.clone());
             async move { inner.head(&to).await }
         });
         assert!(
@@ -3300,7 +4316,7 @@ mod materialization_tests {
         // boundary — delete on the wrapped principal is a typed denial and
         // the object survives.
         let (_store_dir, inner) = remote_fixture();
-        let store = Arc::new(NoDeleteStore::new(inner));
+        let store = Arc::new(NoDeleteStore::new(inner.clone()));
         let location = ObjectPath::from("probe/object");
         bridge({
             let payload = PutPayload::from_static(b"bytes");
@@ -3320,7 +4336,7 @@ mod materialization_tests {
             "delete through the runtime principal must be a typed denial, got: {denial:?}",
         );
         let survives = bridge({
-            let store = store.inner.clone();
+            let store = inner.clone();
             async move { store.head(&location).await }
         });
         assert!(survives.is_ok(), "the probed object must survive the denied delete");
@@ -3460,10 +4476,7 @@ mod immutability_boundary_tests {
     };
     use test_utils::create_tmp_dir;
 
-    use super::{
-        AttemptState, MANIFEST_SUBDIR, NoDeleteStore, bridge, content_checksum, is_manifest_key,
-        payload_matches_existing,
-    };
+    use super::{AttemptState, MANIFEST_SUBDIR, NoDeleteStore, bridge, content_witness, is_manifest_key};
 
     fn wrapped_store() -> (test_utils::TempDir, Arc<NoDeleteStore>) {
         let dir = create_tmp_dir("slate-s04-store");
@@ -3481,14 +4494,15 @@ mod immutability_boundary_tests {
     }
 
     #[test]
-    fn the_payload_match_is_length_and_byte_exact() {
-        let payload = PutPayload::from_static(b"authoritative bytes");
-        assert!(payload_matches_existing(&payload, b"authoritative bytes"), "identical bytes match");
-        assert!(!payload_matches_existing(&payload, b"authoritative byteS"), "one flipped byte must not match");
-        assert!(!payload_matches_existing(&payload, b"authoritative"), "a length mismatch must not match");
-        // and the ledger checksum is stable and content-addressed
-        assert_eq!(content_checksum(b"authoritative bytes"), content_checksum(b"authoritative bytes"));
-        assert_ne!(content_checksum(b"authoritative bytes"), content_checksum(b"authoritative byteS"));
+    fn the_ledger_witness_is_a_stable_content_addressed_digest() {
+        // R6-STOR-03: the ledger records length + a full SHA-256, and the
+        // witness is stable across calls (the property the immutability
+        // ledger needs to compare a key's identity over its lifetime).
+        assert!(content_witness(b"authoritative bytes").matches(&content_witness(b"authoritative bytes")));
+        assert!(!content_witness(b"authoritative bytes").matches(&content_witness(b"authoritative byteS")));
+        assert!(!content_witness(b"authoritative bytes").matches(&content_witness(b"authoritative")));
+        assert_eq!(content_witness(b"authoritative bytes").len, 19);
+        assert_eq!(content_witness(b"authoritative bytes").hex().len(), 64);
     }
 
     #[test]
@@ -4476,6 +5490,782 @@ mod metrics_budget_tests {
             validate_cache_config(Some("not-a-number")),
             Err(CacheConfigError::Invalid { value: "not-a-number".to_owned() }),
             "an invalid budget is a typed refusal, never a silent None"
+        );
+    }
+}
+
+#[cfg(test)]
+mod r6_multipart_integrity_tests {
+    //! R6-STOR-02, R6-STOR-03 and R6-STOR-04.
+    //!
+    //! - **R6-STOR-02**: admission is `O(chunk x concurrency)`, not
+    //!   `O(object size)`. Proven by instrumentation — an observing store that
+    //!   records every ranged read plus a per-materialisation buffer meter —
+    //!   rather than by allocating a giant object.
+    //! - **R6-STOR-03**: the promotion predicate is a domain-separated
+    //!   SHA-256, not a 64-bit checksum. A test-only weak checksum admits a
+    //!   constructed collision; the production digest kills it, and every
+    //!   staged-byte mutation (equal-length flip, reorder, duplicate, drop,
+    //!   post-completion alteration) is refused before anything is published.
+    //! - **R6-STOR-04**: authority is separated by TYPE. The authoritative
+    //!   handle has no delete/rename/overwrite verb to call, the staging
+    //!   handle can only address the staging namespace, and a failed staging
+    //!   reclaim produces a durable orphan record instead of a swallowed
+    //!   error.
+
+    use std::{
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicBool, AtomicU64, Ordering},
+        },
+        time::Duration,
+    };
+
+    use futures::stream::BoxStream;
+    use slatedb::{
+        bytes::Bytes,
+        object_store::{
+            CopyMode, CopyOptions, GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, ObjectStore,
+            ObjectStoreExt, PutMode, PutMultipartOptions, PutOptions, PutPayload, PutResult, UploadPart,
+            local::LocalFileSystem, path::Path as ObjectPath,
+        },
+    };
+    use test_utils::create_tmp_dir;
+
+    use super::{
+        CompletionPermit, MULTIPART_ATTEMPT_INFIX, MULTIPART_MAX_CONCURRENT_COMPLETIONS,
+        MULTIPART_MAX_MATERIALISED_PROMOTE_BYTES, MULTIPART_MAX_OBJECT_BYTES, MULTIPART_ORPHAN_FILE,
+        MultipartBudgetRefused, NoDeleteStore, StagingKey, admit_object_bytes, authority, bridge, content_witness,
+    };
+
+    // ------------------------------------------------------------------
+    // an observing / fault-injecting provider
+    // ------------------------------------------------------------------
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Tamper {
+        None,
+        /// same length, one byte different
+        FlipByte,
+        /// same length, same byte multiset, different order
+        SwapParts,
+        /// a part repeated
+        DuplicatePart,
+        /// a part missing
+        DropPart,
+    }
+
+    /// A provider that records exactly what the layer above asks it for, and
+    /// can inject the faults the audit's mutants name.
+    #[derive(Debug)]
+    struct ProbeStore {
+        inner: Arc<dyn ObjectStore>,
+        tamper: Mutex<Tamper>,
+        deny_reclaim: AtomicBool,
+        deny_conditional_copy: AtomicBool,
+        /// The largest single range this store was ever asked for. The
+        /// R6-STOR-02 bound is that this does not grow with object size.
+        max_range_bytes: AtomicU64,
+        /// How many WHOLE-object reads were requested. The bound requires
+        /// zero of these on the completion paths.
+        unbounded_gets: AtomicU64,
+    }
+
+    impl ProbeStore {
+        fn new(inner: Arc<dyn ObjectStore>) -> Arc<Self> {
+            Arc::new(Self {
+                inner,
+                tamper: Mutex::new(Tamper::None),
+                deny_reclaim: AtomicBool::new(false),
+                deny_conditional_copy: AtomicBool::new(false),
+                max_range_bytes: AtomicU64::new(0),
+                unbounded_gets: AtomicU64::new(0),
+            })
+        }
+
+        fn set_tamper(&self, tamper: Tamper) {
+            *self.tamper.lock().unwrap() = tamper;
+        }
+
+        fn reset_observations(&self) {
+            self.max_range_bytes.store(0, Ordering::SeqCst);
+            self.unbounded_gets.store(0, Ordering::SeqCst);
+        }
+    }
+
+    impl std::fmt::Display for ProbeStore {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "ProbeStore")
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ObjectStore for ProbeStore {
+        async fn put_opts(
+            &self,
+            location: &ObjectPath,
+            payload: PutPayload,
+            opts: PutOptions,
+        ) -> slatedb::object_store::Result<PutResult> {
+            self.inner.put_opts(location, payload, opts).await
+        }
+
+        async fn put_multipart_opts(
+            &self,
+            location: &ObjectPath,
+            opts: PutMultipartOptions,
+        ) -> slatedb::object_store::Result<Box<dyn MultipartUpload>> {
+            let inner = self.inner.put_multipart_opts(location, opts).await?;
+            Ok(Box::new(TamperUpload {
+                inner,
+                store: self.inner.clone(),
+                location: location.clone(),
+                parts: Vec::new(),
+                tamper: *self.tamper.lock().unwrap(),
+            }))
+        }
+
+        async fn get_opts(
+            &self,
+            location: &ObjectPath,
+            options: GetOptions,
+        ) -> slatedb::object_store::Result<GetResult> {
+            match &options.range {
+                Some(slatedb::object_store::GetRange::Bounded(range)) => {
+                    self.max_range_bytes.fetch_max(range.end - range.start, Ordering::SeqCst);
+                }
+                Some(_) => {
+                    self.unbounded_gets.fetch_add(1, Ordering::SeqCst);
+                }
+                None if !options.head => {
+                    self.unbounded_gets.fetch_add(1, Ordering::SeqCst);
+                }
+                None => {}
+            }
+            self.inner.get_opts(location, options).await
+        }
+
+        fn list(&self, prefix: Option<&ObjectPath>) -> BoxStream<'static, slatedb::object_store::Result<ObjectMeta>> {
+            self.inner.list(prefix)
+        }
+
+        async fn list_with_delimiter(
+            &self,
+            prefix: Option<&ObjectPath>,
+        ) -> slatedb::object_store::Result<ListResult> {
+            self.inner.list_with_delimiter(prefix).await
+        }
+
+        async fn copy_opts(
+            &self,
+            from: &ObjectPath,
+            to: &ObjectPath,
+            options: CopyOptions,
+        ) -> slatedb::object_store::Result<()> {
+            if self.deny_conditional_copy.load(Ordering::SeqCst) && matches!(options.mode, CopyMode::Create) {
+                return Err(slatedb::object_store::Error::NotSupported {
+                    source: "this provider has no copy-if-not-exists (the plain-S3 posture)".into(),
+                });
+            }
+            self.inner.copy_opts(from, to, options).await
+        }
+
+        fn delete_stream(
+            &self,
+            locations: BoxStream<'static, slatedb::object_store::Result<ObjectPath>>,
+        ) -> BoxStream<'static, slatedb::object_store::Result<ObjectPath>> {
+            use futures::StreamExt;
+            if self.deny_reclaim.load(Ordering::SeqCst) {
+                return locations
+                    .map(|location| {
+                        location.and_then(|location| {
+                            Err(slatedb::object_store::Error::Generic {
+                                store: "ProbeStore",
+                                source: format!("injected reclaim failure for {location}").into(),
+                            })
+                        })
+                    })
+                    .boxed();
+            }
+            self.inner.delete_stream(locations)
+        }
+    }
+
+    /// Alters the staged object AFTER the provider upload completes and BEFORE
+    /// the promote — the exact window the audit's "alter bytes after provider
+    /// completion but before promotion" mutant names.
+    #[derive(Debug)]
+    struct TamperUpload {
+        inner: Box<dyn MultipartUpload>,
+        store: Arc<dyn ObjectStore>,
+        location: ObjectPath,
+        parts: Vec<Bytes>,
+        tamper: Tamper,
+    }
+
+    #[async_trait::async_trait]
+    impl MultipartUpload for TamperUpload {
+        fn put_part(&mut self, data: PutPayload) -> UploadPart {
+            for chunk in &data {
+                self.parts.push(chunk.clone());
+            }
+            self.inner.put_part(data)
+        }
+
+        async fn complete(&mut self) -> slatedb::object_store::Result<PutResult> {
+            let result = self.inner.complete().await?;
+            if self.tamper == Tamper::None {
+                return Ok(result);
+            }
+            let mut parts = self.parts.clone();
+            match self.tamper {
+                Tamper::None => unreachable!(),
+                Tamper::FlipByte => {
+                    let mut bytes = parts[0].to_vec();
+                    bytes[0] ^= 0xff;
+                    parts[0] = Bytes::from(bytes);
+                }
+                Tamper::SwapParts => parts.swap(0, 1),
+                Tamper::DuplicatePart => {
+                    let first = parts[0].clone();
+                    parts.push(first);
+                }
+                Tamper::DropPart => {
+                    parts.pop();
+                }
+            }
+            let payload: PutPayload = parts.into_iter().collect();
+            self.store.put_opts(&self.location, payload, PutOptions::default()).await?;
+            Ok(result)
+        }
+
+        async fn abort(&mut self) -> slatedb::object_store::Result<()> {
+            self.inner.abort().await
+        }
+    }
+
+    fn fixture() -> (test_utils::TempDir, Arc<ProbeStore>, Arc<NoDeleteStore>) {
+        let dir = create_tmp_dir("slate-r6-probe");
+        let raw: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
+        let probe = ProbeStore::new(raw);
+        let principal = NoDeleteStore::new(probe.clone() as Arc<dyn ObjectStore>);
+        principal.bind_orphan_sink(&dir);
+        (dir, probe, Arc::new(principal))
+    }
+
+    /// Stream `parts` through a multipart upload on `location`.
+    fn upload(store: &Arc<NoDeleteStore>, location: &ObjectPath, parts: Vec<Vec<u8>>) -> slatedb::object_store::Result<PutResult> {
+        let store = store.clone();
+        let location = location.clone();
+        bridge(async move {
+            let mut upload = store.put_multipart(&location).await?;
+            for part in parts {
+                upload.put_part(PutPayload::from(part)).await?;
+            }
+            upload.complete().await
+        })
+    }
+
+    fn read(store: &Arc<NoDeleteStore>, location: &ObjectPath) -> Option<Vec<u8>> {
+        let store = store.clone();
+        let location = location.clone();
+        bridge(async move {
+            match store.get(&location).await {
+                Ok(result) => Some(result.bytes().await.unwrap().to_vec()),
+                Err(_) => None,
+            }
+        })
+    }
+
+    // ------------------------------------------------------------------
+    // R6-STOR-03 — the digest is a cryptographic authority
+    // ------------------------------------------------------------------
+
+    /// The MUTANT of the removed production predicate: a cheap,
+    /// order-insensitive 64-bit checksum, exactly the class of hash the audit
+    /// rules out as a promotion authority.
+    fn weak_checksum_for_test(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0u64, |accumulator, byte| accumulator.wrapping_add(*byte as u64))
+    }
+
+    #[test]
+    fn a_weak_checksum_admits_a_collision_the_production_digest_kills() {
+        // R6-STOR-03 mutant: a test-only weak-hash path accepts two DIFFERENT
+        // byte strings of EQUAL length. Length + weak checksum — the shape of
+        // the removed `length && DefaultHasher` predicate — cannot tell them
+        // apart; the domain-separated SHA-256 does, which is what makes it
+        // safe to decide a promotion with.
+        let left = b"AB".as_slice();
+        let right = b"BA".as_slice();
+        assert_eq!(left.len(), right.len(), "the collision is equal-length");
+        assert_ne!(left, right, "the collision is over DIFFERENT bytes");
+        assert_eq!(
+            weak_checksum_for_test(left),
+            weak_checksum_for_test(right),
+            "the weak-hash mutant must ADMIT this constructed collision",
+        );
+        assert!(
+            !content_witness(left).matches(&content_witness(right)),
+            "the production digest must KILL the collision the weak hash admits",
+        );
+
+        // and the framing is domain-separated: the same bytes under a bare
+        // SHA-256 are not the witness digest, so a digest computed for some
+        // other purpose can never be replayed as a content witness.
+        assert_ne!(
+            content_witness(left).digest,
+            crate::recovery::sha256::digest(left),
+            "the content witness must be domain-separated from a bare digest",
+        );
+        // the length is bound INTO the digest, so no shorter prefix can forge
+        // a longer object's witness
+        assert_ne!(content_witness(b"AB").digest, content_witness(b"AB\x00").digest);
+    }
+
+    #[test]
+    fn the_witness_comparison_is_exact_on_length_and_digest() {
+        let witness = content_witness(b"authoritative");
+        assert!(witness.matches(&witness));
+        assert!(!witness.matches(&content_witness(b"authoritativd")));
+        assert!(!witness.matches(&content_witness(b"authoritative ")));
+        assert_eq!(witness.len, 13);
+    }
+
+    fn tampered_staging_is_refused(tamper: Tamper, label: &str) {
+        let (_dir, probe, store) = fixture();
+        let location = ObjectPath::from("base/fv1/m1/keyspace/01TAMPER.sst");
+        probe.set_tamper(tamper);
+        let outcome = upload(&store, &location, vec![b"first-part-".to_vec(), b"second-part".to_vec()]);
+        let error = outcome.expect_err(&format!("{label} must be refused"));
+        assert!(
+            matches!(error, slatedb::object_store::Error::Precondition { .. }),
+            "{label} must be a typed refusal, got {error:?}",
+        );
+        assert!(error.to_string().contains("R6-STOR-03"), "{label} must cite the digest predicate: {error}");
+        assert!(read(&store, &location).is_none(), "{label} must publish NOTHING at the target");
+    }
+
+    #[test]
+    fn staged_bytes_mutated_without_changing_length_are_refused() {
+        // MUTANT: alter the staged object after provider completion, before
+        // promotion, keeping the length identical.
+        tampered_staging_is_refused(Tamper::FlipByte, "an equal-length byte flip");
+    }
+
+    #[test]
+    fn reordered_staged_chunks_are_refused() {
+        // MUTANT: same length AND same byte multiset — a commutative or
+        // additive checksum would accept this; SHA-256 does not.
+        tampered_staging_is_refused(Tamper::SwapParts, "a chunk reorder");
+    }
+
+    #[test]
+    fn duplicated_staged_chunks_are_refused() {
+        tampered_staging_is_refused(Tamper::DuplicatePart, "a duplicated chunk");
+    }
+
+    #[test]
+    fn dropped_staged_chunks_are_refused() {
+        tampered_staging_is_refused(Tamper::DropPart, "a dropped chunk");
+    }
+
+    #[test]
+    fn an_untampered_upload_still_publishes() {
+        // positive control: the refusals above are not "refuse everything".
+        let (_dir, _probe, store) = fixture();
+        let location = ObjectPath::from("base/fv1/m1/keyspace/01CLEAN.sst");
+        upload(&store, &location, vec![b"first-part-".to_vec(), b"second-part".to_vec()])
+            .expect("a clean upload publishes");
+        assert_eq!(read(&store, &location).unwrap(), b"first-part-second-part");
+    }
+
+    #[test]
+    fn the_ledger_witness_stores_full_digest_bytes() {
+        // R6-STOR-03: the immutability ledger's witness is length + 32 digest
+        // bytes, never a u64.
+        let (_dir, _probe, store) = fixture();
+        let location = ObjectPath::from("base/fv1/m1/keyspace/01LEDGER.sst");
+        bridge({
+            let (store, location) = (store.clone(), location.clone());
+            async move { store.put(&location, PutPayload::from_static(b"ledger bytes")).await }
+        })
+        .expect("first write creates");
+        let ledger = store.immutable_ledger.lock().unwrap();
+        let recorded = ledger.get(location.as_ref()).expect("the admitted key is in the ledger");
+        assert_eq!(recorded.digest.len(), 32, "the ledger witness is full digest bytes");
+        assert!(recorded.matches(&content_witness(b"ledger bytes")));
+    }
+
+    // ------------------------------------------------------------------
+    // R6-STOR-02 — bounded, streaming admission
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn completion_reads_are_bounded_by_the_window_and_never_whole_object() {
+        // R6-STOR-02 acceptance, proven by INSTRUMENTATION rather than by
+        // allocating a giant object: with a 4 KiB streaming window, growing
+        // the object 8x must not grow either the largest single read or the
+        // materialisation's peak completion-buffer residency, and no
+        // whole-object read may be issued at all.
+        const WINDOW: u64 = 4 * 1024;
+        let mut observed = Vec::new();
+        for (index, size) in [64 * 1024usize, 512 * 1024usize].into_iter().enumerate() {
+            let (_dir, probe, store) = fixture();
+            store.set_limits_for_test(WINDOW, MULTIPART_MAX_OBJECT_BYTES, MULTIPART_MAX_MATERIALISED_PROMOTE_BYTES);
+            let location = ObjectPath::from(format!("base/fv1/m1/keyspace/0{index}SIZE.sst"));
+            probe.reset_observations();
+            store.buffers.reset_peak();
+            // stream the object as 16 KiB parts — four windows each
+            let parts: Vec<Vec<u8>> = (0..size / (16 * 1024)).map(|part| vec![part as u8; 16 * 1024]).collect();
+            upload(&store, &location, parts).expect("a large streamed object publishes");
+            observed.push((
+                size as u64,
+                probe.max_range_bytes.load(Ordering::SeqCst),
+                probe.unbounded_gets.load(Ordering::SeqCst),
+                store.buffers.peak(),
+            ));
+        }
+        for (size, max_range, unbounded, peak) in &observed {
+            assert_eq!(*unbounded, 0, "no whole-object read may be issued for a {size}-byte object");
+            assert_eq!(*max_range, WINDOW, "every read must be exactly one window for a {size}-byte object");
+            assert!(
+                *peak <= WINDOW * MULTIPART_MAX_CONCURRENT_COMPLETIONS as u64,
+                "peak buffer residency {peak} for a {size}-byte object must stay within window x concurrency",
+            );
+        }
+        let (small, large) = (&observed[0], &observed[1]);
+        assert_eq!(large.0, small.0 * 8, "the second object really is eight times the first");
+        assert_eq!(large.1, small.1, "the largest single read must NOT grow with object size");
+        assert_eq!(large.3, small.3, "peak buffer residency must NOT grow with object size");
+    }
+
+    #[test]
+    fn the_occupied_target_settlement_also_streams() {
+        // The loser of a promote race settles by comparing the PUBLISHED
+        // object against its own authoritative expected witness. That
+        // comparison used to pull both objects into memory.
+        const WINDOW: u64 = 4 * 1024;
+        let (_dir, probe, store) = fixture();
+        store.set_limits_for_test(WINDOW, MULTIPART_MAX_OBJECT_BYTES, MULTIPART_MAX_MATERIALISED_PROMOTE_BYTES);
+        let location = ObjectPath::from("base/fv1/m1/keyspace/01RACE.sst");
+        let parts: Vec<Vec<u8>> = (0..8).map(|part| vec![part as u8; 16 * 1024]).collect();
+        upload(&store, &location, parts.clone()).expect("the winner publishes");
+        probe.reset_observations();
+        store.buffers.reset_peak();
+        // an identical replay settles idempotently against the published bytes
+        upload(&store, &location, parts).expect("an identical replay settles as success");
+        assert_eq!(probe.unbounded_gets.load(Ordering::SeqCst), 0, "settlement must not read a whole object");
+        assert_eq!(probe.max_range_bytes.load(Ordering::SeqCst), WINDOW, "settlement reads one window at a time");
+        assert!(store.buffers.peak() <= WINDOW * MULTIPART_MAX_CONCURRENT_COMPLETIONS as u64);
+    }
+
+    #[test]
+    fn an_occupied_target_holding_different_bytes_is_still_refused_and_quarantines() {
+        // the streaming settlement must not have weakened the refusal
+        let (_dir, _probe, store) = fixture();
+        let location = ObjectPath::from("base/fv1/m1/keyspace/01DIFF.sst");
+        upload(&store, &location, vec![b"published bytes".to_vec()]).expect("the winner publishes");
+        let refused = upload(&store, &location, vec![b"different bytes".to_vec()]);
+        assert!(
+            matches!(refused, Err(slatedb::object_store::Error::Precondition { .. })),
+            "a losing attempt with different bytes must refuse, got {refused:?}",
+        );
+        assert!(store.is_quarantined(), "the refused overwrite must quarantine the materialisation");
+        assert_eq!(read(&store, &location).unwrap(), b"published bytes", "the published bytes are untouched");
+    }
+
+    #[test]
+    fn the_streaming_fallback_publishes_without_a_contiguous_copy() {
+        // Providers without copy-if-not-exists (the plain-S3 posture this lane
+        // currently builds) take the create-only PUT fallback. It must still
+        // publish, must still verify, and must read the staged object one
+        // window at a time.
+        const WINDOW: u64 = 4 * 1024;
+        let (_dir, probe, store) = fixture();
+        probe.deny_conditional_copy.store(true, Ordering::SeqCst);
+        store.set_limits_for_test(WINDOW, MULTIPART_MAX_OBJECT_BYTES, MULTIPART_MAX_MATERIALISED_PROMOTE_BYTES);
+        let location = ObjectPath::from("base/fv1/m1/keyspace/01FALLBACK.sst");
+        let parts: Vec<Vec<u8>> = (0..4).map(|part| vec![part as u8 + 1; 16 * 1024]).collect();
+        upload(&store, &location, parts).expect("the fallback promote publishes");
+        // observations are captured BEFORE the test's own verification read
+        // (which is deliberately a whole-object read)
+        let (unbounded, max_range) =
+            (probe.unbounded_gets.load(Ordering::SeqCst), probe.max_range_bytes.load(Ordering::SeqCst));
+        assert_eq!(read(&store, &location).unwrap().len(), 64 * 1024);
+        assert_eq!(unbounded, 0, "the fallback must not read the object whole");
+        assert_eq!(max_range, WINDOW);
+    }
+
+    #[test]
+    fn the_size_ceilings_are_named_independent_and_ordered() {
+        // R6-STOR-02: the per-object maximum is INDEPENDENT of the aggregate
+        // journal budget and strictly tighter than it, and the fallback's
+        // materialised cap is tighter still.
+        assert!(
+            MULTIPART_MAX_MATERIALISED_PROMOTE_BYTES < MULTIPART_MAX_OBJECT_BYTES,
+            "the materialised-promote cap must be strictly tighter than the per-object maximum",
+        );
+        assert!(
+            MULTIPART_MAX_OBJECT_BYTES < super::MULTIPART_MAX_JOURNALED_BYTES,
+            "the per-object maximum must be independent of, and tighter than, the aggregate budget",
+        );
+        // the pure decision function, at its exact boundary (the mutant
+        // `<=` -> `<` fails the first assertion, `>` -> `>=` the second)
+        assert_eq!(admit_object_bytes(0, MULTIPART_MAX_OBJECT_BYTES, MULTIPART_MAX_OBJECT_BYTES), Ok(()));
+        assert_eq!(
+            admit_object_bytes(1, MULTIPART_MAX_OBJECT_BYTES, MULTIPART_MAX_OBJECT_BYTES),
+            Err(MultipartBudgetRefused::Object {
+                streamed: 1,
+                incoming: MULTIPART_MAX_OBJECT_BYTES,
+                max: MULTIPART_MAX_OBJECT_BYTES
+            }),
+        );
+        assert!(admit_object_bytes(u64::MAX, 1, MULTIPART_MAX_OBJECT_BYTES).is_err(), "overflow refuses");
+    }
+
+    #[test]
+    fn a_single_object_over_the_per_object_maximum_is_refused_while_the_aggregate_budget_is_free() {
+        // MUTANT: rely on the aggregate journal budget alone. The aggregate
+        // budget is left wide open here (8 GiB, untouched); the per-object
+        // ceiling must still fire, and the refusal must name it.
+        let (_dir, _probe, store) = fixture();
+        store.set_limits_for_test(4 * 1024, 16, MULTIPART_MAX_MATERIALISED_PROMOTE_BYTES);
+        let location = ObjectPath::from("base/fv1/m1/keyspace/01HUGE.sst");
+        let refused = upload(&store, &location, vec![vec![b'x'; 8], vec![b'y'; 9]])
+            .expect_err("an object over the per-object maximum must be refused");
+        assert!(
+            refused.to_string().contains("per-object maximum"),
+            "the refusal must name the per-object maximum: {refused}",
+        );
+        assert!(read(&store, &location).is_none(), "nothing may be published for a refused object");
+        // and an object AT the ceiling is still admitted
+        let admitted = ObjectPath::from("base/fv1/m1/keyspace/01FITS.sst");
+        upload(&store, &admitted, vec![vec![b'x'; 8], vec![b'y'; 8]]).expect("an object at the ceiling is admitted");
+        assert_eq!(read(&store, &admitted).unwrap().len(), 16);
+    }
+
+    #[test]
+    fn the_fallback_refuses_an_object_over_the_materialised_promote_maximum() {
+        // The create-only PUT fallback is the one path that must hold the
+        // object. Above its named cap the completion is a typed refusal (fail
+        // closed) rather than an unbounded allocation, nothing is published,
+        // and the staging object is reclaimed.
+        let (_dir, probe, store) = fixture();
+        probe.deny_conditional_copy.store(true, Ordering::SeqCst);
+        store.set_limits_for_test(4 * 1024, MULTIPART_MAX_OBJECT_BYTES, 8);
+        let location = ObjectPath::from("base/fv1/m1/keyspace/01BIGFALL.sst");
+        let refused = upload(&store, &location, vec![vec![b'z'; 32]])
+            .expect_err("an object over the materialised-promote cap must be refused");
+        assert!(refused.to_string().contains("R6-STOR-02"), "the refusal cites the bound: {refused}");
+        assert!(
+            refused.to_string().contains("materialised-promote maximum"),
+            "the refusal names the cap: {refused}",
+        );
+        assert!(read(&store, &location).is_none(), "nothing may be published");
+
+        // an object AT the cap still publishes through the same fallback
+        store.set_limits_for_test(4 * 1024, MULTIPART_MAX_OBJECT_BYTES, 32);
+        let fits = ObjectPath::from("base/fv1/m1/keyspace/01FITFALL.sst");
+        upload(&store, &fits, vec![vec![b'z'; 32]]).expect("an object at the cap publishes");
+        assert_eq!(read(&store, &fits).unwrap().len(), 32);
+    }
+
+    #[test]
+    fn the_completion_gate_admits_exactly_its_budget_at_once() {
+        // R6-STOR-02: concurrent completions are bounded by a semaphore, so
+        // peak heap is `window x budget` rather than `window x callers`.
+        bridge(async move {
+            let mut held = Vec::new();
+            for _ in 0..MULTIPART_MAX_CONCURRENT_COMPLETIONS {
+                held.push(CompletionPermit::acquire().await);
+            }
+            let blocked = tokio::time::timeout(Duration::from_millis(250), CompletionPermit::acquire()).await;
+            assert!(blocked.is_err(), "a completion beyond the budget must WAIT, not proceed");
+            held.pop();
+            let admitted = tokio::time::timeout(Duration::from_secs(10), CompletionPermit::acquire()).await;
+            assert!(admitted.is_ok(), "releasing a permit must admit the waiter");
+        });
+        assert!(MULTIPART_MAX_CONCURRENT_COMPLETIONS > 0, "the budget is positive");
+    }
+
+    // ------------------------------------------------------------------
+    // R6-STOR-04 — authority separated by type
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn the_staging_authority_cannot_address_an_authoritative_name() {
+        // R6-STOR-04: the ONE handle with reclaim authority is scoped to the
+        // staging namespace. A forged key outside it is a typed refusal at the
+        // boundary and the authoritative object survives.
+        let dir = create_tmp_dir("slate-r6-staging-scope");
+        let raw: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
+        let published = ObjectPath::from("base/fv1/m1/keyspace/01LIVE.sst");
+        bridge({
+            let (raw, published) = (raw.clone(), published.clone());
+            async move { raw.put(&published, PutPayload::from_static(b"authoritative")).await }
+        })
+        .unwrap();
+
+        let (_authoritative, staging) = authority::split(raw.clone());
+        let forged = StagingKey::forged_for_test(published.clone());
+        let refused = bridge({
+            let (staging, forged) = (staging.clone(), forged.clone());
+            async move { staging.reclaim(&forged).await }
+        });
+        assert!(
+            matches!(refused, Err(slatedb::object_store::Error::Precondition { .. })),
+            "the staging authority must refuse an authoritative name, got {refused:?}",
+        );
+        assert!(refused.unwrap_err().to_string().contains("R6-STOR-04"));
+        let survives = bridge({
+            let (raw, published) = (raw.clone(), published.clone());
+            async move { raw.head(&published).await }
+        });
+        assert!(survives.is_ok(), "the authoritative object must survive a refused staging reclaim");
+
+        // and a legitimately minted staging key IS reclaimable through it
+        let target = ObjectPath::from("base/fv1/m1/keyspace/01STAGE.sst");
+        let minted = StagingKey::mint(&target, 7);
+        assert!(minted.path().as_ref().contains(MULTIPART_ATTEMPT_INFIX), "a minted key is in the staging namespace");
+        bridge({
+            let (raw, minted) = (raw.clone(), minted.clone());
+            async move { raw.put(minted.path(), PutPayload::from_static(b"staged")).await }
+        })
+        .unwrap();
+        let reclaimed = bridge({
+            let (staging, minted) = (staging.clone(), minted.clone());
+            async move { staging.reclaim(&minted).await }
+        });
+        assert!(reclaimed.is_ok(), "a staging key must be reclaimable, got {reclaimed:?}");
+    }
+
+    #[test]
+    fn a_failed_staging_reclaim_records_a_durable_orphan() {
+        // R6-STOR-04: a swallowed `let _ = store.delete(..)` made orphan state
+        // invisible. A reclaim that fails must leave a DURABLE record.
+        let (dir, probe, store) = fixture();
+        let location = ObjectPath::from("base/fv1/m1/keyspace/01ORPHAN.sst");
+        probe.deny_reclaim.store(true, Ordering::SeqCst);
+        upload(&store, &location, vec![b"published anyway".to_vec()]).expect("publication still succeeds");
+
+        let records = store.orphans.records();
+        assert_eq!(records.len(), 1, "a failed reclaim must record exactly one orphan, got {records:?}");
+        assert!(records[0].contains(MULTIPART_ATTEMPT_INFIX), "the record names the staging key: {}", records[0]);
+        assert!(records[0].contains("staging reclaim failed"), "the record names the reason: {}", records[0]);
+        assert_eq!(store.orphans.undurable(), 0, "the record must have been made durable");
+
+        let inventory = std::fs::read_to_string(dir.join(MULTIPART_ORPHAN_FILE)).expect("the durable inventory exists");
+        assert!(inventory.contains(MULTIPART_ATTEMPT_INFIX), "the durable inventory carries the orphan key");
+        assert_eq!(inventory.lines().count(), 1);
+
+        // the published object is unaffected: cleanup is best effort, the
+        // publication is the mutation decision
+        assert_eq!(read(&store, &location).unwrap(), b"published anyway");
+    }
+
+    #[test]
+    fn an_orphan_that_cannot_be_made_durable_is_counted_not_swallowed() {
+        // No sink bound (a materialisation constructed outside `open_remote`):
+        // the record still exists in memory AND the un-durable count rises, so
+        // the failure is observable rather than silent.
+        let dir = create_tmp_dir("slate-r6-no-sink");
+        let raw: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
+        let probe = ProbeStore::new(raw);
+        probe.deny_reclaim.store(true, Ordering::SeqCst);
+        let store = Arc::new(NoDeleteStore::new(probe.clone() as Arc<dyn ObjectStore>));
+        let location = ObjectPath::from("base/fv1/m1/keyspace/01NOSINK.sst");
+        upload(&store, &location, vec![b"bytes".to_vec()]).expect("publication succeeds");
+        assert_eq!(store.orphans.records().len(), 1, "the orphan is recorded in memory");
+        assert_eq!(store.orphans.undurable(), 1, "a record that cannot be made durable is COUNTED");
+    }
+
+    #[test]
+    fn a_committed_attempt_cannot_abort_its_published_object_away() {
+        // R6-STOR-04 mutant: multipart abort aimed at an authoritative name.
+        // Abort only ever addresses the attempt's own staging key, and a
+        // COMMITTED attempt refuses abort outright — so no abort path can
+        // remove published bytes.
+        let (_dir, _probe, store) = fixture();
+        let location = ObjectPath::from("base/fv1/m1/keyspace/01ABORT.sst");
+        let refused = bridge({
+            let (store, location) = (store.clone(), location.clone());
+            async move {
+                let mut upload = store.put_multipart(&location).await?;
+                upload.put_part(PutPayload::from_static(b"published")).await?;
+                upload.complete().await?;
+                Ok::<_, slatedb::object_store::Error>(upload.abort().await)
+            }
+        })
+        .unwrap();
+        assert!(
+            matches!(refused, Err(slatedb::object_store::Error::Precondition { .. })),
+            "aborting a committed attempt must be a typed refusal, got {refused:?}",
+        );
+        assert_eq!(read(&store, &location).unwrap(), b"published", "the published object survives");
+    }
+
+    #[test]
+    fn the_authoritative_handle_cannot_overwrite_or_copy_over_a_published_name() {
+        // R6-STOR-04: the authoritative handle exposes only create-only verbs.
+        // There is no `delete`, no `rename` and no overwrite-mode copy to call
+        // on it — those names do not exist on the trait, which is why this
+        // test can only exercise the create-only ones. What it proves is that
+        // the create-only verbs cannot be turned into replacements.
+        let dir = create_tmp_dir("slate-r6-authoritative");
+        let raw: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
+        let (authoritative, _staging) = authority::split(raw.clone());
+        let occupied = ObjectPath::from("base/fv1/m1/keyspace/01OCC.sst");
+        let source = ObjectPath::from("base/fv1/m1/keyspace/01SRC.sst");
+        bridge({
+            let (authoritative, occupied, source) = (authoritative.clone(), occupied.clone(), source.clone());
+            async move {
+                authoritative
+                    .put_create(&occupied, PutPayload::from_static(b"authoritative"), PutOptions::default())
+                    .await
+                    .unwrap();
+                authoritative
+                    .put_create(&source, PutPayload::from_static(b"other"), PutOptions::default())
+                    .await
+                    .unwrap();
+            }
+        });
+        let overwritten = bridge({
+            let (authoritative, occupied) = (authoritative.clone(), occupied.clone());
+            async move {
+                authoritative
+                    .put_create(&occupied, PutPayload::from_static(b"replacement"), PutOptions::default())
+                    .await
+            }
+        });
+        assert!(overwritten.is_err(), "put through the authoritative handle is create-only");
+        let copied = bridge({
+            let (authoritative, occupied, source) = (authoritative.clone(), occupied.clone(), source.clone());
+            async move { authoritative.copy_create(&source, &occupied, CopyOptions::default()).await }
+        });
+        assert!(copied.is_err(), "copy through the authoritative handle is create-only");
+        let survives = bridge({
+            let (raw, occupied) = (raw.clone(), occupied.clone());
+            async move { raw.get(&occupied).await.unwrap().bytes().await.unwrap() }
+        });
+        assert_eq!(&survives[..], b"authoritative", "the authoritative bytes never changed");
+
+        // the manifest CAS path is reserved for manifest keys: aiming it at a
+        // data key is a typed refusal, not a conditional overwrite.
+        let misaimed = bridge({
+            let (authoritative, occupied) = (authoritative.clone(), occupied.clone());
+            async move {
+                authoritative
+                    .put_manifest(
+                        &occupied,
+                        PutPayload::from_static(b"cas"),
+                        PutOptions { mode: PutMode::Overwrite, ..Default::default() },
+                    )
+                    .await
+            }
+        });
+        assert!(
+            matches!(misaimed, Err(slatedb::object_store::Error::Precondition { .. })),
+            "the CAS path must refuse a non-manifest location, got {misaimed:?}",
         );
     }
 }

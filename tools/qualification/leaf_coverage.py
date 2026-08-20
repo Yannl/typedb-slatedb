@@ -24,6 +24,13 @@ reported with its anomalies. A bundle whose profile the plan does not
 require, whose toolchain the plan does not name, or whose tree is DIRTY
 likewise contributes nothing.
 
+`--cucumber DIR` folds in the same granularity for the CUCUMBER family, from
+tools/qualification/run_cucumber_leaf.py: one recorded outcome per Gherkin
+scenario, re-verified here by verify_cucumber_leaf.py under identical rules.
+A cucumber row that stays uncovered now says WHY - either no verified bundle
+carries that (scenario, profile), or the runner's own ignore-tag filter never
+executed it, which is a scenario with no outcome rather than a passing one.
+
 COVERED means "this leaf has a recorded outcome in this lane". It does NOT
 mean the leaf passed: a FAILED leaf is covered evidence of a failure. The
 report therefore always prints the outcome split alongside the coverage
@@ -31,7 +38,8 @@ count, and never says the plan is satisfied.
 
 Usage:
   python3 tools/qualification/leaf_coverage.py --leaf DIR [--leaf DIR ...]
-  python3 tools/qualification/leaf_coverage.py --leaf DIR --out REPORT.json
+  python3 tools/qualification/leaf_coverage.py --leaf DIR --cucumber DIR \
+      --out REPORT.json
 """
 import argparse
 import json
@@ -46,6 +54,8 @@ import common  # noqa: E402
 import plan_coverage  # noqa: E402  (the owner of the coverage rules)
 import leaf_common as lc  # noqa: E402
 import verify_leaf  # noqa: E402
+import cucumber_common as cc  # noqa: E402
+import verify_cucumber_leaf  # noqa: E402
 
 
 def load_leaf_evidence(dirs, plan, catalog_leaves, catalog_targets, repo=REPO):
@@ -108,6 +118,76 @@ def load_leaf_evidence(dirs, plan, catalog_leaves, catalog_targets, repo=REPO):
     return index, notes
 
 
+def load_cucumber_evidence(dirs, plan, catalog, repo=REPO):
+    """(leaf_index, not_run_index, notes) from cucumber leaf bundles.
+
+    Same contract as load_leaf_evidence, one level finer: every bundle is
+    RE-VERIFIED from its bytes by tools/qualification/verify_cucumber_leaf.py
+    before a single row of it is counted, and a bundle with any anomaly
+    contributes NOTHING. `not_run_index` carries the scenarios the runner's own
+    ignore-tag filter never executed, so the report can say WHY those rows are
+    uncovered instead of lumping them under "no evidence".
+    """
+    index, not_run, notes = {}, {}, []
+    corpus = None
+    for d in dirs:
+        p = pathlib.Path(d)
+        p = p if p.is_absolute() else pathlib.Path(repo) / p
+        if corpus is None:
+            corpus = cc.build_corpus_index(catalog, plan)
+        anomalies, facts = verify_cucumber_leaf.verify(p, plan, catalog,
+                                                       repo=repo, corpus=corpus)
+        note = {**facts, "bundle": str(d), "anomalies": anomalies,
+                "counted": False}
+        if anomalies:
+            note["reason"] = (f"{len(anomalies)} verification anomaly/anomalies - "
+                              f"a bundle that does not re-derive from its own "
+                              f"bytes contributes NOTHING")
+            notes.append(note)
+            continue
+        bundle = json.loads((p / cc.RESULTS_NAME).read_text())
+        profile = bundle["profile"]
+        if profile not in plan["profiles"]:
+            note["reason"] = (f"profile {profile!r} is not a plan profile; this "
+                              f"bundle's scenarios are other-lane evidence and "
+                              f"cover no plan row")
+            notes.append(note)
+            continue
+        tc_id = bundle.get("toolchain_id")
+        if tc_id is None:
+            note["reason"] = ("the toolchain matches no toolchain the plan "
+                              "names; a run on an unnamed compiler is not filed "
+                              "under the plan's lane")
+            notes.append(note)
+            continue
+        if not (p / "COMPLETE").is_file():
+            note["reason"] = ("no COMPLETE marker - the bundle was never sealed; "
+                              "an unsealed bundle is a run in progress, not "
+                              "archived evidence")
+            notes.append(note)
+            continue
+        n = 0
+        for leaf in bundle["leaves"]:
+            if not leaf.get("fixture_set_satisfied"):
+                continue
+            key = (profile, leaf["leaf_case_id"])
+            index.setdefault(key, []).append({
+                "bundle": str(d), "profile": profile,
+                "outcome": leaf["outcome"],
+                "outcome_derivation": leaf["outcome_derivation"],
+                "fixture_set_id": leaf["fixture_set_id"],
+                "toolchain_id": tc_id,
+                "raw_log": leaf["raw_log"], "log_line": leaf["log_line"],
+                "log_sha256": leaf["log_sha256"]})
+            n += 1
+        for x in bundle.get("not_run", []):
+            not_run[(profile, x["leaf_case_id"])] = x["reason"]
+        note.update({"counted": True, "leaves_indexed": n,
+                     "scenarios_not_run": len(bundle.get("not_run") or [])})
+        notes.append(note)
+    return index, not_run, notes
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -118,6 +198,10 @@ def main():
                          "plan_coverage.py's own committed bundles")
     ap.add_argument("--leaf", action="append", default=[],
                     help="leaf evidence bundle dir (repeatable)")
+    ap.add_argument("--cucumber", action="append", default=[],
+                    help="cucumber leaf evidence bundle dir (repeatable); each "
+                         "is re-verified by verify_cucumber_leaf.py before any "
+                         "row of it is counted")
     ap.add_argument("--out", type=pathlib.Path, default=None)
     ap.add_argument("--min-covered", type=int, default=None,
                     help="fail if fewer than N rows carry a leaf outcome. The "
@@ -144,6 +228,10 @@ def main():
         args.evidence or plan_coverage.DEFAULT_EVIDENCE, plan_profiles)
     leaf_index, leaf_notes = load_leaf_evidence(
         args.leaf, plan, catalog_leaves, targets, repo=args.repo)
+    cuke_index, cuke_not_run, cuke_notes = load_cucumber_evidence(
+        args.cucumber, plan, catalog, repo=args.repo)
+    for k, v in cuke_index.items():
+        leaf_index.setdefault(k, []).extend(v)
 
     leaves = plan["leaves"]
     counts, uncovered_reasons = {}, {}
@@ -174,6 +262,12 @@ def main():
             if len(covered_examples) < 3:
                 covered_examples.append({"row": [leaf_id, profile_id],
                                          "evidence": refs[:1]})
+        elif rid is None and kind == "CUCUMBER":
+            status = "UNCOVERED"
+            reason = cuke_not_run.get((profile_id, leaf_id))
+            if reason is None:
+                reason = ("no verified cucumber leaf bundle carries an outcome "
+                          "for this scenario in this profile")
         elif rid is None:
             status = "UNCOVERED"
             reason = "no leaf-level runner lane has produced archived evidence"
@@ -251,6 +345,7 @@ def main():
         "covered_examples": covered_examples,
         "target_granularity_bundles": notes,
         "leaf_bundles": leaf_notes,
+        "cucumber_leaf_bundles": cuke_notes,
         "driver_rows_detail": driver_detail,
         "plan_satisfied": False,
         "statement": (

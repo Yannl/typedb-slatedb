@@ -296,6 +296,10 @@ def main():
                       if r.get("joinable")}
             for title, items in by_title.items():
                 observations[titles[title]["target_id"]].append({
+                    "all_passed": all(cc.all_passed(s) for s in
+                                      cc.parse_summaries(cc.decolour(
+                                          (repo / log["raw_log"]).read_text(
+                                              errors="replace")))),
                     "bundle": rec["bundle"], "raw_log": log["raw_log"],
                     "log_sha256": log["log_sha256"],
                     "cargo_target": tgt, "runner_row_id": row["runner_row_id"],
@@ -361,12 +365,22 @@ def main():
                          "scenarios_executed": len(owner["run"])}
         owner_ids = {e["leaf_case_id"] for e in owner["run"]}
         for o in rest:
+            # The corroborating outcome is READ from the corroborator's own
+            # log, by the same ALL_PASSED_SUMMARY derivation - not copied from
+            # the owner. Under D1 that derivation can only ever yield PASSED
+            # (a log whose summaries are not all-passed is refused before it
+            # ever becomes an observation), so `scenarios_disagreeing` is
+            # structurally 0 here; it is still computed rather than asserted,
+            # because the day a second derivation admits FAILED this is the
+            # check that has to fire.
             shared = disagree = 0
-            by_leaf = {e["leaf_case_id"]: (ln, col)
-                       for e, (ln, col, _n) in zip(o["run"], o["items"])}
+            corr_outcome = "PASSED" if o.get("all_passed", True) else None
+            by_leaf = {e["leaf_case_id"] for e in o["run"]}
             for e in owner["run"]:
                 if e["leaf_case_id"] in by_leaf:
-                    shared += 1  # both logs are all-passed, so both say PASSED
+                    shared += 1
+                    if corr_outcome != "PASSED":
+                        disagree += 1
             only = sum(1 for e in o["run"] if e["leaf_case_id"] not in owner_ids)
             frec["corroborator_only_scenarios"] += only
             frec["corroborations"].append({
@@ -501,6 +515,7 @@ def main():
                 "counts sum to exactly the number of scenario lines scanned "
                 "from that log; therefore every scanned scenario passed",
         },
+        "join_reconciliation": cc.join_reconciliation(corpus, features, leaves),
         "sources": sources,
         "corpus": [{k: v for k, v in r.items() if k != "entries"}
                    for r in corpus.values()],

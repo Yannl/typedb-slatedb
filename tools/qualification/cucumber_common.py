@@ -628,6 +628,54 @@ def count_keyword_lines(text):
     return plain, outline
 
 
+def join_reconciliation(corpus, features, leaves):
+    """The headline the whole exercise turns on, in numbers a reader can check.
+
+    Aggregated from the SAME per-feature records the verifier recomputes, so
+    it is a summary of proven facts and not a second, softer claim. The
+    `identical_substituted_name_*` figures are here because they are the
+    reason the ordinal binding exists at all: when nine examples of one
+    template substitute to the same string, a name-based join cannot tell
+    them apart and only position can.
+    """
+    templates, ident_groups, ident_rows = set(), 0, 0
+    ex_catalogued = plain_catalogued = 0
+    for rec in corpus.values():
+        if not rec.get("joinable"):
+            continue
+        seen = collections.Counter()
+        for e in rec["entries"]:
+            if e["template"] is None:
+                plain_catalogued += 1
+                continue
+            ex_catalogued += 1
+            templates.add((rec["target_id"], e["template"], e["declaration_line"]))
+            seen[(e["template"], e["declaration_line"], e["runtime_name"])] += 1
+        for _k, n in seen.items():
+            if n > 1:
+                ident_groups += 1
+                ident_rows += n
+    return {
+        "features_expanded": sum(1 for r in corpus.values() if r.get("joinable")),
+        "scenarios_expanded": sum(len(r["entries"]) for r in corpus.values()),
+        "P1_features_agreeing_with_catalogue":
+            sum(1 for r in corpus.values() if r.get("joinable")),
+        "P2_leaves_agreeing_with_plan_anchor":
+            sum(len(r["entries"]) for r in corpus.values() if r.get("joinable")),
+        "P3_features_order_exact_in_owning_log":
+            sum(1 for f in features if f.get("owner")),
+        "outline_templates": len(templates),
+        "outline_examples_catalogued": ex_catalogued,
+        "plain_scenarios_catalogued": plain_catalogued,
+        "outline_examples_bound": sum(1 for l in leaves if l["example_index"]),
+        "plain_scenarios_bound": sum(1 for l in leaves if not l["example_index"]),
+        "scenarios_bound_total": len(leaves),
+        "features_refused": sum(1 for f in features if f.get("refusals")),
+        "identical_substituted_name_groups": ident_groups,
+        "identical_substituted_name_scenarios": ident_rows,
+    }
+
+
 # ------------------------------------------------------------- bundle seal
 
 def bundle_files(results_dir, bundle, repo=REPO):

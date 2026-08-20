@@ -31,6 +31,6 @@
   "logs_read": 14,
   "logs_refused": 4
  },
- "bundle_root": "49c28b84a4ddfc5486a086fc9dfe1452bd2f834814bb7537aafc1070e3315157",
+ "bundle_root": "81c1ab7057f5e6275d0a16e30b16a721066a1c661b492c3e140794aba5e1192c",
  "statement": "This bundle records per-SCENARIO outcomes, not a pass. COVERED means an outcome was RECORDED for that scenario in this lane; a FAILED leaf would be covered evidence of a failure. Scenarios the runner's ignore-tag filter never executed are reported NOT_RUN and cover nothing."
 }

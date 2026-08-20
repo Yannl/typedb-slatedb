@@ -54,3 +54,47 @@ as a quality pass.
 5. The report records `head_sha`; `verify-report` refuses a report whose
    `head_sha` does not match the working `HEAD`. A green report for SHA `A`
    does not certify SHA `B`.
+
+## Role contracts (`agents/`)
+
+Seven role contracts, spec §11, each stating what the role owns, what it must
+not do, and its required structured handoff (§17, validated against
+`schemas/handoff.schema.json`). **The separation-of-powers rule of §11.1 —
+no agent may both produce a change and unilaterally certify it — is restated
+in every one of them**, because it is the property the whole pipeline is for.
+
+| File | Role | Owns | Fresh context required |
+|---|---|---|---|
+| `agents/specifier.md` | Specifier / Contract Guardian | observable behavior, acceptance criteria, the independent QA plan | recommended |
+| `agents/coder.md` | Coder / Builder | production implementation and focused unit tests | recommended |
+| `agents/cleaner.md` | Cleaner / Refactorer | behavior-preserving improvement; cover-then-split CRAP remediation | recommended |
+| `agents/architect.md` | Architect | boundaries, dependency direction, property tests | recommended |
+| `agents/hardener.md` | Hardener / Breaker | mutation, fuzzing, adversarial cases | **yes** (`[agents] fresh_hardener_context`) |
+| `agents/verifier.md` | QA / Independent Verifier | independent re-verification from a clean checkout | **yes** (`[agents] fresh_verifier_context`) |
+| `agents/integrator.md` | Integrator (optional) | landing, never implementation | — |
+
+## Architecture invariants (`architecture/`)
+
+`architecture/rust-dependencies.toml` — the §6 forbidden-edge model, 33 edges
+across the repository's two cargo workspaces (`fork/typedb/Cargo.toml` and
+`tools/Cargo.toml`). Every edge was derived from real `cargo metadata` output
+rather than from what sounds plausible, every one is currently satisfied, and
+the edges deliberately **not** added are named in the file's header with the
+reason. The load-bearing facts it encodes:
+
+- `slatedb` is declared by exactly one crate in the product workspace,
+  `fork/typedb/storage`; `object_store` by none. That is what makes the
+  externally-issued-epoch fence (ADR-0012) unbypassable.
+- `fork/typedb/durability` knows nothing about `storage` or any engine;
+  `storage -> durability` is the only direction that exists.
+- `tools/protocol-models` has zero dependencies of any kind — it is the
+  executable protocol specification, and it describes the protocol rather
+  than speaking it.
+- `xtask` depends on none of the code it measures.
+
+The model is evaluated over **declared** dependencies (`cargo metadata
+--no-deps`), normal and build kinds only. Resolve-graph questions — such as
+whether the product actually links the SlateDB soft fork rather than the
+registry crate — have a different and stronger owner in
+`tools/ci/check_dependency_sources.py`, and are deliberately not restated
+here.

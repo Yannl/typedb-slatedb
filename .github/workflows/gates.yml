@@ -6,19 +6,24 @@ name: gates (tier 1 - every PR)
 #           locks + mutants, ledger/catalogue/plan + mutants, fmt +
 #           `git diff --check` + Clippy/warning ratchet, control core +
 #           workerd + standing mutants, storage/durability unit, the STRICT
-#           negative epoch suite, a SHORT provider corpus, and the
-#           dependency/advisory/source-truth scans.
+#           negative epoch suite, a SHORT provider corpus, the
+#           dependency/advisory/source-truth scans, the deterministic
+#           CODE-QUALITY controller (`cargo xtask quality`, tiers A/B of the
+#           agentic quality spec), and the zizmor workflow audit.
 #
 #   tier 2  .github/workflows/nightly.yml                nightly + pre-live
 #           storage integrations + bench compile, full feature-off and
 #           feature-on SlateDB suites, the FULL S3 crash/fault corpus on
-#           RustFS with the MinIO comparator, managed local E2Es, and the
-#           full dependency/security scans.
+#           RustFS with the MinIO comparator, managed local E2Es, the
+#           full dependency/security scans, the FULL quality campaign
+#           (`cargo xtask quality full`, tier C), and the zizmor audit
+#           against newly-published rules.
 #
 #   tier 3  .github/workflows/release-qualification.yml  release only
 #           clean hermetic environment, full plan + leaf evidence, Mode Q,
 #           immutable release identity + SBOM + provenance + tested-artifact
-#           digests.
+#           digests, and the full quality campaign re-run and SHA-bound to
+#           the commit being released.
 #
 # Two rules bind all three (§11):
 #   * No job may use `continue-on-error` for a release predicate. There is
@@ -70,7 +75,21 @@ name: gates (tier 1 - every PR)
 #   - control plane: typecheck, node suites (incl. the era-A migration
 #     fixtures and crash matrix), standing mutant, workerd lane, the full
 #     protocol E2E on real workerd, and the 14-probe harness self-test;
-#   - storage: protocol models + storage library over the staged fork.
+#   - storage: protocol models + storage library over the staged fork;
+#   - CODE QUALITY (the agentic quality specification, §14.1/§14.2): the
+#     deterministic controller `cargo xtask quality`, whose policy lives in
+#     `.quality/` and never in this file. On a pull_request it runs
+#     `policy-check --base` then `pr --base` against the TRUSTED base SHA;
+#     on a bare push there is no trusted base, so it runs `fast` and says so
+#     in an annotation rather than inventing a baseline from the tree under
+#     test. The job is never `if:`-skipped and carries no
+#     `continue-on-error:` - see its own header for why every cheaper shape
+#     was refused;
+#   - WORKFLOW SECURITY: `zizmor` over `.github/workflows/**`, installed
+#     from a sha256-verified wheel rather than an unpinned action, at the
+#     default persona with no severity or confidence floor. The one
+#     suppressed finding is ignored by exact line in `.github/zizmor.yml`
+#     with its argument written down.
 #
 # What is deliberately NOT in TIER 1, and where it moved (recorded, not
 # hidden - R6-CI-01 turned most of this list from "nowhere" into "tier 2/3"):
@@ -705,3 +724,230 @@ jobs:
       - name: storage benches still compile (R5-QUAL-01 - compile check only, never executed)
         working-directory: sources/typedb
         run: cargo +1.93.0 bench -p storage --no-run --locked
+
+  quality-controller:
+    # Spec §14.1 (tier A) and §14.2 (tier B) of the agentic code-quality
+    # specification, mapped onto THIS repository's tier 1.
+    #
+    # ONE interface, four verbs, no hand-built scope flags:
+    #
+    #     cargo xtask quality fast
+    #     cargo xtask quality pr           --base <BASE_SHA>
+    #     cargo xtask quality full
+    #     cargo xtask quality policy-check --base <BASE_SHA>
+    #
+    # Everything that decides what a gate MEANS - thresholds, the trusted
+    # CRAP baseline, coverage scope, mutation scope, the architecture edges,
+    # the protected-path list - lives in `.quality/` and is read by the
+    # controller. It is deliberately NOT in this file, so that editing a
+    # workflow cannot change a verdict without also editing protected policy,
+    # which `policy-check` then refuses.
+    #
+    # WHAT THIS JOB IS HONEST ABOUT:
+    #
+    #   * The `xtask` crate that implements these verbs and the `cargo xtask`
+    #     alias in `.cargo/config.toml` land in the same change set as this
+    #     job. Both were verified present and resolving from the repository
+    #     root before this job was written: `cargo xtask` prints the four
+    #     modes below and exits with the documented codes (0 pass, 1 quality
+    #     failure, 2 policy violation, 3 infrastructure failure). If either
+    #     is ever removed, `cargo xtask ...` exits nonzero and this job goes
+    #     RED rather than skipping - deliberately. The cheaper shapes
+    #     (`if: hashFiles('xtask/**') != ''`, `continue-on-error: true`, a
+    #     trailing `|| true`) all make "the gate did not run" and "the gate
+    #     passed" indistinguishable, which is the one thing the tier map's
+    #     §11 rules and the quality spec's §19 both forbid. A missing
+    #     controller is a missing gate, and a missing gate is red.
+    #
+    #   * The toolchain pins are load-bearing for this job specifically. The
+    #     controller checks the running toolchain against
+    #     `.quality/tools.lock.toml` and reports an InfrastructureFailure on
+    #     a mismatch, so the `1.93.0` toolchain step below must remain the
+    #     LAST rust-toolchain action in this job (it becomes the default).
+    #
+    #   * TIER B needs a TRUSTED BASE SHA and only a `pull_request` event has
+    #     one. On a bare `push` the job runs tier A (`quality fast`) and says
+    #     so in an annotation; it does not invent a baseline from the pushed
+    #     tree, because a baseline derived from the code under test is not a
+    #     baseline (spec §2.5). Merge decisions therefore come from the
+    #     pull_request run. The job is not skipped on push - a skipped
+    #     required check reads as green to branch protection.
+    #
+    #   * THE FIRST CHANGE THAT LANDS THE QUALITY SYSTEM TRIPS ITS OWN POLICY
+    #     GATE. `policy-check` refuses any implementation diff that touches
+    #     `.quality/**` or `.github/workflows/**`, and the change that
+    #     CREATES those files touches them by definition. That PR must travel
+    #     the independent-review path described in `.quality/README.md`. It
+    #     is recorded here rather than worked around, because the workaround
+    #     would be to weaken the check.
+    #
+    #   * No evidence artifact is uploaded. `actions/upload-artifact` is not
+    #     used anywhere in this repository: every action here is pinned to a
+    #     commit SHA that was resolved and recorded, and no verified SHA for
+    #     an artifact action exists in this file (see the identical note in
+    #     `provider-corpus-capability`). The controller's report is printed
+    #     into the job summary instead. Wiring a SHA-pinned upload is a
+    #     recorded remainder, not a silent omission.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # the controller resolves a diff against the trusted base SHA and
+          # builds a detached worktree at that SHA for the baseline; a
+          # shallow clone cannot do either
+          fetch-depth: 0
+          persist-credentials: false # R5-CI-01
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11.9"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22.22.2"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          # the FORMATTING toolchain, pinned separately from the build
+          # toolchain for the reason given in the `hygiene` job
+          toolchain: "nightly-2026-04-15"
+          components: rustfmt
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: "1.93.0"
+          components: clippy, llvm-tools-preview
+      - name: native prerequisites (bounded by the pinned runner image)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler cmake pkg-config libclang-dev
+      - name: install the npm workspaces from their locks
+        # `npm ci`, never `npm install`: the TypeScript gates must run against
+        # the committed lockfile, not a re-resolved tree.
+        run: |
+          (cd stack && npm ci)
+          (cd control-plane && npm ci)
+      - name: materialise and stage the fork
+        # Same three commands as the `storage` job. The Rust production scope
+        # includes `fork/typedb/**`, whose workspace-global
+        # `[patch.crates-io] slatedb = { path = "../../sources/slatedb-fork" }`
+        # cannot resolve until the SlateDB fork is reconstructed. The
+        # controller decides from the diff whether it needs any of this
+        # (`.quality/policy.toml` [[scope.rule]]); the job's duty is only to
+        # make the environment capable, never to decide the gate.
+        run: |
+          python3 tools/source-lock/materialize_sources.py
+          python3 tools/fork/materialize_slatedb.py
+          python3 tools/fork/stage.py
+      - name: "quality gate: tier B on a pull request, tier A on a bare push"
+        env:
+          # consumed through env rather than interpolated into the shell:
+          # a `${{ }}` expansion inside `run:` is a shell-injection shape
+          # regardless of today's producer (spec §19)
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "${PR_BASE:-}" ]; then
+            echo "trusted base SHA: $PR_BASE (pull_request) - running tier B"
+            # protected quality policy first (§12/§14.2 "always"): a diff that
+            # smuggles a threshold, baseline, exclusion or workflow change
+            # into an implementation change is refused here, before any gate
+            # has a chance to be measured against the modified rules.
+            cargo xtask quality policy-check --base "$PR_BASE"
+            cargo xtask quality pr --base "$PR_BASE"
+          else
+            echo "::notice title=QUALITY-TIER-A::no pull_request base SHA on a ${GITHUB_EVENT_NAME} event; running tier A only. A trusted baseline cannot be derived from the tree under test (spec 2.5), so the merge decision comes from the pull_request run of this job."
+            cargo xtask quality fast
+          fi
+      - name: publish the quality report into the job summary
+        # `if: always()` so the report is visible when the gate FAILED, which
+        # is when it matters. This step reads a file; it cannot turn a failed
+        # gate green, and the job's conclusion is still the gate's.
+        if: always()
+        run: |
+          report=artifacts/quality/quality-report.json
+          {
+            echo "### quality report"
+            if [ -f "$report" ]; then
+              echo '```json'
+              cat "$report"
+              echo '```'
+            else
+              echo "No \`$report\` was produced. If the gate above failed before"
+              echo "the controller could write one, that is the reason; a missing"
+              echo "report is not a pass."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  workflow-security-audit:
+    # Spec §19 "run a GitHub Actions security auditor such as zizmor".
+    #
+    # It lives in tier 1 because a workflow can only change through a push or
+    # a PR, so this is the tier that sees the diff. It is ALSO in tier 2
+    # (nightly.yml), for the same reason the dependency scan is in every
+    # tier: a newly-published audit rule fires against unchanged workflows,
+    # and a PR-only scan can only ever see the rules that existed when
+    # someone happened to open a PR.
+    #
+    # FAIL-CLOSED. The default `regular` persona, no `--min-severity` and no
+    # `--min-confidence` floor: a finding is either fixed, or ignored by
+    # exact line in `.github/zizmor.yml` with the reason written down. There
+    # is exactly one such ignore today and its argument is recorded there.
+    # zizmor exits 0 on no findings and 13/14 when findings remain, so the
+    # step needs no wrapper to be a gate.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false # R5-CI-01
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11.9"
+      - name: install zizmor from a digest-pinned wheel
+        # NOT a zizmor GitHub Action: every action in this repository is
+        # pinned to a resolved and recorded commit SHA, and no verified SHA
+        # for one exists here. NOT `pip install zizmor==...` either, because
+        # that trusts version resolution at install time. This is the same
+        # curl + `sha256sum -c` + install shape the Bazel install in
+        # nightly.yml uses, which is the strongest pin available without an
+        # action.
+        #
+        # zizmor 1.29.0, manylinux_2_28_x86_64 wheel, resolved from PyPI on
+        # 2026-08-20. The package declares no runtime dependencies, so
+        # `--no-deps` installs exactly these bytes and nothing else.
+        env:
+          ZIZMOR_VERSION: "1.29.0"
+          ZIZMOR_WHEEL: "zizmor-1.29.0-py3-none-manylinux_2_28_x86_64.whl"
+          ZIZMOR_URL: "https://files.pythonhosted.org/packages/b4/f0/dfa67018b76bc4f2f50e265e8cbd1293833d1b1de5f3f02fbbb7487ae9c6/zizmor-1.29.0-py3-none-manylinux_2_28_x86_64.whl"
+          ZIZMOR_SHA256: "587b99c2e1b34575c6c8565c2bfde415ca8bc0310f5589f19bc948c8dea10a20"
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fsSL -o "$ZIZMOR_WHEEL" "$ZIZMOR_URL"
+          echo "${ZIZMOR_SHA256}  ${ZIZMOR_WHEEL}" | sha256sum -c -
+          python3 -m pip install --no-deps --no-index "./${ZIZMOR_WHEEL}"
+          # the wheel ships a compiled binary as a console script, not an
+          # importable module, so resolve the script directory rather than
+          # trusting PATH ordering
+          bin="$(python3 -c 'import os,sysconfig;print(os.path.join(sysconfig.get_path("scripts"),"zizmor"))')"
+          "$bin" --version | grep -qx "zizmor ${ZIZMOR_VERSION}"
+          echo "ZIZMOR_BIN=$bin" >> "$GITHUB_ENV"
+      - name: audit every workflow
+        # `--offline`: no GH token, no online audit rules, no network
+        # dependence in a gate. The config at .github/zizmor.yml is
+        # auto-discovered.
+        run: |
+          "$ZIZMOR_BIN" --offline --no-progress --color never .github/workflows/
+      - name: every checkout drops its credentials (§19, artipacked)
+        # zizmor does NOT protect this at the persona this gate runs at.
+        # Measured, with one guard flipped to `persist-credentials: true`:
+        #   --persona=auditor  -> artipacked fires
+        #   --persona=pedantic -> 0
+        #   --persona=regular  -> 0    <- what runs above
+        # At `regular` the finding is counted "suppressed" and a regression
+        # would pass green. Raising the whole gate to `auditor` is not the
+        # fix either: the clean tree yields 52 findings there, so the gate
+        # would be permanently red or would need a severity floor - and a
+        # floor silently swallows unrelated future findings. So this one
+        # invariant gets its own exact, fail-closed check instead.
+        run: python3 tools/ci/check_workflow_checkouts.py
+      - name: the checkout gate can actually fail
+        run: python3 tools/ci/check_workflow_checkouts.py --self-test

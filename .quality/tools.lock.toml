@@ -173,6 +173,13 @@ detect = ["npx", "--no-install", "depcruise", "--version"]
 cwd = "control-plane"
 remediation = "npm --prefix control-plane install --save-dev dependency-cruiser@18.2.0"
 
+[tool.crap4ts]
+version = "0.6.2"
+mode = "exact"
+detect = ["crap4ts", "--version"]
+remediation = "cargo install --locked crap4rs@0.6.2   # the crap-rs family ships crap4ts alongside crap4rs"
+advisory = true
+
 [tool.stryker]
 version = "10.0.0"
 mode = "exact"

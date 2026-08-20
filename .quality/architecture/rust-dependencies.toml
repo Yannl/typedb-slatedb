@@ -1,37 +1,50 @@
 # Machine-checkable Rust dependency-direction invariants (spec §6).
 #
 # PROTECTED FILE (.quality/** — see .quality/policy.toml [protected]).
-# An implementation agent may not delete or weaken an edge to make its change
-# pass. Relaxing an edge is a quality-policy change and takes the independent
-# review path, not a line edit in the same commit as the code that needed it.
+# Disabling an architecture edge rule is one of the forbidden self-service
+# escapes (§12). An implementation agent may not delete or weaken an edge to
+# make its change pass; relaxing one is a quality-policy change on the
+# independent-review path, not a line edit in the same commit as the code
+# that needed it.
+#
+# THIS FILE SUPERSEDES THE PHASE-0 EMPTY PLACEHOLDER. The placeholder was
+# right to refuse invented edges, and its example edges illustrate exactly
+# the failure it was guarding against: `typedb-storage` and `typedb-encoding`
+# are not package names in this repository (they are `storage` and
+# `encoding`), and `aws-sdk-s3` does not appear in the resolve graph at any
+# depth. The edges below are derived from actual `cargo metadata` output
+# instead, so the gate can now report a real result rather than
+# `not_applicable`.
 #
 # ---------------------------------------------------------------------------
-# HOW THIS FILE IS EVALUATED
+# INTERFACE NOTES FOR THE CONTROLLER
 # ---------------------------------------------------------------------------
 #
-# `cargo xtask quality` reads DECLARED dependencies out of
-# `cargo metadata --format-version 1 --no-deps --offline` for each workspace
-# named below. Declared, not resolved: the question this file answers is
-# "which crate did an author choose to depend on", and that is a manifest
-# fact. Resolved-graph questions (does the product actually link the SlateDB
-# soft fork rather than the registry crate?) are a DIFFERENT question with a
-# different, stronger owner — `tools/ci/check_dependency_sources.py`, which
-# re-derives them from the full resolve graph. This file deliberately does
-# not restate them; two weaker copies of one truth is how a repository ends
-# up with two answers.
-#
-#   workspace  which cargo workspace the edge is evaluated in. There are two,
-#              and a crate name alone is ambiguous between them:
-#                "fork/typedb"  -> manifest fork/typedb/Cargo.toml
-#                "tools"        -> manifest tools/Cargo.toml
+#   workspace  REQUIRED. This repository has TWO cargo workspaces, and a bare
+#              crate name is ambiguous between them:
+#                "fork/typedb"  -> manifest fork/typedb/Cargo.toml (43 members)
+#                "tools"        -> manifest tools/Cargo.toml       (4 members)
 #              MEASURED 2026-08-20: `fork/typedb/Cargo.toml` and the staged
-#              `sources/typedb/Cargo.toml` declare byte-identical edge sets
-#              for all 43 members, so this check runs against the FORK tree
-#              and needs neither `materialize_sources.py` nor `stage.py` nor
-#              a network fetch. That is what makes it affordable in tier 1.
-#   from       must be a member of that workspace.
+#              `sources/typedb/Cargo.toml` declare byte-identical dependency
+#              sets for all 43 members, so this check can run against the
+#              FORK tree and needs neither `materialize_sources.py` nor
+#              `stage.py` nor a network fetch. That is what makes it
+#              affordable in tier 1.
+#   from       a package name (or glob) that must resolve to a MEMBER of that
+#              workspace. Every `from` below is a literal name, no
+#              metacharacters, so it is also a valid glob.
 #   to         a member of that workspace OR an external crate name.
 #   reason     why the edge is forbidden. Mandatory.
+#
+# EVALUATED OVER DECLARED DEPENDENCIES — `cargo metadata --format-version 1
+# --no-deps --offline` — not the resolved graph. The question this file
+# answers is "which crate did an author choose to depend on", and that is a
+# manifest fact. Resolve-graph questions (does the product actually link the
+# SlateDB soft fork rather than the registry crate?) are a different question
+# with a stronger existing owner, `tools/ci/check_dependency_sources.py`,
+# which re-derives them from the full resolve graph. This file deliberately
+# does not restate them: two weaker copies of one truth is how a repository
+# ends up with two answers.
 #
 # KINDS. `normal` and `build` dependencies are in scope. `dev-dependencies`
 # are NOT, and that is a deliberate, load-bearing choice rather than an
@@ -39,9 +52,8 @@
 # dev-dependency, i.e. the storage crate's own test binaries link the layer
 # above it. That upward test-only edge exists today, is upstream TypeDB's
 # arrangement rather than this port's, and forbidding it would make this file
-# red on arrival for a reason no one in this repository chose. If test-only
-# direction ever becomes worth gating, it needs its own list and its own
-# argument.
+# red on arrival for a reason nobody here chose. If test-only direction ever
+# becomes worth gating, it needs its own list and its own argument.
 #
 # ---------------------------------------------------------------------------
 # PROVENANCE OF EVERY EDGE BELOW
@@ -80,12 +92,13 @@
 #     forbidden: those are domain crates with no such pending work.
 #   * `storage-diff-spike` carries no edges. Its integrity property is that
 #     it resolves the *registry* SlateDB 0.15.0 rather than the fork, which
-#     makes it the oracle for the fork. That is a resolve-graph/source fact
-#     already gated by `tools/ci/check_dependency_sources.py`, and a weaker
-#     manifest-level restatement here would not add a dimension.
+#     is what makes it an oracle for the fork. That is a resolve-graph/source
+#     fact already gated by `tools/ci/check_dependency_sources.py`, and a
+#     weaker manifest-level restatement here would not add a dimension.
 #   * `resource` carries no edges despite being a true leaf (one external
 #     dependency, zero internal). Nothing in the port's risk model turns on
 #     it staying that way.
+#   * No edge constrains `cache`, which legitimately declares `rocksdb`.
 
 schema = 1
 
@@ -273,7 +286,7 @@ reason = "The protocol layer is independent of the storage engine. A SlateDB dep
 workspace = "tools"
 from = "protocol-models"
 to = "serde"
-reason = "The crate is declared as 'pure deterministic models' and today has no dependencies at all, so its wire encodings are written out rather than derived. Adding a serialization framework changes what the reference model IS — it is a design decision with an independent-review path, not an incidental import. THIS IS THE EDGE MOST LIKELY TO BE LEGITIMATELY RELAXED; relax it deliberately if so."
+reason = "The crate is declared as 'pure deterministic models' and today has no dependencies at all, so its wire encodings are written out rather than derived. Adding a serialization framework changes what the reference model IS — a design decision with an independent-review path, not an incidental import. THIS IS THE EDGE MOST LIKELY TO BE LEGITIMATELY RELAXED; relax it deliberately if so."
 
 # --- remote-wal-spike is the reference client for the L1 remote WAL
 # --- protocol against the Durable Object write authority.

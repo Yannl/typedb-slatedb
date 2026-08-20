@@ -10,6 +10,7 @@ Readiness policy (round-4 R4-LOCAL-01): the runner treats ONLY a
 successful AUTHENTICATED S3 operation as ready — never a /health
 endpoint, which RustFS has been observed to answer before storage quorum.
 """
+
 import datetime
 import hashlib
 import hmac
@@ -37,16 +38,26 @@ def sigv4_request(endpoint: str, method: str, path: str, body: bytes = b"") -> i
         "x-amz-date": amz_date,
     }
     signed = ";".join(sorted(headers))
-    canonical = "\n".join([
-        method, path, "",
-        *(f"{k}:{headers[k]}" for k in sorted(headers)), "",
-        signed, payload_hash,
-    ])
+    canonical = "\n".join(
+        [
+            method,
+            path,
+            "",
+            *(f"{k}:{headers[k]}" for k in sorted(headers)),
+            "",
+            signed,
+            payload_hash,
+        ]
+    )
     scope = f"{date}/auto/s3/aws4_request"
-    to_sign = "\n".join([
-        "AWS4-HMAC-SHA256", amz_date, scope,
-        hashlib.sha256(canonical.encode()).hexdigest(),
-    ])
+    to_sign = "\n".join(
+        [
+            "AWS4-HMAC-SHA256",
+            amz_date,
+            scope,
+            hashlib.sha256(canonical.encode()).hexdigest(),
+        ]
+    )
     k = _sign(_sign(_sign(_sign(("AWS4" + secret).encode(), date), "auto"), "s3"), "aws4_request")
     signature = hmac.new(k, to_sign.encode(), hashlib.sha256).hexdigest()
     headers["authorization"] = (

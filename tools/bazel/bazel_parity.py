@@ -14,7 +14,15 @@ toolchains and enumerates the graph completely.
 Usage:
   tools/bazel/bazel_parity.py --bazel /path/to/bazel [--out docs/evidence/G0/bazel-parity]
 """
-import argparse, collections, json, os, pathlib, re, subprocess, sys
+
+import argparse
+import collections
+import json
+import os
+import pathlib
+import re
+import subprocess
+import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 TB = REPO / "sources" / "typedb"
@@ -31,8 +39,13 @@ def run(cmd, **kw):
 
 
 def bazel_query(bazel, expr, out_fmt=None):
-    cmd = [bazel, "--output_user_root=" + os.environ.get("BAZEL_ROOT", "/home/user/.bazel-out"),
-           "query", expr, "--disk_cache="]
+    cmd = [
+        bazel,
+        "--output_user_root=" + os.environ.get("BAZEL_ROOT", "/home/user/.bazel-out"),
+        "query",
+        expr,
+        "--disk_cache=",
+    ]
     if out_fmt:
         cmd.append("--output=" + out_fmt)
     r = run(cmd, cwd=TB)
@@ -51,25 +64,22 @@ def norm(label):
 # so a NEW divergence cannot appear silently — the same discipline the fork's
 # EXCLUSIONS list carries. Removing an entry here is how it gets fixed.
 KNOWN_CATALOGUE_ONLY = {
-    "//tool/test:simulate-crash":
-        "catalogue entry with no referent: //tool/test:all contains only "
-        "//tool/test:checkstyle at the pinned revision. Real catalogue defect, "
-        "recorded rather than deleted, because deleting a plan row silently is "
-        "how a denominator shrinks.",
+    "//tool/test:simulate-crash": "catalogue entry with no referent: //tool/test:all contains only "
+    "//tool/test:checkstyle at the pinned revision. Real catalogue defect, "
+    "recorded rather than deleted, because deleting a plan row silently is "
+    "how a denominator shrinks.",
 }
 KNOWN_BAZEL_ONLY_NON_RUST_TEST = {
-    "//:Release_validate_deps_gen":
-        "release dependency-manifest generator; not a semantic test of the "
-        "product and not in the qualification denominator.",
-    "//:release-validate-deps":
-        "release dependency-manifest check; same rationale.",
+    "//:Release_validate_deps_gen": "release dependency-manifest generator; not a semantic test of the "
+    "product and not in the qualification denominator.",
+    "//:release-validate-deps": "release dependency-manifest check; same rationale.",
 }
+
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bazel", default="/home/user/.bazel-bin/bazel")
-    ap.add_argument("--out", type=pathlib.Path,
-                    default=REPO / "docs/evidence/G0/bazel-parity")
+    ap.add_argument("--out", type=pathlib.Path, default=REPO / "docs/evidence/G0/bazel-parity")
     args = ap.parse_args()
 
     # --- 1. the real Bazel test-target graph -------------------------------
@@ -78,26 +88,36 @@ def main():
         if line.strip():
             kind, _rule, label = line.split(None, 2)
             kinds[label.strip()] = kind
-    upstream = {l: k for l, k in kinds.items() if not l.startswith(SHIM)}
+    upstream = {label: k for label, k in kinds.items() if not label.startswith(SHIM)}
 
     # --- 2. catalogue labels vs that graph ---------------------------------
     cat = json.loads(CATALOG.read_text())
-    cl = {norm(t["upstream_label"]): t for t in cat["targets"]
-          if t["upstream_label"] and t["upstream_label"].startswith("//")}
+    cl = {
+        norm(t["upstream_label"]): t
+        for t in cat["targets"]
+        if t["upstream_label"] and t["upstream_label"].startswith("//")
+    }
     cat_only = sorted(set(cl) - set(upstream))
     bazel_only = sorted(set(upstream) - set(cl))
 
     # --- 3. bazel rust_test -> cargo target, matched by SOURCE PATH --------
     import xml.etree.ElementTree as ET
+
     root = ET.fromstring(bazel_query(args.bazel, f"kind(rust_test, //... - {SHIM}...)", "xml"))
-    meta = json.loads(run(["cargo", "metadata", "--no-deps", "--format-version", "1",
-                           "--offline"], cwd=TB).stdout)
+    meta = json.loads(
+        run(["cargo", "metadata", "--no-deps", "--format-version", "1", "--offline"], cwd=TB).stdout
+    )
     all_cargo, by_src, by_dir = [], {}, collections.defaultdict(list)
     for p in meta["packages"]:
         d = os.path.dirname(os.path.realpath(p["manifest_path"]))
         for t in p["targets"]:
-            rec = {"pkg": p["name"], "target": t["name"], "kinds": t["kind"],
-                   "src": t["src_path"], "test": t.get("test")}
+            rec = {
+                "pkg": p["name"],
+                "target": t["name"],
+                "kinds": t["kind"],
+                "src": t["src_path"],
+                "test": t.get("test"),
+            }
             all_cargo.append(rec)
             # a src_path can back two cargo targets (a helper lib crate and the
             # tests/*.rs target cargo auto-discovers for it); keep the first for
@@ -108,45 +128,70 @@ def main():
     crosswalk = []
     for rule in root.findall("rule"):
         label = rule.get("name")
-        attrs = {e.get("name"): ([c.get("value") for c in e] if e.tag == "list"
-                                 else (e.get("value") or e.get("label")))
-                 for e in rule}
+        attrs = {
+            e.get("name"): (
+                [c.get("value") for c in e]
+                if e.tag == "list"
+                else (e.get("value") or e.get("label"))
+            )
+            for e in rule
+        }
         row = {"bazel_target": label, "cargo": None, "note": ""}
-        if attrs.get("srcs"):                      # integration test
+        if attrs.get("srcs"):  # integration test
             pkg = label[2:].split(":")[0]
-            hits = [by_src[p] for p in
-                    (os.path.realpath(str(TB / pkg / s.split(":", 1)[1])) for s in attrs["srcs"])
-                    if p in by_src]
+            hits = [
+                by_src[p]
+                for p in (
+                    os.path.realpath(str(TB / pkg / s.split(":", 1)[1])) for s in attrs["srcs"]
+                )
+                if p in by_src
+            ]
             if hits:
-                row["cargo"] = f'{hits[0]["pkg"]}:{"/".join(hits[0]["kinds"])}:{hits[0]["target"]}'
+                row["cargo"] = f"{hits[0]['pkg']}:{'/'.join(hits[0]['kinds'])}:{hits[0]['target']}"
             else:
                 row["note"] = "no cargo target with a matching src_path"
-        elif attrs.get("crate"):                   # lib unit tests
+        elif attrs.get("crate"):  # lib unit tests
             d = os.path.realpath(str(TB / attrs["crate"][2:].split(":")[0]))
             libs = [c for c in by_dir.get(d, []) if "lib" in c["kinds"]]
             if libs:
-                row["cargo"] = f'{libs[0]["pkg"]}:lib:{libs[0]["target"]}'
+                row["cargo"] = f"{libs[0]['pkg']}:lib:{libs[0]['target']}"
             else:
                 row["note"] = f"no cargo package at {d}"
         crosswalk.append(row)
 
     matched = [r for r in crosswalk if r["cargo"]]
-    cargo_only = sorted({f'{c["pkg"]}:{"/".join(c["kinds"])}:{c["target"]}'
-                         for c in all_cargo
-                         if c["test"] and set(c["kinds"]) & {"lib", "test"}}
-                        - {r["cargo"] for r in matched})
+    cargo_only = sorted(
+        {
+            f"{c['pkg']}:{'/'.join(c['kinds'])}:{c['target']}"
+            for c in all_cargo
+            if c["test"] and set(c["kinds"]) & {"lib", "test"}
+        }
+        - {r["cargo"] for r in matched}
+    )
 
     # --- 4. catalogue CARGO entries vs live cargo metadata -----------------
-    cat_cargo = {(t["cargo_package"], t["cargo_target"])
-                 for t in cat["targets"] if t["origin"] == "CARGO"}
-    live_cargo = {(c["pkg"], c["target"]) for c in all_cargo
-                  if set(c["kinds"]) & {"lib", "test", "bench", "bin"}}
+    cat_cargo = {
+        (t["cargo_package"], t["cargo_target"]) for t in cat["targets"] if t["origin"] == "CARGO"
+    }
+    live_cargo = {
+        (c["pkg"], c["target"])
+        for c in all_cargo
+        if set(c["kinds"]) & {"lib", "test", "bench", "bin"}
+    }
 
     # --- 5. did the fork DROP any upstream test? ---------------------------
-    changed = [f for f in run(["git", "-C", str(TB), "diff", "--name-only", "HEAD"]).stdout.split()
-               if f.endswith(".rs")]
-    untracked = [f for f in run(["git", "-C", str(TB), "ls-files", "--others",
-                                 "--exclude-standard"]).stdout.split() if f.endswith(".rs")]
+    changed = [
+        f
+        for f in run(["git", "-C", str(TB), "diff", "--name-only", "HEAD"]).stdout.split()
+        if f.endswith(".rs")
+    ]
+    untracked = [
+        f
+        for f in run(
+            ["git", "-C", str(TB), "ls-files", "--others", "--exclude-standard"]
+        ).stdout.split()
+        if f.endswith(".rs")
+    ]
     dropped, added = {}, 0
     for f in changed:
         pinned = set(TESTFN.findall(run(["git", "-C", str(TB), "show", f"HEAD:{f}"]).stdout))
@@ -161,8 +206,12 @@ def main():
         "bazel_test_targets_upstream": len(upstream),
         "by_kind": dict(collections.Counter(upstream.values())),
         "catalogue_only_labels": cat_only,
-        "bazel_only_labels_non_rust_test": [l for l in bazel_only if upstream[l] != "rust_test"],
-        "bazel_only_rust_test_count": sum(1 for l in bazel_only if upstream[l] == "rust_test"),
+        "bazel_only_labels_non_rust_test": [
+            label for label in bazel_only if upstream[label] != "rust_test"
+        ],
+        "bazel_only_rust_test_count": sum(
+            1 for label in bazel_only if upstream[label] == "rust_test"
+        ),
         "rust_test_total": len(crosswalk),
         "rust_test_matched_to_cargo": len(matched),
         "rust_test_unmatched": [r["bazel_target"] for r in crosswalk if not r["cargo"]],
@@ -187,29 +236,38 @@ def main():
             f"{len(report['rust_test_unmatched'])} Bazel rust_test target(s) have no "
             f"cargo counterpart: {report['rust_test_unmatched'][:5]}. Something the "
             "upstream build tests is not reachable from cargo, so the cargo runs "
-            "are no longer a superset.")
+            "are no longer a superset."
+        )
     if not report["crosswalk_is_bijective"]:
-        failures.append("the Bazel->cargo crosswalk is not bijective: two Bazel "
-                        "targets map onto one cargo target, so per-target outcomes "
-                        "cannot be attributed.")
+        failures.append(
+            "the Bazel->cargo crosswalk is not bijective: two Bazel "
+            "targets map onto one cargo target, so per-target outcomes "
+            "cannot be attributed."
+        )
     if not report["catalogue_cargo_equals_live_cargo"]:
-        failures.append("the catalogue's cargo target set no longer equals the live "
-                        "`cargo metadata` set: the denominator has drifted from the "
-                        "workspace.")
+        failures.append(
+            "the catalogue's cargo target set no longer equals the live "
+            "`cargo metadata` set: the denominator has drifted from the "
+            "workspace."
+        )
     if report["upstream_tests_dropped_by_fork"]:
         failures.append(
             f"the fork DROPPED upstream #[test] functions: "
             f"{list(report['upstream_tests_dropped_by_fork'])[:5]}. Removing an "
-            "upstream test is how a fork quietly stops being comparable.")
-    new_cat_only = [l for l in report["catalogue_only_labels"]
-                    if l not in KNOWN_CATALOGUE_ONLY]
+            "upstream test is how a fork quietly stops being comparable."
+        )
+    new_cat_only = [
+        label for label in report["catalogue_only_labels"] if label not in KNOWN_CATALOGUE_ONLY
+    ]
     if new_cat_only:
         failures.append(f"new catalogue label(s) with no Bazel referent: {new_cat_only}")
-    new_bazel_only = [l for l in report["bazel_only_labels_non_rust_test"]
-                      if l not in KNOWN_BAZEL_ONLY_NON_RUST_TEST]
+    new_bazel_only = [
+        label
+        for label in report["bazel_only_labels_non_rust_test"]
+        if label not in KNOWN_BAZEL_ONLY_NON_RUST_TEST
+    ]
     if new_bazel_only:
-        failures.append(f"new Bazel test target(s) absent from the catalogue: "
-                        f"{new_bazel_only}")
+        failures.append(f"new Bazel test target(s) absent from the catalogue: {new_bazel_only}")
 
     for label, reason in sorted(KNOWN_CATALOGUE_ONLY.items()):
         print(f"recorded divergence  {label}\n    {reason}")
@@ -221,11 +279,13 @@ def main():
         for f in failures:
             print(f"  - {f}")
         return 1
-    print(f"BAZEL PARITY GATE: PASS — {report['rust_test_total']} Bazel rust_test "
-          f"targets all map 1:1 onto cargo targets; the catalogue's cargo set equals "
-          f"the live workspace; 0 upstream tests dropped by the fork. STRUCTURAL "
-          f"equivalence only: no test was EXECUTED under Bazel, so identical "
-          f"outcomes remain unproven.")
+    print(
+        f"BAZEL PARITY GATE: PASS — {report['rust_test_total']} Bazel rust_test "
+        f"targets all map 1:1 onto cargo targets; the catalogue's cargo set equals "
+        f"the live workspace; 0 upstream tests dropped by the fork. STRUCTURAL "
+        f"equivalence only: no test was EXECUTED under Bazel, so identical "
+        f"outcomes remain unproven."
+    )
     return 0
 
 

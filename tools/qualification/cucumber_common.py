@@ -109,7 +109,6 @@ with `--test-threads 1`, which is stated in the refusal.
 
 import collections
 import hashlib
-import json
 import pathlib
 import re
 import sys
@@ -119,7 +118,6 @@ REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(REPO / "tools" / "catalog"))
 import common  # noqa: E402
-import leaf_common as lc  # noqa: E402
 
 BH = REPO / "sources" / "typedb-behaviour"
 TB = REPO / "sources" / "typedb"
@@ -150,7 +148,8 @@ RUNNER_IGNORE_TAGS = {
 
 GHERKIN_KEYWORD_RE = re.compile(
     r"^(Feature|Scenario Outline|Scenario Template|Scenario|Example|"
-    r"Background|Examples|Scenarios|Rule)\s*:(.*)$")
+    r"Background|Examples|Scenarios|Rule)\s*:(.*)$"
+)
 
 
 def decolour(text):
@@ -158,6 +157,7 @@ def decolour(text):
 
 
 # --------------------------------------------------------------- the corpus
+
 
 def _split_table_row(line):
     parts = line.strip().split("|")
@@ -197,25 +197,33 @@ def parse_feature_file(path):
             if kw == "Feature":
                 title, pending_tags = rest, []
             elif kw in ("Scenario Outline", "Scenario Template"):
-                cur = {"kind": "outline", "name": rest, "tags": pending_tags,
-                       "examples": [], "line": i + 1}
+                cur = {
+                    "kind": "outline",
+                    "name": rest,
+                    "tags": pending_tags,
+                    "examples": [],
+                    "line": i + 1,
+                }
                 scenarios.append(cur)
                 pending_tags = []
             elif kw in ("Scenario", "Example"):
-                cur = {"kind": "scenario", "name": rest, "tags": pending_tags,
-                       "examples": [], "line": i + 1}
+                cur = {
+                    "kind": "scenario",
+                    "name": rest,
+                    "tags": pending_tags,
+                    "examples": [],
+                    "line": i + 1,
+                }
                 scenarios.append(cur)
                 pending_tags = []
             elif kw == "Background":
                 cur, pending_tags = None, []
             else:  # Examples / Scenarios / Rule
-                if kw in ("Examples", "Scenarios") and cur is not None \
-                        and cur["kind"] == "outline":
+                if kw in ("Examples", "Scenarios") and cur is not None and cur["kind"] == "outline":
                     cur["examples"].append({"tags": pending_tags, "rows": []})
                 pending_tags = []
             continue
-        if s.startswith("|") and cur is not None and cur["kind"] == "outline" \
-                and cur["examples"]:
+        if s.startswith("|") and cur is not None and cur["kind"] == "outline" and cur["examples"]:
             cur["examples"][-1]["rows"].append(_split_table_row(s))
     return title, scenarios
 
@@ -247,6 +255,7 @@ def expand_examples(scn):
                     return val
             miss.append(key)
             return ""
+
         name = TEMPLATE_RE.sub(repl, scn["name"])
         if miss and err is None:
             err = miss[0]
@@ -270,27 +279,30 @@ def feature_entries(ref, path):
             errors.append(
                 f"{ref}:{scn['line']} Scenario Outline {scn['name']!r} uses "
                 f"placeholder <{err}> which no Examples header supplies - "
-                f"cucumber aborts on this, so the feature is refused")
+                f"cucumber aborts on this, so the feature is refused"
+            )
             continue
         if scn["kind"] == "outline" and not rows:
             # every Examples row commented out upstream: expands to zero runs,
             # and generate_catalog.py deliberately puts no leaf in the plan
             continue
         for name, ex_i, ex_n in rows:
-            entries.append({
-                "ordinal": len(entries) + 1,
-                "display_name": (f"{scn['name']} [example {ex_i}/{ex_n}]"
-                                 if ex_i else scn["name"]),
-                "runtime_name": name,
-                "template": scn["name"] if ex_i else None,
-                "kind": "OUTLINE_EXAMPLE" if ex_i else "SCENARIO",
-                "declaration_line": scn["line"],
-                "example_index": ex_i,
-                "example_total": ex_n,
-                "anchor": (f"{ref}:{scn['line']}#ex{ex_i}" if ex_i
-                           else f"{ref}:{scn['line']}"),
-                "tags": sorted(set(scn["tags"])),
-            })
+            entries.append(
+                {
+                    "ordinal": len(entries) + 1,
+                    "display_name": (
+                        f"{scn['name']} [example {ex_i}/{ex_n}]" if ex_i else scn["name"]
+                    ),
+                    "runtime_name": name,
+                    "template": scn["name"] if ex_i else None,
+                    "kind": "OUTLINE_EXAMPLE" if ex_i else "SCENARIO",
+                    "declaration_line": scn["line"],
+                    "example_index": ex_i,
+                    "example_total": ex_n,
+                    "anchor": (f"{ref}:{scn['line']}#ex{ex_i}" if ex_i else f"{ref}:{scn['line']}"),
+                    "tags": sorted(set(scn["tags"])),
+                }
+            )
     return title, entries, errors
 
 
@@ -312,15 +324,23 @@ def build_corpus_index(catalog, plan, behaviour_root=BH):
     for tid, leaves in sorted(by_target.items()):
         ref = tid.split("cucumber-corpus:", 1)[1]
         path = pathlib.Path(behaviour_root) / ref
-        rec = {"target_id": tid, "ref": ref, "feature_title": None,
-               "source_path": str(path), "source_sha256": None,
-               "catalogue_source_hash": None, "entries": [],
-               "problems": [], "joinable": False}
+        rec = {
+            "target_id": tid,
+            "ref": ref,
+            "feature_title": None,
+            "source_path": str(path),
+            "source_sha256": None,
+            "catalogue_source_hash": None,
+            "entries": [],
+            "problems": [],
+            "joinable": False,
+        }
         index[tid] = rec
         if not path.is_file():
             rec["problems"].append(
                 f"feature file {ref} named by the catalogue is absent from the "
-                f"pinned behaviour checkout - nothing can be joined to it")
+                f"pinned behaviour checkout - nothing can be joined to it"
+            )
             continue
         rec["source_sha256"] = common.sha256_file(path)
         declared = {sf["sha256"] for sf in targets.get(tid, {}).get("source_files", [])}
@@ -329,7 +349,8 @@ def build_corpus_index(catalog, plan, behaviour_root=BH):
             rec["problems"].append(
                 f"{ref} now hashes {rec['source_sha256']} but the catalogue "
                 f"target declares {sorted(declared)} - the corpus moved under "
-                f"the denominator, so its scenarios are not the plan's")
+                f"the denominator, so its scenarios are not the plan's"
+            )
             continue
         title, entries, errors = feature_entries(ref, path)
         rec["feature_title"] = title
@@ -338,15 +359,22 @@ def build_corpus_index(catalog, plan, behaviour_root=BH):
             continue
         # ---- P1: the expansion must reproduce the catalogue leaf list
         mine = [e["display_name"] for e in entries]
-        theirs = [l["display_name"] for l in leaves]
+        theirs = [leaf["display_name"] for leaf in leaves]
         if mine != theirs:
-            first = next((k for k in range(max(len(mine), len(theirs)))
-                          if mine[k:k + 1] != theirs[k:k + 1]), 0)
+            first = next(
+                (
+                    k
+                    for k in range(max(len(mine), len(theirs)))
+                    if mine[k : k + 1] != theirs[k : k + 1]
+                ),
+                0,
+            )
             rec["problems"].append(
                 f"P1 FAILED for {ref}: the expansion yields {len(mine)} "
                 f"scenario(s), the catalogue declares {len(theirs)}; first "
                 f"divergence at position {first}: expansion says "
-                f"{mine[first:first+1]}, catalogue says {theirs[first:first+1]}")
+                f"{mine[first : first + 1]}, catalogue says {theirs[first : first + 1]}"
+            )
             continue
         # ---- P2: the expansion must reproduce the plan's own anchors
         anchor_bad = []
@@ -360,11 +388,13 @@ def build_corpus_index(catalog, plan, behaviour_root=BH):
             if pl.get("anchor") != e["anchor"]:
                 anchor_bad.append(
                     f"{leaf['leaf_case_id']} anchors to {pl.get('anchor')!r} in "
-                    f"the plan but the expansion places it at {e['anchor']!r}")
+                    f"the plan but the expansion places it at {e['anchor']!r}"
+                )
         if anchor_bad:
             rec["problems"].append(
                 f"P2 FAILED for {ref}: {len(anchor_bad)} leaf/leaves disagree "
-                f"with the plan's anchors, e.g. {anchor_bad[:3]}")
+                f"with the plan's anchors, e.g. {anchor_bad[:3]}"
+            )
             continue
         rec["entries"] = entries
         rec["joinable"] = True
@@ -385,10 +415,12 @@ def runnable_entries(entries, runner):
 # ---------------------------------------------------------- the cargo lane
 
 CARGO_TEST_RE = re.compile(
-    r"\[\[test\]\]\s*\n\s*path\s*=\s*\"([^\"]+)\"\s*\n\s*name\s*=\s*\"([^\"]+)\"")
+    r"\[\[test\]\]\s*\n\s*path\s*=\s*\"([^\"]+)\"\s*\n\s*name\s*=\s*\"([^\"]+)\""
+)
 FEATURE_PATH_RE = re.compile(
     r'"(?:\.\./typedb_behaviour\+/|bazel-typedb/external/typedb_behaviour\+*/)'
-    r'([^"]+\.feature)"')
+    r'([^"]+\.feature)"'
+)
 
 
 def cargo_behaviour_targets(cargo_toml=None):
@@ -424,8 +456,7 @@ def runner_of(cargo_target, targets=None):
     return "http" if path.startswith("tests/behaviour/service/http/") else "native"
 
 
-MOD_RE = re.compile(
-    r"^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+(?:r#)?([A-Za-z_][A-Za-z0-9_]*)\s*;", re.M)
+MOD_RE = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+(?:r#)?([A-Za-z_][A-Za-z0-9_]*)\s*;", re.M)
 
 
 def crate_files(root):
@@ -449,8 +480,7 @@ def crate_files(root):
         seen.add(f)
         text = f.read_text(errors="replace")
         out.append((f, text))
-        base = f.parent if f.name in ("main.rs", "lib.rs", "mod.rs") \
-            else f.parent / f.stem
+        base = f.parent if f.name in ("main.rs", "lib.rs", "mod.rs") else f.parent / f.stem
         for name in MOD_RE.findall(text):
             for cand in (base / f"{name}.rs", base / name / "mod.rs"):
                 if cand.is_file():
@@ -480,7 +510,8 @@ def target_feature_refs(cargo_toml=None):
 
 SUMMARY_STATS_RE = re.compile(
     r"^(?P<total>\d+) (?P<what>features?|scenarios?|steps?|rules?)"
-    r"(?: \((?P<detail>[^)]*)\))?\s*$")
+    r"(?: \((?P<detail>[^)]*)\))?\s*$"
+)
 STAT_ITEM_RE = re.compile(r"^(\d+) (passed|skipped|failed)$")
 RETRY_RE = re.compile(r"^(\d+) retr(?:y|ies)$")
 
@@ -522,11 +553,19 @@ def parse_summaries(text):
     for i, line in enumerate(lines):
         if line.strip() != "[Summary]":
             continue
-        block = {"line": i + 1, "features": None, "rules": 0,
-                 "scenarios": None, "scenario_stats": None,
-                 "steps": None, "step_stats": None,
-                 "parsing_errors": 0, "hook_errors": 0, "problems": [],
-                 "raw": []}
+        block = {
+            "line": i + 1,
+            "features": None,
+            "rules": 0,
+            "scenarios": None,
+            "scenario_stats": None,
+            "steps": None,
+            "step_stats": None,
+            "parsing_errors": 0,
+            "hook_errors": 0,
+            "problems": [],
+            "raw": [],
+        }
         j = i + 1
         while j < len(lines) and j <= i + 6:
             s = lines[j].strip()
@@ -562,12 +601,12 @@ def parse_summaries(text):
                 j += 1
                 continue
             break
-        if block["features"] is None or block["scenarios"] is None \
-                or block["steps"] is None:
+        if block["features"] is None or block["scenarios"] is None or block["steps"] is None:
             block["problems"].append(
                 f"the [Summary] block at line {block['line']} is missing its "
                 f"feature, scenario or step line - the block is truncated and "
-                f"cannot vouch for any outcome")
+                f"cannot vouch for any outcome"
+            )
         out.append(block)
     return out
 
@@ -575,13 +614,16 @@ def parse_summaries(text):
 def all_passed(block):
     """D1: does this block prove every scenario it counted passed?"""
     st = block.get("scenario_stats") or {}
-    return (not block["problems"]
-            and block.get("scenarios") is not None
-            and st.get("passed") == block["scenarios"]
-            and st.get("skipped") == 0 and st.get("failed") == 0
-            and st.get("retried") == 0
-            and block.get("parsing_errors") == 0
-            and block.get("hook_errors") == 0)
+    return (
+        not block["problems"]
+        and block.get("scenarios") is not None
+        and st.get("passed") == block["scenarios"]
+        and st.get("skipped") == 0
+        and st.get("failed") == 0
+        and st.get("retried") == 0
+        and block.get("parsing_errors") == 0
+        and block.get("hook_errors") == 0
+    )
 
 
 def scan_scenario_lines(text, titles):
@@ -602,10 +644,10 @@ def scan_scenario_lines(text, titles):
             j = line.find(FEATURE_MARK, idx)
             if j < 0:
                 break
-            rest = line[j + len(FEATURE_MARK):]
+            rest = line[j + len(FEATURE_MARK) :]
             for t in ordered:
                 if rest.startswith(t + TITLE_SEP):
-                    out.append((ln, j + 1, t, rest[len(t) + len(TITLE_SEP):]))
+                    out.append((ln, j + 1, t, rest[len(t) + len(TITLE_SEP) :]))
                     break
             else:
                 unattributed.append((ln, j + 1, rest[:120]))
@@ -658,17 +700,16 @@ def join_reconciliation(corpus, features, leaves):
     return {
         "features_expanded": sum(1 for r in corpus.values() if r.get("joinable")),
         "scenarios_expanded": sum(len(r["entries"]) for r in corpus.values()),
-        "P1_features_agreeing_with_catalogue":
-            sum(1 for r in corpus.values() if r.get("joinable")),
-        "P2_leaves_agreeing_with_plan_anchor":
-            sum(len(r["entries"]) for r in corpus.values() if r.get("joinable")),
-        "P3_features_order_exact_in_owning_log":
-            sum(1 for f in features if f.get("owner")),
+        "P1_features_agreeing_with_catalogue": sum(1 for r in corpus.values() if r.get("joinable")),
+        "P2_leaves_agreeing_with_plan_anchor": sum(
+            len(r["entries"]) for r in corpus.values() if r.get("joinable")
+        ),
+        "P3_features_order_exact_in_owning_log": sum(1 for f in features if f.get("owner")),
         "outline_templates": len(templates),
         "outline_examples_catalogued": ex_catalogued,
         "plain_scenarios_catalogued": plain_catalogued,
-        "outline_examples_bound": sum(1 for l in leaves if l["example_index"]),
-        "plain_scenarios_bound": sum(1 for l in leaves if not l["example_index"]),
+        "outline_examples_bound": sum(1 for leaf in leaves if leaf["example_index"]),
+        "plain_scenarios_bound": sum(1 for leaf in leaves if not leaf["example_index"]),
         "scenarios_bound_total": len(leaves),
         "features_refused": sum(1 for f in features if f.get("refusals")),
         "identical_substituted_name_groups": ident_groups,
@@ -677,6 +718,7 @@ def join_reconciliation(corpus, features, leaves):
 
 
 # ------------------------------------------------------------- bundle seal
+
 
 def bundle_files(results_dir, bundle, repo=REPO):
     """Every file this bundle's claims rest on: its own results file, and
@@ -687,8 +729,8 @@ def bundle_files(results_dir, bundle, repo=REPO):
     results_dir = pathlib.Path(results_dir)
     files = [results_dir / RESULTS_NAME]
     for s in bundle.get("sources", []):
-        for l in s.get("logs", []):
-            p = pathlib.Path(l["raw_log"])
+        for log in s.get("logs", []):
+            p = pathlib.Path(log["raw_log"])
             files.append(p if p.is_absolute() else pathlib.Path(repo) / p)
     return files
 

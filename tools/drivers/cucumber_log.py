@@ -36,6 +36,7 @@ Self-checks the caller is expected to enforce (see run_rust_behaviour.py):
 Any disagreement means the log and the run do not describe the same thing,
 which is exactly the forgery/truncation class this lane must refuse.
 """
+
 import re
 
 FEATURE_RE = re.compile(r"^Feature: (.*?) :: (.*)$")
@@ -45,7 +46,8 @@ HOOK_FAIL_RE = re.compile(r"^\s*✘\s+Scenario's (before|after) hook failed")
 SUMMARY_RE = re.compile(r"^\[Summary\]\s*$")
 LIBTEST_RESULT_RE = re.compile(
     r"^test result: (\w+)\. (\d+) passed; (\d+) failed; (\d+) ignored; "
-    r"(\d+) measured; (\d+) filtered out")
+    r"(\d+) measured; (\d+) filtered out"
+)
 
 PASSED, FAILED, SKIPPED, EMPTY = "PASSED", "FAILED", "SKIPPED", "EMPTY"
 
@@ -79,13 +81,20 @@ def parse(text):
         m = LIBTEST_RESULT_RE.match(ln)
         if m:
             libtest = {
-                "outcome": m.group(1), "passed": int(m.group(2)),
-                "failed": int(m.group(3)), "ignored": int(m.group(4)),
-                "measured": int(m.group(5)), "filtered_out": int(m.group(6)),
+                "outcome": m.group(1),
+                "passed": int(m.group(2)),
+                "failed": int(m.group(3)),
+                "ignored": int(m.group(4)),
+                "measured": int(m.group(5)),
+                "filtered_out": int(m.group(6)),
             }
-    return {"scenarios": primary, "repeat_scenarios": repeat,
-            "summary": summary, "libtest": libtest,
-            "saw_summary": summary_at is not None}
+    return {
+        "scenarios": primary,
+        "repeat_scenarios": repeat,
+        "summary": summary,
+        "libtest": libtest,
+        "saw_summary": summary_at is not None,
+    }
 
 
 def _scan_blocks(lines):
@@ -96,9 +105,15 @@ def _scan_blocks(lines):
         if mf:
             if cur is not None:
                 blocks.append(_finish(cur))
-            cur = {"feature_name": mf.group(1), "feature_scenario": mf.group(2),
-                   "scenario_keyword": None, "scenario_name": None,
-                   "steps": [], "hook_failed": False, "line_index": idx}
+            cur = {
+                "feature_name": mf.group(1),
+                "feature_scenario": mf.group(2),
+                "scenario_keyword": None,
+                "scenario_name": None,
+                "steps": [],
+                "hook_failed": False,
+                "line_index": idx,
+            }
             continue
         if cur is None:
             continue
@@ -108,7 +123,8 @@ def _scan_blocks(lines):
                 raise CucumberLogError(
                     f"line {idx + 1}: a second Scenario line inside one "
                     f"SingletonParser feature block ({cur['feature_scenario']!r}); "
-                    f"the log does not have the shape this lane executes")
+                    f"the log does not have the shape this lane executes"
+                )
             cur["scenario_keyword"], cur["scenario_name"] = ms.group(1), ms.group(2)
             continue
         if HOOK_FAIL_RE.match(ln):
@@ -135,19 +151,33 @@ def _finish(b):
         status = PASSED
     else:
         status = EMPTY
-    b.update({"steps_passed": passed, "steps_failed": failed,
-              "steps_skipped": skipped, "status": status,
-              "steps_total": len(marks)})
+    b.update(
+        {
+            "steps_passed": passed,
+            "steps_failed": failed,
+            "steps_skipped": skipped,
+            "status": status,
+            "steps_total": len(marks),
+        }
+    )
     del b["steps"]
     return b
 
 
 def _parse_summary(lines):
-    out = {"features": None, "rules": None, "scenarios": None, "steps": None,
-           "parsing_errors": 0, "hook_errors": 0, "raw": []}
+    out = {
+        "features": None,
+        "rules": None,
+        "scenarios": None,
+        "steps": None,
+        "parsing_errors": 0,
+        "hook_errors": 0,
+        "raw": [],
+    }
     stat_re = re.compile(
         r"^(\d+) (features?|rules?|scenarios?|steps?)"
-        r"(?: \(([^)]*)\))?(?: with (\d+) retr(?:y|ies))?\s*$")
+        r"(?: \(([^)]*)\))?(?: with (\d+) retr(?:y|ies))?\s*$"
+    )
     err_re = re.compile(r"(\d+) (parsing errors?|hook errors?)")
     for ln in lines[1:]:
         s = ln.strip()
@@ -157,20 +187,29 @@ def _parse_summary(lines):
         m = stat_re.match(s)
         if m:
             key = m.group(2).rstrip("s") if not m.group(2).endswith("ss") else m.group(2)
-            key = {"feature": "features", "features": "features",
-                   "rule": "rules", "rules": "rules",
-                   "scenario": "scenarios", "scenarios": "scenarios",
-                   "step": "steps", "steps": "steps"}[m.group(2)]
-            stats = {"total": int(m.group(1)), "passed": 0, "skipped": 0,
-                     "failed": 0, "retried": int(m.group(4) or 0)}
-            for n, what in re.findall(r"(\d+) (passed|skipped|failed)",
-                                      m.group(3) or ""):
+            key = {
+                "feature": "features",
+                "features": "features",
+                "rule": "rules",
+                "rules": "rules",
+                "scenario": "scenarios",
+                "scenarios": "scenarios",
+                "step": "steps",
+                "steps": "steps",
+            }[m.group(2)]
+            stats = {
+                "total": int(m.group(1)),
+                "passed": 0,
+                "skipped": 0,
+                "failed": 0,
+                "retried": int(m.group(4) or 0),
+            }
+            for n, what in re.findall(r"(\d+) (passed|skipped|failed)", m.group(3) or ""):
                 stats[what] = int(n)
             out[key] = stats
             continue
         for n, what in err_re.findall(s):
-            out["parsing_errors" if what.startswith("parsing") else
-                "hook_errors"] += int(n)
+            out["parsing_errors" if what.startswith("parsing") else "hook_errors"] += int(n)
         if s.startswith("test result:") or s.startswith("test test"):
             continue
     return out

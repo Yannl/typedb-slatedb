@@ -32,6 +32,7 @@ Fails when:
 Historical review documents record what was believed at the time; only the
 LIVE status surfaces are linted (list below).
 """
+
 import json
 import pathlib
 import re
@@ -87,10 +88,14 @@ def check_semantics(ledger: dict, failures: list[str]) -> None:
     # status enums (gates are checked against REQUIRED_GATE_STATES above)
     for lane in ledger.get("lanes", []):
         if lane.get("state") not in LANE_STATES:
-            failures.append(f"lane {lane.get('id')}: state {lane.get('state')!r} not in the lane-state enum")
+            failures.append(
+                f"lane {lane.get('id')}: state {lane.get('state')!r} not in the lane-state enum"
+            )
     for action in ledger.get("actions", []):
         if action.get("status") not in ACTION_STATUSES:
-            failures.append(f"action {action.get('id')}: status {action.get('status')!r} not in the action-status enum")
+            failures.append(
+                f"action {action.get('id')}: status {action.get('status')!r} not in the action-status enum"
+            )
 
     # every commit an action cites must exist AND be an ancestor of HEAD —
     # a ledger claim about a commit this repository does not contain is a
@@ -117,7 +122,9 @@ def check_semantics(ledger: dict, failures: list[str]) -> None:
                     "(if this is a shallow CI clone, the workflow must fetch full history)"
                 )
             elif not git_ok("merge-base", "--is-ancestor", commit, "HEAD"):
-                failures.append(f"action {action.get('id')}: commit {commit} is not an ancestor of HEAD")
+                failures.append(
+                    f"action {action.get('id')}: commit {commit} is not an ancestor of HEAD"
+                )
 
     # every docs/ path referenced anywhere in the ledger must exist
     def walk_strings(value):
@@ -154,14 +161,16 @@ def check_present_state_contradictions(ledger: dict, failures: list[str]) -> Non
         action lied) or closed (then the gate text is stale). Reconcile the
         DATA; the linter refuses both.
     """
+
     def id_list_ok(owner: str, field: str, value) -> list[str]:
         if value is None:
             return []
         if not isinstance(value, list) or not all(
-                isinstance(x, str) and FINDING_ID_RE.fullmatch(x) for x in value):
+            isinstance(x, str) and FINDING_ID_RE.fullmatch(x) for x in value
+        ):
             failures.append(
-                f"{owner}: {field} must be a list of structured finding ids "
-                f"(got {value!r})")
+                f"{owner}: {field} must be a list of structured finding ids (got {value!r})"
+            )
             return []
         return value
 
@@ -173,11 +182,13 @@ def check_present_state_contradictions(ledger: dict, failures: list[str]) -> Non
         if status in CLOSED_ACTION_STATUSES and not (action.get("commits") or []):
             failures.append(
                 f"action {aid}: status {status} with no commits - a closed "
-                f"action must cite the commits that closed it")
+                f"action must cite the commits that closed it"
+            )
         if closes and status not in CLOSED_ACTION_STATUSES:
             failures.append(
                 f"action {aid}: lists closes={closes} but status {status!r} is "
-                f"not a closed status - only a closed action closes a finding")
+                f"not a closed status - only a closed action closes a finding"
+            )
         if status in CLOSED_ACTION_STATUSES:
             for f in closes:
                 closed_by.setdefault(f, aid)
@@ -185,14 +196,16 @@ def check_present_state_contradictions(ledger: dict, failures: list[str]) -> Non
     for kind in ("gates", "lanes"):
         for entry in ledger.get(kind, []):
             eid = entry.get("id")
-            for f in id_list_ok(f"{kind[:-1]} {eid}", "blocking_findings",
-                                entry.get("blocking_findings")):
+            for f in id_list_ok(
+                f"{kind[:-1]} {eid}", "blocking_findings", entry.get("blocking_findings")
+            ):
                 if f in closed_by:
                     failures.append(
                         f"{kind[:-1]} {eid}: names finding {f} as still "
                         f"blocking, but closed action {closed_by[f]} records "
                         f"it closed - the gate state and the action history "
-                        f"contradict; reconcile the ledger data")
+                        f"contradict; reconcile the ledger data"
+                    )
 
 
 def check_committed_transitions(ledger: dict, failures: list[str]) -> None:
@@ -209,8 +222,9 @@ def check_committed_transitions(ledger: dict, failures: list[str]) -> None:
     rel = "docs/ledger/gates.json"
 
     def show(ref: str):
-        r = subprocess.run(["git", "-C", str(REPO), "show", f"{ref}:{rel}"],
-                           capture_output=True, text=True)
+        r = subprocess.run(
+            ["git", "-C", str(REPO), "show", f"{ref}:{rel}"], capture_output=True, text=True
+        )
         return r.stdout if r.returncode == 0 else None
 
     head_text = show("HEAD")
@@ -231,15 +245,19 @@ def check_committed_transitions(ledger: dict, failures: list[str]) -> None:
         if cur is None:
             failures.append(
                 f"action {pid}: present in the last committed ledger but "
-                f"DELETED here - history rows may be corrected, never erased")
+                f"DELETED here - history rows may be corrected, never erased"
+            )
             continue
-        if prev.get("status") in CLOSED_ACTION_STATUSES \
-                and cur.get("status") not in CLOSED_ACTION_STATUSES:
+        if (
+            prev.get("status") in CLOSED_ACTION_STATUSES
+            and cur.get("status") not in CLOSED_ACTION_STATUSES
+        ):
             failures.append(
                 f"action {pid}: impossible status transition "
                 f"{prev.get('status')} -> {cur.get('status')} - a closed "
                 f"action cannot silently reopen; record a NEW action for the "
-                f"regression instead")
+                f"regression instead"
+            )
 
 
 def main() -> int:
@@ -255,7 +273,9 @@ def main() -> int:
             failures.append(f"ledger missing required key: {key}")
     for g in ledger.get("gates", []):
         if g.get("state") not in REQUIRED_GATE_STATES:
-            failures.append(f"gate {g.get('id')}: state {g.get('state')!r} not a recognised gate state")
+            failures.append(
+                f"gate {g.get('id')}: state {g.get('state')!r} not a recognised gate state"
+            )
 
     # round-3 E-07 semantic checks (ids, enums, commit ancestry, evidence paths)
     check_semantics(ledger, failures)
@@ -268,14 +288,19 @@ def main() -> int:
     # 2. rendered-block drift
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
     import render_status  # noqa: E402
+
     operations = (REPO / "docs" / "operations.md").read_text()
     if render_status.BEGIN not in operations or render_status.END not in operations:
         failures.append("docs/operations.md is missing the generated gate-table markers")
     else:
         current = operations.split(render_status.BEGIN, 1)[1].split(render_status.END, 1)[0]
-        expected = render_status.render().split(render_status.BEGIN, 1)[1].split(render_status.END, 1)[0]
+        expected = (
+            render_status.render().split(render_status.BEGIN, 1)[1].split(render_status.END, 1)[0]
+        )
         if current != expected:
-            failures.append("docs/operations.md gate table drifted from the ledger - run tools/ledger/render_status.py")
+            failures.append(
+                "docs/operations.md gate table drifted from the ledger - run tools/ledger/render_status.py"
+            )
 
     # 3. forbidden claims in live status docs. The GENERATED block is exempt:
     # it is the ledger's own rendered truth (which quotes the raw observation
@@ -297,8 +322,10 @@ def main() -> int:
         for f in failures:
             print(f"  - {f}")
         return 1
-    print(f"LEDGER LINT: PASS ({len(ledger['gates'])} gates, {len(ledger['lanes'])} lanes, "
-          f"{len(ledger['actions'])} actions, {len(STATUS_DOCS)} status docs scanned)")
+    print(
+        f"LEDGER LINT: PASS ({len(ledger['gates'])} gates, {len(ledger['lanes'])} lanes, "
+        f"{len(ledger['actions'])} actions, {len(STATUS_DOCS)} status docs scanned)"
+    )
     return 0
 
 

@@ -57,6 +57,7 @@ Usage:
   python3 tools/catalog/build_plan_v2.py --check    # committed plan vs catalogue; drift = nonzero
   python3 tools/catalog/build_plan_v2.py --check --require-current-lock
 """
+
 import argparse
 import hashlib
 import json
@@ -83,6 +84,7 @@ def error(msg):
 
 
 # ------------------------------------------------- cucumber physical anchors
+
 
 def scan_feature_declarations(text):
     """(name -> [(line_no, kind, example_rows)]) for one feature file.
@@ -138,8 +140,7 @@ def _resolve_declaration(decls, name, ex_index, ordinal):
     if ex_index is None:
         candidates = [d for d in candidates if d[1] == "scenario"]
     else:
-        candidates = [d for d in candidates
-                      if d[1] == "outline" and d[2] >= ex_index]
+        candidates = [d for d in candidates if d[1] == "outline" and d[2] >= ex_index]
     if len(candidates) < ordinal:
         return None
     return candidates[ordinal - 1]
@@ -163,17 +164,21 @@ def cucumber_anchors(catalog):
         if ref not in per_file:
             f = BH / ref
             if not f.is_file():
-                error(f"plan: feature file {ref} referenced by the catalogue is "
-                      f"absent from the pinned behaviour checkout")
+                error(
+                    f"plan: feature file {ref} referenced by the catalogue is "
+                    f"absent from the pinned behaviour checkout"
+                )
                 per_file[ref] = {}
             else:
                 per_file[ref] = scan_feature_declarations(f.read_text())
         prefix = f"cucumber:{ref}::"
         if not lc["leaf_case_id"].startswith(prefix):
-            error(f"plan: leaf {lc['leaf_case_id']!r} does not carry the canonical "
-                  f"'cucumber:<file>::<name>' shape for its target {ref}")
+            error(
+                f"plan: leaf {lc['leaf_case_id']!r} does not carry the canonical "
+                f"'cucumber:<file>::<name>' shape for its target {ref}"
+            )
             continue
-        raw = lc["leaf_case_id"][len(prefix):]
+        raw = lc["leaf_case_id"][len(prefix) :]
 
         def parse(raw):
             ordinal = 1
@@ -193,25 +198,29 @@ def cucumber_anchors(catalog):
             # a genuine scenario name could itself end in '@<digits>';
             # retry treating the suffix as part of the name, occurrence 1
             m = re.match(r"^(.*)#ex(\d+)$", raw)
-            name, ex_index, ordinal = \
-                (m.group(1), int(m.group(2)), 1) if m else (raw, None, 1)
+            name, ex_index, ordinal = (m.group(1), int(m.group(2)), 1) if m else (raw, None, 1)
             decl = _resolve_declaration(per_file[ref], name, ex_index, 1)
         if decl is None:
-            error(f"plan: {ref} has no declaration matching leaf "
-                  f"{lc['leaf_case_id']!r} (name {name!r}, example {ex_index}, "
-                  f"occurrence {ordinal}) - the leaf is unanchorable")
+            error(
+                f"plan: {ref} has no declaration matching leaf "
+                f"{lc['leaf_case_id']!r} (name {name!r}, example {ex_index}, "
+                f"occurrence {ordinal}) - the leaf is unanchorable"
+            )
             continue
         line_no, kind, ex_rows = decl
         key = (ref, line_no, ex_index)
         if key in used:
-            error(f"plan: leaves {used[key]!r} and {lc['leaf_case_id']!r} both "
-                  f"anchor to {ref}:{line_no}"
-                  + (f"#ex{ex_index}" if ex_index else "")
-                  + " - two leaves cannot share one physical case")
+            error(
+                f"plan: leaves {used[key]!r} and {lc['leaf_case_id']!r} both "
+                f"anchor to {ref}:{line_no}"
+                + (f"#ex{ex_index}" if ex_index else "")
+                + " - two leaves cannot share one physical case"
+            )
             continue
         used[key] = lc["leaf_case_id"]
         anchors[lc["leaf_case_id"]] = (
-            f"{ref}:{line_no}#ex{ex_index}" if ex_index else f"{ref}:{line_no}")
+            f"{ref}:{line_no}#ex{ex_index}" if ex_index else f"{ref}:{line_no}"
+        )
     # symmetric exact-set: every declared scenario and every declared example
     # row must be claimed by exactly one leaf (missing = lost case)
     for ref, decls in sorted(per_file.items()):
@@ -219,20 +228,25 @@ def cucumber_anchors(catalog):
             for line_no, kind, ex_rows in dlist:
                 if kind == "scenario":
                     if (ref, line_no, None) not in used:
-                        error(f"plan: {ref}:{line_no} Scenario {name!r} is claimed "
-                              f"by no catalogue leaf - a physical case is missing "
-                              f"from the denominator")
+                        error(
+                            f"plan: {ref}:{line_no} Scenario {name!r} is claimed "
+                            f"by no catalogue leaf - a physical case is missing "
+                            f"from the denominator"
+                        )
                 else:
                     for n in range(1, ex_rows + 1):
                         if (ref, line_no, n) not in used:
-                            error(f"plan: {ref}:{line_no} outline {name!r} example "
-                                  f"row {n}/{ex_rows} is claimed by no catalogue "
-                                  f"leaf - a physical case is missing from the "
-                                  f"denominator")
+                            error(
+                                f"plan: {ref}:{line_no} outline {name!r} example "
+                                f"row {n}/{ex_rows} is claimed by no catalogue "
+                                f"leaf - a physical case is missing from the "
+                                f"denominator"
+                            )
     return anchors
 
 
 # ----------------------------------------------------------------- the plan
+
 
 def canonical(obj):
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -245,18 +259,23 @@ def plan_root_of(body):
 def build_body(catalog, catalog_sha):
     anchors = cucumber_anchors(catalog)
 
-    toolchain_id = "rust-" + catalog["rust_toolchain"]["rustc"].split()[1] \
-        + ":" + catalog["target_triple"]
-    toolchains = {toolchain_id: {**catalog["rust_toolchain"],
-                                 "target_triple": catalog["target_triple"]}}
+    toolchain_id = (
+        "rust-" + catalog["rust_toolchain"]["rustc"].split()[1] + ":" + catalog["target_triple"]
+    )
+    toolchains = {
+        toolchain_id: {**catalog["rust_toolchain"], "target_triple": catalog["target_triple"]}
+    }
 
     targets = {t["target_id"]: t for t in catalog["targets"]}
     fixture_sets = {}
 
     def fixture_set_id(target):
         ids = tuple(sorted(target.get("fixture_ids") or []))
-        fsid = "fs:none" if not ids else \
-            "fs:" + hashlib.sha256("|".join(ids).encode()).hexdigest()[:12]
+        fsid = (
+            "fs:none"
+            if not ids
+            else "fs:" + hashlib.sha256("|".join(ids).encode()).hexdigest()[:12]
+        )
         fixture_sets.setdefault(fsid, list(ids))
         return fsid
 
@@ -264,8 +283,9 @@ def build_body(catalog, catalog_sha):
     for lc in catalog["leaf_cases"]:
         t = targets.get(lc["target_id"])
         if t is None:
-            error(f"plan: leaf {lc['leaf_case_id']!r} references unknown target "
-                  f"{lc['target_id']!r}")
+            error(
+                f"plan: leaf {lc['leaf_case_id']!r} references unknown target {lc['target_id']!r}"
+            )
             continue
         entry = {
             "target_id": lc["target_id"],
@@ -284,11 +304,12 @@ def build_body(catalog, catalog_sha):
     for rp in catalog["required_pairs"]:
         leaf = leaves.get(rp["leaf_case_id"])
         if leaf is None:
-            error(f"plan: required pair references leaf {rp['leaf_case_id']!r} "
-                  f"which produced no plan leaf")
+            error(
+                f"plan: required pair references leaf {rp['leaf_case_id']!r} "
+                f"which produced no plan leaf"
+            )
             continue
-        rows.append([rp["leaf_case_id"], rp["profile_id"],
-                     leaf["fixture_set_id"], toolchain_id])
+        rows.append([rp["leaf_case_id"], rp["profile_id"], leaf["fixture_set_id"], toolchain_id])
     rows.sort()
     if len({tuple(r) for r in rows}) != len(rows):
         error("plan: duplicate (leaf, profile, fixture-set, toolchain) row")
@@ -297,15 +318,19 @@ def build_body(catalog, catalog_sha):
     # docs/evidence/G1/drivers/driver-row-status.json; editing the value
     # below changes the plan body and therefore plan_root.
     driver_rows = [
-        {"row_id": f"driver:{d}:{b}",
-         "driver": d,
-         "backend": b,
-         "status": "NOT_IMPLEMENTED",
-         "required_by": "v17-A17.5",
-         "reason": "official driver suite harness is not built; this row exists "
-                   "so the denominator includes it and every coverage report "
-                   "must show it uncovered - absence is recorded, never hidden"}
-        for d in DRIVERS for b in BACKENDS]
+        {
+            "row_id": f"driver:{d}:{b}",
+            "driver": d,
+            "backend": b,
+            "status": "NOT_IMPLEMENTED",
+            "required_by": "v17-A17.5",
+            "reason": "official driver suite harness is not built; this row exists "
+            "so the denominator includes it and every coverage report "
+            "must show it uncovered - absence is recorded, never hidden",
+        }
+        for d in DRIVERS
+        for b in BACKENDS
+    ]
 
     body = {
         "schema": "typedb-r2-qualification-plan-v2",
@@ -315,7 +340,8 @@ def build_body(catalog, catalog_sha):
             "either produce an execution event or carry an approved exclusion "
             "row. Emitting or committing this file proves nothing ran. The "
             "plan is immutable per plan_root: verdicts pin plan_root and any "
-            "silent edit is a root mismatch."),
+            "silent edit is a root mismatch."
+        ),
         "generated_from": {
             "catalog": "docs/evidence/G1/upstream-test-catalog.json",
             "catalog_sha256": catalog_sha,
@@ -323,18 +349,17 @@ def build_body(catalog, catalog_sha):
             "behaviour_checkout": "sources/typedb-behaviour",
         },
         "toolchains": toolchains,
-        "profiles": {p["profile_id"]: {k: v for k, v in p.items()
-                                       if k != "profile_id"}
-                     for p in catalog["profiles"]},
+        "profiles": {
+            p["profile_id"]: {k: v for k, v in p.items() if k != "profile_id"}
+            for p in catalog["profiles"]
+        },
         "fixture_sets": dict(sorted(fixture_sets.items())),
         "fixtures": sorted(catalog["fixtures"], key=lambda f: f["fixture_id"]),
         "leaves": dict(sorted(leaves.items())),
-        "row_columns": ["leaf_case_id", "profile_id", "fixture_set_id",
-                        "toolchain_id"],
+        "row_columns": ["leaf_case_id", "profile_id", "fixture_set_id", "toolchain_id"],
         "rows": rows,
         "driver_rows": driver_rows,
-        "exclusions": sorted(catalog["exclusions"],
-                             key=lambda e: e["subject_id"]),
+        "exclusions": sorted(catalog["exclusions"], key=lambda e: e["subject_id"]),
         "counts": {
             "targets": len(catalog["targets"]),
             "leaves": len(leaves),
@@ -354,7 +379,7 @@ def write_plan(body, path):
     rows = doc.pop("rows")
     head = json.dumps(doc, sort_keys=True, indent=1, ensure_ascii=False)
     rows_text = ",\n  ".join(json.dumps(r, ensure_ascii=False) for r in rows)
-    text = head[:-2] + ",\n \"rows\": [\n  " + rows_text + "\n ]\n}\n"
+    text = head[:-2] + ',\n "rows": [\n  ' + rows_text + "\n ]\n}\n"
     # the spliced text must parse back to exactly body+root, or nothing is written
     parsed = json.loads(text)
     root = parsed.pop("plan_root")
@@ -380,16 +405,16 @@ def check(catalog, catalog_sha, require_current_lock=False):
     problems = []
     # R4-EVID-01a: the plan copies the catalogue's lock digest; compare it
     # to the CURRENT lock file, always report, fail only when required to
-    current_lock = common.sha256_file(SOURCE_LOCK) if SOURCE_LOCK.is_file() \
-        else None
-    pinned_lock = (committed.get("generated_from") or {}).get(
-        "source_lock_digest")
+    current_lock = common.sha256_file(SOURCE_LOCK) if SOURCE_LOCK.is_file() else None
+    pinned_lock = (committed.get("generated_from") or {}).get("source_lock_digest")
     if pinned_lock != current_lock:
-        msg = (f"plan pins source_lock_digest {pinned_lock} (copied from the "
-               f"catalogue) but the current "
-               f"{SOURCE_LOCK.relative_to(REPO)} hashes {current_lock} - the "
-               f"source binding is STALE (R5-EVID-01: regenerate catalogue + "
-               f"plan against the current lock)")
+        msg = (
+            f"plan pins source_lock_digest {pinned_lock} (copied from the "
+            f"catalogue) but the current "
+            f"{SOURCE_LOCK.relative_to(REPO)} hashes {current_lock} - the "
+            f"source binding is STALE (R5-EVID-01: regenerate catalogue + "
+            f"plan against the current lock)"
+        )
         if require_current_lock:
             problems.append(msg)
         else:
@@ -397,7 +422,8 @@ def check(catalog, catalog_sha, require_current_lock=False):
     if committed_root != recomputed_committed_root:
         problems.append(
             f"committed plan_root {committed_root} != root of the committed "
-            f"body {recomputed_committed_root} - the plan was hand-edited")
+            f"body {recomputed_committed_root} - the plan was hand-edited"
+        )
     body = build_body(catalog, catalog_sha)
     problems.extend(errors)
     if not errors and canonical(body) != canonical(committed):
@@ -405,17 +431,20 @@ def check(catalog, catalog_sha, require_current_lock=False):
         problems.append(
             f"plan drift: rebuilding from the current catalogue yields root "
             f"{fresh_root}, the committed plan body hashes "
-            f"{recomputed_committed_root}")
+            f"{recomputed_committed_root}"
+        )
         for key in body:
             if canonical(body.get(key)) != canonical(committed.get(key)):
                 problems.append(f"plan drift in section {key!r}")
     for p in problems:
         print(f"CHECK FAIL: {p}", file=sys.stderr)
     if not problems:
-        print(f"plan check OK: {committed_root} "
-              f"({committed['counts']['rows']} rows, "
-              f"{committed['counts']['driver_rows']} driver rows, "
-              f"{committed['counts']['exclusions']} exclusion rows)")
+        print(
+            f"plan check OK: {committed_root} "
+            f"({committed['counts']['rows']} rows, "
+            f"{committed['counts']['driver_rows']} driver rows, "
+            f"{committed['counts']['exclusions']} exclusion rows)"
+        )
     return 1 if problems else 0
 
 
@@ -423,22 +452,26 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--catalog", type=pathlib.Path, default=CATALOG)
     ap.add_argument("--out", type=pathlib.Path, default=PLAN)
-    ap.add_argument("--check", action="store_true",
-                    help="revalidate the committed plan against the catalogue; "
-                         "drift is a nonzero exit")
-    ap.add_argument("--require-current-lock", action="store_true",
-                    help="with --check: FAIL if the plan's pinned "
-                         "source_lock_digest is not the sha256 of the current "
-                         "source-lock/source-lock.json (R5-EVID-01: CI runs "
-                         "this as a BLOCKING step; regenerate whenever the "
-                         "source lock changes)")
+    ap.add_argument(
+        "--check",
+        action="store_true",
+        help="revalidate the committed plan against the catalogue; drift is a nonzero exit",
+    )
+    ap.add_argument(
+        "--require-current-lock",
+        action="store_true",
+        help="with --check: FAIL if the plan's pinned "
+        "source_lock_digest is not the sha256 of the current "
+        "source-lock/source-lock.json (R5-EVID-01: CI runs "
+        "this as a BLOCKING step; regenerate whenever the "
+        "source lock changes)",
+    )
     args = ap.parse_args()
     catalog = json.loads(args.catalog.read_text())
     catalog_sha = common.sha256_file(args.catalog)
 
     if args.check:
-        return check(catalog, catalog_sha,
-                     require_current_lock=args.require_current_lock)
+        return check(catalog, catalog_sha, require_current_lock=args.require_current_lock)
 
     body = build_body(catalog, catalog_sha)
     for e in errors:
@@ -447,10 +480,12 @@ def main():
         return 1
     root = write_plan(body, args.out)
     rel = args.out.relative_to(REPO) if args.out.is_relative_to(REPO) else args.out
-    print(json.dumps({"plan": str(rel), "plan_root": root,
-                      **body["counts"]}, indent=1))
-    print("NOTE: this plan is a denominator, not a result - nothing is proven "
-          "executed by its existence.", file=sys.stderr)
+    print(json.dumps({"plan": str(rel), "plan_root": root, **body["counts"]}, indent=1))
+    print(
+        "NOTE: this plan is a denominator, not a result - nothing is proven "
+        "executed by its existence.",
+        file=sys.stderr,
+    )
     return 0
 
 

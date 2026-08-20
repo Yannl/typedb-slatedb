@@ -86,7 +86,17 @@ def make_checkout(tmp: Path) -> Path:
     """
     dst = tmp / "checkout"
     subprocess.run(
-        ["git", "clone", "--quiet", "--no-hardlinks", "--depth", "1", "--no-local", str(REPO_ROOT), str(dst)],
+        [
+            "git",
+            "clone",
+            "--quiet",
+            "--no-hardlinks",
+            "--depth",
+            "1",
+            "--no-local",
+            str(REPO_ROOT),
+            str(dst),
+        ],
         check=True,
         capture_output=True,
     )
@@ -94,12 +104,29 @@ def make_checkout(tmp: Path) -> Path:
         src = REPO_ROOT / name
         if src.exists():
             shutil.copy2(src, dst / name)
-    subprocess.run(["git", "-C", str(dst), "add", "--", IDENTITY_FILENAME, ".gitattributes"], check=True, capture_output=True)
-    staged = subprocess.run(["git", "-C", str(dst), "diff", "--cached", "--quiet"], capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(dst), "add", "--", IDENTITY_FILENAME, ".gitattributes"],
+        check=True,
+        capture_output=True,
+    )
+    staged = subprocess.run(
+        ["git", "-C", str(dst), "diff", "--cached", "--quiet"], capture_output=True
+    )
     if staged.returncode != 0:
         subprocess.run(
-            ["git", "-C", str(dst), "-c", "user.email=selftest@local", "-c", "user.name=selftest",
-             "commit", "--quiet", "-m", "release-identity self-test: sync working-tree identity files"],
+            [
+                "git",
+                "-C",
+                str(dst),
+                "-c",
+                "user.email=selftest@local",
+                "-c",
+                "user.name=selftest",
+                "commit",
+                "--quiet",
+                "-m",
+                "release-identity self-test: sync working-tree identity files",
+            ],
             check=True,
             capture_output=True,
         )
@@ -124,7 +151,9 @@ def make_archive(tmp: Path, source: Path) -> Path:
     tar_path = tmp / "archive.tar"
     with tar_path.open("wb") as fh:
         subprocess.run(
-            ["git", "-C", str(source), "archive", "HEAD", "--", *ARCHIVE_PATHS], stdout=fh, check=True
+            ["git", "-C", str(source), "archive", "HEAD", "--", *ARCHIVE_PATHS],
+            stdout=fh,
+            check=True,
         )
     with tarfile.open(tar_path) as tf:
         tf.extractall(dst)  # noqa: S202 - our own archive, produced two lines above
@@ -192,7 +221,10 @@ def main() -> int:
         tmp = Path(tmpdir)
         checkout = make_checkout(tmp)
         head = subprocess.run(
-            ["git", "-C", str(checkout), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+            ["git", "-C", str(checkout), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout.strip()
 
         archive = make_archive(tmp, checkout)
@@ -203,8 +235,20 @@ def main() -> int:
 
         cases = [
             ("1 git checkout", checkout, head, "git-checkout", True),
-            ("2 git archive (no .git; export-subst expanded)", archive, head, "git-archive-export-subst", False),
-            ("3 release tarball (generated + digest-bound)", release, head, "release-artifact", True),
+            (
+                "2 git archive (no .git; export-subst expanded)",
+                archive,
+                head,
+                "git-archive-export-subst",
+                False,
+            ),
+            (
+                "3 release tarball (generated + digest-bound)",
+                release,
+                head,
+                "release-artifact",
+                True,
+            ),
             ("4 installed package (identity file only)", installed, head, "release-artifact", True),
             ("5 NEGATIVE naked copy without .git or an expanded identity", naked, None, None, None),
             ("6 NEGATIVE identity edited after it was digest-bound", tampered, None, None, None),
@@ -264,7 +308,9 @@ def main() -> int:
     if failures:
         print(f"release-identity posture self-test: {failures} check(s) FAILED")
         return 1
-    print("release-identity posture self-test: all 6 postures behaved as specified, in both resolvers")
+    print(
+        "release-identity posture self-test: all 6 postures behaved as specified, in both resolvers"
+    )
     return 0
 
 

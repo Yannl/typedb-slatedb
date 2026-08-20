@@ -6,6 +6,7 @@ docs/operations.md is GENERATED and must never be hand-edited. lint_ledger.py
 fails when the rendered block drifts from the ledger, so a status change is a
 ledger change first.
 """
+
 import json
 import pathlib
 import sys
@@ -24,12 +25,14 @@ def render() -> str:
     lines.append("|---|---|---|")
     for g in ledger["gates"]:
         lines.append(f"| **{g['id']}** {g['title']} | **{g['state']}** | {g['why']} |")
-    for l in ledger["lanes"]:
-        lines.append(f"| {l['id']} | **{l['state']}** | {l['why']} |")
+    for lane in ledger["lanes"]:
+        lines.append(f"| {lane['id']} | **{lane['state']}** | {lane['why']} |")
     lines.append("")
-    lines.append(f"Adopted audit: {ledger['adopted_audit']['directive']} at "
-                 f"`{ledger['adopted_audit']['audited_commit'][:12]}` — decision: "
-                 f"{ledger['adopted_audit']['decision']}.")
+    lines.append(
+        f"Adopted audit: {ledger['adopted_audit']['directive']} at "
+        f"`{ledger['adopted_audit']['audited_commit'][:12]}` — decision: "
+        f"{ledger['adopted_audit']['decision']}."
+    )
     lines.append("")
     lines.append(END)
     return "\n".join(lines)

@@ -38,6 +38,7 @@ Usage: verify-bundle.py EVIDENCE_DIR [--repo PATH] [--allow-non-qualification]
                                      [--print-stable-root]
 Exit nonzero on any failure.
 """
+
 import argparse
 import hashlib
 import json
@@ -135,11 +136,14 @@ def stable_root_of(bundle) -> str:
         },
         "locks": bundle["locks"],
         "corpus": bundle["corpus"],
-        "toolchain": {k: bundle["toolchain"].get(k)
-                      for k in ("rustc", "cargo", "object_store")},
+        "toolchain": {k: bundle["toolchain"].get(k) for k in ("rustc", "cargo", "object_store")},
         "phases": [
-            {"name": ph["name"], "verdict": ph["verdict"], "exit_code": ph["exit_code"],
-             "summary": ph["summary"]}
+            {
+                "name": ph["name"],
+                "verdict": ph["verdict"],
+                "exit_code": ph["exit_code"],
+                "summary": ph["summary"],
+            }
             for ph in bundle["phases"]
         ],
     }
@@ -151,11 +155,17 @@ def stable_root_of(bundle) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("evidence_dir")
-    ap.add_argument("--repo", help="repository root to re-derive source identity from "
-                                   "(default: the repo_root recorded in the bundle)")
-    ap.add_argument("--allow-non-qualification", action="store_true",
-                    help="accept a bundle explicitly stamped qualification=false "
-                         "(dirty tree). Such a bundle is NOT qualification evidence.")
+    ap.add_argument(
+        "--repo",
+        help="repository root to re-derive source identity from "
+        "(default: the repo_root recorded in the bundle)",
+    )
+    ap.add_argument(
+        "--allow-non-qualification",
+        action="store_true",
+        help="accept a bundle explicitly stamped qualification=false "
+        "(dirty tree). Such a bundle is NOT qualification evidence.",
+    )
     ap.add_argument("--print-stable-root", action="store_true")
     args = ap.parse_args()
 
@@ -164,7 +174,7 @@ def main() -> int:
 
     try:
         bundle = json.loads((evidence / "bundle.json").read_text())
-    except Exception as exc:                                    # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         print("BUNDLE VERIFY: FAIL")
         print(f"  - bundle.json unreadable: {exc}")
         return 1
@@ -184,8 +194,11 @@ def main() -> int:
             bad.append(f"artifact {name} missing")
         elif digest(path) != want:
             bad.append(f"artifact {name} digest mismatch: want {want} got {digest(path)}")
-    present = {p.name for p in evidence.iterdir()
-               if p.is_file() and p.name not in ("bundle.json", "root.txt")}
+    present = {
+        p.name
+        for p in evidence.iterdir()
+        if p.is_file() and p.name not in ("bundle.json", "root.txt")
+    }
     for extra in sorted(present - set(arts)):
         bad.append(f"unsealed file {extra} present in the evidence dir")
     try:
@@ -207,12 +220,16 @@ def main() -> int:
     qualification = bundle.get("qualification")
     if dirt:
         if qualification is not False:
-            bad.append(f"{len(dirt)} dirty path(s) recorded but the bundle is not stamped "
-                       "qualification=false")
+            bad.append(
+                f"{len(dirt)} dirty path(s) recorded but the bundle is not stamped "
+                "qualification=false"
+            )
         if not args.allow_non_qualification:
-            bad.append(f"source tree was DIRTY at seal time ({len(dirt)} path(s), e.g. "
-                       f"{dirt[0]!r}) — this bundle is not qualification evidence; pass "
-                       "--allow-non-qualification to read it anyway")
+            bad.append(
+                f"source tree was DIRTY at seal time ({len(dirt)} path(s), e.g. "
+                f"{dirt[0]!r}) — this bundle is not qualification evidence; pass "
+                "--allow-non-qualification to read it anyway"
+            )
     elif source.get("clean") is not True or qualification is not True:
         bad.append("source.clean/qualification stamp disagrees with an empty dirty_paths list")
 
@@ -220,27 +237,35 @@ def main() -> int:
     repo_root = pathlib.Path(args.repo or source.get("repo_root", ""))
     cs = bundle.get("corpus_source", {})
     if not repo_root or not repo_root.is_dir():
-        bad.append(f"repo root {str(repo_root)!r} not present — the corpus source root "
-                   "cannot be re-derived (pass --repo)")
+        bad.append(
+            f"repo root {str(repo_root)!r} not present — the corpus source root "
+            "cannot be re-derived (pass --repo)"
+        )
     else:
         live = corpus_set(repo_root)
         if live is None:
-            bad.append(f"{repo_root/CORPUS_REL} absent — no corpus source to bind")
+            bad.append(f"{repo_root / CORPUS_REL} absent — no corpus source to bind")
         else:
             claimed = cs.get("files", {})
             for path in sorted(set(live) | set(claimed)):
                 if path not in claimed:
-                    bad.append(f"corpus source {path} exists on disk but is not bound by the bundle")
+                    bad.append(
+                        f"corpus source {path} exists on disk but is not bound by the bundle"
+                    )
                 elif path not in live:
                     bad.append(f"corpus source {path} bound by the bundle but absent on disk")
                 elif live[path] != claimed[path]:
-                    bad.append(f"corpus source {path} digest mismatch: bundle {claimed[path]} "
-                               f"disk {live[path]}")
+                    bad.append(
+                        f"corpus source {path} digest mismatch: bundle {claimed[path]} "
+                        f"disk {live[path]}"
+                    )
             if chain(sorted(claimed.items())) != cs.get("root"):
                 bad.append("corpus_source.root does not equal the rollup over its own file list")
             if live and chain(sorted(live.items())) != cs.get("root"):
-                bad.append(f"corpus source root mismatch: bundle {cs.get('root')} "
-                           f"recomputed {chain(sorted(live.items()))}")
+                bad.append(
+                    f"corpus source root mismatch: bundle {cs.get('root')} "
+                    f"recomputed {chain(sorted(live.items()))}"
+                )
 
     # -- 4/5. provider identity and the source lock ------------------------
     prov = bundle.get("provider", {})
@@ -250,23 +275,28 @@ def main() -> int:
     if node_id is None:
         bad.append(f"provider {prov.get('name')!r} has no source-locked identity")
     elif prov.get("source_lock_node") != node_id:
-        bad.append(f"provider {prov.get('name')!r} bound to source-lock node "
-                   f"{prov.get('source_lock_node')!r}, want {node_id!r}")
+        bad.append(
+            f"provider {prov.get('name')!r} bound to source-lock node "
+            f"{prov.get('source_lock_node')!r}, want {node_id!r}"
+        )
     recomp = prov.get("binary_sha256_recomputed", "")
     if not re.fullmatch(r"[0-9a-f]{64}", recomp or ""):
         bad.append(f"provider binary_sha256_recomputed not 64-hex: {recomp!r}")
     if prov.get("binary_sha256_claimed") != recomp:
-        bad.append(f"caller-claimed provider digest {prov.get('binary_sha256_claimed')!r} != "
-                   f"recomputed {recomp!r}")
+        bad.append(
+            f"caller-claimed provider digest {prov.get('binary_sha256_claimed')!r} != "
+            f"recomputed {recomp!r}"
+        )
     if not sealed_lock.is_file():
-        bad.append(f"sealed source-lock copy {sealed_lock.name} absent — provider identity "
-                   "cannot be bound")
+        bad.append(
+            f"sealed source-lock copy {sealed_lock.name} absent — provider identity cannot be bound"
+        )
     else:
         if digest(sealed_lock) != locks.get("source_lock_sha256"):
             bad.append("sealed source-lock copy does not match locks.source_lock_sha256")
         try:
             doc = json.loads(sealed_lock.read_text())
-        except Exception as exc:                                # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             doc = None
             bad.append(f"sealed source-lock copy unparseable: {exc}")
         if doc is not None and node_id:
@@ -275,12 +305,16 @@ def main() -> int:
                 bad.append(f"sealed source-lock has no node {node_id}")
             else:
                 if node.get("sha256") != recomp:
-                    bad.append(f"provider digest {recomp} != source-lock {node_id} sha256 "
-                               f"{node.get('sha256')}")
+                    bad.append(
+                        f"provider digest {recomp} != source-lock {node_id} sha256 "
+                        f"{node.get('sha256')}"
+                    )
                 for field in ("url", "version"):
                     if prov.get(field) != node.get(field):
-                        bad.append(f"provider {field} {prov.get(field)!r} != source-lock "
-                                   f"{node_id} {field} {node.get(field)!r}")
+                        bad.append(
+                            f"provider {field} {prov.get(field)!r} != source-lock "
+                            f"{node_id} {field} {node.get(field)!r}"
+                        )
     if repo_root.is_dir():
         live_lock = repo_root / "source-lock" / "source-lock.json"
         if not live_lock.is_file():
@@ -297,10 +331,11 @@ def main() -> int:
         bad.append("sealed workspace-lock copy does not match locks.workspace_lock_sha256")
     else:
         try:
-            if json.loads(sealed_ws.read_text()).get("source_lock_sha256") \
-                    != locks.get("source_lock_sha256"):
+            if json.loads(sealed_ws.read_text()).get("source_lock_sha256") != locks.get(
+                "source_lock_sha256"
+            ):
                 bad.append("workspace lock does not bind the sealed source-lock bytes")
-        except Exception as exc:                                # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             bad.append(f"sealed workspace-lock copy unparseable: {exc}")
 
     # -- 6. every executable that actually ran ------------------------------
@@ -317,13 +352,17 @@ def main() -> int:
             continue
         got = digest(path)
         if e.get("sha256") != got:
-            bad.append(f"executable {e.get('name')} at {path} digest mismatch: bundle "
-                       f"{e.get('sha256')} disk {got}")
+            bad.append(
+                f"executable {e.get('name')} at {path} digest mismatch: bundle "
+                f"{e.get('sha256')} disk {got}"
+            )
     tdir = bundle.get("toolchain", {}).get("cargo_target_dir")
     racer = next((e for e in execs if e.get("name") == "cas_racer"), None)
     if tdir and racer and not str(racer.get("path", "")).startswith(str(tdir)):
-        bad.append(f"cas_racer path {racer.get('path')!r} is not under the effective "
-                   f"CARGO_TARGET_DIR {tdir!r}")
+        bad.append(
+            f"cas_racer path {racer.get('path')!r} is not under the effective "
+            f"CARGO_TARGET_DIR {tdir!r}"
+        )
 
     # -- 7/8. structured phase results, re-parsed from the raw logs --------
     phases = bundle.get("phases", [])
@@ -332,8 +371,10 @@ def main() -> int:
     by_name = {p.get("name"): p for p in phases}
     for p in phases:
         if p.get("verdict") != "PASS" or p.get("exit_code") != 0:
-            bad.append(f"phase {p.get('name')} is not PASS/0: exit={p.get('exit_code')} "
-                       f"verdict={p.get('verdict')}")
+            bad.append(
+                f"phase {p.get('name')} is not PASS/0: exit={p.get('exit_code')} "
+                f"verdict={p.get('verdict')}"
+            )
         log = p.get("log")
         if log:
             lp = evidence / log
@@ -356,8 +397,10 @@ def main() -> int:
             passed = sum(t.get("passed", 0) for t in totals)
             failed = sum(t.get("failed", 0) for t in totals)
             if passed != expected or failed != 0:
-                bad.append(f"semantics log shows {passed} passed / {failed} failed, "
-                           f"want {expected} passed / 0 failed")
+                bad.append(
+                    f"semantics log shows {passed} passed / {failed} failed, "
+                    f"want {expected} passed / 0 failed"
+                )
             oks = sorted(n for n, v in outcomes.items() if v == "ok")
             if len(oks) != expected:
                 bad.append(f"semantics log names {len(oks)} passing tests, want {expected}")
@@ -393,7 +436,7 @@ def main() -> int:
         else:
             try:
                 on_disk = json.loads(mp_file.read_text())
-            except Exception as exc:                            # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 on_disk = None
                 bad.append(f"phase1b.json unparseable: {exc}")
             if on_disk is not None:
@@ -405,15 +448,24 @@ def main() -> int:
                 if on_disk.get("procs") != want_procs:
                     bad.append(f"mp-cas procs {on_disk.get('procs')} != configured {want_procs}")
                 for r in rounds:
-                    if (r.get("winners") != 1 or r.get("losers") != (want_procs or 0) - 1
-                            or r.get("overwrites") != 0 or r.get("errors") != 0):
-                        bad.append(f"mp-cas round {r.get('round')}: winners={r.get('winners')} "
-                                   f"losers={r.get('losers')} overwrites={r.get('overwrites')} "
-                                   f"errors={r.get('errors')} — want 1/"
-                                   f"{(want_procs or 0) - 1}/0/0")
+                    if (
+                        r.get("winners") != 1
+                        or r.get("losers") != (want_procs or 0) - 1
+                        or r.get("overwrites") != 0
+                        or r.get("errors") != 0
+                    ):
+                        bad.append(
+                            f"mp-cas round {r.get('round')}: winners={r.get('winners')} "
+                            f"losers={r.get('losers')} overwrites={r.get('overwrites')} "
+                            f"errors={r.get('errors')} — want 1/"
+                            f"{(want_procs or 0) - 1}/0/0"
+                        )
                         break
-                if on_disk.get("racer_sha256") and racer \
-                        and on_disk["racer_sha256"] != racer.get("sha256"):
+                if (
+                    on_disk.get("racer_sha256")
+                    and racer
+                    and on_disk["racer_sha256"] != racer.get("sha256")
+                ):
                     bad.append("phase1b.json racer digest != the recorded cas_racer executable")
 
     # -- 9. environment allowlist ------------------------------------------
@@ -429,7 +481,12 @@ def main() -> int:
             bad.append(f"environment allowlist leaks a secret-bearing value for {k}")
     for k in allow:
         if not INFLUENTIAL.match(k) and k not in (
-                "PATH", "LANG", "LC_ALL", "TZ", "SOURCE_DATE_EPOCH"):
+            "PATH",
+            "LANG",
+            "LC_ALL",
+            "TZ",
+            "SOURCE_DATE_EPOCH",
+        ):
             bad.append(f"environment allowlist contains unexpected variable {k}")
 
     # -- 10. git identity and attestation ----------------------------------
@@ -438,14 +495,20 @@ def main() -> int:
             bad.append(f"source.{field} is not a 40-hex object id: {source.get(field)!r}")
     if repo_root.is_dir():
         try:
-            head = subprocess.run(["git", "-C", str(repo_root), "rev-parse", "HEAD"],
-                                  capture_output=True, text=True).stdout.strip()
+            head = subprocess.run(
+                ["git", "-C", str(repo_root), "rev-parse", "HEAD"], capture_output=True, text=True
+            ).stdout.strip()
             if head and head == source.get("git_head"):
-                tree = subprocess.run(["git", "-C", str(repo_root), "rev-parse", "HEAD^{tree}"],
-                                      capture_output=True, text=True).stdout.strip()
+                tree = subprocess.run(
+                    ["git", "-C", str(repo_root), "rev-parse", "HEAD^{tree}"],
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
                 if tree and tree != source.get("git_tree"):
-                    bad.append(f"source.git_tree {source.get('git_tree')} != the tree of "
-                               f"recorded HEAD ({tree})")
+                    bad.append(
+                        f"source.git_tree {source.get('git_tree')} != the tree of "
+                        f"recorded HEAD ({tree})"
+                    )
         except OSError:
             pass
     att = bundle.get("attestation", {})
@@ -467,13 +530,20 @@ def main() -> int:
         for b in bad:
             print(f"  - {b}")
         return 1
-    stamp = "QUALIFICATION" if bundle.get("qualification") else \
-        "NON-QUALIFICATION (dirty tree, read under --allow-non-qualification)"
+    stamp = (
+        "QUALIFICATION"
+        if bundle.get("qualification")
+        else "NON-QUALIFICATION (dirty tree, read under --allow-non-qualification)"
+    )
     print(f"BUNDLE VERIFY: PASS [{stamp}] ({len(arts) + 1} artifacts)")
-    print(f"  provider      {prov.get('name')} {prov.get('version')} "
-          f"({prov.get('source_lock_node')}) {recomp}")
-    print(f"  source        {source.get('git_head')} tree {source.get('git_tree')} "
-          f"clean={source.get('clean')}")
+    print(
+        f"  provider      {prov.get('name')} {prov.get('version')} "
+        f"({prov.get('source_lock_node')}) {recomp}"
+    )
+    print(
+        f"  source        {source.get('git_head')} tree {source.get('git_tree')} "
+        f"clean={source.get('clean')}"
+    )
     print(f"  corpus root   {cs.get('root')}")
     print(f"  stable root   {att.get('stable_root')}")
     print(f"  artifact root {recorded}")

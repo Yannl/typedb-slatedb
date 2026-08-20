@@ -89,14 +89,13 @@ RUNTIME_OUTPUT_PREFIXES = ("typedb-logs/",)
 # AND SHA256 in the evidence, and the verifier refusing any bundle that
 # excludes a path this list does not name.
 NON_CARGO_INPUTS = {
-    "MODULE.bazel.lock":
-        "Bazel's bzlmod dependency lockfile. No .rs, Cargo.toml or build.rs "
-        "anywhere in the workspace mentions MODULE.bazel (grep -rln "
-        "'MODULE.bazel' over --include=*.rs --include=*.toml --include=build.rs "
-        "returns nothing), and no catalogue target names it in source_files, so "
-        "it enters neither the cargo compilation nor the denominator. Bazel "
-        "rewrites it whenever it resolves modules, which is what happened "
-        "under the first U2 run.",
+    "MODULE.bazel.lock": "Bazel's bzlmod dependency lockfile. No .rs, Cargo.toml or build.rs "
+    "anywhere in the workspace mentions MODULE.bazel (grep -rln "
+    "'MODULE.bazel' over --include=*.rs --include=*.toml --include=build.rs "
+    "returns nothing), and no catalogue target names it in source_files, so "
+    "it enters neither the cargo compilation nor the denominator. Bazel "
+    "rewrites it whenever it resolves modules, which is what happened "
+    "under the first U2 run.",
 }
 
 
@@ -106,10 +105,13 @@ def _load_stage_module():
     tool the brief names for `--check`, so its `differing()` is the authority
     on 'every fork patch is staged and nothing stale remains'."""
     spec = importlib.util.spec_from_file_location(
-        "fork_stage", REPO / "tools" / "fork" / "stage.py")
+        "fork_stage", REPO / "tools" / "fork" / "stage.py"
+    )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
 RESULTS_NAME = "leaf-results.json"
 
 # libtest's per-case lines, in the default (pretty) format. Three real
@@ -133,14 +135,12 @@ RESULTS_NAME = "leaf-results.json"
 # is an error, and every reading is still reconciled against the log's own
 # `test result:` summary before a single leaf is published.
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
-CASE_OPEN_RE = re.compile(
-    r"^test (?P<name>\S+)(?: - should panic)? \.\.\. (?P<rest>.*)$")
+CASE_OPEN_RE = re.compile(r"^test (?P<name>\S+)(?: - should panic)? \.\.\. (?P<rest>.*)$")
 TERMINAL_RE = re.compile(r"^(?P<res>ok|FAILED|ignored|bench:.*)$")
 
 OUTCOME = {"ok": "PASSED", "FAILED": "FAILED", "ignored": "IGNORED"}
 # summary key each outcome must reconcile against
-SUMMARY_KEY = {"PASSED": "passed", "FAILED": "failed",
-               "IGNORED": "ignored", "MEASURED": "measured"}
+SUMMARY_KEY = {"PASSED": "passed", "FAILED": "failed", "IGNORED": "ignored", "MEASURED": "measured"}
 
 
 def _outcome_of(res):
@@ -183,7 +183,8 @@ def parse_libtest_cases(text):
                 problems.append(
                     f"line {i} opens case {m.group('name')!r} while case "
                     f"{pending[0]!r} (opened at line {pending[1]}) is still "
-                    f"unterminated - the log cannot be read unambiguously")
+                    f"unterminated - the log cannot be read unambiguously"
+                )
                 pending = None
                 continue
             pending = (m.group("name"), i)
@@ -198,7 +199,8 @@ def parse_libtest_cases(text):
     if pending is not None:
         problems.append(
             f"case {pending[0]!r} opened at line {pending[1]} never reached an "
-            f"outcome line - the log is truncated or unreadable there")
+            f"outcome line - the log is truncated or unreadable there"
+        )
     return out, problems
 
 
@@ -216,7 +218,8 @@ def reconcile(cases, counts, parse_problems=()):
     if dupes:
         problems.append(
             f"duplicate per-case line(s) for {dupes} - one execution cannot "
-            f"vouch for two leaf outcomes")
+            f"vouch for two leaf outcomes"
+        )
     by_outcome = {}
     for _n, o, _open, _close in cases:
         by_outcome[o] = by_outcome.get(o, 0) + 1
@@ -226,12 +229,14 @@ def reconcile(cases, counts, parse_problems=()):
             problems.append(
                 f"per-case lines name {got} {outcome} case(s) but the log's "
                 f"own 'test result:' summary says {key}={want} - the case list "
-                f"contradicts the log it was read from")
+                f"contradicts the log it was read from"
+            )
     if counts.get("filtered_out", 0):
         problems.append(
             f"the log reports filtered_out={counts['filtered_out']} - a "
             f"filtered run enumerates a SUBSET of the target's leaves while "
-            f"looking exactly like a full one")
+            f"looking exactly like a full one"
+        )
     return problems
 
 
@@ -239,14 +244,16 @@ def has_summary(text):
     """True when the log carries at least one libtest `test result:` line.
     A log without one is truncated (or the binary died mid-run) and can never
     be reconciled: no summary, no leaves."""
-    return any(l.startswith("test result:") for l in text.splitlines())
+    return any(line.startswith("test result:") for line in text.splitlines())
 
 
 # --------------------------------------------------------- executed identity
 
+
 def _git(repo, *a):
-    return subprocess.run(["git", "-C", str(repo), *a],
-                          capture_output=True, text=True).stdout.strip()
+    return subprocess.run(
+        ["git", "-C", str(repo), *a], capture_output=True, text=True
+    ).stdout.strip()
 
 
 def _tree_digest(root, rels):
@@ -280,7 +287,8 @@ def fork_tree_identity():
         "outer_repo_commit": _git(REPO, "rev-parse", "HEAD"),
         "outer_repo_dirty": bool(status),
         "outer_repo_fork_paths_modified": [
-            l[3:] for l in status.splitlines() if l[3:].startswith("fork/")],
+            line[3:] for line in status.splitlines() if line[3:].startswith("fork/")
+        ],
     }
 
 
@@ -292,8 +300,11 @@ def stage_state():
     additionally uses stage.py's own `differing()` so 'is every fork patch
     staged' is answered by the staging tool rather than re-derived here.
     """
-    r = subprocess.run([sys.executable, str(REPO / "tools" / "fork" / "stage.py"),
-                        "--check"], capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, str(REPO / "tools" / "fork" / "stage.py"), "--check"],
+        capture_output=True,
+        text=True,
+    )
     line = (r.stdout.strip().splitlines() or [""])[0]
     for state in ("STAGED", "PRISTINE", "MIXED"):
         if line.startswith(state):
@@ -338,17 +349,17 @@ def executed_tree_identity():
     producers cannot be read as disagreeing.
     """
     stage = _load_stage_module()
-    status = subprocess.run(["git", "-C", str(TB), "status", "--porcelain"],
-                            capture_output=True, text=True).stdout
-    entries = [l for l in status.splitlines() if l.strip()]
+    status = subprocess.run(
+        ["git", "-C", str(TB), "status", "--porcelain"], capture_output=True, text=True
+    ).stdout
+    entries = [line for line in status.splitlines() if line.strip()]
     classified, source_entries = [], []
     for line in sorted(entries):
         rel = line[3:].strip().strip('"')
         f = TB / rel
         if any(rel.startswith(pfx) for pfx in RUNTIME_OUTPUT_PREFIXES):
             kind = "RUNTIME_OUTPUT"
-        elif (FORK / rel).is_file() and f.is_file() and \
-                (FORK / rel).read_bytes() == f.read_bytes():
+        elif (FORK / rel).is_file() and f.is_file() and (FORK / rel).read_bytes() == f.read_bytes():
             kind = "FORK_PATCH"
         elif rel in NON_CARGO_INPUTS:
             kind = "NON_CARGO_INPUT"
@@ -392,10 +403,8 @@ def executed_tree_identity():
         "unstaged_fork_patches": unstaged,
         "unstaged_fork_patches_affecting_cargo": unstaged_cargo,
         "unexplained_paths": unexplained,
-        "runtime_output_paths": [c["path"] for c in classified
-                                 if c["class"] == "RUNTIME_OUTPUT"],
-        "non_cargo_input_paths": [c for c in classified
-                                  if c["class"] == "NON_CARGO_INPUT"],
+        "runtime_output_paths": [c["path"] for c in classified if c["class"] == "RUNTIME_OUTPUT"],
+        "non_cargo_input_paths": [c for c in classified if c["class"] == "NON_CARGO_INPUT"],
         "diverging_paths": classified,
         "staged_delta_files": len(source_entries),
         "staged_delta_sha256": h.hexdigest(),
@@ -404,19 +413,24 @@ def executed_tree_identity():
 
 
 def measured_toolchain(toolchain=common.TOOLCHAIN):
-    out = subprocess.run(["cargo", toolchain, "--version"],
-                         capture_output=True, text=True)
+    out = subprocess.run(["cargo", toolchain, "--version"], capture_output=True, text=True)
     if out.returncode != 0:
         sys.exit(f"toolchain {toolchain} is not installed: {out.stderr.strip()}")
-    rustc = subprocess.run(["rustc", toolchain, "--version"],
-                           capture_output=True, text=True).stdout.strip()
+    rustc = subprocess.run(
+        ["rustc", toolchain, "--version"], capture_output=True, text=True
+    ).stdout.strip()
     triple = ""
-    for line in subprocess.run(["rustc", toolchain, "-vV"], capture_output=True,
-                               text=True).stdout.splitlines():
+    for line in subprocess.run(
+        ["rustc", toolchain, "-vV"], capture_output=True, text=True
+    ).stdout.splitlines():
         if line.startswith("host: "):
-            triple = line[len("host: "):].strip()
-    return {"cargo": out.stdout.strip(), "rustc": rustc, "target_triple": triple,
-            "requested": toolchain.lstrip("+")}
+            triple = line[len("host: ") :].strip()
+    return {
+        "cargo": out.stdout.strip(),
+        "rustc": rustc,
+        "target_triple": triple,
+        "requested": toolchain.lstrip("+"),
+    }
 
 
 def toolchain_id(tc, plan):
@@ -429,8 +443,11 @@ def toolchain_id(tc, plan):
     made impossible.
     """
     for tid, spec in (plan.get("toolchains") or {}).items():
-        if (spec.get("cargo") == tc["cargo"] and spec.get("rustc") == tc["rustc"]
-                and spec.get("target_triple") == tc["target_triple"]):
+        if (
+            spec.get("cargo") == tc["cargo"]
+            and spec.get("rustc") == tc["rustc"]
+            and spec.get("target_triple") == tc["target_triple"]
+        ):
             return tid
     return None
 
@@ -445,11 +462,13 @@ def fixture_state():
     """
     archive = REPO / "sources" / "assembly-artifacts" / "typedb-all-linux-x86_64.tar.gz"
     script = TB / "tests" / "assembly" / "script.tql"
-    links = [TB / "bazel-typedb" / "external" / "typedb_behaviour+",
-             TB / "bazel-typedb" / "external" / "typedb_behaviour",
-             TB / "bazel-typedb" / "external" / "typedb_behaviour++",
-             REPO / "sources" / "typedb_behaviour+"]
-    behaviour_ok = all((l / "connection" / "database.feature").exists() for l in links)
+    links = [
+        TB / "bazel-typedb" / "external" / "typedb_behaviour+",
+        TB / "bazel-typedb" / "external" / "typedb_behaviour",
+        TB / "bazel-typedb" / "external" / "typedb_behaviour++",
+        REPO / "sources" / "typedb_behaviour+",
+    ]
+    behaviour_ok = all((link / "connection" / "database.feature").exists() for link in links)
     return {
         "fixture:typedb-behaviour": {
             "present": behaviour_ok,
@@ -457,8 +476,10 @@ def fixture_state():
             "checkout_revision": _git(BEHAVIOUR, "rev-parse", "HEAD"),
             "checkout_dirty": bool(_git(BEHAVIOUR, "status", "--porcelain")),
             "link_paths_serving_features": [
-                str(l.relative_to(REPO)) for l in links
-                if (l / "connection" / "database.feature").exists()],
+                str(link.relative_to(REPO))
+                for link in links
+                if (link / "connection" / "database.feature").exists()
+            ],
         },
         "fixture:assembly-script.tql": {
             "present": script.is_file(),
@@ -489,6 +510,7 @@ def fixture_set_satisfied(fs_id, plan, fixtures):
 
 
 # ------------------------------------------------------------- bundle identity
+
 
 def bundle_files(results_dir, bundle, repo=REPO):
     """Every file this bundle's claims rest on: the results JSON and every

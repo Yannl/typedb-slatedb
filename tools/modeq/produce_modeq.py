@@ -96,30 +96,39 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", required=True, type=pathlib.Path)
     ap.add_argument("--bazel", default=shutil.which("bazel") or "bazel")
-    ap.add_argument("--query", default=ENUMERATION_QUERY,
-                    help="loading-phase enumeration query; cquery then runs on "
-                         "the explicit label set it returns")
-    ap.add_argument("--toolchain", default=None,
-                    help="recorded toolchain identity; defaults to .bazelversion")
+    ap.add_argument(
+        "--query",
+        default=ENUMERATION_QUERY,
+        help="loading-phase enumeration query; cquery then runs on "
+        "the explicit label set it returns",
+    )
+    ap.add_argument(
+        "--toolchain", default=None, help="recorded toolchain identity; defaults to .bazelversion"
+    )
     args = ap.parse_args()
 
     bazel = pathlib.Path(args.bazel)
     if not bazel.is_file():
         print(f"REFUSED: bazel not found at {bazel}", file=sys.stderr)
         return 2
-    version_proc = subprocess.run([str(bazel), "--version"], cwd=TB,
-                                  capture_output=True, text=True)
+    version_proc = subprocess.run([str(bazel), "--version"], cwd=TB, capture_output=True, text=True)
     version = (version_proc.stdout + version_proc.stderr).strip().splitlines()
     if version_proc.returncode != 0 or not version:
-        print(f"REFUSED: `bazel --version` failed: "
-              f"{(version_proc.stdout + version_proc.stderr)[:400]}", file=sys.stderr)
+        print(
+            f"REFUSED: `bazel --version` failed: "
+            f"{(version_proc.stdout + version_proc.stderr)[:400]}",
+            file=sys.stderr,
+        )
         return 2
 
     enum_argv = [str(bazel), "query", args.query, "--output=label"]
     enum = subprocess.run(enum_argv, cwd=TB, capture_output=True, text=True)
     if enum.returncode != 0:
-        print(f"REFUSED: enumeration `bazel query` failed (exit {enum.returncode}); "
-              "nothing written, Mode-Q stays ABSENT.", file=sys.stderr)
+        print(
+            f"REFUSED: enumeration `bazel query` failed (exit {enum.returncode}); "
+            "nothing written, Mode-Q stays ABSENT.",
+            file=sys.stderr,
+        )
         print(enum.stderr[-3000:], file=sys.stderr)
         return 1
     enumerated = sorted({ln.strip() for ln in enum.stdout.splitlines() if ln.strip()})
@@ -134,29 +143,37 @@ def main() -> int:
     if proc.returncode != 0:
         # The honest outcome: write nothing, explain, and leave Mode-Q ABSENT
         # so the gate stays open rather than being broken by a junk directory.
-        print("REFUSED: `bazel cquery` did not succeed, so there is no Mode-Q "
-              f"observation to record (exit {proc.returncode}). Nothing was "
-              "written; Mode-Q stays ABSENT and G0 stays open.", file=sys.stderr)
+        print(
+            "REFUSED: `bazel cquery` did not succeed, so there is no Mode-Q "
+            f"observation to record (exit {proc.returncode}). Nothing was "
+            "written; Mode-Q stays ABSENT and G0 stays open.",
+            file=sys.stderr,
+        )
         print(proc.stderr[-3000:], file=sys.stderr)
         return 1
 
-    labels = [ln.split(" (")[0].strip() for ln in proc.stdout.splitlines()
-              if ln.strip()]
+    labels = [ln.split(" (")[0].strip() for ln in proc.stdout.splitlines() if ln.strip()]
     labels = sorted(set(labels))
     if not labels:
-        print("REFUSED: cquery returned no targets — an empty snapshot "
-              "enumerates nothing", file=sys.stderr)
+        print(
+            "REFUSED: cquery returned no targets — an empty snapshot enumerates nothing",
+            file=sys.stderr,
+        )
         return 1
 
     by_label = catalog_by_label()
-    crosswalk = [{"bazel_target": lb, "catalog_target_id": by_label[lb]}
-                 for lb in labels if lb in by_label]
+    crosswalk = [
+        {"bazel_target": lb, "catalog_target_id": by_label[lb]} for lb in labels if lb in by_label
+    ]
     unknown = [lb for lb in labels if lb not in by_label]
     if unknown:
-        print(f"REFUSED: {len(unknown)} enumerated target(s) have no catalogue "
-              f"entry, e.g. {unknown[:5]}. The build graph and the catalogue "
-              "have diverged; a bundle that silently dropped them would shrink "
-              "the denominator.", file=sys.stderr)
+        print(
+            f"REFUSED: {len(unknown)} enumerated target(s) have no catalogue "
+            f"entry, e.g. {unknown[:5]}. The build graph and the catalogue "
+            "have diverged; a bundle that silently dropped them would shrink "
+            "the denominator.",
+            file=sys.stderr,
+        )
         return 1
 
     rev, tree = pinned_tb()
@@ -166,7 +183,8 @@ def main() -> int:
         (stage / "cquery-stdout.txt").write_text(proc.stdout, encoding="utf-8")
         (stage / "cquery-stderr.txt").write_text(proc.stderr, encoding="utf-8")
         (stage / "crosswalk.json").write_text(
-            json.dumps(crosswalk, indent=2) + "\n", encoding="utf-8")
+            json.dumps(crosswalk, indent=2) + "\n", encoding="utf-8"
+        )
 
         manifest = {
             "schema": "modeq-bundle/v1",
@@ -176,8 +194,7 @@ def main() -> int:
             },
             "invocation": {
                 "argv": argv,
-                "env": {k: os.environ.get(k, "")
-                        for k in ("PATH", "HOME", "USE_BAZEL_VERSION")},
+                "env": {k: os.environ.get(k, "") for k in ("PATH", "HOME", "USE_BAZEL_VERSION")},
                 "toolchain": args.toolchain or (TB / ".bazelversion").read_text().strip(),
                 "source_commit": rev,
                 "source_tree": tree,
@@ -196,15 +213,15 @@ def main() -> int:
                 "query": args.query,
                 "count": len(enumerated),
                 "note": "loading-phase enumeration; cquery configured exactly "
-                        "these labels, never the whole //... universe",
+                "these labels, never the whole //... universe",
             },
             "crosswalk_file": "crosswalk.json",
         }
-        lines = [f"{p.name}\n{sha256_file(p)}\n"
-                 for p in sorted(stage.iterdir()) if p.is_file()]
+        lines = [f"{p.name}\n{sha256_file(p)}\n" for p in sorted(stage.iterdir()) if p.is_file()]
         manifest["root"] = hashlib.sha256("".join(sorted(lines)).encode()).hexdigest()
         (stage / "modeq.json").write_text(
-            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
 
         out = args.out
         if out.exists():
@@ -214,8 +231,10 @@ def main() -> int:
 
     print(f"MODEQ PRODUCED: {len(labels)} targets, root {manifest['root']}")
     print(f"bundle: {args.out}")
-    print("now run tools/modeq/validate_modeq.py — this producer deliberately "
-          "does not judge its own output.")
+    print(
+        "now run tools/modeq/validate_modeq.py — this producer deliberately "
+        "does not judge its own output."
+    )
     return 0
 
 

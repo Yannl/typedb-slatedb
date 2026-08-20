@@ -53,6 +53,7 @@ USAGE
   python3 tools/qualification/run_leaf.py --probe-formats   # what libtest
       formats this pinned toolchain actually supports (executed, not assumed)
 """
+
 import argparse
 import json
 import os
@@ -113,16 +114,25 @@ def run_one(e, out_dir, timeout):
         if iso.exists():
             shutil.rmtree(iso)
         (iso / "tests" / "assembly").mkdir(parents=True)
-        os.link(REPO / "sources" / "assembly-artifacts" / "typedb-all-linux-x86_64.tar.gz",
-                iso / "typedb-all-linux-x86_64.tar.gz")
-        shutil.copy2(TB / "tests" / "assembly" / "script.tql",
-                     iso / "tests" / "assembly" / "script.tql")
+        os.link(
+            REPO / "sources" / "assembly-artifacts" / "typedb-all-linux-x86_64.tar.gz",
+            iso / "typedb-all-linux-x86_64.tar.gz",
+        )
+        shutil.copy2(
+            TB / "tests" / "assembly" / "script.tql", iso / "tests" / "assembly" / "script.tql"
+        )
         cwd = iso
 
     def execute(argv):
         with open(raw, "wb") as logf:
-            proc = subprocess.Popen(argv, cwd=cwd, env=env, stdout=logf,
-                                    stderr=subprocess.STDOUT, start_new_session=True)
+            proc = subprocess.Popen(
+                argv,
+                cwd=cwd,
+                env=env,
+                stdout=logf,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
             try:
                 return proc.wait(timeout=timeout), False
             except subprocess.TimeoutExpired:
@@ -180,24 +190,32 @@ def analyse(row, out_dir, catalog_target_id, catalog_leaves, plan, fixtures):
     cases, parse_problems = lc.parse_libtest_cases(text)
     refusals = []
     if not text.strip():
-        refusals.append("the archived log is EMPTY - a target that printed "
-                        "nothing proves nothing about its leaves")
+        refusals.append(
+            "the archived log is EMPTY - a target that printed "
+            "nothing proves nothing about its leaves"
+        )
     elif not lc.has_summary(text):
-        refusals.append("the archived log carries no libtest 'test result:' "
-                        "summary line - it is truncated or the binary died "
-                        "mid-run, and an unterminated run cannot be reconciled")
+        refusals.append(
+            "the archived log carries no libtest 'test result:' "
+            "summary line - it is truncated or the binary died "
+            "mid-run, and an unterminated run cannot be reconciled"
+        )
     else:
         refusals += lc.reconcile(cases, counts, parse_problems)
     if row["timed_out"]:
-        refusals.append("the target TIMED OUT - a killed process's partial "
-                        "output is never a complete leaf enumeration")
+        refusals.append(
+            "the target TIMED OUT - a killed process's partial "
+            "output is never a complete leaf enumeration"
+        )
     # An ENOSPC anywhere in the output means the environment failed, not the
     # code under test. Publishing those case outcomes would archive false reds
     # (and false greens for whatever ran before the disk filled).
     if "No space left on device" in text:
-        refusals.append("the log contains 'No space left on device' - the "
-                        "environment failed during this target, so its case "
-                        "outcomes describe the disk, not the code under test")
+        refusals.append(
+            "the log contains 'No space left on device' - the "
+            "environment failed during this target, so its case "
+            "outcomes describe the disk, not the code under test"
+        )
 
     declared = catalog_leaves.get(catalog_target_id, {})
     observed = {n for n, _o, _op, _cl in cases}
@@ -205,20 +223,23 @@ def analyse(row, out_dir, catalog_target_id, catalog_leaves, plan, fixtures):
         refusals.append(
             f"the catalogue records {len(declared)} leaf case(s) for this "
             f"target but the log names none - vacuous evidence: a binary that "
-            f"ran nothing proves nothing about its leaves")
+            f"ran nothing proves nothing about its leaves"
+        )
 
     extra = sorted(observed - set(declared))
     missing = sorted(set(declared) - observed)
-    row.update({
-        "catalog_target_id": catalog_target_id,
-        "counts": counts,
-        "parsed_cases": len(cases),
-        "catalog_leaf_cases": len(declared),
-        "extra_cases": extra,
-        "missing_cases": missing,
-        "refusals": refusals,
-        "publishable": not refusals,
-    })
+    row.update(
+        {
+            "catalog_target_id": catalog_target_id,
+            "counts": counts,
+            "parsed_cases": len(cases),
+            "catalog_leaf_cases": len(declared),
+            "extra_cases": extra,
+            "missing_cases": missing,
+            "refusals": refusals,
+            "publishable": not refusals,
+        }
+    )
     if refusals or catalog_target_id is None:
         return []
 
@@ -227,24 +248,27 @@ def analyse(row, out_dir, catalog_target_id, catalog_leaves, plan, fixtures):
         leaf = declared.get(name)
         if leaf is None:
             continue  # extra_cases: recorded above, never published as a leaf
-        fs_id = leaf.get("fixture_set_id") or plan["leaves"].get(
-            leaf["leaf_case_id"], {}).get("fixture_set_id", "fs:none")
-        leaves.append({
-            "leaf_case_id": leaf["leaf_case_id"],
-            "catalog_target_id": catalog_target_id,
-            "runner_row_id": row["runner_row_id"],
-            "case_name": name,
-            "outcome": outcome,
-            "raw_log": row["raw_log"],
-            "log_sha256": row["log_sha256"],
-            # the line that NAMES the case, and the line that names its
-            # OUTCOME. They differ only for libtest's split single-threaded
-            # form; a verifier reads both back out of the log.
-            "log_line": open_line,
-            "outcome_line": close_line,
-            "fixture_set_id": fs_id,
-            "fixture_set_satisfied": lc.fixture_set_satisfied(fs_id, plan, fixtures),
-        })
+        fs_id = leaf.get("fixture_set_id") or plan["leaves"].get(leaf["leaf_case_id"], {}).get(
+            "fixture_set_id", "fs:none"
+        )
+        leaves.append(
+            {
+                "leaf_case_id": leaf["leaf_case_id"],
+                "catalog_target_id": catalog_target_id,
+                "runner_row_id": row["runner_row_id"],
+                "case_name": name,
+                "outcome": outcome,
+                "raw_log": row["raw_log"],
+                "log_sha256": row["log_sha256"],
+                # the line that NAMES the case, and the line that names its
+                # OUTCOME. They differ only for libtest's split single-threaded
+                # form; a verifier reads both back out of the log.
+                "log_line": open_line,
+                "outcome_line": close_line,
+                "fixture_set_id": fs_id,
+                "fixture_set_satisfied": lc.fixture_set_satisfied(fs_id, plan, fixtures),
+            }
+        )
     return leaves
 
 
@@ -256,41 +280,60 @@ def probe_formats(executable):
     running the binary, not by recalling a release note.
     """
     out = {}
-    for name, argv in (("pretty", ["--format", "pretty", "--list"]),
-                       ("terse", ["--format", "terse", "--list"]),
-                       ("json", ["--format", "json", "--list"]),
-                       ("json+Z", ["-Z", "unstable-options", "--format", "json", "--list"])):
-        r = subprocess.run([executable, *argv], capture_output=True, text=True,
-                           timeout=120)
-        out[name] = {"argv": argv, "returncode": r.returncode,
-                     "head": (r.stdout or r.stderr).strip().splitlines()[:2]}
+    for name, argv in (
+        ("pretty", ["--format", "pretty", "--list"]),
+        ("terse", ["--format", "terse", "--list"]),
+        ("json", ["--format", "json", "--list"]),
+        ("json+Z", ["-Z", "unstable-options", "--format", "json", "--list"]),
+    ):
+        r = subprocess.run([executable, *argv], capture_output=True, text=True, timeout=120)
+        out[name] = {
+            "argv": argv,
+            "returncode": r.returncode,
+            "head": (r.stdout or r.stderr).strip().splitlines()[:2],
+        }
     return out
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--profile", default=None,
-                    help="storage profile to run under; must be a plan profile "
-                         "(U0..U4) for the evidence to cover any plan row")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--profile",
+        default=None,
+        help="storage profile to run under; must be a plan profile "
+        "(U0..U4) for the evidence to cover any plan row",
+    )
     ap.add_argument("--out", default=None)
     ap.add_argument("--package", action="append", default=None)
     ap.add_argument("--filter", default=None)
     ap.add_argument("--skip", action="append", default=[])
-    ap.add_argument("--target", action="append", default=[],
-                    help="exact `<package>:<target>` to run (repeatable). Used "
-                         "to re-run targets a previous bundle REFUSED: a sealed "
-                         "bundle is never reopened, so the re-run lands in its "
-                         "own sealed bundle and both are handed to the reporter.")
+    ap.add_argument(
+        "--target",
+        action="append",
+        default=[],
+        help="exact `<package>:<target>` to run (repeatable). Used "
+        "to re-run targets a previous bundle REFUSED: a sealed "
+        "bundle is never reopened, so the re-run lands in its "
+        "own sealed bundle and both are handed to the reporter.",
+    )
     ap.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
-    ap.add_argument("--min-free-mb", type=int, default=DEFAULT_MIN_FREE_MB,
-                    help="stop the run before a target whose execution would "
-                         "risk running the shared disk out; an ENOSPC failure "
-                         "is a false red and must never be archived as a leaf "
-                         "outcome")
-    ap.add_argument("--probe-formats", action="store_true",
-                    help="report which libtest formats the pinned toolchain "
-                         "supports, using a real compiled test binary")
+    ap.add_argument(
+        "--min-free-mb",
+        type=int,
+        default=DEFAULT_MIN_FREE_MB,
+        help="stop the run before a target whose execution would "
+        "risk running the shared disk out; an ENOSPC failure "
+        "is a false red and must never be archived as a leaf "
+        "outcome",
+    )
+    ap.add_argument(
+        "--probe-formats",
+        action="store_true",
+        help="report which libtest formats the pinned toolchain "
+        "supports, using a real compiled test binary",
+    )
     args = ap.parse_args()
 
     plan = json.loads(lc.PLAN.read_text())
@@ -300,18 +343,27 @@ def main():
     if args.probe_formats:
         execs = run_u0.discover_executables(args.package or ["storage"])
         e = next(x for x in execs if x["target"] == (args.filter or "storage"))
-        print(json.dumps({"executable": e["executable"],
-                          "toolchain": lc.measured_toolchain(),
-                          "formats": probe_formats(e["executable"])}, indent=1))
+        print(
+            json.dumps(
+                {
+                    "executable": e["executable"],
+                    "toolchain": lc.measured_toolchain(),
+                    "formats": probe_formats(e["executable"]),
+                },
+                indent=1,
+            )
+        )
         return 0
 
     if not args.profile or not args.out:
         ap.error("--profile and --out are required for a run")
     out_dir = pathlib.Path(args.out).resolve()
     if (out_dir / "COMPLETE").exists():
-        sys.exit(f"{out_dir} carries a COMPLETE marker - it is a sealed leaf "
-                 f"evidence bundle and this producer will not write into it. "
-                 f"Use a fresh --out.")
+        sys.exit(
+            f"{out_dir} carries a COMPLETE marker - it is a sealed leaf "
+            f"evidence bundle and this producer will not write into it. "
+            f"Use a fresh --out."
+        )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     profile = args.profile
@@ -324,26 +376,30 @@ def main():
     execs = run_u0.discover_executables(args.package)
     if args.filter:
         execs = [e for e in execs if args.filter in f"{e['package']}:{e['target']}"]
-    execs = [e for e in execs
-             if not any(s in f"{e['package']}:{e['target']}" for s in args.skip)]
+    execs = [e for e in execs if not any(s in f"{e['package']}:{e['target']}" for s in args.skip)]
     if args.target:
         want = set(args.target)
         execs = [e for e in execs if f"{e['package']}:{e['target']}" in want]
         missing = want - {f"{e['package']}:{e['target']}" for e in execs}
         if missing:
-            sys.exit(f"--target named {sorted(missing)}, which cargo discovery "
-                     f"does not produce; a target that does not exist cannot be "
-                     f"silently dropped from a selection")
+            sys.exit(
+                f"--target named {sorted(missing)}, which cargo discovery "
+                f"does not produce; a target that does not exist cannot be "
+                f"silently dropped from a selection"
+            )
     if not run_u0.ensure_behaviour_fixture():
         affected = run_u0.needs_behaviour_fixture(execs)
         if affected:
-            sys.exit(f"sources/typedb-behaviour missing and {len(affected)} selected "
-                     f"target(s) read Cucumber features through it - running them "
-                     f"would archive false reds.")
-    selection_complete = not (args.filter or args.skip or args.package
-                              or args.target)
-    print(f"LEAF RUN profile={profile} targets={len(execs)} "
-          f"tree_state={tree_before['tree_state']}", flush=True)
+            sys.exit(
+                f"sources/typedb-behaviour missing and {len(affected)} selected "
+                f"target(s) read Cucumber features through it - running them "
+                f"would archive false reds."
+            )
+    selection_complete = not (args.filter or args.skip or args.package or args.target)
+    print(
+        f"LEAF RUN profile={profile} targets={len(execs)} tree_state={tree_before['tree_state']}",
+        flush=True,
+    )
 
     targets, leaves = [], []
     aborted = None
@@ -351,23 +407,28 @@ def main():
         rid = f"{e['package']}:{e['target']}"
         avail = free_mb()
         if avail < args.min_free_mb:
-            aborted = (f"stopped before {rid}: only {avail} MB free on the "
-                       f"shared filesystem (< --min-free-mb {args.min_free_mb}). "
-                       f"A target that fails because the disk filled is a FALSE "
-                       f"RED; the remaining {len(execs) - i} target(s) are "
-                       f"honestly absent from this bundle instead.")
+            aborted = (
+                f"stopped before {rid}: only {avail} MB free on the "
+                f"shared filesystem (< --min-free-mb {args.min_free_mb}). "
+                f"A target that fails because the disk filled is a FALSE "
+                f"RED; the remaining {len(execs) - i} target(s) are "
+                f"honestly absent from this bundle instead."
+            )
             print(f"ABORT: {aborted}", flush=True)
             break
-        print(f"[{i+1}/{len(execs)}] {rid} ({avail}MB free) ...", end=" ", flush=True)
+        print(f"[{i + 1}/{len(execs)}] {rid} ({avail}MB free) ...", end=" ", flush=True)
         row = run_one(e, out_dir, args.timeout)
         ctid = rid_map.get(rid)
         got = analyse(row, out_dir, ctid, catalog_leaves, plan, fixtures)
         leaves += got
         targets.append(row)
-        print(f"rc={row['exit_code']} {row['parsed_cases']} case(s) -> "
-              f"{len(got)} leaf/leaves"
-              + (f"  REFUSED: {row['refusals'][0]}" if row["refusals"] else "")
-              + f"  [{row['duration_seconds']}s]", flush=True)
+        print(
+            f"rc={row['exit_code']} {row['parsed_cases']} case(s) -> "
+            f"{len(got)} leaf/leaves"
+            + (f"  REFUSED: {row['refusals'][0]}" if row["refusals"] else "")
+            + f"  [{row['duration_seconds']}s]",
+            flush=True,
+        )
 
     tree_after = lc.executed_tree_identity()
     bundle = {
@@ -379,12 +440,16 @@ def main():
         "plan_root": plan.get("plan_root"),
         "catalog_sha256": common.sha256_file(lc.CATALOG),
         "source_lock_digest": catalog.get("source_lock_digest"),
-        "selection": {"package": args.package, "filter": args.filter,
-                      "skip": args.skip, "target": args.target,
-                      "complete": selection_complete and aborted is None,
-                      "aborted": aborted,
-                      "targets_selected": len(execs),
-                      "targets_executed": len(targets)},
+        "selection": {
+            "package": args.package,
+            "filter": args.filter,
+            "skip": args.skip,
+            "target": args.target,
+            "complete": selection_complete and aborted is None,
+            "aborted": aborted,
+            "targets_selected": len(execs),
+            "targets_executed": len(targets),
+        },
         "fixtures": fixtures,
         "executed_tree": tree_before,
         "executed_tree_after_run": tree_after,
@@ -394,24 +459,23 @@ def main():
         # digest moving mid-run does NOT change what ran, so it is recorded as
         # a separate, informational fact rather than silently folded in (or
         # silently ignored).
-        "tree_stable_across_run":
-            tree_before["staged_delta_sha256"] == tree_after["staged_delta_sha256"]
-            and tree_before["checkout_revision"] == tree_after["checkout_revision"],
-        "fork_worktree_changed_during_run":
-            tree_before["fork"]["fork_tree_sha256"]
-            != tree_after["fork"]["fork_tree_sha256"],
+        "tree_stable_across_run": tree_before["staged_delta_sha256"]
+        == tree_after["staged_delta_sha256"]
+        and tree_before["checkout_revision"] == tree_after["checkout_revision"],
+        "fork_worktree_changed_during_run": tree_before["fork"]["fork_tree_sha256"]
+        != tree_after["fork"]["fork_tree_sha256"],
         "started_utc": None,
         "targets": sorted(targets, key=lambda r: r["runner_row_id"]),
         "leaves": sorted(leaves, key=lambda r: r["leaf_case_id"]),
         "failpoint_leaves_not_observable": {
             "count": sum(1 for x in catalog["leaf_cases"] if x["kind"] == "FAILPOINT"),
             "reason": "the catalogue's FAILPOINT leaves are (fail point x libtest "
-                      "case) products enumerated inside a `for fail_point in "
-                      "fail_point::ALL` loop within two #[test] functions; libtest "
-                      "prints one line for the case and none for the iterations, so "
-                      "no per-failpoint outcome exists in the log. Claiming them "
-                      "from a passing loop would be inference presented as "
-                      "observation, so they are left UNCOVERED.",
+            "case) products enumerated inside a `for fail_point in "
+            "fail_point::ALL` loop within two #[test] functions; libtest "
+            "prints one line for the case and none for the iterations, so "
+            "no per-failpoint outcome exists in the log. Claiming them "
+            "from a passing loop would be inference presented as "
+            "observation, so they are left UNCOVERED.",
         },
     }
     results = out_dir / lc.RESULTS_NAME
@@ -429,62 +493,81 @@ def main():
     # files:{rel:sha}}); the root algorithm is byte-for-byte the one
     # verdict.compute_bundle_root uses (`rel\0sha\n` over sorted rels), so
     # every seal in this repository is recomputed the same way.
-    (out_dir / "bundle-manifest.json").write_text(json.dumps(
-        {"bundle_root": root, "files": pairs}, indent=1) + "\n")
+    (out_dir / "bundle-manifest.json").write_text(
+        json.dumps({"bundle_root": root, "files": pairs}, indent=1) + "\n"
+    )
     root2 = root
 
     refused = [t for t in targets if t["refusals"]]
     observation = {
         "targets": len(targets),
         "targets_refused": len(refused),
-        "nonzero_exit_targets": sum(1 for t in targets
-                                    if not t["timed_out"] and t["exit_code"] != 0),
+        "nonzero_exit_targets": sum(
+            1 for t in targets if not t["timed_out"] and t["exit_code"] != 0
+        ),
         "timed_out_targets": sum(1 for t in targets if t["timed_out"]),
         "leaves": len(leaves),
-        "leaves_passed": sum(1 for l in leaves if l["outcome"] == "PASSED"),
-        "leaves_failed": sum(1 for l in leaves if l["outcome"] == "FAILED"),
-        "leaves_ignored": sum(1 for l in leaves if l["outcome"] == "IGNORED"),
+        "leaves_passed": sum(1 for leaf in leaves if leaf["outcome"] == "PASSED"),
+        "leaves_failed": sum(1 for leaf in leaves if leaf["outcome"] == "FAILED"),
+        "leaves_ignored": sum(1 for leaf in leaves if leaf["outcome"] == "IGNORED"),
     }
     # The verdict file mirrors tools/catalog/verdict.py's shape: the raw
     # OBSERVATION always travels with the bundle root, and this producer never
     # adjudicates pass/fail - coverage is denominator progress, and a FAILED
     # leaf is covered evidence of a failure, not a hole.
-    (out_dir / "leaf-verdict.json").write_text(json.dumps({
-        "producer": "tools/qualification/run_leaf.py",
-        "schema": lc.SCHEMA,
-        "profile": profile,
-        "profile_in_plan": bundle["profile_in_plan"],
-        "toolchain_id": tc_id,
-        "plan_root": plan.get("plan_root"),
-        "catalog_sha256": bundle["catalog_sha256"],
-        "executed_tree": tree_before,
-        "tree_stable_across_run": bundle["tree_stable_across_run"],
-        "selection": bundle["selection"],
-        "observation": observation,
-        "bundle_root": root,
-        "statement": (
-            "This bundle records per-case OUTCOMES, not a pass. A FAILED leaf "
-            "here is evidence of a failure, and coverage counts recorded "
-            "outcomes only."),
-    }, indent=1) + "\n")
-    print(json.dumps({
-        "profile": profile, "profile_in_plan": bundle["profile_in_plan"],
-        "toolchain_id": tc_id,
-        "tree_state": tree_before["tree_state"],
-        "tree_stable_across_run": bundle["tree_stable_across_run"],
-        "targets": len(targets), "targets_refused": len(refused),
-        "leaves_emitted": len(leaves),
-        "leaves_passed": sum(1 for l in leaves if l["outcome"] == "PASSED"),
-        "leaves_failed": sum(1 for l in leaves if l["outcome"] == "FAILED"),
-        "leaves_ignored": sum(1 for l in leaves if l["outcome"] == "IGNORED"),
-        "bundle_root": root2,
-    }, indent=1))
+    (out_dir / "leaf-verdict.json").write_text(
+        json.dumps(
+            {
+                "producer": "tools/qualification/run_leaf.py",
+                "schema": lc.SCHEMA,
+                "profile": profile,
+                "profile_in_plan": bundle["profile_in_plan"],
+                "toolchain_id": tc_id,
+                "plan_root": plan.get("plan_root"),
+                "catalog_sha256": bundle["catalog_sha256"],
+                "executed_tree": tree_before,
+                "tree_stable_across_run": bundle["tree_stable_across_run"],
+                "selection": bundle["selection"],
+                "observation": observation,
+                "bundle_root": root,
+                "statement": (
+                    "This bundle records per-case OUTCOMES, not a pass. A FAILED leaf "
+                    "here is evidence of a failure, and coverage counts recorded "
+                    "outcomes only."
+                ),
+            },
+            indent=1,
+        )
+        + "\n"
+    )
+    print(
+        json.dumps(
+            {
+                "profile": profile,
+                "profile_in_plan": bundle["profile_in_plan"],
+                "toolchain_id": tc_id,
+                "tree_state": tree_before["tree_state"],
+                "tree_stable_across_run": bundle["tree_stable_across_run"],
+                "targets": len(targets),
+                "targets_refused": len(refused),
+                "leaves_emitted": len(leaves),
+                "leaves_passed": sum(1 for leaf in leaves if leaf["outcome"] == "PASSED"),
+                "leaves_failed": sum(1 for leaf in leaves if leaf["outcome"] == "FAILED"),
+                "leaves_ignored": sum(1 for leaf in leaves if leaf["outcome"] == "IGNORED"),
+                "bundle_root": root2,
+            },
+            indent=1,
+        )
+    )
     for t in refused:
         print(f"REFUSED {t['runner_row_id']}: {t['refusals']}", file=sys.stderr)
     if not bundle["tree_stable_across_run"]:
-        print("REFUSED BUNDLE: the executed tree changed during the run; rows "
-              "produced against two different trees cannot be filed under one "
-              "identity", file=sys.stderr)
+        print(
+            "REFUSED BUNDLE: the executed tree changed during the run; rows "
+            "produced against two different trees cannot be filed under one "
+            "identity",
+            file=sys.stderr,
+        )
         return 1
     return 0
 

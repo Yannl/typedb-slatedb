@@ -35,13 +35,16 @@ corpus that grew one must stop this runner, not be half-executed); an
 Examples block whose data row has a different column count than its header
 raises; a placeholder with no matching column raises.
 """
+
 import pathlib
 import re
 import sys
 
 SCENARIO_RE = re.compile(r"^(Scenario Outline|Scenario Template|Scenario|Example):\s*(.*)$")
 EXAMPLES_RE = re.compile(r"^(Examples|Scenarios):\s*(.*)$")
-KEYWORD_BREAK_RE = re.compile(r"^(Scenario|Scenario Outline|Scenario Template|Example|Feature|Rule|Background)\b")
+KEYWORD_BREAK_RE = re.compile(
+    r"^(Scenario|Scenario Outline|Scenario Template|Example|Feature|Rule|Background)\b"
+)
 TAG_RE = re.compile(r"^@\S")
 
 
@@ -73,12 +76,13 @@ def enumerate_leaves(feature_path, ref):
         raise GherkinError(
             f"{ref}: contains a `Rule:` block; the upstream SingletonParser "
             f"consumes only feature.scenarios and would silently skip "
-            f"rule-nested scenarios - refusing to enumerate")
+            f"rule-nested scenarios - refusing to enumerate"
+        )
 
     feature_tags = []
     seen_feature = False
     pending_tags = []
-    scenarios = []      # raw scenario records
+    scenarios = []  # raw scenario records
     i = 0
     n = len(lines)
     while i < n:
@@ -101,11 +105,16 @@ def enumerate_leaves(feature_path, ref):
         m = SCENARIO_RE.match(s)
         if m:
             keyword, name = m.group(1), m.group(2).strip()
-            rec = {"keyword": keyword, "name": name, "line": i + 1,
-                   "tags": feature_tags + pending_tags, "examples": []}
+            rec = {
+                "keyword": keyword,
+                "name": name,
+                "line": i + 1,
+                "tags": feature_tags + pending_tags,
+                "examples": [],
+            }
             pending_tags = []
             j = i + 1
-            block = None          # {"tags": [...], "header": [...], "rows": [...]}
+            block = None  # {"tags": [...], "header": [...], "rows": [...]}
             block_tags = []
             while j < n:
                 l2 = lines[j].strip()
@@ -133,7 +142,8 @@ def enumerate_leaves(feature_path, ref):
                         if len(row) != len(block["header"]):
                             raise GherkinError(
                                 f"{ref}:{j + 1}: Examples row has {len(row)} cells "
-                                f"but the header has {len(block['header'])}")
+                                f"but the header has {len(block['header'])}"
+                            )
                         block["rows"].append(row)
                     j += 1
                     continue
@@ -168,15 +178,21 @@ def enumerate_leaves(feature_path, ref):
         if not is_outline:
             if rows:
                 raise GherkinError(
-                    f"{ref}:{rec['line']}: plain `{rec['keyword']}:` carries an "
-                    f"Examples block")
+                    f"{ref}:{rec['line']}: plain `{rec['keyword']}:` carries an Examples block"
+                )
             base = f"cucumber:{ref}::{rec['name']}"
-            leaves.append({
-                "leaf_case_id": uniq(base), "base_id": base,
-                "display_name": rec["name"], "kind": "SCENARIO",
-                "line": rec["line"], "tags": list(rec["tags"]),
-                "example_index": None, "example_count": None,
-            })
+            leaves.append(
+                {
+                    "leaf_case_id": uniq(base),
+                    "base_id": base,
+                    "display_name": rec["name"],
+                    "kind": "SCENARIO",
+                    "line": rec["line"],
+                    "tags": list(rec["tags"]),
+                    "example_index": None,
+                    "example_count": None,
+                }
+            )
             continue
         if not rows:
             # dead outline (all Examples rows commented out): zero leaves,
@@ -187,12 +203,18 @@ def enumerate_leaves(feature_path, ref):
             mapping = dict(zip(blk["header"], row))
             display = _substitute(rec["name"], mapping, ref, rec["line"])
             base = f"cucumber:{ref}::{rec['name']}#ex{idx}"
-            leaves.append({
-                "leaf_case_id": uniq(base), "base_id": base,
-                "display_name": display, "kind": "OUTLINE_EXAMPLE",
-                "line": rec["line"], "tags": rec["tags"] + blk["tags"],
-                "example_index": idx, "example_count": total,
-            })
+            leaves.append(
+                {
+                    "leaf_case_id": uniq(base),
+                    "base_id": base,
+                    "display_name": display,
+                    "kind": "OUTLINE_EXAMPLE",
+                    "line": rec["line"],
+                    "tags": rec["tags"] + blk["tags"],
+                    "example_index": idx,
+                    "example_count": total,
+                }
+            )
     return leaves
 
 
@@ -213,8 +235,7 @@ def _rewind_to_tag_block(lines, j):
             # blank/comment lines inside a tag block keep it contiguous only
             # if another tag line precedes them
             m = k - 1
-            while m >= 0 and (not lines[m].strip()
-                              or lines[m].strip().startswith("#")):
+            while m >= 0 and (not lines[m].strip() or lines[m].strip().startswith("#")):
                 m -= 1
             if m >= 0 and TAG_RE.match(lines[m].strip()):
                 k = m
@@ -233,8 +254,9 @@ def _substitute(name, mapping, ref, line):
         if key not in mapping:
             raise GherkinError(
                 f"{ref}:{line}: outline name references <{key}> which is not an "
-                f"Examples column ({sorted(mapping)})")
-        out.append(name[pos:m.start()])
+                f"Examples column ({sorted(mapping)})"
+            )
+        out.append(name[pos : m.start()])
         out.append(mapping[key])
         pos = m.end()
     out.append(name[pos:])

@@ -98,6 +98,7 @@ Usage:
   python3 tools/evidence/verify_all.py BUNDLE --qualification
   python3 tools/evidence/verify_all.py BUNDLE --require-current-source
 """
+
 import argparse
 import hashlib
 import json
@@ -115,6 +116,7 @@ POLICY_VERDICT_ENUM = ("GREEN", "RED")
 
 # ------------------------------------------------------------ own primitives
 
+
 def sha256_file(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -125,13 +127,11 @@ def sha256_file(path):
 
 def reparse_counts(text):
     """Independent libtest summary parser: sum every `test result:` line."""
-    counts = {"passed": 0, "failed": 0, "ignored": 0,
-              "measured": 0, "filtered_out": 0}
+    counts = {"passed": 0, "failed": 0, "ignored": 0, "measured": 0, "filtered_out": 0}
     for line in text.splitlines():
         if not line.startswith("test result:"):
             continue
-        for number, key in re.findall(
-                r"(\d+) (passed|failed|ignored|measured|filtered out)", line):
+        for number, key in re.findall(r"(\d+) (passed|failed|ignored|measured|filtered out)", line):
             counts[key.replace(" ", "_")] += int(number)
     return counts
 
@@ -144,7 +144,7 @@ def reparse_failed_names(text):
     lines = text.splitlines()
     for i, line in enumerate(lines):
         if line.strip() == "failures:":
-            for after in lines[i + 1:]:
+            for after in lines[i + 1 :]:
                 m = re.match(r"^ {4}(\S+)\s*$", after)
                 if not m:
                     break
@@ -159,8 +159,7 @@ def bundle_rel(path, repo, bundle_dir):
     except ValueError:
         pass
     try:
-        return "<out>/" + p.relative_to(
-            pathlib.Path(bundle_dir).resolve()).as_posix()
+        return "<out>/" + p.relative_to(pathlib.Path(bundle_dir).resolve()).as_posix()
     except ValueError:
         return str(p)
 
@@ -201,8 +200,7 @@ def recompute_plan_root(plan_path):
     if not isinstance(doc, dict):
         return None, None
     declared = doc.pop("plan_root", None)
-    body = json.dumps(doc, sort_keys=True, separators=(",", ":"),
-                      ensure_ascii=False)
+    body = json.dumps(doc, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return declared, hashlib.sha256(body.encode()).hexdigest()
 
 
@@ -213,9 +211,10 @@ def current_tree_identity(repo):
     tb = repo / "sources" / "typedb"
     if not (tb / ".git").exists() and not (tb / ".git").is_file():
         return None
+
     def git(*a):
-        return subprocess.run(["git", "-C", str(tb), *a],
-                              capture_output=True, text=True).stdout
+        return subprocess.run(["git", "-C", str(tb), *a], capture_output=True, text=True).stdout
+
     status = git("status", "--porcelain")
     h = hashlib.sha256()
     for line in sorted(status.splitlines()):
@@ -227,12 +226,13 @@ def current_tree_identity(repo):
     return {
         "checkout_revision": git("rev-parse", "HEAD").strip(),
         "dirty": bool(status.strip()),
-        "staged_delta_files": len([l for l in status.splitlines() if l.strip()]),
+        "staged_delta_files": len([line for line in status.splitlines() if line.strip()]),
         "staged_delta_sha256": h.hexdigest(),
     }
 
 
 # ---------------------------------------------- independent policy re-derivation
+
 
 def rederive_row_policy(adj_rows, ledger, ledger_problems):
     """The row policy of tools/catalog/verdict.py (classify_rows),
@@ -261,42 +261,47 @@ def rederive_row_policy(adj_rows, ledger, ledger_problems):
         exp_failed = entry.get("expected_failed", 0) if entry else 0
         exp_ignored = entry.get("expected_ignored", 0) if entry else 0
         if row["timed_out"]:
-            anomalies.append(f"policy: {tid} TIMED OUT - never ledgerable, "
-                             f"always a defect")
+            anomalies.append(f"policy: {tid} TIMED OUT - never ledgerable, always a defect")
             continue
         if row["exit_code"] != exp_rc:
             anomalies.append(
                 f"policy: {tid} exit code {row['exit_code']!r} but the "
                 f"ledger-derived policy expects {exp_rc!r}"
-                + ("" if entry else " (no ledger entry)"))
+                + ("" if entry else " (no ledger entry)")
+            )
         if row["failed"] != exp_failed:
             anomalies.append(
                 f"policy: {tid} has {row['failed']} failed case(s), policy "
-                f"expects {exp_failed}"
-                + ("" if entry else " (no ledger entry)"))
+                f"expects {exp_failed}" + ("" if entry else " (no ledger entry)")
+            )
         if row["ignored"] != exp_ignored:
             anomalies.append(
                 f"policy: {tid} has {row['ignored']} ignored case(s), policy "
-                f"expects {exp_ignored}"
-                + ("" if entry else " (no ledger entry)"))
-        if entry and entry.get("cases") is not None \
-                and len(entry["cases"]) != exp_failed + exp_ignored:
+                f"expects {exp_ignored}" + ("" if entry else " (no ledger entry)")
+            )
+        if (
+            entry
+            and entry.get("cases") is not None
+            and len(entry["cases"]) != exp_failed + exp_ignored
+        ):
             anomalies.append(
                 f"policy: ledger entry {tid} names {len(entry['cases'])} "
                 f"case(s) but declares {exp_failed} failed + {exp_ignored} "
-                f"ignored - self-inconsistent tolerance")
+                f"ignored - self-inconsistent tolerance"
+            )
     for tid in sorted(set(ledger) - matched):
         anomalies.append(
             f"policy: ledger entry for {tid} matched no row in this bundle - "
-            f"stale exclusions must be retired, not carried")
+            f"stale exclusions must be retired, not carried"
+        )
     rederived = "GREEN" if not (anomalies or ledger_problems) else "RED"
     return anomalies, rederived
 
 
 # ----------------------------------------------------------------- verifier
 
-def verify(bundle_dir, repo, ledger_path, plan_path, require_current_source,
-           qualification=False):
+
+def verify(bundle_dir, repo, ledger_path, plan_path, require_current_source, qualification=False):
     """Returns (integrity, policy, qual_issues, warnings, root, fresh, facts).
 
     integrity   - anomalies about the BYTES (structure, binding, reparse,
@@ -314,8 +319,15 @@ def verify(bundle_dir, repo, ledger_path, plan_path, require_current_source,
 
     results_file = bundle_dir / "u0-results.json"
     if not results_file.is_file():
-        return ([f"bundle: {results_file} does not exist - nothing to verify"],
-                [], [], [], None, {}, facts)
+        return (
+            [f"bundle: {results_file} does not exist - nothing to verify"],
+            [],
+            [],
+            [],
+            None,
+            {},
+            facts,
+        )
     data = json.loads(results_file.read_text())
     rows = data.get("results", [])
     file_profile = data.get("profile")
@@ -331,6 +343,7 @@ def verify(bundle_dir, repo, ledger_path, plan_path, require_current_source,
     ledger, ledger_problems = {}, []
     if ledger_path.is_file():
         import datetime
+
         for e in json.loads(ledger_path.read_text()).get("entries", []):
             tid = e.get("target_id")
             if not tid:
@@ -354,13 +367,21 @@ def verify(bundle_dir, repo, ledger_path, plan_path, require_current_source,
     # ---- rows: identity, binding, reparse, ledger-vs-log
     seen_ids, seen_logs = {}, {}
     adj_rows = []  # what the independent policy re-derivation adjudicates
-    fresh = {"rows": 0, "nonzero_exit_rows": 0, "timed_out_rows": 0,
-             "cases_passed": 0, "cases_failed": 0, "cases_ignored": 0}
+    fresh = {
+        "rows": 0,
+        "nonzero_exit_rows": 0,
+        "timed_out_rows": 0,
+        "cases_passed": 0,
+        "cases_failed": 0,
+        "cases_ignored": 0,
+    }
     for r in rows:
         tid = r.get("target_id", "<no target_id>")
         if tid in seen_ids:
-            integrity.append(f"rows: duplicate result row for {tid} - a row "
-                             f"that appears twice inflates the corpus")
+            integrity.append(
+                f"rows: duplicate result row for {tid} - a row "
+                f"that appears twice inflates the corpus"
+            )
             continue
         seen_ids[tid] = r
         fresh["rows"] += 1
@@ -370,33 +391,42 @@ def verify(bundle_dir, repo, ledger_path, plan_path, require_current_source,
             fresh["nonzero_exit_rows"] += 1
         # adjudicate row-claimed counts by default; replaced below by the
         # fresh reparse whenever the log is readable
-        adj = {"tid": tid, "exit_code": r.get("exit_code"),
-               "timed_out": bool(r.get("timed_out")),
-               "failed": r.get("failed", 0), "ignored": r.get("ignored", 0)}
+        adj = {
+            "tid": tid,
+            "exit_code": r.get("exit_code"),
+            "timed_out": bool(r.get("timed_out")),
+            "failed": r.get("failed", 0),
+            "ignored": r.get("ignored", 0),
+        }
         adj_rows.append(adj)
         raw_log = r.get("raw_log")
         if not raw_log:
-            integrity.append(f"rows: {tid} records no raw log - a count "
-                             f"without its log is an assertion, not evidence")
+            integrity.append(
+                f"rows: {tid} records no raw log - a count "
+                f"without its log is an assertion, not evidence"
+            )
             continue
         p = pathlib.Path(raw_log)
         log = p if p.is_absolute() else repo / p
         if not log.is_file():
-            integrity.append(f"rows: {tid} names raw log {raw_log} which does "
-                             f"not exist - the evidence for its counts is gone")
+            integrity.append(
+                f"rows: {tid} names raw log {raw_log} which does "
+                f"not exist - the evidence for its counts is gone"
+            )
             continue
         try:
             inside = log.resolve().is_relative_to(bundle_dir.resolve())
         except OSError:
             inside = False
         if not inside:
-            integrity.append(f"rows: {tid} names raw log {raw_log} OUTSIDE the "
-                             f"bundle dir")
+            integrity.append(f"rows: {tid} names raw log {raw_log} OUTSIDE the bundle dir")
             continue
         key = log.resolve()
         if key in seen_logs:
-            integrity.append(f"rows: {tid} and {seen_logs[key]} both name log "
-                             f"{raw_log} - one execution cannot vouch for two rows")
+            integrity.append(
+                f"rows: {tid} and {seen_logs[key]} both name log "
+                f"{raw_log} - one execution cannot vouch for two rows"
+            )
             continue
         seen_logs[key] = tid
         actual_sha = sha256_file(log)
@@ -404,24 +434,32 @@ def verify(bundle_dir, repo, ledger_path, plan_path, require_current_source,
         recorded = r.get("log_sha256")
         if recorded is not None:
             if recorded != actual_sha:
-                integrity.append(f"rows: {tid} log hashes {actual_sha} but the "
-                                 f"row recorded {recorded} - the log bytes changed")
+                integrity.append(
+                    f"rows: {tid} log hashes {actual_sha} but the "
+                    f"row recorded {recorded} - the log bytes changed"
+                )
         elif rel_in_dir in manifest:
             if manifest[rel_in_dir] != actual_sha:
-                integrity.append(f"rows: {tid} log hashes {actual_sha} but the "
-                                 f"sidecar manifest recorded {manifest[rel_in_dir]} "
-                                 f"- the archived bytes changed")
+                integrity.append(
+                    f"rows: {tid} log hashes {actual_sha} but the "
+                    f"sidecar manifest recorded {manifest[rel_in_dir]} "
+                    f"- the archived bytes changed"
+                )
         else:
-            integrity.append(f"rows: {tid} log has no recorded hash and no "
-                             f"sidecar manifest entry - unbound bytes are not "
-                             f"evidence")
+            integrity.append(
+                f"rows: {tid} log has no recorded hash and no "
+                f"sidecar manifest entry - unbound bytes are not "
+                f"evidence"
+            )
         text = log.read_text(errors="replace")
         counts = reparse_counts(text)
         for k, v in counts.items():
             if v != r.get(k, 0):
-                integrity.append(f"rows: {tid} claims {k}={r.get(k, 0)} but its "
-                                 f"log independently reparses to {k}={v} - the "
-                                 f"aggregate contradicts its own evidence")
+                integrity.append(
+                    f"rows: {tid} claims {k}={r.get(k, 0)} but its "
+                    f"log independently reparses to {k}={v} - the "
+                    f"aggregate contradicts its own evidence"
+                )
         adj["failed"], adj["ignored"] = counts["failed"], counts["ignored"]
         fresh["cases_passed"] += counts["passed"]
         fresh["cases_failed"] += counts["failed"]
@@ -436,8 +474,10 @@ def verify(bundle_dir, repo, ledger_path, plan_path, require_current_source,
         if not allowed:
             policy.append(f"ledger: {tid} names no profile")
         elif row_profile not in allowed:
-            policy.append(f"ledger: {tid} tolerance covers {allowed} but "
-                          f"this run's profile is {row_profile!r}")
+            policy.append(
+                f"ledger: {tid} tolerance covers {allowed} but "
+                f"this run's profile is {row_profile!r}"
+            )
         fp = entry.get("fingerprint")
         if fp is None:
             if entry.get("expected_failed", 0) + entry.get("expected_ignored", 0) > 0:
@@ -452,26 +492,32 @@ def verify(bundle_dir, repo, ledger_path, plan_path, require_current_source,
                 f"ledger: {tid} fingerprint does not match the log's failing "
                 f"cases"
                 + (f"; ghosts (ledgered, not failing): {ghosts}" if ghosts else "")
-                + (f"; failing but unledgered: {unledgered}" if unledgered else ""))
+                + (f"; failing but unledgered: {unledgered}" if unledgered else "")
+            )
         fp_ignored = set(fp.get("ignored") or [])
         if fp_ignored:
-            log_ignored = set(re.findall(
-                r"^test (\S+) \.\.\. ignored\b.*$", text, re.M))
+            log_ignored = set(re.findall(r"^test (\S+) \.\.\. ignored\b.*$", text, re.M))
             if log_ignored and fp_ignored != log_ignored:
-                policy.append(f"ledger: {tid} ignored fingerprint "
-                              f"{sorted(fp_ignored)} does not match the log's "
-                              f"named ignored cases {sorted(log_ignored)}")
+                policy.append(
+                    f"ledger: {tid} ignored fingerprint "
+                    f"{sorted(fp_ignored)} does not match the log's "
+                    f"named ignored cases {sorted(log_ignored)}"
+                )
             elif not log_ignored:
-                warnings.append(f"{tid}: terse log names no ignored cases; "
-                                f"{len(fp_ignored)} ignored tolerance(s) verified "
-                                f"by count only")
+                warnings.append(
+                    f"{tid}: terse log names no ignored cases; "
+                    f"{len(fp_ignored)} ignored tolerance(s) verified "
+                    f"by count only"
+                )
 
     # ---- roots
     root = recompute_bundle_root(bundle_dir, rows, ledger_path, repo)
     if manifest_root is not None and manifest_root != root:
-        integrity.append(f"roots: recomputed bundle root {root} != sidecar "
-                         f"manifest root {manifest_root} - some consumed file "
-                         f"changed after the manifest was computed")
+        integrity.append(
+            f"roots: recomputed bundle root {root} != sidecar "
+            f"manifest root {manifest_root} - some consumed file "
+            f"changed after the manifest was computed"
+        )
     complete_bound = False  # a COMPLETE that binds exactly the recomputed root
     marker = bundle_dir / "COMPLETE"
     if marker.is_file():
@@ -479,30 +525,36 @@ def verify(bundle_dir, repo, ledger_path, plan_path, require_current_source,
         m = re.match(r"^COMPLETE ([0-9a-f]{64})\s*$", first)
         if m:
             if m.group(1) != root:
-                integrity.append(f"roots: COMPLETE binds root {m.group(1)} but "
-                                 f"the bundle recomputes to {root} - the archive "
-                                 f"was modified after it was sealed")
+                integrity.append(
+                    f"roots: COMPLETE binds root {m.group(1)} but "
+                    f"the bundle recomputes to {root} - the archive "
+                    f"was modified after it was sealed"
+                )
             else:
                 complete_bound = True
         else:
             qual_issues.append(
                 "COMPLETE carries no bundle root (legacy marker) - byte "
                 "integrity rests on the sidecar manifest root, but a seal "
-                "that binds no root is not qualification-grade")
+                "that binds no root is not qualification-grade"
+            )
     else:
-        qual_issues.append("no COMPLETE marker - this bundle was never sealed "
-                           "green; absence of the seal is fatal to any "
-                           "qualification claim")
+        qual_issues.append(
+            "no COMPLETE marker - this bundle was never sealed "
+            "green; absence of the seal is fatal to any "
+            "qualification claim"
+        )
 
     # ---- verdicts: schema/enum + cached derivation vs fresh derivation
-    verdict_files = sorted(bundle_dir.glob("verdict-*.json")) \
-        + ([bundle_dir / "verdict.json"]
-           if (bundle_dir / "verdict.json").is_file() else [])
+    verdict_files = sorted(bundle_dir.glob("verdict-*.json")) + (
+        [bundle_dir / "verdict.json"] if (bundle_dir / "verdict.json").is_file() else []
+    )
     if not verdict_files:
         qual_issues.append(
             "no verdict file in the bundle - nothing claims a policy outcome "
             "(raw observation only); absence of a verdict is fatal to any "
-            "qualification claim")
+            "qualification claim"
+        )
     authoritative = None
     ts_verdicts = sorted(bundle_dir.glob("verdict-*.json"))
     if ts_verdicts:
@@ -518,19 +570,25 @@ def verify(bundle_dir, repo, ledger_path, plan_path, require_current_source,
                 f"verdicts: {vf.name} records policy_verdict {pv!r} which is "
                 f"outside the exact enum {list(POLICY_VERDICT_ENUM)} - a "
                 f"verdict this policy cannot produce is a forgery, not a "
-                f"stronger pass")
+                f"stronger pass"
+            )
         g = v.get("green")
         if not isinstance(g, bool):
-            policy.append(f"verdicts: {vf.name} carries no boolean `green` - "
-                          f"the verdict schema is violated")
+            policy.append(
+                f"verdicts: {vf.name} carries no boolean `green` - the verdict schema is violated"
+            )
         elif pv in POLICY_VERDICT_ENUM and g != (pv == "GREEN"):
-            policy.append(f"verdicts: {vf.name} says green={g} but "
-                          f"policy_verdict={pv!r} - self-contradictory verdict")
+            policy.append(
+                f"verdicts: {vf.name} says green={g} but "
+                f"policy_verdict={pv!r} - self-contradictory verdict"
+            )
         vroot = v.get("bundle_root")
         if vroot is not None and vroot != root:
-            policy.append(f"verdicts: {vf.name} records bundle_root {vroot} "
-                          f"but the bytes recompute to {root} - the verdict "
-                          f"no longer describes this bundle")
+            policy.append(
+                f"verdicts: {vf.name} records bundle_root {vroot} "
+                f"but the bytes recompute to {root} - the verdict "
+                f"no longer describes this bundle"
+            )
         elif vroot is not None and vf == authoritative:
             verdict_root_bound = True
         obs = v.get("observation")
@@ -541,11 +599,11 @@ def verify(bundle_dir, repo, ledger_path, plan_path, require_current_source,
                         f"verdicts: {vf.name} observation {k}={obs.get(k)} but "
                         f"this verifier's independent reparse derives {k}="
                         f"{fresh_v} - producer-cached verdict and fresh reparse "
-                        f"disagree")
+                        f"disagree"
+                    )
 
     # ---- independent policy re-derivation vs the recorded verdict
-    row_policy, rederived = rederive_row_policy(adj_rows, ledger,
-                                                ledger_problems)
+    row_policy, rederived = rederive_row_policy(adj_rows, ledger, ledger_problems)
     facts["rederived_policy_verdict"] = rederived
     recorded_pv = None
     if authoritative is not None:
@@ -557,14 +615,16 @@ def verify(bundle_dir, repo, ledger_path, plan_path, require_current_source,
             "independent policy re-derivation over the observation rows and "
             "the flake ledger derives RED - reasons: "
             + "; ".join(row_policy[:5])
-            + (f"; and {len(row_policy) - 5} more" if len(row_policy) > 5 else ""))
+            + (f"; and {len(row_policy) - 5} more" if len(row_policy) > 5 else "")
+        )
         policy.extend(row_policy)
     elif recorded_pv == "RED" and rederived == "GREEN":
         warnings.append(
             "recorded verdict is RED but the row-level policy re-derives "
             "GREEN here - the recorded RED may rest on denominator/"
             "completeness anomalies this bundle-scoped verifier does not "
-            "re-check; the recorded RED stands")
+            "re-check; the recorded RED stands"
+        )
     elif recorded_pv in POLICY_VERDICT_ENUM and rederived == "RED":
         # recorded RED, re-derived RED: agreement; surface the reasons
         policy.extend(row_policy)
@@ -584,7 +644,8 @@ def verify(bundle_dir, repo, ledger_path, plan_path, require_current_source,
             policy.append(
                 f"policy: {authoritative.name} carries no policy_roots - the "
                 f"policy inputs are not hash-pinned, so a ledger/plan edit "
-                f"could silently reclassify this observation")
+                f"could silently reclassify this observation"
+            )
         else:
             actual_ledger = sha256_file(ledger_path) if ledger_path.is_file() else None
             if pins.get("flake_ledger_sha256") != actual_ledger:
@@ -592,55 +653,73 @@ def verify(bundle_dir, repo, ledger_path, plan_path, require_current_source,
                     f"policy: flake ledger now hashes {actual_ledger} but the "
                     f"verdict pinned {pins.get('flake_ledger_sha256')} - the "
                     f"policy changed after the verdict; re-derive, never "
-                    f"reinterpret")
+                    f"reinterpret"
+                )
             if plan_path.is_file() and plan_recomputed is None:
                 policy.append(f"policy: {plan_path} is unreadable")
             if pins.get("plan_root") is not None or plan_path.is_file():
-                if plan_declared is not None \
-                        and plan_declared != plan_recomputed:
+                if plan_declared is not None and plan_declared != plan_recomputed:
                     policy.append(
                         f"policy: the plan self-declares plan_root "
                         f"{plan_declared} but its canonical body recomputes "
                         f"to {plan_recomputed} - the plan body was edited "
                         f"with the root retained; a self-asserted root is "
-                        f"not the plan")
+                        f"not the plan"
+                    )
                 if pins.get("plan_root") != plan_recomputed:
                     policy.append(
                         f"policy: plan root recomputes to {plan_recomputed} "
                         f"but the verdict pinned {pins.get('plan_root')} - the "
                         f"plan changed after the verdict; re-derive, never "
-                        f"reinterpret")
-    elif qualification and plan_path.is_file() \
-            and plan_declared is not None and plan_declared != plan_recomputed:
+                        f"reinterpret"
+                    )
+    elif (
+        qualification
+        and plan_path.is_file()
+        and plan_declared is not None
+        and plan_declared != plan_recomputed
+    ):
         policy.append(
             f"policy: the plan self-declares plan_root {plan_declared} but "
             f"its canonical body recomputes to {plan_recomputed} - the plan "
-            f"body was edited with the root retained")
+            f"body was edited with the root retained"
+        )
 
     # ---- current-source (optional, expected to FAIL on historical archives)
     if require_current_source:
         current = current_tree_identity(repo)
         if current is None:
-            integrity.append("current-source: sources/typedb is not a git "
-                             "checkout here - cannot establish the current "
-                             "tree, refusing to vouch")
+            integrity.append(
+                "current-source: sources/typedb is not a git "
+                "checkout here - cannot establish the current "
+                "tree, refusing to vouch"
+            )
         else:
-            recorded_trees = {json.dumps(t, sort_keys=True) for t in
-                              ((r.get("run") or {}).get("executed_tree")
-                               for r in rows) if t}
+            recorded_trees = {
+                json.dumps(t, sort_keys=True)
+                for t in ((r.get("run") or {}).get("executed_tree") for r in rows)
+                if t
+            }
             if not recorded_trees:
-                integrity.append("current-source: the bundle records no "
-                                 "executed-tree identity at all - it cannot be "
-                                 "current-source evidence")
+                integrity.append(
+                    "current-source: the bundle records no "
+                    "executed-tree identity at all - it cannot be "
+                    "current-source evidence"
+                )
             for t_json in sorted(recorded_trees):
                 t = json.loads(t_json)
-                for k in ("checkout_revision", "dirty", "staged_delta_files",
-                          "staged_delta_sha256"):
+                for k in (
+                    "checkout_revision",
+                    "dirty",
+                    "staged_delta_files",
+                    "staged_delta_sha256",
+                ):
                     if t.get(k) != current.get(k):
                         integrity.append(
                             f"current-source: bundle tree {k}={t.get(k)!r} but "
                             f"the current staged tree has {k}={current.get(k)!r} "
-                            f"- this bundle is evidence about a DIFFERENT tree")
+                            f"- this bundle is evidence about a DIFFERENT tree"
+                        )
                         break
 
     # ---- the three explicit claims (R4-EVID-03a)
@@ -649,17 +728,22 @@ def verify(bundle_dir, repo, ledger_path, plan_path, require_current_source,
         qual_issues.append(
             "the recomputed bundle root is bound by NO seal (no root-bound "
             "COMPLETE, no sidecar manifest root, no verdict bundle_root) - "
-            "unbound bytes cannot claim integrity")
+            "unbound bytes cannot claim integrity"
+        )
     facts["observation_integrity_verified"] = not integrity and root_bound
     facts["policy_adjudicated"] = (
-        authoritative is not None and not policy
-        and recorded_pv in POLICY_VERDICT_ENUM and recorded_pv == rederived)
+        authoritative is not None
+        and not policy
+        and recorded_pv in POLICY_VERDICT_ENUM
+        and recorded_pv == rederived
+    )
     facts["qualification_pass"] = (
         facts["observation_integrity_verified"]
         and facts["policy_adjudicated"]
         and rederived == "GREEN"
         and complete_bound
-        and not qual_issues)
+        and not qual_issues
+    )
 
     return integrity, policy, qual_issues, warnings, root, fresh, facts
 
@@ -670,63 +754,85 @@ def main():
     ap.add_argument("--repo", type=pathlib.Path, default=DEFAULT_REPO)
     ap.add_argument("--ledger", type=pathlib.Path, default=None)
     ap.add_argument("--plan", type=pathlib.Path, default=None)
-    ap.add_argument("--qualification", "--strict", action="store_true",
-                    dest="qualification",
-                    help="qualification mode: a missing/legacy COMPLETE, a "
-                         "missing verdict, or any qualification issue is "
-                         "FATAL (nonzero exit), and exit 0 requires "
-                         "qualification_pass; default mode reports the same "
-                         "issues loudly but keeps byte-verification of "
-                         "historical archives possible")
-    ap.add_argument("--require-current-source", action="store_true",
-                    help="fail unless the bundle's executed tree matches the "
-                         "current staged sources/typedb tree (a historical "
-                         "archive legitimately fails this)")
+    ap.add_argument(
+        "--qualification",
+        "--strict",
+        action="store_true",
+        dest="qualification",
+        help="qualification mode: a missing/legacy COMPLETE, a "
+        "missing verdict, or any qualification issue is "
+        "FATAL (nonzero exit), and exit 0 requires "
+        "qualification_pass; default mode reports the same "
+        "issues loudly but keeps byte-verification of "
+        "historical archives possible",
+    )
+    ap.add_argument(
+        "--require-current-source",
+        action="store_true",
+        help="fail unless the bundle's executed tree matches the "
+        "current staged sources/typedb tree (a historical "
+        "archive legitimately fails this)",
+    )
     args = ap.parse_args()
     repo = args.repo.resolve()
     bundle = args.bundle if args.bundle.is_absolute() else repo / args.bundle
     ledger = args.ledger or (repo / "docs" / "evidence" / "flake-ledger.json")
-    plan = args.plan or (repo / "docs" / "evidence" / "G1"
-                         / "qualification-plan-v2.json")
+    plan = args.plan or (repo / "docs" / "evidence" / "G1" / "qualification-plan-v2.json")
     integrity, policy, qual_issues, warnings, root, fresh, facts = verify(
-        bundle.resolve(), repo, ledger, plan, args.require_current_source,
-        qualification=args.qualification)
+        bundle.resolve(),
+        repo,
+        ledger,
+        plan,
+        args.require_current_source,
+        qualification=args.qualification,
+    )
     anomalies = integrity + policy
     for w in warnings:
         print(f"WARNING: {w}", file=sys.stderr)
     for q in qual_issues:
-        print(f"QUALIFICATION-ISSUE{' (FATAL)' if args.qualification else ''}"
-              f": {q}", file=sys.stderr)
+        print(
+            f"QUALIFICATION-ISSUE{' (FATAL)' if args.qualification else ''}: {q}", file=sys.stderr
+        )
     for a in anomalies:
         print(f"ANOMALY: {a}", file=sys.stderr)
-    print(json.dumps({
-        "verifier": "tools/evidence/verify_all.py (independent, read-only)",
-        "bundle": str(bundle),
-        "mode": "qualification" if args.qualification else "default",
-        "recomputed_bundle_root": root,
-        "fresh_observation": fresh,
-        "recorded_policy_verdict": facts.get("recorded_policy_verdict"),
-        "rederived_policy_verdict": facts.get("rederived_policy_verdict"),
-        **({"plan_root_declared": facts["plan_root_declared"],
-            "plan_root_recomputed": facts["plan_root_recomputed"]}
-           if "plan_root_recomputed" in facts else {}),
-        "anomalies": len(anomalies),
-        "integrity_anomalies": len(integrity),
-        "policy_anomalies": len(policy),
-        "qualification_issues": len(qual_issues),
-        "warnings": len(warnings),
-        "observation_integrity_verified":
-            facts.get("observation_integrity_verified", False),
-        "policy_adjudicated": facts.get("policy_adjudicated", False),
-        "qualification_pass": facts.get("qualification_pass", False),
-        # backward compatibility: `verified` is EXACTLY
-        # observation_integrity_verified (byte integrity, never a pass)
-        "verified": facts.get("observation_integrity_verified", False),
-    }, indent=1))
+    print(
+        json.dumps(
+            {
+                "verifier": "tools/evidence/verify_all.py (independent, read-only)",
+                "bundle": str(bundle),
+                "mode": "qualification" if args.qualification else "default",
+                "recomputed_bundle_root": root,
+                "fresh_observation": fresh,
+                "recorded_policy_verdict": facts.get("recorded_policy_verdict"),
+                "rederived_policy_verdict": facts.get("rederived_policy_verdict"),
+                **(
+                    {
+                        "plan_root_declared": facts["plan_root_declared"],
+                        "plan_root_recomputed": facts["plan_root_recomputed"],
+                    }
+                    if "plan_root_recomputed" in facts
+                    else {}
+                ),
+                "anomalies": len(anomalies),
+                "integrity_anomalies": len(integrity),
+                "policy_anomalies": len(policy),
+                "qualification_issues": len(qual_issues),
+                "warnings": len(warnings),
+                "observation_integrity_verified": facts.get(
+                    "observation_integrity_verified", False
+                ),
+                "policy_adjudicated": facts.get("policy_adjudicated", False),
+                "qualification_pass": facts.get("qualification_pass", False),
+                # backward compatibility: `verified` is EXACTLY
+                # observation_integrity_verified (byte integrity, never a pass)
+                "verified": facts.get("observation_integrity_verified", False),
+            },
+            indent=1,
+        )
+    )
     if anomalies:
         return 1
-    if args.qualification and (qual_issues
-                               or not facts.get("qualification_pass")):
+    if args.qualification and (qual_issues or not facts.get("qualification_pass")):
         return 1
     return 0
 

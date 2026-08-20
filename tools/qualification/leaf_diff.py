@@ -42,6 +42,7 @@ Usage:
   python3 tools/qualification/leaf_diff.py --oracle DIR --candidate DIR \
       [--scope-package storage --scope-package durability ...] --out FILE
 """
+
 import argparse
 import json
 import pathlib
@@ -67,9 +68,11 @@ def load(d, plan, cl, ct):
     if anomalies:
         for a in anomalies:
             print(f"ANOMALY {d}: {a}", file=sys.stderr)
-        sys.exit(f"{d} does not verify from its own bytes ({len(anomalies)} "
-                 f"anomaly/anomalies); a differential over unverified evidence "
-                 f"is worthless")
+        sys.exit(
+            f"{d} does not verify from its own bytes ({len(anomalies)} "
+            f"anomaly/anomalies); a differential over unverified evidence "
+            f"is worthless"
+        )
     return json.loads((p / lc.RESULTS_NAME).read_text()), facts
 
 
@@ -92,8 +95,10 @@ def load_side(dirs, plan, cl, ct):
             merged["leaves"] = list(b["leaves"])
             continue
         if b["profile"] != merged["profile"]:
-            sys.exit(f"{d} is profile {b['profile']!r} but the side already "
-                     f"holds {merged['profile']!r} - one side, one lane")
+            sys.exit(
+                f"{d} is profile {b['profile']!r} but the side already "
+                f"holds {merged['profile']!r} - one side, one lane"
+            )
         by_rid = {t["runner_row_id"]: i for i, t in enumerate(merged["targets"])}
         for t in b["targets"]:
             rid = t["runner_row_id"]
@@ -105,45 +110,68 @@ def load_side(dirs, plan, cl, ct):
                 # target would mean two executions both claiming its leaves,
                 # which is exactly the double-count this merge must refuse.
                 if prev.get("publishable") and t.get("publishable"):
-                    sys.exit(f"{d}: target {rid} is publishable in BOTH bundles "
-                             f"on this side - two executions cannot both vouch "
-                             f"for one target's leaves")
+                    sys.exit(
+                        f"{d}: target {rid} is publishable in BOTH bundles "
+                        f"on this side - two executions cannot both vouch "
+                        f"for one target's leaves"
+                    )
                 if t.get("publishable"):
                     merged["targets"][by_rid[rid]] = t
                     merged.setdefault("_supersedes", []).append(
-                        {"target": rid,
-                         "refused_row_replaced_from": prev.get("raw_log"),
-                         "refusals": prev.get("refusals"),
-                         "rerun_from": d})
+                        {
+                            "target": rid,
+                            "refused_row_replaced_from": prev.get("raw_log"),
+                            "refusals": prev.get("refusals"),
+                            "rerun_from": d,
+                        }
+                    )
                 continue
             by_rid[rid] = len(merged["targets"])
             merged["targets"].append(t)
         seen_l = {x["leaf_case_id"] for x in merged["leaves"]}
         for x in b["leaves"]:
             if x["leaf_case_id"] in seen_l:
-                sys.exit(f"{d}: leaf {x['leaf_case_id']} already present on this "
-                         f"side - two outcomes for one leaf cannot be merged")
+                sys.exit(
+                    f"{d}: leaf {x['leaf_case_id']} already present on this "
+                    f"side - two outcomes for one leaf cannot be merged"
+                )
             merged["leaves"].append(x)
     return merged, facts
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--oracle", required=True, action="append",
-                    help="leaf bundle for the classic (RocksDB) backend lane "
-                         "(repeatable: a lane may be archived as more than one "
-                         "sealed bundle, e.g. when refused targets were re-run)")
-    ap.add_argument("--candidate", required=True, action="append",
-                    help="leaf bundle for the SlateDB backend lane (repeatable)")
-    ap.add_argument("--scope-package", action="append", default=None,
-                    help="restrict the comparison to these cargo packages "
-                         "(repeatable); default: every package both sides ran")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--oracle",
+        required=True,
+        action="append",
+        help="leaf bundle for the classic (RocksDB) backend lane "
+        "(repeatable: a lane may be archived as more than one "
+        "sealed bundle, e.g. when refused targets were re-run)",
+    )
+    ap.add_argument(
+        "--candidate",
+        required=True,
+        action="append",
+        help="leaf bundle for the SlateDB backend lane (repeatable)",
+    )
+    ap.add_argument(
+        "--scope-package",
+        action="append",
+        default=None,
+        help="restrict the comparison to these cargo packages "
+        "(repeatable); default: every package both sides ran",
+    )
     ap.add_argument("--out", type=pathlib.Path, default=None)
-    ap.add_argument("--require-clean", action="store_true",
-                    help="also fail when the two lanes compared ZERO leaves. A "
-                         "differential over an empty intersection reports "
-                         "'0 regressions' and means nothing.")
+    ap.add_argument(
+        "--require-clean",
+        action="store_true",
+        help="also fail when the two lanes compared ZERO leaves. A "
+        "differential over an empty intersection reports "
+        "'0 regressions' and means nothing.",
+    )
     args = ap.parse_args()
 
     plan = json.loads(lc.PLAN.read_text())
@@ -152,8 +180,9 @@ def main():
     c, c_facts = load_side(args.candidate, plan, cl, ct)
 
     if o["profile"] == c["profile"]:
-        sys.exit(f"both bundles are profile {o['profile']!r} - a differential "
-                 f"needs two different lanes")
+        sys.exit(
+            f"both bundles are profile {o['profile']!r} - a differential needs two different lanes"
+        )
 
     scope = set(args.scope_package or [])
 
@@ -161,17 +190,20 @@ def main():
         return (not scope) or rid.split(":", 1)[0] in scope
 
     def index(bundle):
-        return {l["leaf_case_id"]: l for l in bundle["leaves"]
-                if in_scope(l["runner_row_id"])}
+        return {
+            leaf["leaf_case_id"]: leaf
+            for leaf in bundle["leaves"]
+            if in_scope(leaf["runner_row_id"])
+        }
 
-    O, C = index(o), index(c)
+    oracle, candidate = index(o), index(c)
     # target rows in scope, so an ABSENT case can say whether its TARGET ran
     o_targets = {t["runner_row_id"]: t for t in o["targets"] if in_scope(t["runner_row_id"])}
     c_targets = {t["runner_row_id"]: t for t in c["targets"] if in_scope(t["runner_row_id"])}
 
     rows, tally = [], {}
-    for lid in sorted(set(O) | set(C)):
-        a, b = O.get(lid), C.get(lid)
+    for lid in sorted(set(oracle) | set(candidate)):
+        a, b = oracle.get(lid), candidate.get(lid)
         if a and b:
             oa, ob = a["outcome"], b["outcome"]
             if oa == ob:
@@ -191,32 +223,43 @@ def main():
             continue
         row = {
             "leaf_case_id": lid,
-            "oracle": {"profile": o["profile"],
-                       "outcome": a["outcome"] if a else "ABSENT",
-                       "log": a["raw_log"] if a else None,
-                       "log_line": a["log_line"] if a else None},
-            "candidate": {"profile": c["profile"],
-                          "outcome": b["outcome"] if b else "ABSENT",
-                          "log": b["raw_log"] if b else None,
-                          "log_line": b["log_line"] if b else None},
+            "oracle": {
+                "profile": o["profile"],
+                "outcome": a["outcome"] if a else "ABSENT",
+                "log": a["raw_log"] if a else None,
+                "log_line": a["log_line"] if a else None,
+            },
+            "candidate": {
+                "profile": c["profile"],
+                "outcome": b["outcome"] if b else "ABSENT",
+                "log": b["raw_log"] if b else None,
+                "log_line": b["log_line"] if b else None,
+            },
             "classification": kind,
         }
         if kind == "AGREE_FAILED":
-            row["reading"] = ("fails on BOTH backends - an upstream defect of "
-                              "the pinned revision, not a regression introduced "
-                              "by the SlateDB port")
+            row["reading"] = (
+                "fails on BOTH backends - an upstream defect of "
+                "the pinned revision, not a regression introduced "
+                "by the SlateDB port"
+            )
         elif kind == "REGRESSION":
-            row["reading"] = ("PASSES on the classic backend and FAILS on the "
-                              "SlateDB backend - a backend-attributable "
-                              "regression; stop the line")
+            row["reading"] = (
+                "PASSES on the classic backend and FAILS on the "
+                "SlateDB backend - a backend-attributable "
+                "regression; stop the line"
+            )
         elif kind == "ABSENT_ON_CANDIDATE":
             t = (a or {}).get("runner_row_id")
-            row["reading"] = (f"the oracle recorded this case and the candidate "
-                              f"did not; candidate target row for {t}: "
-                              f"{'present' if t in c_targets else 'ABSENT'}")
+            row["reading"] = (
+                f"the oracle recorded this case and the candidate "
+                f"did not; candidate target row for {t}: "
+                f"{'present' if t in c_targets else 'ABSENT'}"
+            )
         elif kind == "ABSENT_ON_ORACLE":
             row["reading"] = EXPECTED_CANDIDATE_ONLY.get(
-                lid, "UNEXPLAINED - present only on the candidate lane")
+                lid, "UNEXPLAINED - present only on the candidate lane"
+            )
         rows.append(row)
 
     # cases the log named that the CATALOGUE does not carry (e.g. fork-only
@@ -230,9 +273,12 @@ def main():
 
     regressions = [r for r in rows if r["classification"] == "REGRESSION"]
     absent = [r for r in rows if r["classification"] == "ABSENT_ON_CANDIDATE"]
-    unexplained_extra = [r for r in rows
-                         if r["classification"] == "ABSENT_ON_ORACLE"
-                         and str(r.get("reading", "")).startswith("UNEXPLAINED")]
+    unexplained_extra = [
+        r
+        for r in rows
+        if r["classification"] == "ABSENT_ON_ORACLE"
+        and str(r.get("reading", "")).startswith("UNEXPLAINED")
+    ]
     changed = [r for r in rows if r["classification"] == "OUTCOME_CHANGED"]
 
     out = {
@@ -242,15 +288,16 @@ def main():
             f"on the SlateDB backend lane ({c['profile']}) as on the classic "
             f"RocksDB oracle lane ({o['profile']}), except where a difference is "
             f"named below. Cases that fail on BOTH lanes are upstream defects of "
-            f"the pinned revision, not regressions of this port."),
+            f"the pinned revision, not regressions of this port."
+        ),
         "oracle_refused_targets_superseded_by_rerun": o.get("_supersedes", []),
         "candidate_refused_targets_superseded_by_rerun": c.get("_supersedes", []),
         "oracle_bundles": o_facts,
         "candidate_bundles": c_facts,
         "scope_packages": sorted(scope) or "ALL",
-        "leaves_compared": len(set(O) | set(C)),
-        "oracle_leaves": len(O),
-        "candidate_leaves": len(C),
+        "leaves_compared": len(set(oracle) | set(candidate)),
+        "oracle_leaves": len(oracle),
+        "candidate_leaves": len(candidate),
         "tally": dict(sorted(tally.items())),
         "differences": rows,
         "non_catalogued_cases_by_target": extra,
@@ -263,29 +310,42 @@ def main():
             "(<catalogue target_id>::<display_name>); each side's outcome is "
             "read back out of its own archived log line by "
             "tools/qualification/verify_leaf.py before the comparison runs. A "
-            "case absent from either side is a difference, never a skip."),
+            "case absent from either side is a difference, never a skip."
+        ),
     }
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(out, indent=1) + "\n")
-    print(json.dumps({k: v for k, v in out.items()
-                      if k not in ("differences", "claim", "method")}, indent=1))
+    print(
+        json.dumps(
+            {k: v for k, v in out.items() if k not in ("differences", "claim", "method")}, indent=1
+        )
+    )
     for r in rows:
-        print(f"{r['classification']:22s} {r['leaf_case_id']}  "
-              f"{o['profile']}={r['oracle']['outcome']} "
-              f"{c['profile']}={r['candidate']['outcome']}", file=sys.stderr)
+        print(
+            f"{r['classification']:22s} {r['leaf_case_id']}  "
+            f"{o['profile']}={r['oracle']['outcome']} "
+            f"{c['profile']}={r['candidate']['outcome']}",
+            file=sys.stderr,
+        )
     bad = len(regressions) + len(absent) + len(unexplained_extra) + len(changed)
-    print(f"LEAF DIFFERENTIAL: {len(regressions)} regression(s), "
-          f"{len(absent)} absent-on-candidate, {len(changed)} outcome-changed, "
-          f"{len(unexplained_extra)} unexplained candidate-only over "
-          f"{len(set(O) | set(C))} leaf case(s)", file=sys.stderr)
+    print(
+        f"LEAF DIFFERENTIAL: {len(regressions)} regression(s), "
+        f"{len(absent)} absent-on-candidate, {len(changed)} outcome-changed, "
+        f"{len(unexplained_extra)} unexplained candidate-only over "
+        f"{len(set(oracle) | set(candidate))} leaf case(s)",
+        file=sys.stderr,
+    )
     # `rows` is the DIFFERENCES list, so an empty `rows` is the GOOD case.
     # The degenerate case this guards is an empty INTERSECTION: two lanes that
     # share no comparable leaf report "0 regressions" and prove nothing.
-    if args.require_clean and not (set(O) & set(C)):
-        print("LEAF DIFFERENTIAL: FAIL — the two lanes share no comparable "
-              "leaf. An empty comparison reports zero regressions and proves "
-              "nothing about the backend.", file=sys.stderr)
+    if args.require_clean and not (set(oracle) & set(candidate)):
+        print(
+            "LEAF DIFFERENTIAL: FAIL — the two lanes share no comparable "
+            "leaf. An empty comparison reports zero regressions and proves "
+            "nothing about the backend.",
+            file=sys.stderr,
+        )
         return 2
     return 1 if bad else 0
 

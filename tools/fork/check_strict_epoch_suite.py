@@ -49,6 +49,7 @@ Only a full run prints `PASS`.
     python3 tools/fork/check_strict_epoch_suite.py --quick
     python3 tools/fork/check_strict_epoch_suite.py --evidence out.json
 """
+
 import argparse
 import json
 import pathlib
@@ -92,16 +93,11 @@ EXCLUSIONS: dict[str, str] = {}
 # Tests that exist ONLY under the shipped posture (they are `cfg`-gated on the
 # feature), so they legitimately appear feature-on and not feature-off.
 FEATURE_ON_ONLY: dict[str, str] = {
-    "lib::db::builder::tests::negative_fence_a_missing_external_epoch_is_refused_not_defaulted":
-        "negative fence: an epoch-less open is a typed Invalid refusal and does not advance the stored epoch",
-    "lib::db::builder::tests::negative_fence_an_epoch_less_open_creates_no_database":
-        "negative fence: an epoch-less FIRST open is refused before any manifest is created",
-    "lib::db::builder::tests::negative_fence_a_harness_issued_epoch_cannot_be_replayed":
-        "negative fence: replaying an epoch the harness already claimed is Fenced, so the harness does not weaken the fence",
-    "lib::db::builder::tests::negative_fence_harness_epochs_are_exact_and_monotonic_per_database":
-        "witness: the Nth harness-issued open of a database claims epoch N exactly, so the adapted suite runs on external epochs",
-    "lib::fence::tests::negative_fence_the_fencer_refuses_an_unnamed_epoch":
-        "negative fence: WriterFencer refuses an unnamed epoch on its own, independently of the builder's early refusal",
+    "lib::db::builder::tests::negative_fence_a_missing_external_epoch_is_refused_not_defaulted": "negative fence: an epoch-less open is a typed Invalid refusal and does not advance the stored epoch",
+    "lib::db::builder::tests::negative_fence_an_epoch_less_open_creates_no_database": "negative fence: an epoch-less FIRST open is refused before any manifest is created",
+    "lib::db::builder::tests::negative_fence_a_harness_issued_epoch_cannot_be_replayed": "negative fence: replaying an epoch the harness already claimed is Fenced, so the harness does not weaken the fence",
+    "lib::db::builder::tests::negative_fence_harness_epochs_are_exact_and_monotonic_per_database": "witness: the Nth harness-issued open of a database claims epoch N exactly, so the adapted suite runs on external epochs",
+    "lib::fence::tests::negative_fence_the_fencer_refuses_an_unnamed_epoch": "negative fence: WriterFencer refuses an unnamed epoch on its own, independently of the builder's early refusal",
 }
 
 # The negative suite is selected by this substring filter; every test in
@@ -109,7 +105,8 @@ FEATURE_ON_ONLY: dict[str, str] = {
 NEGATIVE_FILTER = "negative_fence_"
 
 TEST_RESULT = re.compile(
-    r"^test result: (?:ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored", re.M)
+    r"^test result: (?:ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored", re.M
+)
 # `#[should_panic]` tests render as `test NAME - should panic ... ok`, so the
 # suffix is optional here. Getting this wrong silently drops 22 leaves and
 # would make the reconciliation clause lie in the safe-looking direction.
@@ -166,16 +163,16 @@ def run(features: str, filt: str | None = None) -> tuple[int, str]:
     # --no-fail-fast: cargo stops after the first failing BINARY by default, so
     # a single library failure would hide the integration targets entirely and
     # the reconciliation would report them as "did not execute".
-    args = ["cargo", TOOLCHAIN, "test", "--tests", "--no-fail-fast",
-            "--features", features]
+    args = ["cargo", TOOLCHAIN, "test", "--tests", "--no-fail-fast", "--features", features]
     if filt:
         args.append(filt)
     # stderr MERGED into stdout, not concatenated after it. cargo announces each
     # test binary ("Running tests/db.rs (...)") on stderr while libtest reports
     # results on stdout; concatenating puts every marker after every result and
     # the leaf-to-binary attribution silently collapses to nothing.
-    proc = subprocess.run(args, cwd=FORK, stdout=subprocess.PIPE,
-                          stderr=subprocess.STDOUT, text=True)
+    proc = subprocess.run(
+        args, cwd=FORK, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+    )
     return proc.returncode, proc.stdout
 
 
@@ -185,8 +182,9 @@ def target_label(binary_path: str) -> str:
     return "lib" if name == "lib.rs" else name.removesuffix(".rs")
 
 
-def accounted_for(label: str, passed: int, failed: int, ignored: int,
-                  leaf_names: dict[str, str]) -> str | None:
+def accounted_for(
+    label: str, passed: int, failed: int, ignored: int, leaf_names: dict[str, str]
+) -> str | None:
     """Every counted test must also appear as a named leaf.
 
     The reconciliation clause compares leaf IDENTITIES, so a parsing gap would
@@ -196,8 +194,10 @@ def accounted_for(label: str, passed: int, failed: int, ignored: int,
     total = passed + failed + ignored
     if total == len(leaf_names):
         return None
-    return (f"{label}: {total} tests reported but {len(leaf_names)} leaf identities parsed — "
-            f"the output could not be accounted for, so reconciliation cannot be trusted")
+    return (
+        f"{label}: {total} tests reported but {len(leaf_names)} leaf identities parsed — "
+        f"the output could not be accounted for, so reconciliation cannot be trusted"
+    )
 
 
 def ran_at_all(label: str, rc: int, output: str) -> str | None:
@@ -211,9 +211,11 @@ def ran_at_all(label: str, rc: int, output: str) -> str | None:
     if TEST_RESULT.search(output):
         return None
     tail = "\n".join(line for line in output.splitlines()[-12:] if line.strip())
-    return (f"{label}: cargo exited {rc} without producing a `test result:` line — the suite "
-            f"did not run, so nothing was measured (a killed or starved test harness looks "
-            f"like this). Last output:\n      " + tail.replace("\n", "\n      "))
+    return (
+        f"{label}: cargo exited {rc} without producing a `test result:` line — the suite "
+        f"did not run, so nothing was measured (a killed or starved test harness looks "
+        f"like this). Last output:\n      " + tail.replace("\n", "\n      ")
+    )
 
 
 def counts(output: str) -> tuple[int, int, int]:
@@ -257,8 +259,10 @@ def describe_failures(output: str) -> str:
     other = sorted(n for n in blocks if n not in fenced)
     lines = []
     if fenced:
-        lines.append(f"    {len(fenced)} failed at the FENCE (an open with no epoch reached the "
-                     f"fence — the harness seam did not cover it):")
+        lines.append(
+            f"    {len(fenced)} failed at the FENCE (an open with no epoch reached the "
+            f"fence — the harness seam did not cover it):"
+        )
         lines += [f"      {n}" for n in fenced[:20]]
     if other:
         lines.append(f"    {len(other)} failed for another reason (genuine regression):")
@@ -268,13 +272,20 @@ def describe_failures(output: str) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--quick", action="store_true",
-                    help="PR tier: run the feature-on full suite and the negative suite, but "
-                         "skip the feature-off oracle and the leaf reconciliation. Verdict is "
-                         "PARTIAL, never PASS.")
-    ap.add_argument("--evidence", metavar="PATH",
-                    help="write executed leaf identities and counts to PATH as JSON")
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--quick",
+        action="store_true",
+        help="PR tier: run the feature-on full suite and the negative suite, but "
+        "skip the feature-off oracle and the leaf reconciliation. Verdict is "
+        "PARTIAL, never PASS.",
+    )
+    ap.add_argument(
+        "--evidence",
+        metavar="PATH",
+        help="write executed leaf identities and counts to PATH as JSON",
+    )
     args = ap.parse_args()
 
     if not FORK.exists():
@@ -298,18 +309,26 @@ def main() -> int:
             failures.append(did_not_run)
         passed, failed, ignored = counts(out)
         off_leaves = leaves(out)
-        print(f"feature-OFF  all targets : {passed} passed, {failed} failed, {ignored} ignored "
-              f"({len(off_leaves)} leaves executed)")
+        print(
+            f"feature-OFF  all targets : {passed} passed, {failed} failed, {ignored} ignored "
+            f"({len(off_leaves)} leaves executed)"
+        )
         if rc != 0 or failed != 0 or passed == 0:
-            failures.append(f"feature-OFF all targets are not green: {passed} passed, {failed} failed")
+            failures.append(
+                f"feature-OFF all targets are not green: {passed} passed, {failed} failed"
+            )
             detail = describe_failures(out)
             if detail:
                 failures.append(detail)
         gap = accounted_for("feature-OFF all targets", passed, failed, ignored, off_leaves)
         if gap:
             failures.append(gap)
-        evidence["feature_off"] = {"passed": passed, "failed": failed, "ignored": ignored,
-                                   "leaves": sorted(off_leaves)}
+        evidence["feature_off"] = {
+            "passed": passed,
+            "failed": failed,
+            "ignored": ignored,
+            "leaves": sorted(off_leaves),
+        }
 
     # ---- clause 2: feature ON, full suite -> must be GREEN, not "expected" ----
     rc, out = run(FEATURES_ON)
@@ -318,21 +337,28 @@ def main() -> int:
         failures.append(did_not_run)
     on_passed, on_failed, on_ignored = counts(out)
     on_leaves = leaves(out)
-    print(f"feature-ON   all targets : {on_passed} passed, {on_failed} failed, {on_ignored} ignored "
-          f"({len(on_leaves)} leaves executed)")
+    print(
+        f"feature-ON   all targets : {on_passed} passed, {on_failed} failed, {on_ignored} ignored "
+        f"({len(on_leaves)} leaves executed)"
+    )
     if rc != 0 or on_failed != 0 or on_passed == 0:
         failures.append(
             f"feature-ON all targets are not green: {on_passed} passed, {on_failed} failed. "
             f"A refusal here is NOT an expected outcome — it means an open with no epoch was "
-            f"not covered by the harness seam (patch 0006), or a real regression.")
+            f"not covered by the harness seam (patch 0006), or a real regression."
+        )
         detail = describe_failures(out)
         if detail:
             failures.append(detail)
     gap = accounted_for("feature-ON all targets", on_passed, on_failed, on_ignored, on_leaves)
     if gap:
         failures.append(gap)
-    evidence["feature_on"] = {"passed": on_passed, "failed": on_failed, "ignored": on_ignored,
-                              "leaves": sorted(on_leaves)}
+    evidence["feature_on"] = {
+        "passed": on_passed,
+        "failed": on_failed,
+        "ignored": on_ignored,
+        "leaves": sorted(on_leaves),
+    }
 
     # ---- clause 3: the dedicated negative fence suite ----
     rc, out = run(FEATURES_ON, NEGATIVE_FILTER)
@@ -342,17 +368,25 @@ def main() -> int:
     neg_passed, neg_failed, _ = counts(out)
     neg_leaves = leaves(out)
     expected_neg = {n for n in FEATURE_ON_ONLY if NEGATIVE_FILTER in n}
-    print(f"feature-ON   negative suite: {neg_passed} passed, {neg_failed} failed "
-          f"({len(neg_leaves)} leaves executed)")
+    print(
+        f"feature-ON   negative suite: {neg_passed} passed, {neg_failed} failed "
+        f"({len(neg_leaves)} leaves executed)"
+    )
     if rc != 0 or neg_failed != 0 or neg_passed == 0:
-        failures.append(f"negative fence suite is not green: {neg_passed} passed, {neg_failed} failed")
+        failures.append(
+            f"negative fence suite is not green: {neg_passed} passed, {neg_failed} failed"
+        )
     if set(neg_leaves) != expected_neg:
         failures.append(
             "negative fence suite does not match its declared membership:\n"
             f"    ran but undeclared : {sorted(set(neg_leaves) - expected_neg)}\n"
-            f"    declared but absent: {sorted(expected_neg - set(neg_leaves))}")
-    evidence["negative_suite"] = {"passed": neg_passed, "failed": neg_failed,
-                                  "leaves": sorted(neg_leaves)}
+            f"    declared but absent: {sorted(expected_neg - set(neg_leaves))}"
+        )
+    evidence["negative_suite"] = {
+        "passed": neg_passed,
+        "failed": neg_failed,
+        "leaves": sorted(neg_leaves),
+    }
 
     # ---- clause 4: leaf reconciliation -> the bodies actually ran ----
     if not args.quick:
@@ -366,27 +400,33 @@ def main() -> int:
         undeclared_extra = sorted(extra - declared_extra)
         stale_extra = sorted(declared_extra - extra)
 
-        print(f"leaf reconciliation      : feature-off {len(off_leaves)} - "
-              f"{len(EXCLUSIONS)} excluded + {len(FEATURE_ON_ONLY)} shipped-posture-only "
-              f"= {len(off_leaves) - len(EXCLUSIONS) + len(FEATURE_ON_ONLY)} "
-              f"vs feature-on {len(on_leaves)} executed")
+        print(
+            f"leaf reconciliation      : feature-off {len(off_leaves)} - "
+            f"{len(EXCLUSIONS)} excluded + {len(FEATURE_ON_ONLY)} shipped-posture-only "
+            f"= {len(off_leaves) - len(EXCLUSIONS) + len(FEATURE_ON_ONLY)} "
+            f"vs feature-on {len(on_leaves)} executed"
+        )
         if undeclared_missing:
             failures.append(
                 f"{len(undeclared_missing)} test(s) execute feature-OFF but NOT feature-ON and are "
                 f"not enumerated in EXCLUSIONS (add an exact id and a reviewed reason, or fix the "
-                f"harness seam):\n    " + "\n    ".join(undeclared_missing[:20]))
+                f"harness seam):\n    " + "\n    ".join(undeclared_missing[:20])
+            )
         if stale_exclusions:
             failures.append(
                 "EXCLUSIONS names test(s) that DO execute feature-ON — the exclusion is stale and "
-                "must be removed:\n    " + "\n    ".join(stale_exclusions))
+                "must be removed:\n    " + "\n    ".join(stale_exclusions)
+            )
         if undeclared_extra:
             failures.append(
                 "test(s) execute feature-ON but not feature-OFF and are not enumerated in "
-                "FEATURE_ON_ONLY:\n    " + "\n    ".join(undeclared_extra[:20]))
+                "FEATURE_ON_ONLY:\n    " + "\n    ".join(undeclared_extra[:20])
+            )
         if stale_extra:
             failures.append(
                 "FEATURE_ON_ONLY names test(s) that did not execute feature-ON:\n    "
-                + "\n    ".join(stale_extra))
+                + "\n    ".join(stale_extra)
+            )
         for name, reason in EXCLUSIONS.items():
             if not reason.strip():
                 failures.append(f"exclusion {name} carries no reason")
@@ -413,19 +453,22 @@ def main() -> int:
         failures.append(
             f"feature-ON doc examples are not green: {on_p} passed, {on_f} failed. "
             "The fork publishes rustdoc examples that the posture it ships would "
-            "refuse.")
+            "refuse."
+        )
     evidence["doc_feature_on"] = {"passed": on_p, "failed": on_f, "ignored": on_i}
     if on_p < DOC_MIN_EXECUTED:
         failures.append(
             f"doc examples executed under the shipped posture dropped to {on_p}, "
             f"below the recorded floor of {DOC_MIN_EXECUTED}. An example was "
             "removed or marked ```ignore``` rather than fixed; lowering the floor "
-            "requires a commit that says why.")
+            "requires a commit that says why."
+        )
     if on_i > DOC_MAX_IGNORED:
         failures.append(
             f"doc examples ignored under the shipped posture rose to {on_i}, above "
             f"the recorded ceiling of {DOC_MAX_IGNORED}. Turning a failing example "
-            "into a skipped one is not a fix.")
+            "into a skipped one is not a fix."
+        )
 
     if not args.quick:
         doc_off_rc, doc_off_out = run_doc(FEATURES_OFF)
@@ -434,25 +477,31 @@ def main() -> int:
         evidence["doc_feature_off"] = {"passed": off_p, "failed": off_f, "ignored": off_i}
         if doc_off_rc != 0 or off_f != 0 or off_p == 0:
             failures.append(
-                f"feature-OFF doc examples are not green: {off_p} passed, {off_f} failed")
+                f"feature-OFF doc examples are not green: {off_p} passed, {off_f} failed"
+            )
         if (on_p, on_i) != (off_p, off_i):
             failures.append(
                 f"doc example population differs between postures: feature-off "
                 f"{off_p} passed/{off_i} ignored vs feature-on {on_p} passed/{on_i} "
                 "ignored. One form of every example must run in BOTH postures; a "
                 "differing count means an example was removed, ignored or "
-                "cfg-gated away rather than fixed.")
+                "cfg-gated away rather than fixed."
+            )
         else:
-            print(f"doc reconciliation       : identical population in both postures "
-                  f"({on_p} executed, {on_i} ignored)")
+            print(
+                f"doc reconciliation       : identical population in both postures "
+                f"({on_p} executed, {on_i} ignored)"
+            )
 
     if EXCLUSIONS:
         print("exclusions (inapplicable under the shipped posture):")
         for name, reason in sorted(EXCLUSIONS.items()):
             print(f"  - {name}\n      {reason}")
     else:
-        print("exclusions               : none — every test executed feature-off also "
-              "executes feature-on")
+        print(
+            "exclusions               : none — every test executed feature-off also "
+            "executes feature-on"
+        )
 
     if args.evidence:
         pathlib.Path(args.evidence).write_text(json.dumps(evidence, indent=2) + "\n")
@@ -464,10 +513,12 @@ def main() -> int:
             print(f"  - {f}")
         return 1
     if args.quick:
-        print("STRICT-EPOCH SUITE GATE: PARTIAL — the feature-ON full suite and the negative "
-              "fence suite are green, but the feature-OFF upstream-regression oracle and the "
-              "leaf reconciliation were NOT run. This is not a qualification result; only a "
-              "full run (no --quick) prints PASS.")
+        print(
+            "STRICT-EPOCH SUITE GATE: PARTIAL — the feature-ON full suite and the negative "
+            "fence suite are green, but the feature-OFF upstream-regression oracle and the "
+            "leaf reconciliation were NOT run. This is not a qualification result; only a "
+            "full run (no --quick) prints PASS."
+        )
         return 0
     print("STRICT-EPOCH SUITE GATE: PASS")
     return 0

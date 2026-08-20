@@ -32,6 +32,7 @@ R4-MODEQ-01 additions (the round-4 synthetic-artifact counterexample):
 A validator that accepts any of these proves nothing; this script exits 1
 if any mutant survives (or if the healthy baseline is rejected).
 """
+
 import hashlib
 import json
 import pathlib
@@ -52,16 +53,21 @@ def sha256_bytes(data: bytes) -> str:
 def build_bundle(out: pathlib.Path) -> None:
     lock = json.loads((REPO / "source-lock" / "source-lock.json").read_text())
     tb = next(n for n in lock["nodes"] if n.get("id") == "TB")
-    catalog = json.loads((REPO / "docs" / "evidence" / "G1" / "upstream-test-catalog.json").read_text())
+    catalog = json.loads(
+        (REPO / "docs" / "evidence" / "G1" / "upstream-test-catalog.json").read_text()
+    )
     cat_ids = [t["target_id"] for t in catalog["targets"][:2]]
 
     targets = ["//answer:answer_test", "//storage:storage_test"]
     stdout = ("\n".join(targets) + "\n").encode()
     stderr = b"INFO: Analyzed 2 targets.\n"
-    crosswalk = json.dumps(
-        [{"bazel_target": t, "catalog_target_id": c} for t, c in zip(targets, cat_ids)],
-        indent=2,
-    ).encode() + b"\n"
+    crosswalk = (
+        json.dumps(
+            [{"bazel_target": t, "catalog_target_id": c} for t, c in zip(targets, cat_ids)],
+            indent=2,
+        ).encode()
+        + b"\n"
+    )
 
     out.mkdir(parents=True)
     (out / "cquery-stdout.txt").write_bytes(stdout)
@@ -77,7 +83,9 @@ def build_bundle(out: pathlib.Path) -> None:
             "toolchain": "bazel 7.4.1 / remote-disabled / linux-x86_64",
             "source_commit": tb["revision"],
             "source_tree": tb["tree"],
-            "workspace_lock_sha256": sha256_bytes((REPO / "source-lock" / "workspace-lock.json").read_bytes()),
+            "workspace_lock_sha256": sha256_bytes(
+                (REPO / "source-lock" / "workspace-lock.json").read_bytes()
+            ),
         },
         "cquery": {
             "stdout_file": "cquery-stdout.txt",
@@ -101,7 +109,8 @@ def build_bundle(out: pathlib.Path) -> None:
 def run_validator(bundle: pathlib.Path) -> tuple[int, str]:
     proc = subprocess.run(
         [sys.executable, str(VALIDATOR), "--dir", str(bundle)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     return proc.returncode, proc.stdout + proc.stderr
 
@@ -117,6 +126,7 @@ def reseal(bundle: pathlib.Path) -> None:
     """What a diligent forger does after tampering with raw files: refresh
     the recorded stdout/stderr hashes and the content-addressed root so only
     the SEMANTIC checks can still catch the edit."""
+
     def fn(doc):
         for role in ("stdout", "stderr"):
             fname = doc["cquery"].get(f"{role}_file")
@@ -126,6 +136,7 @@ def reseal(bundle: pathlib.Path) -> None:
         for name in sorted(p.name for p in bundle.iterdir() if p.name != "modeq.json"):
             lines.append(f"{name}\n{sha256_bytes((bundle / name).read_bytes())}\n")
         doc["root"] = hashlib.sha256("".join(lines).encode()).hexdigest()
+
     edit_manifest(bundle, fn)
 
 
@@ -152,7 +163,9 @@ def main() -> int:
                 print("  " + out.replace("\n", "\n  "))
                 failures += 1
             else:
-                reason = next((l.strip() for l in out.splitlines() if l.strip().startswith("- ")), "")
+                reason = next(
+                    (line.strip() for line in out.splitlines() if line.strip().startswith("- ")), ""
+                )
                 print(f"mutant killed: {name} => exit {code} {reason}")
 
         mutant("junk-file", lambda b: (b / "junk.txt").write_text("the audit's junk file\n"))
@@ -190,6 +203,7 @@ def main() -> int:
         def junk_stdout(b):
             (b / "cquery-stdout.txt").write_bytes(b"THIS IS NOT BAZEL OUTPUT\n")
             reseal(b)  # hashes/root diligently regenerated; only the grammar is left
+
         mutant("junk-stdout", junk_stdout)
 
         mutant(
@@ -202,8 +216,10 @@ def main() -> int:
         mutant(
             "wrong-workspace-hash",
             lambda b: edit_manifest(
-                b, lambda d: d["invocation"].__setitem__(
-                    "workspace_lock_sha256", "0" * 64)  # well-shaped, wrong
+                b,
+                lambda d: d["invocation"].__setitem__(
+                    "workspace_lock_sha256", "0" * 64
+                ),  # well-shaped, wrong
             ),
         )
 
@@ -212,13 +228,13 @@ def main() -> int:
             xw[1]["catalog_target_id"] = xw[0]["catalog_target_id"]  # 2 labels -> 1 id
             (b / "crosswalk.json").write_text(json.dumps(xw, indent=2) + "\n")
             reseal(b)
+
         mutant("two-to-one-crosswalk", two_to_one)
 
         def path_traversal(b):
-            (b.parent / "evil-crosswalk.json").write_text(
-                (b / "crosswalk.json").read_text())
-            edit_manifest(b, lambda d: d.__setitem__(
-                "crosswalk_file", "../evil-crosswalk.json"))
+            (b.parent / "evil-crosswalk.json").write_text((b / "crosswalk.json").read_text())
+            edit_manifest(b, lambda d: d.__setitem__("crosswalk_file", "../evil-crosswalk.json"))
+
         mutant("path-traversal-ref", path_traversal)
 
     if failures:

@@ -37,6 +37,7 @@ Usage:
   python3 tools/drivers/projection_check.py
   python3 tools/drivers/projection_check.py --json
 """
+
 import argparse
 import json
 import pathlib
@@ -61,19 +62,21 @@ DECLARED_DEVIATIONS = {
     "typedb-driver.features": {
         "upstream_cargo": ["sync"],
         "projection": [],
-        "why": ("rust/tests/behaviour/steps/BUILD depends on //rust:typedb_driver "
-                "(async). The upstream Cargo workspace can express only one "
-                "feature set for the shared workspace dependency and pins the "
-                "sync one, which makes the async step definitions fail to "
-                "compile under cargo (115 type errors, recorded in the bundle). "
-                "The Bazel graph is authoritative for what the behaviour suite "
-                "links against."),
+        "why": (
+            "rust/tests/behaviour/steps/BUILD depends on //rust:typedb_driver "
+            "(async). The upstream Cargo workspace can express only one "
+            "feature set for the shared workspace dependency and pins the "
+            "sync one, which makes the async step definitions fail to "
+            "compile under cargo (115 type errors, recorded in the bundle). "
+            "The Bazel graph is authoritative for what the behaviour suite "
+            "links against."
+        ),
     },
 }
 
 BUILD_TEST_RE = re.compile(
-    r'rust_behaviour_test\(\s*name\s*=\s*"([^"]+)"[^)]*?srcs\s*=\s*\[\s*"([^"]+)"',
-    re.S)
+    r'rust_behaviour_test\(\s*name\s*=\s*"([^"]+)"[^)]*?srcs\s*=\s*\[\s*"([^"]+)"', re.S
+)
 
 
 def _toml(path):
@@ -100,34 +103,44 @@ def check():
         return report
 
     # ---- 1/2 locked source identity -------------------------------------
-    for node_id, path, key in (("TDRIVER", DRIVER, "resolved_revision"),
-                               ("BH", BEHAVIOUR, "revision")):
+    for node_id, path, key in (
+        ("TDRIVER", DRIVER, "resolved_revision"),
+        ("BH", BEHAVIOUR, "revision"),
+    ):
         node = common.source_lock_node(node_id)
         ident = common.checkout_identity(path)
-        entry = {"source_lock": {"id": node_id,
-                                 "revision": (node or {}).get(key),
-                                 "tree": (node or {}).get("tree"),
-                                 "status": (node or {}).get("status")},
-                 "checkout": ident}
+        entry = {
+            "source_lock": {
+                "id": node_id,
+                "revision": (node or {}).get(key),
+                "tree": (node or {}).get("tree"),
+                "status": (node or {}).get("status"),
+            },
+            "checkout": ident,
+        }
         report[f"{node_id.lower()}_identity"] = entry
         if node is None:
             problems.append(f"source-lock has no node {node_id}")
             continue
         if node.get("status") != "locked":
-            problems.append(f"{node_id}: source-lock status is "
-                            f"{node.get('status')!r}, not 'locked'")
+            problems.append(
+                f"{node_id}: source-lock status is {node.get('status')!r}, not 'locked'"
+            )
         if ident.get("dirty") is not False:
             problems.append(
                 f"{node_id}: checkout {common.rel(path)} is dirty or its dirt "
                 f"could not be established (dirty={ident.get('dirty')!r}, "
                 f"{ident.get('dirty_path_count')} path(s)) - the executed bytes "
-                f"would not be the locked bytes")
+                f"would not be the locked bytes"
+            )
         if ident.get("revision") != node.get(key):
-            problems.append(f"{node_id}: checkout revision "
-                            f"{ident.get('revision')} != locked {node.get(key)}")
+            problems.append(
+                f"{node_id}: checkout revision {ident.get('revision')} != locked {node.get(key)}"
+            )
         if ident.get("tree") != node.get("tree"):
-            problems.append(f"{node_id}: checkout tree {ident.get('tree')} != "
-                            f"locked tree {node.get('tree')}")
+            problems.append(
+                f"{node_id}: checkout tree {ident.get('tree')} != locked tree {node.get('tree')}"
+            )
 
     # ---- 3 every projected path is inside the locked driver --------------
     projected = []
@@ -137,15 +150,18 @@ def check():
         paths = []
         lib = doc.get("lib") or {}
         if lib.get("path"):
-            paths.append(("lib:" + lib.get("name", doc["package"]["name"]),
-                          lib["path"]))
+            paths.append(("lib:" + lib.get("name", doc["package"]["name"]), lib["path"]))
         for t in doc.get("test", []):
             paths.append(("test:" + t["name"], t["path"]))
         for label, p in paths:
             resolved = (pkgdir / p).resolve()
-            rec = {"manifest": common.rel(manifest), "target": label,
-                   "declared": p, "resolved": common.rel(resolved),
-                   "exists": resolved.is_file()}
+            rec = {
+                "manifest": common.rel(manifest),
+                "target": label,
+                "declared": p,
+                "resolved": common.rel(resolved),
+                "exists": resolved.is_file(),
+            }
             inside = str(resolved).startswith(str(DRIVER.resolve()) + "/")
             rec["inside_locked_driver"] = inside
             if resolved.is_file():
@@ -155,14 +171,16 @@ def check():
                 # suite: refuse rather than report zero cases
                 if label.startswith("lib:") and p == "lib.rs":
                     rec["inside_locked_driver"] = inside = True  # local stub
-                problems.append(f"{common.rel(manifest)}: target {label} path "
-                                f"{p!r} does not resolve to a file")
+                problems.append(
+                    f"{common.rel(manifest)}: target {label} path {p!r} does not resolve to a file"
+                )
             if not inside and not (label.startswith("lib:") and p == "lib.rs"):
                 problems.append(
                     f"{common.rel(manifest)}: target {label} resolves to "
                     f"{common.rel(resolved)}, which is OUTSIDE the locked "
                     f"driver checkout - the projection may only compile locked "
-                    f"upstream sources")
+                    f"upstream sources"
+                )
             projected.append(rec)
     report["projected_targets"] = projected
 
@@ -170,23 +188,29 @@ def check():
     up_lock = _lock_packages(DRIVER / "Cargo.lock")
     pj_lock_path = PROJ / "Cargo.lock"
     if not pj_lock_path.is_file():
-        problems.append("projection has no Cargo.lock; run cargo with --locked "
-                        "only against a committed lock")
+        problems.append(
+            "projection has no Cargo.lock; run cargo with --locked only against a committed lock"
+        )
         pj_lock = {}
     else:
         pj_lock = _lock_packages(pj_lock_path)
     roots = {"typedb_driver_clib", "typedb-driver-behaviour"}
-    diffs = {k: {"upstream": up_lock.get(k), "projection": pj_lock.get(k)}
-             for k in set(up_lock) | set(pj_lock)
-             if up_lock.get(k) != pj_lock.get(k) and k not in roots}
+    diffs = {
+        k: {"upstream": up_lock.get(k), "projection": pj_lock.get(k)}
+        for k in set(up_lock) | set(pj_lock)
+        if up_lock.get(k) != pj_lock.get(k) and k not in roots
+    }
     report["lock_parity"] = {
-        "upstream_packages": len(up_lock), "projection_packages": len(pj_lock),
+        "upstream_packages": len(up_lock),
+        "projection_packages": len(pj_lock),
         "differences": diffs,
         "permitted_root_difference": sorted(roots),
     }
     if diffs:
-        problems.append(f"projection Cargo.lock diverges from the driver's own "
-                        f"lock on {len(diffs)} package(s): {sorted(diffs)[:10]}")
+        problems.append(
+            f"projection Cargo.lock diverges from the driver's own "
+            f"lock on {len(diffs)} package(s): {sorted(diffs)[:10]}"
+        )
 
     # ---- 5 dependency spec parity ---------------------------------------
     up_ws = _toml(DRIVER / "Cargo.toml")["workspace"]["dependencies"]
@@ -197,8 +221,10 @@ def check():
             continue
         up = up_ws.get(name)
         if up is None:
-            problems.append(f"projection declares dependency {name!r} which the "
-                            f"driver workspace does not declare")
+            problems.append(
+                f"projection declares dependency {name!r} which the "
+                f"driver workspace does not declare"
+            )
             continue
         for field in ("version", "default-features", "features"):
             u, p = up.get(field), pj.get(field)
@@ -207,13 +233,13 @@ def check():
                 if (u or []) != dev["upstream_cargo"] or (p or []) != dev["projection"]:
                     problems.append(
                         f"typedb-driver features deviation is not the declared "
-                        f"one: upstream={u!r} projection={p!r}")
+                        f"one: upstream={u!r} projection={p!r}"
+                    )
                 continue
             if name == "typedb-driver" and field == "version":
                 continue
             if u != p:
-                problems.append(f"dependency {name!r}: {field} upstream={u!r} "
-                                f"projection={p!r}")
+                problems.append(f"dependency {name!r}: {field} upstream={u!r} projection={p!r}")
         spec_report[name] = {"upstream": up, "projection": pj}
     report["dependency_specs"] = spec_report
     report["declared_deviations"] = DECLARED_DEVIATIONS
@@ -227,18 +253,19 @@ def check():
     proj_tests = {}
     tdoc = _toml(PROJ / "tests" / "Cargo.toml")
     for t in tdoc.get("test", []):
-        proj_tests[t["name"]] = common.rel(
-            (PROJ / "tests" / t["path"]).resolve())
+        proj_tests[t["name"]] = common.rel((PROJ / "tests" / t["path"]).resolve())
     report["bazel_suites"] = bazel
     report["projection_suites"] = proj_tests
     if set(bazel) != set(proj_tests):
         problems.append(
             f"projected suite set {sorted(proj_tests)} != Bazel "
-            f"rust_behaviour_test set {sorted(bazel)}")
+            f"rust_behaviour_test set {sorted(bazel)}"
+        )
     for name in sorted(set(bazel) & set(proj_tests)):
         if bazel[name] != proj_tests[name]:
-            problems.append(f"suite {name}: Bazel srcs {bazel[name]} != "
-                            f"projection path {proj_tests[name]}")
+            problems.append(
+                f"suite {name}: Bazel srcs {bazel[name]} != projection path {proj_tests[name]}"
+            )
 
     report["ok"] = not problems
     return report
@@ -247,12 +274,14 @@ def check():
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--json", action="store_true")
-    args = ap.parse_args()
+    # The report is always JSON, so --json is a no-op kept for callers that
+    # pass it. parse_args() is still called for its argv validation: it is
+    # what rejects an unknown flag and serves --help.
+    ap.parse_args()
     rep = check()
     print(json.dumps(rep, indent=1))
     if not rep["ok"]:
-        print(f"PROJECTION CHECK FAILED: {len(rep['problems'])} problem(s)",
-              file=sys.stderr)
+        print(f"PROJECTION CHECK FAILED: {len(rep['problems'])} problem(s)", file=sys.stderr)
     return 0 if rep["ok"] else 1
 
 

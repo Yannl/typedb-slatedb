@@ -33,8 +33,8 @@ Usage:
   python3 tools/catalog/completeness.py --results docs/evidence/G3/u2s3-full-2
   python3 tools/catalog/completeness.py --self-test   # embedded negative controls
 """
+
 import argparse
-import datetime
 import json
 import pathlib
 import re
@@ -65,6 +65,7 @@ def error(msg):
 
 
 # ---------------------------------------------------------------- BUILD scan
+
 
 def scan_build_declarations(text, build_file):
     """All top-level `callee(...)` declarations, by balanced-paren walk.
@@ -118,7 +119,7 @@ def scan_build_declarations(text, build_file):
                 if depth != 0:
                     error(f"{build_file}: unbalanced parentheses in {callee}(... at offset {i}")
                     return calls
-                calls.append((callee, text[j + 1:k], i))
+                calls.append((callee, text[j + 1 : k], i))
                 i = k + 1
                 continue
             i = j if j > i else i + 1
@@ -140,9 +141,13 @@ def check_build_declarations(catalog):
     # upstream convention: rust_test(name = "test_crate_X", crate = ":X")
     # is crate X's unit-test target; the cargo catalogue carries it as the
     # unit target named X
-    unit_targets = {t["cargo_target"] for t in catalog["targets"]
-                    if t.get("cargo_target") and t["target_id"].startswith("cargo:")
-                    and ":unit:" in t["target_id"]}
+    unit_targets = {
+        t["cargo_target"]
+        for t in catalog["targets"]
+        if t.get("cargo_target")
+        and t["target_id"].startswith("cargo:")
+        and ":unit:" in t["target_id"]
+    }
     found = []
     for build in sorted(TB.rglob("BUILD")):
         parts = build.parts
@@ -156,11 +161,15 @@ def check_build_declarations(catalog):
             if name is None:
                 # fail closed: a test declaration whose name cannot be read
                 # as a literal is INVISIBLE to the denominator
-                error(f"{rel}: {callee}( at offset {offset} has no literal name= - "
-                      f"unparseable test declarations make the denominator silently incomplete")
+                error(
+                    f"{rel}: {callee}( at offset {offset} has no literal name= - "
+                    f"unparseable test declarations make the denominator silently incomplete"
+                )
                 continue
             found.append({"build_file": rel, "rule": callee, "name": name})
-            crate_unit = name.startswith("test_crate_") and name[len("test_crate_"):] in unit_targets
+            crate_unit = (
+                name.startswith("test_crate_") and name[len("test_crate_") :] in unit_targets
+            )
             # a test_crate_* rule tests the library declared in ITS OWN
             # BUILD directory; when the Bazel library label differs from the
             # cargo package name (admin/client's ":client" is cargo package
@@ -173,13 +182,20 @@ def check_build_declarations(catalog):
                     pkg = re.search(r"^\s*name\s*=\s*\"([^\"]+)\"", sibling.read_text(), re.M)
                     if pkg and pkg.group(1).replace("-", "_") in unit_targets:
                         crate_unit = True
-            if callee == "rust_test" and name not in cargo_targets and not crate_unit \
-                    and not BUILD_ALLOWLIST.get((rel, name)):
-                error(f"{rel}: rust_test '{name}' has no cargo-catalogued target and no allowlist entry")
+            if (
+                callee == "rust_test"
+                and name not in cargo_targets
+                and not crate_unit
+                and not BUILD_ALLOWLIST.get((rel, name))
+            ):
+                error(
+                    f"{rel}: rust_test '{name}' has no cargo-catalogued target and no allowlist entry"
+                )
     return found
 
 
 # ------------------------------------------------------------ cucumber leaves
+
 
 def cucumber_leaves_strict(text, ref):
     """Leaf count of one feature file, by strict line state machine.
@@ -237,7 +253,9 @@ def check_cucumber(catalog):
     for ref, expected in sorted(per_feature_catalog.items()):
         f = BH / ref
         if not f.exists():
-            error(f"cucumber: {ref} referenced by the catalogue but absent from the pinned checkout")
+            error(
+                f"cucumber: {ref} referenced by the catalogue but absent from the pinned checkout"
+            )
             continue
         actual = cucumber_leaves_strict(f.read_text(), ref)
         if actual != expected:
@@ -248,27 +266,34 @@ def check_cucumber(catalog):
 
 # ------------------------------------------------------ failpoint x context
 
+
 def check_failpoints(catalog):
     lib = (TB / "common" / "fail_point" / "lib.rs").read_text()
     m = re.search(r"fail_points!\s*\{(.*?)\}", lib, re.S)
     if not m:
         error("failpoints: fail_points! registry not found in common/fail_point/lib.rs")
         return 0, 0
-    members = [x.strip().rstrip(",") for x in m.group(1).splitlines()
-               if x.strip().rstrip(",") and re.fullmatch(r"[A-Z0-9_]+", x.strip().rstrip(","))]
+    members = [
+        x.strip().rstrip(",")
+        for x in m.group(1).splitlines()
+        if x.strip().rstrip(",") and re.fullmatch(r"[A-Z0-9_]+", x.strip().rstrip(","))
+    ]
     fp_test = (TB / "tests" / "assembly" / "fail_points.rs").read_text()
     contexts = len(re.findall(r"for fail_point in fail_point::ALL", fp_test))
     expected = sum(1 for lc in catalog["leaf_cases"] if lc["kind"] == "FAILPOINT")
     actual = len(members) * contexts
     if actual != expected:
-        error(f"failpoints: registry x contexts = {len(members)}x{contexts} = {actual} "
-              f"!= {expected} catalogued FAILPOINT leaves")
+        error(
+            f"failpoints: registry x contexts = {len(members)}x{contexts} = {actual} "
+            f"!= {expected} catalogued FAILPOINT leaves"
+        )
     if contexts == 0:
         error("failpoints: no fail_point::ALL execution contexts found - registry unexercised")
     return actual, expected
 
 
 # ------------------------------------------------------------- flake ledger
+
 
 def required_targets_from_catalog(catalog):
     """The shared denominator join - see common.required_executable_targets
@@ -304,12 +329,15 @@ def check_ledger(results_dir, catalog=None, ledger_path=None):
         required, case_bearing, excluded = required_targets_from_catalog(catalog)
         for a in verdict_policy.denominator_anomalies(results, required, excluded):
             error(a)
-    for a in verdict_policy.classify_rows(results, ledger,
-                                          expected_case_bearing=case_bearing):
+    for a in verdict_policy.classify_rows(results, ledger, expected_case_bearing=case_bearing):
         error(a)
     bundle_anoms, warnings, bundle_root = verdict_policy.verify_bundle(
-        results_dir, results, ledger, file_profile=data.get("profile"),
-        ledger_path=ledger_path or LEDGER)
+        results_dir,
+        results,
+        ledger,
+        file_profile=data.get("profile"),
+        ledger_path=ledger_path or LEDGER,
+    )
     for a in bundle_anoms:
         error(a)
     for w in warnings:
@@ -319,6 +347,7 @@ def check_ledger(results_dir, catalog=None, ledger_path=None):
 
 # ---------------------------------------------------------------- self-test
 
+
 def self_test():
     """Embedded negative controls: each parser must REJECT its mutant."""
     failures = []
@@ -327,15 +356,20 @@ def self_test():
         del errors[:]
         fn()
         if len(errors) < minimum:
-            failures.append(f"self-test '{label}' expected >= {minimum} error(s), got {len(errors)}")
+            failures.append(
+                f"self-test '{label}' expected >= {minimum} error(s), got {len(errors)}"
+            )
         del errors[:]
 
     # 1. non-literal name: must be a hard error, never a silent skip
     def non_literal():
-        calls = scan_build_declarations('NAME = "x"\nrust_test(\n  name = NAME,\n  srcs = ["a.rs"],\n)\n', "B")
+        calls = scan_build_declarations(
+            'NAME = "x"\nrust_test(\n  name = NAME,\n  srcs = ["a.rs"],\n)\n', "B"
+        )
         for callee, args, offset in calls:
             if callee.endswith("_test") and extract_name_literal(args) is None:
                 error("B: unparseable")
+
     expect_errors("non-literal rust_test name", non_literal)
 
     # 2. the balanced walk still finds a declaration a line-anchored regex misses
@@ -346,7 +380,9 @@ def self_test():
         failures.append(f"self-test: reformatted declaration not fully parsed: {names}")
     legacy_regex = re.findall(r'rust_test\s*\(\s*\n\s*name\s*=\s*"([^"]+)"', reformatted)
     if legacy_regex:
-        failures.append("self-test: the legacy regex unexpectedly caught the reformatted declaration")
+        failures.append(
+            "self-test: the legacy regex unexpectedly caught the reformatted declaration"
+        )
 
     # 3. parens inside strings must not unbalance the walk
     tricky = 'rust_test(\n  name = "with_paren",\n  args = ["--filter=(a|b)"],\n)\n'
@@ -358,16 +394,22 @@ def self_test():
     del dead_outlines[:]
     dead_count = cucumber_leaves_strict("Feature: f\n  Scenario Outline: o\n    Given x\n", "F")
     if dead_count != 0 or dead_outlines != ["F:2"]:
-        failures.append(f"self-test: dead outline expected 0 leaves + report, got {dead_count} {dead_outlines}")
+        failures.append(
+            f"self-test: dead outline expected 0 leaves + report, got {dead_count} {dead_outlines}"
+        )
     del dead_outlines[:]
-    two_blocks = ("Feature: f\n  Scenario Outline: o\n    Given <a>\n"
-                  "    Examples:\n      | a |\n      | 1 |\n      | 2 |\n"
-                  "    Examples:\n      | a |\n      | 3 |\n"
-                  "  Scenario: plain\n    Given y\n")
+    two_blocks = (
+        "Feature: f\n  Scenario Outline: o\n    Given <a>\n"
+        "    Examples:\n      | a |\n      | 1 |\n      | 2 |\n"
+        "    Examples:\n      | a |\n      | 3 |\n"
+        "  Scenario: plain\n    Given y\n"
+    )
     del errors[:]
     count = cucumber_leaves_strict(two_blocks, "F")
     if count != 4 or errors:
-        failures.append(f"self-test: two-Examples expansion expected 4 leaves, got {count} ({errors})")
+        failures.append(
+            f"self-test: two-Examples expansion expected 4 leaves, got {count} ({errors})"
+        )
     del errors[:]
 
     # 5. results-policy mutants - each one was ACCEPTED before this change
@@ -387,7 +429,8 @@ def self_test():
                 f"\nrunning {r['passed'] + r['failed'] + r['ignored']} tests\n"
                 f"test result: ok. {r['passed']} passed; {r['failed']} failed; "
                 f"{r['ignored']} ignored; 0 measured; 0 filtered out; "
-                f"finished in 0.00s\n")
+                f"finished in 0.00s\n"
+            )
             r["raw_log"] = str(log)
             r["log_sha256"] = common.sha256_file(log)
         (tmpdir / "u0-results.json").write_text(json.dumps({"results": rows}))
@@ -396,30 +439,52 @@ def self_test():
         return lambda: check_ledger(tmpdir, cat, lp)
 
     def row(tid, p=1, f=0, i=0, rc=0, to=False):
-        return {"target_id": tid, "passed": p, "failed": f, "ignored": i,
-                "exit_code": rc, "timed_out": to}
+        return {
+            "target_id": tid,
+            "passed": p,
+            "failed": f,
+            "ignored": i,
+            "exit_code": rc,
+            "timed_out": to,
+        }
 
     mini_catalog = {
         "targets": [
-            {"target_id": "cargo:x:unit:t", "origin": "CARGO",
-             "cargo_package": "x", "cargo_target": "t"},
-            {"target_id": "cargo:y:unit:u", "origin": "CARGO",
-             "cargo_package": "y", "cargo_target": "u"},
+            {
+                "target_id": "cargo:x:unit:t",
+                "origin": "CARGO",
+                "cargo_package": "x",
+                "cargo_target": "t",
+            },
+            {
+                "target_id": "cargo:y:unit:u",
+                "origin": "CARGO",
+                "cargo_package": "y",
+                "cargo_target": "u",
+            },
         ],
         "leaf_cases": [{"target_id": "cargo:x:unit:t"}, {"target_id": "cargo:y:unit:u"}],
         "exclusions": [],
     }
     expect_errors("unledgered failure", with_results([row("x:t", f=1, rc=101)]))
-    expect_errors("results truncated to the ledgered rows only",
-                  with_results([row("x:t")], mini_catalog))
-    expect_errors("unknown rc=127 crash row with zero parsed failures",
-                  with_results([row("x:t", rc=127), row("y:u")], mini_catalog))
-    expect_errors("case-bearing target that ran zero cases",
-                  with_results([row("x:t", p=0), row("y:u")], mini_catalog))
-    expect_errors("timeout row", with_results([row("x:t", to=True, rc=None),
-                                               row("y:u")], mini_catalog))
-    expect_errors("row for a target the catalogue does not declare",
-                  with_results([row("x:t"), row("y:u"), row("ghost:g")], mini_catalog))
+    expect_errors(
+        "results truncated to the ledgered rows only", with_results([row("x:t")], mini_catalog)
+    )
+    expect_errors(
+        "unknown rc=127 crash row with zero parsed failures",
+        with_results([row("x:t", rc=127), row("y:u")], mini_catalog),
+    )
+    expect_errors(
+        "case-bearing target that ran zero cases",
+        with_results([row("x:t", p=0), row("y:u")], mini_catalog),
+    )
+    expect_errors(
+        "timeout row", with_results([row("x:t", to=True, rc=None), row("y:u")], mini_catalog)
+    )
+    expect_errors(
+        "row for a target the catalogue does not declare",
+        with_results([row("x:t"), row("y:u"), row("ghost:g")], mini_catalog),
+    )
     # and the clean case must be accepted, or the checks above prove nothing
     clean = with_results([row("x:t"), row("y:u")], mini_catalog)
     del errors[:]
@@ -430,15 +495,21 @@ def self_test():
 
     for f in failures:
         print(f"SELF-TEST FAIL: {f}", file=sys.stderr)
-    print(f"self-test: {'FAIL' if failures else 'PASS'} "
-          f"(10 negative-control groups + clean-run control)", file=sys.stderr)
+    print(
+        f"self-test: {'FAIL' if failures else 'PASS'} "
+        f"(10 negative-control groups + clean-run control)",
+        file=sys.stderr,
+    )
     return 1 if failures else 0
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--results", type=pathlib.Path,
-                        help="evidence dir containing u0-results.json for the ledger check")
+    parser.add_argument(
+        "--results",
+        type=pathlib.Path,
+        help="evidence dir containing u0-results.json for the ledger check",
+    )
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
 
@@ -474,10 +545,12 @@ def main():
 
     print(json.dumps(report, indent=2))
     if args.results:
-        print("SCOPE: execution reconciliation above covers the CARGO-target "
-              "projection of the catalogue ONLY; CUCUMBER/STATIC/FAILPOINT/SCRIPT "
-              "leaves are recounted against the catalogue (checks 1-3) but are "
-              "NOT execution-reconciled by this tool.")
+        print(
+            "SCOPE: execution reconciliation above covers the CARGO-target "
+            "projection of the catalogue ONLY; CUCUMBER/STATIC/FAILPOINT/SCRIPT "
+            "leaves are recounted against the catalogue (checks 1-3) but are "
+            "NOT execution-reconciled by this tool."
+        )
     for e in errors:
         print(f"ERROR: {e}", file=sys.stderr)
     sys.exit(1 if errors else 0)

@@ -53,9 +53,16 @@ def s3_request(endpoint, bucket, region, key_id, secret, method, path="", query=
         url += "?" + urllib.parse.urlencode(query)
     result = subprocess.run(
         [
-            "curl", "-sS", "--fail-with-body", "-X", method, url,
-            "--user", f"{key_id}:{secret}",
-            "--aws-sigv4", f"aws:amz:{region}:s3",
+            "curl",
+            "-sS",
+            "--fail-with-body",
+            "-X",
+            method,
+            url,
+            "--user",
+            f"{key_id}:{secret}",
+            "--aws-sigv4",
+            f"aws:amz:{region}:s3",
         ],
         capture_output=True,
         text=True,
@@ -97,7 +104,9 @@ def materialization_of(key, root_prefix):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument(
         "--delete",
         nargs="+",
@@ -138,7 +147,6 @@ def main():
             "  available today: report mode (no arguments) - inventory only."
         )
 
-
     endpoint = env("TYPEDB_S3_ENDPOINT")
     bucket = env("TYPEDB_S3_BUCKET")
     region = os.environ.get("TYPEDB_S3_REGION", "auto")
@@ -152,7 +160,9 @@ def main():
         split = materialization_of(key, root_prefix)
         if not split:
             continue
-        entry = per_materialization.setdefault(split, {"objects": 0, "bytes": 0, "last_modified": ""})
+        entry = per_materialization.setdefault(
+            split, {"objects": 0, "bytes": 0, "last_modified": ""}
+        )
         entry["objects"] += 1
         entry["bytes"] += size
         entry["last_modified"] = max(entry["last_modified"], mtime or "")

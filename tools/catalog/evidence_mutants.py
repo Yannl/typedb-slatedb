@@ -26,6 +26,7 @@ one mutation applied, and require a nonzero exit naming the defect:
 
 Usage: python3 tools/catalog/evidence_mutants.py
 """
+
 import importlib.util
 import atexit
 import json
@@ -62,23 +63,35 @@ def load_module(name, path):
 
 # --------------------------------------------------------------- comparator
 
+
 def comparator_controls():
     print("comparator (tools/catalog/compare_u2s3.py)")
     cmp_mod = load_module("cmp_u2s3", HERE / "compare_u2s3.py")
 
     def row(tid, log, p=1, f=0, i=0, rc=0, to=False):
-        return {"target_id": tid, "raw_log": f"logs/{log}.log", "passed": p,
-                "failed": f, "ignored": i, "exit_code": rc, "timed_out": to}
+        return {
+            "target_id": tid,
+            "raw_log": f"logs/{log}.log",
+            "passed": p,
+            "failed": f,
+            "ignored": i,
+            "exit_code": rc,
+            "timed_out": to,
+        }
 
-    base_rows = [row("answer:answer", "answer__answer", p=0),
-                 row("cache:cache", "cache__cache", p=3),
-                 row("storage:storage", "storage__storage", p=8)]
+    base_rows = [
+        row("answer:answer", "answer__answer", p=0),
+        row("cache:cache", "cache__cache", p=3),
+        row("storage:storage", "storage__storage", p=8),
+    ]
 
     def run_case(run_rows, oracle_rows=None):
         tmp = pathlib.Path(tempfile.mkdtemp())
         try:
-            for name, rows in (("u2s3-mutant", run_rows),
-                               ("u1-full", oracle_rows if oracle_rows is not None else base_rows)):
+            for name, rows in (
+                ("u2s3-mutant", run_rows),
+                ("u1-full", oracle_rows if oracle_rows is not None else base_rows),
+            ):
                 d = tmp / "docs" / "evidence" / "G3" / name
                 d.mkdir(parents=True)
                 (d / "u0-results.json").write_text(json.dumps({"results": rows}))
@@ -95,17 +108,22 @@ def comparator_controls():
     # rejects everything proves nothing)
     expect("identical run is accepted", run_case(list(base_rows)) == 0)
     # control 1: a target present in the oracle and dropped from the run
-    expect("dropped target is rejected",
-           run_case([r for r in base_rows if r["target_id"] != "answer:answer"]) != 0)
+    expect(
+        "dropped target is rejected",
+        run_case([r for r in base_rows if r["target_id"] != "answer:answer"]) != 0,
+    )
     # control 2: a timeout with unchanged counts
-    timed = [dict(r, timed_out=True, exit_code=None) if r["target_id"] == "cache:cache" else r
-             for r in base_rows]
+    timed = [
+        dict(r, timed_out=True, exit_code=None) if r["target_id"] == "cache:cache" else r
+        for r in base_rows
+    ]
     expect("timeout with unchanged counts is rejected", run_case(timed) != 0)
     # control 3: a classified target rewritten to a wildly different profile
-    rewritten = [dict(r, passed=0, failed=999) if r["target_id"] == "storage:storage" else r
-                 for r in base_rows]
-    expect("classified target with a different profile is rejected",
-           run_case(rewritten) != 0)
+    rewritten = [
+        dict(r, passed=0, failed=999) if r["target_id"] == "storage:storage" else r
+        for r in base_rows
+    ]
+    expect("classified target with a different profile is rejected", run_case(rewritten) != 0)
     # control 4: an extra target the oracle never had
     extra = base_rows + [row("ghost:ghost", "ghost__ghost")]
     expect("target absent from the oracle is rejected", run_case(extra) != 0)
@@ -113,48 +131,90 @@ def comparator_controls():
 
 # ------------------------------------------------------------ verdict policy
 
+
 def verdict_controls():
     print("verdict policy (tools/catalog/verdict.py)")
-    ledger = {"storage:test_recovery": {"target_id": "storage:test_recovery",
-                                        "expected_failed": 2, "expected_ignored": 0,
-                                        "expected_exit_code": 101,
-                                        "cases": ["a", "b"],
-                                        "reason": "upstream stubs", "expiry": "2099-01-01"}}
+    ledger = {
+        "storage:test_recovery": {
+            "target_id": "storage:test_recovery",
+            "expected_failed": 2,
+            "expected_ignored": 0,
+            "expected_exit_code": 101,
+            "cases": ["a", "b"],
+            "reason": "upstream stubs",
+            "expiry": "2099-01-01",
+        }
+    }
 
     def row(tid, p=1, f=0, i=0, rc=0, to=False):
-        return {"target_id": tid, "passed": p, "failed": f, "ignored": i,
-                "exit_code": rc, "timed_out": to}
+        return {
+            "target_id": tid,
+            "passed": p,
+            "failed": f,
+            "ignored": i,
+            "exit_code": rc,
+            "timed_out": to,
+        }
 
     clean = [row("a:a"), row("storage:test_recovery", p=5, f=2, rc=101)]
-    expect("expected corpus (ledgered red only) is green",
-           verdict_policy.classify_rows(clean, ledger) == [])
-    expect("an unledgered failure is red",
-           verdict_policy.classify_rows(clean + [row("b:b", f=1, rc=101)], ledger) != [])
-    expect("a timeout is red",
-           verdict_policy.classify_rows(clean + [row("c:c", to=True, rc=None)], ledger) != [])
-    expect("an unknown crash rc is red",
-           verdict_policy.classify_rows(clean + [row("d:d", rc=127)], ledger) != [])
-    expect("an unledgered ignore is red",
-           verdict_policy.classify_rows(clean + [row("e:e", i=1)], ledger) != [])
-    expect("a ledgered target that stops firing is red",
-           verdict_policy.classify_rows([row("a:a")], ledger) != [])
-    expect("a case-bearing target that ran zero cases is red",
-           verdict_policy.classify_rows(clean + [row("f:f", p=0)], ledger,
-                                        expected_case_bearing={"f:f"}) != [])
-    expect("a ledgered failure with the wrong count is red",
-           verdict_policy.classify_rows(
-               [row("a:a"), row("storage:test_recovery", p=5, f=3, rc=101)], ledger) != [])
-    expect("a missing required target is red",
-           verdict_policy.denominator_anomalies(clean, {"a:a", "storage:test_recovery",
-                                                        "gone:gone"}) != [])
-    expect("an unexpected extra target is red",
-           verdict_policy.denominator_anomalies(clean, {"a:a"}) != [])
-    expect("an exclusion for a target that ran anyway is red",
-           verdict_policy.denominator_anomalies(
-               clean, {"a:a", "storage:test_recovery"},
-               {"a:a": "declared out of lane"}) != [])
-    expect("an expired ledger entry is reported, not silently honoured",
-           verdict_policy.load_ledger(_expired_ledger())[1] != [])
+    expect(
+        "expected corpus (ledgered red only) is green",
+        verdict_policy.classify_rows(clean, ledger) == [],
+    )
+    expect(
+        "an unledgered failure is red",
+        verdict_policy.classify_rows(clean + [row("b:b", f=1, rc=101)], ledger) != [],
+    )
+    expect(
+        "a timeout is red",
+        verdict_policy.classify_rows(clean + [row("c:c", to=True, rc=None)], ledger) != [],
+    )
+    expect(
+        "an unknown crash rc is red",
+        verdict_policy.classify_rows(clean + [row("d:d", rc=127)], ledger) != [],
+    )
+    expect(
+        "an unledgered ignore is red",
+        verdict_policy.classify_rows(clean + [row("e:e", i=1)], ledger) != [],
+    )
+    expect(
+        "a ledgered target that stops firing is red",
+        verdict_policy.classify_rows([row("a:a")], ledger) != [],
+    )
+    expect(
+        "a case-bearing target that ran zero cases is red",
+        verdict_policy.classify_rows(
+            clean + [row("f:f", p=0)], ledger, expected_case_bearing={"f:f"}
+        )
+        != [],
+    )
+    expect(
+        "a ledgered failure with the wrong count is red",
+        verdict_policy.classify_rows(
+            [row("a:a"), row("storage:test_recovery", p=5, f=3, rc=101)], ledger
+        )
+        != [],
+    )
+    expect(
+        "a missing required target is red",
+        verdict_policy.denominator_anomalies(clean, {"a:a", "storage:test_recovery", "gone:gone"})
+        != [],
+    )
+    expect(
+        "an unexpected extra target is red",
+        verdict_policy.denominator_anomalies(clean, {"a:a"}) != [],
+    )
+    expect(
+        "an exclusion for a target that ran anyway is red",
+        verdict_policy.denominator_anomalies(
+            clean, {"a:a", "storage:test_recovery"}, {"a:a": "declared out of lane"}
+        )
+        != [],
+    )
+    expect(
+        "an expired ledger entry is reported, not silently honoured",
+        verdict_policy.load_ledger(_expired_ledger())[1] != [],
+    )
 
 
 def _expired_ledger():
@@ -163,32 +223,43 @@ def _expired_ledger():
     tmpdir = tempfile.mkdtemp()
     atexit.register(shutil.rmtree, tmpdir, True)
     tmp = pathlib.Path(tmpdir) / "ledger.json"
-    tmp.write_text(json.dumps({"entries": [
-        {"target_id": "x:y", "reason": "r", "expiry": "2000-01-01"}]}))
+    tmp.write_text(
+        json.dumps({"entries": [{"target_id": "x:y", "reason": "r", "expiry": "2000-01-01"}]})
+    )
     return tmp
 
 
 # ----------------------------------------------------- catalogue join (E-P0-03)
 
+
 def join_controls():
     print("catalogue join (tools/catalog/common.py)")
     import common
+
     base = {
         "targets": [
-            {"target_id": "cargo:x:unit:t", "origin": "CARGO",
-             "cargo_package": "x", "cargo_target": "t"},
-            {"target_id": "cargo:x:integration:t", "origin": "CARGO",
-             "cargo_package": "x", "cargo_target": "t"},
+            {
+                "target_id": "cargo:x:unit:t",
+                "origin": "CARGO",
+                "cargo_package": "x",
+                "cargo_target": "t",
+            },
+            {
+                "target_id": "cargo:x:integration:t",
+                "origin": "CARGO",
+                "cargo_package": "x",
+                "cargo_target": "t",
+            },
         ],
-        "leaf_cases": [], "exclusions": [],
+        "leaf_cases": [],
+        "exclusions": [],
     }
     try:
         common.required_executable_targets(base)
         collided = False
     except SystemExit:
         collided = True
-    expect("two catalogue targets collapsing onto one runner row id stop the line",
-           collided)
+    expect("two catalogue targets collapsing onto one runner row id stop the line", collided)
     ok = dict(base)
     ok["targets"] = [base["targets"][0]]
     try:
@@ -219,10 +290,14 @@ def bundle_controls():
     for f in ("common.py", "verdict.py", "run_u0.py"):
         shutil.copy2(HERE / f, pristine / "tools" / "catalog" / f)
     (pristine / "docs" / "evidence" / "G1").mkdir(parents=True)
-    shutil.copy2(REPO / "docs" / "evidence" / "flake-ledger.json",
-                 pristine / "docs" / "evidence" / "flake-ledger.json")
-    shutil.copy2(REPO / "docs" / "evidence" / "G1" / "upstream-test-catalog.json",
-                 pristine / "docs" / "evidence" / "G1" / "upstream-test-catalog.json")
+    shutil.copy2(
+        REPO / "docs" / "evidence" / "flake-ledger.json",
+        pristine / "docs" / "evidence" / "flake-ledger.json",
+    )
+    shutil.copy2(
+        REPO / "docs" / "evidence" / "G1" / "upstream-test-catalog.json",
+        pristine / "docs" / "evidence" / "G1" / "upstream-test-catalog.json",
+    )
     src_archive = REPO / ARCHIVE_REL
     dst_archive = pristine / ARCHIVE_REL
     dst_archive.mkdir(parents=True)
@@ -231,8 +306,12 @@ def bundle_controls():
             shutil.copy2(f, dst_archive / f.name)
 
     def run_cli(tree, live=False):
-        argv = [sys.executable, str(tree / "tools" / "catalog" / "run_u0.py"),
-                "--out", str(tree / ARCHIVE_REL)]
+        argv = [
+            sys.executable,
+            str(tree / "tools" / "catalog" / "run_u0.py"),
+            "--out",
+            str(tree / ARCHIVE_REL),
+        ]
         if not live:
             argv.insert(2, "--verdict-only")
         p = subprocess.run(argv, capture_output=True, text=True)
@@ -247,8 +326,8 @@ def bundle_controls():
             m["logs"][name] = vp.common.sha256_file(ad / name)
         rows = json.loads((ad / "u0-results.json").read_text())["results"]
         m["bundle_root"], _ = vp.compute_bundle_root(
-            ad, rows, ledger_path=tree / "docs" / "evidence" / "flake-ledger.json",
-            repo=tree)
+            ad, rows, ledger_path=tree / "docs" / "evidence" / "flake-ledger.json", repo=tree
+        )
         (ad / "log-manifest.json").write_text(json.dumps(m, indent=1) + "\n")
 
     def control(label, mutate, needle=None, live=False, expect_green=False):
@@ -284,72 +363,93 @@ def bundle_controls():
     # every rejection below proves nothing
     control("intact archive copy re-derives GREEN", None, expect_green=True)
 
-    control("deleted raw log is rejected",
-            lambda t: (t / ARCHIVE_REL / "storage__storage.log").unlink(),
-            needle="does not exist")
+    control(
+        "deleted raw log is rejected",
+        lambda t: (t / ARCHIVE_REL / "storage__storage.log").unlink(),
+        needle="does not exist",
+    )
 
     def truncate(tree):
         log = tree / ARCHIVE_REL / "storage__storage.log"
         log.write_text("".join(log.read_text(errors="replace").splitlines(True)[:5]))
         refresh_manifest(tree, ["storage__storage.log"])
-    control("truncated log (manifest regenerated) fails the count reparse",
-            truncate, needle="reparses to")
+
+    control(
+        "truncated log (manifest regenerated) fails the count reparse",
+        truncate,
+        needle="reparses to",
+    )
 
     def duplicate_row(tree):
         edit_rows(tree, lambda rows: rows.append(dict(rows[0])))
         refresh_manifest(tree)
-    control("duplicated result row is rejected", duplicate_row,
-            needle="duplicate result row")
+
+    control("duplicated result row is rejected", duplicate_row, needle="duplicate result row")
 
     def reduce_passed(tree):
         def fn(rows):
             r = next(r for r in rows if r["passed"] > 1)
             r["passed"] = 1
+
         edit_rows(tree, fn)
         refresh_manifest(tree)
-    control("reduced nonzero passed count fails the count reparse",
-            reduce_passed, needle="reparses to")
+
+    control(
+        "reduced nonzero passed count fails the count reparse", reduce_passed, needle="reparses to"
+    )
 
     def forge_log_path(tree):
-        edit_rows(tree, lambda rows: rows[0].__setitem__(
-            "raw_log", str(ARCHIVE_REL / "ghost__ghost.log")))
+        edit_rows(
+            tree, lambda rows: rows[0].__setitem__("raw_log", str(ARCHIVE_REL / "ghost__ghost.log"))
+        )
         refresh_manifest(tree)
-    control("forged (nonexistent) log path is rejected", forge_log_path,
-            needle="does not exist")
+
+    control("forged (nonexistent) log path is rejected", forge_log_path, needle="does not exist")
 
     def forge_provenance(tree):
         # E-P0-10 class: forged executable digest. The binary is gone (reaped),
         # so the digest itself cannot be re-measured; what CAN be caught is the
         # edit of the sealed results file - its hash is inside the bundle root.
-        edit_rows(tree, lambda rows: rows[0].__setitem__(
-            "executable_sha256", "0" * 64))
+        edit_rows(tree, lambda rows: rows[0].__setitem__("executable_sha256", "0" * 64))
         # deliberately NO refresh: the forger who edits only the JSON
-    control("forged executable digest breaks the recorded bundle root",
-            forge_provenance, needle="sidecar manifest root")
+
+    control(
+        "forged executable digest breaks the recorded bundle root",
+        forge_provenance,
+        needle="sidecar manifest root",
+    )
 
     def ghost_cases(tree):
         def fn(entries):
             e = next(e for e in entries if e["target_id"] == "storage:test_recovery")
             e["fingerprint"]["failed"] = ["ghost_case_one", "ghost_case_two"]
             e["cases"] = ["ghost_case_one", "ghost_case_two"]
+
         edit_ledger(tree, fn)
         refresh_manifest(tree)  # the ledger is part of the root
-    control("ledger naming ghost failing cases is rejected", ghost_cases,
-            needle="ghosts")
+
+    control("ledger naming ghost failing cases is rejected", ghost_cases, needle="ghosts")
 
     def wrong_profile(tree):
-        edit_ledger(tree, lambda entries: next(
-            e for e in entries if e["target_id"] == "storage:test_recovery"
-        ).__setitem__("profile", ["U9-nonexistent-lane"]))
+        edit_ledger(
+            tree,
+            lambda entries: next(
+                e for e in entries if e["target_id"] == "storage:test_recovery"
+            ).__setitem__("profile", ["U9-nonexistent-lane"]),
+        )
         refresh_manifest(tree)
-    control("ledger tolerance bound to the wrong profile is rejected",
-            wrong_profile, needle="this run's profile")
+
+    control(
+        "ledger tolerance bound to the wrong profile is rejected",
+        wrong_profile,
+        needle="this run's profile",
+    )
 
     def dup_ledger(tree):
         edit_ledger(tree, lambda entries: entries.append(dict(entries[0])))
         refresh_manifest(tree)
-    control("duplicate ledger target is rejected", dup_ledger,
-            needle="duplicate entry")
+
+    control("duplicate ledger target is rejected", dup_ledger, needle="duplicate entry")
 
     # stale COMPLETE root: seal the copy with its true root, verify the seal
     # is accepted, then tamper a log AND regenerate the manifest - only the
@@ -360,8 +460,8 @@ def bundle_controls():
         ad = sealed / ARCHIVE_REL
         rows = json.loads((ad / "u0-results.json").read_text())["results"]
         root, _ = vp.compute_bundle_root(
-            ad, rows, ledger_path=sealed / "docs" / "evidence" / "flake-ledger.json",
-            repo=sealed)
+            ad, rows, ledger_path=sealed / "docs" / "evidence" / "flake-ledger.json", repo=sealed
+        )
         (ad / "COMPLETE").write_text(f"COMPLETE {root}\n")
         rc, out = run_cli(sealed)
         expect("root-bound COMPLETE over intact bytes is accepted", rc == 0)
@@ -369,19 +469,19 @@ def bundle_controls():
             f.write("\n")  # count-neutral tamper
         # the forger regenerates the manifest but cannot rewrite the sealed root
         m = json.loads((ad / "log-manifest.json").read_text())
-        m["logs"]["storage__storage.log"] = vp.common.sha256_file(
-            ad / "storage__storage.log")
+        m["logs"]["storage__storage.log"] = vp.common.sha256_file(ad / "storage__storage.log")
         m["bundle_root"], _ = vp.compute_bundle_root(
-            ad, rows, ledger_path=sealed / "docs" / "evidence" / "flake-ledger.json",
-            repo=sealed)
+            ad, rows, ledger_path=sealed / "docs" / "evidence" / "flake-ledger.json", repo=sealed
+        )
         (ad / "log-manifest.json").write_text(json.dumps(m, indent=1) + "\n")
         rc, out = run_cli(sealed)
-        expect("log tampered after sealing is rejected by the COMPLETE root",
-               rc != 0 and "COMPLETE binds root" in out)
+        expect(
+            "log tampered after sealing is rejected by the COMPLETE root",
+            rc != 0 and "COMPLETE binds root" in out,
+        )
         # and the live runner must refuse to write into the sealed dir at all
         rc, out = run_cli(sealed, live=True)
-        expect("live run into a sealed (COMPLETE) dir is refused",
-               rc != 0 and "sealed" in out)
+        expect("live run into a sealed (COMPLETE) dir is refused", rc != 0 and "sealed" in out)
     finally:
         shutil.rmtree(sealed, ignore_errors=True)
 

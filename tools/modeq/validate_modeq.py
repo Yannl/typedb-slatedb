@@ -64,6 +64,7 @@ requires it to hold G0 open — either mismatch (and any INVALID) exits 1.
 Only validator success may ever set G0 CLOSED; NOT_REACHABLE or a
 narrative proof is not green.
 """
+
 import argparse
 import hashlib
 import json
@@ -88,8 +89,7 @@ APPROVED_BAZEL_BASENAMES = {"bazel", "bazelisk"}
 # R4-MODEQ-01: one cquery result line — a Bazel label, optionally followed
 # by a configuration checksum "(hex)" or "(null)" (bazel cquery's default
 # --output=label form). Anything else on stdout is not cquery output.
-CQUERY_LINE = re.compile(
-    r"^(@[\w.-]*)?//[\w./-]*(:[\w./+=,@~-]+)?( \(([0-9a-f]+|null)\))?$")
+CQUERY_LINE = re.compile(r"^(@[\w.-]*)?//[\w./-]*(:[\w./+=,@~-]+)?( \(([0-9a-f]+|null)\))?$")
 
 # R4-MODEQ-01: a referenced file must be a safe basename inside the bundle
 SAFE_BASENAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -103,17 +103,24 @@ N_TO_ONE_ALLOWLIST_VERSION = 1
 N_TO_ONE_ALLOWLIST: dict = {}
 
 
-def safe_bundle_file(bundle_dir: pathlib.Path, name: str,
-                     field: str, errors: list[str]) -> pathlib.Path | None:
+def safe_bundle_file(
+    bundle_dir: pathlib.Path, name: str, field: str, errors: list[str]
+) -> pathlib.Path | None:
     """Resolve a manifest-referenced filename strictly as a basename under
     the bundle dir; reject path separators, '..' and absolute paths BEFORE
     touching the filesystem."""
-    if ("/" in name or "\\" in name or name in (".", "..")
-            or pathlib.PurePosixPath(name).is_absolute()
-            or pathlib.PureWindowsPath(name).is_absolute()
-            or not SAFE_BASENAME.match(name)):
-        errors.append(f"{field} {name!r} is not a safe basename — referenced "
-                      "files must live directly inside the bundle directory")
+    if (
+        "/" in name
+        or "\\" in name
+        or name in (".", "..")
+        or pathlib.PurePosixPath(name).is_absolute()
+        or pathlib.PureWindowsPath(name).is_absolute()
+        or not SAFE_BASENAME.match(name)
+    ):
+        errors.append(
+            f"{field} {name!r} is not a safe basename — referenced "
+            "files must live directly inside the bundle directory"
+        )
         return None
     return bundle_dir / name
 
@@ -128,7 +135,8 @@ def check_argv_grammar(argv: list[str], errors: list[str]) -> None:
         errors.append(
             f"invocation.argv[0] {argv[0]!r} is not an approved Bazel "
             f"executable ({', '.join(sorted(APPROVED_BAZEL_BASENAMES))}) — "
-            "whatever ran, it was not Bazel")
+            "whatever ran, it was not Bazel"
+        )
         return
     rest = argv[1:]
     i = 0
@@ -138,19 +146,21 @@ def check_argv_grammar(argv: list[str], errors: list[str]) -> None:
         errors.append(
             "invocation.argv does not match the approved grammar "
             "'bazel [startup opts] cquery <expr> [--flags]' — the command "
-            "after the startup options must be cquery")
+            "after the startup options must be cquery"
+        )
         return
-    tail = rest[i + 1:]
+    tail = rest[i + 1 :]
     positional = [a for a in tail if not a.startswith("-")]
     flags = [a for a in tail if a.startswith("-")]
     if len(positional) != 1 or not positional[0].strip():
         errors.append(
-            f"invocation.argv must carry exactly one cquery expression, got "
-            f"{positional!r}")
+            f"invocation.argv must carry exactly one cquery expression, got {positional!r}"
+        )
     if any(not f.startswith("--") for f in flags):
         errors.append(
             f"invocation.argv carries malformed cquery flags: "
-            f"{[f for f in flags if not f.startswith('--')]!r}")
+            f"{[f for f in flags if not f.startswith('--')]!r}"
+        )
 
 
 def check_cquery_stdout(path: pathlib.Path, errors: list[str]) -> None:
@@ -162,13 +172,15 @@ def check_cquery_stdout(path: pathlib.Path, errors: list[str]) -> None:
     except OSError as error:
         errors.append(f"cquery stdout is unreadable: {error}")
         return
-    bad = [line for line in text.splitlines()
-           if line.strip() and not CQUERY_LINE.match(line.strip())]
+    bad = [
+        line for line in text.splitlines() if line.strip() and not CQUERY_LINE.match(line.strip())
+    ]
     if bad:
         errors.append(
             f"cquery stdout contains {len(bad)} line(s) that are not Bazel "
             f"cquery output (first: {bad[0][:80]!r}) — junk bytes are not a "
-            "query snapshot")
+            "query snapshot"
+        )
 
 
 def sha256_file(path: pathlib.Path) -> str:
@@ -219,8 +231,12 @@ def validate_bundle(bundle_dir: pathlib.Path) -> list[str]:
     if not isinstance(bazel, dict):
         errors.append("missing 'bazel' object")
     else:
-        if not (isinstance(bazel.get("binary_sha256"), str) and HEX64.match(bazel["binary_sha256"])):
-            errors.append("bazel.binary_sha256 must be a 64-hex sha256 of the exact Bazel/Bazelisk binary")
+        if not (
+            isinstance(bazel.get("binary_sha256"), str) and HEX64.match(bazel["binary_sha256"])
+        ):
+            errors.append(
+                "bazel.binary_sha256 must be a 64-hex sha256 of the exact Bazel/Bazelisk binary"
+            )
         if not (isinstance(bazel.get("version"), str) and bazel["version"].strip()):
             errors.append("bazel.version missing")
 
@@ -291,10 +307,15 @@ def validate_bundle(bundle_dir: pathlib.Path) -> list[str]:
                     "truncated or altered raw output"
                 )
         if cq.get("exit_code") != 0:
-            errors.append(f"cquery.exit_code is {cq.get('exit_code')!r} — a nonzero cquery is not evidence of anything")
+            errors.append(
+                f"cquery.exit_code is {cq.get('exit_code')!r} — a nonzero cquery is not evidence of anything"
+            )
         stdout_file = cq.get("stdout_file")
-        if isinstance(stdout_file, str) and SAFE_BASENAME.match(stdout_file) \
-                and (bundle_dir / stdout_file).is_file():
+        if (
+            isinstance(stdout_file, str)
+            and SAFE_BASENAME.match(stdout_file)
+            and (bundle_dir / stdout_file).is_file()
+        ):
             if (bundle_dir / stdout_file).stat().st_size == 0:
                 errors.append("cquery stdout is empty — an empty snapshot enumerates nothing")
             else:
@@ -318,8 +339,7 @@ def validate_bundle(bundle_dir: pathlib.Path) -> list[str]:
     xw_name = doc.get("crosswalk_file")
     if not (isinstance(xw_name, str) and xw_name):
         errors.append("crosswalk_file missing")
-    elif (xw_path := safe_bundle_file(bundle_dir, xw_name, "crosswalk_file",
-                                      errors)) is not None:
+    elif (xw_path := safe_bundle_file(bundle_dir, xw_name, "crosswalk_file", errors)) is not None:
         accounted.add(xw_name)
         if not xw_path.is_file():
             errors.append(f"crosswalk_file {xw_name} does not exist in the bundle")
@@ -337,19 +357,32 @@ def validate_bundle(bundle_dir: pathlib.Path) -> list[str]:
                     seen: list[str] = []
                     by_catalog_id: dict[str, list[str]] = {}
                     for i, row in enumerate(xw):
-                        if not (isinstance(row, dict) and isinstance(row.get("bazel_target"), str)
-                                and isinstance(row.get("catalog_target_id"), str)):
-                            errors.append(f"crosswalk row {i} is not {{bazel_target, catalog_target_id}}")
+                        if not (
+                            isinstance(row, dict)
+                            and isinstance(row.get("bazel_target"), str)
+                            and isinstance(row.get("catalog_target_id"), str)
+                        ):
+                            errors.append(
+                                f"crosswalk row {i} is not {{bazel_target, catalog_target_id}}"
+                            )
                             continue
                         seen.append(row["bazel_target"])
-                        by_catalog_id.setdefault(row["catalog_target_id"], []).append(row["bazel_target"])
+                        by_catalog_id.setdefault(row["catalog_target_id"], []).append(
+                            row["bazel_target"]
+                        )
                         if target_set and row["bazel_target"] not in target_set:
-                            errors.append(f"crosswalk names unknown bazel target {row['bazel_target']}")
+                            errors.append(
+                                f"crosswalk names unknown bazel target {row['bazel_target']}"
+                            )
                         if cat_ids is not None and row["catalog_target_id"] not in cat_ids:
-                            errors.append(f"crosswalk names unknown catalogue id {row['catalog_target_id']}")
+                            errors.append(
+                                f"crosswalk names unknown catalogue id {row['catalog_target_id']}"
+                            )
                     if len(set(seen)) != len(seen):
                         dupes = sorted({t for t in seen if seen.count(t) > 1})
-                        errors.append(f"crosswalk maps a bazel target more than once: {', '.join(dupes)}")
+                        errors.append(
+                            f"crosswalk maps a bazel target more than once: {', '.join(dupes)}"
+                        )
                     # R4-MODEQ-01: BIJECTION policy — each catalogue id may
                     # receive at most one Bazel label unless a versioned
                     # allowlist entry with a reason approves the n:1 mapping
@@ -357,8 +390,11 @@ def validate_bundle(bundle_dir: pathlib.Path) -> list[str]:
                         if len(labels) <= 1:
                             continue
                         allowed = N_TO_ONE_ALLOWLIST.get(cid)
-                        if allowed and sorted(labels) == sorted(allowed.get("labels", [])) \
-                                and allowed.get("reason"):
+                        if (
+                            allowed
+                            and sorted(labels) == sorted(allowed.get("labels", []))
+                            and allowed.get("reason")
+                        ):
                             continue
                         errors.append(
                             f"crosswalk maps {len(labels)} bazel labels "
@@ -378,7 +414,9 @@ def validate_bundle(bundle_dir: pathlib.Path) -> list[str]:
     actual = {p.name for p in bundle_dir.iterdir() if p.is_file()}
     junk = sorted(actual - accounted)
     if junk:
-        errors.append(f"unaccounted file(s) in the bundle: {', '.join(junk)} — junk is not evidence")
+        errors.append(
+            f"unaccounted file(s) in the bundle: {', '.join(junk)} — junk is not evidence"
+        )
     for sub in bundle_dir.iterdir():
         if sub.is_dir():
             errors.append(f"unexpected subdirectory {sub.name}/ in the bundle")
@@ -393,7 +431,9 @@ def validate_bundle(bundle_dir: pathlib.Path) -> list[str]:
             lines.append(f"{name}\n{sha256_file(bundle_dir / name)}\n")
         recomputed = hashlib.sha256("".join(lines).encode()).hexdigest()
         if recomputed != root:
-            errors.append(f"content-addressed root does not recompute (recorded {root}, actual {recomputed})")
+            errors.append(
+                f"content-addressed root does not recompute (recorded {root}, actual {recomputed})"
+            )
 
     return errors
 
@@ -405,10 +445,18 @@ def g0_state(ledger_path: pathlib.Path) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dir", type=pathlib.Path, default=DEFAULT_DIR,
-                        help="Mode-Q bundle directory (default docs/evidence/G0/mode-q)")
-    parser.add_argument("--ledger", type=pathlib.Path, default=None,
-                        help="also enforce two-directional consistency with this gates.json")
+    parser.add_argument(
+        "--dir",
+        type=pathlib.Path,
+        default=DEFAULT_DIR,
+        help="Mode-Q bundle directory (default docs/evidence/G0/mode-q)",
+    )
+    parser.add_argument(
+        "--ledger",
+        type=pathlib.Path,
+        default=None,
+        help="also enforce two-directional consistency with this gates.json",
+    )
     args = parser.parse_args()
 
     if not args.dir.is_dir():
@@ -433,7 +481,9 @@ def main() -> int:
             return 1
         g0_open = state in ("OPEN_RED", "OPEN")
         if status == "VALID" and g0_open:
-            print(f"MODEQ: bundle is VALID but the ledger still holds G0 {state} — reconcile the ledger")
+            print(
+                f"MODEQ: bundle is VALID but the ledger still holds G0 {state} — reconcile the ledger"
+            )
             return 1
         if status == "ABSENT" and not g0_open:
             print(f"MODEQ: ledger closes G0 ({state}) without Mode-Q evidence — refused")

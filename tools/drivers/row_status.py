@@ -27,6 +27,7 @@ leaf outcome. Nothing in this file is taken on trust from the runner.
 Usage:
   python3 tools/drivers/row_status.py --out docs/evidence/G1/drivers/driver-row-status.json
 """
+
 import argparse
 import json
 import pathlib
@@ -34,14 +35,15 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "evidence"))
-import common               # noqa: E402
-import verify_drivers       # noqa: E402
+import common  # noqa: E402
+import verify_drivers  # noqa: E402
 
 REPO = common.REPO
 DRIVERS_DIR = REPO / "docs" / "evidence" / "G1" / "drivers"
 BLOCKED = REPO / "docs" / "evidence" / "G1" / "drivers" / "blocked-lanes.json"
-ALL_ROWS = [f"driver:{d}:{b}" for d in ("rust", "python", "typescript")
-            for b in ("rocksdb", "slatedb")]
+ALL_ROWS = [
+    f"driver:{d}:{b}" for d in ("rust", "python", "typescript") for b in ("rocksdb", "slatedb")
+]
 
 
 # Suites deliberately outside the qualification claim, by owner decision.
@@ -50,10 +52,10 @@ ALL_ROWS = [f"driver:{d}:{b}" for d in ("rust", "python", "typescript")
 # stay reported as not executed.
 OUT_OF_SCOPE_SUITES = {
     # every spelling the three driver harnesses use for the same lane
-    "test_cluster": "OD-010",        # Rust  (rust/tests/behaviour/driver/cluster.rs)
+    "test_cluster": "OD-010",  # Rust  (rust/tests/behaviour/driver/cluster.rs)
     "cluster": "OD-010",
-    "driver/cluster": "OD-010",      # Python (behave feature path)
-    "driver__cluster": "OD-010",     # Python (flattened leaf id)
+    "driver/cluster": "OD-010",  # Python (behave feature path)
+    "driver__cluster": "OD-010",  # Python (flattened leaf id)
     "connection/cluster": "OD-010",
 }
 
@@ -72,10 +74,10 @@ def discover_bundles():
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", type=pathlib.Path,
-                    default=DRIVERS_DIR / "driver-row-status.json")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument("--out", type=pathlib.Path, default=DRIVERS_DIR / "driver-row-status.json")
     args = ap.parse_args()
 
     plan = json.loads(common.PLAN.read_text())
@@ -98,7 +100,8 @@ def main():
             b = blocked.get(row_id) or {}
             entry["blocked_precondition"] = b.get("precondition") or (
                 "no evidence bundle exists for this row and no executed probe "
-                "has recorded why - the row stays NOT_IMPLEMENTED")
+                "has recorded why - the row stays NOT_IMPLEMENTED"
+            )
             entry["blocked_evidence"] = b.get("evidence")
             rows[row_id] = entry
             continue
@@ -106,33 +109,37 @@ def main():
         checks = []
         for bdir, data in found:
             rep = verify_drivers.verify(bdir, REPO, qualification=True)
-            checks.append({
-                "bundle": common.rel(bdir),
-                "bundle_root": rep["recomputed_bundle_root"],
-                "sealed_complete": rep["sealed_complete"],
-                "anomalies": rep["anomalies"],
-                "rederived_verdict": rep["rederived_verdict"],
-                "qualification_pass": rep["qualification_pass"],
-                "plan_leaves_with_outcome": rep["rederived_executed_leaves"],
-                "plan_leaves_passed": rep["rederived_passed_leaves"],
-                "lane": data.get("lane"),
-                "suites_selected": data["counts"]["suites_selected"],
-                "suites_executed": data["counts"]["suites_executed"],
-                "plan_leaves_in_scope": data["counts"]["plan_leaves_in_scope"],
-                "suites_blocked": {
-                    s["suite_id"]: s.get("precondition")
-                    for s in data["suites"]
-                    if s.get("status") == "NOT_EXECUTED_PRECONDITION_UNMET"},
-                "leaves_outside_plan": data["counts"]["leaf_rows_outside_plan"],
-                "harness": data.get("harness", "rust-cucumber-basic"),
-                "caveats": data.get("caveats") or [],
-            })
+            checks.append(
+                {
+                    "bundle": common.rel(bdir),
+                    "bundle_root": rep["recomputed_bundle_root"],
+                    "sealed_complete": rep["sealed_complete"],
+                    "anomalies": rep["anomalies"],
+                    "rederived_verdict": rep["rederived_verdict"],
+                    "qualification_pass": rep["qualification_pass"],
+                    "plan_leaves_with_outcome": rep["rederived_executed_leaves"],
+                    "plan_leaves_passed": rep["rederived_passed_leaves"],
+                    "lane": data.get("lane"),
+                    "suites_selected": data["counts"]["suites_selected"],
+                    "suites_executed": data["counts"]["suites_executed"],
+                    "plan_leaves_in_scope": data["counts"]["plan_leaves_in_scope"],
+                    "suites_blocked": {
+                        s["suite_id"]: s.get("precondition")
+                        for s in data["suites"]
+                        if s.get("status") == "NOT_EXECUTED_PRECONDITION_UNMET"
+                    },
+                    "leaves_outside_plan": data["counts"]["leaf_rows_outside_plan"],
+                    "harness": data.get("harness", "rust-cucumber-basic"),
+                    "caveats": data.get("caveats") or [],
+                }
+            )
         entry["bundles"] = checks
         best = next((c for c in checks if c["qualification_pass"]), None)
         if best is None:
             entry["blocked_precondition"] = (
                 "a bundle exists but the independent verifier refuses it: "
-                + "; ".join(checks[0]["anomalies"][:3]))
+                + "; ".join(checks[0]["anomalies"][:3])
+            )
             rows[row_id] = entry
             continue
         entry["evidence_bundle"] = best["bundle"]
@@ -151,36 +158,44 @@ def main():
         # as not executed — and they do not hold a row partial for a reason
         # unrelated to the property being claimed. Every other unmet
         # precondition still does.
-        out_of_scope = {k: v for k, v in (best["suites_blocked"] or {}).items()
-                        if k in OUT_OF_SCOPE_SUITES}
-        blocking = {k: v for k, v in (best["suites_blocked"] or {}).items()
-                    if k not in OUT_OF_SCOPE_SUITES}
+        out_of_scope = {
+            k: v for k, v in (best["suites_blocked"] or {}).items() if k in OUT_OF_SCOPE_SUITES
+        }
+        blocking = {
+            k: v for k, v in (best["suites_blocked"] or {}).items() if k not in OUT_OF_SCOPE_SUITES
+        }
         best["suites_out_of_scope"] = out_of_scope
         entry["suites_out_of_scope"] = out_of_scope
         entry["out_of_scope_authority"] = (
-            "OD-010 (docs/owner-decisions.json): single-node semantic parity is "
-            "the claim; cluster/HA is not in scope for the storage adapter and "
-            "may not be claimed on the strength of it."
-        ) if out_of_scope else None
+            (
+                "OD-010 (docs/owner-decisions.json): single-node semantic parity is "
+                "the claim; cluster/HA is not in scope for the storage adapter and "
+                "may not be claimed on the strength of it."
+            )
+            if out_of_scope
+            else None
+        )
         complete_suites = not blocking and not best["caveats"]
-        entry["status"] = ("EXECUTED_LEAF" if complete_suites
-                           else "EXECUTED_LEAF_PARTIAL_SUITES")
+        entry["status"] = "EXECUTED_LEAF" if complete_suites else "EXECUTED_LEAF_PARTIAL_SUITES"
         entry["not_covered_because"] = (
-            [] if complete_suites else
-            [f"blocked suite {k}: {v}" for k, v in blocking.items()]
-            + [f"caveat {c.get('id')}: {c.get('detail')}"
-               for c in (best["caveats"] or [])])
+            []
+            if complete_suites
+            else [f"blocked suite {k}: {v}" for k, v in blocking.items()]
+            + [f"caveat {c.get('id')}: {c.get('detail')}" for c in (best["caveats"] or [])]
+        )
         entry["coverage_class"] = "COVERED" if complete_suites else "PARTIAL"
         entry["status_meaning"] = (
             "EXECUTED_LEAF: the official driver suite ran against a real "
             "TypeDB server and EVERY plan leaf in its scope carries a "
             "per-scenario outcome, verified independently from the archived "
-            "bytes." if complete_suites else
-            "EXECUTED_LEAF_PARTIAL_SUITES: the official driver suite ran and "
+            "bytes."
+            if complete_suites
+            else "EXECUTED_LEAF_PARTIAL_SUITES: the official driver suite ran and "
             "every plan leaf in the EXECUTED suites' scope carries a "
             "per-scenario outcome, but at least one declared suite of the "
             "official corpus could not run here; each such suite names its "
-            "exact external precondition. The row is PARTIAL, never covered.")
+            "exact external precondition. The row is PARTIAL, never covered."
+        )
         rows[row_id] = entry
 
     doc = {
@@ -193,21 +208,22 @@ def main():
             "here is EXECUTED only because tools/evidence/verify_drivers.py "
             "re-derived its leaf outcomes from the archived bytes and "
             "returned zero anomalies; every other row names the exact "
-            "external precondition that blocks it."),
-        "plan": {"path": common.rel(common.PLAN),
-                 "plan_root": plan.get("plan_root"),
-                 "driver_rows_in_plan": len(plan["driver_rows"])},
+            "external precondition that blocks it."
+        ),
+        "plan": {
+            "path": common.rel(common.PLAN),
+            "plan_root": plan.get("plan_root"),
+            "driver_rows_in_plan": len(plan["driver_rows"]),
+        },
         "rows": rows,
         "counts": {
             "total": len(ALL_ROWS),
-            "executed_leaf": sum(1 for r in rows.values()
-                                 if r["status"].startswith("EXECUTED_LEAF")),
-            "covered": sum(1 for r in rows.values()
-                           if r["coverage_class"] == "COVERED"),
-            "partial": sum(1 for r in rows.values()
-                           if r["coverage_class"] == "PARTIAL"),
-            "not_implemented": sum(1 for r in rows.values()
-                                   if r["status"] == "NOT_IMPLEMENTED"),
+            "executed_leaf": sum(
+                1 for r in rows.values() if r["status"].startswith("EXECUTED_LEAF")
+            ),
+            "covered": sum(1 for r in rows.values() if r["coverage_class"] == "COVERED"),
+            "partial": sum(1 for r in rows.values() if r["coverage_class"] == "PARTIAL"),
+            "not_implemented": sum(1 for r in rows.values() if r["status"] == "NOT_IMPLEMENTED"),
         },
     }
     out = args.out if args.out.is_absolute() else REPO / args.out
@@ -215,7 +231,9 @@ def main():
     out.write_text(json.dumps(doc, indent=1) + "\n")
     print(json.dumps(doc["counts"], indent=1))
     for rid, r in rows.items():
-        print(f"  {rid:26} {r['status']:32} {r.get('evidence_bundle') or r.get('blocked_precondition','')[:80]}")
+        print(
+            f"  {rid:26} {r['status']:32} {r.get('evidence_bundle') or r.get('blocked_precondition', '')[:80]}"
+        )
     return 0
 
 

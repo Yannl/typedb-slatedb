@@ -29,6 +29,7 @@ step:
 The reconstructed tree lands in sources/slatedb-fork/ (git-ignored, like
 every other materialised source).
 """
+
 import argparse
 import hashlib
 import json
@@ -38,7 +39,6 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import urllib.request
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 LOCK = REPO / "source-lock" / "source-lock.json"
@@ -90,9 +90,22 @@ def fetch(crate: str, version: str, digest: str) -> pathlib.Path:
     # rationale, verbatim, as materialize_sources.py's fetch)
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         staged = pathlib.Path(tmp.name)
-    subprocess.run(["curl", "--fail", "--location", "--silent", "--show-error",
-                    "--retry", "5", "--retry-all-errors",
-                    url, "--output", str(staged)], check=True)
+    subprocess.run(
+        [
+            "curl",
+            "--fail",
+            "--location",
+            "--silent",
+            "--show-error",
+            "--retry",
+            "5",
+            "--retry-all-errors",
+            url,
+            "--output",
+            str(staged),
+        ],
+        check=True,
+    )
     observed = sha256_file(staged)
     if observed != digest:
         staged.unlink()
@@ -122,7 +135,10 @@ def apply_patches(tree: pathlib.Path) -> list:
     for patch in sorted(PATCHES.glob("*.patch")):
         result = subprocess.run(
             ["patch", "-p1", "--forward", "--fuzz=0", "-i", str(patch)],
-            cwd=tree, capture_output=True, text=True)
+            cwd=tree,
+            capture_output=True,
+            text=True,
+        )
         if result.returncode != 0:
             sys.exit(f"{patch.name} did not apply cleanly:\n{result.stdout}{result.stderr}")
         applied.append(patch.name)
@@ -136,13 +152,20 @@ def read_provenance() -> dict:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     group = ap.add_mutually_exclusive_group()
-    group.add_argument("--check", action="store_true",
-                       help="reconstruct into a temporary directory and verify only")
-    group.add_argument("--record", action="store_true",
-                       help="reconstruct and stamp the resulting digest into UPSTREAM-PROVENANCE")
+    group.add_argument(
+        "--check",
+        action="store_true",
+        help="reconstruct into a temporary directory and verify only",
+    )
+    group.add_argument(
+        "--record",
+        action="store_true",
+        help="reconstruct and stamp the resulting digest into UPSTREAM-PROVENANCE",
+    )
     args = ap.parse_args()
 
     crate, version, digest = locked_crate()
@@ -157,26 +180,37 @@ def main() -> int:
         expected = provenance.get("patched_tree_sha256")
 
         if args.record:
-            PROVENANCE.write_text(json.dumps({
-                "document": "SlateDB fork provenance (ADR-0012 external epochs)",
-                "upstream_crate": crate,
-                "upstream_version": version,
-                "upstream_crate_sha256": digest,
-                "patches": applied,
-                "patched_tree_sha256": observed,
-                "note": "reconstruct with tools/fork/materialize_slatedb.py; "
+            PROVENANCE.write_text(
+                json.dumps(
+                    {
+                        "document": "SlateDB fork provenance (ADR-0012 external epochs)",
+                        "upstream_crate": crate,
+                        "upstream_version": version,
+                        "upstream_crate_sha256": digest,
+                        "patches": applied,
+                        "patched_tree_sha256": observed,
+                        "note": "reconstruct with tools/fork/materialize_slatedb.py; "
                         "the patch series is the fork, the crate is the base",
-            }, indent=2) + "\n")
+                    },
+                    indent=2,
+                )
+                + "\n"
+            )
             print(f"recorded patched_tree_sha256={observed}")
             return 0
 
         if expected and expected != observed:
-            print(f"FORK DIGEST MISMATCH\n  expected {expected}\n  observed {observed}",
-                  file=sys.stderr)
+            print(
+                f"FORK DIGEST MISMATCH\n  expected {expected}\n  observed {observed}",
+                file=sys.stderr,
+            )
             return 1
         if not expected:
-            print("UPSTREAM-PROVENANCE records no patched_tree_sha256 "
-                  "(run --record once to stamp it)", file=sys.stderr)
+            print(
+                "UPSTREAM-PROVENANCE records no patched_tree_sha256 "
+                "(run --record once to stamp it)",
+                file=sys.stderr,
+            )
             return 1
 
         if args.check:
@@ -187,8 +221,10 @@ def main() -> int:
             shutil.rmtree(DEST)
         DEST.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(tree), str(DEST))
-        print(f"materialised {DEST.relative_to(REPO)} "
-              f"({crate} {version} + {len(applied)} patch(es), tree {observed[:12]}…)")
+        print(
+            f"materialised {DEST.relative_to(REPO)} "
+            f"({crate} {version} + {len(applied)} patch(es), tree {observed[:12]}…)"
+        )
         return 0
     finally:
         shutil.rmtree(staging, ignore_errors=True)

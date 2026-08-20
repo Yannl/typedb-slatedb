@@ -33,6 +33,7 @@ silent failure would be as unreviewable as a false green.
 Run: python3 tools/s3-cert-corpus/evidence_mutants.py
 Exit 0 only if every mutant is killed and both positive controls hold.
 """
+
 import hashlib
 import json
 import os
@@ -84,6 +85,7 @@ def lock_node(doc, node_id):
 # baseline construction
 # ---------------------------------------------------------------------------
 
+
 def cargo_log(tests, passed) -> str:
     filtered = 11 - passed if passed < 11 else 0
     lines = [
@@ -120,7 +122,8 @@ def build_base(root: pathlib.Path, racer_bytes: bytes = b"stand-in cas_racer\n")
 
     # corpus source: a real byte-copy, so the content root is genuine
     shutil.copytree(
-        HERE, repo / "tools" / "s3-cert-corpus",
+        HERE,
+        repo / "tools" / "s3-cert-corpus",
         ignore=shutil.ignore_patterns("target", "evidence", "__pycache__"),
     )
 
@@ -131,14 +134,20 @@ def build_base(root: pathlib.Path, racer_bytes: bytes = b"stand-in cas_racer\n")
     real = json.loads(REAL_LOCK.read_text())
     node = dict(lock_node(real, "RUSTFS"))
     node["sha256"] = sha256_bytes(FAKE_PROVIDER_BYTES)
-    shadow_lock = {"document": "shadow lock for R6-EVID-01 controls",
-                   "nodes": [node, dict(lock_node(real, "MINIO"))]}
+    shadow_lock = {
+        "document": "shadow lock for R6-EVID-01 controls",
+        "nodes": [node, dict(lock_node(real, "MINIO"))],
+    }
     lock_path = repo / "source-lock" / "source-lock.json"
     lock_path.write_text(json.dumps(shadow_lock, indent=1, sort_keys=True) + "\n")
     (repo / "source-lock" / "workspace-lock.json").write_text(
-        json.dumps({"document": "shadow workspace lock",
-                    "source_lock_sha256": sha256_file(lock_path)},
-                   indent=1, sort_keys=True) + "\n")
+        json.dumps(
+            {"document": "shadow workspace lock", "source_lock_sha256": sha256_file(lock_path)},
+            indent=1,
+            sort_keys=True,
+        )
+        + "\n"
+    )
 
     racer = target / "debug" / "cas_racer"
     racer.write_bytes(racer_bytes)
@@ -147,33 +156,77 @@ def build_base(root: pathlib.Path, racer_bytes: bytes = b"stand-in cas_racer\n")
     # synthetic evidence artifacts, in the shapes a real run emits
     (evidence / "phase1.log").write_text(cargo_log(SEMANTIC_TESTS, 11))
     (evidence / "phase2.log").write_text(
-        cargo_log(["semantics::persisted_objects_survive_server_crash_restart"], 1))
-    rounds = [{"round": r, "key": f"cert/mp-cas/round-{r}", "winners": 1,
-               "losers": MP_PROCS - 1, "overwrites": 0, "errors": 0}
-              for r in range(1, MP_ROUNDS + 1)]
-    (evidence / "phase1b.json").write_text(json.dumps(
-        {"kind": "mp-cas", "procs": MP_PROCS, "racer_path": str(racer),
-         "racer_sha256": sha256_file(racer), "rounds": rounds}, indent=1) + "\n")
-    (evidence / "phase1b.log").write_text("".join(
-        f"round {r['round']}: winners=1 losers={MP_PROCS - 1} overwrites=0 errors=0\n"
-        for r in rounds))
+        cargo_log(["semantics::persisted_objects_survive_server_crash_restart"], 1)
+    )
+    rounds = [
+        {
+            "round": r,
+            "key": f"cert/mp-cas/round-{r}",
+            "winners": 1,
+            "losers": MP_PROCS - 1,
+            "overwrites": 0,
+            "errors": 0,
+        }
+        for r in range(1, MP_ROUNDS + 1)
+    ]
+    (evidence / "phase1b.json").write_text(
+        json.dumps(
+            {
+                "kind": "mp-cas",
+                "procs": MP_PROCS,
+                "racer_path": str(racer),
+                "racer_sha256": sha256_file(racer),
+                "rounds": rounds,
+            },
+            indent=1,
+        )
+        + "\n"
+    )
+    (evidence / "phase1b.log").write_text(
+        "".join(
+            f"round {r['round']}: winners=1 losers={MP_PROCS - 1} overwrites=0 errors=0\n"
+            for r in rounds
+        )
+    )
     (evidence / "server.log").write_text("shadow provider log\n")
-    (evidence / "commands.jsonl").write_text(json.dumps(
-        {"label": "start-server", "cwd": str(repo), "argv": [str(provider)]}) + "\n")
+    (evidence / "commands.jsonl").write_text(
+        json.dumps({"label": "start-server", "cwd": str(repo), "argv": [str(provider)]}) + "\n"
+    )
     (evidence / "phases.tsv").write_text(
         "semantics\t0\tphase1.log\t11 tests\n"
         f"mp-cas\t0\tphase1b.log\t{MP_ROUNDS} rounds x {MP_PROCS} procs\n"
         "crash-restart\t0\tserver.log\tkill -9 pid=1 at 2026-08-20T00:00:00Z; restarted pid=2\n"
-        "post-restart\t0\tphase2.log\twitnesses byte-exact after kill -9\n")
+        "post-restart\t0\tphase2.log\twitnesses byte-exact after kill -9\n"
+    )
 
-    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True,
-                   capture_output=True)
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(repo), "-c", "user.email=controls@local",
-                    "-c", "user.name=controls", "commit", "-q", "-m", "shadow base"],
-                   check=True, capture_output=True)
-    return {"root": root, "repo": repo, "provider": provider, "racer": racer,
-            "target": target, "evidence": evidence, "lock": lock_path}
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.email=controls@local",
+            "-c",
+            "user.name=controls",
+            "commit",
+            "-q",
+            "-m",
+            "shadow base",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return {
+        "root": root,
+        "repo": repo,
+        "provider": provider,
+        "racer": racer,
+        "target": target,
+        "evidence": evidence,
+        "lock": lock_path,
+    }
 
 
 def clone_sealed(base: dict, dst_root: pathlib.Path) -> dict:
@@ -193,24 +246,43 @@ def clone_sealed(base: dict, dst_root: pathlib.Path) -> dict:
         if p.is_file():
             p.write_text(p.read_text().replace(old, new))
     reseal(ev, json.loads((ev / "bundle.json").read_text()))
-    return {"root": dst_root, "repo": dst_root / "repo",
-            "provider": dst_root / "provider" / "rustfs-1.0.0-rc.2",
-            "racer": dst_root / "target" / "debug" / "cas_racer",
-            "target": dst_root / "target", "evidence": ev,
-            "lock": dst_root / "repo" / "source-lock" / "source-lock.json"}
+    return {
+        "root": dst_root,
+        "repo": dst_root / "repo",
+        "provider": dst_root / "provider" / "rustfs-1.0.0-rc.2",
+        "racer": dst_root / "target" / "debug" / "cas_racer",
+        "target": dst_root / "target",
+        "evidence": ev,
+        "lock": dst_root / "repo" / "source-lock" / "source-lock.json",
+    }
 
 
 def seal(base, server_sha256=None, allow_dirty=False):
-    argv = [sys.executable, str(SEAL), str(base["evidence"]),
-            "--provider", "rustfs",
-            "--server-bin", str(base["provider"]),
-            "--server-sha256", server_sha256 or sha256_file(base["provider"]),
-            "--endpoint", "http://127.0.0.1:39301",
-            "--repo", str(base["repo"]),
-            "--racer", str(base["racer"]),
-            "--cargo-target-dir", str(base["target"]),
-            "--semantics-expected", "11",
-            "--mp-rounds", str(MP_ROUNDS), "--mp-procs", str(MP_PROCS)]
+    argv = [
+        sys.executable,
+        str(SEAL),
+        str(base["evidence"]),
+        "--provider",
+        "rustfs",
+        "--server-bin",
+        str(base["provider"]),
+        "--server-sha256",
+        server_sha256 or sha256_file(base["provider"]),
+        "--endpoint",
+        "http://127.0.0.1:39301",
+        "--repo",
+        str(base["repo"]),
+        "--racer",
+        str(base["racer"]),
+        "--cargo-target-dir",
+        str(base["target"]),
+        "--semantics-expected",
+        "11",
+        "--mp-rounds",
+        str(MP_ROUNDS),
+        "--mp-procs",
+        str(MP_PROCS),
+    ]
     if allow_dirty:
         argv.append("--allow-dirty")
     return subprocess.run(argv, capture_output=True, text=True)
@@ -218,18 +290,22 @@ def seal(base, server_sha256=None, allow_dirty=False):
 
 def verify(base, extra=()):
     return subprocess.run(
-        [sys.executable, str(VERIFY), str(base["evidence"]), "--repo", str(base["repo"]),
-         *extra], capture_output=True, text=True)
+        [sys.executable, str(VERIFY), str(base["evidence"]), "--repo", str(base["repo"]), *extra],
+        capture_output=True,
+        text=True,
+    )
 
 
 # ---------------------------------------------------------------------------
 # reseal helpers — keep a mutated bundle INTERNALLY self-consistent
 # ---------------------------------------------------------------------------
 
+
 def reseal(evidence: pathlib.Path, bundle: dict):
     """Rewrite bundle.json, refresh every artifact digest, recompute root.txt."""
     bundle["artifacts"] = {
-        p.name: sha256_file(p) for p in sorted(evidence.iterdir())
+        p.name: sha256_file(p)
+        for p in sorted(evidence.iterdir())
         if p.is_file() and p.name not in ("bundle.json", "root.txt")
     }
     (evidence / "bundle.json").write_text(json.dumps(bundle, indent=1) + "\n")
@@ -251,6 +327,7 @@ def exe(bundle, name):
 # mutants
 # ---------------------------------------------------------------------------
 
+
 def m_dirty_tracked_source(base):
     """The exact round-5 shape: a TRACKED corpus source edited, sealed anyway."""
     p = base["repo"] / "tools" / "s3-cert-corpus" / "src" / "lib.rs"
@@ -260,7 +337,8 @@ def m_dirty_tracked_source(base):
 def m_dirty_untracked_exec_source(base):
     """An UNTRACKED executable source file — invisible to a bare `git_head`."""
     (base["repo"] / "tools" / "s3-cert-corpus" / "src" / "bin" / "smuggled.rs").write_text(
-        "fn main() { /* an extra binary nobody committed */ }\n")
+        "fn main() { /* an extra binary nobody committed */ }\n"
+    )
 
 
 def m_v1_dirty_count(base):
@@ -339,7 +417,8 @@ def m_source_added_after_seal(base):
 def m_forged_phase1_log(base):
     """Naive forgery: rewrite the log bytes, leave the seal alone."""
     (base["evidence"] / "phase1.log").write_text(
-        cargo_log(SEMANTIC_TESTS, 11).replace("75.61s", "0.01s"))
+        cargo_log(SEMANTIC_TESTS, 11).replace("75.61s", "0.01s")
+    )
 
 
 def m_forged_phase1_log_resealed(base):
@@ -418,58 +497,110 @@ def m_unsealed_extra_file(base):
 # Mutants applied to a CLONE of the sealed positive control: (name, fn,
 # verify args, expected refusal substring).
 POST_SEAL_MUTANTS = [
-    ("tracked corpus source edited AFTER sealing (content-root binding)",
-     m_source_edited_after_seal, (), "src/lib.rs digest mismatch"),
-    ("untracked executable source added AFTER sealing (src/bin/smuggled.rs)",
-     m_source_added_after_seal, (), "not bound by the bundle"),
-    ("round-5 shape: dirty_paths recorded as a COUNT, stamped qualification",
-     m_v1_dirty_count, (), "not a list of paths"),
-    ("wrong provider digest (vs the source-locked node)",
-     m_wrong_provider_digest, (), "source-lock RUSTFS sha256"),
-    ("caller-lied --server-sha256 (recorded claim != recomputed)",
-     m_lied_server_sha256, (), "caller-claimed provider digest"),
-    ("wrong source-lock node (rustfs evidence bound to MINIO)",
-     m_wrong_source_lock_node, (), "bound to source-lock node"),
-    ("tampered sealed source-lock copy",
-     m_tampered_lock_copy, (), "live source-lock.json bytes differ"),
-    ("custom target directory (racer taken from a hardcoded target path)",
-     m_custom_target_dir, (), "not under the effective"),
-    ("missing racer (the executable that ran is gone)",
-     m_missing_racer, (), "cas_racer absent"),
-    ("replaced racer (different bytes than the one that ran)",
-     m_replaced_racer, (), "cas_racer at"),
-    ("forged phase1.log (bytes rewritten, seal untouched)",
-     m_forged_phase1_log, (), "phase1.log digest mismatch"),
-    ("forged phase1.log (fabricated tests, fully resealed)",
-     m_forged_phase1_log_resealed, (), "structured result"),
-    ("truncated corpus: phase1.log shows 10 of 11 tests",
-     m_phase1_log_short, (), "want 11 passed"),
-    ("truncated phase list (crash-restart dropped)",
-     m_truncated_phase_list, (), "!= required"),
-    ("mp-cas round with two winners (resealed honestly)",
-     m_mp_round_regressed, (), "winners=2"),
-    ("structured mp-cas result deleted (prose-only CAS verdict)",
-     m_mp_json_dropped, (), "phase1b.json absent"),
-    ("forged attestation.stable_root",
-     m_forged_stable_root, (), "stable_root"),
-    ("LD_PRELOAD set during the run",
-     m_ld_preload, (), "LD_PRELOAD was set"),
-    ("unaccounted-for influential environment variable",
-     m_unlisted_env, (), "unaccounted-for influential"),
-    ("unsealed file smuggled into the evidence dir",
-     m_unsealed_extra_file, (), "unsealed file"),
+    (
+        "tracked corpus source edited AFTER sealing (content-root binding)",
+        m_source_edited_after_seal,
+        (),
+        "src/lib.rs digest mismatch",
+    ),
+    (
+        "untracked executable source added AFTER sealing (src/bin/smuggled.rs)",
+        m_source_added_after_seal,
+        (),
+        "not bound by the bundle",
+    ),
+    (
+        "round-5 shape: dirty_paths recorded as a COUNT, stamped qualification",
+        m_v1_dirty_count,
+        (),
+        "not a list of paths",
+    ),
+    (
+        "wrong provider digest (vs the source-locked node)",
+        m_wrong_provider_digest,
+        (),
+        "source-lock RUSTFS sha256",
+    ),
+    (
+        "caller-lied --server-sha256 (recorded claim != recomputed)",
+        m_lied_server_sha256,
+        (),
+        "caller-claimed provider digest",
+    ),
+    (
+        "wrong source-lock node (rustfs evidence bound to MINIO)",
+        m_wrong_source_lock_node,
+        (),
+        "bound to source-lock node",
+    ),
+    (
+        "tampered sealed source-lock copy",
+        m_tampered_lock_copy,
+        (),
+        "live source-lock.json bytes differ",
+    ),
+    (
+        "custom target directory (racer taken from a hardcoded target path)",
+        m_custom_target_dir,
+        (),
+        "not under the effective",
+    ),
+    ("missing racer (the executable that ran is gone)", m_missing_racer, (), "cas_racer absent"),
+    (
+        "replaced racer (different bytes than the one that ran)",
+        m_replaced_racer,
+        (),
+        "cas_racer at",
+    ),
+    (
+        "forged phase1.log (bytes rewritten, seal untouched)",
+        m_forged_phase1_log,
+        (),
+        "phase1.log digest mismatch",
+    ),
+    (
+        "forged phase1.log (fabricated tests, fully resealed)",
+        m_forged_phase1_log_resealed,
+        (),
+        "structured result",
+    ),
+    ("truncated corpus: phase1.log shows 10 of 11 tests", m_phase1_log_short, (), "want 11 passed"),
+    ("truncated phase list (crash-restart dropped)", m_truncated_phase_list, (), "!= required"),
+    ("mp-cas round with two winners (resealed honestly)", m_mp_round_regressed, (), "winners=2"),
+    (
+        "structured mp-cas result deleted (prose-only CAS verdict)",
+        m_mp_json_dropped,
+        (),
+        "phase1b.json absent",
+    ),
+    ("forged attestation.stable_root", m_forged_stable_root, (), "stable_root"),
+    ("LD_PRELOAD set during the run", m_ld_preload, (), "LD_PRELOAD was set"),
+    (
+        "unaccounted-for influential environment variable",
+        m_unlisted_env,
+        (),
+        "unaccounted-for influential",
+    ),
+    ("unsealed file smuggled into the evidence dir", m_unsealed_extra_file, (), "unsealed file"),
 ]
 
 # Mutants that must be present BEFORE sealing: the dirt is the mutation.
 PRE_SEAL_MUTANTS = [
-    ("dirty TRACKED source sealed under the opt-out, read as qualification",
-     m_dirty_tracked_source, "DIRTY at seal time"),
-    ("dirty UNTRACKED executable source sealed under the opt-out",
-     m_dirty_untracked_exec_source, "DIRTY at seal time"),
+    (
+        "dirty TRACKED source sealed under the opt-out, read as qualification",
+        m_dirty_tracked_source,
+        "DIRTY at seal time",
+    ),
+    (
+        "dirty UNTRACKED executable source sealed under the opt-out",
+        m_dirty_untracked_exec_source,
+        "DIRTY at seal time",
+    ),
 ]
 
 
 # ---------------------------------------------------------------------------
+
 
 def report(results, name, ok, reason):
     results.append((name, ok, reason))
@@ -477,7 +608,7 @@ def report(results, name, ok, reason):
 
 
 def refusal_reasons(v):
-    return [l.strip()[2:] for l in v.stdout.splitlines() if l.startswith("  - ")]
+    return [line.strip()[2:] for line in v.stdout.splitlines() if line.startswith("  - ")]
 
 
 def run_all() -> int:
@@ -513,13 +644,19 @@ def run_all() -> int:
             b = build_base(tmp / f"seal-{kind}")
             if kind == "preflight-t":
                 m_dirty_tracked_source(b)
-                r = subprocess.run([sys.executable, str(SEAL), "--preflight",
-                                    "--repo", str(b["repo"])], capture_output=True, text=True)
+                r = subprocess.run(
+                    [sys.executable, str(SEAL), "--preflight", "--repo", str(b["repo"])],
+                    capture_output=True,
+                    text=True,
+                )
                 ok = r.returncode != 0 and "working tree is dirty" in r.stderr
             elif kind == "preflight-u":
                 m_dirty_untracked_exec_source(b)
-                r = subprocess.run([sys.executable, str(SEAL), "--preflight",
-                                    "--repo", str(b["repo"])], capture_output=True, text=True)
+                r = subprocess.run(
+                    [sys.executable, str(SEAL), "--preflight", "--repo", str(b["repo"])],
+                    capture_output=True,
+                    text=True,
+                )
                 ok = r.returncode != 0 and "working tree is dirty" in r.stderr
             elif kind == "seal-dirty":
                 m_dirty_tracked_source(b)
@@ -534,12 +671,16 @@ def run_all() -> int:
                 ok = r.returncode != 0 and "source-lock" in r.stderr
             else:  # seal-truncate
                 tsv = b["evidence"] / "phases.tsv"
-                tsv.write_text("".join(l + "\n" for l in tsv.read_text().splitlines()
-                                       if not l.startswith("crash-restart")))
+                tsv.write_text(
+                    "".join(
+                        line + "\n"
+                        for line in tsv.read_text().splitlines()
+                        if not line.startswith("crash-restart")
+                    )
+                )
                 r = seal(b)
                 ok = r.returncode != 0 and "phase list" in r.stderr
-            report(results, label, ok,
-                   (r.stderr.strip().splitlines() or ["<no output>"])[0])
+            report(results, label, ok, (r.stderr.strip().splitlines() or ["<no output>"])[0])
             shutil.rmtree(b["root"], ignore_errors=True)
 
         # ---- mutants that must be present before sealing -----------------
@@ -548,18 +689,30 @@ def run_all() -> int:
             fn(b)
             r = seal(b, allow_dirty=True)
             if r.returncode != 0:
-                report(results, name, False,
-                       f"seal unexpectedly refused under --allow-dirty: {r.stderr.strip()}")
+                report(
+                    results,
+                    name,
+                    False,
+                    f"seal unexpectedly refused under --allow-dirty: {r.stderr.strip()}",
+                )
             else:
                 v = verify(b)
                 reasons = refusal_reasons(v)
                 hit = next((x for x in reasons if expect in x), None)
-                report(results, name, v.returncode != 0 and hit is not None,
-                       hit or (reasons[0] if reasons else v.stdout.strip() or "<no output>"))
+                report(
+                    results,
+                    name,
+                    v.returncode != 0 and hit is not None,
+                    hit or (reasons[0] if reasons else v.stdout.strip() or "<no output>"),
+                )
                 stamp = load(b["evidence"])
                 if stamp.get("qualification") is not False:
-                    report(results, name + " [stamped non-qualification]", False,
-                           "bundle was not stamped qualification=false")
+                    report(
+                        results,
+                        name + " [stamped non-qualification]",
+                        False,
+                        "bundle was not stamped qualification=false",
+                    )
             shutil.rmtree(b["root"], ignore_errors=True)
 
         # ---- mutants applied to a clone of the sealed control ------------
@@ -569,33 +722,49 @@ def run_all() -> int:
             v = verify(b, vargs)
             reasons = refusal_reasons(v)
             hit = next((x for x in reasons if expect in x), None)
-            report(results, name, v.returncode != 0 and hit is not None,
-                   hit or (reasons[0] if reasons else v.stdout.strip() or "<no output>"))
+            report(
+                results,
+                name,
+                v.returncode != 0 and hit is not None,
+                hit or (reasons[0] if reasons else v.stdout.strip() or "<no output>"),
+            )
             shutil.rmtree(b["root"], ignore_errors=True)
 
         # ---- reproduction control ----------------------------------------
-        fresh = build_base(tmp / "fresh-checkout",
-                           racer_bytes=b"a differently built cas_racer\n")
+        fresh = build_base(tmp / "fresh-checkout", racer_bytes=b"a differently built cas_racer\n")
         r = seal(fresh)
-        second = load(fresh["evidence"])["attestation"]["stable_root"] if r.returncode == 0 else None
+        second = (
+            load(fresh["evidence"])["attestation"]["stable_root"] if r.returncode == 0 else None
+        )
         if second and second == control_stable:
             print()
-            print("POSITIVE CONTROL: a fresh clean checkout — different paths, git history, "
-                  "seal time and racer build —")
+            print(
+                "POSITIVE CONTROL: a fresh clean checkout — different paths, git history, "
+                "seal time and racer build —"
+            )
             print(f"   reproduces stable_root {second}")
         else:
-            print(f"POSITIVE CONTROL FAILED — stable root not reproducible: "
-                  f"{control_stable} vs {second}")
-            results.append(("stable-root reproduction across a fresh checkout", False,
-                            f"{control_stable} != {second}"))
+            print(
+                f"POSITIVE CONTROL FAILED — stable root not reproducible: "
+                f"{control_stable} vs {second}"
+            )
+            results.append(
+                (
+                    "stable-root reproduction across a fresh checkout",
+                    False,
+                    f"{control_stable} != {second}",
+                )
+            )
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
     killed = [r for r in results if r[1]]
     survived = [r for r in results if not r[1]]
     print()
-    print(f"evidence mutants: {len(killed)} killed, {len(survived)} survived "
-          f"(of {len(results)} executed)")
+    print(
+        f"evidence mutants: {len(killed)} killed, {len(survived)} survived "
+        f"(of {len(results)} executed)"
+    )
     if survived:
         print("SURVIVING MUTANTS — the evidence chain is false-green:")
         for name, _, reason in survived:

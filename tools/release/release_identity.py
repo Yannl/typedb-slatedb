@@ -96,7 +96,11 @@ def resolve(root: Path | None = None) -> dict:
     head = _git(root, "rev-parse", "HEAD")
     if head and SHA1_RE.match(head):
         status = _git(root, "status", "--porcelain")
-        dirty = len([ln for ln in (status or "").splitlines() if ln.strip()]) if status is not None else None
+        dirty = (
+            len([ln for ln in (status or "").splitlines() if ln.strip()])
+            if status is not None
+            else None
+        )
         return {
             "release_commit": head,
             "posture": "git-checkout",
@@ -120,7 +124,9 @@ def resolve(root: Path | None = None) -> dict:
         raise SourceIdentityUnavailable(f"{IDENTITY_FILENAME} is not valid JSON: {exc}")
 
     if body.get("schema") != SCHEMA:
-        raise SourceIdentityUnavailable(f"{IDENTITY_FILENAME} schema is {body.get('schema')!r}, expected {SCHEMA!r}")
+        raise SourceIdentityUnavailable(
+            f"{IDENTITY_FILENAME} schema is {body.get('schema')!r}, expected {SCHEMA!r}"
+        )
 
     commit = body.get("release_commit")
     if isinstance(commit, str) and PLACEHOLDER_RE.match(commit):
@@ -131,7 +137,9 @@ def resolve(root: Path | None = None) -> dict:
             f"build would have populated it."
         )
     if not isinstance(commit, str) or not SHA1_RE.match(commit):
-        raise SourceIdentityUnavailable(f"{IDENTITY_FILENAME} release_commit is not a 40-hex commit: {commit!r}")
+        raise SourceIdentityUnavailable(
+            f"{IDENTITY_FILENAME} release_commit is not a 40-hex commit: {commit!r}"
+        )
 
     digest = body.get("identity_digest")
     if digest is None:
@@ -191,7 +199,9 @@ def generate(root: Path, out_dir: Path) -> dict:
     }
     body["identity_digest"] = canonical_digest(body)
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / IDENTITY_FILENAME).write_text(json.dumps(body, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    (out_dir / IDENTITY_FILENAME).write_text(
+        json.dumps(body, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
     return body
 
 
@@ -202,7 +212,9 @@ def check_template(root: Path) -> list[str]:
     try:
         body = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return [f"{IDENTITY_FILENAME} is not committed - `git archive` would carry no identity at all"]
+        return [
+            f"{IDENTITY_FILENAME} is not committed - `git archive` would carry no identity at all"
+        ]
     except json.JSONDecodeError as exc:
         return [f"{IDENTITY_FILENAME} is not valid JSON: {exc}"]
 
@@ -217,18 +229,28 @@ def check_template(root: Path) -> list[str]:
                 f"future export claim one stale identity"
             )
     if body.get("identity_digest") is not None:
-        problems.append(f"{IDENTITY_FILENAME} identity_digest must be null in the committed template")
+        problems.append(
+            f"{IDENTITY_FILENAME} identity_digest must be null in the committed template"
+        )
 
     attrs = root / ".gitattributes"
     if not attrs.exists():
-        problems.append(".gitattributes is missing, so `git archive` will not expand the identity tokens")
-    elif not re.search(rf"^{re.escape(IDENTITY_FILENAME)}\s+export-subst\s*$", attrs.read_text(encoding="utf-8"), re.M):
+        problems.append(
+            ".gitattributes is missing, so `git archive` will not expand the identity tokens"
+        )
+    elif not re.search(
+        rf"^{re.escape(IDENTITY_FILENAME)}\s+export-subst\s*$",
+        attrs.read_text(encoding="utf-8"),
+        re.M,
+    ):
         problems.append(f".gitattributes does not mark {IDENTITY_FILENAME} `export-subst`")
     return problems
 
 
 def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--root", default=str(REPO_ROOT))
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--require-verified", action="store_true")
@@ -251,22 +273,32 @@ def main(argv: list[str]) -> int:
     try:
         if args.generate:
             body = generate(root, Path(args.out) if args.out else root)
-            print(json.dumps(body, indent=2) if args.json else
-                  f"wrote {IDENTITY_FILENAME}: {body['release_commit']} "
-                  f"(digest {body['identity_digest'][:16]}…, dirty_paths {len(body['dirty_paths'])})")
+            print(
+                json.dumps(body, indent=2)
+                if args.json
+                else f"wrote {IDENTITY_FILENAME}: {body['release_commit']} "
+                f"(digest {body['identity_digest'][:16]}…, dirty_paths {len(body['dirty_paths'])})"
+            )
             return 0
         ident = resolve(root)
     except SourceIdentityUnavailable as exc:
-        print(json.dumps({"outcome": "SOURCE_IDENTITY_UNAVAILABLE", "detail": str(exc)}, indent=2)
-              if args.json else f"SOURCE_IDENTITY_UNAVAILABLE: {exc}", file=sys.stderr)
+        print(
+            json.dumps({"outcome": "SOURCE_IDENTITY_UNAVAILABLE", "detail": str(exc)}, indent=2)
+            if args.json
+            else f"SOURCE_IDENTITY_UNAVAILABLE: {exc}",
+            file=sys.stderr,
+        )
         return 1
 
     if args.require_verified and not ident["verified"]:
         print(f"RELEASE IDENTITY NOT VERIFIED: {ident['detail']}", file=sys.stderr)
         return 1
-    print(json.dumps(ident, indent=2) if args.json else
-          f"{ident['release_commit']}  posture={ident['posture']} verified={ident['verified']} "
-          f"dirty_paths={ident['dirty_paths']}")
+    print(
+        json.dumps(ident, indent=2)
+        if args.json
+        else f"{ident['release_commit']}  posture={ident['posture']} verified={ident['verified']} "
+        f"dirty_paths={ident['dirty_paths']}"
+    )
     return 0
 
 

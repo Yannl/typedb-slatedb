@@ -5,6 +5,7 @@ A signer nobody checked is not a signer. These are the published vectors,
 so a bug in the pure-Python implementation shows up here rather than as a
 release signature that only this file believes in.
 """
+
 import hashlib
 import pathlib
 import subprocess
@@ -18,28 +19,33 @@ NODE_ED25519 = pathlib.Path(__file__).resolve().parent / "ed25519_node.mjs"
 
 # (seed, public, message, signature) — RFC 8032 §7.1 TEST 1, TEST 2, TEST 3
 VECTORS = [
-    ("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
-     "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
-     "",
-     "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8"
-     "821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"),
-    ("4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
-     "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
-     "72",
-     "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085"
-     "ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00"),
-    ("c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7",
-     "fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025",
-     "af82",
-     "6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac18f"
-     "f9b538d16f290ae67f760984dc6594a7c15e9716ed28dc027beceea1ec40a"),
+    (
+        "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+        "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "",
+        "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8"
+        "821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
+    ),
+    (
+        "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+        "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+        "72",
+        "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085"
+        "ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00",
+    ),
+    (
+        "c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7",
+        "fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025",
+        "af82",
+        "6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac18f"
+        "f9b538d16f290ae67f760984dc6594a7c15e9716ed28dc027beceea1ec40a",
+    ),
 ]
 
 
 def node(argv):
     """Run the independent Node implementation; its first stdout line."""
-    r = subprocess.run(["node", str(NODE_ED25519), *argv],
-                       capture_output=True, text=True)
+    r = subprocess.run(["node", str(NODE_ED25519), *argv], capture_output=True, text=True)
     return r.stdout.strip() or f"NODE_ERROR:{r.stderr.strip()[:200]}"
 
 
@@ -75,8 +81,7 @@ def cross_implementation_checks():
         other = hashlib.sha256(f"release-cross-other/{i}".encode()).digest()
         if ed.verify(ed.public_key(other), msg, sig_py):
             failures.append(f"cross {i}: python accepted a wrong-key signature")
-        if node(["verify", ed.public_key(other).hex(), msg.hex(), sig_py.hex()]) \
-                != "NOT_VERIFIED":
+        if node(["verify", ed.public_key(other).hex(), msg.hex(), sig_py.hex()]) != "NOT_VERIFIED":
             failures.append(f"cross {i}: node accepted a wrong-key signature")
     return failures
 
@@ -107,18 +112,18 @@ def main():
         if ed.verify(want_pub, bytes(bad_msg), want_sig):
             failures.append(f"vector {i}: verify accepted a modified message")
         if node(["verify", want_pub.hex(), msg.hex(), want_sig.hex()]) != "VERIFIED":
-            failures.append(f"vector {i}: independent Node verifier rejected "
-                            "a published signature")
+            failures.append(f"vector {i}: independent Node verifier rejected a published signature")
         if node(["verify", want_pub.hex(), msg.hex(), bytes(bad).hex()]) != "NOT_VERIFIED":
-            failures.append(f"vector {i}: independent Node verifier accepted "
-                            "a corrupted signature")
+            failures.append(f"vector {i}: independent Node verifier accepted a corrupted signature")
 
     failures.extend(cross_implementation_checks())
 
     for f in failures:
         print("FAIL:", f)
-    print(f"ed25519: {len(VECTORS)} RFC 8032 vectors + 8 cross-implementation "
-          f"agreements checked, {len(failures)} failures")
+    print(
+        f"ed25519: {len(VECTORS)} RFC 8032 vectors + 8 cross-implementation "
+        f"agreements checked, {len(failures)} failures"
+    )
     return 1 if failures else 0
 
 

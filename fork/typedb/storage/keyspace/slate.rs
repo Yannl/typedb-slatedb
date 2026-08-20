@@ -1062,18 +1062,29 @@ impl OrphanInventory {
 /// it never grows the journal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MultipartBudgetRefused {
-    Attempts { open: usize, max: usize },
-    Bytes { reserved: u64, incoming: u64, max: u64 },
+    Attempts {
+        open: usize,
+        max: usize,
+    },
+    Bytes {
+        reserved: u64,
+        incoming: u64,
+        max: u64,
+    },
     /// R6-STOR-02: the PER-OBJECT ceiling, independent of the aggregate.
-    Object { streamed: u64, incoming: u64, max: u64 },
+    Object {
+        streamed: u64,
+        incoming: u64,
+        max: u64,
+    },
 }
 
 impl MultipartBudgetRefused {
     fn into_store_error(self, location: &ObjectPath) -> slatedb::object_store::Error {
         let detail = match self {
-            Self::Attempts { open, max } => format!(
-                "{open} multipart attempts already open, at the admission budget of {max} concurrent attempts"
-            ),
+            Self::Attempts { open, max } => {
+                format!("{open} multipart attempts already open, at the admission budget of {max} concurrent attempts")
+            }
             Self::Bytes { reserved, incoming, max } => format!(
                 "{reserved} bytes already journaled and {incoming} more requested, over the admission \
                  budget of {max} journaled bytes"
@@ -1306,10 +1317,7 @@ mod authority {
             to: &ObjectPath,
             options: CopyOptions,
         ) -> slatedb::object_store::Result<()>;
-        async fn list_with_delimiter(
-            &self,
-            prefix: Option<&ObjectPath>,
-        ) -> slatedb::object_store::Result<ListResult>;
+        async fn list_with_delimiter(&self, prefix: Option<&ObjectPath>) -> slatedb::object_store::Result<ListResult>;
         fn list(&self, prefix: Option<&ObjectPath>) -> BoxStream<'static, slatedb::object_store::Result<ObjectMeta>>;
     }
 
@@ -1321,8 +1329,7 @@ mod authority {
             key: &StagingKey,
             options: PutMultipartOptions,
         ) -> slatedb::object_store::Result<Box<dyn MultipartUpload>>;
-        async fn get_opts(&self, key: &StagingKey, options: GetOptions)
-        -> slatedb::object_store::Result<GetResult>;
+        async fn get_opts(&self, key: &StagingKey, options: GetOptions) -> slatedb::object_store::Result<GetResult>;
         async fn head(&self, key: &StagingKey) -> slatedb::object_store::Result<ObjectMeta>;
         async fn reclaim(&self, key: &StagingKey) -> slatedb::object_store::Result<()>;
     }
@@ -1420,10 +1427,7 @@ mod authority {
             self.store.copy_opts(from, to, create).await
         }
 
-        async fn list_with_delimiter(
-            &self,
-            prefix: Option<&ObjectPath>,
-        ) -> slatedb::object_store::Result<ListResult> {
+        async fn list_with_delimiter(&self, prefix: Option<&ObjectPath>) -> slatedb::object_store::Result<ListResult> {
             self.store.list_with_delimiter(prefix).await
         }
 
@@ -1445,11 +1449,7 @@ mod authority {
             self.store.put_multipart_opts(key.path(), options).await
         }
 
-        async fn get_opts(
-            &self,
-            key: &StagingKey,
-            options: GetOptions,
-        ) -> slatedb::object_store::Result<GetResult> {
+        async fn get_opts(&self, key: &StagingKey, options: GetOptions) -> slatedb::object_store::Result<GetResult> {
             if !is_multipart_attempt_key(key.path()) {
                 return Err(not_staging(key));
             }
@@ -2182,9 +2182,7 @@ impl JournaledMultipart {
         Self::own_state_uncommitted(&journal, self.attempt_id)?;
         match journal.active.get(self.location.as_ref()) {
             Some(active_id) if *active_id == self.attempt_id => Ok(()),
-            Some(active_id) => {
-                Err(format!("attempt {} is stale; attempt {active_id} superseded it", self.attempt_id))
-            }
+            Some(active_id) => Err(format!("attempt {} is stale; attempt {active_id} superseded it", self.attempt_id)),
             None => Err("no journal entry for this location".to_owned()),
         }
     }
@@ -2425,8 +2423,7 @@ impl MultipartUpload for JournaledMultipart {
             Ok(()) => PromoteOutcome::Won,
             Err(slatedb::object_store::Error::AlreadyExists { .. }) => PromoteOutcome::Occupied,
             Err(
-                slatedb::object_store::Error::NotSupported { .. }
-                | slatedb::object_store::Error::NotImplemented { .. },
+                slatedb::object_store::Error::NotSupported { .. } | slatedb::object_store::Error::NotImplemented { .. },
             ) => match self.promote_by_streaming_put(&expected).await {
                 Ok(outcome) => outcome,
                 Err(error) => {
@@ -2635,8 +2632,7 @@ async fn stream_object_to_file(
             if bytes.is_empty() {
                 return Err(store_error(slatedb::object_store::Error::Precondition {
                     path: location.to_string(),
-                    source: format!("a ranged read at offset {offset} returned no bytes of {size} (R6-STOR-02)")
-                        .into(),
+                    source: format!("a ranged read at offset {offset} returned no bytes of {size} (R6-STOR-02)").into(),
                 }));
             }
             io::Write::write_all(&mut file, &bytes).map_err(io_error)?;
@@ -2976,13 +2972,15 @@ impl SlateKeyspace {
         // inferred as emptiness: it is missing or corrupt live root state, and
         // the checkpoint is refused BEFORE any file is copied, leaving the
         // checkpoint target (and any predecessor state) untouched.
-        let manifest_dir = find_manifest_dir(&self.path).map_err(|error| Arc::new(io_error(error)))?.ok_or_else(
-            || Arc::new(missing_manifest_root_error(format!("no manifest directory under {:?}", self.path))),
-        )?;
+        let manifest_dir =
+            find_manifest_dir(&self.path).map_err(|error| Arc::new(io_error(error)))?.ok_or_else(|| {
+                Arc::new(missing_manifest_root_error(format!("no manifest directory under {:?}", self.path)))
+            })?;
         // lexicographic max = newest manifest, same pin as checkpoint_remote
-        let pinned = pin_newest_manifest(&manifest_dir)
-            .map_err(|error| Arc::new(io_error(error)))?
-            .ok_or_else(|| Arc::new(missing_manifest_root_error(format!("empty manifest directory {manifest_dir:?}"))))?;
+        let pinned =
+            pin_newest_manifest(&manifest_dir).map_err(|error| Arc::new(io_error(error)))?.ok_or_else(|| {
+                Arc::new(missing_manifest_root_error(format!("empty manifest directory {manifest_dir:?}")))
+            })?;
 
         copy_dir_recursive_excluding(&self.path, checkpoint_keyspace_dir, Some(&manifest_dir))
             .map_err(|error| Arc::new(io_error(error)))?;
@@ -4933,8 +4931,7 @@ mod immutability_boundary_tests {
                 let mut onto_existing = store.put_multipart(&manifest).await.unwrap();
                 onto_existing.put_part(PutPayload::from_static(b"manifest v2 via multipart")).await.unwrap();
                 let overwrite = onto_existing.complete().await;
-                let fresh_key =
-                    ObjectPath::from(format!("base/fv1/m1/keyspace/{MANIFEST_SUBDIR}/0002.manifest"));
+                let fresh_key = ObjectPath::from(format!("base/fv1/m1/keyspace/{MANIFEST_SUBDIR}/0002.manifest"));
                 let mut onto_absent = store.put_multipart(&fresh_key).await.unwrap();
                 onto_absent.put_part(PutPayload::from_static(b"manifest v2")).await.unwrap();
                 let fresh = onto_absent.complete().await;
@@ -5147,10 +5144,7 @@ mod multipart_promote_tests {
             self.inner.list(prefix)
         }
 
-        async fn list_with_delimiter(
-            &self,
-            prefix: Option<&ObjectPath>,
-        ) -> slatedb::object_store::Result<ListResult> {
+        async fn list_with_delimiter(&self, prefix: Option<&ObjectPath>) -> slatedb::object_store::Result<ListResult> {
             self.inner.list_with_delimiter(prefix).await
         }
 
@@ -5649,10 +5643,7 @@ mod r6_multipart_integrity_tests {
             self.inner.list(prefix)
         }
 
-        async fn list_with_delimiter(
-            &self,
-            prefix: Option<&ObjectPath>,
-        ) -> slatedb::object_store::Result<ListResult> {
+        async fn list_with_delimiter(&self, prefix: Option<&ObjectPath>) -> slatedb::object_store::Result<ListResult> {
             self.inner.list_with_delimiter(prefix).await
         }
 
@@ -5754,7 +5745,11 @@ mod r6_multipart_integrity_tests {
     }
 
     /// Stream `parts` through a multipart upload on `location`.
-    fn upload(store: &Arc<NoDeleteStore>, location: &ObjectPath, parts: Vec<Vec<u8>>) -> slatedb::object_store::Result<PutResult> {
+    fn upload(
+        store: &Arc<NoDeleteStore>,
+        location: &ObjectPath,
+        parts: Vec<Vec<u8>>,
+    ) -> slatedb::object_store::Result<PutResult> {
         let store = store.clone();
         let location = location.clone();
         bridge(async move {
@@ -6057,10 +6052,7 @@ mod r6_multipart_integrity_tests {
         let refused = upload(&store, &location, vec![vec![b'z'; 32]])
             .expect_err("an object over the materialised-promote cap must be refused");
         assert!(refused.to_string().contains("R6-STOR-02"), "the refusal cites the bound: {refused}");
-        assert!(
-            refused.to_string().contains("materialised-promote maximum"),
-            "the refusal names the cap: {refused}",
-        );
+        assert!(refused.to_string().contains("materialised-promote maximum"), "the refusal names the cap: {refused}",);
         assert!(read(&store, &location).is_none(), "nothing may be published");
 
         // an object AT the cap still publishes through the same fallback

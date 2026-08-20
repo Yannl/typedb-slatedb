@@ -26,12 +26,14 @@ import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { computeProbesSourceRoot, ENVELOPE_SCHEMA, signEnvelope } from "./approval.ts";
+import { resolveReleaseCommit } from "../../tools/release/release-identity.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, "..", "..");
 
 function gitHead(): string {
-  return execFileSync("git", ["-C", REPO_ROOT, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  // an envelope must be signable from a source archive too, not only a checkout
+  return resolveReleaseCommit(REPO_ROOT);
 }
 
 function keygen(prefix: string): number {

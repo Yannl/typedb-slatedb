@@ -892,10 +892,7 @@ impl FileReader {
     fn payload_available(&self, offset: u64, header: &ParsedHeader) -> Result<u64, DurabilityServiceError> {
         let available = self.file.len - offset - header.header_len;
         if header.encoded_len > available {
-            return Err(self.defect(
-                offset,
-                FrameDefect::TruncatedPayload { declared: header.encoded_len, available },
-            ));
+            return Err(self.defect(offset, FrameDefect::TruncatedPayload { declared: header.encoded_len, available }));
         }
         Ok(available)
     }

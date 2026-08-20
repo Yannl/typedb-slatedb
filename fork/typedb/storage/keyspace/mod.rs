@@ -16,11 +16,6 @@ pub use keyspace::{
 /// identity can both derive the object namespace from opaque controller
 /// identifiers rather than a host-local path.
 pub use slate::MaterialisationNamespace;
-/// R5-STOR-01: the complete effective S3 configuration one database open runs
-/// with, resolved exactly once at the factory's `BackendContext` admission
-/// point and carried (secrets as opaque handles) inside the context. The
-/// keyspace layer consumes it; it never resolves it.
-pub use slate::{S3RuntimeConfig, S3Secret};
 // R4-STOR-01/R5-STOR-01: the factory's admission point reads these variable
 // NAMES (the only place their values are read) and validates the cache budget
 // with the same pure validator the O-01 tests pin — one set of names and one
@@ -29,6 +24,11 @@ pub(crate) use slate::{
     CacheConfigError, S3_ACCESS_KEY_ENV, S3_BUCKET_ENV, S3_CACHE_BYTES_ENV, S3_ENDPOINT_ENV, S3_PREFIX_ENV,
     S3_REGION_ENV, S3_SECRET_KEY_ENV, validate_cache_config,
 };
+/// R5-STOR-01: the complete effective S3 configuration one database open runs
+/// with, resolved exactly once at the factory's `BackendContext` admission
+/// point and carried (secrets as opaque handles) inside the context. The
+/// keyspace layer consumes it; it never resolves it.
+pub use slate::{S3RuntimeConfig, S3Secret};
 
 use crate::{
     keyspace::cursor::RawCursor,

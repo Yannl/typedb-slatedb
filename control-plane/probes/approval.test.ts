@@ -22,10 +22,11 @@ import {
   isRunClaimed, signEnvelope, verifyEnvelopeSignature,
 } from "./approval.ts";
 import { runPreflight } from "./preflight.ts";
+import { resolveReleaseCommit } from "../../tools/release/release-identity.mts";
 
 const PROBES_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(PROBES_DIR, "..", "..");
-const HEAD = execFileSync("git", ["-C", REPO_ROOT, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+const HEAD = resolveReleaseCommit(REPO_ROOT);
 const SOURCE_ROOT = computeProbesSourceRoot(PROBES_DIR, join(REPO_ROOT, "control-plane", "wrangler.probe-harness.toml"));
 
 const owner = generateKeyPairSync("ed25519");

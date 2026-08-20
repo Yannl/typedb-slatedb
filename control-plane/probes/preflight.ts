@@ -39,6 +39,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { ProviderConfigError, realConfigFromEnv } from "./provider.ts";
+import { resolveReleaseCommit } from "../../tools/release/release-identity.mts";
 import {
   checkEnvelopeBinding, claimIdentity, computeProbesSourceRoot, isRunClaimed, verifyEnvelopeSignature,
   type SignedEnvelope,
@@ -213,11 +214,16 @@ function checkEnvelope(
   }
 
   // --- binding: this envelope authorizes exactly THIS run ---
+  // R6-PORT-01: a source archive has no .git, and the envelope is BOUND to
+  // the release commit — so resolving identity by shelling out to git made
+  // the approval path unusable outside a checkout. resolveReleaseCommit reads
+  // git where it exists and the digest-bound RELEASE-IDENTITY.json where it
+  // does not; it refuses rather than inventing an identity.
   let releaseCommit = "";
   try {
-    releaseCommit = execFileSync("git", ["-C", REPO_ROOT, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+    releaseCommit = resolveReleaseCommit(REPO_ROOT);
   } catch {
-    reasons.push({ code: "PREREQUISITE_MISSING", detail: "cannot resolve git HEAD for release-commit binding" });
+    reasons.push({ code: "PREREQUISITE_MISSING", detail: "cannot resolve the release commit for envelope binding" });
   }
   const probesSourceRoot = computeProbesSourceRoot(
     PROBES_DIR,

@@ -1,5 +1,5 @@
-argv: ['/tmp/release-lane-r6wfp9zb/x/typedb-all-linux-x86_64-0.0.0/server/typedb_server_bin', '--config', '/tmp/release-lane-r6wfp9zb/x/typedb-all-linux-x86_64-0.0.0/server/config.yml', '--storage.data-directory', '/tmp/release-lane-r6wfp9zb/x/typedb-all-linux-x86_64-0.0.0/_release_lane_data', '--server.listen-address', '127.0.0.1:50783', '--server.http.enabled', 'true', '--server.http.listen-address', '127.0.0.1:49457', '--diagnostics.reporting.errors', 'false', '--diagnostics.reporting.metrics', 'false', '--diagnostics.monitoring.enabled', 'false', '--logging.directory', '/tmp/release-lane-r6wfp9zb/x/typedb-all-linux-x86_64-0.0.0/_release_lane_logs']
-/health on 127.0.0.1:49457 -> 204
+argv: ['/tmp/release-lane-2i_mykpw/x/typedb-all-linux-x86_64-0.0.0/server/typedb_server_bin', '--config', '/tmp/release-lane-2i_mykpw/x/typedb-all-linux-x86_64-0.0.0/server/config.yml', '--storage.data-directory', '/tmp/release-lane-2i_mykpw/x/typedb-all-linux-x86_64-0.0.0/_release_lane_data', '--server.listen-address', '127.0.0.1:45329', '--server.http.enabled', 'true', '--server.http.listen-address', '127.0.0.1:42701', '--diagnostics.reporting.errors', 'false', '--diagnostics.reporting.metrics', 'false', '--diagnostics.monitoring.enabled', 'false', '--logging.directory', '/tmp/release-lane-2i_mykpw/x/typedb-all-linux-x86_64-0.0.0/_release_lane_logs']
+/health on 127.0.0.1:42701 -> 204
 --- server output (last 4000 bytes) ---
 =====================================================================================
      ________ __      __ _____    _______  _____    _____       _______  _______
@@ -15,8 +15,8 @@ argv: ['/tmp/release-lane-r6wfp9zb/x/typedb-all-linux-x86_64-0.0.0/server/typedb
 
 Running TypeDB CE 3.12.3 in development mode.
 Serving:
-  gRPC:       127.0.0.1:50783
-  HTTP:       127.0.0.1:49457
+  gRPC:       127.0.0.1:45329
+  HTTP:       127.0.0.1:42701
   Admin:      disabled
   Monitoring: disabled
 TLS: disabled
@@ -24,10 +24,10 @@ TLS: disabled
   Drivers must be configured to connect *without TLS*.
 
 To connect:
-  Studio:  https://studio.typedb.com/connect?address=http://127.0.0.1:49457&username=admin
-  Console: typedb console --address 127.0.0.1:50783 --tls-disabled --username admin
+  Studio:  https://studio.typedb.com/connect?address=http://127.0.0.1:42701&username=admin
+  Console: typedb console --address 127.0.0.1:45329 --tls-disabled --username admin
 
-2026-08-20T09:12:32.070329Z  INFO ThreadId(01) server/lib.rs:485: 
+2026-08-20T09:42:00.048595Z  INFO ThreadId(01) server/lib.rs:485: 
 Ready!
 
 Received SIGTERM. Initiating shutdown...

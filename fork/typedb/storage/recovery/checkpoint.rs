@@ -250,10 +250,8 @@ impl CheckpointReader {
         let ValidatedCheckpointRecovery { watermark: _, recovered_commits, next_sequence_number } = validated;
 
         let (scratch_dir, retired_dir) = self.restore_working_directories(keyspaces_dir)?;
-        let scratch_error = |error: io::Error| CheckpointRestore {
-            dir: self.directory.clone(),
-            source: Arc::new(error),
-        };
+        let scratch_error =
+            |error: io::Error| CheckpointRestore { dir: self.directory.clone(), source: Arc::new(error) };
 
         // a leftover scratch directory from an earlier in-process failure is
         // unproven residue; start from empty.
@@ -392,7 +390,9 @@ impl CheckpointReader {
     ///   The digest comparison covers every canonical field (kind, policies,
     ///   endpoint/bucket/prefix), so no single field can drift silently.
     fn validate_identity(&self, expected: Option<&BackendIdentity>) -> Result<(), CheckpointLoadError> {
-        use CheckpointLoadError::{AdditionalDataIO, CheckpointIdentityMismatch, CheckpointLegacyIdentityRequiresImport};
+        use CheckpointLoadError::{
+            AdditionalDataIO, CheckpointIdentityMismatch, CheckpointLegacyIdentityRequiresImport,
+        };
 
         let Some(expected) = expected else { return Ok(()) };
         let path = self.directory.join(CHECKPOINT_IDENTITY_FILE_NAME);
@@ -1122,8 +1122,7 @@ impl CheckpointWriter {
         // cannot reorder selection or retention.
         let watermark = read_watermark_at(&self.temporary_directory).map_err(|_| MetadataUnparseable {
             dir: self.temporary_directory.clone(),
-            content: fs::read_to_string(self.temporary_directory.join(STORAGE_METADATA_FILE_NAME))
-                .unwrap_or_default(),
+            content: fs::read_to_string(self.temporary_directory.join(STORAGE_METADATA_FILE_NAME)).unwrap_or_default(),
         })?;
         let checkpoint_parent = self
             .temporary_directory
@@ -2322,7 +2321,12 @@ mod complete_marker_tests {
         let serialised = fs::read_to_string(dir.join(CHECKPOINT_COMPLETE_FILE_NAME)).unwrap();
         let entry_line = serialised
             .lines()
-            .find(|line| !line.starts_with("CHECKPOINT-COMPLETE") && !line.starts_with("root") && !line.starts_with("watermark") && !line.starts_with("created-utc"))
+            .find(|line| {
+                !line.starts_with("CHECKPOINT-COMPLETE")
+                    && !line.starts_with("root")
+                    && !line.starts_with("watermark")
+                    && !line.starts_with("created-utc")
+            })
             .expect("the manifest carries at least one entry line");
         let forged = format!("{}{entry_line}\n", serialised);
         assert!(
@@ -2504,8 +2508,8 @@ mod restore_durability_barrier_tests {
         assert_eq!(replayed.present(), probes.len());
 
         let reopened = {
-            let keyspaces = Keyspaces::open::<TestKs>(&scratch, &resources, StorageBackend::Rocks)
-                .expect("rocks scratch reopens");
+            let keyspaces =
+                Keyspaces::open::<TestKs>(&scratch, &resources, StorageBackend::Rocks).expect("rocks scratch reopens");
             let witness = PostReplayWitness::capture(&keyspaces, &probes).expect("witness readable after reopen");
             keyspaces.flush_and_close().expect("the reopen is closed through the same barrier");
             witness
@@ -2697,10 +2701,9 @@ mod restore_durability_barrier_tests {
         // one validated commit per sequence, each writing its own key
         for sequence in 2u64..6 {
             let mut operations = OperationsBuffer::new();
-            operations.writes_in_mut(KeyspaceId(0)).insert(
-                ByteArray::copy(format!("key-{sequence}").as_bytes()),
-                ByteArray::empty(),
-            );
+            operations
+                .writes_in_mut(KeyspaceId(0))
+                .insert(ByteArray::copy(format!("key-{sequence}").as_bytes()), ByteArray::empty());
             recovered.insert(
                 SequenceNumber::new(sequence),
                 RecoveryCommitStatus::Validated(CommitRecord::new(

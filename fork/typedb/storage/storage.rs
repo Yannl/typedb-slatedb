@@ -1584,15 +1584,9 @@ mod tests {
         let key = StorageKeyArray::from((TestKeyspaceSet::TestKeyspace, b"key"));
         let mut operations = OperationsBuffer::new();
         operations.writes_in_mut(key.keyspace_id()).insert(key.byte_array().clone(), ByteArray::empty());
-        let record = CommitRecord::new(
-            operations,
-            storage.durability_client.previous(),
-            CommitType::Data,
-            SnapshotId::new(),
-        );
-        storage
-            .snapshot_commit(WriteSnapshot::new_with_commit_record(storage.clone(), record), &mut profile)
-            .unwrap();
+        let record =
+            CommitRecord::new(operations, storage.durability_client.previous(), CommitType::Data, SnapshotId::new());
+        storage.snapshot_commit(WriteSnapshot::new_with_commit_record(storage.clone(), record), &mut profile).unwrap();
         let watermark = storage.snapshot_watermark();
         assert!(watermark > SequenceNumber::MIN, "the commit must have advanced the watermark");
 
@@ -1669,8 +1663,7 @@ mod backend_context_barrier_tests {
 
         // 2. the barrier mutant: the environment changes to a DIFFERENT
         //    profile before the MVCC open runs.
-        let mutated_profile =
-            if admitted.profile() == StorageBackendProfile::U2SlateLocalFs { "U1" } else { "U2" };
+        let mutated_profile = if admitted.profile() == StorageBackendProfile::U2SlateLocalFs { "U1" } else { "U2" };
         let original = std::env::var(STORAGE_PROFILE_ENV).ok();
         // SAFETY: single-threaded with respect to this variable — no other
         // test in this binary reads TYPEDB_STORAGE_PROFILE, and it is

@@ -53,6 +53,7 @@ import tempfile
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import ed25519_ref as ed  # noqa: E402
 import lanes as lanes_mod  # noqa: E402
+import release_identity  # noqa: E402
 
 HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parents[1]
@@ -139,28 +140,74 @@ def source_identity():
     """Commit/tree/dirt of the tree that produced the artifact.
 
     R6-PORT-01: a `git archive` materialisation has no `.git`, so git is
-    allowed to be absent — but then the identity is explicitly UNBOUND and
-    release-grade verification refuses it, rather than a tool quietly
-    reporting an identity it cannot establish. `RELEASE_SOURCE_COMMIT` /
-    `RELEASE_SOURCE_TREE` let an archive carry the identity it was cut
-    from; when git IS present the two must agree.
+    allowed to be absent. The first version of this function then fell back
+    to `RELEASE_SOURCE_COMMIT`/`RELEASE_SOURCE_TREE`, which is an
+    UNAUTHENTICATED channel: anyone able to set an environment variable
+    could name the commit a release claims to be cut from. Those variables
+    are now a last resort recorded as such, and the preferred archive
+    source is `tools/release/release_identity.py`, whose RELEASE-IDENTITY.json
+    is bound by a digest over its own body.
+
+    `bound_by` records which of the three actually spoke, and anything
+    weaker than git or a verified identity file is a release-grade blocker
+    rather than a silent equivalence.
     """
     commit = git("rev-parse", "HEAD")
     tree = git("rev-parse", "HEAD^{tree}")
+
+    identity, identity_digest, identity_verified = None, None, False
+    try:
+        identity = release_identity.resolve(REPO)
+    except Exception:                                   # noqa: BLE001
+        # An unresolvable identity is a normal posture (a bare tarball), not
+        # an error here: it simply leaves the identity unbound below.
+        identity = None
+    if identity is not None:
+        identity_verified = bool(identity.get("verified"))
+        identity_digest = identity.get("identity_digest")
+        if commit and identity.get("release_commit") \
+                and commit != identity["release_commit"]:
+            raise Refusal(
+                f"SOURCE_IDENTITY_CONFLICT git={commit} "
+                f"identity-file={identity['release_commit']}")
+
     env_commit = os.environ.get("RELEASE_SOURCE_COMMIT") or None
     env_tree = os.environ.get("RELEASE_SOURCE_TREE") or None
     if commit and env_commit and commit != env_commit:
         raise Refusal(f"SOURCE_IDENTITY_CONFLICT git={commit} env={env_commit}")
     if tree and env_tree and tree != env_tree:
         raise Refusal(f"SOURCE_TREE_CONFLICT git={tree} env={env_tree}")
+    if identity is not None and env_commit \
+            and identity.get("release_commit") != env_commit:
+        raise Refusal(
+            f"SOURCE_IDENTITY_CONFLICT identity-file="
+            f"{identity.get('release_commit')} env={env_commit}")
+
     status = git("status", "--porcelain")
     dirty = sorted(line[3:] for line in status.splitlines()) if status else []
+    if identity is not None and status is None \
+            and identity.get("dirty_paths") is not None:
+        dirty = [f"(identity-file reports {identity['dirty_paths']} dirty paths)"]
+
+    if commit:
+        bound_by = "git"
+    elif identity is not None and identity.get("release_commit"):
+        bound_by = "release-identity-file"
+    elif env_commit:
+        bound_by = "environment"                        # unauthenticated
+    else:
+        bound_by = None
+
     return {
-        "commit": commit or env_commit,
+        "commit": commit or (identity or {}).get("release_commit") or env_commit,
         "tree": tree or env_tree,
-        "bound_by": "git" if commit else ("environment" if env_commit else None),
+        "bound_by": bound_by,
+        "identity_posture": (identity or {}).get("posture"),
+        "identity_verified": identity_verified,
+        "identity_digest": identity_digest,
         "dirty_paths": dirty,
-        "dirty_paths_known": status is not None,
+        "dirty_paths_known": status is not None
+        or (identity is not None and identity.get("dirty_paths") is not None),
         "source_lock_sha256": (sha256_file(SOURCE_LOCK)
                                if SOURCE_LOCK.exists() else None),
     }
@@ -655,6 +702,12 @@ def cmd_verify(args):
     src = record["source"]
     if not src.get("commit"):
         grade_issues.append("SOURCE_IDENTITY_UNBOUND")
+    elif src.get("bound_by") == "environment":
+        # an environment variable is not evidence of anything
+        grade_issues.append("SOURCE_IDENTITY_UNAUTHENTICATED")
+    elif src.get("bound_by") == "release-identity-file" \
+            and not src.get("identity_verified"):
+        grade_issues.append("SOURCE_IDENTITY_FILE_UNVERIFIED")
     if not src.get("dirty_paths_known"):
         grade_issues.append("SOURCE_DIRT_UNKNOWN")
     elif src.get("dirty_paths"):

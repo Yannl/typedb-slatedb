@@ -30,6 +30,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { computeProbesSourceRoot, ENVELOPE_SCHEMA, signEnvelope } from "./approval.ts";
+import { resolveReleaseCommit } from "../../tools/release/release-identity.mts";
 
 const PROBES_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -77,7 +78,7 @@ afterEach(() => {
 const testOwner = generateKeyPairSync("ed25519");
 const TEST_OWNER_PRIVATE = testOwner.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
 export const TEST_OWNER_PUBLIC = testOwner.publicKey.export({ type: "spki", format: "pem" }).toString();
-const GIT_HEAD = execFileSync("git", ["-C", join(PROBES_DIR, "..", ".."), "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+const GIT_HEAD = resolveReleaseCommit(join(PROBES_DIR, "..", ".."));
 const PROBES_SOURCE_ROOT = computeProbesSourceRoot(
   PROBES_DIR,
   join(PROBES_DIR, "..", "wrangler.probe-harness.toml"),

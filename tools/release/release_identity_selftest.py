@@ -106,20 +106,49 @@ def make_checkout(tmp: Path) -> Path:
     return dst
 
 
+# The postures are exercised over a REPRESENTATIVE SUBTREE (the identity file
+# plus tools/release), not the whole repository. That is not a shortcut for
+# convenience: this repository carries ~700 MB of archived evidence logs, and
+# copying them six times to test a resolver would make the self-test fail for
+# want of disk rather than for want of correctness - which it did, once, before
+# this was narrowed. Everything the resolver reads is inside the subtree, the
+# archive is a REAL `git archive` of REAL committed bytes (so export-subst is
+# genuinely exercised through the real .gitattributes), and the negative
+# postures are the same subtree with the identity removed or altered.
+ARCHIVE_PATHS = ["RELEASE-IDENTITY.json", ".gitattributes", "tools/release"]
+
+
 def make_archive(tmp: Path, source: Path) -> Path:
     dst = tmp / "archive"
     dst.mkdir()
     tar_path = tmp / "archive.tar"
     with tar_path.open("wb") as fh:
-        subprocess.run(["git", "-C", str(source), "archive", "HEAD"], stdout=fh, check=True)
+        subprocess.run(
+            ["git", "-C", str(source), "archive", "HEAD", "--", *ARCHIVE_PATHS], stdout=fh, check=True
+        )
     with tarfile.open(tar_path) as tf:
         tf.extractall(dst)  # noqa: S202 - our own archive, produced two lines above
     return dst
 
 
+def _subtree_copy(source: Path, dst: Path) -> Path:
+    """The same paths `git archive` exports, copied WITHOUT .git."""
+    dst.mkdir(parents=True, exist_ok=True)
+    for rel in ARCHIVE_PATHS:
+        src = source / rel
+        if not src.exists():
+            continue
+        target = dst / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if src.is_dir():
+            shutil.copytree(src, target, ignore=shutil.ignore_patterns("__pycache__"))
+        else:
+            shutil.copy2(src, target)
+    return dst
+
+
 def make_release_tarball(tmp: Path, source: Path) -> Path:
-    staged = tmp / "release-stage"
-    shutil.copytree(source, staged, ignore=shutil.ignore_patterns(".git"))
+    staged = _subtree_copy(source, tmp / "release-stage")
     generate(source, staged)  # identity generated FROM the checkout, INTO the artifact
     tar_path = tmp / "release.tar"
     with tarfile.open(tar_path, "w") as tf:
@@ -142,9 +171,10 @@ def make_installed(tmp: Path, release: Path) -> Path:
 
 
 def make_naked_copy(tmp: Path, source: Path) -> Path:
-    dst = tmp / "naked"
-    shutil.copytree(source, dst, ignore=shutil.ignore_patterns(".git"))
-    return dst
+    """A checkout COPIED rather than exported: no .git, and the identity file
+    still carries its literal $Format: placeholders because nothing expanded
+    them. This is the posture that must REFUSE."""
+    return _subtree_copy(source, tmp / "naked")
 
 
 def make_tampered(tmp: Path, release: Path) -> Path:

@@ -32,6 +32,15 @@ GRPC_PORT = 1729           # fixed by Context::DEFAULT_ADDRESS upstream
 HTTP_PORT = 8729
 LOOPBACK = "127.0.0.1"
 
+# What the storage layer must have actually built, per profile. This is the
+# ON-DISK witness (`<data>/_system/backend-spec.marker`, written by the fork's
+# storage factory), not the environment variable this runner set. An env var
+# says what was ASKED for; the marker says what was BUILT. Evidence for a
+# "slatedb" plan row that rests only on `TYPEDB_STORAGE_PROFILE=U2` would be
+# indistinguishable from a run in which the profile was ignored.
+EXPECTED_BACKEND_KIND = {"U0": "classic", "U1": "classic",
+                         "U2": "slatedb-r2"}
+
 LANES = {
     # lane -> (checkout, storage profile env, source-lock node, description)
     "fork-classic": ("sources/typedb", "U1", "TB",
@@ -168,6 +177,42 @@ class TypeDBServer:
             f"{json.dumps(self.probes[-3:])}; log tail:\n"
             f"{self.log_path.read_text()[-4000:]}")
 
+    def backend_witness(self):
+        """Read and check the on-disk backend identity the server wrote."""
+        marker = self.run_dir / "server-data" / "_system" / "backend-spec.marker"
+        out = {"marker_path": str(marker), "present": marker.is_file(),
+               "expected_kind": EXPECTED_BACKEND_KIND.get(self.profile)}
+        if not marker.is_file():
+            out["problem"] = (
+                f"no backend-spec.marker under the server data directory: the "
+                f"backend the server actually built cannot be witnessed, so a "
+                f"{self.profile} claim would rest on the environment variable "
+                f"alone")
+            return out
+        text = marker.read_text()
+        out["marker_text"] = text
+        out["marker_sha256"] = common.sha256_bytes(text.encode())
+        fields = {}
+        for line in text.splitlines():
+            parts = line.split(None, 1)
+            if len(parts) == 2:
+                fields[parts[0]] = parts[1].strip()
+        out["fields"] = fields
+        out["kind"] = fields.get("kind")
+        if out["kind"] != out["expected_kind"]:
+            out["problem"] = (
+                f"server built backend kind {out['kind']!r} but profile "
+                f"{self.profile} requires {out['expected_kind']!r} - the "
+                f"storage profile was not honoured")
+        # a second, independent witness: RocksDB keyspaces are CFs on disk
+        # (CURRENT/MANIFEST/*.sst); a SlateDB keyspace is a `keyspace` object
+        # tree. Layout cannot be faked by an env var either.
+        ks = self.run_dir / "server-data" / "_system" / "storage"
+        sample = sorted(p.name for p in ks.glob("*"))[:3]
+        out["keyspace_sample"] = {
+            n: sorted(q.name for q in (ks / n).glob("*"))[:8] for n in sample}
+        return out
+
     def alive(self):
         return self.proc is not None and self.proc.poll() is None
 
@@ -199,5 +244,6 @@ class TypeDBServer:
             "log_sha256": (common.sha256_file(self.log_path)
                            if self.log_path.is_file() else None),
             "exit_code": (self.proc.returncode if self.proc is not None else None),
+            "backend_witness": self.backend_witness(),
         })
         return e

@@ -1,0 +1,8 @@
+backend-identity v2
+kind slatedb-r2
+durability file-wal
+object-store local-fs
+materialisation fresh-per-open-no-inplace
+cache none
+protocol fv1
+digest c162c079560da1dac1847a5ae3647defdd3283be0df6ae2b281dda6e75bd809a

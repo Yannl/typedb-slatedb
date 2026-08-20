@@ -49,8 +49,8 @@ join is exact on both sides.
 """
 
 import hashlib
+import importlib.util
 import json
-import os
 import pathlib
 import re
 import subprocess
@@ -67,6 +67,25 @@ PLAN = REPO / "docs" / "evidence" / "G1" / "qualification-plan-v2.json"
 BEHAVIOUR = REPO / "sources" / "typedb-behaviour"
 
 SCHEMA = "typedb-r2-leaf-evidence-v1"
+
+# Paths a RUN writes into the checkout that are not source and never compile:
+# the server's own rolling log directory. They are excluded from the source
+# delta digest (otherwise a bundle's tree identity would change mid-run
+# because a test it ran wrote a log line) and are listed explicitly in the
+# evidence, never silently dropped.
+RUNTIME_OUTPUT_PREFIXES = ("typedb-logs/",)
+
+
+def _load_stage_module():
+    """tools/fork/stage.py, imported for its own definition of what a staged
+    fork tree is. Re-deriving that here would fork the truth: stage.py is the
+    tool the brief names for `--check`, so its `differing()` is the authority
+    on 'every fork patch is staged and nothing stale remains'."""
+    spec = importlib.util.spec_from_file_location(
+        "fork_stage", REPO / "tools" / "fork" / "stage.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 RESULTS_NAME = "leaf-results.json"
 
 # libtest's per-case line, in the default (pretty) format. One line per case,
@@ -167,28 +186,21 @@ def fork_tree_identity():
 
     `fork/typedb` is a WORKING TREE in the outer repository, and on this
     machine other work edits it concurrently. Its identity is therefore the
-    bytes, not a commit: every file tools/fork/stage.py would stage, hashed.
-    The outer-repo commit and dirty flag travel alongside so a reader can see
-    both what the repository claims and what was actually on disk.
+    bytes, not a commit: every file tools/fork/stage.py would stage (its own
+    `fork_files()`, so the two cannot drift), hashed. The outer-repo commit
+    and dirty flag travel alongside so a reader can see both what the
+    repository claims and what was actually on disk.
     """
-    skip_dirs = {".git", "target", "node_modules"}
-    fork_only = {"PORT-LEDGER.md", "UPSTREAM-PROVENANCE"}
-    rels = []
-    for p in sorted(FORK.rglob("*")):
-        if not p.is_file():
-            continue
-        rel = p.relative_to(FORK)
-        if rel.parts[0] in skip_dirs or str(rel) in fork_only:
-            continue
-        rels.append(rel)
+    stage = _load_stage_module()
+    rels = list(stage.fork_files())
+    status = _git(REPO, "status", "--porcelain")
     return {
         "files": len(rels),
         "fork_tree_sha256": _tree_digest(FORK, rels),
         "outer_repo_commit": _git(REPO, "rev-parse", "HEAD"),
-        "outer_repo_dirty": bool(_git(REPO, "status", "--porcelain")),
+        "outer_repo_dirty": bool(status),
         "outer_repo_fork_paths_modified": [
-            l[3:] for l in _git(REPO, "status", "--porcelain").splitlines()
-            if l[3:].startswith("fork/")],
+            l[3:] for l in status.splitlines() if l[3:].startswith("fork/")],
     }
 
 
@@ -196,9 +208,9 @@ def stage_state():
     """tools/fork/stage.py --check, executed - never assumed.
 
     Returns (state, first_line) where state is STAGED / PRISTINE / MIXED /
-    UNKNOWN. STAGED means sources/typedb carries EVERY fork patch byte for
-    byte and no stale staged file remains; that is the only condition under
-    which a dirty checkout is still an exactly identified tree.
+    UNKNOWN. Recorded verbatim in the evidence; the tree classification below
+    additionally uses stage.py's own `differing()` so 'is every fork patch
+    staged' is answered by the staging tool rather than re-derived here.
     """
     r = subprocess.run([sys.executable, str(REPO / "tools" / "fork" / "stage.py"),
                         "--check"], capture_output=True, text=True)
@@ -210,49 +222,82 @@ def stage_state():
 
 
 def executed_tree_identity():
-    """What was actually built and run, with cleanliness as a THREE-state fact.
+    """What was actually built and run, with cleanliness as a CLASSIFIED fact.
 
     `run_u0.executed_tree_identity()` records `dirty: bool(git status)`. On a
     fork lane that boolean is ALWAYS true - staging the fork is what makes the
     lane exist - so 'dirty' alone cannot distinguish 'the fork tree, exactly'
-    from 'somebody left an edit in the checkout'. Both readings are recorded
-    here so neither can be inferred wrongly:
+    from 'somebody left an edit in the checkout'. Worse, running the server
+    suites WRITES `typedb-logs/` into the checkout, so a run that started on a
+    clean-by-that-definition tree finishes on a dirty one and its own
+    before/after identity check would fire on its own log output.
 
-      tree_state = PRISTINE           - no diff from the locked revision
-                 = FORK_STAGED_EXACT  - every diff is a fork/typedb file,
-                                        byte-identical to fork/typedb, with no
-                                        stale staged files (stage.py --check
-                                        says STAGED). Dirty w.r.t. the pin,
-                                        and EXACTLY identified by
-                                        (checkout_revision, fork_tree_sha256).
-                 = DIRTY              - anything else. Never publishable.
+    So every diverging path is CLASSIFIED, and the classification is recorded:
+
+      FORK_PATCH      - byte-identical to the same path under fork/typedb
+      RUNTIME_OUTPUT  - a path a RUN writes and no crate compiles
+                        (RUNTIME_OUTPUT_PREFIXES); excluded from the source
+                        delta digest, listed by name in the evidence
+      UNEXPLAINED     - anything else: a source edit that is neither upstream
+                        nor the fork. One of these makes the tree DIRTY.
+
+    tree_state = PRISTINE           - nothing diverges from the locked revision
+               = FORK_STAGED_EXACT  - every diverging SOURCE path is a
+                                      FORK_PATCH and stage.py's own
+                                      `differing()` reports no unstaged fork
+                                      patch; the tree is dirty w.r.t. the pin
+                                      and EXACTLY identified by
+                                      (checkout_revision, fork_tree_sha256)
+               = DIRTY              - anything else. Never publishable.
 
     `dirty` keeps run_u0's exact meaning (git status is nonempty) so the two
     producers cannot be read as disagreeing.
     """
+    stage = _load_stage_module()
     status = subprocess.run(["git", "-C", str(TB), "status", "--porcelain"],
                             capture_output=True, text=True).stdout
-    h = hashlib.sha256()
-    for line in sorted(status.splitlines()):
+    entries = [l for l in status.splitlines() if l.strip()]
+    classified, source_entries = [], []
+    for line in sorted(entries):
         rel = line[3:].strip().strip('"')
-        h.update(line.encode() + b"\0")
         f = TB / rel
+        if any(rel.startswith(pfx) for pfx in RUNTIME_OUTPUT_PREFIXES):
+            kind = "RUNTIME_OUTPUT"
+        elif (FORK / rel).is_file() and f.is_file() and \
+                (FORK / rel).read_bytes() == f.read_bytes():
+            kind = "FORK_PATCH"
+        else:
+            kind = "UNEXPLAINED"
+        classified.append({"path": rel, "class": kind})
+        if kind != "RUNTIME_OUTPUT":
+            source_entries.append((line, rel, kind))
+    h = hashlib.sha256()
+    for line, rel, _kind in source_entries:
+        f = TB / rel
+        h.update(line.encode() + b"\0")
         if f.is_file():
             h.update(f.read_bytes())
+    new, changed, _stale = stage.differing()
+    unstaged = [str(r) for r in new + changed]
+    unexplained = [c["path"] for c in classified if c["class"] == "UNEXPLAINED"]
     state, state_line = stage_state()
-    dirty = bool(status.strip())
-    if not dirty:
+    if not entries:
         tree_state = "PRISTINE"
-    elif state == "STAGED":
+    elif not unexplained and not unstaged:
         tree_state = "FORK_STAGED_EXACT"
     else:
         tree_state = "DIRTY"
     return {
         "checkout_revision": _git(TB, "rev-parse", "HEAD"),
-        "dirty": dirty,
+        "dirty": bool(entries),
         "tree_state": tree_state,
         "stage_check": state_line,
-        "staged_delta_files": len([l for l in status.splitlines() if l.strip()]),
+        "unstaged_fork_patches": unstaged,
+        "unexplained_paths": unexplained,
+        "runtime_output_paths": [c["path"] for c in classified
+                                 if c["class"] == "RUNTIME_OUTPUT"],
+        "diverging_paths": classified,
+        "staged_delta_files": len(source_entries),
         "staged_delta_sha256": h.hexdigest(),
         "fork": fork_tree_identity(),
     }
@@ -345,28 +390,40 @@ def fixture_set_satisfied(fs_id, plan, fixtures):
 
 # ------------------------------------------------------------- bundle identity
 
-def bundle_files(results_dir, bundle):
+def bundle_files(results_dir, bundle, repo=REPO):
     """Every file this bundle's claims rest on: the results JSON and every
     raw log it names. Structurally the same rule as
-    verdict.compute_bundle_root, over this schema's file names."""
+    verdict.compute_bundle_root, over this schema's file names.
+
+    `repo` is the root a repo-relative `raw_log` resolves against. It is a
+    parameter and not a constant only so the negative-control harness can
+    verify a MUTATED COPY of a bundle in a temp tree with the real verifier,
+    as a real subprocess - the property under test is that the verifier
+    refuses the copy, and that test must not be able to touch the archive.
+    """
     results_dir = pathlib.Path(results_dir)
     files = [results_dir / RESULTS_NAME]
     for t in bundle.get("targets", []):
         if t.get("raw_log"):
             p = pathlib.Path(t["raw_log"])
-            files.append(p if p.is_absolute() else REPO / p)
+            files.append(p if p.is_absolute() else pathlib.Path(repo) / p)
     return files
 
 
-def compute_bundle_root(results_dir, bundle):
+def compute_bundle_root(results_dir, bundle, repo=REPO):
     """sha256 over the sorted (repo-relative path, sha256) pairs of every file
     the bundle's leaf claims rest on. A post-hoc edit of ANY of them - the
-    results JSON included - is a root mismatch, never a shrug."""
+    results JSON included - is a root mismatch, never a shrug.
+
+    Identical algorithm to verdict.compute_bundle_root and to the driver-lane
+    seal plan_coverage.py recomputes: `sha256(rel \0 sha \n ...)` over
+    sorted repo-relative paths."""
+    repo = pathlib.Path(repo)
     pairs = {}
-    for f in bundle_files(results_dir, bundle):
+    for f in bundle_files(results_dir, bundle, repo):
         if f.is_file():
             try:
-                rel = f.resolve().relative_to(REPO.resolve()).as_posix()
+                rel = f.resolve().relative_to(repo.resolve()).as_posix()
             except ValueError:
                 rel = str(f.resolve())
             pairs[rel] = common.sha256_file(f)

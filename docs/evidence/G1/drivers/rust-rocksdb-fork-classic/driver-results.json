@@ -5,7 +5,7 @@
  "driver": "rust",
  "backend": "rocksdb",
  "lane": "fork-classic",
- "generated_at_utc": "2026-08-20T09:23:40Z",
+ "generated_at_utc": "2026-08-20T09:36:02Z",
  "plan": {
   "path": "docs/evidence/G1/qualification-plan-v2.json",
   "plan_root_declared": "72020aa01fafebddc41321e0c6100c158f80ae997037430871212049054a7a41",
@@ -584,19 +584,19 @@
   "cwd": "tools/drivers/rust-behaviour",
   "exit_code": 0,
   "cargo_target_dir": "/home/user/typedb-slatedb/target/drivers-proj",
-  "stderr_tail": "             ^^^^^^^^^^^^^^^^^ help: remove the condition\n   |\n   = note: no expected values for `feature`\n   = help: consider adding `bazel` as a feature in `Cargo.toml`\n   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration\n\nwarning: unexpected `cfg` condition value: `bazel`\n  --> tests/../../../../sources/typedb-driver/rust/tests/behaviour/driver/connection.rs:30:11\n   |\n30 |     #[cfg(feature = \"bazel\")]\n   |           ^^^^^^^^^^^^^^^^^ help: remove the condition\n   |\n   = note: no expected values for `feature`\n   = help: consider adding `bazel` as a feature in `Cargo.toml`\n   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration\n   = note: `#[warn(unexpected_cfgs)]` on by default\n\nwarning: unexpected `cfg` condition value: `bazel`\n  --> tests/../../../../sources/typedb-driver/rust/tests/behaviour/driver/connection.rs:33:15\n   |\n33 |     #[cfg(not(feature = \"bazel\"))]\n   |               ^^^^^^^^^^^^^^^^^ help: remove the condition\n   |\n   = note: no expected values for `feature`\n   = help: consider adding `bazel` as a feature in `Cargo.toml`\n   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration\n\nwarning: unexpected `cfg` condition value: `bazel`\n  --> tests/../../../../sources/typedb-driver/rust/tests/behaviour/connection/database.rs:30:11\n   |\n30 |     #[cfg(feature = \"bazel\")]\n   |           ^^^^^^^^^^^^^^^^^ help: remove the condition\n   |\n   = note: no expected values for `feature`\n   = help: consider adding `bazel` as a feature in `Cargo.toml`\n   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration\n   = note: `#[warn(unexpected_cfgs)]` on by default\n\nwarning: unexpected `cfg` condition value: `bazel`\n  --> tests/../../../../sources/typedb-driver/rust/tests/behaviour/connection/database.rs:33:15\n   |\n33 |     #[cfg(not(feature = \"bazel\"))]\n   |               ^^^^^^^^^^^^^^^^^ help: remove the condition\n   |\n   = note: no expected values for `feature`\n   = help: consider adding `bazel` as a feature in `Cargo.toml`\n   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration\n\nwarning: `typedb-driver-behaviour` (test \"test_query\") generated 2 warnings\nwarning: `typedb-driver-behaviour` (test \"test_cluster\") generated 2 warnings\nwarning: `typedb-driver-behaviour` (test \"test_connection\") generated 2 warnings\nwarning: `typedb-driver-behaviour` (test \"test_database\") generated 2 warnings\nwarning: unexpected `cfg` condition value: `bazel`\n  --> tests/../../../../sources/typedb-driver/rust/tests/behaviour/driver/user.rs:30:11\n   |\n30 |     #[cfg(feature = \"bazel\")]\n   |           ^^^^^^^^^^^^^^^^^ help: remove the condition\n   |\n   = note: no expected values for `feature`\n   = help: consider adding `bazel` as a feature in `Cargo.toml`\n   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration\n   = note: `#[warn(unexpected_cfgs)]` on by default\n\nwarning: unexpected `cfg` condition value: `bazel`\n  --> tests/../../../../sources/typedb-driver/rust/tests/behaviour/driver/user.rs:33:15\n   |\n33 |     #[cfg(not(feature = \"bazel\"))]\n   |               ^^^^^^^^^^^^^^^^^ help: remove the condition\n   |\n   = note: no expected values for `feature`\n   = help: consider adding `bazel` as a feature in `Cargo.toml`\n   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration\n\nwarning: `typedb-driver-behaviour` (test \"test_user\") generated 2 warnings\n    Finished `dev` profile [unoptimized] target(s) in 0.39s\n",
+  "stderr_tail": "^^^^^^^^^^^^^ help: remove the condition\n   |\n   = note: no expected values for `feature`\n   = help: consider adding `bazel` as a feature in `Cargo.toml`\n   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration\n\nwarning: unexpected `cfg` condition value: `bazel`\n  --> tests/../../../../sources/typedb-driver/rust/tests/behaviour/connection/database.rs:30:11\n   |\n30 |     #[cfg(feature = \"bazel\")]\n   |           ^^^^^^^^^^^^^^^^^ help: remove the condition\n   |\n   = note: no expected values for `feature`\n   = help: consider adding `bazel` as a feature in `Cargo.toml`\n   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration\n   = note: `#[warn(unexpected_cfgs)]` on by default\n\nwarning: unexpected `cfg` condition value: `bazel`\n  --> tests/../../../../sources/typedb-driver/rust/tests/behaviour/connection/database.rs:33:15\n   |\n33 |     #[cfg(not(feature = \"bazel\"))]\n   |               ^^^^^^^^^^^^^^^^^ help: remove the condition\n   |\n   = note: no expected values for `feature`\n   = help: consider adding `bazel` as a feature in `Cargo.toml`\n   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration\n\nwarning: unexpected `cfg` condition value: `bazel`\n  --> tests/../../../../sources/typedb-driver/rust/tests/behaviour/driver/concept.rs:30:11\n   |\n30 |     #[cfg(feature = \"bazel\")]\n   |           ^^^^^^^^^^^^^^^^^ help: remove the condition\n   |\n   = note: no expected values for `feature`\n   = help: consider adding `bazel` as a feature in `Cargo.toml`\n   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration\n   = note: `#[warn(unexpected_cfgs)]` on by default\n\nwarning: unexpected `cfg` condition value: `bazel`\n  --> tests/../../../../sources/typedb-driver/rust/tests/behaviour/driver/concept.rs:33:15\n   |\n33 |     #[cfg(not(feature = \"bazel\"))]\n   |               ^^^^^^^^^^^^^^^^^ help: remove the condition\n   |\n   = note: no expected values for `feature`\n   = help: consider adding `bazel` as a feature in `Cargo.toml`\n   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration\n\nwarning: `typedb-driver-behaviour` (test \"test_migration\") generated 2 warnings\nwarning: `typedb-driver-behaviour` (test \"test_transaction\") generated 2 warnings\nwarning: `typedb-driver-behaviour` (test \"test_database\") generated 2 warnings\nwarning: `typedb-driver-behaviour` (test \"test_concept\") generated 2 warnings\nwarning: unexpected `cfg` condition value: `bazel`\n  --> tests/../../../../sources/typedb-driver/rust/tests/behaviour/driver/connection.rs:30:11\n   |\n30 |     #[cfg(feature = \"bazel\")]\n   |           ^^^^^^^^^^^^^^^^^ help: remove the condition\n   |\n   = note: no expected values for `feature`\n   = help: consider adding `bazel` as a feature in `Cargo.toml`\n   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration\n   = note: `#[warn(unexpected_cfgs)]` on by default\n\nwarning: unexpected `cfg` condition value: `bazel`\n  --> tests/../../../../sources/typedb-driver/rust/tests/behaviour/driver/connection.rs:33:15\n   |\n33 |     #[cfg(not(feature = \"bazel\"))]\n   |               ^^^^^^^^^^^^^^^^^ help: remove the condition\n   |\n   = note: no expected values for `feature`\n   = help: consider adding `bazel` as a feature in `Cargo.toml`\n   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration\n\nwarning: `typedb-driver-behaviour` (test \"test_connection\") generated 2 warnings\n    Finished `dev` profile [unoptimized] target(s) in 1.65s\n",
   "executables": {
    "steps": "/home/user/typedb-slatedb/target/drivers-proj/debug/deps/steps-38c771c075e06213",
    "config": "/home/user/typedb-slatedb/target/drivers-proj/debug/deps/config-34b4496a35aed109",
-   "test_concept": "/home/user/typedb-slatedb/target/drivers-proj/debug/deps/test_concept-89310d6aff29edcb",
-   "test_transaction": "/home/user/typedb-slatedb/target/drivers-proj/debug/deps/test_transaction-3e618c3a6a5d2150",
+   "test_cluster": "/home/user/typedb-slatedb/target/drivers-proj/debug/deps/test_cluster-f7de00b8a6f35757",
+   "test_user": "/home/user/typedb-slatedb/target/drivers-proj/debug/deps/test_user-d46d53372ee33371",
+   "test_query": "/home/user/typedb-slatedb/target/drivers-proj/debug/deps/test_query-463fc76f3c86ac24",
    "typedb_driver_behaviour": "/home/user/typedb-slatedb/target/drivers-proj/debug/deps/typedb_driver_behaviour-43083b890537fe4c",
    "test_migration": "/home/user/typedb-slatedb/target/drivers-proj/debug/deps/test_migration-f9432a4d708bb63b",
-   "test_query": "/home/user/typedb-slatedb/target/drivers-proj/debug/deps/test_query-463fc76f3c86ac24",
-   "test_cluster": "/home/user/typedb-slatedb/target/drivers-proj/debug/deps/test_cluster-f7de00b8a6f35757",
-   "test_connection": "/home/user/typedb-slatedb/target/drivers-proj/debug/deps/test_connection-087ed7f952b1656e",
+   "test_transaction": "/home/user/typedb-slatedb/target/drivers-proj/debug/deps/test_transaction-3e618c3a6a5d2150",
    "test_database": "/home/user/typedb-slatedb/target/drivers-proj/debug/deps/test_database-cbdc1717e287a556",
-   "test_user": "/home/user/typedb-slatedb/target/drivers-proj/debug/deps/test_user-d46d53372ee33371"
+   "test_concept": "/home/user/typedb-slatedb/target/drivers-proj/debug/deps/test_concept-89310d6aff29edcb",
+   "test_connection": "/home/user/typedb-slatedb/target/drivers-proj/debug/deps/test_connection-087ed7f952b1656e"
   }
  },
  "servers": [
@@ -698,21 +698,65 @@
      "error": "URLError: <urlopen error [Errno 111] Connection refused>"
     },
     {
-     "t": 1.0,
+     "t": 1.02,
      "health_status": 204,
      "version_status": 200,
      "version_body": "{\"distribution\":\"TypeDB CE\",\"version\":\"3.12.3\"}",
      "grpc_accepts": true
     }
    ],
-   "ready_after_seconds": 1.0,
+   "ready_after_seconds": 1.02,
    "version_endpoint": {
     "distribution": "TypeDB CE",
     "version": "3.12.3"
    },
    "log": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/server-test_cluster.log",
-   "log_sha256": "dc9fe49ee6982835af9fb17e599d8c5c54821a22d5519c40b7c16a25abd77be8",
+   "log_sha256": "9ad88eeb2f8f8a09515b0f52d0355fa4636d9f105bbb5032d11ae13439c1aa39",
    "exit_code": 0,
+   "backend_witness": {
+    "marker_path": "/tmp/claude-0/-home-user-typedb-slatedb/85963f01-8967-5de9-ac03-5a7c7d75f1b3/scratchpad/lane-rocksdb/test_cluster/server-data/_system/backend-spec.marker",
+    "present": true,
+    "expected_kind": "classic",
+    "marker_text": "backend-identity v2\nkind classic\ndurability file-wal\ndigest 12b2f8b4c69436e98d642c9da1af12997e193c5c3f896411042c71280db1e918\n",
+    "marker_sha256": "e7e326d5be0c16c5bfb29d7a3ca94b32f8e704a6772b46e20bb7043cc43a03e1",
+    "fields": {
+     "backend-identity": "v2",
+     "kind": "classic",
+     "durability": "file-wal",
+     "digest": "12b2f8b4c69436e98d642c9da1af12997e193c5c3f896411042c71280db1e918"
+    },
+    "kind": "classic",
+    "keyspace_sample": {
+     "OptimisedPrefix11": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ],
+     "OptimisedPrefix15": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ],
+     "OptimisedPrefix16": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ]
+    },
+    "archived_marker": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/backend-spec-test_cluster.marker"
+   },
    "suite_id": "test_cluster"
   },
   {
@@ -783,9 +827,9 @@
     ],
     "status": "locked"
    },
-   "binary_sha256": "beee2eedcf7e313a33a85051e26c38d68fe07bbb4f4922fa11700b588361c80a",
-   "binary_size": 158960704,
-   "binary_mtime": 1787109708,
+   "binary_sha256": "ddd31906a9e5292c99059ee3d70466373cb81639a541370f81ff4a30de24d404",
+   "binary_size": 160191488,
+   "binary_mtime": 1787218278,
    "argv": [
     "/home/user/typedb-slatedb/sources/typedb/target/debug/typedb_server_bin",
     "--config",
@@ -826,8 +870,54 @@
     "version": "3.12.3"
    },
    "log": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/server-test_concept.log",
-   "log_sha256": "6f3994b3a175a1fb625f1b8703855760a912610bca6eda55e818ed8e981e0447",
+   "log_sha256": "320f62b3093dc5bd5168f9d2215deb6c96c3fe1bb8a9a940cc9efc5a604b1630",
    "exit_code": 0,
+   "backend_witness": {
+    "marker_path": "/tmp/claude-0/-home-user-typedb-slatedb/85963f01-8967-5de9-ac03-5a7c7d75f1b3/scratchpad/lane-rocksdb/test_concept/server-data/_system/backend-spec.marker",
+    "present": true,
+    "expected_kind": "classic",
+    "marker_text": "backend-identity v2\nkind classic\ndurability file-wal\ndigest 12b2f8b4c69436e98d642c9da1af12997e193c5c3f896411042c71280db1e918\n",
+    "marker_sha256": "e7e326d5be0c16c5bfb29d7a3ca94b32f8e704a6772b46e20bb7043cc43a03e1",
+    "fields": {
+     "backend-identity": "v2",
+     "kind": "classic",
+     "durability": "file-wal",
+     "digest": "12b2f8b4c69436e98d642c9da1af12997e193c5c3f896411042c71280db1e918"
+    },
+    "kind": "classic",
+    "keyspace_sample": {
+     "OptimisedPrefix11": [
+      "000004.log",
+      "000008.sst",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ],
+     "OptimisedPrefix15": [
+      "000004.log",
+      "000008.sst",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ],
+     "OptimisedPrefix16": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ]
+    },
+    "archived_marker": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/backend-spec-test_concept.marker"
+   },
    "suite_id": "test_concept"
   },
   {
@@ -898,9 +988,9 @@
     ],
     "status": "locked"
    },
-   "binary_sha256": "beee2eedcf7e313a33a85051e26c38d68fe07bbb4f4922fa11700b588361c80a",
-   "binary_size": 158960704,
-   "binary_mtime": 1787109708,
+   "binary_sha256": "ddd31906a9e5292c99059ee3d70466373cb81639a541370f81ff4a30de24d404",
+   "binary_size": 160191488,
+   "binary_mtime": 1787218278,
    "argv": [
     "/home/user/typedb-slatedb/sources/typedb/target/debug/typedb_server_bin",
     "--config",
@@ -941,8 +1031,52 @@
     "version": "3.12.3"
    },
    "log": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/server-test_connection.log",
-   "log_sha256": "aae2da21ec7c79892805df701c77a74340e94db636885154ab2850ad6391ac35",
+   "log_sha256": "4d043220f4d6067155bbfa6dba1b7e0aaeeb818cdb1bf325317c395a38b858e1",
    "exit_code": 0,
+   "backend_witness": {
+    "marker_path": "/tmp/claude-0/-home-user-typedb-slatedb/85963f01-8967-5de9-ac03-5a7c7d75f1b3/scratchpad/lane-rocksdb/test_connection/server-data/_system/backend-spec.marker",
+    "present": true,
+    "expected_kind": "classic",
+    "marker_text": "backend-identity v2\nkind classic\ndurability file-wal\ndigest 12b2f8b4c69436e98d642c9da1af12997e193c5c3f896411042c71280db1e918\n",
+    "marker_sha256": "e7e326d5be0c16c5bfb29d7a3ca94b32f8e704a6772b46e20bb7043cc43a03e1",
+    "fields": {
+     "backend-identity": "v2",
+     "kind": "classic",
+     "durability": "file-wal",
+     "digest": "12b2f8b4c69436e98d642c9da1af12997e193c5c3f896411042c71280db1e918"
+    },
+    "kind": "classic",
+    "keyspace_sample": {
+     "OptimisedPrefix11": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ],
+     "OptimisedPrefix15": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ],
+     "OptimisedPrefix16": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ]
+    },
+    "archived_marker": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/backend-spec-test_connection.marker"
+   },
    "suite_id": "test_connection"
   },
   {
@@ -1013,9 +1147,9 @@
     ],
     "status": "locked"
    },
-   "binary_sha256": "beee2eedcf7e313a33a85051e26c38d68fe07bbb4f4922fa11700b588361c80a",
-   "binary_size": 158960704,
-   "binary_mtime": 1787109708,
+   "binary_sha256": "ddd31906a9e5292c99059ee3d70466373cb81639a541370f81ff4a30de24d404",
+   "binary_size": 160191488,
+   "binary_mtime": 1787218278,
    "argv": [
     "/home/user/typedb-slatedb/sources/typedb/target/debug/typedb_server_bin",
     "--config",
@@ -1056,8 +1190,52 @@
     "version": "3.12.3"
    },
    "log": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/server-test_database.log",
-   "log_sha256": "35da7a6adf491396aa0147b110ce9ec998168ce1f249bde9b985bed89e60b130",
+   "log_sha256": "06a17adb8c944687fb217af156398e82e147ffe9eb1e7c6b41f092c5d03970a1",
    "exit_code": 0,
+   "backend_witness": {
+    "marker_path": "/tmp/claude-0/-home-user-typedb-slatedb/85963f01-8967-5de9-ac03-5a7c7d75f1b3/scratchpad/lane-rocksdb/test_database/server-data/_system/backend-spec.marker",
+    "present": true,
+    "expected_kind": "classic",
+    "marker_text": "backend-identity v2\nkind classic\ndurability file-wal\ndigest 12b2f8b4c69436e98d642c9da1af12997e193c5c3f896411042c71280db1e918\n",
+    "marker_sha256": "e7e326d5be0c16c5bfb29d7a3ca94b32f8e704a6772b46e20bb7043cc43a03e1",
+    "fields": {
+     "backend-identity": "v2",
+     "kind": "classic",
+     "durability": "file-wal",
+     "digest": "12b2f8b4c69436e98d642c9da1af12997e193c5c3f896411042c71280db1e918"
+    },
+    "kind": "classic",
+    "keyspace_sample": {
+     "OptimisedPrefix11": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ],
+     "OptimisedPrefix15": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ],
+     "OptimisedPrefix16": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ]
+    },
+    "archived_marker": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/backend-spec-test_database.marker"
+   },
    "suite_id": "test_database"
   },
   {
@@ -1128,9 +1306,9 @@
     ],
     "status": "locked"
    },
-   "binary_sha256": "beee2eedcf7e313a33a85051e26c38d68fe07bbb4f4922fa11700b588361c80a",
-   "binary_size": 158960704,
-   "binary_mtime": 1787109708,
+   "binary_sha256": "ddd31906a9e5292c99059ee3d70466373cb81639a541370f81ff4a30de24d404",
+   "binary_size": 160191488,
+   "binary_mtime": 1787218278,
    "argv": [
     "/home/user/typedb-slatedb/sources/typedb/target/debug/typedb_server_bin",
     "--config",
@@ -1171,8 +1349,52 @@
     "version": "3.12.3"
    },
    "log": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/server-test_migration.log",
-   "log_sha256": "1b7a0caf6545c6267f800813a8aa18169ac8ba0c1b4b2d701ae97d3a945753ba",
+   "log_sha256": "6159ea019e7df5db7cbb2e022e92b92dbc0c96a5584ddb1163d9beb120787526",
    "exit_code": 0,
+   "backend_witness": {
+    "marker_path": "/tmp/claude-0/-home-user-typedb-slatedb/85963f01-8967-5de9-ac03-5a7c7d75f1b3/scratchpad/lane-rocksdb/test_migration/server-data/_system/backend-spec.marker",
+    "present": true,
+    "expected_kind": "classic",
+    "marker_text": "backend-identity v2\nkind classic\ndurability file-wal\ndigest 12b2f8b4c69436e98d642c9da1af12997e193c5c3f896411042c71280db1e918\n",
+    "marker_sha256": "e7e326d5be0c16c5bfb29d7a3ca94b32f8e704a6772b46e20bb7043cc43a03e1",
+    "fields": {
+     "backend-identity": "v2",
+     "kind": "classic",
+     "durability": "file-wal",
+     "digest": "12b2f8b4c69436e98d642c9da1af12997e193c5c3f896411042c71280db1e918"
+    },
+    "kind": "classic",
+    "keyspace_sample": {
+     "OptimisedPrefix11": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ],
+     "OptimisedPrefix15": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ],
+     "OptimisedPrefix16": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ]
+    },
+    "archived_marker": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/backend-spec-test_migration.marker"
+   },
    "suite_id": "test_migration"
   },
   {
@@ -1243,9 +1465,9 @@
     ],
     "status": "locked"
    },
-   "binary_sha256": "beee2eedcf7e313a33a85051e26c38d68fe07bbb4f4922fa11700b588361c80a",
-   "binary_size": 158960704,
-   "binary_mtime": 1787109708,
+   "binary_sha256": "ddd31906a9e5292c99059ee3d70466373cb81639a541370f81ff4a30de24d404",
+   "binary_size": 160191488,
+   "binary_mtime": 1787218278,
    "argv": [
     "/home/user/typedb-slatedb/sources/typedb/target/debug/typedb_server_bin",
     "--config",
@@ -1286,8 +1508,52 @@
     "version": "3.12.3"
    },
    "log": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/server-test_query.log",
-   "log_sha256": "c5a1f6360cced5a08ef3dfe8ebf42d1ceae17a5996aff0aab1ae9d8e2cd11cd9",
+   "log_sha256": "76ff2439e580a3f169851a480cd140a98cbd2663be5bcefc3483e1bb8249bf64",
    "exit_code": 0,
+   "backend_witness": {
+    "marker_path": "/tmp/claude-0/-home-user-typedb-slatedb/85963f01-8967-5de9-ac03-5a7c7d75f1b3/scratchpad/lane-rocksdb/test_query/server-data/_system/backend-spec.marker",
+    "present": true,
+    "expected_kind": "classic",
+    "marker_text": "backend-identity v2\nkind classic\ndurability file-wal\ndigest 12b2f8b4c69436e98d642c9da1af12997e193c5c3f896411042c71280db1e918\n",
+    "marker_sha256": "e7e326d5be0c16c5bfb29d7a3ca94b32f8e704a6772b46e20bb7043cc43a03e1",
+    "fields": {
+     "backend-identity": "v2",
+     "kind": "classic",
+     "durability": "file-wal",
+     "digest": "12b2f8b4c69436e98d642c9da1af12997e193c5c3f896411042c71280db1e918"
+    },
+    "kind": "classic",
+    "keyspace_sample": {
+     "OptimisedPrefix11": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ],
+     "OptimisedPrefix15": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ],
+     "OptimisedPrefix16": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ]
+    },
+    "archived_marker": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/backend-spec-test_query.marker"
+   },
    "suite_id": "test_query"
   },
   {
@@ -1358,9 +1624,9 @@
     ],
     "status": "locked"
    },
-   "binary_sha256": "beee2eedcf7e313a33a85051e26c38d68fe07bbb4f4922fa11700b588361c80a",
-   "binary_size": 158960704,
-   "binary_mtime": 1787109708,
+   "binary_sha256": "ddd31906a9e5292c99059ee3d70466373cb81639a541370f81ff4a30de24d404",
+   "binary_size": 160191488,
+   "binary_mtime": 1787218278,
    "argv": [
     "/home/user/typedb-slatedb/sources/typedb/target/debug/typedb_server_bin",
     "--config",
@@ -1401,8 +1667,52 @@
     "version": "3.12.3"
    },
    "log": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/server-test_transaction.log",
-   "log_sha256": "4ed713d78b3cc959eb5a6f1ec13693c361d98d051b750a83f71a5d2f9da7cb8d",
+   "log_sha256": "69add4d99e2f6893d4feb3e16458801e3965af637a86128ad06d0b5faa69c9b9",
    "exit_code": 0,
+   "backend_witness": {
+    "marker_path": "/tmp/claude-0/-home-user-typedb-slatedb/85963f01-8967-5de9-ac03-5a7c7d75f1b3/scratchpad/lane-rocksdb/test_transaction/server-data/_system/backend-spec.marker",
+    "present": true,
+    "expected_kind": "classic",
+    "marker_text": "backend-identity v2\nkind classic\ndurability file-wal\ndigest 12b2f8b4c69436e98d642c9da1af12997e193c5c3f896411042c71280db1e918\n",
+    "marker_sha256": "e7e326d5be0c16c5bfb29d7a3ca94b32f8e704a6772b46e20bb7043cc43a03e1",
+    "fields": {
+     "backend-identity": "v2",
+     "kind": "classic",
+     "durability": "file-wal",
+     "digest": "12b2f8b4c69436e98d642c9da1af12997e193c5c3f896411042c71280db1e918"
+    },
+    "kind": "classic",
+    "keyspace_sample": {
+     "OptimisedPrefix11": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ],
+     "OptimisedPrefix15": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ],
+     "OptimisedPrefix16": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ]
+    },
+    "archived_marker": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/backend-spec-test_transaction.marker"
+   },
    "suite_id": "test_transaction"
   },
   {
@@ -1473,9 +1783,9 @@
     ],
     "status": "locked"
    },
-   "binary_sha256": "beee2eedcf7e313a33a85051e26c38d68fe07bbb4f4922fa11700b588361c80a",
-   "binary_size": 158960704,
-   "binary_mtime": 1787109708,
+   "binary_sha256": "ddd31906a9e5292c99059ee3d70466373cb81639a541370f81ff4a30de24d404",
+   "binary_size": 160191488,
+   "binary_mtime": 1787218278,
    "argv": [
     "/home/user/typedb-slatedb/sources/typedb/target/debug/typedb_server_bin",
     "--config",
@@ -1516,8 +1826,52 @@
     "version": "3.12.3"
    },
    "log": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/server-test_user.log",
-   "log_sha256": "06db0a8ddf1e8a036d1b6c33c1c989bba4cea34ab1afbc2e74cd6fb544f65bcd",
+   "log_sha256": "70d7f34d991ba02091915cb995bc577639bc2b822a5a20feb2477334ade96eeb",
    "exit_code": 0,
+   "backend_witness": {
+    "marker_path": "/tmp/claude-0/-home-user-typedb-slatedb/85963f01-8967-5de9-ac03-5a7c7d75f1b3/scratchpad/lane-rocksdb/test_user/server-data/_system/backend-spec.marker",
+    "present": true,
+    "expected_kind": "classic",
+    "marker_text": "backend-identity v2\nkind classic\ndurability file-wal\ndigest 12b2f8b4c69436e98d642c9da1af12997e193c5c3f896411042c71280db1e918\n",
+    "marker_sha256": "e7e326d5be0c16c5bfb29d7a3ca94b32f8e704a6772b46e20bb7043cc43a03e1",
+    "fields": {
+     "backend-identity": "v2",
+     "kind": "classic",
+     "durability": "file-wal",
+     "digest": "12b2f8b4c69436e98d642c9da1af12997e193c5c3f896411042c71280db1e918"
+    },
+    "kind": "classic",
+    "keyspace_sample": {
+     "OptimisedPrefix11": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ],
+     "OptimisedPrefix15": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ],
+     "OptimisedPrefix16": [
+      "000004.log",
+      "CURRENT",
+      "IDENTITY",
+      "LOCK",
+      "LOG",
+      "MANIFEST-000005",
+      "OPTIONS-000007"
+     ]
+    },
+    "archived_marker": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/backend-spec-test_user.marker"
+   },
    "suite_id": "test_user"
   }
  ],
@@ -1534,7 +1888,7 @@
    "executable_sha256": "9a665241c746748bde6748cd72997946b69cdf803a075deb0c09bb69fc3db793",
    "exit_code": 0,
    "timed_out": false,
-   "duration_seconds": 0.34,
+   "duration_seconds": 0.52,
    "raw_log": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/test_cluster.log",
    "log_sha256": "6f2a2430306e5899d729e65bb431381445d2835ec2baa3b113896467d98e17ed",
    "log_bytes": 183,
@@ -1572,9 +1926,9 @@
    "executable_sha256": "11f261613c62812c10ec5ab050d2a91006f203914a884e58fb6fb9a5a88e249a",
    "exit_code": 0,
    "timed_out": false,
-   "duration_seconds": 76.71,
+   "duration_seconds": 86.27,
    "raw_log": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/test_concept.log",
-   "log_sha256": "55896027f37ee001df88de7aa629f5e703ced631cf6071b1e73e6df9e564702a",
+   "log_sha256": "267e7ea074fe06d33d0df23a70292231ef70f0dc4a18f4e101a1876b01e4b490",
    "log_bytes": 220058,
    "server_alive_after_suite": true,
    "feature_ref": "driver/concept.feature",
@@ -1636,9 +1990,9 @@
    "executable_sha256": "c08174d59fc706f481bc3212c48e07e6c6e608eae471db2a081373206778d4fc",
    "exit_code": 0,
    "timed_out": false,
-   "duration_seconds": 53.08,
+   "duration_seconds": 49.97,
    "raw_log": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/test_connection.log",
-   "log_sha256": "58b2804eed5b801bbc1ca498b3d3ddf86b5fe25c2b694ebc7ee398fe2684e762",
+   "log_sha256": "5b91d87be23770df9626b64bd606ce29bfca168daab7d5007c7716b1d2105cb5",
    "log_bytes": 22528,
    "server_alive_after_suite": true,
    "feature_ref": "driver/connection.feature",
@@ -1700,9 +2054,9 @@
    "executable_sha256": "c4143965ebbaaeb65e1d1639ee5a7be1d5adad8018cb005e2556d9ff315a05c3",
    "exit_code": 0,
    "timed_out": false,
-   "duration_seconds": 18.03,
+   "duration_seconds": 16.84,
    "raw_log": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/test_database.log",
-   "log_sha256": "ee93ec778b66cbb2536497628f20d83b85a2b129ea345de92ccda4a0725380fe",
+   "log_sha256": "ce6c36c6c0e17eea7f3ced16e389ff80e05b874258632b54ca7e3cd0adec13c5",
    "log_bytes": 9988,
    "server_alive_after_suite": true,
    "feature_ref": "connection/database.feature",
@@ -1764,9 +2118,9 @@
    "executable_sha256": "5a0a8f01773b85803ed8dee0e2df325290959c8a14d166ecd016c6448c46994e",
    "exit_code": 0,
    "timed_out": false,
-   "duration_seconds": 18.32,
+   "duration_seconds": 17.9,
    "raw_log": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/test_migration.log",
-   "log_sha256": "8dd7196589c5c67b8f8ed3b901d81a00b8fa68300da28a03b21158f0d17548bf",
+   "log_sha256": "df185aac15eb43627126c7de61ec6e2a818524c71dc5f0c6d6b4fd334c8c2e17",
    "log_bytes": 27206,
    "server_alive_after_suite": true,
    "feature_ref": "driver/migration.feature",
@@ -1828,9 +2182,9 @@
    "executable_sha256": "c2640824cdc111f8b1c8d04ff62a77b3dcc32f0447f100a03b763fb9200fa899",
    "exit_code": 0,
    "timed_out": false,
-   "duration_seconds": 35.06,
+   "duration_seconds": 32.93,
    "raw_log": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/test_query.log",
-   "log_sha256": "c97bb98237933a72f858b91ba0e3bb996c6e8193cfc28ac06c92e5c11c55f9b1",
+   "log_sha256": "64ccd39bc9b6ea43993f69f0a4fed721286043a6ed8cc0c2b778f44eca9c926a",
    "log_bytes": 52310,
    "server_alive_after_suite": true,
    "feature_ref": "driver/query.feature",
@@ -1892,9 +2246,9 @@
    "executable_sha256": "a806aac16dceb93d8c0102483247ff64d99789f3e41bd2f76e734acfc36b6781",
    "exit_code": 0,
    "timed_out": false,
-   "duration_seconds": 43.15,
+   "duration_seconds": 37.86,
    "raw_log": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/test_transaction.log",
-   "log_sha256": "eb505f2968876c6cb63ad4d000147716d287963a53efd561a7707bbd88cfefc9",
+   "log_sha256": "f73fafbe8db9968d2814ba339a2c77838e44c69013eeed3c3e66f88844cc8a22",
    "log_bytes": 30160,
    "server_alive_after_suite": true,
    "feature_ref": "connection/transaction.feature",
@@ -1956,9 +2310,9 @@
    "executable_sha256": "f8e707808e9713b95737013f7586f7f101277edca9712df73f9f2d86f80bf841",
    "exit_code": 0,
    "timed_out": false,
-   "duration_seconds": 48.69,
+   "duration_seconds": 43.62,
    "raw_log": "docs/evidence/G1/drivers/rust-rocksdb-fork-classic/test_user.log",
-   "log_sha256": "a79878570ad496efdb4a44c413a598edd002a86311917f2872f6692a6e7ac8e0",
+   "log_sha256": "875a775c6431f353f4060638ccb2fe1fba0a321bde7e63aab939ab82b542a342",
    "log_bytes": 24969,
    "server_alive_after_suite": true,
    "feature_ref": "driver/user.feature",
@@ -2891,7 +3245,7 @@
    "steps_failed": 0,
    "steps_skipped": 0,
    "steps_total": 50,
-   "log_line": 2736
+   "log_line": 2737
   },
   {
    "leaf_case_id": "cucumber:driver/concept.feature::Driver processes values of type <value-type> correctly#ex14",
@@ -2906,7 +3260,7 @@
    "steps_failed": 0,
    "steps_skipped": 0,
    "steps_total": 50,
-   "log_line": 2788
+   "log_line": 2789
   },
   {
    "leaf_case_id": "cucumber:driver/concept.feature::Driver processes values of type <value-type> correctly#ex15",
@@ -2921,7 +3275,7 @@
    "steps_failed": 0,
    "steps_skipped": 0,
    "steps_total": 50,
-   "log_line": 2840
+   "log_line": 2841
   },
   {
    "leaf_case_id": "cucumber:driver/concept.feature::Driver processes values of type <value-type> correctly#ex16",
@@ -2936,7 +3290,7 @@
    "steps_failed": 0,
    "steps_skipped": 0,
    "steps_total": 50,
-   "log_line": 2892
+   "log_line": 2893
   },
   {
    "leaf_case_id": "cucumber:driver/concept.feature::Driver processes values of type <value-type> correctly#ex17",
@@ -2951,7 +3305,7 @@
    "steps_failed": 0,
    "steps_skipped": 0,
    "steps_total": 50,
-   "log_line": 2944
+   "log_line": 2945
   },
   {
    "leaf_case_id": "cucumber:driver/concept.feature::Driver processes values of type <value-type> correctly#ex18",
@@ -2966,7 +3320,7 @@
    "steps_failed": 0,
    "steps_skipped": 0,
    "steps_total": 50,
-   "log_line": 2996
+   "log_line": 2997
   },
   {
    "leaf_case_id": "cucumber:driver/concept.feature::Driver processes values in concept documents correctly#ex1",
@@ -2981,7 +3335,7 @@
    "steps_failed": 0,
    "steps_skipped": 0,
    "steps_total": 24,
-   "log_line": 3048
+   "log_line": 3049
   },
   {
    "leaf_case_id": "cucumber:driver/concept.feature::Driver processes values in concept documents correctly#ex2",
@@ -2996,7 +3350,7 @@
    "steps_failed": 0,
    "steps_skipped": 0,
    "steps_total": 24,
-   "log_line": 3074
+   "log_line": 3075
   },
   {
    "leaf_case_id": "cucumber:driver/concept.feature::Driver processes values in concept documents correctly#ex3",

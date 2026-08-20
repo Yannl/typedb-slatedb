@@ -60,6 +60,10 @@ import sys
 
 DEFAULT_REPO = pathlib.Path(__file__).resolve().parents[2]
 SCHEMA = "typedb-r2-driver-lane-v1"
+# duplicated on purpose: the verifier must not import the
+# producer's idea of which backend a profile requires
+EXPECTED_BACKEND_KIND = {"U0": "classic", "U1": "classic",
+                         "U2": "slatedb-r2"}
 
 
 # ----------------------------------------------------------- own primitives
@@ -229,6 +233,33 @@ def reparse_log(text):
     return scen, summary, libtest
 
 
+def reparse_behave(path):
+    """Independent re-derivation of per-scenario outcomes from behave's own
+    structured output. Duplicated on purpose: the producer's reading of this
+    file must not be the only reading of it."""
+    doc = json.loads(pathlib.Path(path).read_text())
+    out = []
+    for feat in doc:
+        for el in feat.get("elements") or []:
+            if el.get("type") != "scenario":
+                continue
+            steps = el.get("steps") or []
+            p = f = sk = 0
+            for st in steps:
+                stat = ((st.get("result") or {}).get("status")) or "untested"
+                if stat == "passed":
+                    p += 1
+                elif stat in ("failed", "undefined"):
+                    f += 1
+                else:
+                    sk += 1
+            name = re.sub(r"\s+--\s+@\d+\.\d+\s*.*$", "", el.get("name") or "")
+            out.append({"name": name, "p": p, "f": f, "s": sk,
+                        "status": (el.get("status") or "untested").upper(),
+                        "line": el.get("location")})
+    return out
+
+
 # ---------------------------------------------------------------- verifying
 
 def git(repo, *args):
@@ -317,6 +348,49 @@ def verify(bundle_dir, repo, qualification=False):
     else:
         A.append(f"qualification plan not found at {plan_path}")
 
+    harness = data.get("harness", "rust-cucumber-basic")
+    if harness not in ("rust-cucumber-basic", "python-behave-json"):
+        A.append(f"unknown harness {harness!r}: this verifier re-derives only "
+                 f"the harnesses it implements, and refuses what it cannot "
+                 f"re-derive")
+
+    if harness == "python-behave-json":
+        # The Python lane runs the OFFICIAL published wheel because the SWIG
+        # wrapper is a Bazel output. That is only acceptable if the wheel is
+        # proven to be the locked driver, so the provenance section is checked
+        # here rather than trusted: no differing module, no missing module,
+        # the version must equal the locked VERSION file, and the comparison
+        # must have covered EVERY module in the locked tree (a comparison that
+        # silently skipped files would otherwise read as agreement).
+        prov = data.get("driver_artifact") or {}
+        if not prov:
+            A.append("python lane records no driver artifact provenance")
+        else:
+            if prov.get("differing_from_locked_source"):
+                A.append(f"wheel differs from the locked driver tree in "
+                         f"{len(prov['differing_from_locked_source'])} module(s)")
+            if prov.get("only_in_locked_source"):
+                A.append(f"wheel is missing locked driver modules: "
+                         f"{prov['only_in_locked_source'][:5]}")
+            vfile = (repo / "sources" / "typedb-driver" / "VERSION")
+            locked_version = vfile.read_text().strip() if vfile.is_file() else None
+            if (prov.get("metadata") or {}).get("Version") != locked_version:
+                A.append(f"installed driver version "
+                         f"{(prov.get('metadata') or {}).get('Version')!r} != "
+                         f"locked VERSION {locked_version!r}")
+            locked_modules = len(list(
+                (repo / "sources" / "typedb-driver" / "python" / "typedb")
+                .rglob("*.py")))
+            if prov.get("identical_to_locked_source") != locked_modules:
+                A.append(f"the wheel/source comparison covered "
+                         f"{prov.get('identical_to_locked_source')} module(s) "
+                         f"but the locked tree has {locked_modules} - the "
+                         f"comparison was not exhaustive")
+            for f in prov.get("only_in_wheel_nonempty") or []:
+                if f.get("file") != "native_driver_wrapper.py":
+                    A.append(f"wheel carries non-empty module "
+                             f"{f.get('file')!r} absent from the locked tree")
+
     leaves_by_suite = {}
     for l in leaves:
         leaves_by_suite.setdefault(l.get("suite_id"), []).append(l)
@@ -329,30 +403,46 @@ def verify(bundle_dir, repo, qualification=False):
         if status == "NOT_BUILT":
             A.append(f"{sid}: suite was never built")
             continue
+        if status == "NOT_EXECUTED_PRECONDITION_UNMET":
+            # A blocked suite is legitimate ONLY if it names its exact external
+            # precondition. It may have produced a log (a suite that started
+            # and self-skipped) or none at all (a suite that was never
+            # launched); either way it must carry no scenario blocks.
+            if not s.get("precondition"):
+                A.append(f"{sid}: declared not-executed but records no "
+                         f"precondition; a blocked row must name its exact "
+                         f"external precondition")
+            if s.get("raw_log"):
+                p = bind(s.get("raw_log"), s.get("log_sha256"), f"suite {sid}")
+                if p is not None:
+                    scen, _sm, _lt = reparse_log(p.read_text(errors="replace"))
+                    if scen:
+                        A.append(f"{sid}: declared not-executed but its log "
+                                 f"carries {len(scen)} scenario block(s)")
+            continue
         p = bind(s.get("raw_log"), s.get("log_sha256"), f"suite {sid}")
         if p is None:
             continue
         text = p.read_text(errors="replace")
         if not text.strip():
             A.append(f"{sid}: raw log is empty - an empty log is never evidence")
-        scen, summary, libtest = reparse_log(text)
-
-        if status == "NOT_EXECUTED_PRECONDITION_UNMET":
-            if not s.get("precondition"):
-                A.append(f"{sid}: declared not-executed but records no "
-                         f"precondition; a blocked row must name its exact "
-                         f"external precondition")
-            if scen:
-                A.append(f"{sid}: declared not-executed but its log carries "
-                         f"{len(scen)} scenario block(s)")
-            continue
+        if harness == "python-behave-json":
+            jp = bind(s.get("structured_log"), s.get("structured_log_sha256"),
+                      f"suite {sid} structured log")
+            if jp is None:
+                A.append(f"{sid}: no structured behave output to re-derive from")
+                continue
+            scen = reparse_behave(jp)
+            summary, libtest = None, None
+        else:
+            scen, summary, libtest = reparse_log(text)
 
         if not scen:
             A.append(f"{sid}: re-parse finds ZERO cucumber scenarios in the log "
                      f"- a suite that ran nothing proves nothing")
-        if summary is None:
+        if summary is None and harness == "rust-cucumber-basic":
             A.append(f"{sid}: re-parse finds no [Summary] - truncated run")
-        else:
+        elif summary is not None:
             for key in ("features", "scenarios"):
                 tot = (summary.get(key) or {}).get("total")
                 if tot != len(scen):
@@ -369,7 +459,8 @@ def verify(bundle_dir, repo, qualification=False):
                              f"declares {decl.get(k, 0)}")
             if summary.get("parsing_errors") or summary.get("hook_errors"):
                 A.append(f"{sid}: cucumber reported parsing/hook errors")
-        if libtest is None and not s.get("timed_out"):
+        if (libtest is None and harness == "rust-cucumber-basic"
+                and not s.get("timed_out")):
             A.append(f"{sid}: no libtest result line - the process never "
                      f"finished its test case")
         elif libtest is not None and (libtest["outcome"] == "ok") != (
@@ -482,6 +573,46 @@ def verify(bundle_dir, repo, qualification=False):
         if ident.get("dirty") is None:
             A.append(f"{tag}: server checkout dirt is UNKNOWN - never read as "
                      f"clean")
+        # the storage backend the server actually BUILT, re-read from the
+        # archived on-disk marker bytes. A `slatedb` plan row backed only by
+        # `TYPEDB_STORAGE_PROFILE=U2` in the environment would be
+        # indistinguishable from a run in which the profile was ignored.
+        expect = EXPECTED_BACKEND_KIND.get(srv.get("storage_profile_env"))
+        w = srv.get("backend_witness") or {}
+        if expect is None:
+            A.append(f"{tag}: storage profile "
+                     f"{srv.get('storage_profile_env')!r} has no known backend "
+                     f"expectation")
+        elif not w:
+            A.append(f"{tag}: no backend witness - the backend the server built "
+                     f"was never observed, only requested")
+        else:
+            if w.get("problem"):
+                A.append(f"{tag}: {w['problem']}")
+            am = w.get("archived_marker")
+            if not am:
+                A.append(f"{tag}: the backend-spec marker was not archived into "
+                         f"the bundle; an unarchived witness is not evidence")
+            else:
+                mp = bundle_dir / pathlib.Path(am).name
+                if not mp.is_file():
+                    A.append(f"{tag}: archived backend-spec marker {am} is "
+                             f"missing from the bundle")
+                else:
+                    raw = mp.read_bytes()
+                    if hashlib.sha256(raw).hexdigest() != w.get("marker_sha256"):
+                        A.append(f"{tag}: archived backend-spec marker does not "
+                                 f"hash to the recorded marker_sha256")
+                    kind = None
+                    for line in raw.decode(errors="replace").splitlines():
+                        parts = line.split(None, 1)
+                        if len(parts) == 2 and parts[0] == "kind":
+                            kind = parts[1].strip()
+                    if kind != expect:
+                        A.append(f"{tag}: archived backend-spec marker says "
+                                 f"kind={kind!r} but profile "
+                                 f"{srv.get('storage_profile_env')} requires "
+                                 f"{expect!r}")
 
     # ---- 7 provenance of the locked sources
     lock_path = repo / "source-lock" / "source-lock.json"
@@ -514,7 +645,12 @@ def verify(bundle_dir, repo, qualification=False):
     if plan_path.is_file():
         consumed.append(plan_path)
     consumed += [resolve_consumed(s["raw_log"]) for s in suites if s.get("raw_log")]
+    consumed += [resolve_consumed(s["structured_log"]) for s in suites
+                 if s.get("structured_log")]
     consumed += [resolve_consumed(s["log"]) for s in servers if s.get("log")]
+    consumed += [resolve_consumed((s.get("backend_witness") or {})["archived_marker"])
+                 for s in servers
+                 if (s.get("backend_witness") or {}).get("archived_marker")]
     root, _pairs = recompute_root(bundle_dir, consumed, repo)
     manifest = bundle_dir / "bundle-manifest.json"
     if manifest.is_file():

@@ -2733,6 +2733,7 @@ Feature: Driver Concept :: Driver processes values of type datetime-tz correctly
    ✔  Then answer get row(0) get value(value) get datetime-tz is: 2024-09-20T16:40:05.000000001 Europe/London
    ✔  Then answer get row(0) get value(value) get is not: 2024-09-20T16:40:05.000000001 UTC
    ✔  Then answer get row(0) get value(value) get datetime-tz is not: 2024-09-20T16:40:05.000000001 UTC
+test test has been running for over 60 seconds
 Feature: Driver Concept :: Driver processes values of type datetime-tz correctly
   Scenario Outline: Driver processes values of type datetime-tz correctly
    ✔> Given typedb starts
@@ -3097,7 +3098,6 @@ Feature: Driver Concept :: Driver processes values in concept documents correctl
    ✔  Then answer size is: 1
    ✔  Then answer contains document:
    ✔  Then answer does not contain document:
-test test has been running for over 60 seconds
 Feature: Driver Concept :: Driver processes values in concept documents correctly
   Scenario Outline: Driver processes values in concept documents correctly
    ✔> Given typedb starts
@@ -3523,5 +3523,5 @@ Feature: Driver Concept :: Driver processes datetime-tz values in different user
 3368 steps (3368 passed)
 test test ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 76.33s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 85.81s
 

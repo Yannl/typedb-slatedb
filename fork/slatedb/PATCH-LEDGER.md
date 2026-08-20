@@ -270,6 +270,8 @@ Four files, test-and-refusal only; no change to the epoch protocol itself.
 | `src/fence.rs` | `WriterFencerTestHarness::take_fencer()` hands the raw fencer a controller-issued epoch at the moment the test fences, which is what those tests' ordering requires. Plus the fencer-level negative test. |
 | `src/clone.rs` | A clone manifest INHERITS its parent's writer epoch, so the issuer inherits the parent's high-water for the clone's path. Test-only; a real controller has the same obligation. |
 | `src/error.rs` | one-line `dead_code` allow so the unfenced build is warning-clean. |
+| `src/manifest/store.rs` | two `dead_code` allows: with the fence compiled in, `init_writer` (internal allocation) and `init_compactor_with_epoch` have no non-test caller, and the SHIPPED build was emitting warnings for them. |
+| `tests/common/mod.rs` (new) + the four integration targets | the integration targets compile against the SHIPPED library, so the `cfg(test)` seam is invisible to them; they name their epochs through the PUBLIC `with_external_writer_epoch`, fed by the same deterministic per-database sequence. |
 
 ### Why a seam and not 420 edits
 
@@ -293,6 +295,17 @@ The seam is `cfg(test)`. It cannot exist in the shipped library: TypeDB's
 off and `None` is still a refusal. `tools/fork/check_strict_epoch.py`
 attests the feature is resolved into the ordinary build; the negative suite
 below attests the refusal is still live.
+
+That `cfg(test)` boundary has a consequence worth stating rather than
+discovering later: it does NOT reach the crate's four INTEGRATION targets
+(`tests/*.rs`), which are separate crates compiling against the shipped
+library — exactly the posture a consumer is in. Round 5 never measured them.
+They are 19 tests, and every one of them opened a database with no epoch, so
+under the shipped fence they would all have been refused. They are adapted
+here the honest way, through the public API: `tests/common/mod.rs` supplies
+the same deterministic per-database sequence and each open names its epoch.
+The gate now runs `--tests`, not `--lib`, so both kinds of target are inside
+it.
 
 ### What the negative suite found
 
@@ -404,7 +417,29 @@ tier-2 job running this gate WITHOUT `--quick` exists in that workflow yet.
 `--evidence PATH` writes the executed leaf identities and counts as JSON,
 which is the "record executed leaf identities" the audit asked for.
 
-Executed: `STRICT-EPOCH SUITE GATE: PASS`.
+Executed (`python3 tools/fork/check_strict_epoch_suite.py`):
+
+```
+feature-OFF  full suite  : 1988 passed, 0 failed, 1 ignored (1989 leaves executed)
+feature-ON   full suite  : 1993 passed, 0 failed, 1 ignored (1994 leaves executed)
+feature-ON   negative suite: 5 passed, 0 failed (5 leaves executed)
+leaf reconciliation      : feature-off 1989 - 0 excluded + 5 shipped-posture-only = 1994 vs feature-on 1994 executed
+exclusions               : none — every test executed feature-off also executes feature-on
+STRICT-EPOCH SUITE GATE: PASS
+```
+
+Two things the gate's own development is worth recording, because both are
+the same failure mode this finding is about — a number that looks like
+evidence and is not:
+
+* An earlier draft parsed `test NAME ... ok` and silently dropped the 22
+  `#[should_panic]` tests, which render as `test NAME - should panic ... ok`.
+  Reconciliation would have compared 1967 against 1972 and still "balanced".
+  The gate now also asserts `passed + failed + ignored == leaves parsed` and
+  fails when the two disagree.
+* A run on a contended machine produced NO `test result:` line at all, which
+  the first draft rendered as "0 passed, 0 failed". The gate now reports a
+  run that never measured anything as exactly that, with the output tail.
 
 ## What this series still does not do
 
@@ -418,7 +453,8 @@ Unchanged from patches 0001/0003, and still true:
 - The compactor orchestrator still constructs its own fenceable manifest via
   `init_compactor`; `with_external_compactor_epoch` through `CompactorBuilder`
   is still deliberately left for the decision.
-- The suite adapted here is the **library** suite (`--lib`). The crate's
-  `tests/` integration targets are separate crates, where `cfg(test)` of the
-  library does not apply, so the harness seam does not reach them; they are
-  outside this gate.
+- Doc-tests are not in the gate. `cargo test --doc` builds the rustdoc
+  examples, which open databases with no epoch and are documentation of the
+  UNFENCED public API; adapting them would change what the published docs
+  show. They are the one target class still unmeasured under the fence, and
+  they are named here rather than left to be found.

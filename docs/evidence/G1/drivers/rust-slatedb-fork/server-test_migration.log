@@ -24,36 +24,36 @@ To connect:
   Studio:  https://studio.typedb.com/connect?address=http://127.0.0.1:8729&username=admin
   Console: typedb console --address 127.0.0.1:1729 --tls-disabled --username admin
 
-2026-08-20T09:26:28.347043Z  INFO ThreadId(01) server/lib.rs:485: 
+2026-08-20T09:38:27.960685Z  INFO ThreadId(01) server/lib.rs:485: 
 Ready!
-2026-08-20T09:26:32.348950Z  INFO ThreadId(05) server/service/grpc/migration/export_service.rs:137: Export 'typedb' from TypeDB 3.12.3 finished successfully. 98 items exported in 0 seconds.
-2026-08-20T09:26:37.845678Z  INFO ThreadId(04) server/service/grpc/migration/import_service.rs:252: Import to 'typedb-exported' finished successfully. 96 items imported in 3 seconds.
-2026-08-20T09:26:44.070278Z  INFO ThreadId(04) server/service/grpc/migration/import_service.rs:252: Import to 'typedb-exported-relaxed' finished successfully. 96 items imported in 4 seconds.
-2026-08-20T09:26:47.019268Z  INFO ThreadId(05) server/service/grpc/migration/export_service.rs:137: Export 'typedb' from TypeDB 3.12.3 finished successfully. 3 items exported in 0 seconds.
-2026-08-20T09:26:47.036824Z  INFO ThreadId(02) server/service/grpc/migration/export_service.rs:137: Export 'typedb' from TypeDB 3.12.3 finished successfully. 3 items exported in 0 seconds.
-2026-08-20T09:26:48.889111Z  INFO ThreadId(02) server/service/grpc/migration/export_service.rs:137: Export 'typedb' from TypeDB 3.12.3 finished successfully. 3 items exported in 0 seconds.
-2026-08-20T09:26:49.812177Z  INFO ThreadId(02) server/service/grpc/migration/export_service.rs:137: Export 'typedb' from TypeDB 3.12.3 finished successfully. 3 items exported in 0 seconds.
-2026-08-20T09:26:50.739505Z  INFO ThreadId(05) server/service/grpc/migration/export_service.rs:137: Export 'typedb' from TypeDB 3.12.3 finished successfully. 3 items exported in 0 seconds.
-2026-08-20T09:26:50.785912Z  INFO ThreadId(03) server/service/grpc/migration/import_service.rs:260: Import to 'typedb-imported' finished without completion after 0 seconds.
-2026-08-20T09:26:50.854927Z  INFO ThreadId(03) server/service/grpc/migration/import_service.rs:260: Import to 'typedb-imported' finished without completion after 0 seconds.
-2026-08-20T09:26:50.919471Z  INFO ThreadId(03) server/service/grpc/migration/import_service.rs:260: Import to 'typedb-imported' finished without completion after 0 seconds.
-2026-08-20T09:26:50.998786Z  INFO ThreadId(03) server/service/grpc/migration/import_service.rs:260: Import to 'typedb-imported' finished without completion after 0 seconds.
-2026-08-20T09:26:51.829332Z  INFO ThreadId(03) server/service/grpc/migration/export_service.rs:137: Export 'typedb' from TypeDB 3.12.3 finished successfully. 2 items exported in 0 seconds.
-2026-08-20T09:26:52.038205Z  INFO ThreadId(03) server/service/grpc/migration/import_service.rs:252: Import to 'typedb-clone' finished successfully. 0 items imported in 0 seconds.
-2026-08-20T09:26:52.112883Z  INFO ThreadId(02) server/service/grpc/migration/export_service.rs:137: Export 'typedb-clone' from TypeDB 3.12.3 finished successfully. 2 items exported in 0 seconds.
-2026-08-20T09:26:52.330300Z  INFO ThreadId(03) server/service/grpc/migration/import_service.rs:252: Import to 'typedb-clone-2' finished successfully. 0 items imported in 0 seconds.
-2026-08-20T09:26:53.502488Z  INFO ThreadId(05) server/service/grpc/migration/export_service.rs:137: Export 'typedb' from TypeDB 3.12.3 finished successfully. 4 items exported in 0 seconds.
-2026-08-20T09:26:53.511365Z  INFO ThreadId(04) server/service/grpc/migration/export_service.rs:137: Export 'untypedb' from TypeDB 3.12.3 finished successfully. 4 items exported in 0 seconds.
-2026-08-20T09:26:53.519197Z  INFO ThreadId(05) server/service/grpc/migration/export_service.rs:137: Export 'notypedb' from TypeDB 3.12.3 finished successfully. 2 items exported in 0 seconds.
-2026-08-20T09:26:53.595108Z  INFO ThreadId(03) server/service/grpc/migration/import_service.rs:260: Import to 'newtypedb' finished without completion after 0 seconds.
-2026-08-20T09:26:53.684103Z  INFO ThreadId(03) server/service/grpc/migration/import_service.rs:260: Import to 'newtypedb' finished without completion after 0 seconds.
-2026-08-20T09:26:53.751799Z  INFO ThreadId(03) server/service/grpc/migration/import_service.rs:260: Import to 'newtypedb' finished without completion after 0 seconds.
-2026-08-20T09:26:53.827113Z  INFO ThreadId(05) server/service/grpc/migration/import_service.rs:260: Import to 'newtypedb' finished without completion after 0 seconds.
-2026-08-20T09:26:54.088812Z  INFO ThreadId(03) server/service/grpc/migration/import_service.rs:252: Import to 'newtypedb' finished successfully. 2 items imported in 0 seconds.
-2026-08-20T09:26:54.355221Z  INFO ThreadId(05) server/service/grpc/migration/import_service.rs:252: Import to 'newuntypedb' finished successfully. 2 items imported in 0 seconds.
-2026-08-20T09:26:54.472782Z  INFO ThreadId(04) server/service/grpc/migration/import_service.rs:252: Import to 'newnotypedb' finished successfully. 0 items imported in 0 seconds.
-2026-08-20T09:26:56.957840Z  INFO ThreadId(02) server/service/grpc/migration/export_service.rs:137: Export 'typedb' from TypeDB 3.12.3 finished successfully. 28 items exported in 0 seconds.
-2026-08-20T09:26:57.604876Z  INFO ThreadId(05) server/service/grpc/migration/import_service.rs:252: Import to 'typedb-clone' finished successfully. 26 items imported in 0 seconds.
+2026-08-20T09:38:31.127800Z  INFO ThreadId(04) server/service/grpc/migration/export_service.rs:137: Export 'typedb' from TypeDB 3.12.3 finished successfully. 98 items exported in 0 seconds.
+2026-08-20T09:38:35.852225Z  INFO ThreadId(05) server/service/grpc/migration/import_service.rs:252: Import to 'typedb-exported' finished successfully. 96 items imported in 2 seconds.
+2026-08-20T09:38:40.876301Z  INFO ThreadId(02) server/service/grpc/migration/import_service.rs:252: Import to 'typedb-exported-relaxed' finished successfully. 96 items imported in 3 seconds.
+2026-08-20T09:38:43.556039Z  INFO ThreadId(02) server/service/grpc/migration/export_service.rs:137: Export 'typedb' from TypeDB 3.12.3 finished successfully. 3 items exported in 0 seconds.
+2026-08-20T09:38:43.572230Z  INFO ThreadId(04) server/service/grpc/migration/export_service.rs:137: Export 'typedb' from TypeDB 3.12.3 finished successfully. 3 items exported in 0 seconds.
+2026-08-20T09:38:45.460386Z  INFO ThreadId(05) server/service/grpc/migration/export_service.rs:137: Export 'typedb' from TypeDB 3.12.3 finished successfully. 3 items exported in 0 seconds.
+2026-08-20T09:38:46.516322Z  INFO ThreadId(05) server/service/grpc/migration/export_service.rs:137: Export 'typedb' from TypeDB 3.12.3 finished successfully. 3 items exported in 0 seconds.
+2026-08-20T09:38:47.589202Z  INFO ThreadId(04) server/service/grpc/migration/export_service.rs:137: Export 'typedb' from TypeDB 3.12.3 finished successfully. 3 items exported in 0 seconds.
+2026-08-20T09:38:47.637078Z  INFO ThreadId(03) server/service/grpc/migration/import_service.rs:260: Import to 'typedb-imported' finished without completion after 0 seconds.
+2026-08-20T09:38:47.701808Z  INFO ThreadId(04) server/service/grpc/migration/import_service.rs:260: Import to 'typedb-imported' finished without completion after 0 seconds.
+2026-08-20T09:38:47.770654Z  INFO ThreadId(04) server/service/grpc/migration/import_service.rs:260: Import to 'typedb-imported' finished without completion after 0 seconds.
+2026-08-20T09:38:47.838668Z  INFO ThreadId(05) server/service/grpc/migration/import_service.rs:260: Import to 'typedb-imported' finished without completion after 0 seconds.
+2026-08-20T09:38:48.711868Z  INFO ThreadId(05) server/service/grpc/migration/export_service.rs:137: Export 'typedb' from TypeDB 3.12.3 finished successfully. 2 items exported in 0 seconds.
+2026-08-20T09:38:48.961933Z  INFO ThreadId(03) server/service/grpc/migration/import_service.rs:252: Import to 'typedb-clone' finished successfully. 0 items imported in 0 seconds.
+2026-08-20T09:38:49.019337Z  INFO ThreadId(03) server/service/grpc/migration/export_service.rs:137: Export 'typedb-clone' from TypeDB 3.12.3 finished successfully. 2 items exported in 0 seconds.
+2026-08-20T09:38:49.242832Z  INFO ThreadId(05) server/service/grpc/migration/import_service.rs:252: Import to 'typedb-clone-2' finished successfully. 0 items imported in 0 seconds.
+2026-08-20T09:38:50.386898Z  INFO ThreadId(04) server/service/grpc/migration/export_service.rs:137: Export 'typedb' from TypeDB 3.12.3 finished successfully. 4 items exported in 0 seconds.
+2026-08-20T09:38:50.396796Z  INFO ThreadId(03) server/service/grpc/migration/export_service.rs:137: Export 'untypedb' from TypeDB 3.12.3 finished successfully. 4 items exported in 0 seconds.
+2026-08-20T09:38:50.403937Z  INFO ThreadId(02) server/service/grpc/migration/export_service.rs:137: Export 'notypedb' from TypeDB 3.12.3 finished successfully. 2 items exported in 0 seconds.
+2026-08-20T09:38:50.486110Z  INFO ThreadId(04) server/service/grpc/migration/import_service.rs:260: Import to 'newtypedb' finished without completion after 0 seconds.
+2026-08-20T09:38:50.579520Z  INFO ThreadId(02) server/service/grpc/migration/import_service.rs:260: Import to 'newtypedb' finished without completion after 0 seconds.
+2026-08-20T09:38:50.653439Z  INFO ThreadId(02) server/service/grpc/migration/import_service.rs:260: Import to 'newtypedb' finished without completion after 0 seconds.
+2026-08-20T09:38:50.723787Z  INFO ThreadId(04) server/service/grpc/migration/import_service.rs:260: Import to 'newtypedb' finished without completion after 0 seconds.
+2026-08-20T09:38:50.945541Z  INFO ThreadId(03) server/service/grpc/migration/import_service.rs:252: Import to 'newtypedb' finished successfully. 2 items imported in 0 seconds.
+2026-08-20T09:38:51.202902Z  INFO ThreadId(04) server/service/grpc/migration/import_service.rs:252: Import to 'newuntypedb' finished successfully. 2 items imported in 0 seconds.
+2026-08-20T09:38:51.310474Z  INFO ThreadId(03) server/service/grpc/migration/import_service.rs:252: Import to 'newnotypedb' finished successfully. 0 items imported in 0 seconds.
+2026-08-20T09:38:53.338122Z  INFO ThreadId(03) server/service/grpc/migration/export_service.rs:137: Export 'typedb' from TypeDB 3.12.3 finished successfully. 28 items exported in 0 seconds.
+2026-08-20T09:38:53.782689Z  INFO ThreadId(02) server/service/grpc/migration/import_service.rs:252: Import to 'typedb-clone' finished successfully. 26 items imported in 0 seconds.
 
 Received SIGTERM. Initiating shutdown...
 Exited.

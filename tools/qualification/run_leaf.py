@@ -73,6 +73,17 @@ import leaf_common as lc  # noqa: E402
 
 TB = REPO / "sources" / "typedb"
 DEFAULT_TIMEOUT = 3600
+# This machine's single filesystem is shared with concurrent builds. A test
+# that fails because the disk filled is a FALSE RED, and a false red published
+# as a leaf outcome is worse than no evidence at all - so the run STOPS,
+# loudly, rather than archiving one. The remaining targets are then honestly
+# absent (uncovered), never wrongly failed.
+DEFAULT_MIN_FREE_MB = 400
+
+
+def free_mb(path=REPO):
+    st = os.statvfs(path)
+    return (st.f_bavail * st.f_frsize) // (1024 * 1024)
 
 
 def run_one(e, out_dir, timeout):
@@ -136,6 +147,12 @@ def run_one(e, out_dir, timeout):
     dur = time.time() - start
     if e["target"] in run_u0.ASSEMBLY_TARGETS:
         reap_strays()
+        # the extracted runfiles tree is ~250MB per assembly target and is a
+        # WORKING directory, not evidence: the log it produced is the evidence
+        # and is already archived. Dropping it keeps a long corpus run from
+        # filling the shared disk out from under itself.
+        shutil.rmtree(out_dir / "iso" / e["target"], ignore_errors=True)
+    shutil.rmtree(tmp, ignore_errors=True)
     return {
         "runner_row_id": rid,
         "cargo_package": e["package"],
@@ -174,6 +191,13 @@ def analyse(row, out_dir, catalog_target_id, catalog_leaves, plan, fixtures):
     if row["timed_out"]:
         refusals.append("the target TIMED OUT - a killed process's partial "
                         "output is never a complete leaf enumeration")
+    # An ENOSPC anywhere in the output means the environment failed, not the
+    # code under test. Publishing those case outcomes would archive false reds
+    # (and false greens for whatever ran before the disk filled).
+    if "No space left on device" in text:
+        refusals.append("the log contains 'No space left on device' - the "
+                        "environment failed during this target, so its case "
+                        "outcomes describe the disk, not the code under test")
 
     declared = catalog_leaves.get(catalog_target_id, {})
     observed = {n for n, _o, _l in cases}
@@ -250,6 +274,11 @@ def main():
     ap.add_argument("--filter", default=None)
     ap.add_argument("--skip", action="append", default=[])
     ap.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
+    ap.add_argument("--min-free-mb", type=int, default=DEFAULT_MIN_FREE_MB,
+                    help="stop the run before a target whose execution would "
+                         "risk running the shared disk out; an ENOSPC failure "
+                         "is a false red and must never be archived as a leaf "
+                         "outcome")
     ap.add_argument("--probe-formats", action="store_true",
                     help="report which libtest formats the pinned toolchain "
                          "supports, using a real compiled test binary")
@@ -299,9 +328,19 @@ def main():
           f"tree_state={tree_before['tree_state']}", flush=True)
 
     targets, leaves = [], []
+    aborted = None
     for i, e in enumerate(execs):
         rid = f"{e['package']}:{e['target']}"
-        print(f"[{i+1}/{len(execs)}] {rid} ...", end=" ", flush=True)
+        avail = free_mb()
+        if avail < args.min_free_mb:
+            aborted = (f"stopped before {rid}: only {avail} MB free on the "
+                       f"shared filesystem (< --min-free-mb {args.min_free_mb}). "
+                       f"A target that fails because the disk filled is a FALSE "
+                       f"RED; the remaining {len(execs) - i} target(s) are "
+                       f"honestly absent from this bundle instead.")
+            print(f"ABORT: {aborted}", flush=True)
+            break
+        print(f"[{i+1}/{len(execs)}] {rid} ({avail}MB free) ...", end=" ", flush=True)
         row = run_one(e, out_dir, args.timeout)
         ctid = rid_map.get(rid)
         got = analyse(row, out_dir, ctid, catalog_leaves, plan, fixtures)
@@ -323,13 +362,26 @@ def main():
         "catalog_sha256": common.sha256_file(lc.CATALOG),
         "source_lock_digest": catalog.get("source_lock_digest"),
         "selection": {"package": args.package, "filter": args.filter,
-                      "skip": args.skip, "complete": selection_complete},
+                      "skip": args.skip,
+                      "complete": selection_complete and aborted is None,
+                      "aborted": aborted,
+                      "targets_selected": len(execs),
+                      "targets_executed": len(targets)},
         "fixtures": fixtures,
         "executed_tree": tree_before,
         "executed_tree_after_run": tree_after,
+        # Stability is asserted over the EXECUTED tree only - the checkout
+        # revision and the source delta that produced the binaries. The
+        # fork/typedb worktree is edited by other work on this machine and its
+        # digest moving mid-run does NOT change what ran, so it is recorded as
+        # a separate, informational fact rather than silently folded in (or
+        # silently ignored).
         "tree_stable_across_run":
             tree_before["staged_delta_sha256"] == tree_after["staged_delta_sha256"]
-            and tree_before["fork"]["fork_tree_sha256"] == tree_after["fork"]["fork_tree_sha256"],
+            and tree_before["checkout_revision"] == tree_after["checkout_revision"],
+        "fork_worktree_changed_during_run":
+            tree_before["fork"]["fork_tree_sha256"]
+            != tree_after["fork"]["fork_tree_sha256"],
         "started_utc": None,
         "targets": sorted(targets, key=lambda r: r["runner_row_id"]),
         "leaves": sorted(leaves, key=lambda r: r["leaf_case_id"]),
@@ -346,21 +398,57 @@ def main():
     }
     results = out_dir / lc.RESULTS_NAME
     results.write_text(json.dumps(bundle, indent=1) + "\n")
-    root, _pairs = lc.compute_bundle_root(out_dir, bundle)
-    bundle["bundle_root"] = root
-    results.write_text(json.dumps(bundle, indent=1) + "\n")
-    # the root must bind the FINAL bytes of the results file, so recompute
-    # once more over the file that now carries it
-    root2, pairs = lc.compute_bundle_root(out_dir, bundle)
+    # The root is computed OVER the results file and the logs, and is stored
+    # OUTSIDE both - in the sidecar manifest, in the verdict, and in the
+    # COMPLETE marker. verdict.py does exactly this (the root lives in
+    # verdict.json, never in u0-results.json) and the reason is not
+    # stylistic: a root written back into the file it hashes can never be
+    # recomputed, so a self-referential seal is a seal that always mismatches
+    # and therefore proves nothing.
+    root, pairs = lc.compute_bundle_root(out_dir, bundle)
     # sidecar name and shape follow the convention plan_coverage.py already
     # consumes for the driver lane (`bundle-manifest.json`, {bundle_root,
     # files:{rel:sha}}); the root algorithm is byte-for-byte the one
     # verdict.compute_bundle_root uses (`rel\0sha\n` over sorted rels), so
     # every seal in this repository is recomputed the same way.
     (out_dir / "bundle-manifest.json").write_text(json.dumps(
-        {"bundle_root": root2, "files": pairs}, indent=1) + "\n")
+        {"bundle_root": root, "files": pairs}, indent=1) + "\n")
+    root2 = root
 
     refused = [t for t in targets if t["refusals"]]
+    observation = {
+        "targets": len(targets),
+        "targets_refused": len(refused),
+        "nonzero_exit_targets": sum(1 for t in targets
+                                    if not t["timed_out"] and t["exit_code"] != 0),
+        "timed_out_targets": sum(1 for t in targets if t["timed_out"]),
+        "leaves": len(leaves),
+        "leaves_passed": sum(1 for l in leaves if l["outcome"] == "PASSED"),
+        "leaves_failed": sum(1 for l in leaves if l["outcome"] == "FAILED"),
+        "leaves_ignored": sum(1 for l in leaves if l["outcome"] == "IGNORED"),
+    }
+    # The verdict file mirrors tools/catalog/verdict.py's shape: the raw
+    # OBSERVATION always travels with the bundle root, and this producer never
+    # adjudicates pass/fail - coverage is denominator progress, and a FAILED
+    # leaf is covered evidence of a failure, not a hole.
+    (out_dir / "leaf-verdict.json").write_text(json.dumps({
+        "producer": "tools/qualification/run_leaf.py",
+        "schema": lc.SCHEMA,
+        "profile": profile,
+        "profile_in_plan": bundle["profile_in_plan"],
+        "toolchain_id": tc_id,
+        "plan_root": plan.get("plan_root"),
+        "catalog_sha256": bundle["catalog_sha256"],
+        "executed_tree": tree_before,
+        "tree_stable_across_run": bundle["tree_stable_across_run"],
+        "selection": bundle["selection"],
+        "observation": observation,
+        "bundle_root": root,
+        "statement": (
+            "This bundle records per-case OUTCOMES, not a pass. A FAILED leaf "
+            "here is evidence of a failure, and coverage counts recorded "
+            "outcomes only."),
+    }, indent=1) + "\n")
     print(json.dumps({
         "profile": profile, "profile_in_plan": bundle["profile_in_plan"],
         "toolchain_id": tc_id,

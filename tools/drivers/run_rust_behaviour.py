@@ -523,6 +523,13 @@ def main():
                 rec = per.evidence()
                 rec["suite_id"] = name
                 rec["log"] = common.rel(out_dir / f"server-{name}.log")
+                marker = out_dir / f"backend-spec-{name}.marker"
+                w = rec.get("backend_witness") or {}
+                if w.get("marker_text"):
+                    marker.write_text(w["marker_text"])
+                    w["archived_marker"] = common.rel(marker)
+                if w.get("problem"):
+                    anomalies.append(f"{name}: {w['problem']}")
                 per.stop()
                 rec["exit_code"] = per.proc.returncode
                 shutil.copy(per.log_path, out_dir / f"server-{name}.log")
@@ -532,6 +539,13 @@ def main():
     finally:
         if server is not None:
             rec = server.evidence()
+            w = rec.get("backend_witness") or {}
+            if w.get("marker_text"):
+                marker = out_dir / "backend-spec.marker"
+                marker.write_text(w["marker_text"])
+                w["archived_marker"] = common.rel(marker)
+            if w.get("problem"):
+                anomalies.append(f"shared server: {w['problem']}")
             server.stop()
             rec["exit_code"] = server.proc.returncode
             shutil.copy(server.log_path, out_dir / "server.log")
@@ -612,6 +626,9 @@ def main():
     consumed = [results_path, common.PLAN]
     consumed += [REPO / r["raw_log"] for r in suite_rows if r.get("raw_log")]
     consumed += [REPO / r["log"] for r in server_records if r.get("log")]
+    consumed += [REPO / (r.get("backend_witness") or {})["archived_marker"]
+                 for r in server_records
+                 if (r.get("backend_witness") or {}).get("archived_marker")]
     root, pairs = common.compute_bundle_root(out_dir, consumed)
     (out_dir / "bundle-manifest.json").write_text(json.dumps(
         {"schema": "driver-lane-bundle-manifest-v1", "bundle_root": root,

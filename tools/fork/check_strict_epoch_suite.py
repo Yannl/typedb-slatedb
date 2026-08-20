@@ -16,13 +16,16 @@ feature that actually ships.
 
 This gate therefore passes only when ALL of the following hold:
 
-  1. feature OFF, full library suite  -> fully green. The upstream-regression
+  1. feature OFF, EVERY test target -> fully green. The upstream-regression
      oracle: the fork must not change upstream semantics outside its series.
-  2. feature ON, full library suite   -> fully green. Not "green except for
+     "Every target" means `--tests`: the library suite AND the four
+     integration targets, which round 5 never measured at all.
+  2. feature ON, EVERY test target  -> fully green. Not "green except for
      expected refusals" — GREEN. Patch 0006 gives the crate's own test build a
      harness controller that issues a deterministic per-database epoch to any
      open that does not name one, so upstream test BODIES execute under the
-     shipped fence.
+     shipped fence; the integration targets, which compile against the SHIPPED
+     library and cannot see that seam, name their epochs explicitly.
   3. the dedicated NEGATIVE fence suite -> green and non-empty. The seam in
      (2) could hide the very refusal it works around; these tests opt out of
      it and prove an omitted epoch still fails closed.
@@ -36,7 +39,7 @@ This gate therefore passes only when ALL of the following hold:
 Anything less prints FAIL.
 
 `--quick` is the PR-tier shape used by CI: it still runs clauses 2 and 3 in
-full — the feature-on FULL suite must be green, which is the expensive and
+full — every feature-on target must be green, which is the expensive and
 load-bearing clause R6-FORK-01 asks CI to add — and skips clause 1 (and
 therefore clause 4, which needs feature-off's leaf list). Its verdict is
 `PARTIAL`, never the bare word `PASS`, and it names what it did not prove.
@@ -81,15 +84,15 @@ EXCLUSIONS: dict[str, str] = {}
 # Tests that exist ONLY under the shipped posture (they are `cfg`-gated on the
 # feature), so they legitimately appear feature-on and not feature-off.
 FEATURE_ON_ONLY: dict[str, str] = {
-    "db::builder::tests::negative_fence_a_missing_external_epoch_is_refused_not_defaulted":
+    "lib::db::builder::tests::negative_fence_a_missing_external_epoch_is_refused_not_defaulted":
         "negative fence: an epoch-less open is a typed Invalid refusal and does not advance the stored epoch",
-    "db::builder::tests::negative_fence_an_epoch_less_open_creates_no_database":
+    "lib::db::builder::tests::negative_fence_an_epoch_less_open_creates_no_database":
         "negative fence: an epoch-less FIRST open is refused before any manifest is created",
-    "db::builder::tests::negative_fence_a_harness_issued_epoch_cannot_be_replayed":
+    "lib::db::builder::tests::negative_fence_a_harness_issued_epoch_cannot_be_replayed":
         "negative fence: replaying an epoch the harness already claimed is Fenced, so the harness does not weaken the fence",
-    "db::builder::tests::negative_fence_harness_epochs_are_exact_and_monotonic_per_database":
+    "lib::db::builder::tests::negative_fence_harness_epochs_are_exact_and_monotonic_per_database":
         "witness: the Nth harness-issued open of a database claims epoch N exactly, so the adapted suite runs on external epochs",
-    "fence::tests::negative_fence_the_fencer_refuses_an_unnamed_epoch":
+    "lib::fence::tests::negative_fence_the_fencer_refuses_an_unnamed_epoch":
         "negative fence: WriterFencer refuses an unnamed epoch on its own, independently of the builder's early refusal",
 }
 
@@ -99,8 +102,15 @@ NEGATIVE_FILTER = "negative_fence_"
 
 TEST_RESULT = re.compile(
     r"^test result: (?:ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored", re.M)
-TEST_LEAF = re.compile(r"^test (\S+) \.\.\. (ok|FAILED|ignored)", re.M)
+# `#[should_panic]` tests render as `test NAME - should panic ... ok`, so the
+# suffix is optional here. Getting this wrong silently drops 22 leaves and
+# would make the reconciliation clause lie in the safe-looking direction.
+TEST_LEAF = re.compile(r"^test (\S+)(?: - should panic)? \.\.\. (ok|FAILED|ignored)", re.M)
 FAILED_CASE = re.compile(r"^---- (\S+) stdout ----$", re.M)
+# `cargo test` announces each test BINARY before running it. Leaf identities are
+# qualified with the binary so the library suite and the four integration
+# targets cannot collide (or, worse, silently dedupe) in the reconciliation.
+TARGET = re.compile(r"^\s+Running (?:unittests )?(\S+) \(", re.M)
 
 # The exact refusal the fence raises. Kept only to explain a failure, never to
 # excuse one: under this gate a fence refusal in the full feature-on suite is a
@@ -109,11 +119,43 @@ FENCE_REFUSAL = "external writer epoch required: internal allocation is observe-
 
 
 def run(features: str, filt: str | None = None) -> tuple[int, str]:
-    args = ["cargo", TOOLCHAIN, "test", "--lib", "--features", features]
+    """Run EVERY test target: the library suite and the integration targets.
+
+    `--tests` rather than `--lib`. The round-5 measurement was library-only,
+    and an integration target is exactly where a fence that ships would bite a
+    consumer first — it compiles against the shipped library, with no
+    `cfg(test)` seam available to it.
+    """
+    # --no-fail-fast: cargo stops after the first failing BINARY by default, so
+    # a single library failure would hide the integration targets entirely and
+    # the reconciliation would report them as "did not execute".
+    args = ["cargo", TOOLCHAIN, "test", "--tests", "--no-fail-fast",
+            "--features", features]
     if filt:
         args.append(filt)
     proc = subprocess.run(args, cwd=FORK, capture_output=True, text=True)
     return proc.returncode, proc.stdout + proc.stderr
+
+
+def target_label(binary_path: str) -> str:
+    """`src/lib.rs` -> `lib`; `tests/db.rs` -> `db`."""
+    name = binary_path.rsplit("/", 1)[-1]
+    return "lib" if name == "lib.rs" else name.removesuffix(".rs")
+
+
+def accounted_for(label: str, passed: int, failed: int, ignored: int,
+                  leaf_names: dict[str, str]) -> str | None:
+    """Every counted test must also appear as a named leaf.
+
+    The reconciliation clause compares leaf IDENTITIES, so a parsing gap would
+    show up as tests that "did not execute" — a false accusation pointing away
+    from the real fault. Check the two numbers agree first.
+    """
+    total = passed + failed + ignored
+    if total == len(leaf_names):
+        return None
+    return (f"{label}: {total} tests reported but {len(leaf_names)} leaf identities parsed — "
+            f"the output could not be accounted for, so reconciliation cannot be trusted")
 
 
 def ran_at_all(label: str, rc: int, output: str) -> str | None:
@@ -142,8 +184,18 @@ def counts(output: str) -> tuple[int, int, int]:
 
 
 def leaves(output: str) -> dict[str, str]:
-    """Executed leaf identities -> outcome. This is the coverage evidence."""
-    return {name: outcome for name, outcome in TEST_LEAF.findall(output)}
+    """Executed leaf identities -> outcome. This is the coverage evidence.
+
+    Identities are `<target>::<test path>`, so `lib::db::tests::foo` and an
+    integration test of the same name stay distinct.
+    """
+    marks = [(target_label(m.group(1)), m.start()) for m in TARGET.finditer(output)]
+    found: dict[str, str] = {}
+    for i, (label, start) in enumerate(marks):
+        end = marks[i + 1][1] if i + 1 < len(marks) else len(output)
+        for name, outcome in TEST_LEAF.findall(output[start:end]):
+            found[f"{label}::{name}"] = outcome
+    return found
 
 
 def failing_blocks(output: str) -> dict[str, str]:
@@ -199,38 +251,44 @@ def main() -> int:
     # ---- clause 1: feature OFF, full suite -> upstream-regression oracle ----
     if not args.quick:
         rc, out = run(FEATURES_OFF)
-        did_not_run = ran_at_all("feature-OFF full suite", rc, out)
+        did_not_run = ran_at_all("feature-OFF all targets", rc, out)
         if did_not_run:
             failures.append(did_not_run)
         passed, failed, ignored = counts(out)
         off_leaves = leaves(out)
-        print(f"feature-OFF  full suite  : {passed} passed, {failed} failed, {ignored} ignored "
+        print(f"feature-OFF  all targets : {passed} passed, {failed} failed, {ignored} ignored "
               f"({len(off_leaves)} leaves executed)")
         if rc != 0 or failed != 0 or passed == 0:
-            failures.append(f"feature-OFF full suite is not green: {passed} passed, {failed} failed")
+            failures.append(f"feature-OFF all targets are not green: {passed} passed, {failed} failed")
             detail = describe_failures(out)
             if detail:
                 failures.append(detail)
+        gap = accounted_for("feature-OFF all targets", passed, failed, ignored, off_leaves)
+        if gap:
+            failures.append(gap)
         evidence["feature_off"] = {"passed": passed, "failed": failed, "ignored": ignored,
                                    "leaves": sorted(off_leaves)}
 
     # ---- clause 2: feature ON, full suite -> must be GREEN, not "expected" ----
     rc, out = run(FEATURES_ON)
-    did_not_run = ran_at_all("feature-ON full suite", rc, out)
+    did_not_run = ran_at_all("feature-ON all targets", rc, out)
     if did_not_run:
         failures.append(did_not_run)
     on_passed, on_failed, on_ignored = counts(out)
     on_leaves = leaves(out)
-    print(f"feature-ON   full suite  : {on_passed} passed, {on_failed} failed, {on_ignored} ignored "
+    print(f"feature-ON   all targets : {on_passed} passed, {on_failed} failed, {on_ignored} ignored "
           f"({len(on_leaves)} leaves executed)")
     if rc != 0 or on_failed != 0 or on_passed == 0:
         failures.append(
-            f"feature-ON full suite is not green: {on_passed} passed, {on_failed} failed. "
+            f"feature-ON all targets are not green: {on_passed} passed, {on_failed} failed. "
             f"A refusal here is NOT an expected outcome — it means an open with no epoch was "
             f"not covered by the harness seam (patch 0006), or a real regression.")
         detail = describe_failures(out)
         if detail:
             failures.append(detail)
+    gap = accounted_for("feature-ON all targets", on_passed, on_failed, on_ignored, on_leaves)
+    if gap:
+        failures.append(gap)
     evidence["feature_on"] = {"passed": on_passed, "failed": on_failed, "ignored": on_ignored,
                               "leaves": sorted(on_leaves)}
 

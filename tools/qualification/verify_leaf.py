@@ -40,6 +40,7 @@ Usage:
                                                           # iff it verifies
 """
 import argparse
+import hashlib
 import json
 import pathlib
 import re
@@ -53,9 +54,14 @@ import common  # noqa: E402
 import leaf_common as lc  # noqa: E402
 
 
-def verify(out_dir, plan=None, catalog_leaves=None, catalog_targets=None):
+EMPTY_DELTA_SHA = hashlib.sha256(b"").hexdigest()
+
+
+def verify(out_dir, plan=None, catalog_leaves=None, catalog_targets=None,
+           repo=REPO, corroborate_tree=False):
     """Returns (anomalies, facts). Any anomaly means the bundle is refused."""
     out_dir = pathlib.Path(out_dir).resolve()
+    repo = pathlib.Path(repo).resolve()
     A = []
     results = out_dir / lc.RESULTS_NAME
     if not results.is_file():
@@ -103,22 +109,74 @@ def verify(out_dir, plan=None, catalog_leaves=None, catalog_targets=None):
     if state == "FORK_STAGED_EXACT" and not tree.get("dirty"):
         A.append("bundle claims FORK_STAGED_EXACT with dirty=false - staging the "
                  "fork always diverges from the locked revision")
-    if state == "FORK_STAGED_EXACT" and not str(
-            tree.get("stage_check", "")).startswith("STAGED"):
-        A.append(f"bundle claims FORK_STAGED_EXACT but records stage_check="
-                 f"{tree.get('stage_check')!r}, which is not a STAGED report")
+    if state == "FORK_STAGED_EXACT":
+        if tree.get("unstaged_fork_patches"):
+            A.append(f"bundle claims FORK_STAGED_EXACT while recording "
+                     f"{len(tree['unstaged_fork_patches'])} UNSTAGED fork "
+                     f"patch(es) - the checkout is then neither upstream nor "
+                     f"the fork")
+        if tree.get("unexplained_paths"):
+            A.append(f"bundle claims FORK_STAGED_EXACT while recording "
+                     f"{len(tree['unexplained_paths'])} path(s) that are "
+                     f"neither the pinned upstream nor byte-identical to "
+                     f"fork/typedb: {tree['unexplained_paths'][:3]}")
+        classes = {c.get("class") for c in (tree.get("diverging_paths") or [])}
+        if not classes <= {"FORK_PATCH", "RUNTIME_OUTPUT"}:
+            A.append(f"bundle claims FORK_STAGED_EXACT but classifies diverging "
+                     f"paths as {sorted(classes)}")
+    if state == "PRISTINE":
+        # the staged-delta digest of an EMPTY delta is the sha256 of nothing.
+        # A bundle claiming a pristine tree must carry exactly that digest, so
+        # relabelling a dirty run as clean means fabricating the digest too.
+        if tree.get("staged_delta_sha256") != EMPTY_DELTA_SHA:
+            A.append(f"bundle claims a PRISTINE tree but its staged-delta digest "
+                     f"is {tree.get('staged_delta_sha256')}, not the digest of an "
+                     f"empty delta ({EMPTY_DELTA_SHA}) - a dirty tree presented "
+                     f"as clean")
+        if tree.get("diverging_paths"):
+            A.append(f"bundle claims a PRISTINE tree while listing "
+                     f"{len(tree['diverging_paths'])} diverging path(s)")
+    if corroborate_tree:
+        # An external corroboration, used when re-verifying on the machine that
+        # produced the bundle: the bundle's tree record is the ONE fact no
+        # internal binding can pin, because the producer wrote it. If the
+        # checkout is still at the same revision, its CURRENT staging state
+        # must at least be reconcilable with what the bundle claims.
+        cur = lc.executed_tree_identity()
+        if cur["checkout_revision"] == tree.get("checkout_revision"):
+            if state == "PRISTINE" and cur["tree_state"] != "PRISTINE":
+                A.append(f"bundle claims a PRISTINE tree, but the checkout it "
+                         f"names is currently {cur['tree_state']} at the same "
+                         f"revision ({cur['stage_check']}) - corroboration refuses "
+                         f"the claim")
     if not bundle.get("tree_stable_across_run", False):
         A.append("the executed tree changed between the start and the end of the "
                  "run - rows produced against two different trees cannot be filed "
                  "under one identity")
 
     # ---- bundle root over every consumed byte ---------------------------
-    claimed_root = bundle.get("bundle_root")
-    root, pairs = lc.compute_bundle_root(out_dir, bundle)
-    if claimed_root != root:
-        A.append(f"recomputed bundle root {root} != the root the results file "
-                 f"carries ({claimed_root}) - a consumed file changed after it "
-                 f"was written")
+    # The root is recomputed over the results file and every log it names, and
+    # must equal the root the sidecar manifest, the verdict and the COMPLETE
+    # marker each bind. The results file itself never carries the root (it is
+    # hashed BY it), so a self-referential seal cannot exist here.
+    if "bundle_root" in bundle:
+        A.append("the results file carries a bundle_root field; the root is "
+                 "computed OVER this file and must live outside it, or it can "
+                 "never be recomputed")
+    root, pairs = lc.compute_bundle_root(out_dir, bundle, repo)
+    vf = out_dir / "leaf-verdict.json"
+    if vf.is_file():
+        v = json.loads(vf.read_text())
+        if v.get("bundle_root") != root:
+            A.append(f"leaf-verdict.json binds root {v.get('bundle_root')} but "
+                     f"the bundle recomputes to {root}")
+        obs = v.get("observation") or {}
+        if obs.get("leaves") != len(bundle.get("leaves") or []):
+            A.append(f"leaf-verdict.json records {obs.get('leaves')} leaf/leaves "
+                     f"but the results file carries "
+                     f"{len(bundle.get('leaves') or [])}")
+    else:
+        A.append("no leaf-verdict.json - the bundle states no observation")
     mf = out_dir / "bundle-manifest.json"
     if mf.is_file():
         m = json.loads(mf.read_text())
@@ -159,7 +217,7 @@ def verify(out_dir, plan=None, catalog_leaves=None, catalog_targets=None):
                      f"assertion, not evidence")
             continue
         log = pathlib.Path(raw)
-        log = log if log.is_absolute() else REPO / log
+        log = log if log.is_absolute() else repo / log
         if not log.is_file():
             A.append(f"{rid}: names raw log {raw} which does not exist")
             continue
@@ -250,7 +308,7 @@ def verify(out_dir, plan=None, catalog_leaves=None, catalog_targets=None):
         raw = lf.get("raw_log")
         if raw not in log_cache:
             p = pathlib.Path(raw)
-            p = p if p.is_absolute() else REPO / p
+            p = p if p.is_absolute() else repo / p
             log_cache[raw] = (p.read_text(errors="replace").splitlines()
                               if p.is_file() else None)
         lines = log_cache[raw]
@@ -292,7 +350,7 @@ def verify(out_dir, plan=None, catalog_leaves=None, catalog_targets=None):
                      f"({len(declared)} leaf case(s)) yet publishes no leaf")
 
     facts = {
-        "bundle": str(out_dir.relative_to(REPO)) if out_dir.is_relative_to(REPO)
+        "bundle": str(out_dir.relative_to(repo)) if out_dir.is_relative_to(repo)
                   else str(out_dir),
         "profile": prof,
         "profile_in_plan": bundle.get("profile_in_plan"),
@@ -314,13 +372,24 @@ def main():
     ap.add_argument("--seal", action="store_true",
                     help="write a COMPLETE marker binding the bundle root, but "
                          "ONLY if the bundle verifies with zero anomalies")
+    ap.add_argument("--repo", default=str(REPO),
+                    help="root a repo-relative raw_log resolves against; "
+                         "only the negative-control harness passes this, so "
+                         "it can run THIS verifier against a mutated COPY "
+                         "without touching the real archive")
+    ap.add_argument("--corroborate-tree", action="store_true",
+                    help="additionally check the bundle's tree claim against the "
+                         "checkout on THIS machine (only meaningful where the "
+                         "bundle was produced): the producer writes the tree "
+                         "record, so no binding inside the bundle can pin it")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
     plan = json.loads(lc.PLAN.read_text())
     cl, ct, _ = lc.load_catalog_leaves()
     rc = 0
     for d in args.dirs:
-        A, facts = verify(d, plan, cl, ct)
+        A, facts = verify(d, plan, cl, ct, repo=args.repo,
+                          corroborate_tree=args.corroborate_tree)
         if not args.quiet:
             print(json.dumps({**facts, "anomalies": len(A)}, indent=1))
         for a in A:

@@ -24,7 +24,7 @@ To connect:
   Studio:  https://studio.typedb.com/connect?address=http://127.0.0.1:8729&username=admin
   Console: typedb console --address 127.0.0.1:1729 --tls-disabled --username admin
 
-2026-08-20T09:22:50.882375Z  INFO ThreadId(01) server/lib.rs:485: 
+2026-08-20T09:35:18.048049Z  INFO ThreadId(01) server/lib.rs:485: 
 Ready!
 
 Received SIGTERM. Initiating shutdown...

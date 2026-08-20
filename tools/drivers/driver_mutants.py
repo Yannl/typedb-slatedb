@@ -28,6 +28,10 @@ Mutants:
   forged_step_counts     one leaf row's step counts inflated
   forged_plan_membership an out-of-plan leaf row marked in_plan
   forged_feature_hash    the recorded corpus hash no longer matches the corpus
+  forged_backend_kind    the archived on-disk backend-spec marker rewritten so a
+                         SlateDB row is backed by a RocksDB witness
+  backend_witness_stripped the backend witness removed, leaving only the
+                         environment variable's claim
   server_never_booted    the server record's readiness probes stripped
   server_probe_failed    the last readiness probe rewritten to a failure
   forged_verdict_enum    policy_verdict set to a value outside {GREEN,RED}
@@ -81,6 +85,10 @@ def reseal(bundle, data):
             if p.is_file():
                 s["log_sha256"] = common.sha256_file(p)
                 s["log_bytes"] = p.stat().st_size
+        if s.get("structured_log"):
+            p = log_path(bundle, s["structured_log"])
+            if p.is_file():
+                s["structured_log_sha256"] = common.sha256_file(p)
     for srv in data.get("servers", []):
         if srv.get("log"):
             p = log_path(bundle, srv["log"])
@@ -90,8 +98,13 @@ def reseal(bundle, data):
     consumed = [bundle / "driver-results.json", common.PLAN]
     consumed += [log_path(bundle, s["raw_log"])
                  for s in data.get("suites", []) if s.get("raw_log")]
+    consumed += [log_path(bundle, s["structured_log"])
+                 for s in data.get("suites", []) if s.get("structured_log")]
     consumed += [log_path(bundle, s["log"])
                  for s in data.get("servers", []) if s.get("log")]
+    consumed += [log_path(bundle, (s.get("backend_witness") or {})["archived_marker"])
+                 for s in data.get("servers", [])
+                 if (s.get("backend_witness") or {}).get("archived_marker")]
     root, pairs = common.compute_bundle_root(bundle, consumed)
     (bundle / "bundle-manifest.json").write_text(json.dumps(
         {"schema": "driver-lane-bundle-manifest-v1", "bundle_root": root,
@@ -214,6 +227,37 @@ def m_server_probe_failed(bundle, data):
     return "RESEALED"
 
 
+def m_forged_backend_kind(bundle, data):
+    """The slatedb row's on-disk witness rewritten to the rocksdb backend:
+    the environment variable would still say U2."""
+    srv = next((s for s in data.get("servers", [])
+                if (s.get("backend_witness") or {}).get("archived_marker")), None)
+    if srv is None:
+        raise RuntimeError("bundle archives no backend-spec marker")
+    w = srv["backend_witness"]
+    mp = bundle / pathlib.Path(w["archived_marker"]).name
+    text = mp.read_text().replace("kind slatedb-r2", "kind classic") \
+                         .replace("kind classic", "kind classic")
+    if text == mp.read_text():
+        text = mp.read_text().replace("kind ", "kind tampered-")
+    mp.write_text(text)
+    w["marker_sha256"] = hashlib.sha256(text.encode()).hexdigest()
+    w["marker_text"] = text
+    w["kind"] = "classic"
+    reseal(bundle, data)
+    return "RESEALED"
+
+
+def m_backend_witness_stripped(bundle, data):
+    srv = next((s for s in data.get("servers", [])
+                if s.get("backend_witness")), None)
+    if srv is None:
+        raise RuntimeError("bundle records no backend witness")
+    srv["backend_witness"] = {}
+    reseal(bundle, data)
+    return "RESEALED"
+
+
 def m_forged_verdict_enum(bundle, data):
     v = json.loads((bundle / "verdict.json").read_text())
     v["policy_verdict"] = "TOTAL_QUALITY_PASS"
@@ -240,6 +284,8 @@ MUTANTS = {
     "forged_feature_hash": m_forged_feature_hash,
     "server_never_booted": m_server_never_booted,
     "server_probe_failed": m_server_probe_failed,
+    "forged_backend_kind": m_forged_backend_kind,
+    "backend_witness_stripped": m_backend_witness_stripped,
     "forged_verdict_enum": m_forged_verdict_enum,
     "unsealed_edit": m_unsealed_edit,
 }

@@ -3179,7 +3179,6 @@ Feature: Driver Concept :: Driver processes values in concept documents correctl
   Scenario Outline: Driver processes values in concept documents correctly
    ✔> Given typedb starts
    ✔> Given connection is open: false
-test test has been running for over 60 seconds
    ✔> Given connection opens with default authentication
    ✔> Given connection is open: true
    ✔> Given connection has 0 databases
@@ -3202,6 +3201,7 @@ test test has been running for over 60 seconds
    ✔  Then answer size is: 1
    ✔  Then answer contains document:
    ✔  Then answer does not contain document:
+test test has been running for over 60 seconds
 Feature: Driver Concept :: Driver processes values in concept documents correctly
   Scenario Outline: Driver processes values in concept documents correctly
    ✔> Given typedb starts
@@ -3523,5 +3523,5 @@ Feature: Driver Concept :: Driver processes datetime-tz values in different user
 3368 steps (3368 passed)
 test test ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 72.11s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 71.52s
 

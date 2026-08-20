@@ -1,0 +1,4 @@
+backend-identity v2
+kind classic
+durability file-wal
+digest 12b2f8b4c69436e98d642c9da1af12997e193c5c3f896411042c71280db1e918

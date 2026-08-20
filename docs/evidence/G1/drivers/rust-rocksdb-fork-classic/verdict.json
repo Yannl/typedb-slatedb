@@ -2,7 +2,7 @@
  "green": true,
  "policy_verdict": "GREEN",
  "row_id": "driver:rust:rocksdb",
- "bundle_root": "30cb9f34425de0bc82e4fa46bd5e75b3a1dcd3e04d5bb603e0a7bc61730292df",
+ "bundle_root": "030e46942da1ed9c21857d63c6d001bbb473402b7c01be792dc2ea004c188268",
  "plan_root": "72020aa01fafebddc41321e0c6100c158f80ae997037430871212049054a7a41",
  "anomaly_count": 0,
  "anomalies": [],

@@ -1,0 +1,5 @@
+ok   admin/typedb_admin_bin: exit=2 first-line="error: unexpected argument '--version' found"
+ok   console/typedb_console_bin: exit=0 first-line='3.12.0'
+ok   loader/typedb_loader_bin: exit=2 first-line="error: unexpected argument '--version' found"
+ok   server/typedb_server_bin: exit=0 first-line='server 3.12.3'
+exec: PASS

@@ -1,0 +1,10 @@
+{
+  "artifact_sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+  "artifact_sha256_after": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a",
+  "attempt": 1,
+  "lane": "artifact-exec",
+  "log_file": "lanes/artifact-exec.log",
+  "log_sha256": "ef22b896521ac8936ce8ad3e9805e5ad3bec6daee4b3bda28be60e94aab5536d",
+  "passed": true,
+  "schema": "release-lane-result/v1"
+}

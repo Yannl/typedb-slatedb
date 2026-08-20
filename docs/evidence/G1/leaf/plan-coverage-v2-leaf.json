@@ -1,0 +1,242 @@
+{
+ "schema": "plan-coverage-v2-leaf",
+ "derives_rules_from": "tools/catalog/plan_coverage.py (imported, not copied)",
+ "plan_root": "72020aa01fafebddc41321e0c6100c158f80ae997037430871212049054a7a41",
+ "plan_rows": 23132,
+ "driver_rows": 6,
+ "exclusion_rows": 43,
+ "total_denominator_rows": 23138,
+ "covered_rows": 914,
+ "partial_rows": 109,
+ "uncovered_rows": 22115,
+ "by_family": {
+  "cargo-failpoint": {
+   "PARTIAL": 44,
+   "UNCOVERED": 176
+  },
+  "cargo-libtest": {
+   "COVERED": 910,
+   "PARTIAL": 63,
+   "UNCOVERED": 1302
+  },
+  "cucumber": {
+   "UNCOVERED": 20495
+  },
+  "driver": {
+   "COVERED": 4,
+   "PARTIAL": 2
+  },
+  "script": {
+   "UNCOVERED": 1
+  },
+  "static": {
+   "UNCOVERED": 141
+  }
+ },
+ "covered_row_outcomes": {
+  "cargo-libtest": {
+   "IGNORED": 2,
+   "PASSED": 908
+  }
+ },
+ "covered_meaning": "COVERED = a verified leaf bundle carries an OUTCOME for exactly this (leaf, profile, fixture-set, toolchain) row. It does NOT mean the leaf passed - see covered_row_outcomes for the split. Coverage is denominator progress, never a pass.",
+ "leaf_outcome_divergence": [],
+ "uncovered_reasons": [
+  {
+   "family": "cargo-failpoint",
+   "reason": "target evidence exists ONLY under a lane the plan does not require (historical U2S3 dirty-tree archive) - other-lane evidence covers no plan row",
+   "rows": 176
+  },
+  {
+   "family": "cargo-libtest",
+   "reason": "target evidence exists ONLY under a lane the plan does not require (historical U2S3 dirty-tree archive) - other-lane evidence covers no plan row",
+   "rows": 1302
+  },
+  {
+   "family": "cucumber",
+   "reason": "no leaf-level runner lane has produced archived evidence",
+   "rows": 20495
+  },
+  {
+   "family": "script",
+   "reason": "no leaf-level runner lane has produced archived evidence",
+   "rows": 1
+  },
+  {
+   "family": "static",
+   "reason": "no leaf-level runner lane has produced archived evidence",
+   "rows": 141
+  }
+ ],
+ "covered_examples": [
+  {
+   "row": [
+    "cargo:cache:unit:cache::tests::test_delete_insert_duplicates",
+    "U1"
+   ],
+   "evidence": [
+    {
+     "bundle": "docs/evidence/G3/leaf/u1-full-1",
+     "profile": "U1",
+     "outcome": "PASSED",
+     "fixture_set_id": "fs:none",
+     "toolchain_id": "rust-1.93.0:x86_64-unknown-linux-gnu",
+     "raw_log": "docs/evidence/G3/leaf/u1-full-1/cache__cache.log",
+     "log_line": 4,
+     "log_sha256": "e78cba96c3bc25642fc6a6c811057e26ba5341c88f21ebd79587c366ef55774e"
+    }
+   ]
+  },
+  {
+   "row": [
+    "cargo:cache:unit:cache::tests::test_delete_insert_duplicates",
+    "U2"
+   ],
+   "evidence": [
+    {
+     "bundle": "docs/evidence/G3/leaf/u2-full-1",
+     "profile": "U2",
+     "outcome": "PASSED",
+     "fixture_set_id": "fs:none",
+     "toolchain_id": "rust-1.93.0:x86_64-unknown-linux-gnu",
+     "raw_log": "docs/evidence/G3/leaf/u2-full-1/cache__cache.log",
+     "log_line": 4,
+     "log_sha256": "b0504715001a534247bd1611f45c4fb2dfd1be7c42234592c2ad2cd82fca7c9d"
+    }
+   ]
+  },
+  {
+   "row": [
+    "cargo:cache:unit:cache::tests::test_insert_spillover_duplicates",
+    "U1"
+   ],
+   "evidence": [
+    {
+     "bundle": "docs/evidence/G3/leaf/u1-full-1",
+     "profile": "U1",
+     "outcome": "PASSED",
+     "fixture_set_id": "fs:none",
+     "toolchain_id": "rust-1.93.0:x86_64-unknown-linux-gnu",
+     "raw_log": "docs/evidence/G3/leaf/u1-full-1/cache__cache.log",
+     "log_line": 3,
+     "log_sha256": "e78cba96c3bc25642fc6a6c811057e26ba5341c88f21ebd79587c366ef55774e"
+    }
+   ]
+  }
+ ],
+ "target_granularity_bundles": [
+  {
+   "bundle": "docs/evidence/G1/u0-results-pass1",
+   "profile": "U0",
+   "rows": 104,
+   "profile_in_plan": true,
+   "tree_provenance": "UNRECORDED",
+   "dirty_tree": null,
+   "unjoinable_rows": 78,
+   "provenance_note": "this bundle records no executed-tree identity at all; 'dirty_tree: null' means UNKNOWN, never clean",
+   "unjoinable_reason": "target ids in the broken pre-fix '0.0.0:<target>' id space cannot be joined to catalogue targets without guessing; they contribute NOTHING to coverage"
+  },
+  {
+   "bundle": "docs/evidence/G1/u0-results-pass2-fixedenv",
+   "profile": "U0",
+   "rows": 10,
+   "profile_in_plan": true,
+   "tree_provenance": "UNRECORDED",
+   "dirty_tree": null,
+   "unjoinable_rows": 2,
+   "provenance_note": "this bundle records no executed-tree identity at all; 'dirty_tree: null' means UNKNOWN, never clean",
+   "unjoinable_reason": "target ids in the broken pre-fix '0.0.0:<target>' id space cannot be joined to catalogue targets without guessing; they contribute NOTHING to coverage"
+  },
+  {
+   "bundle": "docs/evidence/G3/u2s3-full-3",
+   "profile": "U2S3",
+   "rows": 106,
+   "profile_in_plan": false,
+   "tree_provenance": "recorded",
+   "dirty_tree": true,
+   "unjoinable_rows": 0,
+   "lane_note": "profile 'U2S3' is not a plan profile; this bundle's rows are other-lane evidence and cover no plan row"
+  }
+ ],
+ "leaf_bundles": [
+  {
+   "bundle": "docs/evidence/G3/leaf/u1-full-1",
+   "profile": "U1",
+   "profile_in_plan": true,
+   "toolchain_id": "rust-1.93.0:x86_64-unknown-linux-gnu",
+   "tree_state": "FORK_STAGED_EXACT",
+   "targets": 106,
+   "targets_publishable": 102,
+   "targets_refused": 4,
+   "leaves": 451,
+   "bundle_root": "8836361dbb79dda042fec39da553e05291183cb3cd562562f2b0027c48f0d49b",
+   "anomalies": [],
+   "counted": true,
+   "leaves_indexed": 451
+  },
+  {
+   "bundle": "docs/evidence/G3/leaf/u1-http-2",
+   "profile": "U1",
+   "profile_in_plan": true,
+   "toolchain_id": "rust-1.93.0:x86_64-unknown-linux-gnu",
+   "tree_state": "FORK_STAGED_EXACT",
+   "targets": 4,
+   "targets_publishable": 4,
+   "targets_refused": 0,
+   "leaves": 4,
+   "bundle_root": "48952a67630debded37da7f206bd51fd98d1c71ee14985eda6ead15f95e34ae8",
+   "anomalies": [],
+   "counted": true,
+   "leaves_indexed": 4
+  },
+  {
+   "bundle": "docs/evidence/G3/leaf/u2-full-1",
+   "profile": "U2",
+   "profile_in_plan": true,
+   "toolchain_id": "rust-1.93.0:x86_64-unknown-linux-gnu",
+   "tree_state": "FORK_STAGED_EXACT",
+   "targets": 106,
+   "targets_publishable": 106,
+   "targets_refused": 0,
+   "leaves": 455,
+   "bundle_root": "62a11c337010e8f352c45eb2a41208ea8a2a202bea974896a81ec83efc9e71ae",
+   "anomalies": [],
+   "counted": true,
+   "leaves_indexed": 455
+  }
+ ],
+ "driver_rows_detail": [
+  {
+   "row_id": "driver:rust:rocksdb",
+   "status": "COVERED",
+   "reason": "official driver suite executed at leaf granularity; 213 plan leaves carry a per-scenario outcome (docs/evidence/G1/drivers/rust-rocksdb-fork-classic)"
+  },
+  {
+   "row_id": "driver:rust:slatedb",
+   "status": "COVERED",
+   "reason": "official driver suite executed at leaf granularity; 213 plan leaves carry a per-scenario outcome (docs/evidence/G1/drivers/rust-slatedb-fork)"
+  },
+  {
+   "row_id": "driver:python:rocksdb",
+   "status": "COVERED",
+   "reason": "official driver suite executed at leaf granularity; 213 plan leaves carry a per-scenario outcome (docs/evidence/G1/drivers/python-rocksdb-fork-classic)"
+  },
+  {
+   "row_id": "driver:python:slatedb",
+   "status": "COVERED",
+   "reason": "official driver suite executed at leaf granularity; 213 plan leaves carry a per-scenario outcome (docs/evidence/G1/drivers/python-slatedb-fork)"
+  },
+  {
+   "row_id": "driver:typescript:rocksdb",
+   "status": "PARTIAL",
+   "reason": "official driver suite executed at leaf granularity for 4/4 suites (149 plan leaves with a per-scenario outcome); blocked: cluster: declared upstream only as typedb_behaviour_http_ts_cluster_test (http-ts/tests/behaviour/feature/BUILD), the multi-node cluster lane: it needs a replicated TypeDB deployment and the TLS certificates in //tool/test/resources:certificates. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here.; caveat:npm-install-not-pnpm-lock: http-ts declares packageManager 'pnpm@8.15.9' and ships pnpm-lock.yaml (sha256 5617f6a91f82ae909edfba27c88001612149a63323eac4e9f52af9b41fbedf92), but the pnpm available here is 10.x, which does not honour a v8 lockfile without migrating it. Dependencies were therefore resolved by npm within package.json's ranges. Every exact pin was verified to have installed at its pinned version, and the full resolved tree is archived as npm-tree.json, but the transitive closure is NOT the closure the committed pnpm lockfile names.; caveat:steps-typecheck-not-clean: tsc exited 2 with 9 diagnostic(s) while compiling the behaviour steps, and still emitted JavaScript for every source. Upstream's Bazel target compiles the steps against //http-ts:driver-lib, which emits only dist/index.cjs and deliberately no index.d.cts (http-ts/BUILD: 'TODO: should also output index.d.cts (works in filesystem but not in bazel)'), so the upstream type surface is not reproducible outside bazel. The executed evidence below rests on the emitted JavaScript plus a zero-undefined/zero-ambiguous step check, not on a clean typecheck."
+  },
+  {
+   "row_id": "driver:typescript:slatedb",
+   "status": "PARTIAL",
+   "reason": "official driver suite executed at leaf granularity for 4/4 suites (149 plan leaves with a per-scenario outcome); blocked: cluster: declared upstream only as typedb_behaviour_http_ts_cluster_test (http-ts/tests/behaviour/feature/BUILD), the multi-node cluster lane: it needs a replicated TypeDB deployment and the TLS certificates in //tool/test/resources:certificates. TypeDB CE - the only server this repository builds - is single-node, so no cluster can be stood up here.; caveat:npm-install-not-pnpm-lock: http-ts declares packageManager 'pnpm@8.15.9' and ships pnpm-lock.yaml (sha256 5617f6a91f82ae909edfba27c88001612149a63323eac4e9f52af9b41fbedf92), but the pnpm available here is 10.x, which does not honour a v8 lockfile without migrating it. Dependencies were therefore resolved by npm within package.json's ranges. Every exact pin was verified to have installed at its pinned version, and the full resolved tree is archived as npm-tree.json, but the transitive closure is NOT the closure the committed pnpm lockfile names.; caveat:steps-typecheck-not-clean: tsc exited 2 with 9 diagnostic(s) while compiling the behaviour steps, and still emitted JavaScript for every source. Upstream's Bazel target compiles the steps against //http-ts:driver-lib, which emits only dist/index.cjs and deliberately no index.d.cts (http-ts/BUILD: 'TODO: should also output index.d.cts (works in filesystem but not in bazel)'), so the upstream type surface is not reproducible outside bazel. The executed evidence below rests on the emitted JavaScript plus a zero-undefined/zero-ambiguous step check, not on a clean typecheck."
+  }
+ ],
+ "plan_satisfied": false,
+ "statement": "THE PLAN IS NOT SATISFIED. 914 of 23138 denominator rows now carry a leaf-granularity outcome; 109 are PARTIAL (target-granularity aggregate evidence only); 22115 are uncovered. Coverage counts recorded outcomes, not passes."
+}

@@ -1,0 +1,563 @@
+{
+ "schema": "typedb-r2-leaf-evidence-v1",
+ "profile": "U1",
+ "profile_in_plan": true,
+ "toolchain": {
+  "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+  "rustc": "rustc 1.93.0 (254b59607 2026-01-19)",
+  "target_triple": "x86_64-unknown-linux-gnu",
+  "requested": "1.93.0"
+ },
+ "toolchain_id": "rust-1.93.0:x86_64-unknown-linux-gnu",
+ "plan_root": "72020aa01fafebddc41321e0c6100c158f80ae997037430871212049054a7a41",
+ "catalog_sha256": "569448d1a259c64c789ad8b6e65973f51c7e9a678b89079592b9ca450c41c57e",
+ "source_lock_digest": "837d52fbac8f47ab7a72a6d8921cd7e2d8509e01243a7dc92c73132b7178b8c4",
+ "selection": {
+  "package": null,
+  "filter": null,
+  "skip": [],
+  "target": [
+   "typedb_server_bin:test_http_driver_http",
+   "typedb_server_bin:test_http_driver_query",
+   "typedb_server_bin:test_http_driver_user",
+   "typedb_server_bin:test_http_transaction"
+  ],
+  "complete": false,
+  "aborted": null,
+  "targets_selected": 4,
+  "targets_executed": 4
+ },
+ "fixtures": {
+  "fixture:typedb-behaviour": {
+   "present": true,
+   "checkout": "sources/typedb-behaviour",
+   "checkout_revision": "ac5d5733a484cea1d8809a2968029a818fdae24f",
+   "checkout_dirty": false,
+   "link_paths_serving_features": [
+    "sources/typedb/bazel-typedb/external/typedb_behaviour+",
+    "sources/typedb/bazel-typedb/external/typedb_behaviour",
+    "sources/typedb/bazel-typedb/external/typedb_behaviour++",
+    "sources/typedb_behaviour+"
+   ]
+  },
+  "fixture:assembly-script.tql": {
+   "present": true,
+   "sha256": "83b44cf02e52074a14c2ec334999dd8f3c52263a4dc669bc8d37530ab9bf5e24"
+  },
+  "assembly_archive": {
+   "present": true,
+   "sha256": "16cc22789e6a590244586b18e022c1ef42e6820d04191507d33c06629068b45a"
+  }
+ },
+ "executed_tree": {
+  "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+  "dirty": true,
+  "tree_state": "FORK_STAGED_EXACT",
+  "stage_check": "MIXED: 0 fork patches unstaged, 3 stale staged files, 37 paths diverge from the locked revision",
+  "unstaged_fork_patches": [],
+  "unstaged_fork_patches_affecting_cargo": [],
+  "unexplained_paths": [],
+  "runtime_output_paths": [
+   "typedb-logs/"
+  ],
+  "non_cargo_input_paths": [],
+  "diverging_paths": [
+   {
+    "path": "Cargo.lock",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "Cargo.toml",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "common/concurrency/interval_runner.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "concept/tests/test_statistics.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "concept/thing/thing_manager.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "database/Cargo.toml",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "database/database.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "durability/durability.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "durability/tests/basic.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "durability/tests/common/test_common.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "durability/wal.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "encoding/Cargo.toml",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "encoding/encoding.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "encoding/tests/test_type_vertex.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/Cargo.toml",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/durability_client.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/isolation_manager.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/iterator.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/keyspace.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/mod.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/raw_iterator.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/rocks_resources.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/checkpoint.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/commit_recovery.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/mod.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/storage.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/tests/test_recovery.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/tests/test_utils_storage/lib.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/write_batches.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/factory.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/cursor.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/engine.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/slate.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/post_wal_guard.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/sha256.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/status_resolver.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "typedb-logs/",
+    "class": "RUNTIME_OUTPUT"
+   }
+  ],
+  "staged_delta_files": 36,
+  "staged_delta_sha256": "2b386f13aa2e689256cffb87053b97cfa2cd4a9ea7716d5a72cef322fe99ab53",
+  "fork": {
+   "files": 778,
+   "fork_tree_sha256": "4a163c9be3b103787e4ab025a641abc7424e55769c463a4bbd31b17c462db220",
+   "outer_repo_commit": "c6275609c9dac517be9e08183cfa31c57b5e9d91",
+   "outer_repo_dirty": true,
+   "outer_repo_fork_paths_modified": []
+  }
+ },
+ "executed_tree_after_run": {
+  "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
+  "dirty": true,
+  "tree_state": "FORK_STAGED_EXACT",
+  "stage_check": "MIXED: 0 fork patches unstaged, 3 stale staged files, 37 paths diverge from the locked revision",
+  "unstaged_fork_patches": [],
+  "unstaged_fork_patches_affecting_cargo": [],
+  "unexplained_paths": [],
+  "runtime_output_paths": [
+   "typedb-logs/"
+  ],
+  "non_cargo_input_paths": [],
+  "diverging_paths": [
+   {
+    "path": "Cargo.lock",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "Cargo.toml",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "common/concurrency/interval_runner.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "concept/tests/test_statistics.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "concept/thing/thing_manager.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "database/Cargo.toml",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "database/database.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "durability/durability.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "durability/tests/basic.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "durability/tests/common/test_common.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "durability/wal.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "encoding/Cargo.toml",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "encoding/encoding.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "encoding/tests/test_type_vertex.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/Cargo.toml",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/durability_client.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/isolation_manager.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/iterator.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/keyspace.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/mod.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/raw_iterator.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/rocks_resources.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/checkpoint.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/commit_recovery.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/mod.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/storage.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/tests/test_recovery.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/tests/test_utils_storage/lib.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/write_batches.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/factory.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/cursor.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/engine.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/keyspace/slate.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/post_wal_guard.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/sha256.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "storage/recovery/status_resolver.rs",
+    "class": "FORK_PATCH"
+   },
+   {
+    "path": "typedb-logs/",
+    "class": "RUNTIME_OUTPUT"
+   }
+  ],
+  "staged_delta_files": 36,
+  "staged_delta_sha256": "2b386f13aa2e689256cffb87053b97cfa2cd4a9ea7716d5a72cef322fe99ab53",
+  "fork": {
+   "files": 778,
+   "fork_tree_sha256": "4a163c9be3b103787e4ab025a641abc7424e55769c463a4bbd31b17c462db220",
+   "outer_repo_commit": "c6275609c9dac517be9e08183cfa31c57b5e9d91",
+   "outer_repo_dirty": true,
+   "outer_repo_fork_paths_modified": []
+  }
+ },
+ "tree_stable_across_run": true,
+ "fork_worktree_changed_during_run": false,
+ "started_utc": null,
+ "targets": [
+  {
+   "runner_row_id": "typedb_server_bin:test_http_driver_http",
+   "cargo_package": "typedb_server_bin",
+   "cargo_target": "test_http_driver_http",
+   "executable_sha256": "4887a5d6b2d8b77d48b8de16af015ddb20d6d6c8a157a9dd74c547c39d60c1d3",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 58.73,
+   "raw_log": "docs/evidence/G3/leaf/u1-http-2/typedb_server_bin__test_http_driver_http.log",
+   "log_sha256": "51bbadac98c0de4de3d7170efa2071fbb8a0e71f8224d9ea79ab70fcbdb925a2",
+   "log_bytes": 55787,
+   "catalog_target_id": "cargo:typedb_server_bin:test:test_http_driver_http",
+   "counts": {
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+   },
+   "parsed_cases": 1,
+   "catalog_leaf_cases": 1,
+   "extra_cases": [],
+   "missing_cases": [],
+   "refusals": [],
+   "publishable": true
+  },
+  {
+   "runner_row_id": "typedb_server_bin:test_http_driver_query",
+   "cargo_package": "typedb_server_bin",
+   "cargo_target": "test_http_driver_query",
+   "executable_sha256": "162264034d839434620eb2a887c5a1a772d6bc3cd9eca99614d922c95ea5e1c8",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 26.69,
+   "raw_log": "docs/evidence/G3/leaf/u1-http-2/typedb_server_bin__test_http_driver_query.log",
+   "log_sha256": "c0aa66f6c80be815b9d76b8e5aac0e46f3edcc4abfaa1ff2cfb9fd7ef8dc56d3",
+   "log_bytes": 45400,
+   "catalog_target_id": "cargo:typedb_server_bin:test:test_http_driver_query",
+   "counts": {
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+   },
+   "parsed_cases": 1,
+   "catalog_leaf_cases": 1,
+   "extra_cases": [],
+   "missing_cases": [],
+   "refusals": [],
+   "publishable": true
+  },
+  {
+   "runner_row_id": "typedb_server_bin:test_http_driver_user",
+   "cargo_package": "typedb_server_bin",
+   "cargo_target": "test_http_driver_user",
+   "executable_sha256": "755502c3cbc7944b98c3668ca6b0d3b6f53c2ea47c88fa1427d8579a80cfa8fd",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 40.27,
+   "raw_log": "docs/evidence/G3/leaf/u1-http-2/typedb_server_bin__test_http_driver_user.log",
+   "log_sha256": "7ca49350ab0892c4d79f3a946920d8b5c2fec26d0c81b7a8485e9ac80c7524a5",
+   "log_bytes": 24969,
+   "catalog_target_id": "cargo:typedb_server_bin:test:test_http_driver_user",
+   "counts": {
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+   },
+   "parsed_cases": 1,
+   "catalog_leaf_cases": 1,
+   "extra_cases": [],
+   "missing_cases": [],
+   "refusals": [],
+   "publishable": true
+  },
+  {
+   "runner_row_id": "typedb_server_bin:test_http_transaction",
+   "cargo_package": "typedb_server_bin",
+   "cargo_target": "test_http_transaction",
+   "executable_sha256": "c9e0d3efa0cf6df4fb047763c9322e5a79c63c12ead6696dbd54ca46f85ce959",
+   "exit_code": 0,
+   "timed_out": false,
+   "duration_seconds": 35.05,
+   "raw_log": "docs/evidence/G3/leaf/u1-http-2/typedb_server_bin__test_http_transaction.log",
+   "log_sha256": "939e9c8942a0ad69f81434f92d5f10aa40007690fa97e90779c73cf8641d9380",
+   "log_bytes": 30160,
+   "catalog_target_id": "cargo:typedb_server_bin:test:test_http_transaction",
+   "counts": {
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+   },
+   "parsed_cases": 1,
+   "catalog_leaf_cases": 1,
+   "extra_cases": [],
+   "missing_cases": [],
+   "refusals": [],
+   "publishable": true
+  }
+ ],
+ "leaves": [
+  {
+   "leaf_case_id": "cargo:typedb_server_bin:test:test_http_driver_http::test",
+   "catalog_target_id": "cargo:typedb_server_bin:test:test_http_driver_http",
+   "runner_row_id": "typedb_server_bin:test_http_driver_http",
+   "case_name": "test",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/u1-http-2/typedb_server_bin__test_http_driver_http.log",
+   "log_sha256": "51bbadac98c0de4de3d7170efa2071fbb8a0e71f8224d9ea79ab70fcbdb925a2",
+   "log_line": 1022,
+   "outcome_line": 1022,
+   "fixture_set_id": "fs:166ab4dc2c90",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:typedb_server_bin:test:test_http_driver_query::test",
+   "catalog_target_id": "cargo:typedb_server_bin:test:test_http_driver_query",
+   "runner_row_id": "typedb_server_bin:test_http_driver_query",
+   "case_name": "test",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/u1-http-2/typedb_server_bin__test_http_driver_query.log",
+   "log_sha256": "c0aa66f6c80be815b9d76b8e5aac0e46f3edcc4abfaa1ff2cfb9fd7ef8dc56d3",
+   "log_line": 872,
+   "outcome_line": 872,
+   "fixture_set_id": "fs:166ab4dc2c90",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:typedb_server_bin:test:test_http_driver_user::test",
+   "catalog_target_id": "cargo:typedb_server_bin:test:test_http_driver_user",
+   "runner_row_id": "typedb_server_bin:test_http_driver_user",
+   "case_name": "test",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/u1-http-2/typedb_server_bin__test_http_driver_user.log",
+   "log_sha256": "7ca49350ab0892c4d79f3a946920d8b5c2fec26d0c81b7a8485e9ac80c7524a5",
+   "log_line": 357,
+   "outcome_line": 357,
+   "fixture_set_id": "fs:166ab4dc2c90",
+   "fixture_set_satisfied": true
+  },
+  {
+   "leaf_case_id": "cargo:typedb_server_bin:test:test_http_transaction::test",
+   "catalog_target_id": "cargo:typedb_server_bin:test:test_http_transaction",
+   "runner_row_id": "typedb_server_bin:test_http_transaction",
+   "case_name": "test",
+   "outcome": "PASSED",
+   "raw_log": "docs/evidence/G3/leaf/u1-http-2/typedb_server_bin__test_http_transaction.log",
+   "log_sha256": "939e9c8942a0ad69f81434f92d5f10aa40007690fa97e90779c73cf8641d9380",
+   "log_line": 680,
+   "outcome_line": 680,
+   "fixture_set_id": "fs:166ab4dc2c90",
+   "fixture_set_satisfied": true
+  }
+ ],
+ "failpoint_leaves_not_observable": {
+  "count": 44,
+  "reason": "the catalogue's FAILPOINT leaves are (fail point x libtest case) products enumerated inside a `for fail_point in fail_point::ALL` loop within two #[test] functions; libtest prints one line for the case and none for the iterations, so no per-failpoint outcome exists in the log. Claiming them from a passing loop would be inference presented as observation, so they are left UNCOVERED."
+ }
+}

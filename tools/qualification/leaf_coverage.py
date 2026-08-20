@@ -119,6 +119,12 @@ def main():
     ap.add_argument("--leaf", action="append", default=[],
                     help="leaf evidence bundle dir (repeatable)")
     ap.add_argument("--out", type=pathlib.Path, default=None)
+    ap.add_argument("--min-covered", type=int, default=None,
+                    help="fail if fewer than N rows carry a leaf outcome. The "
+                         "plan is not satisfied and this command exits nonzero "
+                         "either way, so a CI job cannot use the exit code as a "
+                         "regression signal; this floor is what makes coverage "
+                         "ratchet forward instead of quietly sliding back.")
     ap.add_argument("--repo", default=str(REPO),
                     help="root a repo-relative raw_log resolves against; only "
                          "the negative-control harness passes this")
@@ -260,6 +266,14 @@ def main():
     print(f"PLAN COVERAGE (leaf-aware): {covered} covered / {partial} partial / "
           f"{uncovered} uncovered of {total_rows} rows -> NOT SATISFIED",
           file=sys.stderr)
+    if args.min_covered is not None and covered < args.min_covered:
+        print(f"LEAF COVERAGE FLOOR: FAIL — {covered} rows carry a leaf outcome, "
+              f"below the recorded floor of {args.min_covered}. Coverage went "
+              "BACKWARDS; lowering the floor requires a commit that says why.",
+              file=sys.stderr)
+        return 2
+    if args.min_covered is not None:
+        print(f"LEAF COVERAGE FLOOR: PASS — {covered} >= {args.min_covered}")
     return 0 if covered == total_rows else 1
 
 

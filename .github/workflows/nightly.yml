@@ -417,3 +417,60 @@ jobs:
           bazel --version
       - name: the cargo test graph is a faithful superset of the Bazel one
         run: python3 tools/bazel/bazel_parity.py
+
+  leaf-granularity-coverage:
+    # R6-QUAL-01: the denominator is only meaningful if something measures it.
+    # This runs the two reachable plan lanes at LEAF granularity (one recorded
+    # outcome per individual test case, not a per-target summary) and then the
+    # U1-classic vs U2-SlateDB differential, which is the evidence that the
+    # storage adapter changes no upstream per-case outcome.
+    #
+    # It is expected to exit NONZERO: the plan is not satisfied and must not
+    # be reported as satisfied. What is enforced is that coverage does not go
+    # BACKWARDS and that the differential stays clean.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: every archived leaf bundle re-verifies from its own bytes
+        run: |
+          set -euo pipefail
+          for b in docs/evidence/G3/leaf/u1-full-1 \
+                   docs/evidence/G3/leaf/u1-http-2 \
+                   docs/evidence/G3/leaf/u2-full-1; do
+            python3 tools/qualification/verify_leaf.py "$b"
+          done
+      - name: the leaf evidence cannot be forged
+        run: |
+          python3 tools/qualification/leaf_mutants.py --bundle docs/evidence/G3/leaf/u1-full-1
+          python3 tools/qualification/leaf_mutants.py --bundle docs/evidence/G3/leaf/u2-full-1
+      - name: leaf-aware coverage does not regress
+        # Exit 1 is the CORRECT and expected outcome: the plan is NOT satisfied
+        # and must never be reported as satisfied. So the exit code cannot be
+        # the regression signal — exit 2 is, and it means the recorded floor
+        # was breached. Anything else is an unexpected failure.
+        run: |
+          set +e
+          python3 tools/qualification/leaf_coverage.py \
+            --leaf docs/evidence/G3/leaf/u1-full-1 \
+            --leaf docs/evidence/G3/leaf/u1-http-2 \
+            --leaf docs/evidence/G3/leaf/u2-full-1 \
+            --min-covered 914
+          rc=$?
+          set -e
+          case "$rc" in
+            0|1) echo "coverage floor held (exit $rc; 1 = plan not satisfied, as expected)" ;;
+            2)   echo "::error::leaf coverage regressed below the recorded floor"; exit 1 ;;
+            *)   echo "::error::leaf_coverage.py failed unexpectedly (exit $rc)"; exit 1 ;;
+          esac
+      - name: the SlateDB backend changes no upstream per-case outcome
+        # BOTH u1 bundles are the oracle: u1-full-1 refused four HTTP targets on
+        # a loaded machine and u1-http-2 is their clean re-run. Passing only the
+        # first makes those four look candidate-only and the differential goes
+        # red for a reason that is not a regression.
+        run: |
+          python3 tools/qualification/leaf_diff.py \
+            --oracle docs/evidence/G3/leaf/u1-full-1 \
+            --oracle docs/evidence/G3/leaf/u1-http-2 \
+            --candidate docs/evidence/G3/leaf/u2-full-1 \
+            --require-clean

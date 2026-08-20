@@ -151,7 +151,7 @@ def control(label, src, mutate, needle=None, extra=(), expect_ok=False):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--bundle", default="docs/evidence/G3/leaf/smoke-u1",
+    ap.add_argument("--bundle", default="docs/evidence/G3/leaf/u1-full-1",
                     help="a real sealed leaf bundle to mutate (repo-relative)")
     args = ap.parse_args()
     src = args.bundle
@@ -356,18 +356,29 @@ def main():
             "enumeration", src, filtered, needle="filtered_out=3")
 
     # 11 ------------------- the coverage reporter counts nothing from a refusal
+    def leaf_family_covered(report):
+        # ONLY the families this producer supplies. Other lanes (the driver
+        # rows) legitimately cover rows from their own sealed evidence, and
+        # counting them here would make this control pass or fail for reasons
+        # that have nothing to do with the mutation.
+        return sum(v.get("COVERED", 0)
+                   for k, v in report["by_family"].items()
+                   if k.startswith("cargo-"))
+
     c = Copy(src)
-    rc0, out0 = c.coverage()
-    clean_covered = json.loads(out0[out0.index("{"):out0.rindex("}") + 1])["covered_rows"]
+    _rc0, out0 = c.coverage()
+    clean = json.loads(out0[out0.index("{"):out0.rindex("}") + 1])
     c2 = Copy(src)
     edit_outcome(c2)
-    rc1, out1 = c2.coverage()
+    _rc1, out1 = c2.coverage()
     mutated = json.loads(out1[out1.index("{"):out1.rindex("}") + 1])
-    expect(f"11 leaf_coverage counts 0 rows from a refused bundle "
-           f"(clean bundle covers {clean_covered})",
-           clean_covered > 0 and mutated["covered_rows"] == 0
+    expect(f"11 leaf_coverage counts 0 cargo-family rows from a refused bundle "
+           f"(the same bundle intact covers {leaf_family_covered(clean)})",
+           leaf_family_covered(clean) > 0 and leaf_family_covered(mutated) == 0
            and mutated["leaf_bundles"][0]["anomalies"],
-           detail=f"mutated covered_rows={mutated['covered_rows']}")
+           detail=f"intact={leaf_family_covered(clean)} "
+                  f"mutated={leaf_family_covered(mutated)} "
+                  f"anomalies={len(mutated['leaf_bundles'][0]['anomalies'])}")
 
     print(f"\n{checks - len(failures)}/{checks} controls held "
           f"({len(failures)} SURVIVED)")

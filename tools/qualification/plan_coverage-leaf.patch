@@ -40,7 +40,7 @@
  
  
  def load_evidence(dirs, plan_profiles):
-@@ -281,6 +314,10 @@
+@@ -283,6 +316,10 @@
      ap.add_argument("--evidence", action="append", default=None,
                      help="results dir (repeatable); default: the three "
                           "committed bundles")
@@ -51,7 +51,7 @@
      ap.add_argument("--out", type=pathlib.Path, default=None,
                      help="also write the JSON report here")
      args = ap.parse_args()
-@@ -292,6 +329,8 @@
+@@ -294,6 +331,8 @@
  
      same_lane, other_lane, notes = load_evidence(
          args.evidence or DEFAULT_EVIDENCE, plan_profiles)
@@ -60,7 +60,7 @@
  
      def runner_rid(target_id):
          # the one shared join (common.runner_row_id) so this reporter's
-@@ -300,13 +339,29 @@
+@@ -302,13 +341,29 @@
  
      leaves = plan["leaves"]
      counts = {}   # (family, status) -> n
@@ -91,7 +91,7 @@
              family = {"CUCUMBER": "cucumber", "STATIC_CHECK": "static",
                        "SCRIPT": "script"}.get(kind, kind.lower())
              status = "UNCOVERED"
-@@ -382,7 +437,17 @@
+@@ -384,7 +439,17 @@
              {"family": f, "reason": r, "rows": n}
              for (f, r), n in sorted(uncovered_reasons.items())],
          "partial_examples": partial_examples,

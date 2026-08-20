@@ -36,6 +36,7 @@ Usage:
 import argparse
 import collections
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -63,25 +64,79 @@ SUMMARY_RE = re.compile(
     r"^(?P<st>\d+) steps? \((?P<stdetail>[^)]*)\)\s*$", re.M)
 
 
-def source_index():
-    """(module-path suffix, fn name) -> feature path, from the behaviour
-    sources. Only files that literally name a .feature path are indexed, so
-    nothing is inferred about a test that does not read a feature."""
-    idx = {}
+def _norm(case):
+    """libtest prints raw identifiers verbatim (`r#type`, `r#match`); the
+    source module path spells them the same way, so both sides are compared
+    with the `r#` stripped."""
+    return "::".join(c[2:] if c.startswith("r#") else c for c in case.split("::"))
+
+
+def discover_with_src_path(packages=None):
+    """Cargo's own view of every test target, INCLUDING its crate root path.
+
+    `run_u0.discover_executables` drops `target.src_path`, and the crate root
+    is exactly what turns a libtest case name into a source file: a case is
+    `<modules under the crate root>::<fn>`. Asking cargo beats parsing BUILD
+    files, because cargo is what actually compiled the binary being run.
+    """
+    cmd = ["cargo", common.TOOLCHAIN, "test", "--locked", "--no-run",
+           "--message-format", "json"]
+    cmd += (["-p", p] for p in []) and [] or (
+        [x for p in (packages or []) for x in ("-p", p)] or ["--workspace"])
+    out = subprocess.check_output(cmd, cwd=TB, text=True,
+                                  stderr=subprocess.DEVNULL, env=common.CARGO_ENV)
+    execs = {}
+    for line in out.splitlines():
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if msg.get("reason") != "compiler-artifact" or not msg.get("executable"):
+            continue
+        if not msg.get("profile", {}).get("test"):
+            continue
+        tgt = msg["target"]
+        pkg = common.package_name_from_id(msg["package_id"])
+        execs[(pkg, tgt["name"])] = {
+            "package": pkg, "target": tgt["name"],
+            "executable": msg["executable"],
+            "src_path": tgt.get("src_path"),
+            "package_root": str(pathlib.Path(msg["manifest_path"]).parent)}
+    return execs
+
+
+def feature_sources():
+    """.rs file -> the .feature paths its source literally names."""
+    out = {}
     for rs in sorted(BEHAVIOUR_ROOT.rglob("*.rs")):
         txt = rs.read_text(errors="replace")
-        feats = FEATURE_RE.findall(txt)
-        if not feats:
-            continue
-        fns = FN_RE.findall(txt)
-        rel = rs.relative_to(BEHAVIOUR_ROOT)
-        # module path as libtest prints it: directories under the target's
-        # crate root, then the file stem, then the fn; `r#type` prints `type`
-        mods = [p for p in rel.parts[1:-1]] + [rel.stem]
-        mods = [m.lstrip("r#") for m in mods if m != "mod"]
-        for fn in fns:
-            idx[("::".join(mods + [fn]), rs)] = sorted(set(feats))
-    return idx
+        feats = sorted(set(FEATURE_RE.findall(txt)))
+        if feats:
+            out[rs] = feats
+    return out
+
+
+def module_path(src_root, rs):
+    """The module path libtest prints for a fn in `rs`, given the crate root.
+
+    Rust modules are named relative to the crate root FILE's directory; the
+    crate root itself contributes no component, and `mod.rs` names its
+    directory rather than itself. Raw identifiers (`r#type`, `r#match`) print
+    verbatim, which is why comparison strips `r#` on both sides (_norm).
+    """
+    root = pathlib.Path(src_root)
+    if rs == root:
+        return []
+    try:
+        rel = rs.relative_to(root.parent)
+    except ValueError:
+        return None
+    parts = list(rel.parts)
+    if parts[-1] == "mod.rs":
+        parts = parts[:-1]
+    else:
+        parts[-1] = parts[-1][:-3]
+    return parts
 
 
 def list_cases(executable):
@@ -90,45 +145,61 @@ def list_cases(executable):
             if l.endswith(": test")]
 
 
+def case_feature_map(execs=None):
+    """(runner_row_id, case) -> [feature paths], derived from cargo's crate
+    roots and each binary's OWN `--list`. A case that maps to no feature file
+    is reported, never silently dropped."""
+    execs = execs if execs is not None else discover_with_src_path()
+    fsrc = feature_sources()
+    mapping, unmapped = {}, []
+    for (pkg, tgt), e in sorted(execs.items()):
+        root = pathlib.Path(e["package_root"])
+        if root != TB and not str(root).startswith(str(BEHAVIOUR_ROOT)):
+            continue
+        if not e.get("src_path"):
+            continue
+        src_root = pathlib.Path(e["src_path"])
+        if not str(src_root).startswith(str(BEHAVIOUR_ROOT)):
+            continue
+        by_case = {}
+        for rs, feats in fsrc.items():
+            mp = module_path(src_root, rs)
+            if mp is None:
+                continue
+            txt = rs.read_text(errors="replace")
+            for fn in FN_RE.findall(txt):
+                by_case[_norm("::".join(mp + [fn]))] = feats
+        for case in list_cases(e["executable"]):
+            feats = by_case.get(_norm(case))
+            key = (f"{pkg}:{tgt}", case)
+            if feats is None:
+                unmapped.append({"runner_row_id": key[0], "case": case})
+            else:
+                mapping[key] = feats
+    return mapping, unmapped
+
+
 def inventory(catalog):
     scen = collections.Counter(x["target_id"] for x in catalog["leaf_cases"]
                                if x["kind"] == "CUCUMBER")
-    src = source_index()
-    execs = run_u0.discover_executables(None)
-    rows, unmapped = [], []
-    for e in execs:
-        root = pathlib.Path(e.get("package_root") or TB)
-        if root != TB and not str(root).startswith(str(BEHAVIOUR_ROOT)):
-            continue
-        cases = list_cases(e["executable"])
-        if not cases:
-            continue
-        for case in cases:
-            feats = None
-            for (suffix, _rs), f in src.items():
-                if case == suffix or case.endswith("::" + suffix):
-                    feats = f
-                    break
-            if feats is None:
-                continue
-            rows.append({
-                "runner_row_id": f"{e['package']}:{e['target']}",
-                "case": case,
-                "features": feats,
-                "catalogued_scenarios": sum(
-                    scen.get("cucumber-corpus:" + f, 0) for f in feats),
-            })
-    covered_features = {f for r in rows for f in r["features"]}
-    missing = sorted(t for t in scen
-                     if t.split(":", 1)[1] not in covered_features)
+    mapping, unmapped = case_feature_map()
+    rows = [{"runner_row_id": rid, "case": case, "features": feats,
+             "catalogued_scenarios": sum(scen.get("cucumber-corpus:" + f, 0)
+                                         for f in feats)}
+            for (rid, case), feats in sorted(mapping.items())]
+    covered = {f for r in rows for f in r["features"]}
+    catalogued = {t.split(":", 1)[1] for t in scen}
     return {
-        "behaviour_cases": len(rows),
+        "behaviour_cases_mapped_to_a_feature": len(rows),
+        "behaviour_cases_unmapped": unmapped,
         "catalogued_features": len(scen),
         "catalogued_scenarios": sum(scen.values()),
-        "features_reachable_via_cargo": len(covered_features & {
-            t.split(":", 1)[1] for t in scen}),
-        "catalogued_features_with_no_cargo_case": missing,
-        "cases": sorted(rows, key=lambda r: (r["runner_row_id"], r["case"])),
+        "catalogued_features_reachable_via_cargo": len(covered & catalogued),
+        "catalogued_scenarios_reachable_via_cargo": sum(
+            scen["cucumber-corpus:" + f] for f in (covered & catalogued)),
+        "catalogued_features_with_no_cargo_case": sorted(
+            "cucumber-corpus:" + f for f in (catalogued - covered)),
+        "cases": rows,
     }
 
 
@@ -136,9 +207,10 @@ def measure(spec, archive, catalog):
     """Execute ONE behaviour libtest case with per-scenario output captured."""
     rid, _, case = spec.partition("::")
     pkg, _, tgt = rid.partition(":")
-    execs = run_u0.discover_executables([pkg])
-    e = next(x for x in execs if x["package"] == pkg and x["target"] == tgt)
+    execs = discover_with_src_path()
+    e = execs[(pkg, tgt)]
     archive = pathlib.Path(archive)
+    archive = archive if archive.is_absolute() else REPO / archive
     archive.mkdir(parents=True, exist_ok=True)
     log = archive / f"{pkg}__{tgt}__{case.replace('::', '_')}.log"
     env = dict(common.CARGO_ENV)
@@ -157,12 +229,8 @@ def measure(spec, archive, catalog):
     names = SCENARIO_RE.findall(text)
     m = SUMMARY_RE.search(text)
     counts = common.parse_libtest_counts(text)
-    src = source_index()
-    feats = None
-    for (suffix, _rs), f in src.items():
-        if case == suffix or case.endswith("::" + suffix):
-            feats = f
-            break
+    mapping, _unmapped = case_feature_map(execs)
+    feats = mapping.get((rid, case))
     cat = [x["display_name"] for x in catalog["leaf_cases"]
            if x["kind"] == "CUCUMBER"
            and x["target_id"] in {"cucumber-corpus:" + f for f in (feats or [])}]
@@ -199,6 +267,75 @@ def measure(spec, archive, catalog):
     }
 
 
+def costing(catalog, inv, measurements, lane_bundles, cores):
+    """What a full cucumber leaf lane costs, from MEASURED rates and from the
+    behaviour targets' own archived durations - never from a guess.
+
+    Two numbers, because two architectures are on the table:
+
+      serial_per_lane   - every scenario one after another, the shape of the
+                          `--exact --nocapture --test-threads 1` measurement
+                          that produced the rate;
+      parallel_per_lane - one PROCESS per libtest case (each case is exactly
+                          one feature file, so each process writes a log that
+                          needs no de-interleaving), `cores` at a time. Greedy
+                          longest-first packing over the per-case scenario
+                          counts at the same measured rate; the makespan is
+                          bounded below by the single longest case, which is
+                          reported separately because no core count beats it.
+    """
+    rates = [m["scenarios_per_second"] for m in measurements
+             if m.get("reconciles") and m.get("scenarios_per_second")]
+    rate = min(rates) if rates else None
+    per_case = sorted((r["catalogued_scenarios"] for r in inv["cases"]
+                       if r["catalogued_scenarios"]), reverse=True)
+    total = inv["catalogued_scenarios_reachable_via_cargo"]
+    out = {
+        "measured_rate_scenarios_per_second": rate,
+        "rate_basis": [{"case": m["command"].split()[1],
+                        "scenarios": m["scenario_lines_parsed"],
+                        "wall_seconds": m["wall_seconds"],
+                        "rate": m["scenarios_per_second"]} for m in measurements],
+        "catalogued_scenarios": inv["catalogued_scenarios"],
+        "scenarios_reachable_via_cargo": total,
+        "cores_assumed": cores,
+    }
+    if rate:
+        bins = [0.0] * cores
+        for n in per_case:
+            i = bins.index(min(bins))
+            bins[i] += n / rate
+        out["serial_seconds_per_lane"] = round(total / rate)
+        out["parallel_seconds_per_lane"] = round(max(bins))
+        out["longest_single_case_seconds"] = round(per_case[0] / rate) if per_case else 0
+        out["longest_single_case_scenarios"] = per_case[0] if per_case else 0
+    lanes = []
+    for d in lane_bundles:
+        b = json.loads((REPO / d / "leaf-results.json").read_text())
+        cases = {r["runner_row_id"] for r in inv["cases"]}
+        secs = sum(t["duration_seconds"] for t in b["targets"]
+                   if t["runner_row_id"] in cases)
+        lanes.append({"bundle": d, "profile": b["profile"],
+                      "behaviour_target_seconds_as_archived": round(secs, 1),
+                      "note": "measured in THIS repository's own archived lane "
+                              "run, with libtest's default per-case parallelism "
+                              "inside each target"})
+    out["archived_lane_behaviour_cost"] = lanes
+    out["plan_rows_this_would_cover"] = {
+        "rows_per_profile": inv["catalogued_scenarios"],
+        "profiles_runnable_here": ["U1", "U2"],
+        "profiles_not_runnable_here": {
+            "U0": "requires the PRISTINE upstream checkout; the fork must be "
+                  "unstaged (tools/fork/stage.py --restore), which would break "
+                  "every other build in flight on this machine",
+            "U3": "storage factory refuses: ProfileUnavailable { profile: \"U3\" }",
+            "U4": "storage factory refuses: ProfileUnavailable { profile: \"U4\" }"},
+        "rows_reachable_here": 2 * inv["catalogued_scenarios"],
+        "rows_in_plan": 5 * inv["catalogued_scenarios"],
+    }
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -206,6 +343,10 @@ def main():
     ap.add_argument("--measure", action="append", default=[],
                     help="<pkg>:<target>::<libtest case> to execute")
     ap.add_argument("--archive", default="docs/evidence/G3/leaf/cucumber-probe")
+    ap.add_argument("--lane-bundle", action="append", default=[],
+                    help="a sealed leaf bundle whose behaviour-target durations "
+                         "give the archived cost of the same work (repeatable)")
+    ap.add_argument("--cores", type=int, default=os.cpu_count() or 1)
     ap.add_argument("--out", type=pathlib.Path, default=None)
     args = ap.parse_args()
     catalog = json.loads(lc.CATALOG.read_text())
@@ -219,6 +360,10 @@ def main():
     if args.measure:
         report["measurements"] = [measure(s, args.archive, catalog)
                                   for s in args.measure]
+    if args.inventory and args.measure:
+        report["costing"] = costing(catalog, report["inventory"],
+                                    report["measurements"], args.lane_bundle,
+                                    args.cores)
     print(json.dumps(report, indent=1))
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)

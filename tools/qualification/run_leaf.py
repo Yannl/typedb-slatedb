@@ -277,6 +277,11 @@ def main():
     ap.add_argument("--package", action="append", default=None)
     ap.add_argument("--filter", default=None)
     ap.add_argument("--skip", action="append", default=[])
+    ap.add_argument("--target", action="append", default=[],
+                    help="exact `<package>:<target>` to run (repeatable). Used "
+                         "to re-run targets a previous bundle REFUSED: a sealed "
+                         "bundle is never reopened, so the re-run lands in its "
+                         "own sealed bundle and both are handed to the reporter.")
     ap.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
     ap.add_argument("--min-free-mb", type=int, default=DEFAULT_MIN_FREE_MB,
                     help="stop the run before a target whose execution would "
@@ -321,13 +326,22 @@ def main():
         execs = [e for e in execs if args.filter in f"{e['package']}:{e['target']}"]
     execs = [e for e in execs
              if not any(s in f"{e['package']}:{e['target']}" for s in args.skip)]
+    if args.target:
+        want = set(args.target)
+        execs = [e for e in execs if f"{e['package']}:{e['target']}" in want]
+        missing = want - {f"{e['package']}:{e['target']}" for e in execs}
+        if missing:
+            sys.exit(f"--target named {sorted(missing)}, which cargo discovery "
+                     f"does not produce; a target that does not exist cannot be "
+                     f"silently dropped from a selection")
     if not run_u0.ensure_behaviour_fixture():
         affected = run_u0.needs_behaviour_fixture(execs)
         if affected:
             sys.exit(f"sources/typedb-behaviour missing and {len(affected)} selected "
                      f"target(s) read Cucumber features through it - running them "
                      f"would archive false reds.")
-    selection_complete = not (args.filter or args.skip or args.package)
+    selection_complete = not (args.filter or args.skip or args.package
+                              or args.target)
     print(f"LEAF RUN profile={profile} targets={len(execs)} "
           f"tree_state={tree_before['tree_state']}", flush=True)
 
@@ -366,7 +380,7 @@ def main():
         "catalog_sha256": common.sha256_file(lc.CATALOG),
         "source_lock_digest": catalog.get("source_lock_digest"),
         "selection": {"package": args.package, "filter": args.filter,
-                      "skip": args.skip,
+                      "skip": args.skip, "target": args.target,
                       "complete": selection_complete and aborted is None,
                       "aborted": aborted,
                       "targets_selected": len(execs),

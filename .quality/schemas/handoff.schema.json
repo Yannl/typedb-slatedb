@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://typedb-slatedb.invalid/.quality/schemas/handoff.schema.json",
+  "title": "Agent role handoff",
+  "description": "Structured evidence handed from one Swarm-Forge role to the next. Spec sections 11 and 17. Every stage ends on a commit SHA; no role hands uncommitted mutable state to the next role.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "role", "input_sha", "output_sha", "policy_digest", "commands", "artifacts", "changes", "unresolved"],
+  "properties": {
+    "schema": { "const": 1 },
+    "role": {
+      "enum": ["specifier", "coder", "cleaner", "architect", "hardener", "verifier", "integrator"]
+    },
+    "input_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "output_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "policy_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "toolchain_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "quality_report": {
+      "type": ["string", "null"],
+      "description": "Path to the unified report produced for output_sha. The next role reruns its own checks; it does not trust this file's prose."
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "Exact commands executed, not paraphrases."
+    },
+    "artifacts": { "type": "array", "items": { "type": "string" } },
+    "changes": { "type": "array", "items": { "type": "string" } },
+    "unresolved": { "type": "array", "items": { "type": "string" } },
+    "requirements": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Specifier only."
+    },
+    "acceptance_artifacts": { "type": "array", "items": { "type": "string" } },
+    "qa_plan": { "type": "array", "items": { "type": "string" } },
+    "ambiguities_resolved": { "type": "array", "items": { "type": "string" } },
+    "open_questions": { "type": "array", "items": { "type": "string" } },
+    "metrics_before": { "type": "object" },
+    "metrics_after": { "type": "object" },
+    "surviving_mutants": {
+      "type": "array",
+      "description": "Hardener only. A survivor is never dismissed without a waiver id.",
+      "items": {
+        "type": "object",
+        "required": ["file", "description", "disposition"],
+        "properties": {
+          "file": { "type": "string" },
+          "line": { "type": ["integer", "null"] },
+          "description": { "type": "string" },
+          "disposition": { "enum": ["killed", "test_added", "routed_back", "waived"] },
+          "waiver_id": { "type": ["string", "null"] },
+          "routed_to": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "defects": {
+      "type": "array",
+      "description": "Verifier only. A defect routes back to the owning implementation role and is then re-verified.",
+      "items": {
+        "type": "object",
+        "required": ["summary", "owning_role"],
+        "properties": {
+          "summary": { "type": "string" },
+          "owning_role": { "type": "string" },
+          "evidence": { "type": "string" }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "role": { "const": "specifier" } }, "required": ["role"] },
+      "then": { "required": ["requirements", "acceptance_artifacts", "qa_plan"] }
+    },
+    {
+      "if": { "properties": { "role": { "const": "hardener" } }, "required": ["role"] },
+      "then": { "required": ["surviving_mutants"] }
+    },
+    {
+      "if": { "properties": { "role": { "const": "verifier" } }, "required": ["role"] },
+      "then": { "required": ["defects", "quality_report"] }
+    }
+  ]
+}

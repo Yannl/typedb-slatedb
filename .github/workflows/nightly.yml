@@ -405,6 +405,13 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          # R5-CI-01 / spec §19: this job only reads the tree and queries
+          # Bazel's loading phase - it pushes nothing, so it must not carry
+          # the repo token into the workspace. This was the one pair of
+          # checkouts in the three workflows that still did (found by the
+          # zizmor `artipacked` audit added in this change).
+          persist-credentials: false
       - name: install the pinned Bazel and verify its digest
         run: |
           set -euo pipefail
@@ -432,6 +439,9 @@ jobs:
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          # R5-CI-01 / spec §19: read-only leaf verification, no push.
+          persist-credentials: false
       - name: every archived leaf bundle re-verifies from its own bytes
         run: |
           set -euo pipefail

@@ -1,0 +1,341 @@
+# Deterministic quality policy for typedb-slatedb.
+#
+# This file is PROTECTED (see [protected] below). A normal implementation diff
+# that modifies it is refused by `cargo xtask quality policy-check --base <SHA>`
+# with POLICY_CHANGE_REQUIRES_INDEPENDENT_REVIEW. Removing a path from the
+# protected list is itself a modification of this file, so the escape is
+# self-detecting: the protected list is loaded from the *trusted base SHA*
+# unioned with the head tree, never from the head tree alone.
+#
+# Source of truth: docs spec "Agentic Code Quality Enforcement Specification"
+# (2026-08-20), sections §12 (protected policy), §13 (waivers), §14 (tiers),
+# §15 (diff-to-gate matrix), §26 (initial policy values).
+
+schema = 1
+policy_version = "0.1.0"
+
+# ---------------------------------------------------------------------------
+# §26 — Suggested initial policy values. Reproduced verbatim in structure.
+# These are starting values to test, not universal truths.
+# ---------------------------------------------------------------------------
+
+[crap.rust]
+canonical = "cargo-crap"
+missing_coverage = "pessimistic"
+fail_regression = true
+new_function_max = 8.0
+cleaner_target_changed_domain = 6.0
+adapter_review_threshold = 15.0
+legacy_hotspot_threshold = 30.0
+
+[mutation.rust]
+changed_production = "no-unexplained-survivors"
+full_run = "scheduled"
+
+[coverage.rust]
+require_instrumentation_complete = true
+global_percent_hard_gate = false
+
+[duplication]
+strategy = "no-new-unjustified-duplication"
+
+[agents]
+implementation_can_change_policy = false
+fresh_verifier_context = true
+fresh_hardener_context = true
+
+[exceptions]
+require_reason = true
+require_issue_for_persistent = true
+require_independent_approval = true
+# Machine-checkable proxy for "independent approval": a waiver must carry an
+# `approved_by` that is not the same principal as `owner`.
+require_owner_field = true
+require_expiry_field = true
+max_waiver_lifetime_days = 180
+
+# ---------------------------------------------------------------------------
+# Execution preconditions.
+#
+# A gate whose preconditions are unmet is recorded as InfrastructureFailure.
+# It is NEVER recorded as a pass and never silently skipped (spec §4:
+# "Infrastructure failure is never interpreted as a quality pass").
+# ---------------------------------------------------------------------------
+
+[execution]
+# Gates that only parse sources (fmt, ruff, policy checks) need almost nothing.
+min_free_disk_gb_light = 0.5
+# Gates that invoke the compiler / a test runner / coverage instrumentation
+# need real build space. Below this, the gate is InfrastructureFailure with an
+# explicit "insufficient disk" remediation rather than a half-run or an ENOSPC
+# crash that could be mistaken for a tool bug.
+min_free_disk_gb_heavy = 12.0
+# Mutation and full-feature-powerset campaigns need substantially more.
+min_free_disk_gb_campaign = 40.0
+# A changed file that carries a source-language extension but matches no scope
+# rule is a QualityFailure, not an implicit pass. This closes the "add a new
+# top-level directory to escape the gates" hole.
+fail_on_unclassified_source = true
+# Seconds before a single gate command is killed and recorded as
+# InfrastructureFailure (a hung gate must never look green).
+gate_timeout_secs = 3600
+
+# ---------------------------------------------------------------------------
+# §12 — Protected quality policy.
+#
+# Concrete globs for this repository. `**` matches zero or more path segments,
+# `*` matches within one segment, `?` matches one non-separator character.
+# ---------------------------------------------------------------------------
+
+[protected]
+paths = [
+  # CI is the verifier of last resort.
+  ".github/workflows/**",
+  ".github/actions/**",
+  ".github/CODEOWNERS",
+  "CODEOWNERS",
+  "docs/CODEOWNERS",
+
+  # The quality policy and the controller that enforces it.
+  ".quality/**",
+  "xtask/**",
+  ".cargo/config.toml",
+
+  # Tool configuration that defines verification semantics.
+  ".cargo-crap.toml",
+  "crap.toml",
+  "deny.toml",
+  ".config/nextest.toml",
+  ".config/mutants.toml",
+  "mutants.toml",
+  ".mutants.toml",
+  "rust-toolchain.toml",
+  "*/rust-toolchain.toml",
+  ".prototools",
+  "rustfmt.toml",
+  ".rustfmt.toml",
+  "tools/rustfmt.toml",
+  "fork/typedb/rustfmt.toml",
+  "clippy.toml",
+  ".clippy.toml",
+
+  # Coverage scope / exclusion configuration.
+  ".config/llvm-cov.toml",
+  "llvm-cov.toml",
+  "codecov.yml",
+  ".codecov.yml",
+
+  # Duplication, dead-code and architecture rule files.
+  ".jscpd.json",
+  "jscpd.json",
+  ".jscpdignore",
+  "knip.json",
+  "knip.jsonc",
+  ".dependency-cruiser.cjs",
+  ".dependency-cruiser.js",
+  "stryker.conf.json",
+  "stryker.conf.mjs",
+
+  # Test-runner configuration: retry counts and test filters are verification
+  # semantics, not implementation detail (spec §5.3 flakiness policy).
+  "control-plane/vitest.config.ts",
+  "vitest.config.ts",
+
+  # Workspace member lists control which code is in scope for the Rust gates.
+  "tools/Cargo.toml",
+]
+
+# Free-text notes for the protected classes named in §12 that are not a single
+# path. They exist so a reviewer can see what the globs above are standing in
+# for, and so a future path can be added to the right bucket.
+[protected.rationale]
+"coverage configuration/excludes" = "llvm-cov / codecov config globs above; narrowing coverage scope hides new risk"
+"mutation skip/exception files" = "mutants.toml globs above plus .quality/waivers/**"
+"jscpd exclusions" = ".jscpd.json / .jscpdignore"
+"lint allowlists" = "clippy.toml, oxlint/eslint config, .quality/architecture/**"
+"architecture rule files" = ".quality/architecture/** (covered by .quality/**)"
+"quality-related package scripts" = "package.json scripts are reviewed by the TS gates; a scripts-only change still requires the TS tier"
+"rust-toolchain.toml" = "insofar as it controls verification semantics"
+
+# ---------------------------------------------------------------------------
+# Language identification. Used both to pick gates and to decide whether an
+# unclassified changed path is fail-closed.
+# ---------------------------------------------------------------------------
+
+[languages]
+rust = ["rs"]
+typescript = ["ts", "tsx", "mts", "cts"]
+javascript = ["js", "mjs", "cjs", "jsx"]
+python = ["py", "pyi"]
+# Only these count for [execution].fail_on_unclassified_source.
+fail_closed = ["rust", "typescript", "javascript", "python"]
+
+# ---------------------------------------------------------------------------
+# Scope manifest.
+#
+# Ordered: the FIRST rule whose glob matches a path wins. This is the single
+# machine-readable place where "what is production" is decided; the diff-to-gate
+# matrix (§15) consults it and nothing else. Do not hardcode paths elsewhere.
+#
+# class = "production" -> full gate tiers apply
+# class = "tooling"    -> fast gates only
+# class = "excluded"   -> no language gates (docs, data, vendored sources)
+#
+# Owner scope decision of 2026-08-20 is encoded verbatim below.
+# ---------------------------------------------------------------------------
+
+[[scope.rule]]
+id = "quality-controller"
+globs = ["xtask/**", ".quality/**"]
+class = "production"
+tier = "full"
+rust_manifest = "tools/Cargo.toml"
+rust_package = "xtask"
+reason = "The quality controller gates itself. Machinery that decides pass/fail is production code."
+
+[[scope.rule]]
+id = "typedb-fork"
+globs = ["fork/typedb/**"]
+class = "production"
+tier = "full"
+rust_manifest = "fork/typedb/Cargo.toml"
+reason = "Owner scope decision 2026-08-20: Rust production, full gates."
+
+[[scope.rule]]
+id = "slatedb-patches"
+globs = ["fork/slatedb/patches/**"]
+class = "production"
+tier = "full"
+reason = "Owner scope decision 2026-08-20: production. Patch files carry no compilable unit of their own; they gate via the fork build."
+
+[[scope.rule]]
+id = "slatedb-other"
+globs = ["fork/slatedb/**"]
+class = "excluded"
+tier = "fast"
+reason = "Provenance and ledger prose under fork/slatedb outside patches/."
+
+[[scope.rule]]
+id = "remote-wal-spike"
+globs = ["tools/remote-wal-spike/**"]
+class = "production"
+tier = "full"
+rust_manifest = "tools/Cargo.toml"
+rust_package = "remote-wal-spike"
+reason = "Owner scope decision 2026-08-20: Rust production, full gates."
+
+[[scope.rule]]
+id = "control-plane-src"
+globs = ["control-plane/src/**"]
+class = "production"
+tier = "full"
+ts_project = "control-plane"
+reason = "Owner scope decision 2026-08-20: the real Cloudflare Worker + Durable Object control plane, NOT test tooling. Full gates."
+
+[[scope.rule]]
+id = "control-plane-probes"
+globs = ["control-plane/probes/**", "control-plane/scripts/**"]
+class = "tooling"
+tier = "fast"
+ts_project = "control-plane"
+reason = "Owner scope decision 2026-08-20: tooling, fast gates only."
+
+[[scope.rule]]
+id = "control-plane-config"
+globs = ["control-plane/*"]
+class = "tooling"
+tier = "fast"
+ts_project = "control-plane"
+reason = "Package manifests, tsconfig and wrangler configuration for the control plane."
+
+[[scope.rule]]
+id = "stack"
+globs = ["stack/**"]
+class = "tooling"
+tier = "fast"
+ts_project = "stack"
+reason = "Owner scope decision 2026-08-20: tooling, fast gates only."
+
+[[scope.rule]]
+id = "tools-rust-support"
+globs = ["tools/protocol-models/**", "tools/storage-diff-spike/**"]
+class = "tooling"
+tier = "fast"
+rust_manifest = "tools/Cargo.toml"
+reason = "Rust support crates in the tools workspace. Not named in the owner scope decision of 2026-08-20, which promoted only remote-wal-spike; defaults to tooling. Revisit if they acquire production responsibility."
+
+[[scope.rule]]
+id = "tools-qualification"
+globs = ["tools/qualification/**"]
+class = "tooling"
+tier = "fast"
+python_project = "tools"
+reason = "Owner scope decision 2026-08-20: Python under tools/** is tooling, fast gates only."
+
+[[scope.rule]]
+id = "tools-generic"
+globs = ["tools/**"]
+class = "tooling"
+tier = "fast"
+python_project = "tools"
+reason = "Owner scope decision 2026-08-20: all Python under tools/** is tooling, fast gates only."
+
+[[scope.rule]]
+id = "vendored-sources"
+globs = ["sources/**", "source-lock/**", "spikes/**"]
+class = "excluded"
+tier = "fast"
+reason = "Vendored upstream sources and lock manifests; not authored here."
+
+[[scope.rule]]
+id = "documentation"
+globs = [
+  "docs/**", "contract/**", "*.md", "LICENSE", "*.json", "*.gitattributes",
+  ".gitignore", ".gitattributes", ".prototools", ".github/**", ".claude/**",
+  "artifacts/**", "target/**",
+]
+class = "excluded"
+tier = "fast"
+reason = "Documentation, evidence, contracts and repository metadata. Protected-path rules still apply independently of scope class."
+
+# ---------------------------------------------------------------------------
+# §15 — Diff-to-gate matrix triggers that are content-based rather than
+# path-based. The controller greps the diff hunks (added lines only) for these.
+# ---------------------------------------------------------------------------
+
+[triggers.unsafe_ffi]
+# Miri + targeted fuzz/integration become PR requirements (§14.2).
+patterns = [
+  "unsafe ", "unsafe{", "unsafe {", "extern \"C\"", "#[no_mangle]",
+  "*mut ", "*const ", "std::alloc", "libc::", "from_raw", "into_raw",
+  "MaybeUninit", "transmute",
+]
+
+[triggers.public_api]
+# semver-checks only when API compatibility is a repository contract.
+patterns = ["pub fn ", "pub struct ", "pub enum ", "pub trait ", "pub mod ", "pub use "]
+compatibility_contract = false
+compatibility_contract_reason = "No Rust crate in this repository is published to crates.io. Set to true and list the crates before enabling cargo-semver-checks as a gate."
+
+[triggers.features]
+# cargo-hack stronger matrix when feature declarations change.
+manifest_globs = ["**/Cargo.toml"]
+section = "[features]"
+
+[triggers.dependencies]
+globs = ["**/Cargo.lock", "**/Cargo.toml", "**/package-lock.json", "**/package.json", "**/uv.lock", "**/requirements*.txt"]
+
+[triggers.fuzz_critical]
+# Parser / codec / protocol / storage-format surfaces (§15): fuzz target and
+# property tests strongly expected.
+globs = [
+  "fork/typedb/encoding/**", "fork/typedb/durability/**", "fork/typedb/storage/**",
+  "fork/slatedb/patches/**", "tools/protocol-models/**",
+  "tools/remote-wal-spike/**", "control-plane/src/container/**",
+]
+
+[triggers.architecture]
+globs = [
+  ".quality/architecture/**", "**/Cargo.toml", "control-plane/src/*/index.ts",
+  "tools/Cargo.toml",
+]

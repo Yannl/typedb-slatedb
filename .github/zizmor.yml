@@ -1,0 +1,40 @@
+# zizmor configuration - GitHub Actions workflow security audit (spec §19).
+#
+# The gate is `.github/workflows/gates.yml` -> job `workflow-security-audit`
+# (and its tier-2 twin in nightly.yml). It runs zizmor at the DEFAULT
+# `regular` persona over `.github/workflows/`, and the job fails on any
+# finding. There is no `continue-on-error:` and no severity floor: a finding
+# is either fixed or ignored HERE, by exact line, with the reason written
+# down. That is the same posture the npm advisory policy already uses.
+#
+# What was FIXED rather than ignored when this audit was introduced
+# (2026-08-20, zizmor 1.29.0):
+#   * artipacked x2 - nightly.yml's bazel-test-graph-parity and
+#     leaf-granularity-coverage checkouts did not set
+#     `persist-credentials: false`; they do now.
+#   * template-injection x2 - release-qualification.yml interpolated
+#     `needs.release-identity.outputs.*` directly into a `run:` block; the
+#     values now arrive through `env:`.
+
+rules:
+  cache-poisoning:
+    ignore:
+      # release-qualification.yml, the `actions/setup-node` step of the
+      # `supply-chain-attestation` job.
+      #
+      # WHY THIS IS NOT A REAL FINDING: the audit fires because this
+      # workflow publishes release attestations and `setup-node` is capable
+      # of populating a restorable cache. This step sets no `cache:` input,
+      # so setup-node neither saves nor restores anything, and every
+      # dependency in that job is installed by `npm ci` from a committed
+      # lockfile whose registry provenance is separately enforced by
+      # `tools/ci/check_npm_advisories.py --lockfile`. There is no cache for
+      # a poisoned entry to live in.
+      #
+      # THE IGNORE IS SCOPED TO ONE LINE ON PURPOSE. If the line moves, the
+      # audit re-fires and the job goes red - that is the intended re-review
+      # trigger. Re-verify that the step still sets no `cache:` input and
+      # then update the line number. Do NOT widen this to the whole file,
+      # and do NOT add a `--min-severity`/`--min-confidence` floor to the
+      # gate: both would silently swallow a future real finding.
+      - release-qualification.yml:205

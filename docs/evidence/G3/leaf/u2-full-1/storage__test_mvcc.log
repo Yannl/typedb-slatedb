@@ -1,9 +1,0 @@
-
-running 4 tests
-test test_commit_increments_watermark ... ok
-test test_concurrent_writes_to_same_key ... ok
-test test_reading_snapshots ... ok
-test test_conflicting_update_fails ... ok
-
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
-

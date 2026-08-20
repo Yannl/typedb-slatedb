@@ -132,18 +132,30 @@ def verify(out_dir, plan=None, catalog_leaves=None, catalog_targets=None,
         A.append("bundle claims FORK_STAGED_EXACT with dirty=false - staging the "
                  "fork always diverges from the locked revision")
     if state == "FORK_STAGED_EXACT":
-        if tree.get("unstaged_fork_patches"):
+        stray = [u for u in (tree.get("unstaged_fork_patches") or [])
+                 if u not in lc.NON_CARGO_INPUTS]
+        if stray:
             A.append(f"bundle claims FORK_STAGED_EXACT while recording "
-                     f"{len(tree['unstaged_fork_patches'])} UNSTAGED fork "
-                     f"patch(es) - the checkout is then neither upstream nor "
-                     f"the fork")
+                     f"{len(stray)} UNSTAGED fork patch(es) that DO affect the "
+                     f"cargo build ({stray[:3]}) - the checkout is then neither "
+                     f"upstream nor the fork")
+        if tree.get("unstaged_fork_patches_affecting_cargo"):
+            A.append(f"bundle claims FORK_STAGED_EXACT while itself recording "
+                     f"cargo-affecting unstaged patches "
+                     f"{tree['unstaged_fork_patches_affecting_cargo'][:3]}")
+        for e in (tree.get("non_cargo_input_paths") or []):
+            if e.get("path") not in lc.NON_CARGO_INPUTS:
+                A.append(f"bundle excludes {e.get('path')!r} from its executed "
+                         f"tree identity as a NON_CARGO_INPUT, but that path is "
+                         f"not in the declared, reasoned NON_CARGO_INPUTS list - "
+                         f"an exclusion a bundle invents for itself is refused")
         if tree.get("unexplained_paths"):
             A.append(f"bundle claims FORK_STAGED_EXACT while recording "
                      f"{len(tree['unexplained_paths'])} path(s) that are "
                      f"neither the pinned upstream nor byte-identical to "
                      f"fork/typedb: {tree['unexplained_paths'][:3]}")
         classes = {c.get("class") for c in (tree.get("diverging_paths") or [])}
-        if not classes <= {"FORK_PATCH", "RUNTIME_OUTPUT"}:
+        if not classes <= {"FORK_PATCH", "RUNTIME_OUTPUT", "NON_CARGO_INPUT"}:
             A.append(f"bundle claims FORK_STAGED_EXACT but classifies diverging "
                      f"paths as {sorted(classes)}")
     if state == "PRISTINE":

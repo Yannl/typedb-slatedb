@@ -371,11 +371,16 @@ def executed_tree_identity():
             h.update(f.read_bytes())
     new, changed, _stale = stage.differing()
     unstaged = [str(r) for r in new + changed]
+    # the same NON_CARGO_INPUTS judgement, applied to the other direction of
+    # the same fact: a fork patch that is "unstaged" only because Bazel
+    # rewrote its lockfile does not change what cargo compiled. The RAW list
+    # from stage.py is recorded alongside, so nothing is hidden by the split.
+    unstaged_cargo = [r for r in unstaged if r not in NON_CARGO_INPUTS]
     unexplained = [c["path"] for c in classified if c["class"] == "UNEXPLAINED"]
     state, state_line = stage_state()
     if not entries:
         tree_state = "PRISTINE"
-    elif not unexplained and not unstaged:
+    elif not unexplained and not unstaged_cargo:
         tree_state = "FORK_STAGED_EXACT"
     else:
         tree_state = "DIRTY"
@@ -385,6 +390,7 @@ def executed_tree_identity():
         "tree_state": tree_state,
         "stage_check": state_line,
         "unstaged_fork_patches": unstaged,
+        "unstaged_fork_patches_affecting_cargo": unstaged_cargo,
         "unexplained_paths": unexplained,
         "runtime_output_paths": [c["path"] for c in classified
                                  if c["class"] == "RUNTIME_OUTPUT"],

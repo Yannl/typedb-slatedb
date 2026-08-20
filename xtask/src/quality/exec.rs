@@ -286,6 +286,6 @@ mod tests {
     #[test]
     fn free_disk_reports_a_plausible_number() {
         let gb = free_disk_gb(Path::new(".")).expect("df must work on this platform");
-        assert!(gb >= 0.0 && gb < 1_000_000.0);
+        assert!((0.0..1_000_000.0).contains(&gb));
     }
 }

@@ -41,10 +41,7 @@ use std::{
 
 use remote_wal_spike::{
     hex,
-    l1_client::{
-        CapabilityMethod, FinalizeHttpRequest, L1Client, L1Config, L1Error, MintRestrictions,
-        SequencingKind,
-    },
+    l1_client::{CapabilityMethod, FinalizeHttpRequest, L1Client, L1Config, L1Error, MintRestrictions, SequencingKind},
     sha256,
 };
 
@@ -112,8 +109,10 @@ fn issue_or_refuse(spec: &serde_json::Value) -> (u16, String) {
     // closed registry: an unknown method (e.g. the retired SESSION_ADMIN)
     // is refused outright, never treated as restriction-free
     let Some((_, required)) = REQUIRED_RESTRICTIONS.iter().find(|(name, _)| *name == method) else {
-        return (400, format!(
-            r#"{{"ok":false,"error":"ISSUE_SPEC_INVALID","detail":"CAPABILITY_METHOD_UNKNOWN: {method}"}}"#));
+        return (
+            400,
+            format!(r#"{{"ok":false,"error":"ISSUE_SPEC_INVALID","detail":"CAPABILITY_METHOD_UNKNOWN: {method}"}}"#),
+        );
     };
     // mandatory-by-method restrictions: absence (or the wrong JSON type) is
     // refusal, not permission — a token missing one would be WIDER, and
@@ -127,8 +126,12 @@ fn issue_or_refuse(spec: &serde_json::Value) -> (u16, String) {
             _ => false,
         };
         if !present {
-            return (400, format!(
-                r#"{{"ok":false,"error":"ISSUE_SPEC_INVALID","detail":"CAPABILITY_RESTRICTION_MISSING: {method} requires {restriction}"}}"#));
+            return (
+                400,
+                format!(
+                    r#"{{"ok":false,"error":"ISSUE_SPEC_INVALID","detail":"CAPABILITY_RESTRICTION_MISSING: {method} requires {restriction}"}}"#
+                ),
+            );
         }
     }
     let mut token = format!("cap-{method}");
@@ -244,11 +247,8 @@ impl Mock {
             for stream in listener.incoming().take(64) {
                 let Ok(mut stream) = stream else { return };
                 let Some((method, path, headers, body)) = read_request(&mut stream) else { continue };
-                let header = |name: &str| {
-                    headers.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone())
-                };
-                let body_json: serde_json::Value =
-                    serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null);
+                let header = |name: &str| headers.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
+                let body_json: serde_json::Value = serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null);
                 recorder.lock().unwrap().push(Seen {
                     method: method.clone(),
                     path: path.clone(),
@@ -266,11 +266,8 @@ impl Mock {
                     } else if let Some((status, reply)) = issuance_override.clone() {
                         (status, reply)
                     } else if path == "/issue" {
-                        let spec = if body_json.get("spec").is_some() {
-                            body_json["spec"].clone()
-                        } else {
-                            body_json.clone()
-                        };
+                        let spec =
+                            if body_json.get("spec").is_some() { body_json["spec"].clone() } else { body_json.clone() };
                         issue_or_refuse(&spec)
                     } else {
                         provision_or_refuse(&body_json)
@@ -341,8 +338,11 @@ fn finalize_spec_without_generation_dies_at_issuance() {
     // /wal/finalize route must never be reached, and no token may exist.
     let mock = Mock::serve(vec![], None);
     let client = client(mock.base.clone());
-    match client.issue("db", CapabilityMethod::WalFinalize,
-        MintRestrictions { session: Some("session-a"), ..Default::default() }) {
+    match client.issue(
+        "db",
+        CapabilityMethod::WalFinalize,
+        MintRestrictions { session: Some("session-a"), ..Default::default() },
+    ) {
         Err(L1Error::Issuance { status: 400, body }) => {
             assert!(body.contains("CAPABILITY_RESTRICTION_MISSING"), "{body}");
             assert!(body.contains("generation"), "the refusal names the missing restriction: {body}");
@@ -359,15 +359,18 @@ fn read_spec_without_generation_or_session_dies_at_issuance() {
     // generation are mandatory at mint time.
     let mock = Mock::serve(vec![], None);
     let client = client(mock.base.clone());
-    match client.issue("db", CapabilityMethod::WalRead,
-        MintRestrictions { session: Some("session-a"), ..Default::default() }) {
+    match client.issue(
+        "db",
+        CapabilityMethod::WalRead,
+        MintRestrictions { session: Some("session-a"), ..Default::default() },
+    ) {
         Err(L1Error::Issuance { status: 400, body }) => {
             assert!(body.contains("CAPABILITY_RESTRICTION_MISSING") && body.contains("generation"), "{body}");
         }
         other => panic!("a generation-less read spec must be a typed Issuance refusal, got {other:?}"),
     }
-    match client.issue("db", CapabilityMethod::WalRead,
-        MintRestrictions { generation: Some(1), ..Default::default() }) {
+    match client.issue("db", CapabilityMethod::WalRead, MintRestrictions { generation: Some(1), ..Default::default() })
+    {
         Err(L1Error::Issuance { status: 400, body }) => {
             assert!(body.contains("CAPABILITY_RESTRICTION_MISSING") && body.contains("session"), "{body}");
         }
@@ -426,25 +429,32 @@ fn client_methods_exclude_every_dev_only_route_method() {
     // closed and deliberately omits their capability methods, so no code
     // path — not even a mistaken one — can request authority for them.
     let spelled: Vec<String> = [
-        CapabilityMethod::SessionReserve, CapabilityMethod::SessionAttest,
-        CapabilityMethod::SessionActivate, CapabilityMethod::SessionRenew,
-        CapabilityMethod::WalFinalize, CapabilityMethod::WalRead,
-        CapabilityMethod::PutPayload, CapabilityMethod::JournalVerify,
+        CapabilityMethod::SessionReserve,
+        CapabilityMethod::SessionAttest,
+        CapabilityMethod::SessionActivate,
+        CapabilityMethod::SessionRenew,
+        CapabilityMethod::WalFinalize,
+        CapabilityMethod::WalRead,
+        CapabilityMethod::PutPayload,
+        CapabilityMethod::JournalVerify,
     ]
     .iter()
     .map(|method| {
-        remote_wal_spike::l1_client::issuance_spec("p", "db", *method, &MintRestrictions::default())
-            ["method"].as_str().unwrap_or_default().to_string()
+        remote_wal_spike::l1_client::issuance_spec("p", "db", *method, &MintRestrictions::default())["method"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string()
     })
     .collect();
     for dev_only in DEV_ONLY_ROUTE_METHODS {
-        assert!(!spelled.iter().any(|m| m == dev_only),
-            "the managed client must not be able to request {dev_only}");
+        assert!(!spelled.iter().any(|m| m == dev_only), "the managed client must not be able to request {dev_only}");
     }
     // and every method it CAN spell is in the worker's closed registry
     for method in &spelled {
-        assert!(REQUIRED_RESTRICTIONS.iter().any(|(name, _)| name == method),
-            "{method} is not a known capability method");
+        assert!(
+            REQUIRED_RESTRICTIONS.iter().any(|(name, _)| name == method),
+            "{method} is not a known capability method"
+        );
     }
 }
 
@@ -472,10 +482,10 @@ fn managed_bootstrap_threads_the_exact_actor_through_every_issuance() {
     let digest = hex(&sha256(payload));
     let mock = Mock::serve(
         vec![
-            ok(r#"{"ok":true,"created":true}"#),                                    // POST /provision
-            ok(r#"{"ok":true}"#),                                                   // /session/reserve
-            ok(r#"{"ok":true}"#),                                                   // /session/attest
-            ok(r#"{"ok":true,"leaseDeadlineMs":1000,"fencedPredecessors":0}"#),      // /session/activate
+            ok(r#"{"ok":true,"created":true}"#),                                // POST /provision
+            ok(r#"{"ok":true}"#),                                               // /session/reserve
+            ok(r#"{"ok":true}"#),                                               // /session/attest
+            ok(r#"{"ok":true,"leaseDeadlineMs":1000,"fencedPredecessors":0}"#), // /session/activate
             ok(&format!(r#"{{"key":"p/db/{digest}","sha256hex":"{digest}","length":{}}}"#, payload.len())),
             ok(r#"{"ok":true,"appendLsn":"0","typeSequence":"1","controlSeq":"1","replayed":false}"#),
             ok(r#"{"ok":true,"headLsn":"0","headTypeSequence":"1"}"#),
@@ -514,16 +524,17 @@ fn managed_bootstrap_threads_the_exact_actor_through_every_issuance() {
     // the method requires — the validating issuer would have refused
     // otherwise — and each was bearer-authenticated
     let issuances = mock.requests_to("/issue");
-    let methods: Vec<&str> =
-        issuances.iter().map(|i| i.body["spec"]["method"].as_str().unwrap_or_default()).collect();
+    let methods: Vec<&str> = issuances.iter().map(|i| i.body["spec"]["method"].as_str().unwrap_or_default()).collect();
     assert_eq!(
         methods,
         vec!["SESSION_RESERVE", "SESSION_ATTEST", "SESSION_ACTIVATE", "PUT_PAYLOAD", "WAL_FINALIZE", "WAL_READ"],
         "one single-use grant per request, in protocol order",
     );
     assert!(issuances.iter().all(|i| i.method == "POST"), "issuance is POST /issue");
-    assert!(issuances.iter().all(|i| i.authorization.as_deref() == Some(&format!("Bearer {BEARER}"))),
-        "issuance is bearer-authenticated");
+    assert!(
+        issuances.iter().all(|i| i.authorization.as_deref() == Some(&format!("Bearer {BEARER}"))),
+        "issuance is bearer-authenticated"
+    );
     for issuance in &issuances {
         let spec = &issuance.body["spec"];
         let method = spec["method"].as_str().unwrap();
@@ -571,10 +582,7 @@ fn a_non_canonical_issuer_key_is_refused_before_the_upload() {
 
 #[test]
 fn issuance_refusal_is_a_typed_issuance_error() {
-    let mock = Mock::serve(
-        vec![],
-        Some((401, r#"{"ok":false,"error":"ISSUER_UNAUTHORIZED"}"#.to_string())),
-    );
+    let mock = Mock::serve(vec![], Some((401, r#"{"ok":false,"error":"ISSUER_UNAUTHORIZED"}"#.to_string())));
     match client(mock.base.clone()).reserve_session("db", 1, "session-a", "holder") {
         Err(L1Error::Issuance { status: 401, body }) => {
             assert!(body.contains("ISSUER_UNAUTHORIZED"), "body preserved for diagnosis: {body}");
@@ -650,10 +658,8 @@ fn numeric_append_lsn_is_a_decode_error_never_a_coercion() {
     // F7: sequence values are decimal STRINGS on the wire. A server (or
     // proxy) answering with JSON numbers reintroduces the 2^53 cliff; the
     // client must refuse the response, not round it.
-    let mock = Mock::serve(
-        vec![ok(r#"{"ok":true,"appendLsn":0,"typeSequence":1,"controlSeq":1,"replayed":false}"#)],
-        None,
-    );
+    let mock =
+        Mock::serve(vec![ok(r#"{"ok":true,"appendLsn":0,"typeSequence":1,"controlSeq":1,"replayed":false}"#)], None);
     match client(mock.base.clone()).finalize(&finalize_request()) {
         Err(L1Error::Decode(detail)) => {
             assert!(detail.contains("string"), "decode error names the type drift: {detail}");
@@ -683,8 +689,7 @@ fn full_range_u64_decodes_exactly() {
         )],
         None,
     );
-    let (status, outcome) =
-        client(mock.base.clone()).finalize(&finalize_request()).expect("canonical strings decode");
+    let (status, outcome) = client(mock.base.clone()).finalize(&finalize_request()).expect("canonical strings decode");
     assert_eq!(status, 200);
     assert_eq!(outcome.append_lsn, Some(u64::MAX), "no 2^53 cliff");
     assert_eq!(outcome.type_sequence, Some(u64::MAX));

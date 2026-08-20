@@ -89,25 +89,40 @@ fn rust_client_full_protocol_against_the_managed_surface() {
     let dev_routes: Vec<DevProbe> = vec![
         // the dev issuance route, presented WITH the committed dev issuer
         // credential: on managed there is nothing to authenticate against
-        ("POST", "/capability".into(),
-         Some(serde_json::json!({ "principal": "p", "databaseId": db, "method": "WAL_READ" })),
-         vec![("x-issuer-authorization", DEV_ISSUER_SECRET)]),
-        ("POST", "/session/register".into(),
-         Some(serde_json::json!({ "databaseId": db, "generation": gen, "startupSessionId": "sess-probe" })),
-         vec![]),
-        ("POST", "/session/fence".into(),
-         Some(serde_json::json!({ "databaseId": db, "generation": gen, "startupSessionId": "sess-probe" })),
-         vec![]),
-        ("POST", "/budgets".into(),
-         Some(serde_json::json!({ "databaseId": db, "maxUnpublishedOutbox": 1,
+        (
+            "POST",
+            "/capability".into(),
+            Some(serde_json::json!({ "principal": "p", "databaseId": db, "method": "WAL_READ" })),
+            vec![("x-issuer-authorization", DEV_ISSUER_SECRET)],
+        ),
+        (
+            "POST",
+            "/session/register".into(),
+            Some(serde_json::json!({ "databaseId": db, "generation": gen, "startupSessionId": "sess-probe" })),
+            vec![],
+        ),
+        (
+            "POST",
+            "/session/fence".into(),
+            Some(serde_json::json!({ "databaseId": db, "generation": gen, "startupSessionId": "sess-probe" })),
+            vec![],
+        ),
+        (
+            "POST",
+            "/budgets".into(),
+            Some(serde_json::json!({ "databaseId": db, "maxUnpublishedOutbox": 1,
                                   "maxPayloadLength": 1, "maxTailRecords": 1 })),
-         vec![]),
-        ("POST", "/wal/finalize-batch".into(),
-         Some(serde_json::json!({ "batchOperationId": "b", "requests": [] })), vec![]),
+            vec![],
+        ),
+        (
+            "POST",
+            "/wal/finalize-batch".into(),
+            Some(serde_json::json!({ "batchOperationId": "b", "requests": [] })),
+            vec![],
+        ),
         ("POST", format!("/admin/{db}/incarnation/bump"), Some(serde_json::json!({})), vec![]),
         ("GET", format!("/outbox/{db}?limit=10"), None, vec![]),
-        ("POST", format!("/outbox/{db}/ack"),
-         Some(serde_json::json!({ "upToControlSeq": "1" })), vec![]),
+        ("POST", format!("/outbox/{db}/ack"), Some(serde_json::json!({ "upToControlSeq": "1" })), vec![]),
         ("GET", format!("/wal/{db}/{gen}/audit"), None, vec![]),
     ];
     let mut absent = 0u32;

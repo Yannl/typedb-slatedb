@@ -173,10 +173,65 @@ free at handoff        2.1 GB
   free-disk floor, rather than dying on ENOSPC mid-compile.
 - a full Bazel build of TypeDB was never attemptable.
 
-**Ask for ≥150 GB on the next machine.** One correction worth carrying: I
-predicted `cargo install` of the Rust quality tools would fail in 2.7 GB. It
-did **not** — building each into a throwaway `CARGO_TARGET_DIR` and deleting
-it between installs kept peak usage to 82–357 MB. Eight tools are installed.
+### Living inside ~37 GB — the measured strategy
+
+A bigger machine may not be available, so this is the plan that fits. Every
+number below was measured on this tree, not estimated.
+
+**First, two things that are NOT the lever, so nobody wastes a day on them:**
+
+- **Debug info is already off.** Stripping the largest test binary
+  (245.3 MB) recovers **2.7 MB**. I assumed this was the big win; it is
+  noise. Do not go hunting for `debug = 0`.
+- **`cargo install` of the quality tools is affordable.** I predicted it
+  would fail in 2.7 GB. It did not — built into a throwaway
+  `CARGO_TARGET_DIR` and deleted between installs, peak was 82–357 MB each.
+  Eight tools fit.
+
+**What the 16 GB build tree actually is:**
+
+```
+136 executables   10.4 GB     <- the concentration
+979 .rlib          3.4 GB
+977 .rmeta         1.0 GB
+ 59 .so            0.2 GB
+```
+
+The 12 behaviour test binaries are **~245 MB each**, because each statically
+links the whole server plus rocksdb plus slatedb. That is inherent to Rust
+`[[test]]` targets; it is not waste and cannot be configured away.
+
+**The four levers, in order of value:**
+
+1. **`python3 tools/dev/cargo_gc.py` — reclaims 4.49 GB, repeatable.**
+   Cargo never garbage-collects: every rebuild emits a new hash-suffixed
+   artifact and leaves the old one forever. This tree held 136 executables
+   for 100 distinct targets. Measured on this repository: **2.2 GB free →
+   6.5 GB free**, and `cargo test -p xtask` still passed straight after
+   (122 tests) — cargo simply relinked. Run it between phases, not once.
+   `--dry-run` reports; `--include-libs` goes further when the squeeze is
+   severe.
+2. **Run lanes SEQUENTIALLY, never side by side.** This is what actually
+   unblocks U0, and the earlier claim that U0 "does not fit" was wrong in an
+   important way: U0 and U1/U2 never need to exist *at the same time*.
+   Build a lane → run it → **seal its evidence** → `cargo clean` → switch
+   the tree → rebuild. A sealed leaf bundle is ~5 MB; the build tree that
+   produced it is 16 GB and is disposable. The evidence is the artifact,
+   not the target directory. The cost is rebuild time, not disk.
+3. **Build behaviour binaries one at a time.** `cargo test --test X`, seal,
+   delete that binary, then the next. Peak goes from ~2.9 GB (all twelve)
+   to ~245 MB (one).
+4. **Coverage per package, not per workspace.** `cargo llvm-cov` needs its
+   own instrumented tree, which is why the CRAP baseline never ran here.
+   Use the documented split: `cargo llvm-cov --no-report` per package,
+   keep only the small `.profraw`, `cargo clean` between packages, then
+   `cargo llvm-cov report` at the end. Never ask for `--workspace` in one
+   shot on this allowance.
+
+**Standing habit:** check `df -h /` before any compile-heavy step, and run
+`cargo_gc.py` when Avail drops below ~6 GB. The controller already refuses
+heavy gates below its floor rather than dying on ENOSPC mid-compile, so a
+refusal is information, not a failure to work around.
 
 ### Reclaiming space safely, if you must
 
@@ -306,7 +361,7 @@ cd stack && node native-fidelity.mjs                   # ALL 6 PHASES PASS
 
 | Blocked by | What | Rows | Unblocked by |
 |---|---|---|---|
-| **Machine** | U0 pristine lane | ~4,700 | more disk |
+| **Machine** | U0 pristine lane | ~4,700 | more disk, OR the sequential-lane strategy in §4 |
 | **Machine** | CRAP/coverage/mutation baselines | — | more disk |
 | **Machine + egress** | Bazel analysis, Mode-Q, 390 checkstyle rows | 390 | disk **and** egress to `github.com` |
 | **Product** | U3 / U4 profiles | 9,480 | **writing the product code** |
@@ -465,11 +520,12 @@ with identifiers masked shows 53 of 72 files are formatting-only.
 
 ---
 
-## 9. First moves on the new machine
+## 9. First moves on the next machine
 
 ```bash
-# 0. confirm the constraint is gone
-df -h /                         # want >100 GB Avail, not 2
+# 0. establish the real disk budget and reclaim what cargo abandoned
+df -h /                         # Avail is the quota, not the filesystem
+python3 tools/dev/cargo_gc.py --dry-run    # reclaims ~4.5 GB of stale artifacts
 
 # 1. orient: is the fork staged or pristine?
 python3 tools/fork/stage.py --check

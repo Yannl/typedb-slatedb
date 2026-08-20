@@ -432,12 +432,36 @@ never executed** — treat it as unproven. Same for `llvm-cov`
 instrumentation, differential `cargo-mutants`, Miri triggers, the feature
 matrix, and property/fuzz targets.
 
-### Real findings the controller already surfaced
+### Real findings the controller surfaced — all four now CLOSED
 
-`cargo xtask quality full` found: a `cargo-deny` license rejection, an
-unused `async-std` in `tools/drivers/rust-behaviour/steps`, `ruff` E741 in
-`tools/source-lock/lock_mutants.py`, and 7 files failing `ruff format`.
-**These are real and unfixed.** Fix them early — they are cheap.
+`cargo xtask quality full` found four. They were **larger than first
+reported**, and that understatement is itself worth remembering: the first
+report said "E741 in one file and 7 files unformatted"; the measured truth
+was **144 lints and 72 files**. All four are fixed:
+
+- **`deny.toml` did not exist**, so `cargo deny` ran on defaults that allow
+  nothing and rejected nine permissive license families. Now written from
+  the exact set in the resolved graph. LGPL-2.1-or-later is deliberately
+  NOT allowed even though it appears on `r-efi`: that crate is multi-licensed
+  `MIT OR Apache-2.0 OR LGPL`, so the permissive side satisfies it, and
+  blanket-allowing LGPL would silently permit copyleft for every future
+  dependency. If a crate ever arrives LGPL-only, this gate SHOULD go red.
+- **`cargo-machete`'s three unused deps are upstream's, not ours.**
+  `tools/drivers/rust-behaviour/steps` is a *projection* of a Bazel target
+  and mirrors its BUILD deps; upstream declares async-std/regex/smol there
+  and never uses them. Deleting them would break the projection's fidelity,
+  which `projection_check.py` exists to enforce. Documented ignore with an
+  owner and a review condition (re-check when TDRIVER moves).
+- **144 ruff lints → 0** and **72 unformatted files → 0**, with `ruff.toml`
+  at line-length 100 (the width the code was actually written at). The 122
+  E741 renames used a scope-exact AST renamer, never sed: 122 bindings, 304
+  references, rewritten by byte offset. A naive text collision check flagged
+  37 conflicts of which **all 10 plausible ones were false**.
+
+The bar for the Python change was not "ruff is green" — that Python IS the
+machinery that certifies everything else. All 22 validator/mutant suites
+produced **byte-identical** output before and after, and an AST comparison
+with identifiers masked shows 53 of 72 files are formatting-only.
 
 ---
 
@@ -521,8 +545,15 @@ Each of these cost real time. Three lines each is cheap insurance.
 
 ## 11. Open items worth picking up early
 
-- The four real `quality full` findings (§8) — cheap, and they block a clean
-  first baseline.
+- Two comprehensions removed as F841 dead code, `run_ids` in
+  `run_cucumber_leaf.py` and `by_ref` in `verify_cucumber_leaf.py`, look
+  like reconciliation checks someone intended to wire up and never did.
+  Removing them preserved behaviour exactly, but if either was meant to
+  catch something, that gap **predates** the cleanup and is still open.
+- `.circleci/**` is not in ruff's default exclude, and `sources/**` was
+  excluded only by ruff's *gitignore* default — which `--no-respect-gitignore`
+  turns off. Both are now excluded explicitly. Watch for the same class of
+  silent scope gap in other tool configs.
 - **`//tool/test:simulate-crash`** is a catalogue entry with **no referent**
   in the pinned upstream tree (confirmed against Bazel's own graph). Kept
   rather than deleted, because silently removing a plan row is how a

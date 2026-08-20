@@ -1,0 +1,788 @@
+Feature: Connection Transaction
+  Background: 
+
+  Scenario Outline: one database, one read transaction -- @1.1 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.167s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    When connection create database: typedb ... passed in 0.072s
+    Given connection open read transaction for database: typedb ... passed in 0.003s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: read ... passed in 0.000s
+
+  Scenario Outline: one database, one write transaction -- @1.2 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.166s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    When connection create database: typedb ... passed in 0.039s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: write ... passed in 0.000s
+
+  Scenario Outline: one database, one schema transaction -- @1.3 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.183s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    When connection create database: typedb ... passed in 0.043s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: schema ... passed in 0.000s
+
+  Scenario Outline: one database, one committed write transaction is closed -- @1.1 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.175s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    When connection create database: typedb ... passed in 0.041s
+    Given connection open write transaction for database: typedb ... passed in 0.003s
+    Then transaction commits ... passed in 0.002s
+    Then transaction is open: false ... passed in 0.000s
+
+  Scenario Outline: one database, one committed schema transaction is closed -- @1.2 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.173s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    When connection create database: typedb ... passed in 0.042s
+    Given connection open schema transaction for database: typedb ... passed in 0.003s
+    Then transaction commits ... passed in 0.004s
+    Then transaction is open: false ... passed in 0.000s
+
+  Scenario: read transaction cannot be committed
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.170s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    When connection create database: typedb ... passed in 0.036s
+    Given connection open read transaction for database: typedb ... passed in 0.002s
+    Then transaction commits; fails ... passed in 0.001s
+
+  Scenario Outline: one database, read transaction close -- @1.1 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.172s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    When connection create database: typedb ... passed in 0.044s
+    Given connection open read transaction for database: typedb ... passed in 0.002s
+    Then transaction closes ... passed in 0.001s
+    Then transaction is open: false ... passed in 0.000s
+
+  Scenario Outline: one database, write transaction close -- @1.2 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.168s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    When connection create database: typedb ... passed in 0.046s
+    Given connection open write transaction for database: typedb ... passed in 0.003s
+    Then transaction closes ... passed in 0.001s
+    Then transaction is open: false ... passed in 0.000s
+
+  Scenario Outline: one database, schema transaction close -- @1.3 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.170s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    When connection create database: typedb ... passed in 0.040s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Then transaction closes ... passed in 0.001s
+    Then transaction is open: false ... passed in 0.000s
+
+  Scenario Outline: one database, write transaction rollback -- @1.1 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.172s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.003s
+    When connection create database: typedb ... passed in 0.045s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Then transaction rollbacks ... passed in 0.001s
+    Then transaction is open: true ... passed in 0.000s
+
+  Scenario Outline: one database, schema transaction rollback -- @1.2 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.163s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.004s
+    When connection create database: typedb ... passed in 0.040s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Then transaction rollbacks ... passed in 0.001s
+    Then transaction is open: true ... passed in 0.000s
+
+  Scenario: read transaction cannot be rollbacked
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.172s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    When connection create database: typedb ... passed in 0.045s
+    Given connection open read transaction for database: typedb ... passed in 0.002s
+    Then transaction rollbacks; fails ... passed in 0.002s
+
+  Scenario Outline: one database, many read transactions -- @1.1 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.183s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    When connection create database: typedb ... passed in 0.050s
+    When connection open transactions for database: typedb, of type ... passed in 0.024s
+      | <type> |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+    Then transactions are open: true ... passed in 0.000s
+    Then transactions have type ... passed in 0.000s
+      | <type> |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+
+  Scenario Outline: one database, many write transactions -- @1.2 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.191s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    When connection create database: typedb ... passed in 0.046s
+    When connection open transactions for database: typedb, of type ... passed in 0.023s
+      | <type> |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+    Then transactions are open: true ... passed in 0.000s
+    Then transactions have type ... passed in 0.000s
+      | <type> |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+
+  Scenario: one database, many transactions of write and read types
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.173s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    When connection create database: typedb ... passed in 0.049s
+    When connection open transactions for database: typedb, of type ... passed in 0.025s
+      | read  |
+      | write |
+      | read  |
+      | write |
+      | read  |
+      | write |
+      | read  |
+      | write |
+      | read  |
+      | write |
+      | read  |
+      | write |
+    Then transactions are open: true ... passed in 0.000s
+    Then transactions have type ... passed in 0.000s
+      | read  |
+      | write |
+      | read  |
+      | write |
+      | read  |
+      | write |
+      | read  |
+      | write |
+      | read  |
+      | write |
+      | read  |
+      | write |
+
+  Scenario Outline: one database, many read transactions in parallel -- @1.1 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.170s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    When connection create database: typedb ... passed in 0.037s
+    When connection open transactions in parallel for database: typedb, of type ... passed in 0.013s
+      | <type> |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+    Then transactions in parallel are open: true ... passed in 0.000s
+    Then transactions in parallel have type ... passed in 0.000s
+      | <type> |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+      | read   |
+
+  Scenario Outline: one database, many write transactions in parallel -- @1.2 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.163s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    When connection create database: typedb ... passed in 0.054s
+    When connection open transactions in parallel for database: typedb, of type ... passed in 0.012s
+      | <type> |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+    Then transactions in parallel are open: true ... passed in 0.000s
+    Then transactions in parallel have type ... passed in 0.000s
+      | <type> |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+      | write  |
+
+  Scenario: one database, many transactions in parallel of read and write types
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.159s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    When connection create database: typedb ... passed in 0.036s
+    When connection open transactions in parallel for database: typedb, of type ... passed in 0.013s
+      | read  |
+      | write |
+      | read  |
+      | write |
+      | read  |
+      | write |
+      | read  |
+      | write |
+      | read  |
+      | write |
+      | read  |
+      | write |
+    Then transactions in parallel are open: true ... passed in 0.000s
+    Then transactions in parallel have type ... passed in 0.000s
+      | read  |
+      | write |
+      | read  |
+      | write |
+      | read  |
+      | write |
+      | read  |
+      | write |
+      | read  |
+      | write |
+      | read  |
+      | write |
+
+  Scenario Outline: write in a read transaction fails -- @1.1 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.171s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.044s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
+      """
+      define entity person;
+      """
+    Given transaction commits ... passed in 0.010s
+    When connection open read transaction for database: typedb ... passed in 0.008s
+    Then typeql write query; fails ... passed in 0.002s
+      """
+      insert $person isa person;
+      """
+
+  Scenario: commit in a read transaction fails
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.160s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    When connection create database: typedb ... passed in 0.040s
+    Given connection open read transaction for database: typedb ... passed in 0.002s
+    Then transaction commits; fails ... passed in 0.002s
+
+  Scenario Outline: close in a schema transaction closes the transaction -- @1.1 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.209s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.039s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
+      """
+      define entity person;
+      """
+    When transaction closes ... passed in 0.001s
+    Then transaction is open: false ... passed in 0.000s
+
+  Scenario Outline: commit in a schema transaction closes the transaction -- @1.2 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.163s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.046s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
+      """
+      define entity person;
+      """
+    When transaction commits ... passed in 0.025s
+    Then transaction is open: false ... passed in 0.000s
+
+  Scenario Outline: close in a write transaction closes the transaction -- @1.1 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.158s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.031s
+    Given connection open schema transaction for database: typedb ... passed in 0.003s
+    Given typeql schema query ... passed in 0.004s
+      """
+      define entity person;
+      """
+    Given transaction commits ... passed in 0.011s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.004s
+      """
+      insert $person isa person;
+      """
+    When transaction closes ... passed in 0.001s
+    Then transaction is open: false ... passed in 0.000s
+
+  Scenario Outline: commit in a write transaction closes the transaction -- @1.2 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.208s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.003s
+    Given connection create database: typedb ... passed in 0.033s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
+      """
+      define entity person;
+      """
+    Given transaction commits ... passed in 0.011s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.004s
+      """
+      insert $person isa person;
+      """
+    When transaction commits ... passed in 0.008s
+    Then transaction is open: false ... passed in 0.000s
+
+  Scenario: schema modification in a write transaction fails
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.176s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.056s
+    Given connection open write transaction for database: typedb ... passed in 0.003s
+    Then typeql schema query; fails ... passed in 0.002s
+      """
+      define entity person;
+      """
+
+  Scenario: write data in a schema transaction is allowed
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.174s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.035s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Then typeql schema query ... passed in 0.002s
+      """
+      define entity person;
+      """
+    Then typeql write query ... passed in 0.006s
+      """
+      insert $x isa person;
+      """
+    Then transaction commits ... passed in 0.009s
+
+  Scenario: commit after a schema transaction rollback does nothing
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.162s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.040s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    When typeql schema query ... passed in 0.004s
+      """
+      define entity person;
+      """
+    When get answers of typeql read query ... passed in 0.005s
+      """
+      match entity $x;
+      """
+    Then answer size is: 1 ... passed in 0.003s
+    When get answers of typeql read query ... passed in 0.004s
+      """
+      match entity $x;
+      """
+    Then answer size is: 1 ... passed in 0.000s
+    When transaction rollbacks ... passed in 0.001s
+    When get answers of typeql read query ... passed in 0.004s
+      """
+      match entity $x;
+      """
+    Then answer size is: 0 ... passed in 0.000s
+    When transaction commits ... passed in 0.002s
+    When connection open read transaction for database: typedb ... passed in 0.002s
+    When get answers of typeql read query ... passed in 0.003s
+      """
+      match entity $x;
+      """
+    Then answer size is: 0 ... passed in 0.002s
+
+  Scenario: commit after a write transaction rollback does nothing
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.173s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.004s
+    Given connection create database: typedb ... passed in 0.052s
+    Given connection open schema transaction for database: typedb ... passed in 0.003s
+    Given typeql schema query ... passed in 0.003s
+      """
+      define entity person;
+      """
+    Given transaction commits ... passed in 0.010s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    When typeql write query ... passed in 0.003s
+      """
+      insert $x isa person;
+      """
+    When get answers of typeql read query ... passed in 0.004s
+      """
+      match $x isa person;
+      """
+    Then answer size is: 1 ... passed in 0.001s
+    When transaction rollbacks ... passed in 0.001s
+    When get answers of typeql read query ... passed in 0.002s
+      """
+      match $x isa person;
+      """
+    Then answer size is: 0 ... passed in 0.001s
+    When transaction commits ... passed in 0.001s
+    When connection open read transaction for database: typedb ... passed in 0.002s
+    When get answers of typeql read query ... passed in 0.001s
+      """
+      match $x isa person;
+      """
+    Then answer size is: 0 ... passed in 0.003s
+
+  Scenario Outline: can open a read transaction after a critical failure of a write transaction -- @1.1 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.165s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.003s
+    Given connection create database: typedb ... passed in 0.047s
+    When connection open write transaction for database: typedb ... passed in 0.003s
+    Then transaction has type: write ... passed in 0.000s
+    Then typeql write query; fails ... passed in 0.006s
+      """
+      insert $x isa non-existing-type;
+      """
+    Then transaction is open: false ... passed in 0.000s
+    When connection open read transaction for database: typedb ... passed in 0.003s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: read ... passed in 0.000s
+
+  Scenario Outline: can open a write transaction after a critical failure of a write transaction -- @1.2 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.161s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.045s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    Then transaction has type: write ... passed in 0.000s
+    Then typeql write query; fails ... passed in 0.004s
+      """
+      insert $x isa non-existing-type;
+      """
+    Then transaction is open: false ... passed in 0.000s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: write ... passed in 0.000s
+
+  Scenario Outline: can open a schema transaction after a critical failure of a write transaction -- @1.3 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.163s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.003s
+    Given connection create database: typedb ... passed in 0.052s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    Then transaction has type: write ... passed in 0.000s
+    Then typeql write query; fails ... passed in 0.005s
+      """
+      insert $x isa non-existing-type;
+      """
+    Then transaction is open: false ... passed in 0.000s
+    When connection open schema transaction for database: typedb ... passed in 0.002s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: schema ... passed in 0.000s
+
+  Scenario Outline: can open a read transaction after a critical failure of a schema transaction -- @1.4 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.175s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.039s
+    When connection open schema transaction for database: typedb ... passed in 0.002s
+    Then transaction has type: schema ... passed in 0.000s
+    Then typeql write query; fails ... passed in 0.006s
+      """
+      insert $x isa non-existing-type;
+      """
+    Then transaction is open: false ... passed in 0.000s
+    When connection open read transaction for database: typedb ... passed in 0.003s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: read ... passed in 0.000s
+
+  Scenario Outline: can open a write transaction after a critical failure of a schema transaction -- @1.5 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.182s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.047s
+    When connection open schema transaction for database: typedb ... passed in 0.003s
+    Then transaction has type: schema ... passed in 0.000s
+    Then typeql write query; fails ... passed in 0.005s
+      """
+      insert $x isa non-existing-type;
+      """
+    Then transaction is open: false ... passed in 0.000s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: write ... passed in 0.000s
+
+  Scenario Outline: can open a schema transaction after a critical failure of a schema transaction -- @1.6 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.187s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.082s
+    When connection open schema transaction for database: typedb ... passed in 0.003s
+    Then transaction has type: schema ... passed in 0.000s
+    Then typeql write query; fails ... passed in 0.004s
+      """
+      insert $x isa non-existing-type;
+      """
+    Then transaction is open: false ... passed in 0.000s
+    When connection open schema transaction for database: typedb ... passed in 0.002s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: schema ... passed in 0.000s
+
+  Scenario Outline: can open a read transaction after a non-critical failure and closing of a read transaction -- @1.1 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.162s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.004s
+    Given connection create database: typedb ... passed in 0.048s
+    When connection open read transaction for database: typedb ... passed in 0.004s
+    Then transaction has type: read ... passed in 0.000s
+    Then typeql write query; parsing fails ... passed in 0.002s
+      """
+      insert $x isa; # parsing error
+      """
+    When transaction closes ... passed in 0.002s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open read transaction for database: typedb ... passed in 0.002s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: read ... passed in 0.000s
+
+  Scenario Outline: can open a write transaction after a non-critical failure and closing of a read transaction -- @1.2 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.166s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.032s
+    When connection open read transaction for database: typedb ... passed in 0.002s
+    Then transaction has type: read ... passed in 0.000s
+    Then typeql write query; parsing fails ... passed in 0.002s
+      """
+      insert $x isa; # parsing error
+      """
+    When transaction closes ... passed in 0.001s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: write ... passed in 0.000s
+
+  Scenario Outline: can open a schema transaction after a non-critical failure and closing of a read transaction -- @1.3 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.194s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.006s
+    Given connection create database: typedb ... passed in 0.064s
+    When connection open read transaction for database: typedb ... passed in 0.003s
+    Then transaction has type: read ... passed in 0.000s
+    Then typeql write query; parsing fails ... passed in 0.003s
+      """
+      insert $x isa; # parsing error
+      """
+    When transaction closes ... passed in 0.001s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open schema transaction for database: typedb ... passed in 0.002s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: schema ... passed in 0.000s
+
+  Scenario Outline: can open a read transaction after a non-critical failure and closing of a write transaction -- @1.4 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.153s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.032s
+    When connection open write transaction for database: typedb ... passed in 0.003s
+    Then transaction has type: write ... passed in 0.000s
+    Then typeql write query; parsing fails ... passed in 0.002s
+      """
+      insert $x isa; # parsing error
+      """
+    When transaction closes ... passed in 0.002s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open read transaction for database: typedb ... passed in 0.003s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: read ... passed in 0.000s
+
+  Scenario Outline: can open a write transaction after a non-critical failure and closing of a write transaction -- @1.5 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.165s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.045s
+    When connection open write transaction for database: typedb ... passed in 0.004s
+    Then transaction has type: write ... passed in 0.000s
+    Then typeql write query; parsing fails ... passed in 0.002s
+      """
+      insert $x isa; # parsing error
+      """
+    When transaction closes ... passed in 0.001s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: write ... passed in 0.000s
+
+  Scenario Outline: can open a schema transaction after a non-critical failure and closing of a write transaction -- @1.6 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.190s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.005s
+    Given connection create database: typedb ... passed in 0.052s
+    When connection open write transaction for database: typedb ... passed in 0.004s
+    Then transaction has type: write ... passed in 0.000s
+    Then typeql write query; parsing fails ... passed in 0.002s
+      """
+      insert $x isa; # parsing error
+      """
+    When transaction closes ... passed in 0.001s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open schema transaction for database: typedb ... passed in 0.003s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: schema ... passed in 0.000s
+
+  Scenario Outline: can open a read transaction after a non-critical failure and closing of a schema transaction -- @1.7 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.190s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.039s
+    When connection open schema transaction for database: typedb ... passed in 0.004s
+    Then transaction has type: schema ... passed in 0.000s
+    Then typeql write query; parsing fails ... passed in 0.002s
+      """
+      insert $x isa; # parsing error
+      """
+    When transaction closes ... passed in 0.002s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open read transaction for database: typedb ... passed in 0.007s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: read ... passed in 0.000s
+
+  Scenario Outline: can open a write transaction after a non-critical failure and closing of a schema transaction -- @1.8 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.178s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.005s
+    Given connection create database: typedb ... passed in 0.050s
+    When connection open schema transaction for database: typedb ... passed in 0.002s
+    Then transaction has type: schema ... passed in 0.000s
+    Then typeql write query; parsing fails ... passed in 0.002s
+      """
+      insert $x isa; # parsing error
+      """
+    When transaction closes ... passed in 0.002s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open write transaction for database: typedb ... passed in 0.004s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: write ... passed in 0.000s
+
+  Scenario Outline: can open a schema transaction after a non-critical failure and closing of a schema transaction -- @1.9 
+    Given typedb starts ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.167s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.048s
+    When connection open schema transaction for database: typedb ... passed in 0.003s
+    Then transaction has type: schema ... passed in 0.000s
+    Then typeql write query; parsing fails ... passed in 0.007s
+      """
+      insert $x isa; # parsing error
+      """
+    When transaction closes ... passed in 0.004s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open schema transaction for database: typedb ... passed in 0.014s
+    Then transaction is open: true ... passed in 0.000s
+    Then transaction has type: schema ... passed in 0.000s
+
+1 feature passed, 0 failed, 0 skipped
+43 scenarios passed, 0 failed, 0 skipped
+443 steps passed, 0 failed, 0 skipped, 0 undefined
+Took 0m10.039s

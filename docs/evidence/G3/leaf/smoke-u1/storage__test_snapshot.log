@@ -1,15 +1,15 @@
 
 running 10 tests
-test preloaded_snapshot_multi_keyspace ... ok
 test snapshot_buffered_delete ... ok
+test preloaded_snapshot_multi_keyspace ... ok
 test preloaded_snapshot_matches_source_over_mixed_writes ... ok
 test preloaded_snapshot_load_from_at_sequence_number ... ok
 test snapshot_buffered_put_get ... ok
 test snapshot_buffered_put_iterate ... ok
 test snapshot_delete_reinserted ... ok
 test snapshot_generated_new_id ... ok
-test snapshot_read_through ... ok
 test snapshot_read_buffered_delete_of_persisted_key ... ok
+test snapshot_read_through ... ok
 
-test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
 

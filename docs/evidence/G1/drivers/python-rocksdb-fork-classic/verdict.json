@@ -1,0 +1,20 @@
+{
+ "green": true,
+ "policy_verdict": "GREEN",
+ "row_id": "driver:python:rocksdb",
+ "bundle_root": "a6dc3173fa364e193831ce26a59064a30520ff2fc6a56aabc30e7f49d02809bd",
+ "plan_root": "72020aa01fafebddc41321e0c6100c158f80ae997037430871212049054a7a41",
+ "anomaly_count": 0,
+ "anomalies": [],
+ "observation": {
+  "suites_selected": 7,
+  "suites_executed": 7,
+  "plan_leaves_in_scope": 213,
+  "plan_leaves_with_outcome": 213,
+  "plan_leaves_passed": 213,
+  "leaf_status_counts": {
+   "NOT_RUN": 9,
+   "PASSED": 222
+  }
+ }
+}

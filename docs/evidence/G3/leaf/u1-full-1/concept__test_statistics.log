@@ -1,0 +1,23 @@
+
+running 9 tests
+[2m2026-08-20T09:59:48.717809Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-20T09:59:48.719980Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-20T09:59:48.720321Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+[2m2026-08-20T09:59:48.721352Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+[2m2026-08-20T09:59:48.721557Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[1] with size 310 bytes; 310 bytes total
+[2m2026-08-20T09:59:48.721838Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[1]
+[2m2026-08-20T09:59:48.722316Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[2] with size 151 bytes; 461 bytes total
+[2m2026-08-20T09:59:48.722387Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[2]
+[2m2026-08-20T09:59:48.724094Z[0m [35mTRACE[0m [2mconcept::thing::statistics[0m[2m:[0m Statistics sync finished in 1 ms. Storage watermark was initially: SeqNr[2]. Current statistics sequence is from: SeqNr[2]
+test delete_attribute ... ok
+test create_entity ... ok
+test delete_relation ... ok
+test delete_twice ... ok
+test put_has_twice ... ok
+test relation_index_counts ... ok
+test put_plays ... ok
+test remove_player ... ok
+test unset_has ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+

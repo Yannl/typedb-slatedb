@@ -4,17 +4,17 @@ Feature: Driver Concept
   Scenario: Driver processes empty concepts correctly
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.166s
+    Given connection opens with default authentication ... passed in 0.175s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.114s
+    Given connection has 0 databases ... passed in 0.004s
+    Given connection create database: typedb ... passed in 0.041s
     Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.003s
     Given typeql schema query ... passed in 0.002s
       """
       define entity person;
       """
-    When get answers of typeql write query ... passed in 0.005s
+    When get answers of typeql write query ... passed in 0.006s
       """
       match try { $empty isa person; };
       """
@@ -26,23 +26,23 @@ Feature: Driver Concept
   Scenario: Driver processes entity types correctly
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.218s
+    Given connection opens with default authentication ... passed in 0.166s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.163s
-    Given connection has database: typedb ... passed in 0.004s
-    Given connection open schema transaction for database: typedb ... passed in 0.003s
-    Given typeql schema query ... passed in 0.003s
+    Given connection create database: typedb ... passed in 0.055s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.002s
       """
       define entity person;
       """
-    When get answers of typeql read query ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match entity $p;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer size is: 1 ... passed in 0.000s
-    Then answer get row(0) get variable(p) is type: true ... passed in 0.003s
+    Then answer get row(0) get variable(p) is type: true ... passed in 0.001s
     Then answer get row(0) get variable(p) is instance: false ... passed in 0.000s
     Then answer get row(0) get variable(p) is value: false ... passed in 0.000s
     Then answer get row(0) get variable(p) is entity type: true ... passed in 0.000s
@@ -77,24 +77,24 @@ Feature: Driver Concept
   Scenario: Driver processes relation types correctly
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.356s
+    Given connection opens with default authentication ... passed in 0.160s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.123s
+    Given connection create database: typedb ... passed in 0.034s
     Given connection has database: typedb ... passed in 0.002s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
-    Given typeql schema query ... passed in 0.003s
+    Given typeql schema query ... passed in 0.002s
       """
       define relation parentship, relates parent;
       """
-    When get answers of typeql read query ... passed in 0.004s
+    When get answers of typeql read query ... passed in 0.003s
       """
       match relation $p;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
     Then answer size is: 1 ... passed in 0.000s
-    Then answer get row(0) get variable(p) is type: true ... passed in 0.001s
+    Then answer get row(0) get variable(p) is type: true ... passed in 0.000s
     Then answer get row(0) get variable(p) is instance: false ... passed in 0.000s
     Then answer get row(0) get variable(p) is value: false ... passed in 0.000s
     Then answer get row(0) get variable(p) is entity type: false ... passed in 0.000s
@@ -119,7 +119,7 @@ Feature: Driver Concept
     Then answer get row(0) get variable(p) try get string is none ... passed in 0.000s
     Then answer get row(0) get variable(p) try get date is none ... passed in 0.000s
     Then answer get row(0) get variable(p) try get datetime is none ... passed in 0.000s
-    Then answer get row(0) get variable(p) try get datetime-tz is none ... passed in 0.001s
+    Then answer get row(0) get variable(p) try get datetime-tz is none ... passed in 0.000s
     Then answer get row(0) get variable(p) try get duration is none ... passed in 0.000s
     Then answer get row(0) get variable(p) try get struct is none ... passed in 0.000s
     Then answer get row(0) get type(p) get label: parentship ... passed in 0.000s
@@ -128,11 +128,11 @@ Feature: Driver Concept
   Scenario: Driver processes role types correctly
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.319s
+    Given connection opens with default authentication ... passed in 0.159s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.004s
-    Given connection create database: typedb ... passed in 0.143s
-    Given connection has database: typedb ... passed in 0.004s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.040s
+    Given connection has database: typedb ... passed in 0.002s
     Given connection open schema transaction for database: typedb ... passed in 0.003s
     Given typeql schema query ... passed in 0.003s
       """
@@ -145,14 +145,14 @@ Feature: Driver Concept
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
     Then answer size is: 1 ... passed in 0.000s
-    Then answer get row(0) get variable(p) is type: true ... passed in 0.001s
+    Then answer get row(0) get variable(p) is type: true ... passed in 0.000s
     Then answer get row(0) get variable(p) is instance: false ... passed in 0.000s
-    Then answer get row(0) get variable(p) is value: false ... passed in 0.000s
+    Then answer get row(0) get variable(p) is value: false ... passed in 0.001s
     Then answer get row(0) get variable(p) is entity type: false ... passed in 0.000s
     Then answer get row(0) get variable(p) is relation type: false ... passed in 0.000s
     Then answer get row(0) get variable(p) is attribute type: false ... passed in 0.000s
     Then answer get row(0) get variable(p) is role type: true ... passed in 0.000s
-    Then answer get row(0) get variable(p) is entity: false ... passed in 0.003s
+    Then answer get row(0) get variable(p) is entity: false ... passed in 0.000s
     Then answer get row(0) get variable(p) is relation: false ... passed in 0.000s
     Then answer get row(0) get variable(p) is attribute: false ... passed in 0.000s
     Then answer get row(0) get variable(p) is struct: false ... passed in 0.000s
@@ -174,29 +174,29 @@ Feature: Driver Concept
     Then answer get row(0) get variable(p) try get duration is none ... passed in 0.000s
     Then answer get row(0) get variable(p) try get struct is none ... passed in 0.000s
     Then answer get row(0) get type(p) get label: parentship:parent ... passed in 0.000s
-    Then answer get row(0) get role type(p) get label: parentship:parent ... passed in 0.001s
+    Then answer get row(0) get role type(p) get label: parentship:parent ... passed in 0.000s
 
   Scenario: Driver processes attribute types without value type correctly
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.207s
+    Given connection opens with default authentication ... passed in 0.159s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.003s
-    Given connection create database: typedb ... passed in 0.098s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.041s
     Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.004s
-    Given typeql schema query ... passed in 0.004s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.002s
       """
       define attribute untyped @abstract;
       """
-    When get answers of typeql read query ... passed in 0.006s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match attribute $a;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
     Then answer size is: 1 ... passed in 0.000s
-    Then answer get row(0) get variable(a) is type: true ... passed in 0.001s
+    Then answer get row(0) get variable(a) is type: true ... passed in 0.000s
     Then answer get row(0) get variable(a) is instance: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is value: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is entity type: false ... passed in 0.000s
@@ -239,13 +239,13 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attribute types with value type boolean correctly -- @1.1 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.265s
+    Given connection opens with default authentication ... passed in 0.140s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.003s
-    Given connection create database: typedb ... passed in 0.094s
-    Given connection has database: typedb ... passed in 0.003s
-    Given connection open schema transaction for database: typedb ... passed in 0.004s
-    Given typeql schema query ... passed in 0.003s
+    Given connection create database: typedb ... passed in 0.045s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.004s
       """
       define attribute typed, value boolean;
       """
@@ -296,17 +296,17 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attribute types with value type integer correctly -- @1.2 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.281s
+    Given connection opens with default authentication ... passed in 0.152s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.082s
+    Given connection create database: typedb ... passed in 0.043s
     Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.007s
-    Given typeql schema query ... passed in 0.003s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.002s
       """
       define attribute typed, value integer;
       """
-    When get answers of typeql read query ... passed in 0.019s
+    When get answers of typeql read query ... passed in 0.003s
       """
       match attribute $a;
       """
@@ -353,13 +353,13 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attribute types with value type double correctly -- @1.3 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.191s
+    Given connection opens with default authentication ... passed in 0.139s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.061s
-    Given connection has database: typedb ... passed in 0.003s
+    Given connection create database: typedb ... passed in 0.042s
+    Given connection has database: typedb ... passed in 0.001s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
-    Given typeql schema query ... passed in 0.003s
+    Given typeql schema query ... passed in 0.002s
       """
       define attribute typed, value double;
       """
@@ -410,23 +410,23 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attribute types with value type decimal correctly -- @1.4 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.190s
+    Given connection opens with default authentication ... passed in 0.159s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.073s
-    Given connection has database: typedb ... passed in 0.008s
-    Given connection open schema transaction for database: typedb ... passed in 0.003s
-    Given typeql schema query ... passed in 0.006s
+    Given connection create database: typedb ... passed in 0.039s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
       """
       define attribute typed, value decimal;
       """
-    When get answers of typeql read query ... passed in 0.008s
+    When get answers of typeql read query ... passed in 0.005s
       """
       match attribute $a;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.000s
+    Then answer size is: 1 ... passed in 0.001s
     Then answer get row(0) get variable(a) is type: true ... passed in 0.000s
     Then answer get row(0) get variable(a) is instance: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is value: false ... passed in 0.000s
@@ -467,17 +467,17 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attribute types with value type string correctly -- @1.5 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.187s
+    Given connection opens with default authentication ... passed in 0.144s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.004s
-    Given connection create database: typedb ... passed in 0.089s
-    Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.002s
-    Given typeql schema query ... passed in 0.005s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.042s
+    Given connection has database: typedb ... passed in 0.003s
+    Given connection open schema transaction for database: typedb ... passed in 0.004s
+    Given typeql schema query ... passed in 0.003s
       """
       define attribute typed, value string;
       """
-    When get answers of typeql read query ... passed in 0.012s
+    When get answers of typeql read query ... passed in 0.005s
       """
       match attribute $a;
       """
@@ -510,7 +510,7 @@ Feature: Driver Concept
     Then answer get row(0) get type(a) get label: typed ... passed in 0.000s
     Then answer get row(0) get attribute type(a) get label: typed ... passed in 0.000s
     Then answer get row(0) get attribute type(a) try get value type: string ... passed in 0.000s
-    Then answer get row(0) get attribute type(a) is boolean: false ... passed in 0.000s
+    Then answer get row(0) get attribute type(a) is boolean: false ... passed in 0.001s
     Then answer get row(0) get attribute type(a) is integer: false ... passed in 0.000s
     Then answer get row(0) get attribute type(a) is double: false ... passed in 0.000s
     Then answer get row(0) get attribute type(a) is decimal: false ... passed in 0.000s
@@ -524,23 +524,23 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attribute types with value type date correctly -- @1.6 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.179s
+    Given connection opens with default authentication ... passed in 0.141s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.003s
-    Given connection create database: typedb ... passed in 0.060s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.046s
     Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.004s
-    Given typeql schema query ... passed in 0.005s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
       """
       define attribute typed, value date;
       """
-    When get answers of typeql read query ... passed in 0.003s
+    When get answers of typeql read query ... passed in 0.005s
       """
       match attribute $a;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.001s
+    Then answer size is: 1 ... passed in 0.002s
     Then answer get row(0) get variable(a) is type: true ... passed in 0.000s
     Then answer get row(0) get variable(a) is instance: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is value: false ... passed in 0.000s
@@ -581,29 +581,29 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attribute types with value type datetime correctly -- @1.7 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.207s
+    Given connection opens with default authentication ... passed in 0.144s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.071s
+    Given connection create database: typedb ... passed in 0.042s
     Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.003s
-    Given typeql schema query ... passed in 0.004s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.002s
       """
       define attribute typed, value datetime;
       """
-    When get answers of typeql read query ... passed in 0.007s
+    When get answers of typeql read query ... passed in 0.008s
       """
       match attribute $a;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.005s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer get row(0) get variable(a) is type: true ... passed in 0.000s
-    Then answer get row(0) get variable(a) is instance: false ... passed in 0.002s
+    Then answer get row(0) get variable(a) is instance: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is value: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is entity type: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is relation type: false ... passed in 0.000s
-    Then answer get row(0) get variable(a) is attribute type: true ... passed in 0.001s
+    Then answer get row(0) get variable(a) is attribute type: true ... passed in 0.000s
     Then answer get row(0) get variable(a) is role type: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is entity: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is relation: false ... passed in 0.000s
@@ -614,23 +614,23 @@ Feature: Driver Concept
     Then answer get row(0) get variable(a) try get boolean is none ... passed in 0.000s
     Then answer get row(0) get variable(a) try get integer is none ... passed in 0.000s
     Then answer get row(0) get variable(a) try get double is none ... passed in 0.000s
-    Then answer get row(0) get variable(a) try get decimal is none ... passed in 0.001s
+    Then answer get row(0) get variable(a) try get decimal is none ... passed in 0.000s
     Then answer get row(0) get variable(a) try get string is none ... passed in 0.000s
     Then answer get row(0) get variable(a) try get date is none ... passed in 0.000s
-    Then answer get row(0) get variable(a) try get datetime is none ... passed in 0.002s
-    Then answer get row(0) get variable(a) try get datetime-tz is none ... passed in 0.001s
+    Then answer get row(0) get variable(a) try get datetime is none ... passed in 0.000s
+    Then answer get row(0) get variable(a) try get datetime-tz is none ... passed in 0.000s
     Then answer get row(0) get variable(a) try get duration is none ... passed in 0.000s
     Then answer get row(0) get variable(a) try get struct is none ... passed in 0.000s
-    Then answer get row(0) get type(a) get label: typed ... passed in 0.001s
+    Then answer get row(0) get type(a) get label: typed ... passed in 0.000s
     Then answer get row(0) get attribute type(a) get label: typed ... passed in 0.000s
-    Then answer get row(0) get attribute type(a) try get value type: datetime ... passed in 0.001s
+    Then answer get row(0) get attribute type(a) try get value type: datetime ... passed in 0.000s
     Then answer get row(0) get attribute type(a) is boolean: false ... passed in 0.000s
-    Then answer get row(0) get attribute type(a) is integer: false ... passed in 0.002s
+    Then answer get row(0) get attribute type(a) is integer: false ... passed in 0.000s
     Then answer get row(0) get attribute type(a) is double: false ... passed in 0.000s
     Then answer get row(0) get attribute type(a) is decimal: false ... passed in 0.000s
     Then answer get row(0) get attribute type(a) is string: false ... passed in 0.000s
     Then answer get row(0) get attribute type(a) is date: false ... passed in 0.000s
-    Then answer get row(0) get attribute type(a) is datetime: true ... passed in 0.001s
+    Then answer get row(0) get attribute type(a) is datetime: true ... passed in 0.000s
     Then answer get row(0) get attribute type(a) is datetime-tz: false ... passed in 0.000s
     Then answer get row(0) get attribute type(a) is duration: false ... passed in 0.000s
     Then answer get row(0) get attribute type(a) is struct: false ... passed in 0.000s
@@ -638,17 +638,17 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attribute types with value type datetime-tz correctly -- @1.8 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.165s
+    Given connection opens with default authentication ... passed in 0.141s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.067s
-    Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.004s
-    Given typeql schema query ... passed in 0.003s
+    Given connection create database: typedb ... passed in 0.042s
+    Given connection has database: typedb ... passed in 0.001s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.002s
       """
       define attribute typed, value datetime-tz;
       """
-    When get answers of typeql read query ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match attribute $a;
       """
@@ -669,13 +669,13 @@ Feature: Driver Concept
     Then answer get row(0) get variable(a) get label: typed ... passed in 0.000s
     Then answer get row(0) get variable(a) try get value is none ... passed in 0.000s
     Then answer get row(0) get variable(a) try get boolean is none ... passed in 0.000s
-    Then answer get row(0) get variable(a) try get integer is none ... passed in 0.001s
+    Then answer get row(0) get variable(a) try get integer is none ... passed in 0.000s
     Then answer get row(0) get variable(a) try get double is none ... passed in 0.000s
     Then answer get row(0) get variable(a) try get decimal is none ... passed in 0.000s
     Then answer get row(0) get variable(a) try get string is none ... passed in 0.000s
     Then answer get row(0) get variable(a) try get date is none ... passed in 0.000s
     Then answer get row(0) get variable(a) try get datetime is none ... passed in 0.000s
-    Then answer get row(0) get variable(a) try get datetime-tz is none ... passed in 0.001s
+    Then answer get row(0) get variable(a) try get datetime-tz is none ... passed in 0.000s
     Then answer get row(0) get variable(a) try get duration is none ... passed in 0.000s
     Then answer get row(0) get variable(a) try get struct is none ... passed in 0.000s
     Then answer get row(0) get type(a) get label: typed ... passed in 0.000s
@@ -695,23 +695,23 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attribute types with value type duration correctly -- @1.9 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.187s
+    Given connection opens with default authentication ... passed in 0.164s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.056s
-    Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.004s
+    Given connection create database: typedb ... passed in 0.041s
+    Given connection has database: typedb ... passed in 0.001s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
       """
       define attribute typed, value duration;
       """
-    When get answers of typeql read query ... passed in 0.006s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match attribute $a;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.001s
+    Then answer size is: 1 ... passed in 0.002s
     Then answer get row(0) get variable(a) is type: true ... passed in 0.000s
     Then answer get row(0) get variable(a) is instance: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is value: false ... passed in 0.000s
@@ -752,13 +752,13 @@ Feature: Driver Concept
   Scenario: Driver processes attribute types with value type struct correctly
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.188s
+    Given connection opens with default authentication ... passed in 0.171s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.037s
-    Given connection has database: typedb ... passed in 0.001s
+    Given connection create database: typedb ... passed in 0.038s
+    Given connection has database: typedb ... passed in 0.002s
     Given connection open schema transaction for database: typedb ... passed in 0.003s
-    Given typeql schema query ... passed in 0.003s
+    Given typeql schema query ... passed in 0.004s
       """
       define
       attribute film, value film-properties;
@@ -777,7 +777,7 @@ Feature: Driver Concept
         local-premier value datetime-tz,
         is-verified value boolean;
       """
-    When get answers of typeql read query ... passed in 0.009s
+    When get answers of typeql read query ... passed in 0.003s
       """
       match attribute $a;
       """
@@ -789,14 +789,14 @@ Feature: Driver Concept
     Then answer get row(0) get variable(a) is value: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is entity type: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is relation type: false ... passed in 0.000s
-    Then answer get row(0) get variable(a) is attribute type: true ... passed in 0.001s
+    Then answer get row(0) get variable(a) is attribute type: true ... passed in 0.000s
     Then answer get row(0) get variable(a) is role type: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is entity: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is relation: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is attribute: false ... passed in 0.000s
     Then answer get row(0) get variable(a) as attribute type ... passed in 0.000s
     Then answer get row(0) get variable(a) get label: film ... passed in 0.000s
-    Then answer get row(0) get type(a) get label: film ... passed in 0.001s
+    Then answer get row(0) get type(a) get label: film ... passed in 0.000s
     Then answer get row(0) get attribute type(a) get label: film ... passed in 0.000s
     Then answer get row(0) get attribute type(a) try get value type: film-properties ... passed in 0.000s
     Then answer get row(0) get attribute type(a) is boolean: false ... passed in 0.000s
@@ -813,10 +813,10 @@ Feature: Driver Concept
   Scenario: Driver processes entities correctly
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.185s
+    Given connection opens with default authentication ... passed in 0.167s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.013s
-    Given connection create database: typedb ... passed in 0.095s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.045s
     Given connection has database: typedb ... passed in 0.002s
     Given connection open schema transaction for database: typedb ... passed in 0.004s
     Given typeql schema query ... passed in 0.002s
@@ -824,19 +824,19 @@ Feature: Driver Concept
       define entity person;
       """
     Given transaction commits ... passed in 0.005s
-    Given connection open write transaction for database: typedb ... passed in 0.002s
-    Given typeql write query ... passed in 0.004s
+    Given connection open write transaction for database: typedb ... passed in 0.007s
+    Given typeql write query ... passed in 0.005s
       """
       insert $p isa person;
       """
-    When get answers of typeql read query ... passed in 0.003s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $p isa person;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.000s
-    Then answer get row(0) get variable(p) is type: false ... passed in 0.004s
+    Then answer size is: 1 ... passed in 0.001s
+    Then answer get row(0) get variable(p) is type: false ... passed in 0.001s
     Then answer get row(0) get variable(p) is instance: true ... passed in 0.000s
     Then answer get row(0) get variable(p) is value: false ... passed in 0.000s
     Then answer get row(0) get variable(p) is entity type: false ... passed in 0.000s
@@ -876,30 +876,30 @@ Feature: Driver Concept
   Scenario: Driver processes relations correctly
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.163s
+    Given connection opens with default authentication ... passed in 0.162s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.086s
-    Given connection has database: typedb ... passed in 0.004s
-    Given connection open schema transaction for database: typedb ... passed in 0.004s
+    Given connection create database: typedb ... passed in 0.044s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
       """
       define relation parentship, relates parent;
       """
-    Given transaction commits ... passed in 0.011s
-    Given connection open write transaction for database: typedb ... passed in 0.003s
-    Given typeql write query ... passed in 0.004s
+    Given transaction commits ... passed in 0.009s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.006s
       """
       insert $p isa parentship;
       """
-    When get answers of typeql read query ... passed in 0.003s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $p isa parentship;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
     Then answer size is: 1 ... passed in 0.000s
-    Then answer get row(0) get variable(p) is type: false ... passed in 0.001s
+    Then answer get row(0) get variable(p) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(p) is instance: true ... passed in 0.000s
     Then answer get row(0) get variable(p) is value: false ... passed in 0.000s
     Then answer get row(0) get variable(p) is entity type: false ... passed in 0.000s
@@ -938,30 +938,30 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attributes of type boolean correctly -- @1.1 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.218s
+    Given connection opens with default authentication ... passed in 0.155s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.003s
-    Given connection create database: typedb ... passed in 0.144s
-    Given connection has database: typedb ... passed in 0.010s
-    Given connection open schema transaction for database: typedb ... passed in 0.006s
-    Given typeql schema query ... passed in 0.016s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.035s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value boolean;
       """
-    Given transaction commits ... passed in 0.008s
-    Given connection open write transaction for database: typedb ... passed in 0.003s
-    Given typeql write query ... passed in 0.005s
+    Given transaction commits ... passed in 0.006s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed true;
       """
-    When get answers of typeql read query ... passed in 0.003s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has $a;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.001s
-    Then answer get row(0) get variable(a) is type: false ... passed in 0.002s
+    Then answer size is: 1 ... passed in 0.000s
+    Then answer get row(0) get variable(a) is type: false ... passed in 0.001s
     Then answer get row(0) get variable(a) is instance: true ... passed in 0.000s
     Then answer get row(0) get variable(a) is value: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is entity type: false ... passed in 0.000s
@@ -1006,34 +1006,34 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attributes of type integer correctly -- @1.2 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.224s
+    Given connection opens with default authentication ... passed in 0.168s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.165s
-    Given connection has database: typedb ... passed in 0.009s
+    Given connection create database: typedb ... passed in 0.035s
+    Given connection has database: typedb ... passed in 0.002s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value integer;
       """
-    Given transaction commits ... passed in 0.011s
+    Given transaction commits ... passed in 0.006s
     Given connection open write transaction for database: typedb ... passed in 0.002s
     Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 12345090;
       """
-    When get answers of typeql read query ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has $a;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.000s
+    Then answer size is: 1 ... passed in 0.001s
     Then answer get row(0) get variable(a) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is instance: true ... passed in 0.000s
     Then answer get row(0) get variable(a) is value: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is entity type: false ... passed in 0.000s
-    Then answer get row(0) get variable(a) is relation type: false ... passed in 0.000s
+    Then answer get row(0) get variable(a) is relation type: false ... passed in 0.001s
     Then answer get row(0) get variable(a) is attribute type: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is role type: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is entity: false ... passed in 0.000s
@@ -1074,23 +1074,23 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attributes of type double correctly -- @1.3 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.349s
+    Given connection opens with default authentication ... passed in 0.138s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.108s
-    Given connection has database: typedb ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.037s
+    Given connection has database: typedb ... passed in 0.001s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value double;
       """
-    Given transaction commits ... passed in 0.006s
+    Given transaction commits ... passed in 0.005s
     Given connection open write transaction for database: typedb ... passed in 0.002s
     Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 0.0000000000000000001;
       """
-    When get answers of typeql read query ... passed in 0.004s
+    When get answers of typeql read query ... passed in 0.003s
       """
       match $_ isa person, has $a;
       """
@@ -1142,29 +1142,29 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attributes of type double correctly -- @1.4 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.216s
+    Given connection opens with default authentication ... passed in 0.155s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.108s
+    Given connection create database: typedb ... passed in 0.037s
     Given connection has database: typedb ... passed in 0.002s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value double;
       """
-    Given transaction commits ... passed in 0.007s
+    Given transaction commits ... passed in 0.005s
     Given connection open write transaction for database: typedb ... passed in 0.002s
-    Given typeql write query ... passed in 0.005s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 2.01234567;
       """
-    When get answers of typeql read query ... passed in 0.004s
+    When get answers of typeql read query ... passed in 0.003s
       """
       match $_ isa person, has $a;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.000s
+    Then answer size is: 1 ... passed in 0.001s
     Then answer get row(0) get variable(a) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is instance: true ... passed in 0.000s
     Then answer get row(0) get variable(a) is value: false ... passed in 0.000s
@@ -1210,29 +1210,29 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attributes of type decimal correctly -- @1.5 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.161s
+    Given connection opens with default authentication ... passed in 0.167s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.117s
-    Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.003s
-    Given typeql schema query ... passed in 0.007s
+    Given connection create database: typedb ... passed in 0.034s
+    Given connection has database: typedb ... passed in 0.001s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value decimal;
       """
-    Given transaction commits ... passed in 0.065s
-    Given connection open write transaction for database: typedb ... passed in 0.010s
-    Given typeql write query ... passed in 0.005s
+    Given transaction commits ... passed in 0.005s
+    Given connection open write transaction for database: typedb ... passed in 0.004s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 1234567890.0001234567890dec;
       """
-    When get answers of typeql read query ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has $a;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.000s
+    Then answer size is: 1 ... passed in 0.001s
     Then answer get row(0) get variable(a) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is instance: true ... passed in 0.000s
     Then answer get row(0) get variable(a) is value: false ... passed in 0.000s
@@ -1251,11 +1251,11 @@ Feature: Driver Concept
     Then answer get row(0) get attribute(a) get type get label: typed ... passed in 0.000s
     Then answer get row(0) get attribute(a) get type is attribute: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) get type is entity type: false ... passed in 0.000s
-    Then answer get row(0) get attribute(a) get type is relation type: false ... passed in 0.001s
+    Then answer get row(0) get attribute(a) get type is relation type: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) get type is attribute type: true ... passed in 0.000s
     Then answer get row(0) get attribute(a) get type is role type: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) get type get value type: decimal ... passed in 0.000s
-    Then answer get row(0) get attribute(a) get decimal ... passed in 0.004s
+    Then answer get row(0) get attribute(a) get decimal ... passed in 0.000s
     Then answer get row(0) get attribute(a) is boolean: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) is integer: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) is double: false ... passed in 0.000s
@@ -1278,29 +1278,29 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attributes of type decimal correctly -- @1.6 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.158s
+    Given connection opens with default authentication ... passed in 0.165s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.090s
+    Given connection create database: typedb ... passed in 0.041s
     Given connection has database: typedb ... passed in 0.002s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
-    Given typeql schema query ... passed in 0.005s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value decimal;
       """
-    Given transaction commits ... passed in 0.008s
+    Given transaction commits ... passed in 0.006s
     Given connection open write transaction for database: typedb ... passed in 0.002s
     Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 0.0000000000000000001dec;
       """
-    When get answers of typeql read query ... passed in 0.007s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has $a;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.007s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer get row(0) get variable(a) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is instance: true ... passed in 0.000s
     Then answer get row(0) get variable(a) is value: false ... passed in 0.000s
@@ -1346,23 +1346,23 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attributes of type string correctly -- @1.7 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.203s
+    Given connection opens with default authentication ... passed in 0.169s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.003s
-    Given connection create database: typedb ... passed in 0.097s
-    Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.003s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.040s
+    Given connection has database: typedb ... passed in 0.001s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value string;
       """
     Given transaction commits ... passed in 0.006s
-    Given connection open write transaction for database: typedb ... passed in 0.007s
-    Given typeql write query ... passed in 0.006s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed "John \"Baba Yaga\" Wick";
       """
-    When get answers of typeql read query ... passed in 0.026s
+    When get answers of typeql read query ... passed in 0.003s
       """
       match $_ isa person, has $a;
       """
@@ -1414,29 +1414,29 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attributes of type string correctly -- @1.8 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.238s
+    Given connection opens with default authentication ... passed in 0.159s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.038s
+    Given connection create database: typedb ... passed in 0.035s
     Given connection has database: typedb ... passed in 0.001s
-    Given connection open schema transaction for database: typedb ... passed in 0.003s
-    Given typeql schema query ... passed in 0.004s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value string;
       """
-    Given transaction commits ... passed in 0.006s
-    Given connection open write transaction for database: typedb ... passed in 0.003s
-    Given typeql write query ... passed in 0.006s
+    Given transaction commits ... passed in 0.005s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed "hello";
       """
-    When get answers of typeql read query ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.003s
       """
       match $_ isa person, has $a;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.001s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer get row(0) get variable(a) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is instance: true ... passed in 0.000s
     Then answer get row(0) get variable(a) is value: false ... passed in 0.000s
@@ -1482,19 +1482,19 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attributes of type string correctly -- @1.9 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.180s
+    Given connection opens with default authentication ... passed in 0.165s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.036s
-    Given connection has database: typedb ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.035s
+    Given connection has database: typedb ... passed in 0.001s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
-    Given typeql schema query ... passed in 0.004s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value string;
       """
     Given transaction commits ... passed in 0.006s
-    Given connection open write transaction for database: typedb ... passed in 0.002s
-    Given typeql write query ... passed in 0.005s
+    Given connection open write transaction for database: typedb ... passed in 0.005s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed "äìèòðèé";
       """
@@ -1506,7 +1506,7 @@ Feature: Driver Concept
     Then answer query type is: read ... passed in 0.000s
     Then answer size is: 1 ... passed in 0.000s
     Then answer get row(0) get variable(a) is type: false ... passed in 0.000s
-    Then answer get row(0) get variable(a) is instance: true ... passed in 0.001s
+    Then answer get row(0) get variable(a) is instance: true ... passed in 0.000s
     Then answer get row(0) get variable(a) is value: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is entity type: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is relation type: false ... passed in 0.000s
@@ -1550,29 +1550,29 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attributes of type string correctly -- @1.10 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.162s
+    Given connection opens with default authentication ... passed in 0.168s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.003s
-    Given connection create database: typedb ... passed in 0.092s
-    Given connection has database: typedb ... passed in 0.003s
-    Given connection open schema transaction for database: typedb ... passed in 0.005s
-    Given typeql schema query ... passed in 0.007s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.037s
+    Given connection has database: typedb ... passed in 0.001s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.004s
       """
       define entity person, owns typed; attribute typed, value string;
       """
-    Given transaction commits ... passed in 0.017s
-    Given connection open write transaction for database: typedb ... passed in 0.005s
-    Given typeql write query ... passed in 0.009s
+    Given transaction commits ... passed in 0.006s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed "കുര്യാക്കോസ്";
       """
-    When get answers of typeql read query ... passed in 0.006s
+    When get answers of typeql read query ... passed in 0.003s
       """
       match $_ isa person, has $a;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.002s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer get row(0) get variable(a) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is instance: true ... passed in 0.000s
     Then answer get row(0) get variable(a) is value: false ... passed in 0.000s
@@ -1610,7 +1610,7 @@ Feature: Driver Concept
     Then answer get row(0) get attribute(a) try get string is: "കുര്യാക്കോസ്" ... passed in 0.000s
     Then answer get row(0) get attribute(a) try get value is not: "John" ... passed in 0.000s
     Then answer get row(0) get attribute(a) try get string is not: "John" ... passed in 0.000s
-    Then answer get row(0) get attribute(a) get value is: "കുര്യാക്കോസ്" ... passed in 0.001s
+    Then answer get row(0) get attribute(a) get value is: "കുര്യാക്കോസ്" ... passed in 0.000s
     Then answer get row(0) get attribute(a) get string is: "കുര്യാക്കോസ്" ... passed in 0.000s
     Then answer get row(0) get attribute(a) get value is not: "John" ... passed in 0.000s
     Then answer get row(0) get attribute(a) get string is not: "John" ... passed in 0.000s
@@ -1618,29 +1618,29 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attributes of type string correctly -- @1.11 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.278s
+    Given connection opens with default authentication ... passed in 0.161s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.084s
-    Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.003s
-    Given typeql schema query ... passed in 0.003s
+    Given connection create database: typedb ... passed in 0.035s
+    Given connection has database: typedb ... passed in 0.001s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.002s
       """
       define entity person, owns typed; attribute typed, value string;
       """
-    Given transaction commits ... passed in 0.006s
-    Given connection open write transaction for database: typedb ... passed in 0.034s
-    Given typeql write query ... passed in 0.009s
+    Given transaction commits ... passed in 0.004s
+    Given connection open write transaction for database: typedb ... passed in 0.003s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed "📎";
       """
-    When get answers of typeql read query ... passed in 0.004s
+    When get answers of typeql read query ... passed in 0.003s
       """
       match $_ isa person, has $a;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.002s
+    Then answer size is: 1 ... passed in 0.001s
     Then answer get row(0) get variable(a) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is instance: true ... passed in 0.000s
     Then answer get row(0) get variable(a) is value: false ... passed in 0.000s
@@ -1648,7 +1648,7 @@ Feature: Driver Concept
     Then answer get row(0) get variable(a) is relation type: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is attribute type: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is role type: false ... passed in 0.000s
-    Then answer get row(0) get variable(a) is entity: false ... passed in 0.001s
+    Then answer get row(0) get variable(a) is entity: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is relation: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is attribute: true ... passed in 0.000s
     Then answer get row(0) get variable(a) as attribute ... passed in 0.000s
@@ -1663,13 +1663,13 @@ Feature: Driver Concept
     Then answer get row(0) get attribute(a) get type is attribute type: true ... passed in 0.000s
     Then answer get row(0) get attribute(a) get type is role type: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) get type get value type: string ... passed in 0.000s
-    Then answer get row(0) get attribute(a) get string ... passed in 0.001s
+    Then answer get row(0) get attribute(a) get string ... passed in 0.000s
     Then answer get row(0) get attribute(a) is boolean: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) is integer: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) is double: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) is decimal: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) is string: true ... passed in 0.000s
-    Then answer get row(0) get attribute(a) is date: false ... passed in 0.003s
+    Then answer get row(0) get attribute(a) is date: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) is datetime: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) is datetime-tz: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) is duration: false ... passed in 0.000s
@@ -1689,15 +1689,15 @@ Feature: Driver Concept
     Given connection opens with default authentication ... passed in 0.168s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.103s
+    Given connection create database: typedb ... passed in 0.042s
     Given connection has database: typedb ... passed in 0.002s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
-    Given typeql schema query ... passed in 0.004s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value date;
       """
-    Given transaction commits ... passed in 0.008s
-    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given transaction commits ... passed in 0.005s
+    Given connection open write transaction for database: typedb ... passed in 0.003s
     Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed 2024-09-20;
@@ -1742,7 +1742,7 @@ Feature: Driver Concept
     Then answer get row(0) get attribute(a) is datetime-tz: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) is duration: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) is struct: false ... passed in 0.000s
-    Then answer get row(0) get attribute(a) try get value is: 2024-09-20 ... passed in 0.003s
+    Then answer get row(0) get attribute(a) try get value is: 2024-09-20 ... passed in 0.002s
     Then answer get row(0) get attribute(a) try get date is: 2024-09-20 ... passed in 0.000s
     Then answer get row(0) get attribute(a) try get value is not: 2025-09-20 ... passed in 0.000s
     Then answer get row(0) get attribute(a) try get date is not: 2025-09-20 ... passed in 0.000s
@@ -1754,19 +1754,19 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attributes of type datetime correctly -- @1.13 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.203s
+    Given connection opens with default authentication ... passed in 0.156s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.003s
-    Given connection create database: typedb ... passed in 0.079s
-    Given connection has database: typedb ... passed in 0.002s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.034s
+    Given connection has database: typedb ... passed in 0.001s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value datetime;
       """
-    Given transaction commits ... passed in 0.016s
-    Given connection open write transaction for database: typedb ... passed in 0.003s
-    Given typeql write query ... passed in 0.005s
+    Given transaction commits ... passed in 0.006s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 1999-02-26T12:15:05;
       """
@@ -1776,7 +1776,7 @@ Feature: Driver Concept
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.001s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer get row(0) get variable(a) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is instance: true ... passed in 0.000s
     Then answer get row(0) get variable(a) is value: false ... passed in 0.000s
@@ -1822,23 +1822,23 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attributes of type datetime correctly -- @1.14 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.235s
+    Given connection opens with default authentication ... passed in 0.154s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.008s
-    Given connection create database: typedb ... passed in 0.094s
-    Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.005s
-    Given typeql schema query ... passed in 0.007s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.036s
+    Given connection has database: typedb ... passed in 0.001s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.002s
       """
       define entity person, owns typed; attribute typed, value datetime;
       """
-    Given transaction commits ... passed in 0.011s
-    Given connection open write transaction for database: typedb ... passed in 0.010s
-    Given typeql write query ... passed in 0.005s
+    Given transaction commits ... passed in 0.005s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 1999-02-26T12:15:05.000000001;
       """
-    When get answers of typeql read query ... passed in 0.004s
+    When get answers of typeql read query ... passed in 0.003s
       """
       match $_ isa person, has $a;
       """
@@ -1890,30 +1890,30 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attributes of type datetime-tz correctly -- @1.15 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.194s
+    Given connection opens with default authentication ... passed in 0.185s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.087s
-    Given connection has database: typedb ... passed in 0.004s
-    Given connection open schema transaction for database: typedb ... passed in 0.004s
-    Given typeql schema query ... passed in 0.005s
+    Given connection create database: typedb ... passed in 0.034s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value datetime-tz;
       """
-    Given transaction commits ... passed in 0.015s
-    Given connection open write transaction for database: typedb ... passed in 0.013s
-    Given typeql write query ... passed in 0.007s
+    Given transaction commits ... passed in 0.006s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed 2024-09-20T16:40:05 America/New_York;
       """
-    When get answers of typeql read query ... passed in 0.009s
+    When get answers of typeql read query ... passed in 0.003s
       """
       match $_ isa person, has $a;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.000s
-    Then answer get row(0) get variable(a) is type: false ... passed in 0.001s
+    Then answer size is: 1 ... passed in 0.001s
+    Then answer get row(0) get variable(a) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is instance: true ... passed in 0.000s
     Then answer get row(0) get variable(a) is value: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is entity type: false ... passed in 0.000s
@@ -1935,7 +1935,7 @@ Feature: Driver Concept
     Then answer get row(0) get attribute(a) get type is attribute type: true ... passed in 0.000s
     Then answer get row(0) get attribute(a) get type is role type: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) get type get value type: datetime-tz ... passed in 0.000s
-    Then answer get row(0) get attribute(a) get datetime-tz ... passed in 0.001s
+    Then answer get row(0) get attribute(a) get datetime-tz ... passed in 0.000s
     Then answer get row(0) get attribute(a) is boolean: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) is integer: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) is double: false ... passed in 0.000s
@@ -1958,23 +1958,23 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attributes of type datetime-tz correctly -- @1.16 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.190s
+    Given connection opens with default authentication ... passed in 0.175s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.069s
-    Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.003s
-    Given typeql schema query ... passed in 0.004s
+    Given connection create database: typedb ... passed in 0.063s
+    Given connection has database: typedb ... passed in 0.003s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value datetime-tz;
       """
-    Given transaction commits ... passed in 0.008s
-    Given connection open write transaction for database: typedb ... passed in 0.009s
+    Given transaction commits ... passed in 0.007s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
     Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed 2024-09-20T16:40:05.000000001 Europe/London;
       """
-    When get answers of typeql read query ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has $a;
       """
@@ -2003,7 +2003,7 @@ Feature: Driver Concept
     Then answer get row(0) get attribute(a) get type is attribute type: true ... passed in 0.000s
     Then answer get row(0) get attribute(a) get type is role type: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) get type get value type: datetime-tz ... passed in 0.000s
-    Then answer get row(0) get attribute(a) get datetime-tz ... passed in 0.001s
+    Then answer get row(0) get attribute(a) get datetime-tz ... passed in 0.000s
     Then answer get row(0) get attribute(a) is boolean: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) is integer: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) is double: false ... passed in 0.000s
@@ -2014,35 +2014,35 @@ Feature: Driver Concept
     Then answer get row(0) get attribute(a) is datetime-tz: true ... passed in 0.000s
     Then answer get row(0) get attribute(a) is duration: false ... passed in 0.000s
     Then answer get row(0) get attribute(a) is struct: false ... passed in 0.000s
-    Then answer get row(0) get attribute(a) try get value is: 2024-09-20T16:40:05.000000001 Europe/London ... passed in 0.001s
+    Then answer get row(0) get attribute(a) try get value is: 2024-09-20T16:40:05.000000001 Europe/London ... passed in 0.000s
     Then answer get row(0) get attribute(a) try get datetime-tz is: 2024-09-20T16:40:05.000000001 Europe/London ... passed in 0.000s
-    Then answer get row(0) get attribute(a) try get value is not: 2024-09-20T16:40:05.000000001 UTC ... passed in 0.001s
+    Then answer get row(0) get attribute(a) try get value is not: 2024-09-20T16:40:05.000000001 UTC ... passed in 0.000s
     Then answer get row(0) get attribute(a) try get datetime-tz is not: 2024-09-20T16:40:05.000000001 UTC ... passed in 0.000s
     Then answer get row(0) get attribute(a) get value is: 2024-09-20T16:40:05.000000001 Europe/London ... passed in 0.000s
     Then answer get row(0) get attribute(a) get datetime-tz is: 2024-09-20T16:40:05.000000001 Europe/London ... passed in 0.000s
-    Then answer get row(0) get attribute(a) get value is not: 2024-09-20T16:40:05.000000001 UTC ... passed in 0.001s
+    Then answer get row(0) get attribute(a) get value is not: 2024-09-20T16:40:05.000000001 UTC ... passed in 0.000s
     Then answer get row(0) get attribute(a) get datetime-tz is not: 2024-09-20T16:40:05.000000001 UTC ... passed in 0.000s
 
   Scenario Outline: Driver processes attributes of type datetime-tz correctly -- @1.17 
     Given typedb starts ... passed in 0.000s
-    Given connection is open: false ... passed in 0.001s
-    Given connection opens with default authentication ... passed in 0.169s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.162s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.004s
-    Given connection create database: typedb ... passed in 0.097s
+    Given connection has 0 databases ... passed in 0.003s
+    Given connection create database: typedb ... passed in 0.053s
     Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.004s
-    Given typeql schema query ... passed in 0.005s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value datetime-tz;
       """
-    Given transaction commits ... passed in 0.008s
-    Given connection open write transaction for database: typedb ... passed in 0.004s
-    Given typeql write query ... passed in 0.010s
+    Given transaction commits ... passed in 0.006s
+    Given connection open write transaction for database: typedb ... passed in 0.003s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 2024-09-20T16:40:05.000000001 Europe/Belfast;
       """
-    When get answers of typeql read query ... passed in 0.013s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has $a;
       """
@@ -2094,29 +2094,29 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attributes of type datetime-tz correctly -- @1.18 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.242s
+    Given connection opens with default authentication ... passed in 0.189s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.004s
-    Given connection create database: typedb ... passed in 0.082s
-    Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.004s
-    Given typeql schema query ... passed in 0.004s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.043s
+    Given connection has database: typedb ... passed in 0.001s
+    Given connection open schema transaction for database: typedb ... passed in 0.006s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value datetime-tz;
       """
-    Given transaction commits ... passed in 0.011s
-    Given connection open write transaction for database: typedb ... passed in 0.002s
-    Given typeql write query ... passed in 0.005s
+    Given transaction commits ... passed in 0.006s
+    Given connection open write transaction for database: typedb ... passed in 0.004s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 2024-09-20T16:40:05.000000001+0100;
       """
-    When get answers of typeql read query ... passed in 0.006s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has $a;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.004s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer get row(0) get variable(a) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is instance: true ... passed in 0.000s
     Then answer get row(0) get variable(a) is value: false ... passed in 0.000s
@@ -2162,23 +2162,23 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attributes of type datetime-tz correctly -- @1.19 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.185s
+    Given connection opens with default authentication ... passed in 0.163s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.003s
-    Given connection create database: typedb ... passed in 0.102s
-    Given connection has database: typedb ... passed in 0.004s
-    Given connection open schema transaction for database: typedb ... passed in 0.006s
-    Given typeql schema query ... passed in 0.005s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.047s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value datetime-tz;
       """
-    Given transaction commits ... passed in 0.013s
-    Given connection open write transaction for database: typedb ... passed in 0.005s
-    Given typeql write query ... passed in 0.009s
+    Given transaction commits ... passed in 0.012s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed 2024-09-20T16:40:05.000000001+1115;
       """
-    When get answers of typeql read query ... passed in 0.015s
+    When get answers of typeql read query ... passed in 0.005s
       """
       match $_ isa person, has $a;
       """
@@ -2224,24 +2224,24 @@ Feature: Driver Concept
     Then answer get row(0) get attribute(a) try get datetime-tz is not: 2024-09-20T16:40:05.000000001+0000 ... passed in 0.000s
     Then answer get row(0) get attribute(a) get value is: 2024-09-20T16:40:05.000000001+1115 ... passed in 0.000s
     Then answer get row(0) get attribute(a) get datetime-tz is: 2024-09-20T16:40:05.000000001+1115 ... passed in 0.000s
-    Then answer get row(0) get attribute(a) get value is not: 2024-09-20T16:40:05.000000001+0000 ... passed in 0.004s
+    Then answer get row(0) get attribute(a) get value is not: 2024-09-20T16:40:05.000000001+0000 ... passed in 0.000s
     Then answer get row(0) get attribute(a) get datetime-tz is not: 2024-09-20T16:40:05.000000001+0000 ... passed in 0.000s
 
   Scenario Outline: Driver processes attributes of type datetime-tz correctly -- @1.20 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.257s
+    Given connection opens with default authentication ... passed in 0.138s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.122s
-    Given connection has database: typedb ... passed in 0.007s
-    Given connection open schema transaction for database: typedb ... passed in 0.003s
+    Given connection create database: typedb ... passed in 0.043s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value datetime-tz;
       """
-    Given transaction commits ... passed in 0.005s
-    Given connection open write transaction for database: typedb ... passed in 0.005s
+    Given transaction commits ... passed in 0.007s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
     Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed 2024-09-20T16:40:05.000000001+0000;
@@ -2298,29 +2298,29 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attributes of type duration correctly -- @1.21 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.280s
+    Given connection opens with default authentication ... passed in 0.165s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.095s
+    Given connection create database: typedb ... passed in 0.034s
     Given connection has database: typedb ... passed in 0.002s
     Given connection open schema transaction for database: typedb ... passed in 0.003s
-    Given typeql schema query ... passed in 0.007s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value duration;
       """
-    Given transaction commits ... passed in 0.010s
-    Given connection open write transaction for database: typedb ... passed in 0.007s
-    Given typeql write query ... passed in 0.008s
+    Given transaction commits ... passed in 0.006s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed P1Y10M7DT15H44M5.00394892S;
       """
-    When get answers of typeql read query ... passed in 0.008s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has $a;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.002s
+    Then answer size is: 1 ... passed in 0.001s
     Then answer get row(0) get variable(a) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(a) is instance: true ... passed in 0.000s
     Then answer get row(0) get variable(a) is value: false ... passed in 0.000s
@@ -2366,19 +2366,19 @@ Feature: Driver Concept
   Scenario Outline: Driver processes attributes of type duration correctly -- @1.22 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.224s
+    Given connection opens with default authentication ... passed in 0.144s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.003s
-    Given connection create database: typedb ... passed in 0.146s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.037s
     Given connection has database: typedb ... passed in 0.002s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.004s
       """
       define entity person, owns typed; attribute typed, value duration;
       """
-    Given transaction commits ... passed in 0.009s
-    Given connection open write transaction for database: typedb ... passed in 0.014s
-    Given typeql write query ... passed in 0.005s
+    Given transaction commits ... passed in 0.006s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed P66W;
       """
@@ -2432,32 +2432,32 @@ Feature: Driver Concept
     Then answer get row(0) get attribute(a) get duration is not: P67W ... passed in 0.000s
 
   Scenario Outline: Driver processes values of type boolean correctly -- @1.1 
-    Given typedb starts ... passed in 0.020s
+    Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.374s
+    Given connection opens with default authentication ... passed in 0.143s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.095s
-    Given connection has database: typedb ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.035s
+    Given connection has database: typedb ... passed in 0.001s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value boolean;
       """
-    Given transaction commits ... passed in 0.009s
-    Given connection open write transaction for database: typedb ... passed in 0.008s
-    Given typeql write query ... passed in 0.007s
+    Given transaction commits ... passed in 0.005s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed true;
       """
-    When get answers of typeql read query ... passed in 0.007s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has typed $v;
       let $value = $v;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.002s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer get row(0) get variable(value) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is instance: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is value: true ... passed in 0.000s
@@ -2476,11 +2476,11 @@ Feature: Driver Concept
     Then answer get row(0) get value(value) get value type: boolean ... passed in 0.000s
     Then answer get row(0) get value(value) is boolean: true ... passed in 0.000s
     Then answer get row(0) get value(value) is integer: false ... passed in 0.000s
-    Then answer get row(0) get value(value) is double: false ... passed in 0.004s
+    Then answer get row(0) get value(value) is double: false ... passed in 0.000s
     Then answer get row(0) get value(value) is decimal: false ... passed in 0.000s
     Then answer get row(0) get value(value) is string: false ... passed in 0.000s
-    Then answer get row(0) get value(value) is date: false ... passed in 0.003s
-    Then answer get row(0) get value(value) is datetime: false ... passed in 0.001s
+    Then answer get row(0) get value(value) is date: false ... passed in 0.000s
+    Then answer get row(0) get value(value) is datetime: false ... passed in 0.000s
     Then answer get row(0) get value(value) is datetime-tz: false ... passed in 0.000s
     Then answer get row(0) get value(value) is duration: false ... passed in 0.000s
     Then answer get row(0) get value(value) is struct: false ... passed in 0.000s
@@ -2491,35 +2491,35 @@ Feature: Driver Concept
     Then answer get row(0) get value(value) get is: true ... passed in 0.000s
     Then answer get row(0) get value(value) get boolean is: true ... passed in 0.000s
     Then answer get row(0) get value(value) get is not: false ... passed in 0.000s
-    Then answer get row(0) get value(value) get boolean is not: false ... passed in 0.001s
+    Then answer get row(0) get value(value) get boolean is not: false ... passed in 0.000s
 
   Scenario Outline: Driver processes values of type integer correctly -- @1.2 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.283s
+    Given connection opens with default authentication ... passed in 0.166s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.123s
-    Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.005s
+    Given connection create database: typedb ... passed in 0.037s
+    Given connection has database: typedb ... passed in 0.001s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value integer;
       """
-    Given transaction commits ... passed in 0.006s
+    Given transaction commits ... passed in 0.005s
     Given connection open write transaction for database: typedb ... passed in 0.002s
-    Given typeql write query ... passed in 0.005s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 12345090;
       """
-    When get answers of typeql read query ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has typed $v;
       let $value = $v;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.000s
+    Then answer size is: 1 ... passed in 0.001s
     Then answer get row(0) get variable(value) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is instance: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is value: true ... passed in 0.000s
@@ -2558,30 +2558,30 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values of type double correctly -- @1.3 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.242s
+    Given connection opens with default authentication ... passed in 0.165s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.005s
-    Given connection create database: typedb ... passed in 0.103s
-    Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.012s
-    Given typeql schema query ... passed in 0.003s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.040s
+    Given connection has database: typedb ... passed in 0.001s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.002s
       """
       define entity person, owns typed; attribute typed, value double;
       """
     Given transaction commits ... passed in 0.006s
     Given connection open write transaction for database: typedb ... passed in 0.002s
-    Given typeql write query ... passed in 0.005s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 0.0000000000000000001;
       """
-    When get answers of typeql read query ... passed in 0.009s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has typed $v;
       let $value = $v;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.012s
+    Then answer size is: 1 ... passed in 0.001s
     Then answer get row(0) get variable(value) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is instance: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is value: true ... passed in 0.000s
@@ -2620,30 +2620,30 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values of type double correctly -- @1.4 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.319s
+    Given connection opens with default authentication ... passed in 0.158s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.138s
+    Given connection create database: typedb ... passed in 0.038s
     Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.003s
-    Given typeql schema query ... passed in 0.020s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value double;
       """
-    Given transaction commits ... passed in 0.010s
-    Given connection open write transaction for database: typedb ... passed in 0.006s
-    Given typeql write query ... passed in 0.013s
+    Given transaction commits ... passed in 0.006s
+    Given connection open write transaction for database: typedb ... passed in 0.003s
+    Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed 2.01234567;
       """
-    When get answers of typeql read query ... passed in 0.007s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has typed $v;
       let $value = $v;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.003s
+    Then answer size is: 1 ... passed in 0.001s
     Then answer get row(0) get variable(value) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is instance: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is value: true ... passed in 0.000s
@@ -2682,30 +2682,30 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values of type decimal correctly -- @1.5 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.201s
+    Given connection opens with default authentication ... passed in 0.169s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.044s
+    Given connection create database: typedb ... passed in 0.036s
     Given connection has database: typedb ... passed in 0.002s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value decimal;
       """
-    Given transaction commits ... passed in 0.006s
+    Given transaction commits ... passed in 0.007s
     Given connection open write transaction for database: typedb ... passed in 0.004s
-    Given typeql write query ... passed in 0.004s
+    Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed 1234567890.0001234567890dec;
       """
-    When get answers of typeql read query ... passed in 0.004s
+    When get answers of typeql read query ... passed in 0.006s
       """
       match $_ isa person, has typed $v;
       let $value = $v;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.002s
+    Then answer size is: 1 ... passed in 0.001s
     Then answer get row(0) get variable(value) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is instance: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is value: true ... passed in 0.000s
@@ -2744,23 +2744,23 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values of type decimal correctly -- @1.6 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.183s
+    Given connection opens with default authentication ... passed in 0.160s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.047s
-    Given connection has database: typedb ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.039s
+    Given connection has database: typedb ... passed in 0.001s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
-    Given typeql schema query ... passed in 0.004s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value decimal;
       """
-    Given transaction commits ... passed in 0.008s
-    Given connection open write transaction for database: typedb ... passed in 0.007s
-    Given typeql write query ... passed in 0.007s
+    Given transaction commits ... passed in 0.005s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 0.0000000000000000001dec;
       """
-    When get answers of typeql read query ... passed in 0.006s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has typed $v;
       let $value = $v;
@@ -2769,7 +2769,7 @@ Feature: Driver Concept
     Then answer query type is: read ... passed in 0.000s
     Then answer size is: 1 ... passed in 0.001s
     Then answer get row(0) get variable(value) is type: false ... passed in 0.000s
-    Then answer get row(0) get variable(value) is instance: false ... passed in 0.001s
+    Then answer get row(0) get variable(value) is instance: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is value: true ... passed in 0.000s
     Then answer get row(0) get variable(value) is entity type: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is relation type: false ... passed in 0.000s
@@ -2806,23 +2806,23 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values of type string correctly -- @1.7 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.182s
+    Given connection opens with default authentication ... passed in 0.141s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.003s
-    Given connection create database: typedb ... passed in 0.059s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.038s
     Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.003s
-    Given typeql schema query ... passed in 0.004s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value string;
       """
-    Given transaction commits ... passed in 0.006s
+    Given transaction commits ... passed in 0.005s
     Given connection open write transaction for database: typedb ... passed in 0.003s
-    Given typeql write query ... passed in 0.008s
+    Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed "John \"Baba Yaga\" Wick";
       """
-    When get answers of typeql read query ... passed in 0.008s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has typed $v;
       let $value = $v;
@@ -2832,13 +2832,13 @@ Feature: Driver Concept
     Then answer size is: 1 ... passed in 0.000s
     Then answer get row(0) get variable(value) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is instance: false ... passed in 0.000s
-    Then answer get row(0) get variable(value) is value: true ... passed in 0.001s
+    Then answer get row(0) get variable(value) is value: true ... passed in 0.000s
     Then answer get row(0) get variable(value) is entity type: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is relation type: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is attribute type: false ... passed in 0.000s
-    Then answer get row(0) get variable(value) is role type: false ... passed in 0.001s
+    Then answer get row(0) get variable(value) is role type: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is entity: false ... passed in 0.000s
-    Then answer get row(0) get variable(value) is relation: false ... passed in 0.001s
+    Then answer get row(0) get variable(value) is relation: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is attribute: false ... passed in 0.000s
     Then answer get row(0) get variable(value) try get iid is none ... passed in 0.000s
     Then answer get row(0) get variable(value) as value ... passed in 0.000s
@@ -2861,30 +2861,30 @@ Feature: Driver Concept
     Then answer get row(0) get value(value) try get value is not: "John Baba Yaga Wick" ... passed in 0.000s
     Then answer get row(0) get value(value) try get string is not: "John Baba Yaga Wick" ... passed in 0.000s
     Then answer get row(0) get value(value) get is: "John \"Baba Yaga\" Wick" ... passed in 0.000s
-    Then answer get row(0) get value(value) get string is: "John \"Baba Yaga\" Wick" ... passed in 0.001s
+    Then answer get row(0) get value(value) get string is: "John \"Baba Yaga\" Wick" ... passed in 0.000s
     Then answer get row(0) get value(value) get is not: "John Baba Yaga Wick" ... passed in 0.000s
     Then answer get row(0) get value(value) get string is not: "John Baba Yaga Wick" ... passed in 0.000s
 
   Scenario Outline: Driver processes values of type date correctly -- @1.8 
-    Given typedb starts ... passed in 0.001s
+    Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.204s
+    Given connection opens with default authentication ... passed in 0.158s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.003s
-    Given connection create database: typedb ... passed in 0.070s
-    Given connection has database: typedb ... passed in 0.002s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.038s
+    Given connection has database: typedb ... passed in 0.001s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
-    Given typeql schema query ... passed in 0.006s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value date;
       """
-    Given transaction commits ... passed in 0.014s
-    Given connection open write transaction for database: typedb ... passed in 0.011s
+    Given transaction commits ... passed in 0.005s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
     Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 2024-09-20;
       """
-    When get answers of typeql read query ... passed in 0.006s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has typed $v;
       let $value = $v;
@@ -2930,23 +2930,23 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values of type datetime correctly -- @1.9 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.172s
+    Given connection opens with default authentication ... passed in 0.158s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.190s
+    Given connection create database: typedb ... passed in 0.036s
     Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.004s
-    Given typeql schema query ... passed in 0.006s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value datetime;
       """
-    Given transaction commits ... passed in 0.007s
+    Given transaction commits ... passed in 0.006s
     Given connection open write transaction for database: typedb ... passed in 0.002s
-    Given typeql write query ... passed in 0.006s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 1999-02-26T12:15:05;
       """
-    When get answers of typeql read query ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has typed $v;
       let $value = $v;
@@ -2992,30 +2992,30 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values of type datetime correctly -- @1.10 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.185s
+    Given connection opens with default authentication ... passed in 0.147s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.049s
-    Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.004s
+    Given connection create database: typedb ... passed in 0.045s
+    Given connection has database: typedb ... passed in 0.001s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value datetime;
       """
-    Given transaction commits ... passed in 0.008s
-    Given connection open write transaction for database: typedb ... passed in 0.005s
-    Given typeql write query ... passed in 0.007s
+    Given transaction commits ... passed in 0.006s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 1999-02-26T12:15:05.000000001;
       """
-    When get answers of typeql read query ... passed in 0.006s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has typed $v;
       let $value = $v;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.001s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer get row(0) get variable(value) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is instance: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is value: true ... passed in 0.000s
@@ -3054,30 +3054,30 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values of type datetime-tz correctly -- @1.11 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.193s
+    Given connection opens with default authentication ... passed in 0.140s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.003s
-    Given connection create database: typedb ... passed in 0.048s
-    Given connection has database: typedb ... passed in 0.001s
-    Given connection open schema transaction for database: typedb ... passed in 0.003s
-    Given typeql schema query ... passed in 0.006s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.037s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value datetime-tz;
       """
     Given transaction commits ... passed in 0.006s
-    Given connection open write transaction for database: typedb ... passed in 0.004s
-    Given typeql write query ... passed in 0.005s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 2024-09-20T16:40:05 America/New_York;
       """
-    When get answers of typeql read query ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has typed $v;
       let $value = $v;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.001s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer get row(0) get variable(value) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is instance: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is value: true ... passed in 0.000s
@@ -3104,7 +3104,7 @@ Feature: Driver Concept
     Then answer get row(0) get value(value) is datetime-tz: true ... passed in 0.000s
     Then answer get row(0) get value(value) is duration: false ... passed in 0.000s
     Then answer get row(0) get value(value) is struct: false ... passed in 0.000s
-    Then answer get row(0) get value(value) try get value is: 2024-09-20T16:40:05 America/New_York ... passed in 0.001s
+    Then answer get row(0) get value(value) try get value is: 2024-09-20T16:40:05 America/New_York ... passed in 0.000s
     Then answer get row(0) get value(value) try get datetime-tz is: 2024-09-20T16:40:05 America/New_York ... passed in 0.000s
     Then answer get row(0) get value(value) try get value is not: 2024-06-20T15:40:05 America/New_York ... passed in 0.000s
     Then answer get row(0) get value(value) try get datetime-tz is not: 2024-06-20T15:40:05 America/New_York ... passed in 0.000s
@@ -3116,18 +3116,18 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values of type datetime-tz correctly -- @1.12 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.199s
+    Given connection opens with default authentication ... passed in 0.168s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.056s
+    Given connection create database: typedb ... passed in 0.037s
     Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.003s
-    Given typeql schema query ... passed in 0.004s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value datetime-tz;
       """
-    Given transaction commits ... passed in 0.007s
-    Given connection open write transaction for database: typedb ... passed in 0.004s
+    Given transaction commits ... passed in 0.005s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
     Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed 2024-09-20T16:40:05.000000001 Europe/London;
@@ -3139,7 +3139,7 @@ Feature: Driver Concept
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.001s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer get row(0) get variable(value) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is instance: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is value: true ... passed in 0.000s
@@ -3178,18 +3178,18 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values of type datetime-tz correctly -- @1.13 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.168s
+    Given connection opens with default authentication ... passed in 0.163s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.003s
-    Given connection create database: typedb ... passed in 0.052s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.039s
     Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.003s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value datetime-tz;
       """
-    Given transaction commits ... passed in 0.007s
-    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given transaction commits ... passed in 0.006s
+    Given connection open write transaction for database: typedb ... passed in 0.003s
     Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed 2024-09-20T16:40:05.000000001 Europe/Belfast;
@@ -3201,7 +3201,7 @@ Feature: Driver Concept
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.001s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer get row(0) get variable(value) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is instance: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is value: true ... passed in 0.000s
@@ -3240,30 +3240,30 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values of type datetime-tz correctly -- @1.14 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.187s
+    Given connection opens with default authentication ... passed in 0.184s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.052s
+    Given connection create database: typedb ... passed in 0.040s
     Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.003s
     Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value datetime-tz;
       """
-    Given transaction commits ... passed in 0.005s
-    Given connection open write transaction for database: typedb ... passed in 0.004s
+    Given transaction commits ... passed in 0.006s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
     Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed 2024-09-20T16:40:05.000000001+0100;
       """
-    When get answers of typeql read query ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has typed $v;
       let $value = $v;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.002s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer get row(0) get variable(value) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is instance: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is value: true ... passed in 0.000s
@@ -3302,23 +3302,23 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values of type datetime-tz correctly -- @1.15 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.174s
+    Given connection opens with default authentication ... passed in 0.157s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.044s
+    Given connection create database: typedb ... passed in 0.040s
     Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.003s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value datetime-tz;
       """
     Given transaction commits ... passed in 0.006s
-    Given connection open write transaction for database: typedb ... passed in 0.003s
-    Given typeql write query ... passed in 0.005s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 2024-09-20T16:40:05.000000001+1115;
       """
-    When get answers of typeql read query ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has typed $v;
       let $value = $v;
@@ -3364,30 +3364,30 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values of type datetime-tz correctly -- @1.16 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.192s
+    Given connection opens with default authentication ... passed in 0.173s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.097s
-    Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.004s
-    Given typeql schema query ... passed in 0.004s
+    Given connection create database: typedb ... passed in 0.036s
+    Given connection has database: typedb ... passed in 0.001s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value datetime-tz;
       """
-    Given transaction commits ... passed in 0.009s
+    Given transaction commits ... passed in 0.004s
     Given connection open write transaction for database: typedb ... passed in 0.002s
-    Given typeql write query ... passed in 0.009s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 2024-09-20T16:40:05.000000001+0000;
       """
-    When get answers of typeql read query ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has typed $v;
       let $value = $v;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.000s
+    Then answer size is: 1 ... passed in 0.001s
     Then answer get row(0) get variable(value) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is instance: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is value: true ... passed in 0.000s
@@ -3426,19 +3426,19 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values of type duration correctly -- @1.17 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.200s
+    Given connection opens with default authentication ... passed in 0.157s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.003s
-    Given connection create database: typedb ... passed in 0.092s
-    Given connection has database: typedb ... passed in 0.003s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.036s
+    Given connection has database: typedb ... passed in 0.002s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
-    Given typeql schema query ... passed in 0.004s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value duration;
       """
-    Given transaction commits ... passed in 0.008s
-    Given connection open write transaction for database: typedb ... passed in 0.005s
-    Given typeql write query ... passed in 0.004s
+    Given transaction commits ... passed in 0.005s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed P1Y10M7DT15H44M5.00394892S;
       """
@@ -3488,30 +3488,30 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values of type duration correctly -- @1.18 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.176s
+    Given connection opens with default authentication ... passed in 0.158s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.059s
-    Given connection has database: typedb ... passed in 0.004s
-    Given connection open schema transaction for database: typedb ... passed in 0.005s
+    Given connection create database: typedb ... passed in 0.038s
+    Given connection has database: typedb ... passed in 0.001s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed; attribute typed, value duration;
       """
-    Given transaction commits ... passed in 0.009s
+    Given transaction commits ... passed in 0.005s
     Given connection open write transaction for database: typedb ... passed in 0.002s
-    Given typeql write query ... passed in 0.006s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed P66W;
       """
-    When get answers of typeql read query ... passed in 0.009s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has typed $v;
       let $value = $v;
       """
     Then answer type is: concept rows ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.001s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer get row(0) get variable(value) is type: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is instance: false ... passed in 0.000s
     Then answer get row(0) get variable(value) is value: true ... passed in 0.000s
@@ -3550,31 +3550,31 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values in concept documents correctly -- @1.1 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.184s
+    Given connection opens with default authentication ... passed in 0.169s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.067s
-    Given connection has database: typedb ... passed in 0.003s
-    Given connection open schema transaction for database: typedb ... passed in 0.004s
-    Given typeql schema query ... passed in 0.004s
+    Given connection create database: typedb ... passed in 0.038s
+    Given connection has database: typedb ... passed in 0.001s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed;
       attribute typed, value boolean;
       """
-    Given transaction commits ... passed in 0.011s
-    Given connection open write transaction for database: typedb ... passed in 0.003s
+    Given transaction commits ... passed in 0.006s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
     Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed true;
       """
-    When get answers of typeql read query ... passed in 0.006s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has $a;
       fetch { "a": $a };
       """
     Then answer type is: concept documents ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.002s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer contains document ... passed in 0.000s
       """
       { "a": true }
@@ -3583,14 +3583,14 @@ Feature: Driver Concept
       """
       { "a": false }
       """
-    When get answers of typeql read query ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has $a; let $v = $a;
       fetch { "v": $v };
       """
     Then answer type is: concept documents ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.002s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer contains document ... passed in 0.000s
       """
       { "v": true }
@@ -3603,31 +3603,31 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values in concept documents correctly -- @1.2 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.302s
+    Given connection opens with default authentication ... passed in 0.163s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.066s
-    Given connection has database: typedb ... passed in 0.005s
-    Given connection open schema transaction for database: typedb ... passed in 0.003s
-    Given typeql schema query ... passed in 0.004s
+    Given connection create database: typedb ... passed in 0.038s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed;
       attribute typed, value integer;
       """
-    Given transaction commits ... passed in 0.013s
-    Given connection open write transaction for database: typedb ... passed in 0.005s
-    Given typeql write query ... passed in 0.006s
+    Given transaction commits ... passed in 0.005s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 12345090;
       """
-    When get answers of typeql read query ... passed in 0.007s
+    When get answers of typeql read query ... passed in 0.003s
       """
       match $_ isa person, has $a;
       fetch { "a": $a };
       """
     Then answer type is: concept documents ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.001s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer contains document ... passed in 0.000s
       """
       { "a": 12345090 }
@@ -3636,7 +3636,7 @@ Feature: Driver Concept
       """
       { "a": 0 }
       """
-    When get answers of typeql read query ... passed in 0.006s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has $a; let $v = $a;
       fetch { "v": $v };
@@ -3656,31 +3656,31 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values in concept documents correctly -- @1.3 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.176s
+    Given connection opens with default authentication ... passed in 0.159s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.047s
+    Given connection create database: typedb ... passed in 0.038s
     Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.003s
     Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed;
       attribute typed, value double;
       """
-    Given transaction commits ... passed in 0.008s
-    Given connection open write transaction for database: typedb ... passed in 0.003s
-    Given typeql write query ... passed in 0.006s
+    Given transaction commits ... passed in 0.005s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 0.0000000001;
       """
-    When get answers of typeql read query ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has $a;
       fetch { "a": $a };
       """
     Then answer type is: concept documents ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.001s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer contains document ... passed in 0.000s
       """
       { "a": 0.0000000001 }
@@ -3689,14 +3689,14 @@ Feature: Driver Concept
       """
       { "a": 0.000000001 }
       """
-    When get answers of typeql read query ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.007s
       """
       match $_ isa person, has $a; let $v = $a;
       fetch { "v": $v };
       """
     Then answer type is: concept documents ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.001s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer contains document ... passed in 0.000s
       """
       { "v": 0.0000000001 }
@@ -3709,20 +3709,20 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values in concept documents correctly -- @1.4 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.166s
+    Given connection opens with default authentication ... passed in 0.157s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.056s
+    Given connection create database: typedb ... passed in 0.039s
     Given connection has database: typedb ... passed in 0.002s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
-    Given typeql schema query ... passed in 0.004s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed;
       attribute typed, value double;
       """
     Given transaction commits ... passed in 0.005s
-    Given connection open write transaction for database: typedb ... passed in 0.003s
-    Given typeql write query ... passed in 0.006s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 2.01234567;
       """
@@ -3762,31 +3762,31 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values in concept documents correctly -- @1.5 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.168s
+    Given connection opens with default authentication ... passed in 0.170s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.046s
-    Given connection has database: typedb ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.038s
+    Given connection has database: typedb ... passed in 0.001s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
-    Given typeql schema query ... passed in 0.003s
+    Given typeql schema query ... passed in 0.007s
       """
       define entity person, owns typed;
       attribute typed, value decimal;
       """
-    Given transaction commits ... passed in 0.008s
+    Given transaction commits ... passed in 0.005s
     Given connection open write transaction for database: typedb ... passed in 0.002s
-    Given typeql write query ... passed in 0.005s
+    Given typeql write query ... passed in 0.006s
       """
       insert $p isa person, has typed 1234567890.0001234567890dec;
       """
-    When get answers of typeql read query ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.007s
       """
       match $_ isa person, has $a;
       fetch { "a": $a };
       """
     Then answer type is: concept documents ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.001s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer contains document ... passed in 0.000s
       """
       { "a": "1234567890.000123456789dec" }
@@ -3795,7 +3795,7 @@ Feature: Driver Concept
       """
       { "a": "1234567890.0001234567890dec" }
       """
-    When get answers of typeql read query ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has $a; let $v = $a;
       fetch { "v": $v };
@@ -3815,10 +3815,10 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values in concept documents correctly -- @1.6 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.171s
+    Given connection opens with default authentication ... passed in 0.168s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.047s
+    Given connection create database: typedb ... passed in 0.042s
     Given connection has database: typedb ... passed in 0.002s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
@@ -3826,20 +3826,20 @@ Feature: Driver Concept
       define entity person, owns typed;
       attribute typed, value decimal;
       """
-    Given transaction commits ... passed in 0.010s
+    Given transaction commits ... passed in 0.008s
     Given connection open write transaction for database: typedb ... passed in 0.002s
-    Given typeql write query ... passed in 0.005s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 0.0000000000000000001dec;
       """
-    When get answers of typeql read query ... passed in 0.003s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has $a;
       fetch { "a": $a };
       """
     Then answer type is: concept documents ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.002s
+    Then answer size is: 1 ... passed in 0.001s
     Then answer contains document ... passed in 0.000s
       """
       { "a": "0.0000000000000000001dec" }
@@ -3868,24 +3868,24 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values in concept documents correctly -- @1.7 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.198s
+    Given connection opens with default authentication ... passed in 0.158s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.003s
-    Given connection create database: typedb ... passed in 0.054s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.036s
     Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.003s
-    Given typeql schema query ... passed in 0.003s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.006s
       """
       define entity person, owns typed;
       attribute typed, value string;
       """
-    Given transaction commits ... passed in 0.007s
-    Given connection open write transaction for database: typedb ... passed in 0.003s
-    Given typeql write query ... passed in 0.005s
+    Given transaction commits ... passed in 0.012s
+    Given connection open write transaction for database: typedb ... passed in 0.005s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed "outPUT";
       """
-    When get answers of typeql read query ... passed in 0.004s
+    When get answers of typeql read query ... passed in 0.003s
       """
       match $_ isa person, has $a;
       fetch { "a": $a };
@@ -3901,14 +3901,14 @@ Feature: Driver Concept
       """
       { "a": "output" }
       """
-    When get answers of typeql read query ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.003s
       """
       match $_ isa person, has $a; let $v = $a;
       fetch { "v": $v };
       """
     Then answer type is: concept documents ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.000s
+    Then answer size is: 1 ... passed in 0.001s
     Then answer contains document ... passed in 0.000s
       """
       { "v": "outPUT" }
@@ -3921,31 +3921,31 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values in concept documents correctly -- @1.8 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.176s
+    Given connection opens with default authentication ... passed in 0.139s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.003s
-    Given connection create database: typedb ... passed in 0.047s
-    Given connection has database: typedb ... passed in 0.003s
-    Given connection open schema transaction for database: typedb ... passed in 0.003s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.035s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed;
       attribute typed, value date;
       """
-    Given transaction commits ... passed in 0.006s
-    Given connection open write transaction for database: typedb ... passed in 0.003s
-    Given typeql write query ... passed in 0.006s
+    Given transaction commits ... passed in 0.005s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed 2024-09-20;
       """
-    When get answers of typeql read query ... passed in 0.007s
+    When get answers of typeql read query ... passed in 0.005s
       """
       match $_ isa person, has $a;
       fetch { "a": $a };
       """
     Then answer type is: concept documents ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.000s
+    Then answer size is: 1 ... passed in 0.001s
     Then answer contains document ... passed in 0.000s
       """
       { "a": "2024-09-20" }
@@ -3961,7 +3961,7 @@ Feature: Driver Concept
       """
     Then answer type is: concept documents ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.002s
+    Then answer size is: 1 ... passed in 0.001s
     Then answer contains document ... passed in 0.000s
       """
       { "v": "2024-09-20" }
@@ -3974,24 +3974,24 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values in concept documents correctly -- @1.9 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.163s
+    Given connection opens with default authentication ... passed in 0.188s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.042s
+    Given connection create database: typedb ... passed in 0.054s
     Given connection has database: typedb ... passed in 0.001s
-    Given connection open schema transaction for database: typedb ... passed in 0.003s
-    Given typeql schema query ... passed in 0.004s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.005s
       """
       define entity person, owns typed;
       attribute typed, value datetime;
       """
-    Given transaction commits ... passed in 0.005s
-    Given connection open write transaction for database: typedb ... passed in 0.003s
-    Given typeql write query ... passed in 0.007s
+    Given transaction commits ... passed in 0.007s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed 1999-02-26T12:15:05;
       """
-    When get answers of typeql read query ... passed in 0.003s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has $a;
       fetch { "a": $a };
@@ -4007,14 +4007,14 @@ Feature: Driver Concept
       """
       { "a": "1999-02-26T12:15:05" }
       """
-    When get answers of typeql read query ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has $a; let $v = $a;
       fetch { "v": $v };
       """
     Then answer type is: concept documents ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.001s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer contains document ... passed in 0.000s
       """
       { "v": "1999-02-26T12:15:05.000000000" }
@@ -4027,24 +4027,24 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values in concept documents correctly -- @1.10 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.169s
+    Given connection opens with default authentication ... passed in 0.140s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.004s
-    Given connection create database: typedb ... passed in 0.050s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.044s
     Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.003s
     Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed;
       attribute typed, value datetime;
       """
-    Given transaction commits ... passed in 0.006s
-    Given connection open write transaction for database: typedb ... passed in 0.008s
-    Given typeql write query ... passed in 0.006s
+    Given transaction commits ... passed in 0.009s
+    Given connection open write transaction for database: typedb ... passed in 0.004s
+    Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed 1999-02-26T12:15:05.000000001;
       """
-    When get answers of typeql read query ... passed in 0.004s
+    When get answers of typeql read query ... passed in 0.003s
       """
       match $_ isa person, has $a;
       fetch { "a": $a };
@@ -4060,14 +4060,14 @@ Feature: Driver Concept
       """
       { "a": "1999-02-26T12:15:05.000000000" }
       """
-    When get answers of typeql read query ... passed in 0.004s
+    When get answers of typeql read query ... passed in 0.003s
       """
       match $_ isa person, has $a; let $v = $a;
       fetch { "v": $v };
       """
     Then answer type is: concept documents ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.000s
+    Then answer size is: 1 ... passed in 0.001s
     Then answer contains document ... passed in 0.000s
       """
       { "v": "1999-02-26T12:15:05.000000001" }
@@ -4080,31 +4080,31 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values in concept documents correctly -- @1.11 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.174s
+    Given connection opens with default authentication ... passed in 0.160s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.047s
-    Given connection has database: typedb ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.040s
+    Given connection has database: typedb ... passed in 0.001s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed;
       attribute typed, value datetime-tz;
       """
-    Given transaction commits ... passed in 0.010s
+    Given transaction commits ... passed in 0.006s
     Given connection open write transaction for database: typedb ... passed in 0.002s
     Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed 2024-09-20T16:40:05.000000001 Europe/London;
       """
-    When get answers of typeql read query ... passed in 0.004s
+    When get answers of typeql read query ... passed in 0.003s
       """
       match $_ isa person, has $a;
       fetch { "a": $a };
       """
     Then answer type is: concept documents ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.001s
+    Then answer size is: 1 ... passed in 0.000s
     Then answer contains document ... passed in 0.000s
       """
       { "a": "2024-09-20T16:40:05.000000001 Europe/London" }
@@ -4113,7 +4113,7 @@ Feature: Driver Concept
       """
       { "a": "2024-09-20T16:40:05.000000001Europe/London" }
       """
-    When get answers of typeql read query ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.003s
       """
       match $_ isa person, has $a; let $v = $a;
       fetch { "v": $v };
@@ -4133,24 +4133,24 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values in concept documents correctly -- @1.12 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.162s
+    Given connection opens with default authentication ... passed in 0.179s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.342s
-    Given connection has database: typedb ... passed in 0.002s
-    Given connection open schema transaction for database: typedb ... passed in 0.005s
+    Given connection create database: typedb ... passed in 0.036s
+    Given connection has database: typedb ... passed in 0.001s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed;
       attribute typed, value datetime-tz;
       """
-    Given transaction commits ... passed in 0.006s
+    Given transaction commits ... passed in 0.005s
     Given connection open write transaction for database: typedb ... passed in 0.002s
-    Given typeql write query ... passed in 0.007s
+    Given typeql write query ... passed in 0.005s
       """
       insert $p isa person, has typed 2024-09-20T16:40:05.000000001+0100;
       """
-    When get answers of typeql read query ... passed in 0.008s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $_ isa person, has $a;
       fetch { "a": $a };
@@ -4186,10 +4186,10 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values in concept documents correctly -- @1.13 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.167s
+    Given connection opens with default authentication ... passed in 0.163s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.044s
+    Given connection create database: typedb ... passed in 0.033s
     Given connection has database: typedb ... passed in 0.001s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
@@ -4197,8 +4197,8 @@ Feature: Driver Concept
       define entity person, owns typed;
       attribute typed, value duration;
       """
-    Given transaction commits ... passed in 0.008s
-    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given transaction commits ... passed in 0.005s
+    Given connection open write transaction for database: typedb ... passed in 0.001s
     Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed P1Y10M7DT15H44M5.00394892S;
@@ -4210,7 +4210,7 @@ Feature: Driver Concept
       """
     Then answer type is: concept documents ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.000s
+    Then answer size is: 1 ... passed in 0.001s
     Then answer contains document ... passed in 0.000s
       """
       { "a": "P1Y10M7DT15H44M5.003948920S" }
@@ -4219,7 +4219,7 @@ Feature: Driver Concept
       """
       { "a": "P1Y10M7DT15H44M5.00394892S" }
       """
-    When get answers of typeql read query ... passed in 0.004s
+    When get answers of typeql read query ... passed in 0.003s
       """
       match $_ isa person, has $a; let $v = $a;
       fetch { "v": $v };
@@ -4239,20 +4239,20 @@ Feature: Driver Concept
   Scenario Outline: Driver processes values in concept documents correctly -- @1.14 
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.165s
+    Given connection opens with default authentication ... passed in 0.162s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
     Given connection create database: typedb ... passed in 0.039s
     Given connection has database: typedb ... passed in 0.001s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
-    Given typeql schema query ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
       """
       define entity person, owns typed;
       attribute typed, value duration;
       """
-    Given transaction commits ... passed in 0.010s
-    Given connection open write transaction for database: typedb ... passed in 0.002s
-    Given typeql write query ... passed in 0.005s
+    Given transaction commits ... passed in 0.006s
+    Given connection open write transaction for database: typedb ... passed in 0.005s
+    Given typeql write query ... passed in 0.004s
       """
       insert $p isa person, has typed P66W;
       """
@@ -4279,7 +4279,7 @@ Feature: Driver Concept
       """
     Then answer type is: concept documents ... passed in 0.000s
     Then answer query type is: read ... passed in 0.000s
-    Then answer size is: 1 ... passed in 0.000s
+    Then answer size is: 1 ... passed in 0.001s
     Then answer contains document ... passed in 0.000s
       """
       { "v": "P462D" }
@@ -4292,18 +4292,18 @@ Feature: Driver Concept
   Scenario: Driver processes concept errors correctly
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.166s
+    Given connection opens with default authentication ... passed in 0.177s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.041s
+    Given connection create database: typedb ... passed in 0.038s
     Given connection has database: typedb ... passed in 0.002s
     Given connection open schema transaction for database: typedb ... passed in 0.002s
-    Given typeql schema query ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
       """
       define attribute age @independent, value integer; attribute name @independent, value string;
       """
-    Given transaction commits ... passed in 0.008s
-    Given connection open write transaction for database: typedb ... passed in 0.004s
+    Given transaction commits ... passed in 0.006s
+    Given connection open write transaction for database: typedb ... passed in 0.003s
     Given typeql write query ... passed in 0.005s
       """
       insert $a isa age 25; $n isa name "John";
@@ -4314,7 +4314,7 @@ Feature: Driver Concept
       """
     Then answer unwraps as ok; fails ... passed in 0.000s
     Then answer unwraps as concept documents; fails ... passed in 0.000s
-    Then answer get row(0) get variable(unknown); fails with a message containing: "Cannot get concept from a concept row by variable 'unknown'" ... passed in 0.001s
+    Then answer get row(0) get variable(unknown); fails with a message containing: "Cannot get concept from a concept row by variable 'unknown'" ... passed in 0.000s
     Then answer get row(0) get variable by index(15); fails with a message containing: "Cannot get concept from a concept row by index '15'" ... passed in 0.000s
     Then answer get row(0) get variable(); fails with a message containing: "Cannot get concept from a concept row by variable ''" ... passed in 0.000s
     Then answer get row(0) get variable( ); fails with a message containing: "Cannot get concept from a concept row by variable ' '" ... passed in 0.000s
@@ -4322,7 +4322,7 @@ Feature: Driver Concept
     Then answer get row(0) get variable(a) as attribute type; fails with a message containing: "Invalid concept conversion" ... passed in 0.000s
     Then answer get row(0) get variable(a) as value; fails with a message containing: "Invalid concept conversion" ... passed in 0.000s
     Then answer get row(0) get attribute(a) get boolean; fails with a message containing: "Could not retrieve a 'boolean' value" ... passed in 0.000s
-    Then answer get row(0) get attribute(a) get double; fails with a message containing: "Could not retrieve a 'double' value" ... passed in 0.000s
+    Then answer get row(0) get attribute(a) get double; fails with a message containing: "Could not retrieve a 'double' value" ... passed in 0.001s
     Then answer get row(0) get attribute(a) get decimal; fails with a message containing: "Could not retrieve a 'decimal' value" ... passed in 0.000s
     Then answer get row(0) get attribute(a) get string; fails with a message containing: "Could not retrieve a 'string' value" ... passed in 0.000s
     Then answer get row(0) get attribute(a) get date; fails with a message containing: "Could not retrieve a 'date' value" ... passed in 0.000s
@@ -4336,44 +4336,44 @@ Feature: Driver Concept
       """
     Then answer unwraps as ok; fails ... passed in 0.000s
     Then answer unwraps as concept documents; fails ... passed in 0.000s
-    Then answer get row(0) get variable(n) as relation; fails with a message containing: "Invalid concept conversion" ... passed in 0.001s
+    Then answer get row(0) get variable(n) as relation; fails with a message containing: "Invalid concept conversion" ... passed in 0.003s
     Then answer get row(0) get attribute(n) get integer; fails with a message containing: "Could not retrieve a 'integer' value" ... passed in 0.000s
-    Then typeql read query; fails with a message containing: "syntax error" ... passed in 0.001s
+    Then typeql read query; fails with a message containing: "syntax error" ... passed in 0.002s
     Then typeql read query; fails with a message containing: "syntax error" ... passed in 0.001s
 
   Scenario: Driver processes datetime values in different user time-zones identically
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.187s
+    Given connection opens with default authentication ... passed in 0.164s
     Given connection is open: true ... passed in 0.000s
-    Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.059s
+    Given connection has 0 databases ... passed in 0.003s
+    Given connection create database: typedb ... passed in 0.049s
     Given connection has database: typedb ... passed in 0.002s
     Given set time-zone: Asia/Calcutta ... passed in 0.000s
-    Given connection open schema transaction for database: typedb ... passed in 0.003s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
     Given typeql schema query ... passed in 0.003s
       """
       define attribute dt @independent, value datetime;
       """
     Given transaction commits ... passed in 0.005s
-    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given connection open write transaction for database: typedb ... passed in 0.003s
     When get answers of typeql write query ... passed in 0.005s
       """
       insert $dt isa dt 2023-05-01T00:00:00;
       """
     Then answer get row(0) get attribute(dt) get value is: 2023-05-01T00:00:00 ... passed in 0.001s
     Then answer get row(0) get attribute(dt) get value is not: 2023-04-30T13:30:00 ... passed in 0.000s
-    When get answers of typeql read query ... passed in 0.003s
+    When get answers of typeql read query ... passed in 0.004s
       """
       match $x isa dt;
       """
-    Then answer get row(0) get attribute(x) get value is: 2023-05-01T00:00:00 ... passed in 0.002s
+    Then answer get row(0) get attribute(x) get value is: 2023-05-01T00:00:00 ... passed in 0.000s
     Then answer get row(0) get attribute(x) get value is not: 2023-04-30T13:30:00 ... passed in 0.000s
-    When transaction commits ... passed in 0.004s
+    When transaction commits ... passed in 0.003s
     When connection closes ... passed in 0.000s
-    When set time-zone: America/Chicago ... passed in 0.001s
-    When connection opens with default authentication ... passed in 0.179s
-    When connection open read transaction for database: typedb ... passed in 0.003s
+    When set time-zone: America/Chicago ... passed in 0.000s
+    When connection opens with default authentication ... passed in 0.146s
+    When connection open read transaction for database: typedb ... passed in 0.008s
     When get answers of typeql read query ... passed in 0.003s
       """
       match $x isa dt;
@@ -4384,91 +4384,58 @@ Feature: Driver Concept
   Scenario: Driver processes datetime-tz values in different user time-zones identically
     Given typedb starts ... passed in 0.000s
     Given connection is open: false ... passed in 0.000s
-    Given connection opens with default authentication ... passed in 0.157s
+    Given connection opens with default authentication ... passed in 0.167s
     Given connection is open: true ... passed in 0.000s
     Given connection has 0 databases ... passed in 0.002s
-    Given connection create database: typedb ... passed in 0.052s
-    Given connection has database: typedb ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.036s
+    Given connection has database: typedb ... passed in 0.001s
     Given set time-zone: Asia/Calcutta ... passed in 0.000s
-    Given connection open schema transaction for database: typedb ... passed in 0.002s
-    Given typeql schema query ... passed in 0.003s
+    Given connection open schema transaction for database: typedb ... passed in 0.004s
+    Given typeql schema query ... passed in 0.002s
       """
       define attribute dt @independent, value datetime-tz;
       """
-    Given transaction commits ... passed in 0.005s
+    Given transaction commits ... passed in 0.007s
     Given connection open write transaction for database: typedb ... passed in 0.002s
     When get answers of typeql write query ... passed in 0.005s
       """
       insert $dt isa dt 2023-05-01T00:00:00 Asia/Calcutta;
       """
-    Then answer get row(0) get attribute(dt) get value is: 2023-05-01T00:00:00 Asia/Calcutta ... failed in 0.006s
-Traceback (most recent call last):
-  File "/usr/lib/python3.11/zoneinfo/_common.py", line 12, in load_tzdata
-    return resources.files(package_name).joinpath(resource_name).open("rb")
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/usr/lib/python3.11/importlib/resources/_common.py", line 22, in files
-    return from_package(get_package(package))
-                        ^^^^^^^^^^^^^^^^^^^^
-  File "/usr/lib/python3.11/importlib/resources/_common.py", line 53, in get_package
-    resolved = resolve(package)
-               ^^^^^^^^^^^^^^^^
-  File "/usr/lib/python3.11/importlib/resources/_common.py", line 44, in resolve
-    return cand if isinstance(cand, types.ModuleType) else importlib.import_module(cand)
-                                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/usr/lib/python3.11/importlib/__init__.py", line 126, in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
-  File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
-  File "<frozen importlib._bootstrap>", line 1126, in _find_and_load_unlocked
-  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
-  File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
-  File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
-  File "<frozen importlib._bootstrap>", line 1126, in _find_and_load_unlocked
-  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
-  File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
-  File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
-  File "<frozen importlib._bootstrap>", line 1140, in _find_and_load_unlocked
-ModuleNotFoundError: No module named 'tzdata'
+    Then answer get row(0) get attribute(dt) get value is: 2023-05-01T00:00:00 Asia/Calcutta ... passed in 0.005s
+    Then answer get row(0) get attribute(dt) get value is not: 2023-04-30T13:30:00 Asia/Calcutta ... passed in 0.000s
+    Then answer get row(0) get attribute(dt) get value is not: 2023-05-01T00:00:00 America/Chicago ... passed in 0.000s
+    When get answers of typeql read query ... passed in 0.004s
+      """
+      match $x isa dt;
+      """
+    Then answer get row(0) get attribute(x) get value is: 2023-05-01T00:00:00 Asia/Calcutta ... passed in 0.000s
+    Then answer get row(0) get attribute(x) get value is not: 2023-04-30T13:30:00 Asia/Calcutta ... passed in 0.000s
+    Then answer get row(0) get attribute(x) get value is not: 2023-05-01T00:00:00 America/Chicago ... passed in 0.000s
+    When transaction commits ... passed in 0.004s
+    When connection closes ... passed in 0.000s
+    When set time-zone: America/Chicago ... passed in 0.000s
+    When connection opens with default authentication ... passed in 0.146s
+    When connection open read transaction for database: typedb ... passed in 0.003s
+    When get answers of typeql read query ... passed in 0.002s
+      """
+      match $x isa dt;
+      """
+    Then answer get row(0) get attribute(x) get value is: 2023-05-01T00:00:00 Asia/Calcutta ... passed in 0.001s
+    Then answer get row(0) get attribute(x) get value is not: 2023-04-30T13:30:00 Asia/Calcutta ... passed in 0.000s
+    Then answer get row(0) get attribute(x) get value is not: 2023-05-01T00:00:00 America/Chicago ... passed in 0.000s
+    When connection closes ... passed in 0.000s
+    When set time-zone: Europe/London ... passed in 0.000s
+    When connection opens with default authentication ... passed in 0.162s
+    When connection open read transaction for database: typedb ... passed in 0.003s
+    When get answers of typeql read query ... passed in 0.002s
+      """
+      match $x isa dt;
+      """
+    Then answer get row(0) get attribute(x) get value is: 2023-05-01T00:00:00 Asia/Calcutta ... passed in 0.001s
+    Then answer get row(0) get attribute(x) get value is not: 2023-04-30T13:30:00 Asia/Calcutta ... passed in 0.000s
+    Then answer get row(0) get attribute(x) get value is not: 2023-05-01T00:00:00 America/Chicago ... passed in 0.000s
 
-During handling of the above exception, another exception occurred:
-
-Traceback (most recent call last):
-  File "/tmp/claude-0/-home-user-typedb-slatedb/85963f01-8967-5de9-ac03-5a7c7d75f1b3/scratchpad/pyenv/lib/python3.11/site-packages/behave/model.py", line 1329, in run
-    match.run(runner.context)
-  File "/tmp/claude-0/-home-user-typedb-slatedb/85963f01-8967-5de9-ac03-5a7c7d75f1b3/scratchpad/pyenv/lib/python3.11/site-packages/behave/matchers.py", line 98, in run
-    self.func(context, *args, **kwargs)
-  File "features/driver__concept/steps/query_steps.py", line 779, in step_impl
-    attribute_value = attribute.get_value()
-                      ^^^^^^^^^^^^^^^^^^^^^
-  File "/tmp/claude-0/-home-user-typedb-slatedb/85963f01-8967-5de9-ac03-5a7c7d75f1b3/scratchpad/pyenv/lib/python3.11/site-packages/typedb/concept/instance/attribute.py", line 42, in get_value
-    return self._get_value_concept().get()
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/tmp/claude-0/-home-user-typedb-slatedb/85963f01-8967-5de9-ac03-5a7c7d75f1b3/scratchpad/pyenv/lib/python3.11/site-packages/typedb/concept/value/value.py", line 60, in get
-    return self.get_datetime_tz()
-           ^^^^^^^^^^^^^^^^^^^^^^
-  File "/tmp/claude-0/-home-user-typedb-slatedb/85963f01-8967-5de9-ac03-5a7c7d75f1b3/scratchpad/pyenv/lib/python3.11/site-packages/typedb/concept/value/value.py", line 104, in get_datetime_tz
-    if (value := self.try_get_datetime_tz()) is None:
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/tmp/claude-0/-home-user-typedb-slatedb/85963f01-8967-5de9-ac03-5a7c7d75f1b3/scratchpad/pyenv/lib/python3.11/site-packages/typedb/concept/concept.py", line 148, in try_get_datetime_tz
-    return Datetime.fromtimestamp(native_datetime.seconds, native_datetime.subsec_nanos,
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/tmp/claude-0/-home-user-typedb-slatedb/85963f01-8967-5de9-ac03-5a7c7d75f1b3/scratchpad/pyenv/lib/python3.11/site-packages/typedb/common/datetime.py", line 114, in fromtimestamp
-    return cls(timestamp_seconds=timestamp_seconds, subsec_nanos=subsec_nanos, tz_name=tz_name,
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/tmp/claude-0/-home-user-typedb-slatedb/85963f01-8967-5de9-ac03-5a7c7d75f1b3/scratchpad/pyenv/lib/python3.11/site-packages/typedb/common/datetime.py", line 59, in __init__
-    timezone_info = ZoneInfo(self._tz_name)
-                    ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/usr/lib/python3.11/zoneinfo/_common.py", line 24, in load_tzdata
-    raise ZoneInfoNotFoundError(f"No time zone found with key {key}")
-zoneinfo._common.ZoneInfoNotFoundError: 'No time zone found with key Asia/Calcutta'
-
-
-
-Failing scenarios:
-  features/driver__concept/concept.feature:975  Driver processes datetime-tz values in different user time-zones identically
-
-0 features passed, 1 failed, 0 skipped
-73 scenarios passed, 1 failed, 0 skipped
-3344 steps passed, 1 failed, 23 skipped, 0 undefined
-Took 0m24.693s
+1 feature passed, 0 failed, 0 skipped
+74 scenarios passed, 0 failed, 0 skipped
+3368 steps passed, 0 failed, 0 skipped, 0 undefined
+Took 0m17.337s

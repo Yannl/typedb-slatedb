@@ -110,6 +110,8 @@ def main():
                     for s in data["suites"]
                     if s.get("status") == "NOT_EXECUTED_PRECONDITION_UNMET"},
                 "leaves_outside_plan": data["counts"]["leaf_rows_outside_plan"],
+                "harness": data.get("harness", "rust-cucumber-basic"),
+                "caveats": data.get("caveats") or [],
             })
         entry["bundles"] = checks
         best = next((c for c in checks if c["qualification_pass"]), None)
@@ -127,9 +129,17 @@ def main():
         entry["suites_executed"] = best["suites_executed"]
         entry["suites_selected"] = best["suites_selected"]
         entry["suites_blocked"] = best["suites_blocked"]
-        complete_suites = not best["suites_blocked"]
+        entry["harness"] = best["harness"]
+        entry["caveats"] = best["caveats"]
+        complete_suites = not best["suites_blocked"] and not best["caveats"]
         entry["status"] = ("EXECUTED_LEAF" if complete_suites
                            else "EXECUTED_LEAF_PARTIAL_SUITES")
+        entry["not_covered_because"] = (
+            [] if complete_suites else
+            [f"blocked suite {k}: {v}" for k, v in
+             (best["suites_blocked"] or {}).items()]
+            + [f"caveat {c.get('id')}: {c.get('detail')}"
+               for c in (best["caveats"] or [])])
         entry["coverage_class"] = "COVERED" if complete_suites else "PARTIAL"
         entry["status_meaning"] = (
             "EXECUTED_LEAF: the official driver suite ran against a real "

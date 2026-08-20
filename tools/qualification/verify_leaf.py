@@ -94,6 +94,28 @@ def verify(out_dir, plan=None, catalog_leaves=None, catalog_targets=None,
         A.append(f"bundle records toolchain_id {bundle.get('toolchain_id')!r} but "
                  f"its own measured toolchain re-derives to {tc_id!r}")
 
+    # ---- fixture identity: the plan's own declared bytes ---------------
+    # A plan row names a FIXTURE SET, so "covered" must mean "run against the
+    # fixtures the plan declares", not "run against something by that name".
+    fx = bundle.get("fixtures") or {}
+    declared_fx = {f["fixture_id"]: f for f in (plan.get("fixtures") or [])}
+    script = declared_fx.get("fixture:assembly-script.tql")
+    if script and fx.get("fixture:assembly-script.tql", {}).get("present"):
+        got = fx["fixture:assembly-script.tql"].get("sha256")
+        if got != script.get("sha256"):
+            A.append(f"fixture:assembly-script.tql hashed {got} at run time but "
+                     f"the plan declares {script.get('sha256')}")
+    bh = declared_fx.get("fixture:typedb-behaviour")
+    if bh and fx.get("fixture:typedb-behaviour", {}).get("present"):
+        want = (bh.get("source") or "").rsplit(" @ ", 1)[-1].strip()
+        got = fx["fixture:typedb-behaviour"].get("checkout_revision")
+        if want and got != want:
+            A.append(f"fixture:typedb-behaviour was at revision {got} at run "
+                     f"time but the plan declares {want}")
+        if fx["fixture:typedb-behaviour"].get("checkout_dirty"):
+            A.append("fixture:typedb-behaviour checkout was DIRTY at run time - "
+                     "the feature corpus under test is then not the declared one")
+
     # ---- tree cleanliness, three-state and internally consistent -------
     tree = bundle.get("executed_tree") or {}
     state = tree.get("tree_state")
@@ -205,6 +227,13 @@ def verify(out_dir, plan=None, catalog_leaves=None, catalog_targets=None,
     target_by_rid = {}
     for r in rows:
         rid = r.get("runner_row_id", "<none>")
+        # the broken pre-fix id space plan_coverage.py reports as UNJOINABLE.
+        # It arose from parsing a cargo package-id fragment instead of the
+        # package NAME; a bundle carrying it cannot be joined without guessing
+        # and is refused here rather than being guessed at downstream.
+        if rid.startswith("0.0.0:"):
+            A.append(f"target row id {rid!r} is in the broken pre-fix "
+                     f"'0.0.0:<target>' id space - unjoinable without guessing")
         if rid in seen_rid:
             A.append(f"duplicate target row {rid} - a row that appears twice "
                      f"inflates the corpus without running anything")
@@ -246,7 +275,7 @@ def verify(out_dir, plan=None, catalog_leaves=None, catalog_targets=None,
             if v != (r.get("counts") or {}).get(k, 0):
                 A.append(f"{rid}: row claims {k}={(r.get('counts') or {}).get(k)} "
                          f"but its log reparses to {k}={v}")
-        cases = lc.parse_libtest_cases(text)
+        cases, parse_problems = lc.parse_libtest_cases(text)
         if len(cases) != r.get("parsed_cases"):
             A.append(f"{rid}: row claims {r.get('parsed_cases')} parsed case(s) "
                      f"but the log yields {len(cases)}")
@@ -254,7 +283,7 @@ def verify(out_dir, plan=None, catalog_leaves=None, catalog_targets=None,
             if not lc.has_summary(text):
                 A.append(f"{rid}: marked publishable but its log carries no "
                          f"libtest summary line (truncated log)")
-            for p in lc.reconcile(cases, counts):
+            for p in lc.reconcile(cases, counts, parse_problems):
                 A.append(f"{rid}: marked publishable but {p}")
             if r.get("timed_out"):
                 A.append(f"{rid}: marked publishable but the row records a TIMEOUT")
@@ -316,19 +345,27 @@ def verify(out_dir, plan=None, catalog_leaves=None, catalog_targets=None,
             A.append(f"{lid}: its log {raw} does not exist")
             continue
         n = lf.get("log_line")
-        if not isinstance(n, int) or not (1 <= n <= len(lines)):
-            A.append(f"{lid}: log_line {n!r} is outside its log ({len(lines)} lines)")
+        c = lf.get("outcome_line", n)
+        if not isinstance(n, int) or not (1 <= n <= len(lines)) \
+                or not isinstance(c, int) or not (1 <= c <= len(lines)) or c < n:
+            A.append(f"{lid}: log_line/outcome_line {n!r}/{c!r} are outside its "
+                     f"log ({len(lines)} lines) or out of order")
             continue
-        parsed = lc.parse_libtest_cases(lines[n - 1] + "\n")
-        if not parsed:
-            A.append(f"{lid}: line {n} of {raw} is not a libtest per-case line: "
-                     f"{lines[n-1]!r}")
+        # Read the claim back out of the bytes: the naming line and the
+        # outcome line are re-parsed as the producer's parser would, over
+        # exactly that slice of the log, so neither half is taken on trust.
+        parsed, probs = lc.parse_libtest_cases("\n".join(lines[n - 1:c]) + "\n")
+        if probs or len(parsed) != 1:
+            A.append(f"{lid}: lines {n}..{c} of {raw} do not read back as exactly "
+                     f"one libtest case ({len(parsed)} case(s), {len(probs)} parse "
+                     f"problem(s)); line {n} is {lines[n-1]!r}")
             continue
-        got_name, got_outcome, _ = parsed[0]
-        if got_name != name or got_outcome != lf.get("outcome"):
-            A.append(f"{lid}: the row claims ({name!r}, {lf.get('outcome')!r}) but "
-                     f"line {n} of {raw} says ({got_name!r}, {got_outcome!r}) - an "
-                     f"edited outcome over an untouched log")
+        got_name, got_outcome, got_open, got_close = parsed[0]
+        if got_name != name or got_outcome != lf.get("outcome") \
+                or got_open != 1 or got_close != (c - n + 1):
+            A.append(f"{lid}: the row claims ({name!r}, {lf.get('outcome')!r}) at "
+                     f"lines {n}..{c} but {raw} says ({got_name!r}, "
+                     f"{got_outcome!r}) - an edited outcome over an untouched log")
 
     # ---- publishable targets must publish every catalogued case they ran --
     for rid, r in target_by_rid.items():

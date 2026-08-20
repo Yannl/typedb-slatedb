@@ -1,0 +1,26 @@
+
+running 9 tests
+[2m2026-08-20T10:00:46.003132Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-20T10:00:46.006190Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-20T10:00:46.009380Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[1] with size 8.93 KiB; 8.93 KiB total
+[2m2026-08-20T10:00:46.009477Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[1]
+[2m2026-08-20T10:00:46.012542Z[0m [35mTRACE[0m [2mconcept::thing::statistics[0m[2m:[0m Statistics sync finished in 4 ms. Storage watermark was initially: SeqNr[1]. Current statistics sequence is from: SeqNr[1]
+[2m2026-08-20T10:00:46.018295Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+[2m2026-08-20T10:00:46.021023Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+[2m2026-08-20T10:00:46.022385Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[1] with size 8.93 KiB; 8.93 KiB total
+[2m2026-08-20T10:00:46.022450Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[1]
+[2m2026-08-20T10:00:46.022497Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[2] with size 307 bytes; 9.23 KiB total
+[2m2026-08-20T10:00:46.022545Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[2]
+[2m2026-08-20T10:00:46.022996Z[0m [35mTRACE[0m [2mconcept::thing::statistics[0m[2m:[0m Statistics sync finished in 1 ms. Storage watermark was initially: SeqNr[2]. Current statistics sequence is from: SeqNr[2]
+test intersections_seeks_with_extra_values ... ok
+test value_inline_string_equality_has_bound_owner ... ok
+test intersection_seeks ... ok
+test value_hashed_string_equality_has_bound_owner ... ok
+test value_int_inequality_has_bound_owner ... ok
+test value_int_equality_has_bound_owner ... ok
+test value_int_equality_has_reverse_reads ... ok
+test value_int_equality_isa_reads ... ok
+test value_string_inequality_reduces_has_reads_bound_owner ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s
+

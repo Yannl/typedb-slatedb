@@ -1,23 +1,23 @@
 
 running 15 tests
 test g0_dirty_writes ... ignored
-[2m2026-08-20T09:44:00.798563Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
-[2m2026-08-20T09:44:00.804221Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
-[2m2026-08-20T09:44:00.806107Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[3]
-test commits_isolated ... ok
+[2m2026-08-20T09:59:32.959029Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-20T09:59:32.960796Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+[2m2026-08-20T09:59:32.962565Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[3]
 test g1a_aborted_writes ... ok
-test g0_update_conflicts_fail ... ok
+test commits_isolated ... ok
 test g1b_intermediate_read ... ok
+test g0_update_conflicts_fail ... ok
 test g1c_circular_info_flow ... ok
 test g2_item_write_skew_disjoint_read ... ok
-test g2_predicate_anti_dependency_cycles ... ok
 test g2_antidependency_cycles_fekete ... ok
+test g2_predicate_anti_dependency_cycles ... ok
 test g_single_read_skew ... ok
 test imp_commit_delete_first ... ok
 test imp_commit_update_first ... ok
-test otv ... ok
 test p4_g_cursor_lost_update ... ok
 test isolation_manager_correctly_recovers_from_disk ... ok
+test otv ... ok
 
-test result: ok. 14 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.15s
+test result: ok. 14 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.12s
 

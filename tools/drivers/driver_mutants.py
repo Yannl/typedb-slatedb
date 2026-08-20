@@ -105,6 +105,9 @@ def reseal(bundle, data):
     consumed += [log_path(bundle, (s.get("backend_witness") or {})["archived_marker"])
                  for s in data.get("servers", [])
                  if (s.get("backend_witness") or {}).get("archived_marker")]
+    for extra in ("npm-tree.json", "tsc.log"):
+        if (bundle / extra).is_file():
+            consumed.append(bundle / extra)
     root, pairs = common.compute_bundle_root(bundle, consumed)
     (bundle / "bundle-manifest.json").write_text(json.dumps(
         {"schema": "driver-lane-bundle-manifest-v1", "bundle_root": root,

@@ -1,0 +1,27 @@
+
+running 22 tests
+test value::decimal_value::tests::div ... ok
+test value::decimal_value::tests::fractional_part_overflow_is_handled_correctly ... ok
+test value::decimal_value::tests::parsing_from_string_errors_if_values_either_part_is_out_of_bounds ... ok
+test value::duration_value::tests::adding_24_hours_respects_dst ... ok
+test value::duration_value::tests::adding_one_day_ignores_dst ... ok
+test value::double_bytes::tests::ordering_is_preserved ... ok
+test value::duration_value::tests::adding_24_hours_or_1_day_to_naive_datetime_is_always_the_same ... ok
+test value::duration_value::tests::duration_is_parsed_correctly ... ok
+test value::duration_value::tests::empty_duration_is_printed_correctly ... ok
+test value::duration_value::tests::extreme_timezone_changes_are_respected ... ok
+test value::duration_value::tests::extreme_timezone_changes_produce_sensible_duration_diffs ... ok
+test value::duration_value::tests::subtracting_across_dst_gap_produces_correct_duration ... ok
+test value::duration_value::tests::subtracting_across_dst_shows_correct_time_delta ... ok
+test value::duration_value::tests::subtracting_across_dst_uses_days ... ok
+test value::duration_value::tests::when_adding_duration_is_ambiguous_earlier_is_used ... ok
+test value::duration_value::tests::when_adding_duration_lands_in_gap_it_is_advanced_by_gap ... ok
+test value::integer_bytes::tests::ordering_is_preserved ... ok
+test value::struct_bytes::test::encoding_decoding ... ok
+test value::struct_bytes::test::vle ... ok
+test value::duration_value::tests::date_subtraction_is_consistent ... ok
+test value::duration_value::tests::datetime_subtraction_is_consistent ... ok
+test value::decimal_value::tests::randomized_tests ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.12s
+

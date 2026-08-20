@@ -260,6 +260,45 @@ def reparse_behave(path):
     return out
 
 
+def reparse_cucumberjs(path):
+    """Independent re-derivation from cucumber-js's `message` NDJSON stream.
+    Only first attempts are counted, so a retry cannot inflate the census."""
+    pickles, cases, started, steps = {}, {}, [], {}
+    for line in pathlib.Path(path).read_text().splitlines():
+        if not line.strip():
+            continue
+        m = json.loads(line)
+        if "pickle" in m:
+            pickles[m["pickle"]["id"]] = m["pickle"]
+        elif "testCase" in m:
+            cases[m["testCase"]["id"]] = m["testCase"]
+        elif "testCaseStarted" in m:
+            started.append(m["testCaseStarted"])
+        elif "testStepFinished" in m:
+            steps.setdefault(m["testStepFinished"]["testCaseStartedId"],
+                             []).append(
+                (m["testStepFinished"]["testStepResult"] or {}).get("status"))
+    out = []
+    for st in started:
+        if st.get("attempt", 0) != 0:
+            continue
+        pk = pickles.get((cases.get(st.get("testCaseId")) or {}).get("pickleId")) or {}
+        sts = steps.get(st["id"], [])
+        bad = [x for x in sts if x in ("FAILED", "UNDEFINED", "AMBIGUOUS")]
+        status = ("FAILED" if bad else
+                  "SKIPPED" if sts and all(x in ("SKIPPED", "PENDING")
+                                           for x in sts) else
+                  "PASSED" if sts else "EMPTY")
+        out.append({"name": pk.get("name"), "status": status,
+                    "p": sum(1 for x in sts if x == "PASSED"),
+                    "f": len(bad),
+                    "s": sum(1 for x in sts if x in ("SKIPPED", "PENDING")),
+                    "line": pk.get("uri"),
+                    "undefined": any(x in ("UNDEFINED", "AMBIGUOUS")
+                                     for x in sts)})
+    return out
+
+
 # ---------------------------------------------------------------- verifying
 
 def git(repo, *args):
@@ -349,7 +388,8 @@ def verify(bundle_dir, repo, qualification=False):
         A.append(f"qualification plan not found at {plan_path}")
 
     harness = data.get("harness", "rust-cucumber-basic")
-    if harness not in ("rust-cucumber-basic", "python-behave-json"):
+    if harness not in ("rust-cucumber-basic", "python-behave-json",
+                       "typescript-cucumberjs-messages"):
         A.append(f"unknown harness {harness!r}: this verifier re-derives only "
                  f"the harnesses it implements, and refuses what it cannot "
                  f"re-derive")
@@ -426,14 +466,20 @@ def verify(bundle_dir, repo, qualification=False):
         text = p.read_text(errors="replace")
         if not text.strip():
             A.append(f"{sid}: raw log is empty - an empty log is never evidence")
-        if harness == "python-behave-json":
+        if harness in ("python-behave-json", "typescript-cucumberjs-messages"):
             jp = bind(s.get("structured_log"), s.get("structured_log_sha256"),
                       f"suite {sid} structured log")
             if jp is None:
-                A.append(f"{sid}: no structured behave output to re-derive from")
+                A.append(f"{sid}: no structured output to re-derive from")
                 continue
-            scen = reparse_behave(jp)
+            scen = (reparse_behave(jp) if harness == "python-behave-json"
+                    else reparse_cucumberjs(jp))
             summary, libtest = None, None
+            if harness == "typescript-cucumberjs-messages":
+                und = sum(1 for x in scen if x.get("undefined"))
+                if und:
+                    A.append(f"{sid}: {und} scenario(s) contain undefined or "
+                             f"ambiguous steps in the re-parsed message stream")
         else:
             scen, summary, libtest = reparse_log(text)
 
@@ -494,6 +540,9 @@ def verify(bundle_dir, repo, qualification=False):
         # positional join of executed leaves onto re-parsed scenario blocks
         run_rows = [r for r in recorded
                     if r.get("status") in ("PASSED", "FAILED", "SKIPPED", "EMPTY")]
+        # SKIPPED_IGNORED_TAG rows were filtered out by the driver's own tag
+        # expression before cucumber ever saw them; they are recorded, never
+        # counted as executed, and must NOT be expected in the log.
         if len(run_rows) != len(scen):
             A.append(f"{sid}: {len(run_rows)} leaf row(s) claim an executed "
                      f"outcome but the log carries {len(scen)} scenario "
@@ -651,6 +700,10 @@ def verify(bundle_dir, repo, qualification=False):
     consumed += [resolve_consumed((s.get("backend_witness") or {})["archived_marker"])
                  for s in servers
                  if (s.get("backend_witness") or {}).get("archived_marker")]
+    # build artefacts some harnesses archive alongside the results
+    for extra in ("npm-tree.json", "tsc.log"):
+        if (bundle_dir / extra).is_file():
+            consumed.append(bundle_dir / extra)
     root, _pairs = recompute_root(bundle_dir, consumed, repo)
     manifest = bundle_dir / "bundle-manifest.json"
     if manifest.is_file():
@@ -704,8 +757,15 @@ def verify(bundle_dir, repo, qualification=False):
             A.append("recorded verdict is GREEN but this verifier re-derives "
                      "RED from the archived bytes")
 
+    for c in (data.get("caveats") or []):
+        if not c.get("detail"):
+            A.append(f"caveat {c.get('id')!r} carries no detail; a caveat "
+                     f"without an explanation is a hidden gap")
+        W.append(f"declared caveat: {c.get('id')} - {(c.get('detail') or '')[:200]}")
+
     out = {
         "bundle": str(bundle_dir),
+        "declared_caveats": [c.get("id") for c in (data.get("caveats") or [])],
         "row_id": data.get("row_id"),
         "recomputed_bundle_root": root,
         "sealed_complete": sealed,

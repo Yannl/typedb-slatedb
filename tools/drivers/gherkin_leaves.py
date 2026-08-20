@@ -142,7 +142,14 @@ def enumerate_leaves(feature_path, ref):
                 block_tags = []
                 j += 1
             scenarios.append(rec)
-            i = j
+            # The tag block that belongs to the NEXT scenario sits inside the
+            # window this inner scan just walked. Hand those lines back to the
+            # outer loop, or the next scenario silently loses its tags - which
+            # is exactly how a @ignore-... scenario would be counted as
+            # runnable and then reported NOT_RUN. (Executed proof: before this
+            # fix, driver/connection.feature reported 0 tagged scenarios while
+            # carrying two @ignore-typedb-http ones.)
+            i = _rewind_to_tag_block(lines, j)
             continue
         pending_tags = []
         i += 1
@@ -187,6 +194,35 @@ def enumerate_leaves(feature_path, ref):
                 "example_index": idx, "example_count": total,
             })
     return leaves
+
+
+def _rewind_to_tag_block(lines, j):
+    """Given the index the inner scan stopped at (a keyword line or EOF),
+    return the index of the first line of the contiguous tag block that
+    immediately precedes it, or `j` when there is none."""
+    k = j - 1
+    while k >= 0 and (not lines[k].strip() or lines[k].strip().startswith("#")):
+        k -= 1
+    if k < 0 or not TAG_RE.match(lines[k].strip()):
+        return j
+    while k - 1 >= 0:
+        prev = lines[k - 1].strip()
+        if TAG_RE.match(prev):
+            k -= 1
+        elif not prev or prev.startswith("#"):
+            # blank/comment lines inside a tag block keep it contiguous only
+            # if another tag line precedes them
+            m = k - 1
+            while m >= 0 and (not lines[m].strip()
+                              or lines[m].strip().startswith("#")):
+                m -= 1
+            if m >= 0 and TAG_RE.match(lines[m].strip()):
+                k = m
+            else:
+                break
+        else:
+            break
+    return k
 
 
 def _substitute(name, mapping, ref, line):

@@ -1,0 +1,9 @@
+
+running 4 tests
+test build_with_functions ... ok
+test optional_writes ... ok
+test nested_optional_blocks_in_write ... ok
+test multiple_optional_writes_in_a_block ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

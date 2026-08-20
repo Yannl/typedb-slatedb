@@ -88,11 +88,30 @@ def _load_stage_module():
     return mod
 RESULTS_NAME = "leaf-results.json"
 
-# libtest's per-case line, in the default (pretty) format. One line per case,
-# printed when the case completes, in every thread mode. This is the leaf
-# granularity libtest has always had; nothing nightly is required.
-CASE_RE = re.compile(
-    r"^test (?P<name>\S+) \.\.\. (?P<res>ok|FAILED|ignored|bench:.*?)\s*$")
+# libtest's per-case lines, in the default (pretty) format. Three real
+# shapes, all observed in this repository's own archived logs - the third was
+# found by this module's own reconciliation refusing two targets, which is
+# what fail-closed is for:
+#
+#   test <name> ... ok                     the ordinary atomic line
+#   test <name> - should panic ... ok      a #[should_panic] case
+#   test <name> ... <leaked bytes>         a SPLIT line: with --test-threads 1
+#   ...                                    libtest writes "test <name> ... "
+#   ok                                     without a newline and the outcome
+#                                          afterwards, so a SUBPROCESS the test
+#                                          spawned (the extracted TypeDB server
+#                                          printing its banner) lands between
+#                                          the two halves.
+#
+# tracing/log output also carries ANSI colour, so lines are decoloured before
+# matching. Nothing here loosens the guarantee: the split form is only ever
+# closed while exactly one case is open, a second opener while one is pending
+# is an error, and every reading is still reconciled against the log's own
+# `test result:` summary before a single leaf is published.
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+CASE_OPEN_RE = re.compile(
+    r"^test (?P<name>\S+)(?: - should panic)? \.\.\. (?P<rest>.*)$")
+TERMINAL_RE = re.compile(r"^(?P<res>ok|FAILED|ignored|bench:.*)$")
 
 OUTCOME = {"ok": "PASSED", "FAILED": "FAILED", "ignored": "IGNORED"}
 # summary key each outcome must reconcile against
@@ -100,29 +119,66 @@ SUMMARY_KEY = {"PASSED": "passed", "FAILED": "failed",
                "IGNORED": "ignored", "MEASURED": "measured"}
 
 
+def _outcome_of(res):
+    if res.startswith("bench:"):
+        return "MEASURED"
+    if res.startswith("ignored"):
+        return "IGNORED"
+    return OUTCOME.get(res)
+
+
 def parse_libtest_cases(text):
-    """[(case_name, outcome, 1-based log line number)] from a raw libtest log.
+    """[(case_name, outcome, open_line, close_line)] from a raw libtest log.
 
-    Reads ONLY the per-case lines. Deliberately does not fall back to the
-    trailing `failures:` block or the terse format: a leaf outcome must come
-    from a line that names both the case and its result, or it does not
-    exist. Callers must reconcile the result against
-    common.parse_libtest_counts before trusting it (see reconcile()).
+    Line numbers are 1-based. `open_line` is the line that NAMES the case;
+    `close_line` is the line that names its OUTCOME. They are the same line
+    for the ordinary atomic form and differ for the split form above, and
+    both are recorded so a verifier can read the claim back out of the bytes
+    without either half being taken on trust.
+
+    Returns (cases, problems). Structural problems travel alongside the
+    cases because a log the parser cannot read UNAMBIGUOUSLY must refuse the
+    whole target rather than silently yield fewer cases than it contains -
+    silently yielding fewer is how a leaf quietly stops being covered.
     """
-    out = []
-    for i, line in enumerate(text.splitlines(), start=1):
-        m = CASE_RE.match(line.rstrip("\r"))
-        if not m:
+    out, problems = [], []
+    pending = None
+    for i, raw in enumerate(text.splitlines(), start=1):
+        line = ANSI_RE.sub("", raw.rstrip("\r")).rstrip()
+        m = CASE_OPEN_RE.match(line)
+        if m:
+            rest = m.group("rest").strip()
+            term = TERMINAL_RE.match(rest)
+            if term:
+                oc = _outcome_of(term.group("res"))
+                if oc:
+                    out.append((m.group("name"), oc, i, i))
+                    pending = None
+                    continue
+            if pending is not None:
+                problems.append(
+                    f"line {i} opens case {m.group('name')!r} while case "
+                    f"{pending[0]!r} (opened at line {pending[1]}) is still "
+                    f"unterminated - the log cannot be read unambiguously")
+                pending = None
+                continue
+            pending = (m.group("name"), i)
             continue
-        res = m.group("res")
-        outcome = "MEASURED" if res.startswith("bench:") else OUTCOME.get(res)
-        if outcome is None:
-            continue
-        out.append((m.group("name"), outcome, i))
-    return out
+        if pending is not None:
+            term = TERMINAL_RE.match(line)
+            if term:
+                oc = _outcome_of(term.group("res"))
+                if oc:
+                    out.append((pending[0], oc, pending[1], i))
+                    pending = None
+    if pending is not None:
+        problems.append(
+            f"case {pending[0]!r} opened at line {pending[1]} never reached an "
+            f"outcome line - the log is truncated or unreadable there")
+    return out, problems
 
 
-def reconcile(cases, counts):
+def reconcile(cases, counts, parse_problems=()):
     """Fail-closed agreement between the per-case lines and the summary.
 
     Returns a list of refusal reasons; empty means the log is self-consistent
@@ -130,7 +186,7 @@ def reconcile(cases, counts):
     result refuses the WHOLE target: a log that miscounts one case is not a
     log that can be trusted about the others.
     """
-    problems = []
+    problems = list(parse_problems)
     names = [c[0] for c in cases]
     dupes = sorted({n for n in names if names.count(n) > 1})
     if dupes:
@@ -138,7 +194,7 @@ def reconcile(cases, counts):
             f"duplicate per-case line(s) for {dupes} - one execution cannot "
             f"vouch for two leaf outcomes")
     by_outcome = {}
-    for _n, o, _l in cases:
+    for _n, o, _open, _close in cases:
         by_outcome[o] = by_outcome.get(o, 0) + 1
     for outcome, key in SUMMARY_KEY.items():
         got, want = by_outcome.get(outcome, 0), counts.get(key, 0)

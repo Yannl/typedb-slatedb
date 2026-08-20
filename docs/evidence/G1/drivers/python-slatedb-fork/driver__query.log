@@ -1,0 +1,2144 @@
+Feature: Driver Query
+  Background: Open connection, create driver, create database
+
+  Scenario: Read rows queries can include and exclude instance types
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.251s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.040s
+    Given connection has database: typedb ... passed in 0.002s
+    Given set query option include_instance_types to: false ... passed in 0.000s
+    Given connection open schema transaction for database: typedb ... passed in 0.003s
+    Given typeql schema query ... passed in 0.012s
+      """
+      define
+        entity person, owns name, plays friendship:friend;
+        relation friendship, relates friend;
+        attribute name value string;
+      """
+    Given typeql write query ... passed in 0.030s
+      """
+      insert
+        $p isa person, has name "John";
+        $f isa friendship, links ($p);
+      """
+    Given transaction commits ... passed in 0.024s
+    When set query option include_instance_types to: true ... passed in 0.000s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open read transaction for database: typedb ... passed in 0.002s
+    Then transaction is open: true ... passed in 0.000s
+    When get answers of typeql read query ... passed in 0.008s
+      """
+      match
+        $e isa person;
+        $a isa name;
+        $r isa friendship;
+      """
+    Then answer size is: 1 ... passed in 0.000s
+    Then answer get row(0) get variable(e) try get label is not none ... passed in 0.001s
+    Then answer get row(0) get entity(e) get type get label: person ... passed in 0.001s
+    Then answer get row(0) get variable(a) try get label is not none ... passed in 0.003s
+    Then answer get row(0) get attribute(a) get type get label: name ... passed in 0.000s
+    Then answer get row(0) get variable(r) try get label is not none ... passed in 0.000s
+    Then answer get row(0) get relation(r) get type get label: friendship ... passed in 0.000s
+    When transaction closes ... passed in 0.001s
+    When set query option include_instance_types to: false ... passed in 0.000s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open read transaction for database: typedb ... passed in 0.002s
+    Then transaction is open: true ... passed in 0.000s
+    When get answers of typeql read query ... passed in 0.004s
+      """
+      match
+        $e isa person;
+        $a isa name;
+        $r isa friendship;
+      """
+    Then answer size is: 1 ... passed in 0.002s
+    Then answer get row(0) get variable(e) try get label is none ... passed in 0.000s
+    Then answer get row(0) get variable(a) try get label is none ... passed in 0.000s
+    Then answer get row(0) get variable(r) try get label is none ... passed in 0.000s
+
+  Scenario: Write rows queries can include and exclude instance types
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.245s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.003s
+    Given connection create database: typedb ... passed in 0.113s
+    Given connection has database: typedb ... passed in 0.005s
+    Given set query option include_instance_types to: false ... passed in 0.000s
+    Given connection open schema transaction for database: typedb ... passed in 0.008s
+    Given typeql schema query ... passed in 0.025s
+      """
+      define
+        entity person, owns name, plays friendship:friend;
+        relation friendship, relates friend;
+        attribute name value string;
+      """
+    Given transaction commits ... passed in 0.024s
+    When set query option include_instance_types to: true ... passed in 0.000s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open write transaction for database: typedb ... passed in 0.003s
+    Then transaction is open: true ... passed in 0.000s
+    When get answers of typeql write query ... passed in 0.006s
+      """
+      insert
+        $e isa person, has name $a;
+        $a isa name "John";
+        $r isa friendship, links ($e);
+      """
+    Then answer size is: 1 ... passed in 0.000s
+    Then answer get row(0) get variable(e) try get label is not none ... passed in 0.000s
+    Then answer get row(0) get entity(e) get type get label: person ... passed in 0.000s
+    Then answer get row(0) get variable(a) try get label is not none ... passed in 0.000s
+    Then answer get row(0) get attribute(a) get type get label: name ... passed in 0.000s
+    Then answer get row(0) get variable(r) try get label is not none ... passed in 0.000s
+    Then answer get row(0) get relation(r) get type get label: friendship ... passed in 0.000s
+    When transaction closes ... passed in 0.001s
+    When set query option include_instance_types to: false ... passed in 0.000s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    Then transaction is open: true ... passed in 0.000s
+    When get answers of typeql write query ... passed in 0.003s
+      """
+      insert
+        $e isa person, has name $a;
+        $a isa name "John";
+        $r isa friendship, links ($e);
+      """
+    Then answer size is: 1 ... passed in 0.000s
+    Then answer get row(0) get variable(e) try get label is none ... passed in 0.000s
+    Then answer get row(0) get variable(a) try get label is none ... passed in 0.000s
+    Then answer get row(0) get variable(r) try get label is none ... passed in 0.000s
+
+  Scenario: Read document queries are not controlled by the include_instance_types option
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.273s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.044s
+    Given connection has database: typedb ... passed in 0.002s
+    Given set query option include_instance_types to: false ... passed in 0.000s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.009s
+      """
+      define
+        entity person, owns name; attribute name value string;
+      """
+    Given typeql write query ... passed in 0.014s
+      """
+      insert $p isa person, has name "John";
+      """
+    Given transaction commits ... passed in 0.018s
+    When set query option include_instance_types to: true ... passed in 0.000s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open read transaction for database: typedb ... passed in 0.003s
+    Then transaction is open: true ... passed in 0.000s
+    When get answers of typeql read query ... passed in 0.004s
+      """
+      match
+        attribute $type;
+        $instance isa $type;
+      fetch {
+        "instance": $instance,
+        "type": $type,
+      };
+      """
+    Then answer size is: 1 ... passed in 0.002s
+    Then answer contains document ... passed in 0.000s
+      """
+      {
+          "instance": "John",
+          "type": {
+              "kind": "attribute",
+              "label": "name",
+              "valueType": "string"
+          }
+      }
+      """
+    When transaction closes ... passed in 0.002s
+    When set query option include_instance_types to: false ... passed in 0.000s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open read transaction for database: typedb ... passed in 0.002s
+    Then transaction is open: true ... passed in 0.000s
+    When get answers of typeql read query ... passed in 0.003s
+      """
+      match
+        attribute $type;
+        $instance isa $type;
+      fetch {
+        "instance": $instance,
+        "type": $type,
+      };
+      """
+    Then answer size is: 1 ... passed in 0.000s
+    Then answer contains document ... passed in 0.000s
+      """
+      {
+          "instance": "John",
+          "type": {
+              "kind": "attribute",
+              "label": "name",
+              "valueType": "string"
+          }
+      }
+      """
+
+  Scenario: Write documents queries are not controlled by the include_instance_types option
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.307s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.003s
+    Given connection create database: typedb ... passed in 0.031s
+    Given connection has database: typedb ... passed in 0.001s
+    Given set query option include_instance_types to: false ... passed in 0.000s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.010s
+      """
+      define
+        entity person, owns name;
+        attribute name value string;
+      """
+    Given transaction commits ... passed in 0.013s
+    When set query option include_instance_types to: true ... passed in 0.000s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    Then transaction is open: true ... passed in 0.000s
+    When get answers of typeql write query ... passed in 0.006s
+      """
+      match
+        attribute $type;
+      insert
+        $instance isa $type "John";
+      fetch {
+        "instance": $instance,
+        "type": $type,
+      };
+      """
+    Then answer size is: 1 ... passed in 0.000s
+    Then answer contains document ... passed in 0.000s
+      """
+      {
+          "instance": "John",
+          "type": {
+              "kind": "attribute",
+              "label": "name",
+              "valueType": "string"
+          }
+      }
+      """
+    When transaction closes ... passed in 0.001s
+    When set query option include_instance_types to: false ... passed in 0.000s
+    Then transaction is open: false ... passed in 0.000s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    Then transaction is open: true ... passed in 0.000s
+    When get answers of typeql write query ... passed in 0.002s
+      """
+      match
+        attribute $type;
+      insert
+        $instance isa $type "John";
+      fetch {
+        "instance": $instance,
+        "type": $type,
+      };
+      """
+    Then answer size is: 1 ... passed in 0.000s
+    Then answer contains document ... passed in 0.000s
+      """
+      {
+          "instance": "John",
+          "type": {
+              "kind": "attribute",
+              "label": "name",
+              "valueType": "string"
+          }
+      }
+      """
+
+  Scenario: Query option prefetch_size should be >= 1
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.229s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.005s
+    Given connection create database: typedb ... passed in 0.060s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.003s
+      """
+      define entity person;
+      """
+    Given transaction commits ... passed in 0.008s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    When set query option prefetch_size to: 0 ... passed in 0.000s
+    Then typeql write query; fails with a message containing: "Invalid query option: prefetch size" ... passed in 0.001s
+      """
+      insert $p isa person;
+      """
+    Then typeql read query; fails with a message containing: "Invalid query option: prefetch size" ... passed in 0.001s
+      """
+      insert $p isa person;
+      """
+    Then typeql write query; fails with a message containing: "Invalid query option: prefetch size" ... passed in 0.001s
+      """
+      match $pt label person;
+      insert $p isa $pt;
+      fetch {"pt": $pt};
+      """
+    Then typeql read query; fails with a message containing: "Invalid query option: prefetch size" ... passed in 0.001s
+      """
+      match $pt label person;
+      fetch {"pt": $pt};
+      """
+
+  Scenario: Row queries work the same with different prefetch_size options
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.265s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.007s
+    Given connection create database: typedb ... passed in 0.063s
+    Given connection has database: typedb ... passed in 0.002s
+    Given set query option prefetch_size to: 1 ... passed in 0.000s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.028s
+      """
+      define
+        entity person, owns name;
+        attribute name value string;
+      """
+    Given transaction commits ... passed in 0.012s
+    When connection open write transaction for database: typedb ... passed in 0.012s
+    When get answers of typeql write query ... passed in 0.006s
+      """
+      insert
+        $alice isa name "Alice";
+        $p isa person, has $alice;
+        $p2 isa person, has name "Bob";
+      """
+    Then answer size is: 1 ... passed in 0.000s
+    Then answer get row(0) get attribute(alice) get type get label: name ... passed in 0.000s
+    Then answer get row(0) get attribute(alice) get value is: "Alice" ... passed in 0.000s
+    When transaction commits ... passed in 0.011s
+    When connection open read transaction for database: typedb ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.005s
+      """
+      match $p isa person, has $n;
+      sort $n;
+      """
+    Then answer size is: 2 ... passed in 0.000s
+    Then answer get row(0) get attribute(n) get value is: "Alice" ... passed in 0.000s
+    Then answer get row(1) get attribute(n) get value is: "Bob" ... passed in 0.000s
+    When transaction closes ... passed in 0.001s
+    When set query option prefetch_size to: 100000 ... passed in 0.000s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    When get answers of typeql write query ... passed in 0.006s
+      """
+      match
+        $p isa person;
+      insert
+        $charlie isa name "Charlie";
+        $p2 isa person, has $charlie;
+      """
+    Then answer size is: 2 ... passed in 0.000s
+    Then answer get row(0) get attribute(charlie) get type get label: name ... passed in 0.000s
+    Then answer get row(0) get attribute(charlie) get value is: "Charlie" ... passed in 0.000s
+    Then answer get row(1) get attribute(charlie) get type get label: name ... passed in 0.000s
+    Then answer get row(1) get attribute(charlie) get value is: "Charlie" ... passed in 0.000s
+    When transaction commits ... passed in 0.006s
+    When connection open read transaction for database: typedb ... passed in 0.003s
+    When get answers of typeql read query ... passed in 0.004s
+      """
+      match $p isa person, has $n;
+      sort $n;
+      """
+    Then answer size is: 4 ... passed in 0.000s
+    Then answer get row(0) get attribute(n) get value is: "Alice" ... passed in 0.000s
+    Then answer get row(1) get attribute(n) get value is: "Bob" ... passed in 0.000s
+    Then answer get row(2) get attribute(n) get value is: "Charlie" ... passed in 0.000s
+    Then answer get row(3) get attribute(n) get value is: "Charlie" ... passed in 0.000s
+    When transaction closes ... passed in 0.006s
+    When set query option prefetch_size to: 2 ... passed in 0.000s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    When get answers of typeql write query ... passed in 0.006s
+      """
+      match
+        $p isa person;
+      insert
+        $donald isa name "Donald";
+        $p2 isa person, has $donald;
+      """
+    Then answer size is: 4 ... passed in 0.000s
+    Then answer get row(0) get attribute(donald) get value is: "Donald" ... passed in 0.000s
+    Then answer get row(1) get attribute(donald) get value is: "Donald" ... passed in 0.000s
+    Then answer get row(2) get attribute(donald) get value is: "Donald" ... passed in 0.000s
+    Then answer get row(3) get attribute(donald) get value is: "Donald" ... passed in 0.000s
+    When transaction commits ... passed in 0.011s
+    When connection open read transaction for database: typedb ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.004s
+      """
+      match $p isa person, has $n;
+      sort $n;
+      """
+    Then answer size is: 8 ... passed in 0.000s
+    Then answer get row(0) get attribute(n) get value is: "Alice" ... passed in 0.000s
+    Then answer get row(1) get attribute(n) get value is: "Bob" ... passed in 0.000s
+    Then answer get row(2) get attribute(n) get value is: "Charlie" ... passed in 0.000s
+    Then answer get row(3) get attribute(n) get value is: "Charlie" ... passed in 0.000s
+    Then answer get row(4) get attribute(n) get value is: "Donald" ... passed in 0.000s
+    Then answer get row(5) get attribute(n) get value is: "Donald" ... passed in 0.000s
+    Then answer get row(6) get attribute(n) get value is: "Donald" ... passed in 0.000s
+    Then answer get row(7) get attribute(n) get value is: "Donald" ... passed in 0.000s
+
+  Scenario: Document queries work the same with different prefetch_size options
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.219s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.041s
+    Given connection has database: typedb ... passed in 0.002s
+    Given set query option prefetch_size to: 1 ... passed in 0.000s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.005s
+      """
+      define
+        entity person, owns name;
+        attribute name value string;
+      """
+    Given transaction commits ... passed in 0.015s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    When get answers of typeql write query ... passed in 0.022s
+      """
+      insert
+        $alice isa name "Alice";
+        $p isa person, has $alice;
+        $p2 isa person, has name "Bob";
+      fetch {
+        "alice": $alice
+      };
+      """
+    Then answer size is: 1 ... passed in 0.000s
+    Then answer contains document ... passed in 0.000s
+      """
+      { "alice": "Alice" }
+      """
+    When transaction commits ... passed in 0.009s
+    When connection open read transaction for database: typedb ... passed in 0.002s
+    When get answers of typeql read query ... passed in 0.004s
+      """
+      match $p isa person, has $n;
+      sort $n;
+      fetch {
+        "n": $n
+      };
+      """
+    Then answer size is: 2 ... passed in 0.002s
+    Then answer contains document ... passed in 0.000s
+      """
+      { "n": "Alice" }
+      """
+    Then answer contains document ... passed in 0.000s
+      """
+      { "n": "Bob" }
+      """
+    When transaction closes ... passed in 0.001s
+    When set query option prefetch_size to: 100000 ... passed in 0.000s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    When get answers of typeql write query ... passed in 0.005s
+      """
+      match
+        $p isa person;
+      insert
+        $charlie isa name "Charlie";
+        $p2 isa person, has $charlie;
+      fetch {
+        "charlie": $charlie
+      };
+      """
+    Then answer size is: 2 ... passed in 0.000s
+    Then answer contains document ... passed in 0.000s
+      """
+      { "charlie": "Charlie" }
+      """
+    When transaction commits ... passed in 0.005s
+    When connection open read transaction for database: typedb ... passed in 0.002s
+    When get answers of typeql read query ... passed in 0.003s
+      """
+      match $p isa person, has $n;
+      sort $n;
+      fetch {
+        "n": $n
+      };
+      """
+    Then answer size is: 4 ... passed in 0.000s
+    Then answer contains document ... passed in 0.000s
+      """
+      { "n": "Alice" }
+      """
+    Then answer contains document ... passed in 0.000s
+      """
+      { "n": "Bob" }
+      """
+    Then answer contains document ... passed in 0.000s
+      """
+      { "n": "Charlie" }
+      """
+    When transaction closes ... passed in 0.001s
+    When set query option prefetch_size to: 2 ... passed in 0.000s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    When get answers of typeql write query ... passed in 0.005s
+      """
+      match
+        $p isa person;
+      insert
+        $donald isa name "Donald";
+        $p2 isa person, has $donald;
+      fetch {
+        "donald": $donald
+      };
+      """
+    Then answer size is: 4 ... passed in 0.000s
+    Then answer contains document ... passed in 0.000s
+      """
+      { "donald": "Donald" }
+      """
+    When transaction commits ... passed in 0.007s
+    When connection open read transaction for database: typedb ... passed in 0.005s
+    When get answers of typeql read query ... passed in 0.004s
+      """
+      match $p isa person, has $n;
+      sort $n;
+      fetch {
+        "n": $n
+      };
+      """
+    Then answer size is: 8 ... passed in 0.000s
+    Then answer contains document ... passed in 0.000s
+      """
+      { "n": "Alice" }
+      """
+    Then answer contains document ... passed in 0.000s
+      """
+      { "n": "Bob" }
+      """
+    Then answer contains document ... passed in 0.000s
+      """
+      { "n": "Charlie" }
+      """
+    Then answer contains document ... passed in 0.000s
+      """
+      { "n": "Donald" }
+      """
+
+  Scenario: Row queries can request the query structure to be included in response
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.169s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.075s
+    Given connection has database: typedb ... passed in 0.002s
+    Given set query option include_query_structure to: true ... passed in 0.000s
+    When connection open read transaction for database: typedb ... passed in 0.004s
+    When get answers of typeql read query ... passed in 0.004s
+      """
+      match let $x = 1;
+      """
+    Then answers have query structure ... passed in 0.002s
+      """
+      Pipeline([
+        Match([
+          Expression(let $x = 1, $x, [])
+        ])
+      ])
+      """
+    Given transaction closes ... passed in 0.002s
+
+  Scenario: Driver processes ok query answers correctly
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.249s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.051s
+    Given connection has database: typedb ... passed in 0.005s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    When get answers of typeql schema query ... passed in 0.005s
+      """
+      define entity person;
+      """
+    Then answer type is: ok ... passed in 0.000s
+    Then answer type is not: concept rows ... passed in 0.000s
+    Then answer type is not: concept documents ... passed in 0.000s
+    Then answer unwraps as ok ... passed in 0.000s
+    Then transaction commits ... passed in 0.009s
+
+  Scenario: Driver processes concept row query answers correctly
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.249s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.018s
+    Given connection create database: typedb ... passed in 0.043s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.003s
+    Given typeql schema query ... passed in 0.008s
+      """
+      define entity person owns name @key; attribute name, value string;
+      """
+    When get answers of typeql read query ... passed in 0.004s
+      """
+      match entity $p;
+      """
+    Then answer type is: concept rows ... passed in 0.000s
+    Then answer type is not: ok ... passed in 0.000s
+    Then answer type is not: concept documents ... passed in 0.000s
+    Then answer unwraps as concept rows ... passed in 0.000s
+    Then answer query type is: read ... passed in 0.000s
+    Then answer query type is not: schema ... passed in 0.000s
+    Then answer query type is not: write ... passed in 0.000s
+    Then answer size is: 1 ... passed in 0.000s
+    Then answer column names are ... passed in 0.000s
+      | p |
+    Then answer get row(0) query type is: read ... passed in 0.000s
+    Then answer get row(0) query type is not: schema ... passed in 0.000s
+    Then answer get row(0) query type is not: write ... passed in 0.000s
+    Then answer get row(0) get concepts size is: 1 ... passed in 0.000s
+    Then answer get row(0) get entity type(p) get label: person ... passed in 0.000s
+    Then answer get row(0) get entity type by index of variable(p) get label: person ... passed in 0.000s
+    When get answers of typeql read query ... passed in 0.004s
+      """
+      match entity $p; attribute $n;
+      """
+    Then answer type is: concept rows ... passed in 0.000s
+    Then answer type is not: ok ... passed in 0.000s
+    Then answer type is not: concept documents ... passed in 0.000s
+    Then answer query type is: read ... passed in 0.000s
+    Then answer query type is not: schema ... passed in 0.000s
+    Then answer query type is not: write ... passed in 0.000s
+    Then answer size is: 1 ... passed in 0.000s
+    Then answer column names are ... passed in 0.000s
+      | p |
+      | n |
+    Then answer get row(0) get concepts size is: 2 ... passed in 0.000s
+    Then answer get row(0) get entity type(p) get label: person ... passed in 0.000s
+    Then answer get row(0) get attribute type(n) get label: name ... passed in 0.000s
+    Then answer get row(0) get entity type by index of variable(p) get label: person ... passed in 0.000s
+    Then answer get row(0) get attribute type by index of variable(n) get label: name ... passed in 0.000s
+    When typeql schema query ... passed in 0.004s
+      """
+      define attribute age, value integer;
+      """
+    When get answers of typeql read query ... passed in 0.004s
+      """
+      match entity $p; attribute $n;
+      """
+    Then answer type is: concept rows ... passed in 0.000s
+    Then answer type is not: ok ... passed in 0.000s
+    Then answer type is not: concept documents ... passed in 0.000s
+    Then answer query type is: read ... passed in 0.000s
+    Then answer query type is not: schema ... passed in 0.000s
+    Then answer query type is not: write ... passed in 0.000s
+    Then answer size is: 2 ... passed in 0.000s
+    Then answer column names are ... passed in 0.000s
+      | p |
+      | n |
+    Then answer get row(0) query type is: read ... passed in 0.000s
+    Then answer get row(0) query type is not: schema ... passed in 0.000s
+    Then answer get row(0) query type is not: write ... passed in 0.000s
+    Then answer get row(0) get concepts size is: 2 ... passed in 0.000s
+    Then answer get row(0) get entity type(p) get label: person ... passed in 0.000s
+    Then answer get row(0) get attribute type(n) get label: name ... passed in 0.000s
+    Then answer get row(0) get entity type by index of variable(p) get label: person ... passed in 0.000s
+    Then answer get row(0) get attribute type by index of variable(n) get label: name ... passed in 0.000s
+    Then answer get row(1) query type is: read ... passed in 0.000s
+    Then answer get row(1) query type is not: schema ... passed in 0.000s
+    Then answer get row(1) query type is not: write ... passed in 0.000s
+    Then answer get row(1) get concepts size is: 2 ... passed in 0.000s
+    Then answer get row(1) get entity type(p) get label: person ... passed in 0.000s
+    Then answer get row(1) get attribute type(n) get label: age ... passed in 0.000s
+    Then answer get row(1) get entity type by index of variable(p) get label: person ... passed in 0.000s
+    Then answer get row(1) get attribute type by index of variable(n) get label: age ... passed in 0.000s
+    Then transaction commits ... passed in 0.013s
+    When connection open read transaction for database: typedb ... passed in 0.002s
+    When get answers of typeql read query ... passed in 0.004s
+      """
+      match entity $p; attribute $n;
+      """
+    Then answer type is: concept rows ... passed in 0.000s
+    Then answer type is not: ok ... passed in 0.000s
+    Then answer type is not: concept documents ... passed in 0.000s
+    Then answer query type is: read ... passed in 0.000s
+    Then answer query type is not: schema ... passed in 0.000s
+    Then answer query type is not: write ... passed in 0.000s
+    Then answer size is: 2 ... passed in 0.000s
+    Then answer column names are ... passed in 0.000s
+      | p |
+      | n |
+    Then answer get row(0) get concepts size is: 2 ... passed in 0.000s
+    Then answer get row(0) get entity type(p) get label: person ... passed in 0.000s
+    Then answer get row(0) get attribute type(n) get label: name ... passed in 0.000s
+    Then answer get row(0) get entity type by index of variable(p) get label: person ... passed in 0.000s
+    Then answer get row(0) get attribute type by index of variable(n) get label: name ... passed in 0.000s
+    Then answer get row(1) get concepts size is: 2 ... passed in 0.000s
+    Then answer get row(1) get entity type(p) get label: person ... passed in 0.000s
+    Then answer get row(1) get attribute type(n) get label: age ... passed in 0.000s
+    Then answer get row(1) get entity type by index of variable(p) get label: person ... passed in 0.000s
+    Then answer get row(1) get attribute type by index of variable(n) get label: age ... passed in 0.000s
+    When get answers of typeql read query ... passed in 0.004s
+      """
+      match $p isa person;
+      """
+    Then answer type is: concept rows ... passed in 0.000s
+    Then answer type is not: ok ... passed in 0.000s
+    Then answer type is not: concept documents ... passed in 0.000s
+    Then answer size is: 0 ... passed in 0.000s
+    When transaction closes ... passed in 0.002s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    When get answers of typeql write query ... passed in 0.004s
+      """
+      insert $p isa person, has name "John";
+      """
+    Then answer type is: concept rows ... passed in 0.000s
+    Then answer type is not: ok ... passed in 0.000s
+    Then answer type is not: concept documents ... passed in 0.000s
+    Then answer query type is: write ... passed in 0.000s
+    Then answer query type is not: schema ... passed in 0.000s
+    Then answer query type is not: read ... passed in 0.000s
+    Then answer size is: 1 ... passed in 0.000s
+    Then answer column names are ... passed in 0.000s
+      | p |
+    Then answer get row(0) query type is: write ... passed in 0.000s
+    Then answer get row(0) query type is not: schema ... passed in 0.000s
+    Then answer get row(0) query type is not: read ... passed in 0.000s
+    Then answer get row(0) get concepts size is: 1 ... passed in 0.000s
+    Then answer get row(0) get entity(p) get type get label: person ... passed in 0.000s
+    Then answer get row(0) get entity by index of variable(p) get type get label: person ... passed in 0.000s
+    When get answers of typeql read query ... passed in 0.003s
+      """
+      match $p isa person, has name $a;
+      """
+    Then answer type is: concept rows ... passed in 0.000s
+    Then answer type is not: ok ... passed in 0.000s
+    Then answer type is not: concept documents ... passed in 0.000s
+    Then answer query type is: read ... passed in 0.000s
+    Then answer query type is not: schema ... passed in 0.000s
+    Then answer query type is not: write ... passed in 0.000s
+    Then answer size is: 1 ... passed in 0.002s
+    Then answer column names are ... passed in 0.000s
+      | p |
+      | a |
+    Then answer get row(0) get concepts size is: 2 ... passed in 0.000s
+    Then answer get row(0) get entity(p) get type get label: person ... passed in 0.000s
+    Then answer get row(0) get entity by index of variable(p) get type get label: person ... passed in 0.000s
+    Then answer get row(0) get attribute(a) get type get label: name ... passed in 0.000s
+    Then answer get row(0) get attribute(a) get value is: "John" ... passed in 0.000s
+    Then answer get row(0) get attribute by index of variable(a) get type get label: name ... passed in 0.000s
+    Then answer get row(0) get attribute by index of variable(a) get value is: "John" ... passed in 0.000s
+    Then transaction commits ... passed in 0.009s
+
+  Scenario: Driver processes concept document query answers from read queries correctly
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.198s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.004s
+    Given connection create database: typedb ... passed in 0.068s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.012s
+      """
+      define
+      entity person owns id @key, owns name @card(0..);
+      entity empty-person;
+      entity nameless-person, owns name;
+      attribute id, value integer;
+      attribute name, value string;
+      """
+    When get answers of typeql read query ... passed in 0.006s
+      """
+      match
+        $x isa! person;
+      fetch {
+        "all attributes": { $x.* },
+      };
+      """
+    Then answer type is: concept documents ... passed in 0.000s
+    Then answer type is not: ok ... passed in 0.000s
+    Then answer type is not: concept rows ... passed in 0.000s
+    Then answer unwraps as concept documents ... passed in 0.000s
+    Then answer query type is: read ... passed in 0.000s
+    Then answer query type is not: schema ... passed in 0.000s
+    Then answer query type is not: write ... passed in 0.000s
+    Then answer size is: 0 ... passed in 0.000s
+    When transaction commits ... passed in 0.013s
+    When connection open write transaction for database: typedb ... passed in 0.002s
+    When typeql write query ... passed in 0.007s
+      """
+      insert
+      $z isa person, has id 1;
+      $y isa person, has id 2, has name "Yan";
+      $x isa person, has id 3, has name "Xena", has name "Warrior Princess";
+      $e isa empty-person;
+      $n isa nameless-person;
+      """
+    When get answers of typeql read query ... passed in 0.006s
+      """
+      match
+        $x isa! person;
+      fetch {
+        "all attributes": { $x.* },
+      };
+      """
+    Then answer type is: concept documents ... passed in 0.000s
+    Then answer type is not: ok ... passed in 0.000s
+    Then answer type is not: concept rows ... passed in 0.000s
+    Then answer unwraps as concept documents ... passed in 0.000s
+    Then answer query type is: read ... passed in 0.000s
+    Then answer query type is not: schema ... passed in 0.000s
+    Then answer query type is not: write ... passed in 0.000s
+    Then answer size is: 3 ... passed in 0.000s
+    Then answer contains document ... passed in 0.000s
+      """
+      { "all attributes": { "id": 1 } }
+      """
+    Then answer contains document ... passed in 0.000s
+      """
+      {
+        "all attributes": {
+          "id": 2,
+          "name": [ "Yan" ]
+        }
+      }
+      """
+    Then answer contains document ... passed in 0.000s
+      """
+      {
+          "all attributes": {
+              "id": 3,
+              "name": [
+                  "Warrior Princess",
+                  "Xena"
+              ]
+          }
+      }
+      """
+    Then answer does not contain document ... passed in 0.000s
+      """
+      { "all attributes": { "id": 2 } }
+      """
+    Then answer does not contain document ... passed in 0.000s
+      """
+      {
+        "all attributes": {
+          "id": 2,
+          "name": [
+              "Warrior Princess",
+              "Xena"
+          ]
+        }
+      }
+      """
+    When transaction commits ... passed in 0.011s
+    When connection open read transaction for database: typedb ... passed in 0.002s
+    When get answers of typeql read query ... passed in 0.005s
+      """
+      match
+        $x isa! person, has $a;
+        $a isa! $t;
+      fetch {
+        "single attribute type": $t,
+        "single attribute": $a,
+      };
+      """
+    Then answer type is: concept documents ... passed in 0.000s
+    Then answer type is not: ok ... passed in 0.000s
+    Then answer type is not: concept rows ... passed in 0.000s
+    Then answer unwraps as concept documents ... passed in 0.000s
+    Then answer query type is: read ... passed in 0.000s
+    Then answer query type is not: schema ... passed in 0.000s
+    Then answer query type is not: write ... passed in 0.000s
+    Then answer size is: 6 ... passed in 0.000s
+    Then answer contains document ... passed in 0.000s
+      """
+      {
+          "single attribute": "Yan",
+          "single attribute type": {
+              "kind": "attribute",
+              "label": "name",
+              "valueType": "string"
+          }
+      }
+      """
+    Then answer contains document ... passed in 0.000s
+      """
+      {
+          "single attribute": 1,
+          "single attribute type": {
+              "kind": "attribute",
+              "label": "id",
+              "valueType": "integer"
+          }
+      }
+      """
+    When get answers of typeql read query ... passed in 0.003s
+      """
+      match
+        $x isa! empty-person;
+      fetch {
+        "empty-result": { $x.* },
+      };
+      """
+    Then answer type is: concept documents ... passed in 0.000s
+    Then answer type is not: ok ... passed in 0.000s
+    Then answer type is not: concept rows ... passed in 0.000s
+    Then answer unwraps as concept documents ... passed in 0.000s
+    Then answer query type is: read ... passed in 0.000s
+    Then answer query type is not: schema ... passed in 0.000s
+    Then answer query type is not: write ... passed in 0.000s
+    Then answer size is: 1 ... passed in 0.000s
+    Then answer contains document ... passed in 0.000s
+      """
+      {
+          "empty-result": { }
+      }
+      """
+    When get answers of typeql read query ... passed in 0.003s
+      """
+      match
+        $x isa! nameless-person;
+      fetch {
+        "null-result": $x.name,
+      };
+      """
+    Then answer type is: concept documents ... passed in 0.000s
+    Then answer type is not: ok ... passed in 0.000s
+    Then answer type is not: concept rows ... passed in 0.000s
+    Then answer unwraps as concept documents ... passed in 0.000s
+    Then answer query type is: read ... passed in 0.000s
+    Then answer query type is not: schema ... passed in 0.000s
+    Then answer query type is not: write ... passed in 0.000s
+    Then answer size is: 1 ... passed in 0.000s
+    Then answer contains document ... passed in 0.000s
+      """
+      {
+          "null-result": null
+      }
+      """
+
+  Scenario: Driver processes concept document query answers from write queries correctly
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.259s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.063s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.014s
+      """
+      define entity person owns name @card(1); attribute name, value string; attribute age @abstract;
+      """
+    Given transaction commits ... passed in 0.018s
+    When connection open write transaction for database: typedb ... passed in 0.006s
+    When get answers of typeql write query ... passed in 0.006s
+      """
+      insert $p isa person, has name "John";
+      fetch {
+        "name": $p.name,
+        "sub fetch": {
+          "all attributes": { $p.* },
+        }
+      };
+      """
+    Then answer type is: concept documents ... passed in 0.000s
+    Then answer type is not: ok ... passed in 0.000s
+    Then answer type is not: concept rows ... passed in 0.000s
+    Then answer query type is: write ... passed in 0.000s
+    Then answer query type is not: schema ... passed in 0.000s
+    Then answer query type is not: read ... passed in 0.000s
+    Then answer size is: 1 ... passed in 0.000s
+    Then answer contains document ... passed in 0.000s
+      """
+      {
+        "name": "John",
+        "sub fetch": {
+          "all attributes": {
+            "name": "John"
+          }
+        }
+      }
+      """
+    When get answers of typeql write query ... passed in 0.007s
+      """
+      match
+      attribute $a;
+      insert
+      $p1 isa person, has name "Alice";
+      $p2 isa person, has name "Bob";
+      fetch {
+        "Alice's name": $p1.name,
+        "sub fetch": {
+          "Bob's all": { $p2.* },
+        }
+      };
+      """
+    Then answer type is: concept documents ... passed in 0.000s
+    Then answer type is not: ok ... passed in 0.000s
+    Then answer type is not: concept rows ... passed in 0.000s
+    Then answer query type is: write ... passed in 0.000s
+    Then answer query type is not: schema ... passed in 0.000s
+    Then answer query type is not: read ... passed in 0.000s
+    Then answer size is: 2 ... passed in 0.000s
+    Then answer contains document ... passed in 0.000s
+      """
+      {
+        "Alice's name": "Alice",
+        "sub fetch": {
+          "Bob's all": {
+            "name": "Bob"
+          }
+        }
+      }
+      """
+    Then answer does not contain document ... passed in 0.000s
+      """
+      {
+        "Alice's name": "Bob",
+        "sub fetch": {
+          "Bob's all": {
+            "name": "Alice"
+          }
+        }
+      }
+      """
+
+  Scenario: Driver processes query given rows correctly
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.190s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.074s
+    Given connection has database: typedb ... passed in 0.005s
+    Given connection open schema transaction for database: typedb ... passed in 0.003s
+    Given typeql schema query ... passed in 0.014s
+      """
+      define
+        entity person owns name @card(0..), owns age @card(0..);
+        attribute name, value string;
+        attribute age, value integer;
+      """
+    Given transaction commits ... passed in 0.017s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given get answers of typeql write query ... passed in 0.005s
+      """
+      insert $_ isa person, has name "John";
+      insert $_ isa person, has name "Jane";
+      """
+    Given transaction commits ... passed in 0.008s
+    Given connection open write transaction for database: typedb ... passed in 0.004s
+    Given set query option include_instance_types to: true ... passed in 0.000s
+    Given set answers of typeql read query as given rows with order: $p, $age_value ... passed in 0.010s
+      """
+      match
+        $p isa person, has name $name;
+        {
+          $name == "Jane"; try { let $age_value = 38; };
+        } or {
+          $name == "John"; try { let $age_value = 0; $age_value == 1; };
+        };
+      sort $name;
+      select $p, $age_value;
+      """
+    When get answers of typeql write query with given rows ... passed in 0.008s
+      """
+      given $p: person, $age_value: integer?;
+      match $p isa person, has name $name;
+      insert try { $p has age == $age_value; };
+      """
+    Then answer get row(0) get concepts size is: 3 ... passed in 0.000s
+    Then answer get row(0) get entity(p) get type get label: person ... passed in 0.000s
+    Then answer get row(0) get attribute(name) get type get label: name ... passed in 0.000s
+    Then answer get row(0) get attribute(name) get value is: "Jane" ... passed in 0.000s
+    Then answer get row(1) get entity(p) get type get label: person ... passed in 0.000s
+    Then answer get row(1) get attribute(name) get type get label: name ... passed in 0.000s
+    Then answer get row(1) get attribute(name) get value is: "John" ... passed in 0.000s
+    Then transaction commits ... passed in 0.024s
+    Given connection open read transaction for database: typedb ... passed in 0.006s
+    Given set query option include_instance_types to: true ... passed in 0.000s
+    When get answers of typeql read query ... passed in 0.009s
+      """
+      match $p isa person, has name $name, has age $age;
+      """
+    Then answer get row(0) get concepts size is: 3 ... passed in 0.000s
+    Then answer get row(0) get entity(p) get type get label: person ... passed in 0.000s
+    Then answer get row(0) get attribute(age) get type get label: age ... passed in 0.000s
+    Then answer get row(0) get attribute(age) get value is: 38 ... passed in 0.000s
+    Then answer get row(0) get attribute(name) get type get label: name ... passed in 0.000s
+    Then answer get row(0) get attribute(name) get value is: "Jane" ... passed in 0.000s
+
+  Scenario: The order of variables in given rows don't matter
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.283s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.053s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.004s
+    Given typeql schema query ... passed in 0.011s
+      """
+      define
+        entity person owns name @card(0..), owns age @card(0..);
+        attribute name, value string;
+        attribute age, value integer;
+      """
+    Given transaction commits ... passed in 0.013s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given get answers of typeql write query ... passed in 0.005s
+      """
+      insert $_ isa person, has name "John";
+      insert $_ isa person, has name "Jane";
+      """
+    Given transaction commits ... passed in 0.008s
+    Given connection open write transaction for database: typedb ... passed in 0.021s
+    Given set query option include_instance_types to: true ... passed in 0.000s
+    Given set answers of typeql read query as given rows with order: $p, $age_value ... passed in 0.013s
+      """
+      match
+        $p isa person, has name $name;
+        $name == "Jane"; try { let $age_value = 38; };
+      sort $name;
+      select $p, $age_value;
+      """
+    When get answers of typeql write query with given rows ... passed in 0.007s
+      """
+      given $p: person, $age_value: integer?;
+      match $p isa person, has name $name;
+      insert try { $p has age == $age_value; };
+      """
+    Then answer get row(0) get entity(p) get type get label: person ... passed in 0.000s
+    Then answer get row(0) get attribute(name) get type get label: name ... passed in 0.000s
+    Then answer get row(0) get attribute(name) get value is: "Jane" ... passed in 0.000s
+    Given set answers of typeql read query as given rows with order: $p ... passed in 0.006s
+      """
+      match
+        $p isa person, has name $name;
+        $name == "John";
+      sort $name;
+      select $p;
+      """
+    When get answers of typeql write query with given rows ... passed in 0.004s
+      """
+      given $p: person, $age_value: integer?;
+      match $p isa person, has name $name;
+      insert try { $p has age == $age_value; };
+      """
+    Then answer get row(0) get entity(p) get type get label: person ... passed in 0.000s
+    Then answer get row(0) get attribute(name) get type get label: name ... passed in 0.000s
+    Then answer get row(0) get attribute(name) get value is: "John" ... passed in 0.000s
+    Then transaction commits ... passed in 0.011s
+
+  Scenario: In given rows, optional variables may be omitted, required ones may not, undeclared variables are flagged.
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.183s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.003s
+    Given connection create database: typedb ... passed in 0.071s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open read transaction for database: typedb ... passed in 0.002s
+    When set answers of typeql read query as given rows with order: $x ... passed in 0.004s
+      """
+      match let $x = 5;
+      """
+    When get answers of typeql read query with given rows ... passed in 0.005s
+      """
+      given $x: integer, $y: integer?;
+      match
+       let $p = $x * 2;
+       try { let $q = $x + $y; };
+      """
+    Then answer get row(0) get value(x) get is: 5 ... passed in 0.000s
+    Then answer get row(0) get value(p) get is: 10 ... passed in 0.000s
+    Then answer get row(0) get variable(y) is empty ... passed in 0.000s
+    Then answer get row(0) get variable(q) is empty ... passed in 0.000s
+    When set answers of typeql read query as given rows with order: $x ... passed in 0.002s
+      """
+      match let $x = 5;
+      """
+    Then typeql read query with given rows; fails with a message containing: "The given rows are missing the required variable 'y'" ... passed in 0.003s
+      """
+      given $x: integer, $y: integer;
+      match
+       let $p = $x * 2;
+       let $q = $x + $y;
+      """
+    When set answers of typeql read query as given rows with order: $x, $z ... passed in 0.005s
+      """
+      match let $x = 5; let $z =6;
+      """
+    Then typeql read query with given rows; fails with a message containing: "The variable 'z' was not declared in the query" ... passed in 0.012s
+      """
+      given $x: integer, $y: integer?;
+      match
+        let $p = $x;
+       try { let $q = $x + $y; };
+      """
+
+  Scenario: Drivers also accept given rows as maps
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.251s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.059s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.003s
+    Given typeql schema query ... passed in 0.010s
+      """
+      define
+        entity person owns name @card(0..), owns age @card(0..);
+        attribute name, value string;
+        attribute age, value integer;
+      """
+    Given transaction commits ... passed in 0.011s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given get answers of typeql write query ... passed in 0.005s
+      """
+      insert $_ isa person, has name "John";
+      insert $_ isa person, has name "Jane";
+      """
+    Given transaction commits ... passed in 0.019s
+    Given connection open write transaction for database: typedb ... passed in 0.003s
+    Given set query option include_instance_types to: true ... passed in 0.000s
+    Given set answers of typeql read query as given rows dictionary with variables: $p, $age_value ... passed in 0.019s
+      """
+      match
+        $p isa person, has name $name;
+        {
+          $name == "Jane"; try { let $age_value = 38; };
+        } or {
+          $name == "John"; try { let $age_value = 0; $age_value == 1; };
+        };
+      sort $name;
+      select $p, $age_value;
+      """
+    When get answers of typeql write query with given rows ... passed in 0.008s
+      """
+      given $p: person, $age_value: integer?;
+      match $p isa person, has name $name;
+      insert try { $p has age == $age_value; };
+      """
+    Then answer get row(0) get entity(p) get type get label: person ... passed in 0.000s
+    Then answer get row(0) get attribute(name) get type get label: name ... passed in 0.000s
+    Then answer get row(0) get attribute(name) get value is: "Jane" ... passed in 0.000s
+    Then answer get row(1) get entity(p) get type get label: person ... passed in 0.000s
+    Then answer get row(1) get attribute(name) get type get label: name ... passed in 0.000s
+    Then answer get row(1) get attribute(name) get value is: "John" ... passed in 0.000s
+    Then transaction commits ... passed in 0.006s
+    Given connection open read transaction for database: typedb ... passed in 0.003s
+    Given set query option include_instance_types to: true ... passed in 0.000s
+    When get answers of typeql read query ... passed in 0.007s
+      """
+      match $p isa person, has name $name, has age $age;
+      """
+    Then answer get row(0) get entity(p) get type get label: person ... passed in 0.000s
+    Then answer get row(0) get attribute(age) get type get label: age ... passed in 0.000s
+    Then answer get row(0) get attribute(age) get value is: 38 ... passed in 0.000s
+    Then answer get row(0) get attribute(name) get type get label: name ... passed in 0.000s
+    Then answer get row(0) get attribute(name) get value is: "Jane" ... passed in 0.000s
+    When set answers of typeql read query as given rows dictionary with variables: $x ... passed in 0.003s
+      """
+      match let $x = 5;
+      """
+    When get answers of typeql read query with given rows ... passed in 0.004s
+      """
+      given $x: integer, $y: integer?;
+      match
+       let $p = $x * 2;
+       try { let $q = $x + $y; };
+      """
+    Then answer get row(0) get value(x) get is: 5 ... passed in 0.000s
+    Then answer get row(0) get value(p) get is: 10 ... passed in 0.000s
+    Then answer get row(0) get variable(y) is empty ... passed in 0.000s
+    Then answer get row(0) get variable(q) is empty ... passed in 0.000s
+
+  Scenario Outline: Given rows handle boolean values -- @1.1 
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.236s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.032s
+    Given connection has database: typedb ... passed in 0.004s
+    Given connection open schema transaction for database: typedb ... passed in 0.004s
+    Given typeql schema query ... passed in 0.010s
+      """
+      define attribute attr, value boolean; entity owner, owns attr;
+      """
+    Given transaction commits ... passed in 0.017s
+    Given connection open write transaction for database: typedb ... passed in 0.005s
+    Given set answers of typeql read query as given rows with order: $attr ... passed in 0.004s
+      """
+      match let $attr = true;
+      """
+    When get answers of typeql write query with given rows ... passed in 0.004s
+      """
+      given $attr: boolean;
+      insert $x isa owner, has attr == $attr;
+      """
+    Given transaction commits ... passed in 0.019s
+    Given connection open read transaction for database: typedb ... passed in 0.003s
+    When get answers of typeql read query ... passed in 0.004s
+      """
+      match $x isa owner, has attr $attr;
+      """
+    Then answer size is: 1 ... passed in 0.001s
+    Then answer get row(0) get attribute(attr) get value is: true ... passed in 0.000s
+
+  Scenario Outline: Given rows handle integer values -- @1.2 
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.166s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.051s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.006s
+      """
+      define attribute attr, value integer; entity owner, owns attr;
+      """
+    Given transaction commits ... passed in 0.016s
+    Given connection open write transaction for database: typedb ... passed in 0.005s
+    Given set answers of typeql read query as given rows with order: $attr ... passed in 0.008s
+      """
+      match let $attr = 12345090;
+      """
+    When get answers of typeql write query with given rows ... passed in 0.004s
+      """
+      given $attr: integer;
+      insert $x isa owner, has attr == $attr;
+      """
+    Given transaction commits ... passed in 0.010s
+    Given connection open read transaction for database: typedb ... passed in 0.004s
+    When get answers of typeql read query ... passed in 0.005s
+      """
+      match $x isa owner, has attr $attr;
+      """
+    Then answer size is: 1 ... passed in 0.000s
+    Then answer get row(0) get attribute(attr) get value is: 12345090 ... passed in 0.000s
+
+  Scenario Outline: Given rows handle double values -- @1.3 
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.297s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.067s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.007s
+    Given typeql schema query ... passed in 0.006s
+      """
+      define attribute attr, value double; entity owner, owns attr;
+      """
+    Given transaction commits ... passed in 0.010s
+    Given connection open write transaction for database: typedb ... passed in 0.006s
+    Given set answers of typeql read query as given rows with order: $attr ... passed in 0.006s
+      """
+      match let $attr = 2.01234567;
+      """
+    When get answers of typeql write query with given rows ... passed in 0.005s
+      """
+      given $attr: double;
+      insert $x isa owner, has attr == $attr;
+      """
+    Given transaction commits ... passed in 0.011s
+    Given connection open read transaction for database: typedb ... passed in 0.004s
+    When get answers of typeql read query ... passed in 0.005s
+      """
+      match $x isa owner, has attr $attr;
+      """
+    Then answer size is: 1 ... passed in 0.000s
+    Then answer get row(0) get attribute(attr) get value is: 2.01234567 ... passed in 0.000s
+
+  Scenario Outline: Given rows handle decimal values -- @1.4 
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.344s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.009s
+    Given connection create database: typedb ... passed in 0.091s
+    Given connection has database: typedb ... passed in 0.003s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.006s
+      """
+      define attribute attr, value decimal; entity owner, owns attr;
+      """
+    Given transaction commits ... passed in 0.023s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given set answers of typeql read query as given rows with order: $attr ... passed in 0.006s
+      """
+      match let $attr = 1234567890.0001234567890dec;
+      """
+    When get answers of typeql write query with given rows ... passed in 0.005s
+      """
+      given $attr: decimal;
+      insert $x isa owner, has attr == $attr;
+      """
+    Given transaction commits ... passed in 0.006s
+    Given connection open read transaction for database: typedb ... passed in 0.002s
+    When get answers of typeql read query ... passed in 0.005s
+      """
+      match $x isa owner, has attr $attr;
+      """
+    Then answer size is: 1 ... passed in 0.001s
+    Then answer get row(0) get attribute(attr) get value is: 1234567890.0001234567890dec ... passed in 0.000s
+
+  Scenario Outline: Given rows handle date values -- @1.5 
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.167s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.005s
+    Given connection create database: typedb ... passed in 0.065s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.011s
+      """
+      define attribute attr, value date; entity owner, owns attr;
+      """
+    Given transaction commits ... passed in 0.016s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given set answers of typeql read query as given rows with order: $attr ... passed in 0.005s
+      """
+      match let $attr = 2024-09-20;
+      """
+    When get answers of typeql write query with given rows ... passed in 0.004s
+      """
+      given $attr: date;
+      insert $x isa owner, has attr == $attr;
+      """
+    Given transaction commits ... passed in 0.012s
+    Given connection open read transaction for database: typedb ... passed in 0.003s
+    When get answers of typeql read query ... passed in 0.005s
+      """
+      match $x isa owner, has attr $attr;
+      """
+    Then answer size is: 1 ... passed in 0.000s
+    Then answer get row(0) get attribute(attr) get value is: 2024-09-20 ... passed in 0.003s
+
+  Scenario Outline: Given rows handle datetime values -- @1.6 
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.174s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.072s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.009s
+      """
+      define attribute attr, value datetime; entity owner, owns attr;
+      """
+    Given transaction commits ... passed in 0.020s
+    Given connection open write transaction for database: typedb ... passed in 0.002s
+    Given set answers of typeql read query as given rows with order: $attr ... passed in 0.005s
+      """
+      match let $attr = 1999-02-26T12:15:05;
+      """
+    When get answers of typeql write query with given rows ... passed in 0.019s
+      """
+      given $attr: datetime;
+      insert $x isa owner, has attr == $attr;
+      """
+    Given transaction commits ... passed in 0.008s
+    Given connection open read transaction for database: typedb ... passed in 0.002s
+    When get answers of typeql read query ... passed in 0.004s
+      """
+      match $x isa owner, has attr $attr;
+      """
+    Then answer size is: 1 ... passed in 0.001s
+    Then answer get row(0) get attribute(attr) get value is: 1999-02-26T12:15:05 ... passed in 0.001s
+
+  Scenario Outline: Given rows handle datetime-tz values -- @1.7 
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.169s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.036s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.008s
+    Given typeql schema query ... passed in 0.009s
+      """
+      define attribute attr, value datetime-tz; entity owner, owns attr;
+      """
+    Given transaction commits ... passed in 0.017s
+    Given connection open write transaction for database: typedb ... passed in 0.009s
+    Given set answers of typeql read query as given rows with order: $attr ... passed in 0.006s
+      """
+      match let $attr = 2024-09-20T16:40:05.000000001+0100;
+      """
+    When get answers of typeql write query with given rows ... passed in 0.006s
+      """
+      given $attr: datetime-tz;
+      insert $x isa owner, has attr == $attr;
+      """
+    Given transaction commits ... passed in 0.010s
+    Given connection open read transaction for database: typedb ... passed in 0.007s
+    When get answers of typeql read query ... passed in 0.009s
+      """
+      match $x isa owner, has attr $attr;
+      """
+    Then answer size is: 1 ... passed in 0.000s
+    Then answer get row(0) get attribute(attr) get value is: 2024-09-20T16:40:05.000000001+0100 ... passed in 0.000s
+
+  Scenario Outline: Given rows handle duration values -- @1.8 
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.175s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.063s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.007s
+      """
+      define attribute attr, value duration; entity owner, owns attr;
+      """
+    Given transaction commits ... passed in 0.014s
+    Given connection open write transaction for database: typedb ... passed in 0.004s
+    Given set answers of typeql read query as given rows with order: $attr ... passed in 0.004s
+      """
+      match let $attr = P1Y10M7DT15H44M5.00394892S;
+      """
+    When get answers of typeql write query with given rows ... passed in 0.005s
+      """
+      given $attr: duration;
+      insert $x isa owner, has attr == $attr;
+      """
+    Given transaction commits ... passed in 0.004s
+    Given connection open read transaction for database: typedb ... passed in 0.002s
+    When get answers of typeql read query ... passed in 0.005s
+      """
+      match $x isa owner, has attr $attr;
+      """
+    Then answer size is: 1 ... passed in 0.000s
+    Then answer get row(0) get attribute(attr) get value is: P1Y10M7DT15H44M5.00394892S ... passed in 0.000s
+
+  Scenario Outline: Given rows handle string values -- @1.9 
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.378s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.095s
+    Given connection has database: typedb ... passed in 0.004s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.017s
+      """
+      define attribute attr, value string; entity owner, owns attr;
+      """
+    Given transaction commits ... passed in 0.035s
+    Given connection open write transaction for database: typedb ... passed in 0.005s
+    Given set answers of typeql read query as given rows with order: $attr ... passed in 0.006s
+      """
+      match let $attr = "hello";
+      """
+    When get answers of typeql write query with given rows ... passed in 0.009s
+      """
+      given $attr: string;
+      insert $x isa owner, has attr == $attr;
+      """
+    Given transaction commits ... passed in 0.013s
+    Given connection open read transaction for database: typedb ... passed in 0.004s
+    When get answers of typeql read query ... passed in 0.010s
+      """
+      match $x isa owner, has attr $attr;
+      """
+    Then answer size is: 1 ... passed in 0.001s
+    Then answer get row(0) get attribute(attr) get value is: "hello" ... passed in 0.000s
+
+  Scenario Outline: Given rows handle string values -- @1.10 
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.167s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.061s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.009s
+    Given typeql schema query ... passed in 0.007s
+      """
+      define attribute attr, value string; entity owner, owns attr;
+      """
+    Given transaction commits ... passed in 0.020s
+    Given connection open write transaction for database: typedb ... passed in 0.003s
+    Given set answers of typeql read query as given rows with order: $attr ... passed in 0.004s
+      """
+      match let $attr = "bob\"bobby";
+      """
+    When get answers of typeql write query with given rows ... passed in 0.005s
+      """
+      given $attr: string;
+      insert $x isa owner, has attr == $attr;
+      """
+    Given transaction commits ... passed in 0.007s
+    Given connection open read transaction for database: typedb ... passed in 0.003s
+    When get answers of typeql read query ... passed in 0.004s
+      """
+      match $x isa owner, has attr $attr;
+      """
+    Then answer size is: 1 ... passed in 0.002s
+    Then answer get row(0) get attribute(attr) get value is: "bob\"bobby" ... passed in 0.000s
+
+  Scenario: Driver processes query structure correctly
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.231s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.065s
+    Given connection has database: typedb ... passed in 0.009s
+    Given connection open schema transaction for database: typedb ... passed in 0.007s
+    Given typeql schema query ... passed in 0.020s
+      """
+      define
+      attribute ref value integer;
+      attribute name value string;
+      relation friendship, relates friend @card(2);
+      entity person,
+        owns name, owns ref @key,
+        plays friendship:friend;
+      """
+    Given transaction commits ... passed in 0.019s
+    Given connection open read transaction for database: typedb ... passed in 0.002s
+    When get answers of typeql analyze ... passed in 0.010s
+      """
+      with fun n_pi($n: integer) -> double:
+        match let $n_pi = $n * 3.14; # close enough?
+      return first $n_pi;
+      
+      with fun sum_refs() -> integer:
+        match $r isa ref;
+      return sum($r);
+      
+      match
+        $p1 isa! person, has name $n1;
+        $n1 contains "son";
+        $f isa friendship, links (friend: $p1, $p2);
+        $p1 is $p2;
+        $p2 iid 0x1234567890112345678901;
+        let $three = 3;
+        let $x = ceil(2 * n_pi($three));
+      """
+    Then analyzed query pipeline structure is ... passed in 0.001s
+      """
+      Pipeline([
+        Match([
+          IsaExact($p1, person), Has($p1, $n1), Isa($n1, name),
+          Comparison($n1, "son", contains),
+          Isa($f, friendship), Links($f, $p1, friend), Links($f, $p2, $_),
+          Is($p1, $p2),
+          Iid($p2, 0x1234567890112345678901),
+          expression(let $three = 3, $three, []),
+          FunctionCall(n_pi($three), [$_], [$three]),
+          Expression(let $x = ceil(2 * n_pi($three)), $x, [$_])
+        ])
+      ])
+      """
+    Then analyzed query preamble contains ... passed in 0.000s
+      """
+      Function(
+        [$n],
+        Single(first, [$n_pi]),
+        Pipeline([
+          Match([
+            Expression(let $n_pi = $n * 3.14, $n_pi, [$n])
+          ])
+        ])
+      )
+      """
+    Then analyzed query preamble contains ... passed in 0.000s
+      """
+      Function(
+        [],
+        Reduce([Reducer(sum,[$r])]),
+        Pipeline([
+          Match([
+            Isa($r, ref)
+          ])
+        ])
+      )
+      """
+    When get answers of typeql analyze ... passed in 0.004s
+      """
+      match
+        entity $p1;
+        $p1 sub! person, owns $n1;
+        $n1 label name;
+        $n1 value string;
+        $f sub friendship, relates friend;
+        $p1 plays friendship:friend;
+        $p2 plays $role;
+      """
+    Then analyzed query pipeline structure is ... passed in 0.001s
+      """
+      Pipeline([
+        Match([
+          Kind(entity, $p1),
+          SubExact($p1, person), Owns($p1, $n1),
+          Label($n1, name),
+          Value($n1, string),
+          Sub($f, friendship), Relates($f, friend),
+          Plays($p1, friendship:friend),
+          Plays($p2, $role)
+        ])
+      ])
+      """
+    When get answers of typeql analyze ... passed in 0.006s
+      """
+      match
+        $p isa person;
+        { $p has name $id; } or { $p has ref $id; };
+        not { $id == 5; };
+        try { $f isa friendship, links (friend: $p); };
+      """
+    Then analyzed query pipeline structure is ... passed in 0.001s
+      """
+      Pipeline([
+        Match([
+          Isa($p, person),
+          Or([
+            [Has($p, $id), Isa($id, name)],
+            [Has($p, $id), Isa($id, ref)]
+          ]),
+          not([Comparison($id, 5, ==)]),
+          Try([Isa($f, friendship), Links($f, $p, friend)])
+        ])
+      ])
+      """
+    When get answers of typeql analyze ... passed in 0.007s
+      """
+      match
+       $p isa person;
+       $q isa person;
+       $n isa name == "John";
+      insert
+       $p has $n;
+      delete
+        has $n of $p;
+        $q;
+      update
+        $p has $n;
+      put
+        $p has $n;
+      distinct;
+      match
+        try { $p has ref $ref; };
+      require $ref;
+      select $ref, $n;
+      reduce $ref_sum = sum($ref) groupby $n;
+      sort $n desc;
+      offset 1;
+      limit 1;
+      """
+    Then analyzed query pipeline structure is ... passed in 0.001s
+      """
+      Pipeline([
+        Match(
+          [Isa($p, person), Isa($q, person), Isa($n, name), Comparison($n, "John", ==)]
+        ),
+        Insert([Has($p, $n)]),
+        Delete([$q], [Has($p, $n)]),
+        Update([Has($p, $n)]),
+        Put([Has($p, $n)]),
+        Distinct(),
+        Match([
+          Try([Has($p, $ref), Isa($ref, ref)])
+        ]),
+        Require([$ref]),
+        Select([$n, $ref]),
+        Reduce(
+          [ReduceAssign($ref_sum, Reducer(sum, [$ref]))],
+          [$n]
+        ),
+        Sort([desc($n)]),
+        Offset(1),
+        Limit(1)
+      ])
+      """
+    When get answers of typeql analyze ... passed in 0.004s
+      """
+        given $x: person, $y: string;
+        insert
+          $z isa name == $y;
+          $x has $z;
+      """
+    Then analyzed query given structure is ... passed in 0.000s
+      """
+      Given([$x, $y])
+      """
+    Then analyzed query pipeline structure is ... passed in 0.000s
+      """
+      Pipeline([
+        Insert(
+          [Isa($z, name), Comparison($z, $y, ==), Has($x, $z)]
+        )
+      ])
+      """
+    Given transaction closes ... passed in 0.001s
+
+  Scenario: Analyze returns the annotations of variables in the query
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.167s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.087s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.003s
+    Given typeql schema query ... passed in 0.020s
+      """
+      define
+      attribute ref value integer;
+      attribute name value string;
+      entity dummy;
+      entity subdummy sub dummy;
+      relation friendship, relates friend @card(2);
+      entity person,
+        owns name, owns ref @key,
+        plays friendship:friend;
+      """
+    Given transaction commits ... passed in 0.019s
+    Given connection open read transaction for database: typedb ... passed in 0.002s
+    When get answers of typeql analyze ... passed in 0.011s
+      """
+      match
+        $x isa person, has name $n, has ref $r;
+        { $r == 2; } or { $r == 3; };
+      select $n, $x;
+      delete $n;
+      insert $x has name "John";
+      match $n1 isa name == "J";
+      put $x has name $n1;
+      """
+    Then analyzed query pipeline annotations are ... passed in 0.001s
+      """
+      Pipeline([
+        Match(
+          And(
+            { $n: instance([name]), $r: instance([ref]), $x: instance([person]) },
+            [
+              Or([
+                And({ $r: instance([ref]) }, []),
+                And({ $r: instance([ref]) }, [])
+              ])
+            ]
+          )
+        ),
+        Select(),
+        Delete(
+          And({ $n: instance([name]) }, [])
+        ),
+        Insert(
+          And({ $_: instance([name]), $x: instance([person]) }, [])
+        ),
+        Match(
+          And({ $n1:instance([name]) }, [])
+        ),
+        Put(
+          And({ $n1:instance([name]), $x: instance([person]) }, [])
+        )
+      ])
+      """
+    When get answers of typeql analyze ... passed in 0.007s
+      """
+      with
+      fun names_of($p: person) -> { name }:
+      match $p has name $n;
+      return { $n };
+      
+      match
+        $p isa person, has ref $r;
+      fetch {
+        "ref": $r,
+        "names": [names_of($p)],
+        "friends": [
+          match $_ isa friendship, links (friend: $p, friend: $f);
+          fetch {
+            "name": (match $f has name $nf; return first $nf;)
+          };
+        ]
+      };
+      """
+    Then analyzed preamble annotations contains ... passed in 0.001s
+      """
+      Function(
+        [instance([person])],
+        stream([instance([name])]),
+        Pipeline([
+          Match(
+            And({ $n: instance([name]), $p: instance([person]) }, [])
+          )
+        ])
+      )
+      """
+    Then analyzed query pipeline annotations are ... passed in 0.000s
+      """
+      Pipeline([
+        Match(
+          And({ $p: instance([person]), $r: instance([ref]) }, [])
+        )
+      ])
+      """
+    Then analyzed fetch annotations are ... passed in 0.000s
+      """
+        {
+          friends: List({
+            name: [string]
+          }),
+          names: List([string]),
+          ref: [integer]
+        }
+      """
+    When get answers of typeql analyze ... passed in 0.005s
+      """
+        given $p: person, $m: string;
+        insert $p has name == $m;
+      """
+    Then analyzed query given annotations are ... passed in 0.001s
+      """
+        Given({ $m: value([string]), $p: instance([person]) })
+      """
+    Then analyzed query pipeline annotations are ... passed in 0.003s
+      """
+        Pipeline([
+          Insert(And({ $_: instance([name]), $m: value([string]), $p: instance([person]) }, []))
+        ])
+      """
+
+  Scenario: Analyze handles unsatisfiable schema queries and errors properly
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.316s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.051s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.015s
+      """
+      define
+      entity person;
+      relation friendship, relates friend;
+      relation new-relation, relates new-role;
+      """
+    Given transaction commits ... passed in 0.072s
+    Given connection open read transaction for database: typedb ... passed in 0.012s
+    When get answers of typeql analyze ... passed in 0.004s
+      """
+      match
+       $p sub! person;
+      """
+    Then analyzed query pipeline structure is ... passed in 0.000s
+      """
+      Pipeline([
+        Match(
+          [SubExact($p, person)]
+        )
+      ])
+      """
+    Then analyzed query pipeline annotations are ... passed in 0.000s
+      """
+      Pipeline([
+        Match(
+          And({$p: type([])}, [])
+        )
+      ])
+      """
+    When get answers of typeql analyze ... passed in 0.003s
+      """
+      match
+       $r sub friendship, relates new-role;
+      """
+    Then analyzed query pipeline structure is ... passed in 0.000s
+      """
+      Pipeline([
+        Match(
+          [Sub($r, friendship), Relates($r, new-role)]
+        )
+      ])
+      """
+    Then analyzed query pipeline annotations are ... passed in 0.000s
+      """
+      Pipeline([
+        Match(
+          And({$_: type([]), $r: type([])}, [])
+        )
+      ])
+      """
+    Given transaction closes ... passed in 0.001s
+    Given connection open read transaction for database: typedb ... passed in 0.002s
+    Then typeql analyze; parsing fails ... passed in 0.002s
+      """
+      match
+       This isnt valid TypeQL;
+      """
+    Then typeql analyze; fails with a message containing: "Type-inference was unable to find compatible types for the pair of variables 'x' & 'p' across a 'isa' constraint" ... passed in 0.004s
+      """
+      match
+       $p sub! person; $x isa! $p;
+      """
+    Given transaction closes ... passed in 0.001s
+
+  Scenario: Driver processes query errors correctly
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.260s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.060s
+    Given connection has database: typedb ... passed in 0.011s
+    Given connection open schema transaction for database: typedb ... passed in 0.007s
+    Then typeql schema query; fails ... passed in 0.003s
+    Then typeql schema query; fails ... passed in 0.002s
+    Then typeql read query; fails with a message containing: "Error analysing query" ... passed in 0.030s
+      """
+      match $r label non-existing;
+      """
+    Then typeql schema query; fails with a message containing: "The reserved keyword \"entity\" cannot be used as an identifier" ... passed in 0.021s
+      """
+      define entity entity;
+      """
+    Given connection open schema transaction for database: typedb ... passed in 0.003s
+    Then typeql schema query; fails with a message containing: "Failed to execute define query" ... passed in 0.005s
+      """
+      define attribute name owns name;
+      """
+
+  Scenario: Driver can concurrently process read queries without interruptions
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.258s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.007s
+    Given connection create database: typedb ... passed in 0.032s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.008s
+      """
+      define
+      entity person0;
+      entity person1;
+      entity person2;
+      entity person3;
+      entity person4;
+      entity person5;
+      entity person6;
+      entity person7;
+      entity person8;
+      entity person9;
+      """
+    When concurrently get answers of typeql read query 10 times ... passed in 0.035s
+      """
+      match entity $p;
+      """
+    Then concurrently process 1 row from answers ... passed in 0.002s
+    Then concurrently process 1 row from answers ... passed in 0.001s
+    Then concurrently process 3 rows from answers ... passed in 0.001s
+    When get answers of typeql read query ... passed in 0.005s
+      """
+      match entity $p;
+      """
+    Then answer size is: 10 ... passed in 0.000s
+    Then concurrently process 5 rows from answers ... passed in 0.004s
+    Then concurrently process 1 row from answers; fails ... passed in 0.005s
+
+  Scenario: Driver's concurrent processing of read queries answers is not interrupted by schema queries if answers are prefetched
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.168s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.053s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.002s
+    Given typeql schema query ... passed in 0.010s
+      """
+      define
+      entity person0;
+      entity person1;
+      entity person2;
+      entity person3;
+      entity person4;
+      entity person5;
+      entity person6;
+      entity person7;
+      entity person8;
+      entity person9;
+      """
+    When concurrently get answers of typeql read query 10 times ... passed in 0.021s
+      """
+      match entity $p;
+      """
+    Then concurrently process 1 row from answers ... passed in 0.001s
+    Then concurrently process 1 row from answers ... passed in 0.001s
+    Then concurrently process 3 rows from answers ... passed in 0.002s
+    When typeql schema query ... passed in 0.003s
+      """
+      define entity person10;
+      """
+    Then concurrently process 1 rows from answers ... passed in 0.002s
+    Then concurrently process 3 rows from answers ... passed in 0.002s
+    Then concurrently process 1 rows from answers ... passed in 0.005s
+    Then concurrently process 1 row from answers; fails ... passed in 0.002s
+
+  Scenario: Driver's concurrent processing of read queries answers is interrupted by schema queries if answers are not prefetched
+    Given typedb starts ... passed in 0.000s
+    Given connection is open: false ... passed in 0.000s
+    Given connection opens with default authentication ... passed in 0.191s
+    Given connection is open: true ... passed in 0.000s
+    Given connection has 0 databases ... passed in 0.002s
+    Given connection create database: typedb ... passed in 0.032s
+    Given connection has database: typedb ... passed in 0.002s
+    Given connection open schema transaction for database: typedb ... passed in 0.003s
+    Given typeql schema query ... passed in 0.017s
+      """
+      define
+      entity person0;
+      entity person1;
+      entity person2;
+      entity person3;
+      entity person4;
+      entity person5;
+      entity person6;
+      entity person7;
+      entity person8;
+      entity person9;
+      """
+    When concurrently get answers of typeql read query 10 times ... passed in 0.087s
+      """
+      match entity $p;
+      """
+    Then concurrently process 1 row from answers ... passed in 0.003s
+    Then concurrently process 1 row from answers ... passed in 0.002s
+    Then concurrently process 3 rows from answers ... passed in 0.002s
+    When typeql schema query ... passed in 0.003s
+      """
+      define entity person10;
+      """
+
+1 feature passed, 0 failed, 0 skipped
+33 scenarios passed, 0 failed, 0 skipped
+919 steps passed, 0 failed, 0 skipped, 0 undefined
+Took 0m12.241s

@@ -48,7 +48,7 @@ import leaf_common as lc  # noqa: E402
 import verify_leaf  # noqa: E402
 
 
-def load_leaf_evidence(dirs, plan, catalog_leaves, catalog_targets):
+def load_leaf_evidence(dirs, plan, catalog_leaves, catalog_targets, repo=REPO):
     """(leaf_index, notes). leaf_index maps (profile, leaf_case_id) -> ref.
 
     Every bundle is RE-VERIFIED from its bytes before a single row of it is
@@ -57,8 +57,9 @@ def load_leaf_evidence(dirs, plan, catalog_leaves, catalog_targets):
     index, notes = {}, []
     for d in dirs:
         p = pathlib.Path(d)
-        p = p if p.is_absolute() else REPO / p
-        anomalies, facts = verify_leaf.verify(p, plan, catalog_leaves, catalog_targets)
+        p = p if p.is_absolute() else pathlib.Path(repo) / p
+        anomalies, facts = verify_leaf.verify(p, plan, catalog_leaves,
+                                              catalog_targets, repo=repo)
         note = {**facts, "bundle": str(d), "anomalies": anomalies,
                 "counted": False}
         if anomalies:
@@ -118,6 +119,9 @@ def main():
     ap.add_argument("--leaf", action="append", default=[],
                     help="leaf evidence bundle dir (repeatable)")
     ap.add_argument("--out", type=pathlib.Path, default=None)
+    ap.add_argument("--repo", default=str(REPO),
+                    help="root a repo-relative raw_log resolves against; only "
+                         "the negative-control harness passes this")
     args = ap.parse_args()
 
     plan = json.loads(args.plan.read_text())
@@ -133,7 +137,7 @@ def main():
     same_lane, other_lane, notes = plan_coverage.load_evidence(
         args.evidence or plan_coverage.DEFAULT_EVIDENCE, plan_profiles)
     leaf_index, leaf_notes = load_leaf_evidence(
-        args.leaf, plan, catalog_leaves, targets)
+        args.leaf, plan, catalog_leaves, targets, repo=args.repo)
 
     leaves = plan["leaves"]
     counts, uncovered_reasons = {}, {}

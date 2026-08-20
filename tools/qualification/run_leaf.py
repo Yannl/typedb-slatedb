@@ -177,7 +177,7 @@ def analyse(row, out_dir, catalog_target_id, catalog_leaves, plan, fixtures):
     log = REPO / row["raw_log"]
     text = log.read_text(errors="replace")
     counts = common.parse_libtest_counts(text)
-    cases = lc.parse_libtest_cases(text)
+    cases, parse_problems = lc.parse_libtest_cases(text)
     refusals = []
     if not text.strip():
         refusals.append("the archived log is EMPTY - a target that printed "
@@ -187,7 +187,7 @@ def analyse(row, out_dir, catalog_target_id, catalog_leaves, plan, fixtures):
                         "summary line - it is truncated or the binary died "
                         "mid-run, and an unterminated run cannot be reconciled")
     else:
-        refusals += lc.reconcile(cases, counts)
+        refusals += lc.reconcile(cases, counts, parse_problems)
     if row["timed_out"]:
         refusals.append("the target TIMED OUT - a killed process's partial "
                         "output is never a complete leaf enumeration")
@@ -200,7 +200,7 @@ def analyse(row, out_dir, catalog_target_id, catalog_leaves, plan, fixtures):
                         "outcomes describe the disk, not the code under test")
 
     declared = catalog_leaves.get(catalog_target_id, {})
-    observed = {n for n, _o, _l in cases}
+    observed = {n for n, _o, _op, _cl in cases}
     if declared and not cases and not refusals:
         refusals.append(
             f"the catalogue records {len(declared)} leaf case(s) for this "
@@ -223,7 +223,7 @@ def analyse(row, out_dir, catalog_target_id, catalog_leaves, plan, fixtures):
         return []
 
     leaves = []
-    for name, outcome, line_no in cases:
+    for name, outcome, open_line, close_line in cases:
         leaf = declared.get(name)
         if leaf is None:
             continue  # extra_cases: recorded above, never published as a leaf
@@ -237,7 +237,11 @@ def analyse(row, out_dir, catalog_target_id, catalog_leaves, plan, fixtures):
             "outcome": outcome,
             "raw_log": row["raw_log"],
             "log_sha256": row["log_sha256"],
-            "log_line": line_no,
+            # the line that NAMES the case, and the line that names its
+            # OUTCOME. They differ only for libtest's split single-threaded
+            # form; a verifier reads both back out of the log.
+            "log_line": open_line,
+            "outcome_line": close_line,
             "fixture_set_id": fs_id,
             "fixture_set_satisfied": lc.fixture_set_satisfied(fs_id, plan, fixtures),
         })

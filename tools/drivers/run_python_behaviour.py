@@ -245,6 +245,73 @@ def wheel_provenance(venv):
     }
 
 
+IANA_AREAS = ("Africa", "America", "Antarctica", "Arctic", "Asia", "Atlantic",
+              "Australia", "Europe", "Indian", "Pacific", "Etc", "US")
+
+
+def corpus_time_zones(refs):
+    """Every IANA-looking zone id the feature files in scope actually name.
+
+    Deriving the list from the CORPUS rather than hardcoding it means the
+    check cannot drift from the fixtures it is meant to protect - and it
+    cannot be padded with zones nothing tests (an earlier version of this
+    probe hardcoded 'Africa/Eswatini', which is not an IANA zone at all and
+    produced a false anomaly).
+    """
+    pat = re.compile(r"\b(?:" + "|".join(IANA_AREAS) + r")/[A-Za-z_+-]+")
+    zones = set()
+    for ref in refs:
+        f = BEHAVIOUR / ref
+        if f.is_file():
+            zones |= set(pat.findall(f.read_text()))
+    return sorted(zones)
+
+
+def harness_environment(venv, refs):
+    """Facts about the interpreter environment the suite runs in, checked
+    against the corpus rather than assumed.
+
+    The IANA time-zone database is the one that actually bit here. This host
+    ships a SLIM /usr/share/zoneinfo without the `backward` compatibility
+    aliases, so `zoneinfo.ZoneInfo("Asia/Calcutta")` raised
+    ZoneInfoNotFoundError and driver/concept.feature's "Driver processes
+    datetime-tz values in different user time-zones identically" failed on
+    the fixture, not on the driver or the server. (Executed and recorded:
+    the Rust lane passes the same scenario because chrono-tz compiles the
+    full IANA database, aliases included.) Supplying the full database via
+    the `tzdata` distribution restores the fixture; it does not weaken the
+    test, and every zone the corpus names is probed here so a reader sees
+    which ones resolved rather than taking it on trust.
+    """
+    py = venv / "bin" / "python"
+    probe = (
+        "import json,sys,zoneinfo\n"
+        "zones=" + repr(corpus_time_zones(refs)) + "\n"
+        "res={}\n"
+        "for z in zones:\n"
+        "    try:\n"
+        "        zoneinfo.ZoneInfo(z); res[z]=True\n"
+        "    except Exception as e:\n"
+        "        res[z]=f'{type(e).__name__}: {e}'\n"
+        "try:\n"
+        "    import tzdata; v=getattr(tzdata,'IANA_VERSION',None)\n"
+        "except Exception as e:\n"
+        "    v=f'absent ({type(e).__name__})'\n"
+        "print(json.dumps({'python':sys.version,'tzpath':list(zoneinfo.TZPATH),"
+        "'zones_from_corpus':res,'tzdata_package':v}))\n")
+    r = subprocess.run([str(py), "-c", probe], capture_output=True, text=True)
+    try:
+        info = json.loads(r.stdout)
+    except json.JSONDecodeError:
+        return {"problems": [f"time-zone probe failed: {r.stderr[-300:]}"],
+                "raw": r.stdout}
+    info["problems"] = [
+        f"time zone {z}, named by the behaviour corpus, is not resolvable in "
+        f"this interpreter: {v}"
+        for z, v in info["zones_from_corpus"].items() if v is not True]
+    return info
+
+
 # ----------------------------------------------------------------- behave IO
 
 def materialise(suite_id, meta, run_dir):
@@ -348,6 +415,10 @@ def main():
             anomalies.append(f"{node_id}: checkout does not match the source lock")
 
     prov = wheel_provenance(venv)
+    prov["harness_environment"] = harness_environment(
+        venv, [m["feature_ref"] for m in suites.values()])
+    for problem in prov["harness_environment"]["problems"]:
+        anomalies.append(f"harness environment: {problem}")
     if prov["differing_from_locked_source"]:
         anomalies.append(
             f"the installed wheel's python modules differ from the locked "
@@ -368,8 +439,18 @@ def main():
 
     selected = args.suite or [s for s in suites if not suites[s]["cluster_only"]]
     env = dict(os.environ)
+    # Bazel's py_test puts the WORKSPACE ROOT on sys.path (so
+    # `python.tests.behaviour.util.functor_encoder` resolves) and the
+    # py_library import roots too (so `tests.behaviour.context` resolves).
+    # Both upstream spellings appear in the step modules, so both roots go on
+    # PYTHONPATH here; using only one of them makes step modules fail to
+    # import at RUNTIME, mid-scenario, which reads as a product failure and
+    # is not one. (Executed: with only PYROOT, driver/query.feature scenario
+    # "Row queries can request the query structure to be included in
+    # response" failed with ModuleNotFoundError: No module named 'python'.)
     env["PYTHONPATH"] = os.pathsep.join(
-        [str(PYROOT)] + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else []))
+        [str(DRIVER), str(PYROOT)]
+        + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else []))
     behave = venv / "bin" / "behave"
 
     suite_rows, leaf_rows, server_records = [], [], []

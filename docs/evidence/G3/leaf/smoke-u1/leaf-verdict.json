@@ -171,44 +171,38 @@
   "fork": {
    "files": 778,
    "fork_tree_sha256": "4a163c9be3b103787e4ab025a641abc7424e55769c463a4bbd31b17c462db220",
-   "outer_repo_commit": "12789d8791b66a20c0dd37c6c050c1a7d60a654d",
+   "outer_repo_commit": "58a91747c8b4191445a4501a6a249dec3861f26d",
    "outer_repo_dirty": true,
    "outer_repo_fork_paths_modified": [
     "fork/slatedb/PATCH-LEDGER.md",
-    "fork/typedb/database/database.rs",
-    "fork/typedb/durability/wal.rs",
-    "fork/typedb/storage/factory.rs",
-    "fork/typedb/storage/keyspace/mod.rs",
-    "fork/typedb/storage/keyspace/slate.rs",
-    "fork/typedb/storage/recovery/checkpoint.rs",
-    "fork/typedb/storage/recovery/sha256.rs",
-    "fork/typedb/storage/storage.rs",
-    "fork/typedb/storage/tests/test_recovery.rs"
+    "fork/slatedb/UPSTREAM-PROVENANCE",
+    "fork/slatedb/patches/0006-upstream-suite-executes-under-the-shipped-fence.patch"
    ]
   }
  },
  "tree_stable_across_run": true,
  "selection": {
   "package": [
-   "storage"
+   "storage",
+   "durability"
   ],
   "filter": null,
   "skip": [],
   "complete": false,
   "aborted": null,
-  "targets_selected": 6,
-  "targets_executed": 6
+  "targets_selected": 9,
+  "targets_executed": 9
  },
  "observation": {
-  "targets": 6,
+  "targets": 9,
   "targets_refused": 0,
   "nonzero_exit_targets": 0,
   "timed_out_targets": 0,
-  "leaves": 50,
-  "leaves_passed": 49,
+  "leaves": 67,
+  "leaves_passed": 66,
   "leaves_failed": 0,
   "leaves_ignored": 1
  },
- "bundle_root": "56219461715e8ea60463a4ea7b839482886c401c588908c74da07bf47b7b9223",
+ "bundle_root": "1e6b36c03d934a8551dd2f8ff295d2c7613fd3cce21db967340aa89852fa292d",
  "statement": "This bundle records per-case OUTCOMES, not a pass. A FAILED leaf here is evidence of a failure, and coverage counts recorded outcomes only."
 }

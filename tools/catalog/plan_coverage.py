@@ -262,7 +262,9 @@ def driver_row_status(plan):
                            f"plan leaves carry a per-scenario outcome "
                            f"({bdir})")
         else:
-            blocked = entry.get("suites_blocked") or {}
+            blocked = dict(entry.get("suites_blocked") or {})
+            for c in (entry.get("caveats") or []):
+                blocked[f"caveat:{c.get('id')}"] = c.get("detail")
             out[row_id] = ("PARTIAL",
                            f"official driver suite executed at leaf "
                            f"granularity for "

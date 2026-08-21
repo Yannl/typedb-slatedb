@@ -1,0 +1,33 @@
+
+running 15 tests
+[2m2026-08-21T12:44:22.622942Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[1] with size 1.57 KiB; 1.57 KiB total
+[2m2026-08-21T12:44:22.623118Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[1]
+[2m2026-08-21T12:44:22.623264Z[0m [35mTRACE[0m [2mconcept::thing::statistics[0m[2m:[0m Statistics sync finished in 0 ms. Storage watermark was initially: SeqNr[1]. Current statistics sequence is from: SeqNr[1]
+[2m2026-08-21T12:44:22.635464Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[1] with size 1.57 KiB; 1.57 KiB total
+[2m2026-08-21T12:44:22.635560Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[1]
+[2m2026-08-21T12:44:22.635739Z[0m [35mTRACE[0m [2mconcept::thing::statistics[0m[2m:[0m Statistics sync finished in 9 ms. Storage watermark was initially: SeqNr[1]. Current statistics sequence is from: SeqNr[1]
+test attribute_string_write_read_delete ... ok
+[2m2026-08-21T12:44:22.642868Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[1] with size 1.57 KiB; 1.57 KiB total
+[2m2026-08-21T12:44:22.642930Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[1]
+[2m2026-08-21T12:44:22.642970Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[2] with size 217 bytes; 1.78 KiB total
+[2m2026-08-21T12:44:22.642985Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[2]
+[2m2026-08-21T12:44:22.643071Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[3] with size 254 bytes; 2.03 KiB total
+[2m2026-08-21T12:44:22.643088Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[3]
+[2m2026-08-21T12:44:22.643283Z[0m [35mTRACE[0m [2mconcept::thing::statistics[0m[2m:[0m Statistics sync finished in 0 ms. Storage watermark was initially: SeqNr[3]. Current statistics sequence is from: SeqNr[3]
+test attribute_string_write_read_delete_with_has ... ok
+test attribute_create ... ok
+test attribute_cleanup_on_concurrent_detach ... ok
+test attribute_struct_errors ... ok
+test attribute_struct_write_read ... ok
+test has ... ok
+test get_has_reverse_in_range ... ok
+test read_attribute_struct_by_field ... ok
+test role_player_duplicates_ordered_default_card ... ok
+test role_player_distinct ... ok
+test role_player_duplicates_ordered_small_card ... ok
+test role_player_duplicates_unordered ... ok
+test thing_create_iterate ... ok
+test schema_transactions_generate_role_player_indices ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+

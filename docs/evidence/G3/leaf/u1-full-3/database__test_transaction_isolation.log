@@ -1,0 +1,134 @@
+
+running 22 tests
+[2m2026-08-21T12:45:00.669137Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running schema query:
+define entity person, owns id @key; attribute id, value integer;
+[2m2026-08-21T12:45:00.670621Z[0m [32m INFO[0m [2mquery::query_manager[0m[2m:[0m Schema query done.
+Query profile[measurements_enabled=true, total micros: 0]
+  CompileIR[enabled=true, total micros=0]
+    validation micros: 0
+    annotation micros: 0
+    compilation micros: 0
+  -----
+  Stage[root pattern id=0]
+    Define ~~ 0 us
+    Define pattern
+    [0] Define execution
+        ==> batches: 0, rows: 0, micros: 0, micros/row: NaN (raw seeks: 1, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+
+[2m2026-08-21T12:45:00.672330Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[0]
+[2m2026-08-21T12:45:00.672938Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-21T12:45:00.674488Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-21T12:45:00.675873Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[1] with size 445 bytes; 445 bytes total
+[2m2026-08-21T12:45:00.675981Z[0m [35mTRACE[0m [2mconcept::thing::statistics[0m[2m:[0m Statistics sync finished in 0 ms. Storage watermark was initially: SeqNr[1]. Current statistics sequence is from: SeqNr[1]
+[2m2026-08-21T12:45:00.676966Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running write query:
+insert $p isa person, has id 1;
+[2m2026-08-21T12:45:00.680148Z[0m [32m INFO[0m [2mdatabase::query[0m[2m:[0m Write query done (excluding network request time) in 3175 micros.
+Query profile[measurements_enabled=true, total micros: 1848.314]
+  CompileIR[enabled=true, total micros=1608.838]
+    validation micros: 89.756
+    annotation micros: 1074.588
+    compilation micros: 444.494
+  -----
+  Stage[root pattern id=0]
+    Insert ~~ 239.476 us
+    Insert pattern
+    [0] Concept inserts
+      [0] Put object
+          ==> batches: 1, rows: 1, micros: 13, micros/row: 13.0 (raw seeks: 0, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+      [1] Put attribute
+          ==> batches: 1, rows: 1, micros: 29, micros/row: 29.0 (raw seeks: 0, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+    [1] Connection inserts
+      [0] Put has
+          ==> batches: 1, rows: 1, micros: 195, micros/row: 195.0 (raw seeks: 1, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+
+[2m2026-08-21T12:45:00.680670Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+[2m2026-08-21T12:45:00.683730Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+[2m2026-08-21T12:45:00.684270Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running write query:
+match $p isa person, has id 1; delete $p;
+[2m2026-08-21T12:45:00.685944Z[0m [32m INFO[0m [2mdatabase::query[0m[2m:[0m Write query done (excluding network request time) in 1672 micros.
+Query profile[measurements_enabled=true, total micros: 1012.977]
+  CompileIR[enabled=true, total micros=804.22]
+    validation micros: 25.432
+    annotation micros: 215.551
+    compilation micros: 563.237
+  -----
+  Stage[root pattern id=4]
+    Match ~~ 141.278 us
+    Conjunction [id: 4] ~ Cost: 6.06 Size: 1.00 (stats: links 0.00 / 0.00, has 1.00 / 0.00, vars 2.00 / 0.00)
+    [0] Sorted Iterator Intersection [bound_vars=[], output_size=2, sort_by=$0]
+            [$0 has $_1] filter [Check[$_1 == Param[Value(integer:0)]] ] with (outputs=$_1, $0, )
+        ==> batches: 1, rows: 1, micros: 129, micros/row: 129.0 (raw seeks: 1, raw advances: 1, advances mvcc visible: 1, advances mvcc invisible: 0, advances deleted invisible: 0)
+    [1] Check
+            Check[$_1 isa [AttributeType:[0000]]] 
+        ==> batches: 1, rows: 1, micros: 9, micros/row: 9.0 (raw seeks: 0, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+    [2] Check
+            Check[$0 isa [EntityType:[0000]]] 
+        ==> batches: 1, rows: 1, micros: 2, micros/row: 2.0 (raw seeks: 0, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+  -----
+  Stage[root pattern id=5]
+    Delete ~~ 67.479 us
+    Delete
+    [0] Connection deletes
+    [1] Concept deletes
+      [0] instance
+          ==> batches: 1, rows: 1, micros: 67, micros/row: 67.0 (raw seeks: 5, raw advances: 1, advances mvcc visible: 4, advances mvcc invisible: 0, advances deleted invisible: 0)
+
+[2m2026-08-21T12:45:00.686533Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running write query:
+match $p isa person, has id 1; delete $p;
+[2m2026-08-21T12:45:00.687064Z[0m [32m INFO[0m [2mdatabase::query[0m[2m:[0m Write query done (excluding network request time) in 529 micros.
+Query profile[measurements_enabled=true, total micros: 226.997]
+  CompileIR[enabled=true, total micros=0]
+    validation micros: 0
+    annotation micros: 0
+    compilation micros: 0
+  -----
+  Stage[root pattern id=4]
+    Match ~~ 112.813 us
+    Conjunction [id: 4] ~ Cost: 6.06 Size: 1.00 (stats: links 0.00 / 0.00, has 1.00 / 0.00, vars 2.00 / 0.00)
+    [0] Sorted Iterator Intersection [bound_vars=[], output_size=2, sort_by=$0]
+            [$0 has $_1] filter [Check[$_1 == Param[Value(integer:0)]] ] with (outputs=$_1, $0, )
+        ==> batches: 1, rows: 1, micros: 103, micros/row: 103.0 (raw seeks: 1, raw advances: 1, advances mvcc visible: 1, advances mvcc invisible: 0, advances deleted invisible: 0)
+    [1] Check
+            Check[$_1 isa [AttributeType:[0000]]] 
+        ==> batches: 1, rows: 1, micros: 7, micros/row: 7.0 (raw seeks: 0, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+    [2] Check
+            Check[$0 isa [EntityType:[0000]]] 
+        ==> batches: 1, rows: 1, micros: 2, micros/row: 2.0 (raw seeks: 0, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+  -----
+  Stage[root pattern id=5]
+    Delete ~~ 114.184 us
+    Delete
+    [0] Connection deletes
+    [1] Concept deletes
+      [0] instance
+          ==> batches: 1, rows: 1, micros: 114, micros/row: 114.0 (raw seeks: 5, raw advances: 1, advances mvcc visible: 4, advances mvcc invisible: 0, advances deleted invisible: 0)
+
+[2m2026-08-21T12:45:00.687454Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[3]
+[2m2026-08-21T12:45:00.688130Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[3]
+[2m2026-08-21T12:45:00.688465Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[4]
+[2m2026-08-21T12:45:00.689107Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[4]
+test concurrent_deletes_of_identical_entity_one_fails ... ok
+test concurrent_has_deletes_violating_owns_cardinality_lower_bound_one_fails ... ok
+test concurrent_deletes_of_identical_relation_one_fails ... ok
+test concurrent_has_insert_new_attribute_deleting_attribute ... ok
+test concurrent_has_write_and_owner_delete_one_fails ... ok
+test concurrent_has_writes_violating_hashed_string_key_one_fails ... ok
+test concurrent_has_write_and_attribute_delete_one_fails ... ok
+test concurrent_has_writes_to_different_owners_with_bounded_cardinality_both_succeed ... ok
+test concurrent_has_writes_violating_inline_key_one_fails ... ok
+test concurrent_has_writes_violating_inherited_key_across_subtypes_one_fails ... ok
+test concurrent_has_writes_violating_inherited_owns_cardinality_one_fails ... ok
+test concurrent_has_writes_violating_inherited_unique_across_subtypes_one_fails ... ok
+test concurrent_has_writes_violating_unique_one_fails ... ok
+test concurrent_has_writes_with_bounded_owns_cardinality_always_contend_even_when_within_bound ... ok
+test concurrent_has_writes_with_owns_cardinality_one_fails ... ok
+test concurrent_has_writes_with_unlimited_cardinality_both_succeed ... ok
+test concurrent_inserts_of_new_entity_and_relation_both_succeed ... ok
+test concurrent_player_link_and_relation_delete_one_fails ... ok
+test concurrent_player_link_and_player_delete_one_fails ... ok
+test concurrent_player_links_via_super_and_specialised_sub_role_one_fails ... ok
+test concurrent_player_links_with_bounded_plays_cardinality_one_fails ... ok
+test concurrent_player_links_with_bounded_relates_cardinality_one_fails ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.76s
+

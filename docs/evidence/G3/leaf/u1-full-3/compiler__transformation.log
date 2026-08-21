@@ -1,0 +1,17 @@
+
+running 12 tests
+test test_relation_index_transformation_dual_read_snapshot ... ok
+test test_optimise_away_read_snapshot ... ok
+test test_optimise_away_write_snapshot ... ok
+test test_optimise_away_schema_snapshot ... ok
+test test_relation_index_transformation_dual_schema_snapshot ... ok
+test test_relation_index_transformation_not_applied_ternary_read_snapshot ... ok
+test test_relation_index_transformation_dual_write_snapshot ... ok
+test test_relation_index_transformation_not_applied_ternary_schema_snapshot ... ok
+test test_relation_index_transformation_single_read_snapshot ... ok
+test test_relation_index_transformation_single_schema_snapshot ... ok
+test test_relation_index_transformation_not_applied_ternary_write_snapshot ... ok
+test test_relation_index_transformation_single_write_snapshot ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+

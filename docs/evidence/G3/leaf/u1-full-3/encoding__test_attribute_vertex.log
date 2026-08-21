@@ -1,0 +1,12 @@
+
+running 7 tests
+test attribute_id_deterministic_bytes ... ok
+test generate_struct_attribute_vertex ... ok
+test generate_string_attribute_vertex ... ok
+test same_string_in_two_concurrent_snapshots_produces_equal_deterministic_bytes ... ok
+test sync_from_storage_never_lowers_a_counter ... ok
+test sync_from_storage_lifts_counters_to_match_storage ... ok
+test next_entity_and_relation_ids_are_determined_from_storage ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.56s
+

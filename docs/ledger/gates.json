@@ -86,7 +86,7 @@
   {
    "id": "U1",
    "state": "OPEN",
-   "why": "104 rows, weak target-name identity, no current per-row provenance; oracle joins on name (CD-003)."
+   "why": "SUPERSEDED by round-6 evidence and re-verified in round 7. The lane now carries leaf-granularity, per-row provenance instead of 104 name-joined target rows: docs/evidence/G3/leaf/u1-full-1 (106 targets, 4 refused, 451 leaves = 450 PASSED / 1 IGNORED, tree FORK_STAGED_EXACT, root 8836361dbb79dda042fec39da553e05291183cb3cd562562f2b0027c48f0d49b) plus docs/evidence/G3/leaf/u1-http-2, the clean re-run of exactly those 4 refused HTTP targets (4 leaves, all PASSED, root 48952a67630debded37da7f206bd51fd98d1c71ee14985eda6ead15f95e34ae8), and docs/evidence/G3/leaf/cucumber-u1-1 (47/47 features, 4071 leaves all PASSED, 28 NOT_RUN, root 81c1ab7057f5e6275d0a16e30b16a721066a1c661b492c3e140794aba5e1192c). CD-003 is answered: the oracle no longer joins on target name — leaf_diff.py compares 455 leaf CASES and reports 0 regressions, 0 absent-on-candidate, 0 outcome-changed, 0 unexplained candidate-only against U2. BOTH u1 bundles must be passed as --oracle; passing only u1-full-1 makes those 4 HTTP targets look candidate-only. The lane stays OPEN because plan rows remain uncovered, not because its identity is weak."
   },
   {
    "id": "U2",

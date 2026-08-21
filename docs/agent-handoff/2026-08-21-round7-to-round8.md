@@ -855,3 +855,91 @@ one built from the pristine tree and the release evidence pins one built from
 the fork. Dropping the U0-built archive there made `release_mutants`' control of
 controls fail with `ARTIFACT_DIGEST_MISMATCH`. Build it for the lane you are
 running, and remove it afterwards.
+
+
+---
+
+## 12. Round 7c — the lanes re-run, and the last gate finally executed
+
+### 12.1 Evidence corresponds to the tree again
+
+The §11.2 lint fixes moved `fork_tree_sha256` `4a163c9b…` -> `45912c8a…`, so
+the round-6 U1/U2 bundles described a tree that no longer existed. Both lanes
+were re-run and sealed:
+
+| bundle | numbers | root |
+|---|---|---|
+| `u1-full-3` | 106/106 targets, **0 refused**, 455 leaves: 454 PASSED / 0 FAILED / 1 IGNORED | `fbd03560…` |
+| `u2-full-3` | same shape | `b03164af…` |
+| `cucumber-u1-3` | 47/47 features, 4071 leaves all PASSED, 28 NOT_RUN | `94659ed3…` |
+| `cucumber-u2-3` | same shape | `1111aadc…` |
+
+All four CLEAN and SEALED; `leaf_mutants` 16/16 on both leaf bundles;
+`cucumber_mutants` 21/21.
+
+**The central result, re-measured at HEAD rather than inherited:**
+
+```
+leaf_diff.py --oracle u1-full-3 --candidate u2-full-3 --require-clean
+  0 regressions · 0 absent-on-candidate · 0 outcome-changed
+  · 0 unexplained candidate-only, over 455 leaf cases
+```
+
+Coverage is unchanged at **13,582 / 23,138**, floor holds, and the invocation
+is now **six bundles, not seven**: `u1-full-3` refused nothing, so the
+long-standing "pass BOTH u1 bundles as --oracle" trap is retired.
+
+### 12.2 CORRECTION to §1 and §4.6: the disk limit was mine, not the machine's
+
+§1 and §4.6 said the fork's test build takes >23 GB and cannot fit here. **That
+was measured with the wrong environment.** Every evidence runner uses
+`tools/catalog/common.py CARGO_ENV` — `CARGO_INCREMENTAL=0`, dev/test debug
+info off. I ran a bare `cargo test --workspace --no-run` instead.
+
+```
+cargo defaults    20 GB, ENOSPC before finishing
+hermetic env       8.9 GB, completes
+```
+
+The controller now applies those settings to every cargo invocation (and only
+to cargo), so it builds the way the runners it certifies build. The
+`rust.tests@fork/typedb/Cargo.toml` floor drops 30 GB -> 16 GB.
+
+**Do not budget 30 GB for this machine. Budget the hermetic env.**
+
+### 12.3 `rust.tests` on the fork ran for the first time — and found a runner bug
+
+11 GB build, 423/711 tests, 420 passed, 3 failed. All three are in
+`server/service/admin/admin_service_test.rs`, **byte-identical to upstream**:
+
+```
+alone                          10/10 pass
+as a binary under nextest       7/10 pass
+--no-capture (serial)          10/10 pass
+in the sealed U1 bundle        10/10 pass, exit 0
+in the sealed U2 bundle        10/10 pass, exit 0
+```
+
+The server binds fixed addresses (gRPC 11729, monitoring 4104). Upstream wrote
+these tests assuming one server at a time — which is why `run_leaf.py` executes
+one target at a time, and why trap 8 already says concurrent lanes collide.
+`nextest --workspace` parallelises across that corpus and manufactures reds.
+
+Recorded as **`OD-017`, OPEN**. The fork's corpus is already gated by the lanes;
+whether `rust.tests` should cover an overlay workspace, and under what execution
+model, is the same question OD-011 answered for lints.
+
+### 12.4 Gate state at the end of round 7c
+
+```
+pass  policy.waivers · policy.toolchain_pin · policy.scope_classification
+pass  rust.fmt
+pass  rust.clippy
+red   rust.tests   3 upstream tests, parallelism artefact, OD-017
+```
+
+Third instance of one pattern this round, now worth stating as a rule:
+**a fixed port or address in a test is a latent failure under any parallel
+runner.** wrangler's inspector 9229 (§11.3), the admin service's 11729/4104
+here, and upstream's `Context::DEFAULT_ADDRESS` in trap 8 are the same bug three
+times.

@@ -31,10 +31,8 @@ usage:
 
 import argparse
 import collections
-import os
 import pathlib
 import re
-import shutil
 import sys
 
 # a cargo artifact hash is exactly 16 lowercase hex characters
@@ -42,6 +40,10 @@ HASH = re.compile(r"-[0-9a-f]{16}$")
 DEFAULT_TARGET_DIRS = [
     "sources/typedb/target",
     "sources/slatedb-fork/target",
+    # the overlay workspace the quality controller builds: since round 7 this
+    # is the LARGEST tree on the machine (11 GB with the test binaries linked),
+    # so leaving it out defeated the point of the tool
+    "fork/typedb/target",
     "tools/target",
     "target",
 ]
@@ -85,13 +87,18 @@ def human(n: int) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--target-dir", action="append", default=None,
-                    help="cargo target dir (repeatable); defaults to this "
-                         "repository's four known trees")
+    ap.add_argument(
+        "--target-dir",
+        action="append",
+        default=None,
+        help="cargo target dir (repeatable); defaults to this repository's known build trees",
+    )
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--include-libs", action="store_true",
-                    help="also collect stale .rlib/.rmeta/.so — more reclaim, "
-                         "more relinking on the next build")
+    ap.add_argument(
+        "--include-libs",
+        action="store_true",
+        help="also collect stale .rlib/.rmeta/.so — more reclaim, more relinking on the next build",
+    )
     args = ap.parse_args()
 
     dirs = [pathlib.Path(d) for d in (args.target_dir or DEFAULT_TARGET_DIRS)]
@@ -116,15 +123,19 @@ def main() -> int:
                         path.unlink(missing_ok=True)
             if stale:
                 verb = "would free" if args.dry_run else "freed"
-                print(f"{deps.relative_to(REPO)}: {stale} stale artifact(s), "
-                      f"{verb} {human(freed)} (kept {human(kept)})")
+                print(
+                    f"{deps.relative_to(REPO)}: {stale} stale artifact(s), "
+                    f"{verb} {human(freed)} (kept {human(kept)})"
+                )
             total_freed += freed
             total_kept += kept
             removed += stale
 
     verb = "WOULD RECLAIM" if args.dry_run else "RECLAIMED"
-    print(f"\n{verb}: {human(total_freed)} across {removed} stale artifact(s); "
-          f"{human(total_kept)} of current artifacts kept")
+    print(
+        f"\n{verb}: {human(total_freed)} across {removed} stale artifact(s); "
+        f"{human(total_kept)} of current artifacts kept"
+    )
     if args.dry_run:
         print("re-run without --dry-run to reclaim")
     return 0

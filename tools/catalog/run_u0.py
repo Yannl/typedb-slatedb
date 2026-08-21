@@ -43,7 +43,34 @@ ENV_BASE = common.CARGO_ENV
 
 # targets that need the assembly archive staged in cwd
 ASSEMBLY_TARGETS = {"test_assembly", "test_fail_points", "test_admin_assembly"}
-ASSEMBLY_ENV = {"TYPEDB_ASSEMBLY_ARCHIVE": "typedb-all-linux-x86_64.tar.gz"}
+ASSEMBLY_ARCHIVE_NAME = "typedb-all-linux-x86_64.tar.gz"
+ASSEMBLY_ENV = {"TYPEDB_ASSEMBLY_ARCHIVE": ASSEMBLY_ARCHIVE_NAME}
+ASSEMBLY_ARTIFACTS = REPO / "sources" / "assembly-artifacts"
+
+
+def assembly_archive_for(root):
+    """The assembly archive belonging to ONE cargo workspace.
+
+    The archive is a build product of a specific tree: it contains that tree's
+    `typedb_server_bin`. Handing an assembly test an archive built from another
+    tree makes it certify the wrong server while reporting green, which is why
+    the path is qualified by the workspace instead of shared.
+
+    `sources/typedb` keeps the unqualified location because the release records
+    pin it there by path; every other workspace (the fork, chiefly) gets its own
+    slot beside it.
+    """
+    root = pathlib.Path(root).resolve()
+    if root == TB:
+        return ASSEMBLY_ARTIFACTS / ASSEMBLY_ARCHIVE_NAME
+    slot = (
+        root.relative_to(REPO).as_posix().replace("/", "-")
+        if root.is_relative_to(REPO)
+        else hashlib.sha256(str(root).encode()).hexdigest()[:16]
+    )
+    return ASSEMBLY_ARTIFACTS / slot / ASSEMBLY_ARCHIVE_NAME
+
+
 # execution order: fast crates first, server-binding suites last
 ORDER_LAST = ("test_behaviour", "test_http", "test_assembly", "test_fail_points")
 
@@ -192,8 +219,8 @@ def run_one(e, out_dir, timeout, reap=False):
             shutil.rmtree(iso)
         (iso / "tests" / "assembly").mkdir(parents=True)
         os.link(
-            REPO / "sources" / "assembly-artifacts" / "typedb-all-linux-x86_64.tar.gz",
-            iso / "typedb-all-linux-x86_64.tar.gz",
+            assembly_archive_for(TB),
+            iso / ASSEMBLY_ARCHIVE_NAME,
         )
         shutil.copy2(
             TB / "tests" / "assembly" / "script.tql", iso / "tests" / "assembly" / "script.tql"
@@ -281,7 +308,7 @@ def run_one(e, out_dir, timeout, reap=False):
     }
 
 
-def ensure_behaviour_fixture():
+def ensure_behaviour_fixture(root=None):
     """Bazel-equivalent runfiles: behaviour suites read Cucumber features via
     the literal path `bazel-typedb/external/typedb_behaviour+/...` relative to
     the workspace root (the convenience-symlink layout Bazel would create).
@@ -309,11 +336,19 @@ def ensure_behaviour_fixture():
     #    #[cfg(not(feature="bazel"))] fallback at all, so under cargo their
     #    bazel-sibling path `../typedb_behaviour+/...` resolves against the
     #    package root's parent — the sources/ directory.
+    #
+    # `root` is the CARGO WORKSPACE the tests will run from, defaulting to the
+    # staged checkout. The quality controller builds and runs `fork/typedb`,
+    # which is a complete mirror of the same workspace, and the feature paths
+    # are relative — so the links have to exist next to whichever root is
+    # actually under test. Parameterised rather than duplicated: two copies of
+    # this list would drift, and a drifted copy shows up as 49 false reds.
+    root = pathlib.Path(root) if root else TB
     links = [
-        TB / "bazel-typedb" / "external" / "typedb_behaviour+",
-        TB / "bazel-typedb" / "external" / "typedb_behaviour",
-        TB / "bazel-typedb" / "external" / "typedb_behaviour++",
-        REPO / "sources" / "typedb_behaviour+",
+        root / "bazel-typedb" / "external" / "typedb_behaviour+",
+        root / "bazel-typedb" / "external" / "typedb_behaviour",
+        root / "bazel-typedb" / "external" / "typedb_behaviour++",
+        root.parent / "typedb_behaviour+",
     ]
     usable = True
     for link in links:
@@ -488,7 +523,7 @@ def main():
     # under different archives or commits; per-row stamping keeps each row
     # telling the truth about itself).
     profile = os.environ.get("TYPEDB_STORAGE_PROFILE") or "U0/U1 (unset: RocksDB oracle)"
-    archive = REPO / "sources" / "assembly-artifacts" / "typedb-all-linux-x86_64.tar.gz"
+    archive = assembly_archive_for(TB)
     tree = executed_tree_identity()
     run_manifest = {
         "profile": profile,

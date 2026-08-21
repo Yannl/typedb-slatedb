@@ -202,10 +202,19 @@ def verify(
                 f"empty delta ({EMPTY_DELTA_SHA}) - a dirty tree presented "
                 f"as clean"
             )
-        if tree.get("diverging_paths"):
+        # A PRISTINE tree may still carry paths no crate compiles: a run writes
+        # its own `typedb-logs/`. What it may NOT carry is a diverging SOURCE
+        # path — a staged fork patch or an unexplained edit.
+        source_divergence = [
+            c
+            for c in (tree.get("diverging_paths") or [])
+            if c.get("class") not in ("RUNTIME_OUTPUT", "NON_CARGO_INPUT")
+        ]
+        if source_divergence:
             A.append(
                 f"bundle claims a PRISTINE tree while listing "
-                f"{len(tree['diverging_paths'])} diverging path(s)"
+                f"{len(source_divergence)} diverging SOURCE path(s): "
+                f"{[c.get('path') for c in source_divergence[:3]]}"
             )
     if corroborate_tree:
         # An external corroboration, used when re-verifying on the machine that

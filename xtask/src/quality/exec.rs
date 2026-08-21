@@ -86,13 +86,22 @@ pub fn run(repo_root: &Path, cmd: &Cmd, timeout: Duration) -> CmdResult {
         None => repo_root.to_path_buf(),
     };
 
-    let child = Command::new(&cmd.program)
-        .args(&cmd.args)
-        .current_dir(&dir)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn();
+    let mut builder = Command::new(&cmd.program);
+    builder.args(&cmd.args).current_dir(&dir);
+    // Cargo invocations run under the SAME hermetic settings the evidence
+    // runners use (tools/catalog/common.py CARGO_ENV). This is not a tuning
+    // knob: with cargo's defaults, `cargo test --no-run` over the TypeDB fork
+    // consumed 20 GB and died on ENOSPC; with these, the same build finishes in
+    // 8.9 GB. A gate that cannot be attempted on ordinary hardware is not a
+    // gate, and a controller that builds differently from the runners it is
+    // meant to certify is measuring a different tree.
+    if is_cargo_invocation(&cmd.program) {
+        builder
+            .env("CARGO_INCREMENTAL", "0")
+            .env("CARGO_PROFILE_DEV_DEBUG", "false")
+            .env("CARGO_PROFILE_TEST_DEBUG", "false");
+    }
+    let child = builder.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn();
 
     let mut child = match child {
         Ok(c) => c,
@@ -154,6 +163,14 @@ pub fn run(repo_root: &Path, cmd: &Cmd, timeout: Duration) -> CmdResult {
         stderr,
         duration_ms: started.elapsed().as_millis(),
     }
+}
+
+/// Does this program invoke cargo, and so need the hermetic build settings?
+///
+/// Covers both `cargo <subcommand>` and the `cargo-foo` binaries some gates
+/// call directly (see the note on cargo-machete in .quality/tools.lock.toml).
+pub fn is_cargo_invocation(program: &str) -> bool {
+    program == "cargo" || program.starts_with("cargo-")
 }
 
 fn spawn_reader<R: std::io::Read + Send + 'static>(
@@ -333,6 +350,31 @@ mod tests {
         );
         assert!(r.success());
         assert_eq!(r.tail(2), "c\ne");
+    }
+
+    #[test]
+    fn only_cargo_invocations_get_the_hermetic_build_env() {
+        assert!(is_cargo_invocation("cargo"));
+        assert!(is_cargo_invocation("cargo-machete"), "gates that call a cargo-* binary directly");
+        assert!(!is_cargo_invocation("env"));
+        assert!(!is_cargo_invocation("npx"), "the control-plane gates must keep their own environment");
+        assert!(!is_cargo_invocation("cargoloader"), "a mere prefix match would be wrong");
+
+        // And the real spawn must not INJECT the setting into a non-cargo
+        // program. It may still INHERIT one: this very test runs under `cargo
+        // nextest`, which the controller itself spawns hermetically, so the
+        // test process already carries CARGO_INCREMENTAL=0 and any child would
+        // too. Asserting mere absence confuses inheritance with injection —
+        // and the gate caught exactly that mistake here. The invariant is that
+        // a non-cargo child sees what the PARENT had, unchanged.
+        let inherited = std::env::var("CARGO_INCREMENTAL").ok();
+        let plain = run(Path::new("/"), &Cmd::new("env", &[]), Duration::from_secs(30));
+        let observed = plain.stdout.lines().find_map(|l| l.strip_prefix("CARGO_INCREMENTAL=").map(str::to_string));
+        assert_eq!(
+            observed, inherited,
+            "a non-cargo program must inherit the parent environment unchanged, never have the \
+             hermetic build settings imposed on it"
+        );
     }
 
     #[test]

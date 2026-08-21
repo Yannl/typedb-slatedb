@@ -99,15 +99,21 @@ gate_timeout_secs = 3600
 # Keys are "<manifest>" or, more specifically, "<gate id>@<manifest>". The
 # gate-specific key wins where both match.
 [execution.workspace_free_disk_gb]
-# MEASURED 2026-08-21: `cargo test --no-run --workspace --all-features` against
-# the fork had consumed 23 GB and had NOT finished when the filesystem hit
-# 100%, having started from 14 GB free — which passed the 12 GB heavy floor.
-# 23 GB is a measured LOWER BOUND, not a proven sufficient figure; 30 is that
-# bound plus headroom, and ENOSPC is now typed as InfrastructureFailure so
-# being wrong fails safe. Deliberately scoped to rust.tests: clippy only
-# type-checks the same workspace and completed at ~21 GB free, so a
-# workspace-wide floor would refuse the cheap gate to protect the costly one.
-"rust.tests@fork/typedb/Cargo.toml" = 30.0
+# RECALIBRATED 2026-08-21 after finding the real cause of the 23 GB figure.
+# That measurement was taken with cargo's DEFAULT settings; the controller now
+# runs every cargo invocation under the same hermetic env the evidence runners
+# use (CARGO_INCREMENTAL=0, dev/test debug info off — see exec::run). Measured
+# on the same tree, same command:
+#
+#   cargo defaults   20 GB and ENOSPC before finishing
+#   hermetic env      8.9 GB, completes
+#
+# 16 GB is that 8.9 GB plus room for `--all-features`, which the gate adds and
+# the measurement did not, and for the test run's own scratch. Still scoped to
+# rust.tests: clippy only type-checks the same workspace and finishes in 4.5 GB,
+# so a workspace-wide floor would refuse the cheap gate to protect the costly
+# one. ENOSPC is typed as InfrastructureFailure, so being wrong fails safe.
+"rust.tests@fork/typedb/Cargo.toml" = 16.0
 
 # ---------------------------------------------------------------------------
 # §12 — Protected quality policy.

@@ -16,6 +16,15 @@ Plan coverage **13,582 of 23,138 rows (58.7%)**, up from 9,056 (39%). The U0
 lane exists for the first time. G0 is still `OPEN_RED` and Mode-Q is still
 `ABSENT`. Nothing in the ledger claims otherwise.
 
+Six findings were raised for the owner during the round; **all six were decided
+and five are implemented** (`OD-011`..`OD-016` in `docs/owner-decisions.json`).
+The largest consequence: `rust.clippy` now gates the 36 files the fork owns
+instead of upstream's 742, and reports **77 real findings in our storage
+adapter** — untriaged, and the main item for round 8 (§9).
+
+`policy.protected` deliberately still refuses this branch: three commits touch
+protected paths, and no self-approval mechanism was built. See §4.
+
 ---
 
 ## 1. READ THIS FIRST: the container starts EMPTY
@@ -229,13 +238,59 @@ silently deflates the denominator. The call was moved below the block.
 
 ---
 
-## 4. Open findings — NOT fixed, and why
+## 4. Findings raised for the owner — ALL SIX NOW DECIDED AND FIXED
 
-Each of these is a judgement that belongs to the owner, not to the agent that
-happened to trip over it. **In every case the agent producing the evidence
-would also have been the one relaxing the rule that governs it.**
+These were raised rather than fixed unilaterally, because in every case the
+agent producing the evidence would also have been the one relaxing the rule
+that governs it. **The owner ruled on all six on 2026-08-21**, and each is now
+implemented. The decisions are recorded as `OD-011`..`OD-016` in
+`docs/owner-decisions.json` — what was decided, by whom, what was in force
+before, and why each is safe rather than merely convenient.
+
+| # | finding | decision | commit |
+|---|---|---|---|
+| 4.1 | lint gates cover 742 upstream files | scope to the fork's own 36 | `4732d51` (OD-011) |
+| 4.2 | one clippy error inside `xtask` | approved as its own change | `12dadff` (OD-012) |
+| 4.3 | pristine bundle uncorroboratable | fix the classifier | `434c7a0` (OD-015) |
+| 4.4 | null mutation reports SURVIVED | per-control assertions | `92f8daa` (OD-016) |
+| 4.5 | `release_mutants` 23/24 on a fresh box | same class — **NOT yet fixed** | — |
+| 4.6 | ENOSPC typed as a quality failure | fix both halves | `5f2b2e3` (OD-013) |
+
+**`policy.protected` still reports `POLICY_CHANGE_REQUIRES_INDEPENDENT_REVIEW`,
+exit 2, and that was left alone deliberately.** Three commits touch protected
+paths. The gate has no approval mechanism, and adding one is the most dangerous
+change available here: an approval record the agent making the change can also
+author is not independent review, it is a bypass wearing its clothes. The
+approval lives where a human can see it — the OD entries, the commit messages,
+and the gate's own refusal listing the paths.
+
+The original write-ups follow, each with what actually shipped.
 
 ### 4.1 `cargo xtask quality` lints 742 files of upstream code
+
+**RESOLVED (OD-011, `4732d51`).** Ownership is now DERIVED per file — a file
+is ours when its git blob id differs from the pinned upstream revision, or when
+upstream has no such file. Cross-checked to exact agreement with the
+independent Python implementation in `tools/fork/stage.py`: 36 owned, 742
+identical, 778 total, both tools. For an overlay workspace clippy emits
+`--message-format json` without `-D warnings` and findings are attributed per
+file; every other workspace keeps `-D warnings` unchanged. If ownership cannot
+be derived the gate REFUSES, because gating everything would fail on upstream's
+code and gating nothing would be a false pass. The gate now reads:
+
+```
+77 clippy finding(s) in files this fork owns (36 owned, 742 identical to the
+pinned upstream revision and therefore not gated; 1210 finding(s) fell in those
+upstream files and were not counted)
+```
+
+Note 77/1210, not the 44/651 quoted below: that earlier count deduplicated only
+`clippy::` codes, while the gate also counts plain rustc warnings — which
+`-D warnings` denied too, and which scoping by file must not quietly stop
+denying. **The 77 are real and untriaged**; fixing them changes the fork digest
+and so requires re-running U1/U2 to keep the sealed bundles in correspondence
+with the tree.
+
 
 `rust.clippy` runs `cargo clippy --manifest-path fork/typedb/Cargo.toml
 --workspace --all-targets --all-features -- -D warnings` and fails on
@@ -281,6 +336,10 @@ should lint files the fork does not modify.
 
 ### 4.2 One protected-path change is parked awaiting review
 
+**APPROVED (OD-012).** The fix stands in `12dadff`. `policy.protected` still
+refuses the branch, by design — see the note above.
+
+
 Commit `12dadff` fixes the single clippy error in `xtask/src/quality/exec.rs`
 (`manual_range_contains`, inside `#[cfg(test)]`, exactly equivalent). `xtask/**`
 is on the protected list, so:
@@ -302,6 +361,14 @@ This was also, almost certainly, **clippy's first ever execution here** — roun
 6's disk floor refused every compiling gate.
 
 ### 4.3 A pristine bundle cannot be corroborated on the machine that made it
+
+**RESOLVED (OD-015, `434c7a0`).** `PRISTINE` is now decided on the SOURCE
+delta — the same set `staged_delta_sha256` already covers. `dirty` keeps its
+old raw-`git status` meaning and the path stays listed in
+`runtime_output_paths`, so nothing is hidden. Verified: with `typedb-logs/`
+present, `verify_leaf.py u0-full-1 --corroborate-tree` now prints CLEAN where it
+previously printed REFUSED.
+
 
 `executed_tree_identity()` decides `PRISTINE` with `if not entries`, where
 `entries` is raw `git status --porcelain` — so it counts `RUNTIME_OUTPUT`
@@ -336,6 +403,18 @@ semantics and needs review.
 
 ### 4.4 A mutant that mutates nothing still reports SURVIVED
 
+**RESOLVED (OD-016 + OD-014, `92f8daa`).** Investigating properly changed the
+diagnosis, and the write-up below is wrong on one point: the mutation was NOT
+null. Of the six fields mutant 6 writes, five already held their values, but
+`unstaged_fork_patches` went 36 entries -> `[]` and `verify_leaf.py` never
+looked at it. So it was a REAL forgery going undetected, and the U0 lane had no
+internal defence at all. `verify_leaf.py` now refuses a PRISTINE claim listing
+no unstaged fork patches. Control 6c asserted the opposite as a standing limit;
+a limit that no longer holds is RESTATED, not deleted, so 6c is now
+source-state aware. **u0-full-1 goes 14/16 -> 16/16**, u1-full-1 stays 16/16,
+and 16 controls RUN against both.
+
+
 Against `u0-full-1`, `leaf_mutants.py` reports 14/16 with controls 6 and 6b
 SURVIVED. Both forge "a dirty tree presented as clean" — and on a genuinely
 pristine bundle they write values it already holds:
@@ -364,6 +443,11 @@ check, per control, rather than a generic diff).
 
 ### 4.5 `release_mutants.py` reports 23/24 for want of a build artifact
 
+**STILL OPEN.** The same class as 4.4 and the only one of the six not fixed:
+`leaf_mutants.py` now asserts each mutation landed, `release_mutants.py` does
+not. Port the same guard.
+
+
 `record-immutable` SURVIVES on a fresh container because
 `sources/assembly-artifacts/typedb-all-linux-x86_64.tar.gz` is absent and the
 `build` subcommand refuses at `ARTIFACT_MISSING` before ever reaching the
@@ -371,6 +455,16 @@ immutability check. Same class as §4.4: a control that never ran, reported as a
 survivor. Build the archive first and it is 24/24.
 
 ### 4.6 `rust.tests` exhausts the disk, and calls it a QUALITY failure
+
+**RESOLVED (OD-013, `5f2b2e3`).** ENOSPC is typed `InfrastructureFailure`
+with a `cargo clean` remediation, and tested not to fire on real compile errors.
+Floors are keyed `"<gate>@<manifest>"` -> `"<manifest>"` -> cost class, checked
+before the command that builds that workspace, and may only RAISE the class
+floor. `rust.tests@fork/typedb/Cargo.toml` is 30 GB. The key is per GATE
+because clippy type-checks the same workspace in 4.5 GB while nextest links
+every test binary — a workspace-wide floor would refuse the cheap gate to
+protect the costly one.
+
 
 The last act of the round. `cargo xtask quality fast` reached its `rust.tests`
 gate, which runs
@@ -591,38 +685,54 @@ python3 tools/fork/stage.py --check          # STAGED before believing leaf_muta
 python3 tools/qualification/leaf_mutants.py --bundle docs/evidence/G3/leaf/u1-full-1
 ```
 
-Then, in the order the owner's decisions unblock them:
+Then, in priority order. All six §4 findings are decided and five are
+implemented, so the work below is what those decisions opened up:
 
-1. **Get a ruling on §4.1** — whether the Rust production tier should lint
-   files the fork does not modify. Until then `cargo xtask quality full` cannot
-   go green, and the 44 fork-owned findings cannot be triaged without
-   invalidating U1/U2's correspondence to the tree.
-2. **Get `12dadff` reviewed** (§4.2), or the branch cannot pass `policy-check`.
-3. **§4.3 and §4.4** are small, real, and both need a reviewer because the
-   agent that hits them is the agent that would relax them.
+1. **Triage the 77 fork-owned clippy findings** that `rust.clippy` now reports
+   (§4.1). They are in the storage adapter — `durability/wal.rs`,
+   `storage/factory.rs`, `storage/isolation_manager.rs`,
+   `storage/keyspace/{slate,iterator}.rs`, `storage/storage.rs`,
+   `encoding/tests/test_type_vertex.rs`. **Budget a U1/U2 re-run with it**:
+   editing `fork/typedb/**` changes `fork_staging.staged_tree_sha256`, which
+   every sealed bundle binds, so the evidence must be regenerated to stay in
+   correspondence with the tree. This is the single largest remaining item and
+   it is now the only thing between `rust.clippy` and green.
+2. **`rust.tests` on `fork/typedb` has still never completed anywhere.** It now
+   refuses honestly below 30 GB free rather than dying at 100%. It needs a
+   machine with real disk; do not read its absence as a pass.
+3. **Port the mutation-landed guard to `release_mutants.py`** (§4.5) — the one
+   finding of the six left unfixed, and a small job now that the pattern
+   exists in `leaf_mutants.py`.
 4. **The strict-epoch suite was NOT re-run this round** —
    `python3 tools/fork/check_strict_epoch_suite.py` needs its own full build
    and the session ran out of room after U0. Round 6's numbers
    (feature-OFF 2007/0, feature-ON 2012/0, negative 5/0) are therefore
    *inherited, not re-verified*. Re-run it early.
-5. `bazel_parity.py` was likewise not re-run; Bazel is now installed for it.
+5. **Phase 1 of the quality programme** — the CRAP baseline, per-package
+   `llvm-cov`, differential mutation — is still unstarted. All eight tools are
+   installed and pinned, which was the prerequisite.
+
+`bazel_parity.py` WAS re-run this round and passes; Bazel 8.5.1 is installed at
+`/home/user/.bazel-bin/bazel` with its digest verified against the ledger.
 
 ---
 
 ## 10. What did NOT happen this round, stated plainly
 
-- **`cargo xtask quality full` never returned a clean result, and `fast` never
-  returned a clean one either.** Its final state was two quality failures:
-  `rust.clippy` (the upstream-lint scope question, §4.1) and `rust.tests`
-  (out of disk, §4.6). `full` was never attempted, because `fast` never got
-  past those. The clippy question blocks it regardless of machine.
+- **`cargo xtask quality fast` never returned a clean result, and `full` was
+  never attempted.** Its final state is two quality failures: `rust.clippy`,
+  now correctly reporting 77 findings in code we own rather than one in
+  upstream's, and `rust.tests`, which fails on the tools workspace via the
+  wrangler cold start (trap 3) and would refuse on the fork for disk. Neither
+  is a mystery any more, but neither is green.
 - **Phase 1 of the quality programme — the CRAP baseline, per-package
   `llvm-cov`, differential mutation — was not started.** The eight tools are
   now installed and pinned, which is the prerequisite, but no baseline exists.
   Treat every Phase 1 claim as unproven, exactly as round 6 said.
 - **Mode-Q was not produced and G0 was not closed.** `MODEQ: ABSENT`, G0
   `OPEN_RED`. The blocker was re-measured, not merely restated (§7).
-- **The U1 lane's ledger `why` is still stale** — it says "104 rows, weak
-  target-name identity", which the 455-leaf `u1-full-1` bundle superseded a
-  round ago. Only the U0 entry was corrected, because that is the evidence this
-  round produced. Someone should fix U1's.
+- **Both lane entries in the ledger are now current.** U0 was corrected when
+  its evidence was produced (`a6c79ac`); U1's stale "104 rows, weak
+  target-name identity" was corrected in `cc4aad8` once the owner asked for it,
+  and now names the three bundles, their roots, and the fact that CD-003 is
+  answered by comparing 455 leaf CASES rather than target names.

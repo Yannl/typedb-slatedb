@@ -1,0 +1,13 @@
+
+running 5 tests
+[2m2026-08-21T12:45:18.817072Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Read commit @ SeqNr[1] with size 2.41 KiB; 2.41 KiB total
+[2m2026-08-21T12:45:18.817239Z[0m [35mTRACE[0m [2mstorage::recovery::commit_recovery[0m[2m:[0m Marked as committed commit @ SeqNr[1]
+[2m2026-08-21T12:45:18.817443Z[0m [35mTRACE[0m [2mconcept::thing::statistics[0m[2m:[0m Statistics sync finished in 0 ms. Storage watermark was initially: SeqNr[1]. Current statistics sequence is from: SeqNr[1]
+test traverse_has_unbounded_sorted_from ... ok
+test traverse_has_bounded_sorted_from_chain_intersect ... ok
+test traverse_has_unbounded_sorted_from_intersect ... ok
+test traverse_has_reverse_unbounded_sorted_from ... ok
+test traverse_has_unbounded_sorted_to_merged ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+

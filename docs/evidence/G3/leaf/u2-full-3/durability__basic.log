@@ -1,0 +1,10 @@
+
+running 5 tests
+test basic ... ok
+test added_junk ... ok
+test added_zeros ... ok
+test corrupted_record_junk ... ok
+test corrupted_record_zeros ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+

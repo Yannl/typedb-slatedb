@@ -1,0 +1,21 @@
+
+running 10 tests
+[2m2026-08-21T13:31:38.734498Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running write query:
+insert
+        $p1 isa person, has name "Alice", has age 1, has age 5;
+        $p2 isa person, has name "Bob", has age 2;
+        $p3 isa person, has name "Chris", has age 5;
+        
+test fibonacci ... ok
+test function_binary ... ok
+test function_compiles ... ok
+test reduce_depends_on_cyclic_function ... ok
+test linear_reachability_in_tree ... ok
+test return_check ... ok
+test write_pipelines ... ok
+test test_retries_at_collection ... ok
+test test_retries_at_negation ... ok
+test quadratic_reachability_in_tree ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.57s
+

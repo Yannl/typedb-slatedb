@@ -1,0 +1,39 @@
+
+running 34 tests
+test sequence_boundary_tests::add_assign_and_sub_are_exact_at_the_boundary ... ok
+test sequence_boundary_tests::checked_window_end_matrix_at_the_four_boundary_points ... ok
+test sequence_boundary_tests::next_is_exact_up_to_the_last_representable_sequence_number ... ok
+test sequence_boundary_tests::add_across_max_is_a_hard_fault_not_a_wrap - should panic ... ok
+test sequence_boundary_tests::next_at_max_is_a_hard_fault_not_a_wrap - should panic ... ok
+test sequence_boundary_tests::previous_at_min_is_a_hard_fault_not_a_wrap - should panic ... ok
+test sequence_boundary_tests::subtracting_a_later_sequence_number_is_a_hard_fault_not_a_wrap - should panic ... ok
+test sequence_boundary_tests::try_next_matrix_at_the_four_boundary_points ... ok
+test sequence_boundary_tests::try_next_reports_exhaustion_at_max_instead_of_wrapping ... ok
+test sequence_boundary_tests::try_previous_matrix_at_the_four_boundary_points ... ok
+test wal::frame_integrity_tests::a_file_renamed_to_the_wrong_range_is_a_typed_quarantine ... ok
+test wal::frame_integrity_tests::a_flipped_header_bit_mid_file_is_a_typed_quarantine ... ok
+test wal::frame_integrity_tests::a_flipped_payload_bit_mid_file_is_a_checksum_quarantine_not_a_repair ... ok
+test wal::frame_integrity_tests::a_lying_declared_length_is_a_typed_budget_refusal ... ok
+test wal::frame_integrity_tests::a_sequence_regression_between_frames_is_a_typed_quarantine ... ok
+test wal::frame_integrity_tests::garbage_between_frames_is_a_typed_quarantine ... ok
+test wal::frame_integrity_tests::legacy_v0_frames_still_load_and_new_appends_are_authenticated_v1 ... ok
+test wal::frame_integrity_tests::a_torn_v0_tail_is_repaired_but_a_nonterminal_v0_defect_quarantines ... ok
+test wal::test::record_over_the_frame_budget_is_a_typed_refusal_with_no_mutation ... ok
+test wal::test::sequence_exhaustion_is_a_typed_terminal_error_with_no_mutation ... ok
+test wal::test::test_wal_find_last ... ok
+test wal::test::test_wal_iterate_from ... ok
+test wal::test::test_wal_load ... ok
+test wal::test::test_wal_open_multiple ... ok
+test wal::test::test_wal_truncate_from_beginning_clears_everything ... ok
+test wal::test::test_wal_truncate_from_is_idempotent_for_same_cut ... ok
+test wal::test::test_wal_truncate_from_middle_of_single_file_and_continue ... ok
+test wal::test::test_wal_write_read ... ok
+test wal::frame_integrity_tests::truncation_at_several_offsets_in_the_final_record_repairs_to_the_authenticated_prefix ... ok
+test wal::test::truncate_from_beyond_end_does_not_skip_sequence_numbers ... ok
+test wal::test::test_wal_write_read_lots ... ok
+test wal::test::truncate_from_keeps_prior_unsequenced_records_with_same_seq ... ok
+test wal::frame_integrity_tests::a_damaged_sealed_file_is_a_quarantine_never_a_repair ... ok
+test wal::test::test_wal_truncate_from_across_multiple_files_deletes_newer_files ... ok
+
+test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.13s
+

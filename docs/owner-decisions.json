@@ -223,6 +223,20 @@
    "referenced_by": [
     "tools/qualification/leaf_mutants.py"
    ]
+  },
+  {
+   "id": "OD-017",
+   "status": "OPEN",
+   "title": "Should rust.tests cover an overlay workspace whose corpus is certified by the lane runners?",
+   "question": "`rust.tests` runs `cargo nextest run --manifest-path fork/typedb/Cargo.toml --workspace --all-features`. That parallelises a test corpus upstream wrote assuming one server at a time, and manufactures failures that do not exist. Should the gate cover this workspace at all, and if so under what execution model?",
+   "default_in_force": "The gate runs and reports 3 failures, all in server/service/admin/admin_service_test.rs, a file BYTE-IDENTICAL to the pinned upstream revision. Measured 2026-08-21: alone 10/10 pass; as a binary under nextest 7/10; with --no-capture (serial) 10/10; in the sealed U1 bundle 10/10 exit 0; in the sealed U2 bundle 10/10 exit 0. The server binds fixed addresses (gRPC 11729, monitoring 4104), which is why run_leaf.py executes one target at a time and why the handoff's trap 8 records that concurrent lanes collide.",
+   "why_safe": "Reporting the failures is safer than hiding them: the gate is red and says so, and nothing claims the fork's corpus is green on its strength. It is not CORRECT, though — the corpus is already gated by the U1/U2 lanes, which produce sealed bundles, a leaf differential (0 regressions over 455 cases) and 16/16 mutants, and which pass these exact tests. A red gate that cannot be made green without either serialising the runner or excluding the workspace will either be worked around or ignored, and both are worse than deciding it.",
+   "owner_decision_changes": "One of: a nextest test-group in .config/nextest.toml serialising the server binaries (keeps the gate, costs wall-clock); a scope rule excluding overlay workspaces from rust.tests on the grounds that the lane runners certify them (the same reasoning OD-011 applied to lints); or accepting the red. All three touch protected policy.",
+   "referenced_by": [
+    ".quality/policy.toml",
+    "xtask/src/quality/gates.rs",
+    "docs/agent-handoff/2026-08-21-round7-to-round8.md"
+   ]
   }
  ]
 }

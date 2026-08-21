@@ -1,0 +1,11 @@
+
+running 6 tests
+test role_usage ... ok
+test annotations_with_value_arguments ... ok
+test entity_usage ... ok
+test annotations_with_range_arguments ... ok
+test test_struct_definition ... ok
+test test_struct_definition_updates ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+

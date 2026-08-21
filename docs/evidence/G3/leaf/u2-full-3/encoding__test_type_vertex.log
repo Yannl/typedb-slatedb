@@ -1,0 +1,8 @@
+
+running 3 tests
+test entity_type_vertexes_are_reused ... ok
+test max_entity_type_vertexes ... ok
+test loading_storage_assigns_next_vertex ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.47s
+

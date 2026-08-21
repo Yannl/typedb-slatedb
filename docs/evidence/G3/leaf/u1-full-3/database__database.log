@@ -1,0 +1,26 @@
+
+running 21 tests
+test database::backend_seam_ordering_tests::a_marker_failure_never_removes_a_directory_this_attempt_did_not_create ... ok
+test database::backend_seam_ordering_tests::a_marker_failure_never_removes_a_directory_that_gained_content ... ok
+test database::backend_seam_ordering_tests::a_marker_write_failure_leaves_no_stray_directory ... ok
+test database::backend_seam_ordering_tests::no_directory_is_created_before_a_backend_refusal ... ok
+test database::backend_seam_ordering_tests::the_marker_discriminant_still_maps_kinds_exactly ... ok
+test database::background_task_policy_tests::re_enabling_the_automatic_remote_checkpoint_fails_attestation ... ok
+test database::background_task_policy_tests::the_classic_lane_runs_the_interval_checkpointer ... ok
+test database::background_task_policy_tests::the_slatedb_lane_forbids_the_interval_checkpointer_and_attests_when_absent ... ok
+test database::interval_task_failure_tests::checkpoint_failure_is_fatal_and_names_the_database ... ok
+test database::metrics_totality_tests::a_cold_failure_is_the_zero_default_not_a_panic ... ok
+test database::interval_task_failure_tests::statistics_failure_is_a_logged_retry_not_a_stop ... ok
+test database::metrics_totality_tests::a_failure_after_a_success_serves_the_stale_last_good ... ok
+test database::metrics_totality_tests::a_partial_failure_does_not_fabricate ... ok
+test database::metrics_totality_tests::a_successful_sample_updates_last_good ... ok
+test database::startup_catchup_policy_tests::a_failing_catchup_cut_propagates_its_typed_error ... ok
+test database::startup_catchup_policy_tests::a_remote_shaped_wal_ahead_startup_cannot_reach_the_checkpoint_exporter ... ok
+test database::startup_catchup_policy_tests::no_catchup_runs_when_the_wal_is_not_ahead ... ok
+test database::startup_catchup_policy_tests::the_local_lanes_permit_the_startup_catchup ... ok
+test database::startup_catchup_policy_tests::the_remote_shaped_lane_forbids_the_startup_catchup ... ok
+test database::startup_catchup_policy_tests::the_u2_local_lane_wal_ahead_startup_still_takes_the_catchup_cut ... ok
+test database::backend_seam_ordering_tests::a_resolved_backend_creates_the_directory_and_persists_the_marker_atomically ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

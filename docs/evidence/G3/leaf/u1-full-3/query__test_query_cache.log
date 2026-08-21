@@ -1,0 +1,8 @@
+
+running 3 tests
+test identical_query_string_hits_parse_cache ... ok
+test schema_reset_invalidates_translation_but_keeps_parse_cache ... ok
+test identical_query_string_hits_translation_cache ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+

@@ -93,11 +93,24 @@ pub fn spawn_wrangler(config: &str, port: u16, vars: &[(String, String)]) -> Pro
         port.to_string(),
         "--persist-to".into(),
         persist_to.to_string_lossy().into_owned(),
+        // workerd binds a DEBUG INSPECTOR port as well as the HTTP one, and it
+        // defaults to a FIXED 9229. `--port` does not move it. Two stack tests
+        // running concurrently therefore each got their own HTTP port and then
+        // fought over 9229, and the loser died with
+        //   Fatal uncaught kj::Exception: ::bind(...): Address already in use;
+        //   toString() = 127.0.0.1:9229
+        // which surfaced only as "did not open port" because this spawn threw
+        // wrangler's output away. Derived from the HTTP port, which is already
+        // unique per test binary, so the inspector is unique too.
+        "--inspector-port".into(),
+        (port + 1000).to_string(),
     ];
     for (key, value) in vars {
         args.push("--var".into());
         args.push(format!("{key}:{value}"));
     }
+    let log_path = std::env::temp_dir().join(format!("l1-stack-wrangler-{port}-{}.log", std::process::id()));
+    let _ = std::fs::remove_file(&log_path);
     let child = Command::new("npx")
         .args(&args)
         .current_dir(CONTROL_PLANE_DIR)
@@ -105,21 +118,57 @@ pub fn spawn_wrangler(config: &str, port: u16, vars: &[(String, String)]) -> Pro
         // would otherwise stall the boot behind a closed stdin
         .env("CI", "1")
         .env("WRANGLER_SEND_METRICS", "false")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        // Captured to a file, never discarded: when this boot fails, the
+        // reason is ONLY in wrangler's own output, and throwing it away turns
+        // a diagnosable failure into a bare "did not open port" with nothing
+        // to act on.
+        .stdout(Stdio::from(log_file(&log_path)))
+        .stderr(Stdio::from(log_file(&log_path)))
         .process_group(0)
         .spawn()
         .expect("failed to spawn wrangler dev - is the control-plane npm install done?");
     let group = ProcGroup(child);
-    let deadline = Instant::now() + Duration::from_secs(180);
+    let deadline = Instant::now() + Duration::from_secs(boot_timeout_secs());
     loop {
         if TcpStream::connect(("127.0.0.1", port)).is_ok() {
             break;
         }
-        assert!(Instant::now() < deadline, "wrangler dev did not open port {port} within 180s");
+        if Instant::now() >= deadline {
+            let log = std::fs::read_to_string(&log_path).unwrap_or_default();
+            let tail: Vec<&str> = log.lines().filter(|l| !l.trim().is_empty()).collect();
+            let tail = tail[tail.len().saturating_sub(30)..].join("\n");
+            panic!(
+                "wrangler dev did not open port {port} within {}s.\n\
+                 Read the output below before assuming a timeout: a bind conflict on an\n\
+                 ancillary port (the inspector) presents identically. A genuinely slow boot\n\
+                 can be given more room with L1_STACK_BOOT_TIMEOUT_SECS.\n\
+                 --- wrangler output ({}) ---\n{tail}",
+                boot_timeout_secs(),
+                log_path.display(),
+            );
+        }
         thread::sleep(Duration::from_millis(500));
     }
     group
+}
+
+/// How long the worker gets to open its port.
+///
+/// The default is unchanged at 180s, and this is NOT the fix for the failure
+/// that motivated capturing the output — that was a hard bind conflict on the
+/// inspector port, which no timeout would have cured. It exists so a genuinely
+/// slow or loaded machine can say so, without weakening the assertion: the
+/// port must still open.
+fn boot_timeout_secs() -> u64 {
+    std::env::var("L1_STACK_BOOT_TIMEOUT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(180)
+}
+
+fn log_file(path: &std::path::Path) -> std::fs::File {
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .expect("cannot open a log file for wrangler output")
 }
 
 /// A per-run unique database id (local DO state persists on disk between

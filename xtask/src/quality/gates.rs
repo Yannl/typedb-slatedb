@@ -677,7 +677,7 @@ fn overlay_of<'a>(_ctx: &Ctx, manifest: &str) -> Option<&'a (&'a str, &'a str, &
 }
 
 /// One compiler diagnostic, reduced to what deciding needs.
-fn diagnostic_file(msg: &serde_json::Value) -> Option<(String, String)> {
+fn diagnostic_file(msg: &serde_json::Value) -> Option<(String, String, u32)> {
     let d = msg.get("message")?;
     let level = d.get("level")?.as_str()?;
     if level != "warning" && level != "error" {
@@ -687,8 +687,8 @@ fn diagnostic_file(msg: &serde_json::Value) -> Option<(String, String)> {
     let span =
         d.get("spans")?.as_array()?.iter().find(|s| s.get("is_primary").and_then(|b| b.as_bool()).unwrap_or(false))?;
     let file = span.get("file_name")?.as_str()?.to_string();
-    let line = span.get("line_start").and_then(|l| l.as_u64()).unwrap_or(0);
-    Some((file, format!("{code}{}{line}", if code.is_empty() { "" } else { ":" })))
+    let line = span.get("line_start").and_then(|l| l.as_u64()).unwrap_or(0) as u32;
+    Some((file, format!("{code}{}{line}", if code.is_empty() { "" } else { ":" }), line))
 }
 
 /// Judge a gate that reports in its OUTPUT rather than its exit code.
@@ -740,12 +740,15 @@ fn attribute_clippy(stdout: &str, owned: &super::forkowned::ForkOwnership) -> (V
         if msg.get("reason").and_then(|r| r.as_str()) != Some("compiler-message") {
             continue;
         }
-        let Some((file, tag)) = diagnostic_file(&msg) else { continue };
+        let Some((file, tag, line)) = diagnostic_file(&msg) else { continue };
         if !seen.insert(format!("{file}|{tag}")) {
             continue;
         }
         // Absolute paths are generated build output (OUT_DIR), never ours.
-        if file.starts_with('/') || !owned.owns(&file) {
+        // Attribution is per LINE, not per file: a finding on a line the fork
+        // did not write is upstream's, however heavily the fork edited the
+        // rest of that file.
+        if file.starts_with('/') || !owned.owns_line(&file, line) {
             upstream_hits += 1;
             continue;
         }
@@ -1410,6 +1413,24 @@ mod tests {
         assert!(ours.iter().any(|f| f.contains("unused import")));
         assert!(!ours.iter().any(|f| f.contains("resource/profile.rs")), "upstream file must not gate us");
         assert_eq!(upstream, 3, "the two upstream findings plus the generated one");
+    }
+
+    #[test]
+    fn a_finding_on_an_upstream_line_of_a_file_we_touched_is_not_ours() {
+        // The fork changed line 397 of this file and nothing else. A finding
+        // at 120 is upstream's code sitting in a file we happened to edit, and
+        // gating it would mean editing the upstream test corpus.
+        let owned =
+            super::super::forkowned::ForkOwnership::for_test_lines("concept/tests/test_statistics.rs", &[397], 742);
+        let stdout = [
+            diag("concept/tests/test_statistics.rs", 397, None, "warning", "ours"),
+            diag("concept/tests/test_statistics.rs", 120, None, "warning", "upstream's"),
+        ]
+        .join("\n");
+        let (ours, upstream) = attribute_clippy(&stdout, &owned);
+        assert_eq!(ours.len(), 1, "only the line the fork wrote, got {ours:?}");
+        assert!(ours[0].contains("ours"));
+        assert_eq!(upstream, 1);
     }
 
     #[test]

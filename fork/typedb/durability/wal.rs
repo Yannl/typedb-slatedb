@@ -943,13 +943,11 @@ impl FileReader {
     }
 
     fn check_sequence_progression(&mut self, offset: u64, header: &ParsedHeader) -> Result<(), DurabilityServiceError> {
-        if let Some(previous) = self.last_sequence_number {
-            if header.sequence_number.number() < previous {
-                return Err(self.defect(
-                    offset,
-                    FrameDefect::SequenceRegression { previous, found: header.sequence_number.number() },
-                ));
-            }
+        if let Some(previous) = self.last_sequence_number
+            && header.sequence_number.number() < previous
+        {
+            return Err(self
+                .defect(offset, FrameDefect::SequenceRegression { previous, found: header.sequence_number.number() }));
         }
         self.last_sequence_number = Some(header.sequence_number.number());
         Ok(())
@@ -1159,11 +1157,14 @@ impl Iterator for FileRecordIterator<'_> {
     }
 }
 
+/// One waiter's acknowledgement channel for a completed fsync.
+type SyncAck = mpsc::Sender<Result<(), DurabilityServiceError>>;
+
 #[derive(Debug)]
 pub struct FsyncThreadContext {
     files: Arc<RwLock<Files>>,
     shutting_down: AtomicBool,
-    signalling: [Mutex<Vec<Option<mpsc::Sender<Result<(), DurabilityServiceError>>>>>; 2],
+    signalling: [Mutex<Vec<Option<SyncAck>>>; 2],
     current_signal: AtomicU8,
     metrics: FsyncMetrics,
 }

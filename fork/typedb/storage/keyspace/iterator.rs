@@ -84,7 +84,7 @@ impl KeyspaceRangeIterator {
                         // end that is not a prefix of it must not be sliced to end.len()
                         // (that would panic) — its own length decides the comparison
                         end_inclusive.starts_with(key)
-                            || (key.len() >= end_inclusive.len() && &key[0..end_inclusive.len()] <= &**end_inclusive)
+                            || (key.len() >= end_inclusive.len() && key[0..end_inclusive.len()] <= **end_inclusive)
                             || (key.len() < end_inclusive.len() && **key < end_inclusive[0..key.len()])
                     }
                     ContinueCondition::EndPrefixExclusive(end_exclusive) => {
@@ -93,7 +93,7 @@ impl KeyspaceRangeIterator {
                         // otherwise compare the overlapping prefixes (see inclusive arm for
                         // the short-key guard)
                         end_exclusive.starts_with(key)
-                            || (key.len() >= end_exclusive.len() && &key[0..end_exclusive.len()] < &**end_exclusive)
+                            || (key.len() >= end_exclusive.len() && key[0..end_exclusive.len()] < **end_exclusive)
                             || (key.len() < end_exclusive.len() && **key < end_exclusive[0..key.len()])
                     }
                     ContinueCondition::Always => true,

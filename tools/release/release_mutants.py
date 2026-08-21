@@ -51,6 +51,7 @@ class Suite:
         self.digest = self.source.name
         self.killed = []
         self.survived = []
+        self.skipped = []
 
     @contextlib.contextmanager
     def tampered(self, name):
@@ -61,17 +62,37 @@ class Suite:
             shutil.copytree(self.source, releases / self.digest)
             yield releases
 
+    # Refusals that mean "this control could not run here", not "the forgery
+    # got through". A control that never reached the check it is testing must
+    # not report SURVIVED: that is indistinguishable from the check having
+    # regressed, and it is how a green suite quietly stops testing something.
+    UNMET_PRECONDITION = ("ARTIFACT_MISSING",)
+
     def expect(self, name, argv, code_fragment, expect_exit=(1, 2)):
         exit_code, text = run(argv)
         if exit_code in expect_exit and code_fragment in text:
             self.killed.append(name)
             print(f"KILLED   {name}: {code_fragment}")
+            return
+        unmet = next((c for c in self.UNMET_PRECONDITION if c in text), None)
+        if unmet and code_fragment not in text:
+            self.skipped.append((name, unmet))
+            print(f"N/A      {name}: refused at {unmet} before reaching the check")
+            return
+        self.survived.append((name, exit_code, text.strip()[:400]))
+        print(
+            f"SURVIVED {name}: expected {code_fragment!r}, "
+            f"got exit={exit_code}\n{text.strip()[:400]}"
+        )
+
+    def assert_true(self, name, ok, detail=""):
+        """A control whose claim is a FACT about the report, not a refusal."""
+        if ok:
+            self.killed.append(name)
+            print(f"HOLDS    {name}")
         else:
-            self.survived.append((name, exit_code, text.strip()[:400]))
-            print(
-                f"SURVIVED {name}: expected {code_fragment!r}, "
-                f"got exit={exit_code}\n{text.strip()[:400]}"
-            )
+            self.survived.append((name, 0, detail))
+            print(f"UNEXPECTED {name}: {detail}")
 
     def verify_argv(self, releases, extra=()):
         return ["--releases", str(releases), "verify", "--digest", self.digest, *extra]
@@ -360,6 +381,37 @@ def main():
             "PROMOTION_CLASS_DEVELOPMENT",
         )
 
+    # An UNCHECKABLE artifact must not read as a checked one. `collect` skips
+    # the digest and member-root checks when the file is absent, and `verify`
+    # still printed OK, so "I could not check this" was indistinguishable from
+    # "I checked it and it is correct". The control is two-sided so it stays
+    # meaningful whichever state this machine happens to be in.
+    with s.tampered("artifact-not-checked") as r:
+        artifact = pathlib.Path(
+            REPO / "sources" / "assembly-artifacts" / "typedb-all-linux-x86_64.tar.gz"
+        )
+        if artifact.exists():
+            _rc, text = run(s.verify_argv(r, ("--release-grade",)))
+            try:
+                report = json.loads(text[text.index("{") : text.rindex("}") + 1])
+            except (ValueError, json.JSONDecodeError):
+                report = {}
+            s.assert_true(
+                "an artifact that IS present is reported as checked, and does "
+                "not raise the not-checked blocker",
+                report.get("artifact_checked") is True
+                and "ARTIFACT_NOT_CHECKED" not in report.get("release_grade_blockers", []),
+                detail=f"artifact_checked={report.get('artifact_checked')!r} "
+                f"blockers={report.get('release_grade_blockers')!r}",
+            )
+        else:
+            s.expect(
+                "an absent artifact claimed as release grade (its digest and "
+                "member root were never computed)",
+                s.verify_argv(r, ("--release-grade",)),
+                "ARTIFACT_NOT_CHECKED",
+            )
+
     with s.tampered("record-immutable") as r:
         edit_json(r / d / "release.json", lambda doc: doc.update(state="TAMPERED"))
         s.expect(
@@ -379,9 +431,12 @@ def main():
         )
 
     print()
-    print(f"release mutants: {len(s.killed)} killed, {len(s.survived)} survived")
+    na = f", {len(s.skipped)} not applicable here" if s.skipped else ""
+    print(f"release mutants: {len(s.killed)} killed, {len(s.survived)} survived{na}")
     for name, code, text in s.survived:
         print(f"  SURVIVED {name} (exit {code})")
+    for name, why in s.skipped:
+        print(f"  N/A      {name} — refused at {why} before the check could run")
     return 1 if s.survived else 0
 
 

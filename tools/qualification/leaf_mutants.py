@@ -151,7 +151,7 @@ def observable(c):
     that mutates only that file. So: every .json parsed, every other file by
     digest, plus the name list so a deletion is visible.
     """
-    out = {"__names__": sorted(f.name for f in c.dir.iterdir() if f.is_file())}
+    out: dict[str, object] = {"__names__": sorted(f.name for f in c.dir.iterdir() if f.is_file())}
     for f in sorted(c.dir.iterdir()):
         if not f.is_file():
             continue

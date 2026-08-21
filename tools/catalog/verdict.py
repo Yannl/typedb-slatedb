@@ -133,7 +133,7 @@ def compute_policy_roots(ledger_path=None, plan_path=None):
     """
     ledger_path = pathlib.Path(ledger_path) if ledger_path else LEDGER
     plan_path = pathlib.Path(plan_path) if plan_path else PLAN
-    roots = {"flake_ledger_sha256": None, "plan_root": None}
+    roots: dict[str, str | None] = {"flake_ledger_sha256": None, "plan_root": None}
     if ledger_path.is_file():
         roots["flake_ledger_sha256"] = common.sha256_file(ledger_path)
     if plan_path.is_file():

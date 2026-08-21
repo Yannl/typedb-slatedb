@@ -80,6 +80,10 @@ BUILD_TEST_RE = re.compile(
 
 
 def _toml(path):
+    if tomllib is None:
+        # The caller checks this too and records it as a problem; raising here
+        # keeps a future caller from getting an AttributeError instead.
+        raise RuntimeError("python tomllib unavailable; cannot parse manifests")
     with open(path, "rb") as f:
         return tomllib.load(f)
 

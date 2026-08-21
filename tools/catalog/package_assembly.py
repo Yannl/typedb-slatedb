@@ -122,8 +122,15 @@ def main():
                 if member is None:
                     sys.exit(f"{tarball}: subpath {sub} not found")
                 dest.mkdir(parents=True, exist_ok=True)
+                # extractfile returns None for anything that is not a regular
+                # file (a directory or a link entry). Packaging nothing under
+                # the binary's name would produce an archive whose server does
+                # not exist.
+                src_f = tf.extractfile(member)
+                if src_f is None:
+                    sys.exit(f"{tarball}: {sub} is not a regular file entry")
                 with (
-                    tf.extractfile(member) as src,
+                    src_f as src,
                     open(dest / pathlib.Path(sub).name, "wb") as dst,
                 ):
                     shutil.copyfileobj(src, dst)

@@ -46,11 +46,25 @@ SKIP_DIRS = {".git", "target", "node_modules"}
 
 
 def fork_files():
+    """Every file that is part of the FORK, in the sense that staging carries
+    it and its digest identifies the executed tree.
+
+    RUNTIME_OUTPUT_PREFIXES are excluded HERE, at the one enumeration every
+    caller shares — the staged file count, the staged tree digest
+    (generate_workspace_lock.py) and the executed-tree identity
+    (leaf_common.py) all read this function. Filtering only on the destination
+    side, as `differing()` used to do alone, left a run's own `typedb-logs/`
+    counted as four unstaged fork patches: `lint_source_lock.py` then failed
+    after every run that started a server inside fork/typedb, which the
+    quality controller now does on every `rust.tests`.
+    """
     for p in sorted(FORK.rglob("*")):
         if not p.is_file():
             continue
         rel = p.relative_to(FORK)
         if rel.parts[0] in SKIP_DIRS or str(rel) in FORK_ONLY:
+            continue
+        if any(rel.as_posix().startswith(pfx) for pfx in RUNTIME_OUTPUT_PREFIXES):
             continue
         yield rel
 

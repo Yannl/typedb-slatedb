@@ -136,6 +136,11 @@ def load_side(dirs, plan, cl, ct):
                     f"side - two outcomes for one leaf cannot be merged"
                 )
             merged["leaves"].append(x)
+    if merged is None:
+        # Not defensive: a side with no bundle directories would sail through
+        # the whole differential and report "0 regressions", which is exactly
+        # the empty-intersection lie --require-clean exists to catch.
+        sys.exit("a side needs at least one bundle directory; none was given")
     return merged, facts
 
 

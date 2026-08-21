@@ -56,6 +56,11 @@ def expect(label, condition):
 
 def load_module(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        # These controls exist to prove the comparator rejects forgeries. A
+        # comparator that could not be loaded rejects nothing, and every
+        # control would report KILLED for the wrong reason.
+        raise ImportError(f"cannot load {name} from {path}: no import spec or loader")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -95,12 +100,16 @@ def comparator_controls():
                 d = tmp / "docs" / "evidence" / "G3" / name
                 d.mkdir(parents=True)
                 (d / "u0-results.json").write_text(json.dumps({"results": rows}))
-            old, cmp_mod.REPO = cmp_mod.REPO, tmp
+            # setattr, not attribute syntax: REPO is redirected on a module
+            # object, which is a dynamic attribute by construction.
+            old = cmp_mod.REPO
+            setattr(cmp_mod, "REPO", tmp)
             old_argv, sys.argv = sys.argv, ["compare", "u2s3-mutant"]
             try:
                 return cmp_mod.main()
             finally:
-                cmp_mod.REPO, sys.argv = old, old_argv
+                setattr(cmp_mod, "REPO", old)
+                sys.argv = old_argv
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
@@ -146,7 +155,9 @@ def verdict_controls():
         }
     }
 
-    def row(tid, p=1, f=0, i=0, rc=0, to=False):
+    # rc is None for a target that TIMED OUT: it never exited, so it has no
+    # exit code, and 0 would read as success.
+    def row(tid, p=1, f=0, i=0, rc: int | None = 0, to=False):
         return {
             "target_id": tid,
             "passed": p,

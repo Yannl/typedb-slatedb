@@ -336,7 +336,9 @@ def _lock_version_2(doc: dict) -> dict:
 def self_test() -> int:
     today = date(2026, 8, 20)
     live = _mutant_audit([("GHSA-aaaa-bbbb-cccc", "leftpad", "high", "<1.0.0")])
-    cases: list[tuple[str, dict, dict, str]] = []
+    # `expect` is None for a case that must be refused outright rather than
+    # refused with a particular message in it.
+    cases: list[tuple[str, dict, dict, str | None]] = []
 
     # 1. control: the exact live advisory has a valid, unexpired exception -> PASS
     pol = _base_policy()

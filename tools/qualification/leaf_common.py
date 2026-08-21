@@ -100,6 +100,10 @@ def _load_stage_module():
     spec = importlib.util.spec_from_file_location(
         "fork_stage", REPO / "tools" / "fork" / "stage.py"
     )
+    if spec is None or spec.loader is None:
+        # stage.py's differing() is the authority this module defers to. Losing
+        # it must not degrade into a second, weaker opinion about staging.
+        raise ImportError(f"cannot load {REPO / 'tools' / 'fork' / 'stage.py'}: no spec or loader")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -371,7 +375,7 @@ def executed_tree_identity():
             kind = "NON_CARGO_INPUT"
         else:
             kind = "UNEXPLAINED"
-        entry = {"path": rel, "class": kind}
+        entry: dict[str, object] = {"path": rel, "class": kind}
         if kind == "NON_CARGO_INPUT":
             # excluded paths are recorded by name, digest and reason, so the
             # exclusion is auditable rather than merely asserted

@@ -1107,3 +1107,125 @@ loop, ~20-36 minutes, on every `quality fast` — narrowing that is gate
 SELECTION, which is protected policy and the owner's call.
 `OD-019` discloses the two disk guards this round LOOSENED inside the protected
 controller, and is deliberately NOT self-approved.
+
+---
+
+## 14. Round 7e — the type checker runs, and the tooling it checks got safer
+
+§13.6 left `py.typecheck` measured and red. This closes it, on merit.
+
+### 14.1 Two traps before any code was fixed
+
+**basedpyright ignores `basedpyrightconfig.json`** in the invocation the gate
+uses (`basedpyright tools`, with or without `--project .`). Measured: the error
+count stayed at exactly 515 with that name, and dropped to 86 with
+`pyrightconfig.json`. A config that is silently not read is indistinguishable
+from a config that changed nothing.
+
+**A flat `extraPaths` list invents errors.** Every tool script does
+`sys.path.insert(0, str(HERE))`, and BOTH `tools/catalog` and `tools/drivers`
+define a `common.py`. One shared path list resolved `import common` in the
+drivers to the catalogue's module and produced 95 attribute errors that do not
+exist at runtime. `executionEnvironments`, one per tool directory, each seeing
+its own directory plus exactly the directories its scripts insert, gives the
+real picture:
+
+```
+no config (basedpyright's default "recommended")   515 errors, 12762 warnings
+pyrightconfig.json, flat extraPaths                158 errors  (95 invented)
+pyrightconfig.json, executionEnvironments           69 errors  (all real)
+after the fixes                                      0 errors,     0 warnings
+```
+
+### 14.2 What the findings actually were
+
+Not annotation noise. A sample of what a passing-looking gate had been hiding:
+
+| where | what |
+|---|---|
+| `release.py` | `tarfile.extractfile()` returns `None` for a non-regular member; the artifact digest hashed it anyway, so a digest could match an archive missing that file. Now `ARTIFACT_UNREADABLE_MEMBER`. |
+| `ed25519_ref.py` | the base point's x coordinate used without checking `_recover_x` found one. If the curve constants were ever corrupted, every signature would be wrong with no test vector able to explain it. |
+| `leaf_diff.py` | a side built from ZERO bundle directories fell through the whole differential and reported "0 regressions" — the empty-intersection lie `--require-clean` exists to catch, by another route. |
+| `typedb_server.py` | `server.proc.returncode` read directly by four call sites; on a server that failed to start that is a `None` dereference, exactly when the evidence record matters most. Now `server.returncode()`. |
+| `bazel_parity.py` | a `<rule>` with no `name`, and list attributes with no `value`, would crosswalk half a graph rather than refuse. |
+| `generate_catalog.py` | `re.search` for the `fail_points!` block used without a match check: a moved macro would silently enumerate zero fail-point leaves and read as "there are none". |
+| `cucumber_probe.py` | `(generator) and [] or (...)` — a generator is always truthy, so the first two terms were dead. Replaced by what it actually evaluated to. |
+
+Level declared in `pyrightconfig.json` as `"standard"`, with **OD-020** recording
+what the higher bar would cost (429 more findings, dominated by missing type
+arguments and dynamic module attributes — annotation work, not defects).
+
+### 14.3 The bug this work exposed in the staging tool
+
+`lint_source_lock.py` began FAILING after any run that started a server inside
+`fork/typedb` — which the quality controller now does on every `rust.tests`:
+
+```
+staged_file_count   now 782, committed 778
+```
+
+The four extra files were `typedb-logs/typedb.log.2026-08-21-{17,18,19,20}`.
+Round 7's OD-015 fix excluded runtime output from `differing()`'s **stale** list
+only — the destination side. `fork_files()`, the one enumeration that decides
+what staging carries, what `staged_tree_sha256` binds AND what identifies the
+executed tree, still counted them, so a run's own logs became four "unstaged
+fork patches" and changed the executed tree's identity.
+
+Fixed at that enumeration, where all three callers share it, with a pytest
+regression test that fails if the exclusion moves back to the destination side
+alone — and a second one asserting the exclusion follows
+`RUNTIME_OUTPUT_PREFIXES` rather than a hard-coded `typedb-logs`.
+
+### 14.4 Re-verified after the changes
+
+Every truth-plane suite that touches a changed tool, re-run in full:
+
+```
+leaf_mutants            16/16 held, 0 survived
+release_mutants         24 killed, 0 survived, 1 N/A
+catalog/evidence_mutants 32/32 held
+s3-cert evidence_mutants 28/28 killed
+evidence_v2_mutants     15/15 held
+cucumber_mutants        21/21 held
+ledger_mutants          16/16 killed
+lock_mutants             7/7 held
+modeq_mutants           11/11 killed
+lint_source_lock        PASS      (9 git nodes, 2 artifacts, 27 lock nodes)
+lint_ledger             PASS      (4 gates, 7 lanes, 38 actions)
+release_identity_selftest  6/6 postures, both resolvers
+check_npm_advisories --self-test  11/11 cases
+pytest tools            4 passed
+```
+
+### 14.5 Gate state at the end of round 7e
+
+One `cargo xtask quality fast` over the whole change set, cold fork tree:
+
+```
+pass  policy.waivers · policy.toolchain_pin · policy.scope_classification
+pass  rust.fmt          2.0 s
+pass  rust.clippy     364.0 s
+pass  rust.tests     1923.6 s   711/711 on fork/typedb
+pass  py.ruff.check · py.ruff.format
+pass  py.typecheck      6.4 s   0 errors, 0 warnings
+pass  py.pytest         3.2 s   4 passed
+
+0 policy violation(s) · 0 quality failure(s) · 0 infrastructure failure(s)
+decision  pass, exit 0
+```
+
+Every gate the controller selects is green, with no waiver, no exclusion and no
+advisory downgrade. Two things this does NOT mean, and the next session should
+not let anyone read into it:
+
+  - **A quality pass is not a gate closure.** G0-G3 are unmoved. Coverage is
+    still 13,582 of 23,138 rows (58.7 %), the realistic ceiling is still ~61 %,
+    and U3/U4 remain product code that does not exist.
+  - `py.typecheck` passes at the level declared in `pyrightconfig.json`
+    (**OD-020**), and `rust.tests`, `rust.coverage` and the mutation gates are
+    selected by tier, not by proof of sufficiency.
+
+Three owner decisions are OPEN and none of them blocks anything today:
+**OD-018** (should the 32-minute corpus run in the inner loop), **OD-019** (the
+two disk guards this round loosened inside the protected controller, disclosed
+and NOT self-approved), **OD-020** (the type-checking level).

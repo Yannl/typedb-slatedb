@@ -216,6 +216,18 @@ def verify(
                 f"{len(source_divergence)} diverging SOURCE path(s): "
                 f"{[c.get('path') for c in source_divergence[:3]]}"
             )
+        # PRISTINE means the checkout is upstream with the fork NOT staged, so
+        # the fork's patches must all be reported unstaged. An empty list is
+        # self-contradictory. It is also the ONLY field a "relabel the tree as
+        # clean" forgery actually changes when the bundle is already pristine,
+        # so without this the U0 lane had no internal defence at all.
+        if not tree.get("unstaged_fork_patches"):
+            A.append(
+                "bundle claims a PRISTINE tree but lists no unstaged fork "
+                "patches - pristine means the fork is NOT staged, so its "
+                "patches must all appear unstaged; an empty list is a staged "
+                "or relabelled tree presented as untouched"
+            )
     if corroborate_tree:
         # An external corroboration, used when re-verifying on the machine that
         # produced the bundle: the bundle's tree record is the ONE fact no

@@ -125,33 +125,49 @@ def main():
             by_src.setdefault(os.path.realpath(t["src_path"]), rec)
             by_dir[d].append(rec)
 
+    # `bazel query --output=xml` always names a rule and always gives each list
+    # entry a value. Missing either means the query output is not what it
+    # claims to be, and every parity number derived from it would be a guess:
+    # refuse rather than crosswalk half a graph.
+    def attr_values(e):
+        out = []
+        for c in e:
+            v = c.get("value")
+            if v is None:
+                sys.exit(f"bazel query xml: <{e.get('name')}> has an entry with no value attribute")
+            out.append(v)
+        return out
+
     crosswalk = []
     for rule in root.findall("rule"):
         label = rule.get("name")
+        if label is None:
+            sys.exit("bazel query xml: a <rule> element has no name attribute")
         attrs = {
             e.get("name"): (
-                [c.get("value") for c in e]
-                if e.tag == "list"
-                else (e.get("value") or e.get("label"))
+                attr_values(e) if e.tag == "list" else (e.get("value") or e.get("label"))
             )
             for e in rule
         }
         row = {"bazel_target": label, "cargo": None, "note": ""}
-        if attrs.get("srcs"):  # integration test
+        # `srcs` is a list attribute and `crate` a scalar one. Testing the SHAPE
+        # rather than truthiness means an attribute that arrives as the other
+        # kind takes neither branch instead of failing halfway down one.
+        srcs = attrs.get("srcs")
+        crate = attrs.get("crate")
+        if isinstance(srcs, list) and srcs:  # integration test
             pkg = label[2:].split(":")[0]
             hits = [
                 by_src[p]
-                for p in (
-                    os.path.realpath(str(TB / pkg / s.split(":", 1)[1])) for s in attrs["srcs"]
-                )
+                for p in (os.path.realpath(str(TB / pkg / s.split(":", 1)[1])) for s in srcs)
                 if p in by_src
             ]
             if hits:
                 row["cargo"] = f"{hits[0]['pkg']}:{'/'.join(hits[0]['kinds'])}:{hits[0]['target']}"
             else:
                 row["note"] = "no cargo target with a matching src_path"
-        elif attrs.get("crate"):  # lib unit tests
-            d = os.path.realpath(str(TB / attrs["crate"][2:].split(":")[0]))
+        elif isinstance(crate, str) and crate:  # lib unit tests
+            d = os.path.realpath(str(TB / crate[2:].split(":")[0]))
             libs = [c for c in by_dir.get(d, []) if "lib" in c["kinds"]]
             if libs:
                 row["cargo"] = f"{libs[0]['pkg']}:lib:{libs[0]['target']}"

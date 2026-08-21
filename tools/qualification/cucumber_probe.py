@@ -83,11 +83,11 @@ def discover_with_src_path(packages=None):
     files, because cargo is what actually compiled the binary being run.
     """
     cmd = ["cargo", common.TOOLCHAIN, "test", "--locked", "--no-run", "--message-format", "json"]
-    cmd += (
-        (["-p", p] for p in [])
-        and []
-        or ([x for p in (packages or []) for x in ("-p", p)] or ["--workspace"])
-    )
+    # Named packages, or the whole workspace when none are given. (This was
+    # written as `(generator) and [] or (...)`, which evaluates to exactly the
+    # right-hand side — a generator is always truthy — and read as though the
+    # first two terms did something.)
+    cmd += [x for p in (packages or []) for x in ("-p", p)] or ["--workspace"]
     out = subprocess.check_output(
         cmd, cwd=TB, text=True, stderr=subprocess.DEVNULL, env=common.CARGO_ENV
     )

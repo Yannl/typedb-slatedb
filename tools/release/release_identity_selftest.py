@@ -267,6 +267,7 @@ def main() -> int:
             else:
                 ok_py = (
                     py_err is None
+                    and got is not None
                     and got["release_commit"] == want_commit
                     and got["posture"] == want_posture
                     and got["verified"] is want_verified
@@ -285,6 +286,7 @@ def main() -> int:
             else:
                 ok_ts = (
                     ts_err is None
+                    and ts_ident is not None
                     and ts_ident["releaseCommit"] == want_commit
                     and ts_ident["posture"] == want_posture
                     and ts_ident["verified"] is want_verified

@@ -121,8 +121,17 @@ def member_root(tar_path):
                     "directories and regular files"
                 )
             fh = tf.extractfile(member)
+            if fh is None:
+                # Only directories and regular files reach here (checked just
+                # above), so this is a tar whose header and payload disagree.
+                # Hashing nothing under a member's name would let the artifact
+                # digest match an archive that is missing that file.
+                raise Refusal(
+                    f"ARTIFACT_UNREADABLE_MEMBER {member.name} — the tar header "
+                    "declares a regular file but no payload can be read"
+                )
             h = hashlib.sha256()
-            for chunk in iter(lambda: fh.read(1 << 20), b""):
+            while chunk := fh.read(1 << 20):
                 h.update(chunk)
             lines.append(f"{member.name}\0{member.mode:o}\0{member.size}\0{h.hexdigest()}\n")
     return sha256_bytes("".join(sorted(lines)).encode("utf-8")), len(lines)
@@ -829,7 +838,7 @@ def cmd_list(args):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument("--releases", default=str(DEFAULT_RELEASES), help="release evidence directory")
     sub = ap.add_subparsers(dest="cmd", required=True)
 

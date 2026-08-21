@@ -242,6 +242,13 @@ def cucumber_cases():
 def failpoint_cases():
     lib = (TB / "common" / "fail_point" / "lib.rs").read_text()
     m = re.search(r"fail_points!\s*\{(.*?)\}", lib, re.S)
+    if m is None:
+        # The catalogue's fail-point leaf count comes from this macro. Silently
+        # enumerating zero of them would under-count the corpus and read as
+        # "there are none".
+        sys.exit(
+            f"{TB / 'common' / 'fail_point' / 'lib.rs'}: no fail_points! {{ ... }} block found"
+        )
     members = []
     for x in m.group(1).splitlines():
         x = x.strip().rstrip(",")
@@ -765,7 +772,7 @@ def main():
     out_path = pathlib.Path(args.out).resolve() if args.out else OUT
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(catalog, indent=1, sort_keys=True) + "\n")
-    summary = {
+    summary: dict[str, object] = {
         "targets": len(targets),
         "explicit_cargo_test_targets": sum(1 for t in cargo_targets if t["kind"] == "test"),
         "explicit_cargo_bench_targets": sum(1 for t in cargo_targets if t["kind"] == "bench"),

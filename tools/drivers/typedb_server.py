@@ -185,7 +185,7 @@ class TypeDBServer:
                     f"server exited rc={rc} before becoming ready; captured "
                     f"output:\n{self.log_path.read_text()[-4000:]}"
                 )
-            probe = {"t": round(time.time() - started, 2)}
+            probe: dict[str, object] = {"t": round(time.time() - started, 2)}
             try:
                 st, _ = _http(f"http://{LOOPBACK}:{self.http_port}/health")
                 probe["health_status"] = st
@@ -251,6 +251,15 @@ class TypeDBServer:
 
     def alive(self):
         return self.proc is not None and self.proc.poll() is None
+
+    def returncode(self):
+        """The server's exit status, or None if it was never started.
+
+        Callers used to read `server.proc.returncode` directly, which is a
+        None dereference on a server that failed to start — precisely the case
+        where the evidence record matters most.
+        """
+        return self.proc.returncode if self.proc is not None else None
 
     def stop(self):
         rc = None

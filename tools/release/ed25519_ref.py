@@ -88,6 +88,11 @@ def _recover_x(y, sign):
 
 _G_Y = 4 * _modp_inv(5) % P
 _G_X = _recover_x(_G_Y, 0)
+if _G_X is None:
+    # RFC 8032 §5.1.5: the base point's x exists by construction. Reaching here
+    # means P, D or _recover_x has been altered, and every signature this module
+    # then produced would be wrong in a way no test vector could explain.
+    raise AssertionError("ed25519: the base point has no x coordinate; curve constants are corrupt")
 G = (_G_X, _G_Y, 1, _G_X * _G_Y % P)
 
 

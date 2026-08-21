@@ -510,7 +510,7 @@ def main():
         if w.get("problem"):
             anomalies.append(f"{name}: {w['problem']}")
         server.stop()
-        rec["exit_code"] = server.proc.returncode
+        rec["exit_code"] = server.returncode()
         shutil.copy(server.log_path, out_dir / f"server-{name}.log")
         rec["log"] = common.rel(out_dir / f"server-{name}.log")
         rec["log_sha256"] = common.sha256_file(out_dir / f"server-{name}.log")

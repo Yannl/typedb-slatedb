@@ -152,7 +152,12 @@ def main():
         run_profile, base_profile = profiles(run_rows), profiles(base_rows)
         if run_rows and base_rows and run_profile == base_profile:
             continue
-        tid = (run_rows or base_rows)[0]["target_id"]
+        # `name` comes from the UNION of both sides, so at least one side holds
+        # rows for it; saying so is cheaper than a TypeError three lines later.
+        rows = run_rows or base_rows
+        if not rows:
+            sys.exit(f"internal: {name} appears in neither side of the comparison")
+        tid = rows[0]["target_id"]
         exp = EXPLAINED.get(tid)
         if exp and run_profile == sorted(exp["u2s3"]) and base_profile == sorted(exp["u1"]):
             classification = f"EXPLAINED: {exp['reason']}"

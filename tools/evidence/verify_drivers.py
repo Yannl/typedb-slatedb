@@ -217,7 +217,12 @@ def reparse_log(text):
 
     summary = None
     if cut is not None:
-        summary = {"parsing_errors": 0, "hook_errors": 0}
+        # Two shapes live in this record: per-noun sections ("scenarios" ->
+        # {total, passed, ...}) and flat error counters. Accumulated apart and
+        # merged at the end, so a counter can never be reached with a section's
+        # `+=` — the merge preserves the original key order exactly.
+        sections: dict[str, dict[str, int]] = {}
+        errors = {"parsing_errors": 0, "hook_errors": 0}
         for ln in lines[cut + 1 :]:
             t = ln.strip()
             m = re.match(
@@ -230,11 +235,12 @@ def reparse_log(text):
                 st = {"total": int(m.group(1))}
                 for num, what in re.findall(r"(\d+) (passed|skipped|failed)", m.group(3) or ""):
                     st[what] = int(num)
-                summary[key] = st
+                sections[key] = st
             for num, what in re.findall(r"(\d+) (parsing errors?|hook errors?)", t):
-                summary["parsing_errors" if what.startswith("parsing") else "hook_errors"] += int(
+                errors["parsing_errors" if what.startswith("parsing") else "hook_errors"] += int(
                     num
                 )
+        summary = {**errors, **sections}
     libtest = None
     for ln in lines:
         m = re.match(r"^test result: (\w+)\. (\d+) passed; (\d+) failed;", ln)
@@ -619,7 +625,8 @@ def verify(bundle_dir, repo, qualification=False):
             A.append(f"{sid}: re-parse finds no [Summary] - truncated run")
         elif summary is not None:
             for key in ("features", "scenarios"):
-                tot = (summary.get(key) or {}).get("total")
+                sec = summary.get(key)
+                tot = sec.get("total") if isinstance(sec, dict) else None
                 if tot != len(scen):
                     A.append(
                         f"{sid}: [Summary] declares {tot} {key} but the "
@@ -635,7 +642,8 @@ def verify(bundle_dir, repo, qualification=False):
                         "EMPTY": "failed",
                     }[sc["status"]]
                 ] += 1
-            decl = summary.get("scenarios") or {}
+            declared = summary.get("scenarios")
+            decl = declared if isinstance(declared, dict) else {}
             for k in ("passed", "failed", "skipped"):
                 if decl.get(k, 0) != tally[k]:
                     A.append(

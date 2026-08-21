@@ -591,7 +591,12 @@ def main():
                 per.start()
                 shutil.copy(per.log_path, out_dir / f"server-{name}.log")
             row = run_suite(name, suites[name], exe, workdir, out_dir, args.timeout)
+            # One of the two always exists: `per` when each suite gets its own
+            # server, the shared one otherwise. Saying so keeps a future
+            # third mode from silently recording "alive" for no server at all.
             active = per or server
+            if active is None:
+                sys.exit(f"{name}: neither a per-suite nor a shared server is running")
             row["server_alive_after_suite"] = active.alive()
             if not active.alive():
                 anomalies.append(
@@ -613,7 +618,7 @@ def main():
                 if w.get("problem"):
                     anomalies.append(f"{name}: {w['problem']}")
                 per.stop()
-                rec["exit_code"] = per.proc.returncode
+                rec["exit_code"] = per.returncode()
                 shutil.copy(per.log_path, out_dir / f"server-{name}.log")
                 rec["log_sha256"] = common.sha256_file(out_dir / f"server-{name}.log")
                 server_records.append(rec)
@@ -628,7 +633,7 @@ def main():
             if w.get("problem"):
                 anomalies.append(f"shared server: {w['problem']}")
             server.stop()
-            rec["exit_code"] = server.proc.returncode
+            rec["exit_code"] = server.returncode()
             shutil.copy(server.log_path, out_dir / "server.log")
             rec["log"] = common.rel(out_dir / "server.log")
             rec["log_sha256"] = common.sha256_file(out_dir / "server.log")

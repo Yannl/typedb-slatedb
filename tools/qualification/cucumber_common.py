@@ -180,7 +180,9 @@ def parse_feature_file(path):
     for i, raw in enumerate(lines):
         s = raw.strip()
         if in_doc:
-            if s.startswith(doc_delim):
+            # doc_delim is set together with in_doc and never cleared while it
+            # holds; testing it keeps the pair's invariant visible.
+            if doc_delim is not None and s.startswith(doc_delim):
                 in_doc = False
             continue
         if s.startswith('"""') or s.startswith("'''"):

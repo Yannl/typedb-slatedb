@@ -438,7 +438,9 @@ def self_test():
         lp.write_text(json.dumps({"entries": ledger or []}))
         return lambda: check_ledger(tmpdir, cat, lp)
 
-    def row(tid, p=1, f=0, i=0, rc=0, to=False):
+    # rc is None for a target that TIMED OUT: it never exited, so it has no
+    # exit code, and 0 would read as success.
+    def row(tid, p=1, f=0, i=0, rc: int | None = 0, to=False):
         return {
             "target_id": tid,
             "passed": p,

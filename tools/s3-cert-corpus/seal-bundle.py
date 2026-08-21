@@ -68,6 +68,7 @@ import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
+from typing import NoReturn
 
 SCHEMA = "s3-cert-corpus-bundle/v2"
 
@@ -241,7 +242,7 @@ def dirty_paths(repo: pathlib.Path) -> list:
     return [line.rstrip() for line in out.splitlines() if line.strip()]
 
 
-def die(msg: str, code: int = 2):
+def die(msg: str, code: int = 2) -> NoReturn:
     print(f"seal-bundle: REFUSED — {msg}", file=sys.stderr)
     sys.exit(code)
 
@@ -253,7 +254,7 @@ def lock_node(lock_doc: dict, node_id: str) -> dict:
     die(f"source-lock has no node {node_id!r} — the provider has no locked identity")
 
 
-def tool_record(path_or_name: str, version: str = None, required=True) -> dict:
+def tool_record(path_or_name: str, version: str | None = None, required=True) -> dict:
     resolved = shutil.which(path_or_name) or path_or_name
     p = pathlib.Path(resolved)
     rec = {"name": pathlib.Path(path_or_name).name, "path": str(p), "required": required}

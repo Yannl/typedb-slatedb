@@ -541,6 +541,38 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
     let mut total_ms = 0u128;
     let mut last_command = None;
     for cmd in &cmds {
+        // Per-workspace floor, checked immediately before the command that
+        // builds that workspace. The single pre-gate check above uses the cost
+        // class alone, and a class number cannot be right for both the tiny
+        // `tools` workspace and the whole TypeDB fork: 14 GB free passed the
+        // 12 GB heavy floor and then ran out at 23 GB mid-compile.
+        let manifest = exec::manifest_of(cmd);
+        let need = d.weight.required_free_gb_for(&ctx.policy.execution, manifest.as_deref());
+        if let Some(free) = exec::free_disk_gb(ctx.repo_root) {
+            if free < need {
+                let where_ = manifest.as_deref().unwrap_or("this workspace");
+                let mut r = GateResult::new(
+                    id,
+                    d.tier,
+                    d.language,
+                    d.advisory,
+                    Status::InfrastructureFailure,
+                    &format!(
+                        "insufficient build space: gate `{id}` needs {need:.1} GB free to build \
+                         {where_}, {free:.1} GB available"
+                    ),
+                );
+                r.command = Some(cmd.display());
+                r.cwd = cmd.cwd.clone();
+                r.remediation = Some(format!(
+                    "free at least {:.1} GB (`cargo clean` in any other build tree), or run this \
+                     gate on a machine with more disk; the command was not attempted and no \
+                     quality conclusion may be drawn from this run",
+                    need - free
+                ));
+                return r;
+            }
+        }
         let res = exec::run(ctx.repo_root, cmd, timeout);
         total_ms += res.duration_ms;
         last_command = Some(res.command.clone());
@@ -557,6 +589,20 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
                     res.command, ctx.policy.execution.gate_timeout_secs
                 ),
             )
+        } else if exec::looks_like_enospc(&res.tail(200)) {
+            // The disk ran out mid-command. That is infrastructure, not a
+            // statement about the code, and calling it a QualityFailure sends
+            // the next reader hunting for a defect that is not there.
+            (
+                Status::InfrastructureFailure,
+                format!(
+                    "`{}` ran out of disk space (exit {}); the gate did not complete and no \
+                     quality conclusion may be drawn from it\n{}",
+                    res.command,
+                    res.exit_code.unwrap_or(-1),
+                    res.tail(25)
+                ),
+            )
         } else {
             (
                 Status::QualityFailure,
@@ -564,6 +610,10 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
             )
         };
         let mut r = GateResult::new(id, d.tier, d.language, d.advisory, status, &detail);
+        if status == Status::InfrastructureFailure && r.remediation.is_none() {
+            r.remediation =
+                Some("free disk space (`cargo clean` in any other build tree) and re-run the gate".to_string());
+        }
         r.command = Some(res.command);
         r.cwd = cmd.cwd.clone();
         r.exit_code = res.exit_code;

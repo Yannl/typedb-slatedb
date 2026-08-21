@@ -68,13 +68,6 @@ BEHAVIOUR = REPO / "sources" / "typedb-behaviour"
 
 SCHEMA = "typedb-r2-leaf-evidence-v1"
 
-# Paths a RUN writes into the checkout that are not source and never compile:
-# the server's own rolling log directory. They are excluded from the source
-# delta digest (otherwise a bundle's tree identity would change mid-run
-# because a test it ran wrote a log line) and are listed explicitly in the
-# evidence, never silently dropped.
-RUNTIME_OUTPUT_PREFIXES = ("typedb-logs/",)
-
 # Paths that diverge from the pinned checkout yet PROVABLY enter neither the
 # cargo lane's build nor the catalogue's denominator.
 #
@@ -111,6 +104,19 @@ def _load_stage_module():
     spec.loader.exec_module(mod)
     return mod
 
+
+# Paths a RUN writes into the checkout that are not source and never compile:
+# the server's own rolling log directory. They are excluded from the source
+# delta digest (otherwise a bundle's tree identity would change mid-run because
+# a test it ran wrote a log line) and are listed explicitly in the evidence,
+# never silently dropped.
+#
+# TAKEN FROM stage.py, which owns the set, rather than kept as a second copy:
+# staging and tree classification must agree on what a run's own output is.
+# When they disagreed, stage.py called `typedb-logs/` a stale staged file — so
+# lint_source_lock.py failed after every lane run, and staging would have
+# DELETED a run's own logs.
+RUNTIME_OUTPUT_PREFIXES = _load_stage_module().RUNTIME_OUTPUT_PREFIXES
 
 RESULTS_NAME = "leaf-results.json"
 

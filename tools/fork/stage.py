@@ -35,6 +35,13 @@ DEST = REPO / "sources" / "typedb"
 
 # Fork-side files that describe the fork rather than build with it.
 FORK_ONLY = {"PORT-LEDGER.md", "UPSTREAM-PROVENANCE"}
+# Paths a RUN writes into the checkout and no crate compiles. They are not
+# staging drift: staging must not delete them and --check must not report them,
+# or `lint_source_lock.py` fails after every lane run and the lint becomes
+# something people learn to skip. THE source of truth for this set —
+# tools/qualification/leaf_common.py imports it from here rather than keeping
+# a second copy that can drift.
+RUNTIME_OUTPUT_PREFIXES = ("typedb-logs/",)
 SKIP_DIRS = {".git", "target", "node_modules"}
 
 
@@ -57,6 +64,13 @@ def differing():
     deleted a module it had introduced. Leaving them makes the tree under
     test neither upstream nor the fork, so staging removes them and --check
     reports them.
+
+    RUNTIME_OUTPUT_PREFIXES are excluded: a run writes `typedb-logs/` into the
+    checkout, and calling that "stale staged files" made stage.py disagree with
+    leaf_common's tree classifier, which correctly calls it RUNTIME_OUTPUT
+    (OD-015). The disagreement was not cosmetic — it failed
+    lint_source_lock.py after every lane run and would have had staging DELETE
+    a run's own logs.
     """
     new, changed = [], []
     fork_set = set()
@@ -73,7 +87,11 @@ def differing():
         text=True,
         check=True,
     )
-    stale = [pathlib.Path(p) for p in r.stdout.splitlines() if p and p not in fork_set]
+    stale = [
+        pathlib.Path(p)
+        for p in r.stdout.splitlines()
+        if p and p not in fork_set and not any(p.startswith(pfx) for pfx in RUNTIME_OUTPUT_PREFIXES)
+    ]
     return new, changed, stale
 
 

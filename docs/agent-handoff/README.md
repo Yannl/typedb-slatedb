@@ -21,7 +21,8 @@ what came before. Conversations end; this directory is what survives them.
 
 | Date | Handoff | Read this if |
 |---|---|---|
-| 2026-08-20 | [`2026-08-20-round6-to-round7.md`](2026-08-20-round6-to-round7.md) | you are starting any new session on this repository |
+| 2026-08-21 | [`2026-08-21-round7-to-round8.md`](2026-08-21-round7-to-round8.md) | you are starting any new session on this repository |
+| 2026-08-20 | [`2026-08-20-round6-to-round7.md`](2026-08-20-round6-to-round7.md) | you want round 6's detail; round 7 corrects its §4 (disk), §6 (egress) and §7 (U0 row count) |
 
 ## Related durable context
 

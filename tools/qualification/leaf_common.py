@@ -389,7 +389,16 @@ def executed_tree_identity():
     unstaged_cargo = [r for r in unstaged if r not in NON_CARGO_INPUTS]
     unexplained = [c["path"] for c in classified if c["class"] == "UNEXPLAINED"]
     state, state_line = stage_state()
-    if not entries:
+    # PRISTINE is decided on the SOURCE delta, not on raw `git status`.
+    # `source_entries` already excludes RUNTIME_OUTPUT and NON_CARGO_INPUT, and
+    # `staged_delta_sha256` is computed over exactly those entries — so testing
+    # `entries` here contradicted both this function's own docstring and the
+    # digest it publishes. It mattered for exactly one lane: U0 is the only
+    # profile that runs on an unstaged tree, and running it WRITES
+    # `typedb-logs/` into the checkout, so a U0 bundle could never be
+    # corroborated on the machine that produced it. A path that no crate
+    # compiles does not change what was built.
+    if not source_entries:
         tree_state = "PRISTINE"
     elif not unexplained and not unstaged_cargo:
         tree_state = "FORK_STAGED_EXACT"

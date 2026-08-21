@@ -202,10 +202,31 @@ def verify(
                 f"empty delta ({EMPTY_DELTA_SHA}) - a dirty tree presented "
                 f"as clean"
             )
-        if tree.get("diverging_paths"):
+        # A PRISTINE tree may still carry paths no crate compiles: a run writes
+        # its own `typedb-logs/`. What it may NOT carry is a diverging SOURCE
+        # path — a staged fork patch or an unexplained edit.
+        source_divergence = [
+            c
+            for c in (tree.get("diverging_paths") or [])
+            if c.get("class") not in ("RUNTIME_OUTPUT", "NON_CARGO_INPUT")
+        ]
+        if source_divergence:
             A.append(
                 f"bundle claims a PRISTINE tree while listing "
-                f"{len(tree['diverging_paths'])} diverging path(s)"
+                f"{len(source_divergence)} diverging SOURCE path(s): "
+                f"{[c.get('path') for c in source_divergence[:3]]}"
+            )
+        # PRISTINE means the checkout is upstream with the fork NOT staged, so
+        # the fork's patches must all be reported unstaged. An empty list is
+        # self-contradictory. It is also the ONLY field a "relabel the tree as
+        # clean" forgery actually changes when the bundle is already pristine,
+        # so without this the U0 lane had no internal defence at all.
+        if not tree.get("unstaged_fork_patches"):
+            A.append(
+                "bundle claims a PRISTINE tree but lists no unstaged fork "
+                "patches - pristine means the fork is NOT staged, so its "
+                "patches must all appear unstaged; an empty list is a staged "
+                "or relabelled tree presented as untouched"
             )
     if corroborate_tree:
         # An external corroboration, used when re-verifying on the machine that

@@ -1,0 +1,8 @@
+
+running 3 tests
+test cartesian_named_counted_checked ... ok
+test unselected_named_vars_counted ... ok
+test anonymous_vars_not_enumerated_or_counted ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+

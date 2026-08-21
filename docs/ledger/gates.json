@@ -81,12 +81,12 @@
   {
    "id": "U0",
    "state": "OPEN",
-   "why": "Baseline is a stale 104-row identity-weak archive; no fresh pristine U0 over the current tree."
+   "why": "Round 7 executed the first fresh pristine U0 over the current tree. docs/evidence/G3/leaf/u0-full-1 (executed, tree_state PRISTINE, tree_stable_across_run true, 106/106 targets, 0 refused, 0 timed out, 455 leaves: 452 PASSED / 2 FAILED / 1 IGNORED, root 1fb52e70dbd3507df8444f9500e5d0b8bd01e315390ceb9cdbd64bbe2cc5cf94) and docs/evidence/G3/leaf/cucumber-u0-1 (DERIVED from that bundle's archived bytes, nothing re-run; 47/47 features, 0 refused, 4071 leaves all PASSED, 28 scenarios NOT_RUN, root 13a82c609998e4325afc617b3d41dd4570e191d04933dafdbe66cd1f5b54baa7). Both verify CLEAN with 0 anomalies; u0-full-1 also verifies CLEAN under --corroborate-tree. Adding them moved plan coverage 9056 -> 13582 of 23138 rows, i.e. 4526 of U0's 4740 plan rows now carry a leaf-granularity outcome. The lane stays OPEN because 214 U0 rows remain uncovered (failpoint rows that libtest does not print per fail point, and static rows) and because COVERED records an outcome, never a pass: the 2 FAILED leaves are upstream's own todo!() stubs in storage/tests/test_recovery.rs, which the fork implements (upstream 7 #[test] with 2 todo!(); fork 18 #[test] with 0), and both pass under U1 and U2."
   },
   {
    "id": "U1",
    "state": "OPEN",
-   "why": "104 rows, weak target-name identity, no current per-row provenance; oracle joins on name (CD-003)."
+   "why": "SUPERSEDED by round-6 evidence and re-verified in round 7. The lane now carries leaf-granularity, per-row provenance instead of 104 name-joined target rows: docs/evidence/G3/leaf/u1-full-1 (106 targets, 4 refused, 451 leaves = 450 PASSED / 1 IGNORED, tree FORK_STAGED_EXACT, root 8836361dbb79dda042fec39da553e05291183cb3cd562562f2b0027c48f0d49b) plus docs/evidence/G3/leaf/u1-http-2, the clean re-run of exactly those 4 refused HTTP targets (4 leaves, all PASSED, root 48952a67630debded37da7f206bd51fd98d1c71ee14985eda6ead15f95e34ae8), and docs/evidence/G3/leaf/cucumber-u1-1 (47/47 features, 4071 leaves all PASSED, 28 NOT_RUN, root 81c1ab7057f5e6275d0a16e30b16a721066a1c661b492c3e140794aba5e1192c). CD-003 is answered: the oracle no longer joins on target name — leaf_diff.py compares 455 leaf CASES and reports 0 regressions, 0 absent-on-candidate, 0 outcome-changed, 0 unexplained candidate-only against U2. BOTH u1 bundles must be passed as --oracle; passing only u1-full-1 makes those 4 HTTP targets look candidate-only. The lane stays OPEN because plan rows remain uncovered, not because its identity is weak."
   },
   {
    "id": "U2",

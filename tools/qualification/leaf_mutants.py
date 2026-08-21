@@ -58,7 +58,7 @@ import leaf_common as lc  # noqa: E402
 VERIFIER = HERE / "verify_leaf.py"
 COVERAGE = HERE / "leaf_coverage.py"
 
-failures, checks = [], 0
+failures, checks, skipped = [], 0, 0
 
 
 def expect(label, ok, detail="", verb=("KILLED", "SURVIVED")):
@@ -143,12 +143,57 @@ class Copy:
         return p.returncode, p.stdout + p.stderr
 
 
+def observable(c):
+    """Everything a verifier can read, compared by MEANING not by spelling.
+
+    refresh() re-serialises the JSON, so raw bytes differ even when nothing
+    changed; and a probe that omits one file silently disables every control
+    that mutates only that file. So: every .json parsed, every other file by
+    digest, plus the name list so a deletion is visible.
+    """
+    out = {"__names__": sorted(f.name for f in c.dir.iterdir() if f.is_file())}
+    for f in sorted(c.dir.iterdir()):
+        if not f.is_file():
+            continue
+        if f.suffix == ".json":
+            try:
+                out[f.name] = json.loads(f.read_text())
+            except (OSError, json.JSONDecodeError):
+                out[f.name] = "<unparseable>"
+        else:
+            out[f.name] = sha256_file(f)
+    return out
+
+
 def control(label, src, mutate, needle=None, extra=(), expect_ok=False):
+    """One mutation, one real verifier subprocess.
+
+    `needle` may be a string or a tuple of alternatives: the SAME forgery is
+    caught by different messages depending on the source bundle (a pristine
+    bundle and a fork-staged one diverge on different fields), and a control
+    whose claim is "this forgery is detected" must not be pinned to one
+    sentence.
+    """
+    global skipped
     c = Copy(src)
+    before = observable(c)
     if mutate:
         mutate(c)
+    if mutate and not expect_ok and observable(c) == before:
+        # Nothing was forged, so this control never ran. Reporting SURVIVED
+        # would be indistinguishable from a real check having regressed, and
+        # reporting KILLED would be a lie. Neither: say it did not apply.
+        skipped += 1
+        print(f"  N/A     {label}")
+        print(
+            f"      mutation left {src} unchanged - this control does not "
+            f"apply to this bundle and did NOT run",
+            file=sys.stderr,
+        )
+        return c
     rc, out = c.verify(extra)
-    ok = (rc == 0) if expect_ok else (rc != 0 and (needle is None or needle in out))
+    needles = (needle,) if isinstance(needle, str) else (needle or (None,))
+    ok = (rc == 0) if expect_ok else (rc != 0 and any(n is None or n in out for n in needles))
     expect(label, ok, detail=f"rc={rc} tail: {out[-900:]}")
     return c
 
@@ -283,7 +328,10 @@ def main():
         "staged_delta_files/diverging_paths all forged)",
         src,
         fake_clean,
-        needle="not the digest of an empty delta",
+        needle=(
+            "not the digest of an empty delta",
+            "lists no unstaged fork patches",
+        ),
     )
 
     # 6b ------------------------- the same forgery, digest fabricated too
@@ -304,22 +352,68 @@ def main():
         "fabricated - caught only by --corroborate-tree",
         src,
         fake_clean_total,
-        needle="corroboration refuses the claim",
+        needle=(
+            "corroboration refuses the claim",
+            "lists no unstaged fork patches",
+        ),
         extra=("--corroborate-tree",),
     )
-    # and the honest statement of the limit: without corroboration it survives
+
+    # The limit, restated as it NOW stands. It used to be "the total forgery
+    # is undetectable from inside the bundle". That is no longer true: a
+    # relabel-as-PRISTINE has to empty unstaged_fork_patches, and verify_leaf
+    # now refuses a pristine claim that lists none. So the forger must ALSO
+    # leave the fork patch list intact - and that version still gets through,
+    # because nothing inside the bundle can pin the tree record its own
+    # producer wrote. The limit is narrower, not gone, and it is asserted here
+    # in the form that still holds rather than deleted for being inconvenient.
+    def fake_clean_evasive(c):
+        b = c.load()
+        tr = b["executed_tree"]
+        tr["tree_state"] = "PRISTINE"
+        tr["dirty"] = False
+        tr["staged_delta_files"] = 0
+        tr["diverging_paths"] = []
+        tr["unexplained_paths"] = []
+        tr["staged_delta_sha256"] = hashlib.sha256(b"").hexdigest()
+        # unstaged_fork_patches deliberately LEFT POPULATED
+        c.refresh(b)
+
     c = Copy(src)
-    fake_clean_total(c)
+    fake_clean_evasive(c)
     rc, _out = c.verify()
-    expect(
-        "6c LIMIT ASSERTED (expected ACCEPTANCE, not a kill): without "
-        "--corroborate-tree the same total forgery is NOT detectable from "
-        "inside the bundle alone, because the producer writes the tree "
-        "record and nothing inside the bundle can pin it",
-        rc == 0,
-        detail=f"expected the un-corroborated verify to accept it, rc={rc}",
-        verb=("HOLDS", "UNEXPECTED"),
-    )
+    # Whether this forgery gets through depends on what the SOURCE bundle was,
+    # and the control says which case it is testing rather than averaging them:
+    #
+    #   FORK_STAGED source - a staged tree legitimately lists NO unstaged fork
+    #       patches, so relabelling it PRISTINE always contradicts the new
+    #       pristine-implies-unstaged-patches rule. Detected, every time.
+    #   PRISTINE source - the bundle already lists its 36 unstaged patches, the
+    #       forger leaves them alone, and nothing inside the bundle can pin the
+    #       tree record its own producer wrote. Accepted; only
+    #       --corroborate-tree refuses it. THIS is the surviving limit.
+    src_state = json.loads((REPO / src / lc.RESULTS_NAME).read_text())["executed_tree"][
+        "tree_state"
+    ]
+    if src_state == "PRISTINE":
+        expect(
+            "6c LIMIT ASSERTED (expected ACCEPTANCE, not a kill): against a "
+            "PRISTINE source bundle, a forgery that fabricates the empty-delta "
+            "digest and leaves the unstaged fork-patch list intact is still "
+            "not detectable from inside the bundle - only --corroborate-tree "
+            "refuses it",
+            rc == 0,
+            detail=f"expected the un-corroborated verify to accept it, rc={rc}",
+            verb=("HOLDS", "UNEXPECTED"),
+        )
+    else:
+        expect(
+            f"6c the same evasive forgery against a {src_state} source bundle "
+            f"IS caught from inside the bundle: a staged tree lists no unstaged "
+            f"fork patches, so a PRISTINE relabel contradicts itself",
+            rc != 0,
+            detail=f"expected the un-corroborated verify to refuse it, rc={rc}",
+        )
 
     # 7 ------------------------------------ a leaf bound to the wrong target
     def wrong_target(c):
@@ -459,7 +553,8 @@ def main():
         f"anomalies={len(mutated['leaf_bundles'][0]['anomalies'])}",
     )
 
-    print(f"\n{checks - len(failures)}/{checks} controls held ({len(failures)} SURVIVED)")
+    na = f", {skipped} not applicable to this bundle" if skipped else ""
+    print(f"\n{checks - len(failures)}/{checks} controls held ({len(failures)} SURVIVED){na}")
     for f in failures:
         print(f"SURVIVED: {f}", file=sys.stderr)
     return 1 if failures else 0

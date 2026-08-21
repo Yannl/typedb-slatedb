@@ -153,20 +153,41 @@ pub fn commands(id: &str, ctx: &Ctx) -> Vec<Cmd> {
         }
         "rust.clippy" => {
             for m in &ctx.rust_manifests_all {
-                out.push(Cmd::new(
-                    "cargo",
-                    &[
-                        "clippy",
-                        "--manifest-path",
-                        m,
-                        "--workspace",
-                        "--all-targets",
-                        "--all-features",
-                        "--",
-                        "-D",
-                        "warnings",
-                    ],
-                ));
+                if overlay_of(ctx, m).is_some() {
+                    // An overlay workspace is mostly upstream's code, which we
+                    // may not edit (see forkowned). `-D warnings` would abort
+                    // the build on the first upstream lint and gate us on code
+                    // nobody here wrote, so findings are collected as JSON and
+                    // judged per file after the run.
+                    out.push(Cmd::new(
+                        "cargo",
+                        &[
+                            "clippy",
+                            "--manifest-path",
+                            m,
+                            "--workspace",
+                            "--all-targets",
+                            "--all-features",
+                            "--message-format",
+                            "json",
+                        ],
+                    ));
+                } else {
+                    out.push(Cmd::new(
+                        "cargo",
+                        &[
+                            "clippy",
+                            "--manifest-path",
+                            m,
+                            "--workspace",
+                            "--all-targets",
+                            "--all-features",
+                            "--",
+                            "-D",
+                            "warnings",
+                        ],
+                    ));
+                }
             }
         }
         "rust.tests" => {
@@ -541,10 +562,52 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
     let mut total_ms = 0u128;
     let mut last_command = None;
     for cmd in &cmds {
+        // Per-workspace floor, checked immediately before the command that
+        // builds that workspace. The single pre-gate check above uses the cost
+        // class alone, and a class number cannot be right for both the tiny
+        // `tools` workspace and the whole TypeDB fork: 14 GB free passed the
+        // 12 GB heavy floor and then ran out at 23 GB mid-compile.
+        let manifest = exec::manifest_of(cmd);
+        let need = d.weight.required_free_gb_for(&ctx.policy.execution, id, manifest.as_deref());
+        if let Some(free) = exec::free_disk_gb(ctx.repo_root) {
+            if free < need {
+                let where_ = manifest.as_deref().unwrap_or("this workspace");
+                let mut r = GateResult::new(
+                    id,
+                    d.tier,
+                    d.language,
+                    d.advisory,
+                    Status::InfrastructureFailure,
+                    &format!(
+                        "insufficient build space: gate `{id}` needs {need:.1} GB free to build \
+                         {where_}, {free:.1} GB available"
+                    ),
+                );
+                r.command = Some(cmd.display());
+                r.cwd = cmd.cwd.clone();
+                r.remediation = Some(format!(
+                    "free at least {:.1} GB (`cargo clean` in any other build tree), or run this \
+                     gate on a machine with more disk; the command was not attempted and no \
+                     quality conclusion may be drawn from this run",
+                    need - free
+                ));
+                return r;
+            }
+        }
         let res = exec::run(ctx.repo_root, cmd, timeout);
         total_ms += res.duration_ms;
         last_command = Some(res.command.clone());
         if res.success() {
+            // A zero exit is not automatically a pass: a gate that reports in
+            // its output rather than its status code is judged below.
+            if let Some(fail) = judge_output(id, ctx, cmd, &res) {
+                let mut r = GateResult::new(id, d.tier, d.language, d.advisory, Status::QualityFailure, &fail);
+                r.command = Some(res.command);
+                r.cwd = cmd.cwd.clone();
+                r.exit_code = res.exit_code;
+                r.duration_ms = Some(total_ms);
+                return r;
+            }
             continue;
         }
         let (status, detail) = if let Some(err) = &res.spawn_error {
@@ -557,6 +620,20 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
                     res.command, ctx.policy.execution.gate_timeout_secs
                 ),
             )
+        } else if exec::looks_like_enospc(&res.tail(200)) {
+            // The disk ran out mid-command. That is infrastructure, not a
+            // statement about the code, and calling it a QualityFailure sends
+            // the next reader hunting for a defect that is not there.
+            (
+                Status::InfrastructureFailure,
+                format!(
+                    "`{}` ran out of disk space (exit {}); the gate did not complete and no \
+                     quality conclusion may be drawn from it\n{}",
+                    res.command,
+                    res.exit_code.unwrap_or(-1),
+                    res.tail(25)
+                ),
+            )
         } else {
             (
                 Status::QualityFailure,
@@ -564,6 +641,10 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
             )
         };
         let mut r = GateResult::new(id, d.tier, d.language, d.advisory, status, &detail);
+        if status == Status::InfrastructureFailure && r.remediation.is_none() {
+            r.remediation =
+                Some("free disk space (`cargo clean` in any other build tree) and re-run the gate".to_string());
+        }
         r.command = Some(res.command);
         r.cwd = cmd.cwd.clone();
         r.exit_code = res.exit_code;
@@ -582,6 +663,104 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
     r.command = last_command;
     r.duration_ms = Some(total_ms);
     r
+}
+
+/// Overlay workspaces: a manifest whose sources are a file overlay on a pinned
+/// upstream checkout, and the checkout + lock node that pins it.
+///
+/// Only these workspaces get per-file lint attribution. Everything else in the
+/// repository is ours end to end and is gated whole.
+const OVERLAYS: &[(&str, &str, &str, &str)] = &[("fork/typedb/Cargo.toml", "fork/typedb", "sources/typedb", "TB")];
+
+fn overlay_of<'a>(_ctx: &Ctx, manifest: &str) -> Option<&'a (&'a str, &'a str, &'a str, &'a str)> {
+    OVERLAYS.iter().find(|(m, _, _, _)| *m == manifest)
+}
+
+/// One compiler diagnostic, reduced to what deciding needs.
+fn diagnostic_file(msg: &serde_json::Value) -> Option<(String, String)> {
+    let d = msg.get("message")?;
+    let level = d.get("level")?.as_str()?;
+    if level != "warning" && level != "error" {
+        return None;
+    }
+    let code = d.get("code").and_then(|c| c.get("code")).and_then(|c| c.as_str()).unwrap_or("").to_string();
+    let span =
+        d.get("spans")?.as_array()?.iter().find(|s| s.get("is_primary").and_then(|b| b.as_bool()).unwrap_or(false))?;
+    let file = span.get("file_name")?.as_str()?.to_string();
+    let line = span.get("line_start").and_then(|l| l.as_u64()).unwrap_or(0);
+    Some((file, format!("{code}{}{line}", if code.is_empty() { "" } else { ":" })))
+}
+
+/// Judge a gate that reports in its OUTPUT rather than its exit code.
+///
+/// Returns `Some(detail)` when the gate should fail. `None` means it passed.
+fn judge_output(id: &str, ctx: &Ctx, cmd: &Cmd, res: &exec::CmdResult) -> Option<String> {
+    if id != "rust.clippy" {
+        return None;
+    }
+    let manifest = exec::manifest_of(cmd)?;
+    let (_, fork_root, upstream, node) = overlay_of(ctx, &manifest)?;
+    let owned = match super::forkowned::detect(ctx.repo_root, fork_root, upstream, node) {
+        Ok(o) => o,
+        // Ownership cannot be derived, so nothing can be attributed. Refusing
+        // is the only honest answer: silently gating everything would fail on
+        // upstream's code, and silently gating nothing would be a false pass.
+        Err(e) => return Some(format!("cannot determine which {fork_root} files are ours: {e}")),
+    };
+    let (ours, upstream_hits) = attribute_clippy(&res.stdout, &owned);
+    if ours.is_empty() {
+        return None;
+    }
+    let shown: Vec<String> = ours.iter().take(20).cloned().collect();
+    Some(format!(
+        "{} clippy finding(s) in files this fork owns ({} owned, {} identical to the pinned \
+         upstream revision and therefore not gated; {} finding(s) fell in those upstream files \
+         and were not counted):\n{}{}",
+        ours.len(),
+        owned.len(),
+        owned.upstream_identical,
+        upstream_hits,
+        shown.join("\n"),
+        if ours.len() > shown.len() { format!("\n  … and {} more", ours.len() - shown.len()) } else { String::new() }
+    ))
+}
+
+/// Split clippy's JSON stream into findings we own and findings we do not.
+///
+/// Pure, so the attribution rule can be tested directly rather than only
+/// through a whole gate run: getting this wrong in either direction is severe.
+/// Too broad and we gate on upstream's code; too narrow and our own defects
+/// pass silently.
+fn attribute_clippy(stdout: &str, owned: &super::forkowned::ForkOwnership) -> (Vec<String>, usize) {
+    let mut ours: Vec<String> = Vec::new();
+    let mut upstream_hits = 0usize;
+    let mut seen = std::collections::BTreeSet::new();
+    for line in stdout.lines() {
+        let Ok(msg) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+        if msg.get("reason").and_then(|r| r.as_str()) != Some("compiler-message") {
+            continue;
+        }
+        let Some((file, tag)) = diagnostic_file(&msg) else { continue };
+        if !seen.insert(format!("{file}|{tag}")) {
+            continue;
+        }
+        // Absolute paths are generated build output (OUT_DIR), never ours.
+        if file.starts_with('/') || !owned.owns(&file) {
+            upstream_hits += 1;
+            continue;
+        }
+        let rendered = msg
+            .get("message")
+            .and_then(|m| m.get("rendered"))
+            .and_then(|r| r.as_str())
+            .unwrap_or("")
+            .lines()
+            .next()
+            .unwrap_or("")
+            .to_string();
+        ours.push(format!("  {file} — {rendered}"));
+    }
+    (ours, upstream_hits)
 }
 
 /// Protected-path hits for the current change set, with provenance.
@@ -1189,6 +1368,68 @@ mod tests {
         protected: ProtectedMatcher,
         waivers: WaiverSummary,
         registry: Registry,
+    }
+
+    /// One clippy JSON line, as cargo actually emits it.
+    fn diag(file: &str, line: u64, code: Option<&str>, level: &str, text: &str) -> String {
+        let code = match code {
+            Some(c) => format!(r#"{{"code":"{c}"}}"#),
+            None => "null".to_string(),
+        };
+        format!(
+            r#"{{"reason":"compiler-message","message":{{"level":"{level}","code":{code},"rendered":"{level}: {text}\n --> {file}:{line}","spans":[{{"file_name":"{file}","line_start":{line},"is_primary":true}}]}}}}"#
+        )
+    }
+
+    #[test]
+    fn only_findings_in_files_the_fork_owns_are_counted() {
+        let owned =
+            super::super::forkowned::ForkOwnership::for_test(&["storage/keyspace/slate.rs", "durability/wal.rs"], 742);
+        let stdout = [
+            // ours -> counted
+            diag("storage/keyspace/slate.rs", 10, Some("clippy::collapsible_if"), "warning", "collapse it"),
+            // upstream's -> NOT counted, however loud
+            diag("resource/profile.rs", 306, Some("clippy::collapsible_if"), "warning", "collapse it"),
+            diag("concept/type_/entity.rs", 1, Some("clippy::needless_borrow"), "error", "borrow"),
+            // generated build output is an ABSOLUTE path and is never ours
+            diag("/repo/fork/typedb/target/debug/build/x/out/gen.rs", 4, Some("clippy::x"), "warning", "gen"),
+            // a plain rustc warning in OUR file still counts: `-D warnings`
+            // denied these too, and scoping by file must not quietly stop.
+            diag("durability/wal.rs", 7, None, "warning", "unused import: `std::sync::Arc`"),
+            // notes and helps are not findings
+            diag("durability/wal.rs", 7, None, "note", "the lint level is defined here"),
+            // not a diagnostic at all
+            r#"{"reason":"compiler-artifact","target":{"name":"storage"}}"#.to_string(),
+            "not json at all".to_string(),
+        ]
+        .join("\n");
+
+        let (ours, upstream) = attribute_clippy(&stdout, &owned);
+        assert_eq!(ours.len(), 2, "expected exactly our two findings, got {ours:?}");
+        assert!(ours.iter().any(|f| f.contains("storage/keyspace/slate.rs")));
+        assert!(ours.iter().any(|f| f.contains("unused import")));
+        assert!(!ours.iter().any(|f| f.contains("resource/profile.rs")), "upstream file must not gate us");
+        assert_eq!(upstream, 3, "the two upstream findings plus the generated one");
+    }
+
+    #[test]
+    fn the_same_finding_reported_twice_is_counted_once() {
+        let owned = super::super::forkowned::ForkOwnership::for_test(&["storage/factory.rs"], 742);
+        // cargo re-emits diagnostics per target (lib, test, bench), so the same
+        // line arrives several times and must not inflate the count.
+        let one = diag("storage/factory.rs", 42, Some("clippy::collapsible_if"), "warning", "collapse it");
+        let stdout = [one.clone(), one.clone(), one].join("\n");
+        let (ours, _) = attribute_clippy(&stdout, &owned);
+        assert_eq!(ours.len(), 1);
+    }
+
+    #[test]
+    fn a_clean_owned_set_is_a_pass_even_with_upstream_noise() {
+        let owned = super::super::forkowned::ForkOwnership::for_test(&["storage/factory.rs"], 742);
+        let stdout = diag("resource/profile.rs", 306, Some("clippy::collapsible_if"), "warning", "collapse it");
+        let (ours, upstream) = attribute_clippy(&stdout, &owned);
+        assert!(ours.is_empty(), "upstream noise alone must not fail the gate");
+        assert_eq!(upstream, 1);
     }
 
     fn fixture(reports: Vec<ToolReport>) -> Fixture {

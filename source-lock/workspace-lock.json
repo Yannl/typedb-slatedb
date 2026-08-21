@@ -12,9 +12,9 @@
     },
     "tools": {
       "manifest": "tools/Cargo.toml",
-      "manifest_sha256": "f5fe8427695edba95ec2ea71c8a683b6192617d6655be87d49a1f42e1addc6bb",
+      "manifest_sha256": "c909ff40e4e844093aca719f2028ff9f1186e840ec66189daac280e0e5a405e1",
       "lockfile": "tools/Cargo.lock",
-      "lockfile_sha256": "1526f2efae70e4d34326bac7334d6ce9373b38d0242f74896b09e3f9fb45ee3e"
+      "lockfile_sha256": "01395dd1cb415a841f096ebf9932ac4e689cba24934d10489dfff01a911dc532"
     },
     "control-plane": {
       "manifest": "control-plane/package.json",
@@ -26,7 +26,7 @@
   "fork_staging": {
     "fork_root": "fork/typedb",
     "staged_file_count": 778,
-    "staged_tree_sha256": "9cdc967eaeb403e6fd4e00223846caffca19a864edf0e23c427a25b60eb6e11d",
+    "staged_tree_sha256": "1c8474288ce66f5242d0476ba459658b8f87d789375724611538da6488d16365",
     "note": "sources/typedb under test == locked TB revision + this patch set"
   },
   "slatedb_consumption": {

@@ -214,6 +214,58 @@ impl Weight {
             Weight::Campaign => exec.min_free_disk_gb_campaign,
         }
     }
+
+    /// The floor for one command, which knows which workspace it builds.
+    ///
+    /// The class default is a floor, never a ceiling: a workspace override may
+    /// only raise it. Light gates parse sources and are unaffected by how big
+    /// the workspace's build tree would be, so they keep the class number.
+    pub fn required_free_gb_for(self, exec: &super::policy::Execution, gate_id: &str, manifest: Option<&str>) -> f64 {
+        let base = self.required_free_gb(exec);
+        if self == Weight::Light {
+            return base;
+        }
+        let Some(m) = manifest else { return base };
+        // Most specific first. Two gates differ enormously on the SAME
+        // workspace: `clippy` type-checks, while `nextest` links every test
+        // binary, and on the TypeDB fork that is the difference between a few
+        // GB and 23+. A workspace-wide number would refuse the cheap gate to
+        // protect the expensive one.
+        exec.workspace_free_disk_gb
+            .get(&format!("{gate_id}@{m}"))
+            .or_else(|| exec.workspace_free_disk_gb.get(m))
+            .map_or(base, |o| o.max(base))
+    }
+}
+
+/// Which workspace a command builds, read from its own arguments so a new gate
+/// cannot forget to declare it.
+pub fn manifest_of(cmd: &Cmd) -> Option<String> {
+    let mut it = cmd.args.iter();
+    while let Some(a) = it.next() {
+        if a == "--manifest-path" {
+            return it.next().cloned();
+        }
+        if let Some(rest) = a.strip_prefix("--manifest-path=") {
+            return Some(rest.to_string());
+        }
+    }
+    // `cargo-machete` and friends take the workspace DIRECTORY, not the
+    // manifest; normalise so both forms hit the same policy key.
+    cmd.args
+        .iter()
+        .find(|a| !a.starts_with('-') && (Path::new(a).join("Cargo.toml").is_file()))
+        .map(|d| format!("{}/Cargo.toml", d.trim_end_matches('/')))
+}
+
+/// Is this failure the disk running out, rather than anything about the code?
+///
+/// ENOSPC part-way through a compile is the least ambiguous infrastructure
+/// signal there is, and typing it as a QualityFailure sends the next reader
+/// hunting for a defect in code that compiles perfectly well.
+pub fn looks_like_enospc(text: &str) -> bool {
+    const MARKS: [&str; 3] = ["No space left on device", "os error 28", "ENOSPC"];
+    MARKS.iter().any(|m| text.contains(m))
 }
 
 #[cfg(test)]
@@ -284,8 +336,59 @@ mod tests {
     }
 
     #[test]
+    fn enospc_is_recognised_in_any_of_its_spellings() {
+        assert!(looks_like_enospc(
+            "error: failed to write to `target/debug/deps/full.rmeta`: No space left on device (os error 28)"
+        ));
+        assert!(looks_like_enospc("ENOSPC: no space left"));
+        // and a real compile error must NOT be mistaken for one
+        assert!(!looks_like_enospc("error[E0308]: mismatched types"));
+        assert!(!looks_like_enospc("error: manual `Range::contains` implementation"));
+    }
+
+    #[test]
+    fn a_workspace_override_may_only_raise_the_class_floor() {
+        let mut e = super::super::policy::Execution {
+            min_free_disk_gb_light: 0.5,
+            min_free_disk_gb_heavy: 12.0,
+            min_free_disk_gb_campaign: 40.0,
+            fail_on_unclassified_source: true,
+            gate_timeout_secs: 3600,
+            workspace_free_disk_gb: Default::default(),
+        };
+        e.workspace_free_disk_gb.insert("fork/typedb/Cargo.toml".into(), 30.0);
+        e.workspace_free_disk_gb.insert("tools/Cargo.toml".into(), 1.0);
+
+        let fork = Some("fork/typedb/Cargo.toml");
+        // named workspace raises it, for any gate
+        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.clippy", fork), 30.0);
+        // an override BELOW the class floor cannot lower it
+        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.clippy", Some("tools/Cargo.toml")), 12.0);
+        // unnamed workspace keeps the class number
+        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.clippy", Some("other/Cargo.toml")), 12.0);
+        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.clippy", None), 12.0);
+        // light gates parse sources; workspace size is irrelevant to them
+        assert_eq!(Weight::Light.required_free_gb_for(&e, "rust.fmt", fork), 0.5);
+
+        // a gate-specific key beats the workspace key, for that gate only
+        e.workspace_free_disk_gb.insert("rust.tests@fork/typedb/Cargo.toml".into(), 45.0);
+        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.tests", fork), 45.0);
+        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.clippy", fork), 30.0);
+    }
+
+    #[test]
+    fn a_command_names_the_workspace_it_builds() {
+        let c = Cmd::new("cargo", &["clippy", "--manifest-path", "fork/typedb/Cargo.toml", "--workspace"]);
+        assert_eq!(manifest_of(&c).as_deref(), Some("fork/typedb/Cargo.toml"));
+        let eq = Cmd::new("cargo", &["clippy", "--manifest-path=tools/Cargo.toml"]);
+        assert_eq!(manifest_of(&eq).as_deref(), Some("tools/Cargo.toml"));
+        let none = Cmd::new("sh", &["-c", "true"]);
+        assert_eq!(manifest_of(&none), None);
+    }
+
+    #[test]
     fn free_disk_reports_a_plausible_number() {
         let gb = free_disk_gb(Path::new(".")).expect("df must work on this platform");
-        assert!(gb >= 0.0 && gb < 1_000_000.0);
+        assert!((0.0..1_000_000.0).contains(&gb));
     }
 }

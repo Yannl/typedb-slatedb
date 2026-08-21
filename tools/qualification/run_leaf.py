@@ -370,7 +370,6 @@ def main():
     os.environ["TYPEDB_STORAGE_PROFILE"] = profile
     tc = lc.measured_toolchain()
     tc_id = lc.toolchain_id(tc, plan)
-    fixtures = lc.fixture_state()
     tree_before = lc.executed_tree_identity()
 
     execs = run_u0.discover_executables(args.package)
@@ -395,6 +394,14 @@ def main():
                 f"target(s) read Cucumber features through it - running them "
                 f"would archive false reds."
             )
+    # Measured AFTER ensure_behaviour_fixture(), because that call is what
+    # CREATES the bazel-typedb/external/typedb_behaviour* links this reads.
+    # Measuring first is only invisible on a machine where a previous run
+    # already left them behind: on a fresh checkout it recorded the
+    # behaviour fixture as absent while the suites then ran against it
+    # correctly, and fixture_set_satisfied() turned that into thousands of
+    # leaves published as unsatisfied. An under-claim is still false evidence.
+    fixtures = lc.fixture_state()
     selection_complete = not (args.filter or args.skip or args.package or args.target)
     print(
         f"LEAF RUN profile={profile} targets={len(execs)} tree_state={tree_before['tree_state']}",

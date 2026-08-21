@@ -121,6 +121,11 @@ pub struct Execution {
     pub fail_on_unclassified_source: bool,
     #[serde(default = "default_timeout")]
     pub gate_timeout_secs: u64,
+    /// Per-workspace floors, keyed by manifest path, for workspaces whose
+    /// build dwarfs the cost-class default. A single global number cannot be
+    /// right for both the tiny `tools` workspace and the whole TypeDB fork.
+    #[serde(default)]
+    pub workspace_free_disk_gb: BTreeMap<String, f64>,
 }
 
 fn default_timeout() -> u64 {

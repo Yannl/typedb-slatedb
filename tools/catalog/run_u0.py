@@ -55,7 +55,20 @@ def discover_executables(packages=None):
             cmd += ["-p", p]
     else:
         cmd += ["--workspace"]
-    out = subprocess.check_output(cmd, cwd=TB, text=True, stderr=subprocess.DEVNULL, env=ENV_BASE)
+    # stderr is captured, never discarded: when this build fails the reason
+    # (a missing protoc, an ENOSPC, a compile error) is ONLY on stderr, and
+    # discarding it turns a diagnosable infrastructure failure into a bare
+    # CalledProcessError traceback that says nothing about the cause.
+    proc = subprocess.run(cmd, cwd=TB, text=True, capture_output=True, env=ENV_BASE, check=False)
+    if proc.returncode != 0:
+        tail = "\n".join(ln for ln in proc.stderr.splitlines() if ln.strip())[-4000:]
+        raise RuntimeError(
+            f"cargo build of the test executables failed (exit {proc.returncode}).\n"
+            f"command: {' '.join(cmd)}\n"
+            f"cwd:     {TB}\n"
+            f"--- cargo stderr (tail) ---\n{tail}"
+        )
+    out = proc.stdout
     execs = []
     for line in out.splitlines():
         try:

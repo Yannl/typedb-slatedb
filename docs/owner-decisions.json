@@ -134,6 +134,95 @@
     "docs/evidence/G1/drivers/driver-row-status.json",
     "docs/ledger/gates.json lane OFFICIAL_DRIVERS"
    ]
+  },
+  {
+   "id": "OD-011",
+   "status": "DECIDED",
+   "title": "Lint scope for an overlay workspace: gate the fork's own files, not upstream's",
+   "question": "fork/typedb is 778 files, of which 742 are byte-identical to the pinned upstream revision. Should the Rust production lint gates apply to all of them, or only to the 36 the fork actually modifies?",
+   "decision": "ONLY THE FILES THE FORK MODIFIES. Ownership is DERIVED per file, never declared: a file is ours when its git blob id differs from the pinned upstream revision, or when upstream has no such file. Measured 2026-08-21, gating everything meant 1210 of 1287 clippy findings were about code nobody here wrote or may change, and the gate aborted on resource/profile.rs, a file identical to upstream.",
+   "decided_by": "release owner, recorded 2026-08-21",
+   "default_in_force": "Before this decision rust.clippy ran with -D warnings over the whole overlay workspace and could not pass, which blocked the entire quality programme.",
+   "why_safe": "The rule is derived rather than listed, so there is nothing to keep in sync and no allowlist to rot; reverting a fork file to upstream's bytes correctly stops gating it, because it is upstream's code again. It cannot silently widen: if ownership cannot be derived (sources/ not materialised) the gate REFUSES rather than gating everything or nothing. Plain rustc warnings in owned files still count, so scoping by file does not quietly stop denying what -D warnings denied. The rejected alternative, fixing upstream's findings, would grow the fork patch set from 36 paths to hundreds and invalidate fork_staging.staged_tree_sha256, the identity every sealed evidence bundle binds.",
+   "owner_decision_changes": ".quality/policy.toml, xtask/src/quality/forkowned.rs, and the rust.clippy command shape for overlay workspaces.",
+   "referenced_by": [
+    "xtask/src/quality/forkowned.rs",
+    "xtask/src/quality/gates.rs",
+    "docs/agent-handoff/2026-08-21-round7-to-round8.md"
+   ]
+  },
+  {
+   "id": "OD-012",
+   "status": "DECIDED",
+   "title": "The one clippy error inside the quality controller itself",
+   "question": "xtask/src/quality/exec.rs carried clippy::manual_range_contains inside a #[cfg(test)] assertion. xtask/** is protected; may an implementation task fix it?",
+   "decision": "YES, as its own reviewed change. Approved 2026-08-21. The change is exactly equivalent for every f64 including NaN, since Range::contains is defined as start <= x && x < end. It weakens nothing, allows no lint and moves no threshold.",
+   "decided_by": "release owner, recorded 2026-08-21",
+   "default_in_force": "rust.clippy was red on the controller's own source, and this was almost certainly clippy's first execution against this repository: round 6's disk floor refused every compiling gate.",
+   "why_safe": "The finding was re-confirmed under the PINNED toolchain before being acted on. It first appeared under ambient clippy 1.94.0 while .prototools pins 1.93.0; after `rustup override set 1.93.0`, clippy 0.1.93 emits the same lint. Acting on a lint the pinned compiler does not emit would have been a change with no cause.",
+   "owner_decision_changes": "xtask/src/quality/exec.rs only.",
+   "referenced_by": [
+    "xtask/src/quality/exec.rs"
+   ]
+  },
+  {
+   "id": "OD-013",
+   "status": "DECIDED",
+   "title": "ENOSPC is an infrastructure failure, and the disk floor is per gate and workspace",
+   "question": "A gate that dies on 'No space left on device' was reported as a QualityFailure, and a single cost-class disk floor admitted a build it could not finish. Fix both?",
+   "decision": "BOTH. ENOSPC is typed InfrastructureFailure with a `cargo clean` remediation. Floors are keyed '<gate>@<manifest>' falling back to '<manifest>' falling back to the cost class, checked immediately before the command that builds that workspace, and an override may only RAISE the class floor.",
+   "decided_by": "release owner, recorded 2026-08-21",
+   "default_in_force": "14 GB free passed the 12 GB heavy floor; the build then consumed 23 GB without finishing and the run reported '0 infrastructure failure(s)'.",
+   "why_safe": "AGENTS.md 3.7 insists an infrastructure failure is never a pass; the converse matters as much, because a QualityFailure sends the next reader hunting for a defect in code that compiles fine. The floor for rust.tests@fork/typedb/Cargo.toml is 30 GB, and the policy comment records that 23 GB is a MEASURED LOWER BOUND rather than a proven sufficient figure, so it can be raised on evidence; with ENOSPC now typed correctly, being wrong fails safe. The key is per gate because clippy type-checks the same workspace in 4.5 GB while nextest links every test binary.",
+   "owner_decision_changes": ".quality/policy.toml [execution], xtask/src/quality/{exec,gates,policy}.rs.",
+   "referenced_by": [
+    ".quality/policy.toml",
+    "xtask/src/quality/exec.rs"
+   ]
+  },
+  {
+   "id": "OD-014",
+   "status": "DECIDED",
+   "title": "A PRISTINE bundle must list its unstaged fork patches",
+   "question": "Mutants 6/6b relabel a tree as PRISTINE. Against a genuinely pristine bundle the only field that actually changed was unstaged_fork_patches (36 entries -> []), which verify_leaf.py did not check, so the forgery went undetected. Close it?",
+   "decision": "YES. verify_leaf.py refuses a PRISTINE claim that lists no unstaged fork patches: pristine means the fork is NOT staged, so its patches must all appear unstaged, and an empty list is self-contradictory.",
+   "decided_by": "release owner, recorded 2026-08-21",
+   "default_in_force": "The U0 lane had no internal defence against being relabelled at all; leaf_mutants reported 14/16 against u0-full-1.",
+   "why_safe": "It closes a real forgery rather than suppressing its report, and it narrows an ASSERTED LIMIT rather than deleting it. Control 6c previously asserted that the forgery is undetectable from inside the bundle; that is no longer true, so 6c was RESTATED and made source-state aware instead of removed for being inconvenient. The surviving limit is stated exactly: against a PRISTINE source bundle a forger who also leaves the fork-patch list intact still gets through, and only --corroborate-tree refuses it.",
+   "owner_decision_changes": "tools/qualification/verify_leaf.py and the 6/6b/6c controls in tools/qualification/leaf_mutants.py.",
+   "referenced_by": [
+    "tools/qualification/verify_leaf.py",
+    "tools/qualification/leaf_mutants.py"
+   ]
+  },
+  {
+   "id": "OD-015",
+   "status": "DECIDED",
+   "title": "Runtime output does not make a pristine tree dirty",
+   "question": "executed_tree_identity() decided PRISTINE from raw `git status`, which counts the typedb-logs/ directory a run writes into the checkout. Since a U0 run necessarily writes it, a U0 bundle could never be corroborated on the machine that produced it. Fix it?",
+   "decision": "YES. PRISTINE is decided on the SOURCE delta — the same set staged_delta_sha256 is computed over, which already excludes RUNTIME_OUTPUT and NON_CARGO_INPUT. verify_leaf.py's PRISTINE branch correspondingly refuses diverging SOURCE paths while tolerating runtime output.",
+   "decided_by": "release owner, recorded 2026-08-21",
+   "default_in_force": "The workaround was to delete sources/typedb/typedb-logs before every U0 run, which is a manual step nobody will remember.",
+   "why_safe": "The implementation now matches its own docstring, which already named this exact case. `dirty` keeps its old meaning (raw git status nonempty) so the two producers cannot be read as disagreeing, and the path stays listed by name in runtime_output_paths, so nothing is hidden. Regression-checked: leaf_mutants still 16/16 against u1-full-1, and all four sealed bundles still verify CLEAN.",
+   "owner_decision_changes": "tools/qualification/leaf_common.py and tools/qualification/verify_leaf.py.",
+   "referenced_by": [
+    "tools/qualification/leaf_common.py",
+    "tools/qualification/verify_leaf.py"
+   ]
+  },
+  {
+   "id": "OD-016",
+   "status": "DECIDED",
+   "title": "A mutant that mutates nothing is not a survivor",
+   "question": "A control whose mutation leaves the bundle unchanged reported SURVIVED, which is indistinguishable from a real check having regressed. Report it differently?",
+   "decision": "YES. Every mutating control asserts its mutation actually landed, comparing the bundle by meaning; one that changes nothing reports N/A and counts as neither a kill nor a survival.",
+   "decided_by": "release owner, recorded 2026-08-21",
+   "default_in_force": "Ambiguous SURVIVED lines, and the same class of false report in tools/release/release_mutants.py when a build artifact is absent.",
+   "why_safe": "The probe covers EVERY file in the bundle: each .json parsed (refresh() re-serialises, so raw bytes always differ) and every other file by digest, plus the name list so a deletion registers. An earlier attempt snapshotted only the results file and the logs and silently disabled control 10, which mutates only the COMPLETE marker; that attempt was REVERTED rather than shipped, and the replacement is regression-tested against exactly that failure — 16 controls RUN against both u1-full-1 and u0-full-1.",
+   "owner_decision_changes": "tools/qualification/leaf_mutants.py. tools/release/release_mutants.py carries the same defect and is NOT yet fixed.",
+   "referenced_by": [
+    "tools/qualification/leaf_mutants.py"
+   ]
   }
  ]
 }

@@ -80,6 +80,35 @@ fail_on_unclassified_source = true
 # InfrastructureFailure (a hung gate must never look green).
 gate_timeout_secs = 3600
 
+# Per-workspace (and per-gate) floors. MUST stay last in [execution]:
+# a TOML table header ends the parent table, so any scalar written below this
+# point would silently become a member of it.
+#
+# The cost-class numbers above are a floor and never a ceiling; an entry here
+# may only raise one.
+#
+# fork/typedb is the whole TypeDB workspace, and `--all-features` links every
+# behaviour test binary (round 6 measured those at ~245 MB each). MEASURED on
+# 2026-08-21: `cargo test --no-run --workspace --all-features` against it had
+# consumed 23 GB and had NOT finished when the filesystem hit 100%, having
+# started from 14 GB free — which passed the 12 GB heavy floor. 23 GB is a
+# measured LOWER BOUND, not a proven sufficient figure; 30 is that bound plus
+# headroom. If a run still hits ENOSPC at this floor the gate now reports
+# InfrastructureFailure rather than QualityFailure, so the failure mode is safe
+# and the number can be raised on evidence.
+# Keys are "<manifest>" or, more specifically, "<gate id>@<manifest>". The
+# gate-specific key wins where both match.
+[execution.workspace_free_disk_gb]
+# MEASURED 2026-08-21: `cargo test --no-run --workspace --all-features` against
+# the fork had consumed 23 GB and had NOT finished when the filesystem hit
+# 100%, having started from 14 GB free — which passed the 12 GB heavy floor.
+# 23 GB is a measured LOWER BOUND, not a proven sufficient figure; 30 is that
+# bound plus headroom, and ENOSPC is now typed as InfrastructureFailure so
+# being wrong fails safe. Deliberately scoped to rust.tests: clippy only
+# type-checks the same workspace and completed at ~21 GB free, so a
+# workspace-wide floor would refuse the cheap gate to protect the costly one.
+"rust.tests@fork/typedb/Cargo.toml" = 30.0
+
 # ---------------------------------------------------------------------------
 # §12 — Protected quality policy.
 #

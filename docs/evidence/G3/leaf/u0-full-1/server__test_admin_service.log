@@ -1,0 +1,15 @@
+
+running 10 tests
+test admin_server_status_reports_endpoint ... ok
+test correct_endpoint_connects_and_admins_successfully ... ok
+test admin_server_version ... ok
+test admin_socket_file_has_owner_only_permissions ... ok
+test user_reset_password_rejects_empty_username ... ok
+test user_reset_password_rejects_empty_password ... ok
+test wrong_endpoint_does_not_connect ... ok
+test user_reset_password_accepts_special_characters ... ok
+test user_reset_password_rejects_unknown_user ... ok
+test user_reset_password_succeeds_for_default_user ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.30s
+

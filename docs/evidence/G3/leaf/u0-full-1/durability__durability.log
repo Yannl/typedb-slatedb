@@ -1,0 +1,17 @@
+
+running 12 tests
+test wal::test::test_wal_find_last ... ok
+test wal::test::test_wal_load ... ok
+test wal::test::test_wal_iterate_from ... ok
+test wal::test::test_wal_open_multiple ... ok
+test wal::test::test_wal_truncate_from_is_idempotent_for_same_cut ... ok
+test wal::test::test_wal_write_read ... ok
+test wal::test::test_wal_truncate_from_beginning_clears_everything ... ok
+test wal::test::test_wal_truncate_from_middle_of_single_file_and_continue ... ok
+test wal::test::truncate_from_beyond_end_does_not_skip_sequence_numbers ... ok
+test wal::test::truncate_from_keeps_prior_unsequenced_records_with_same_seq ... ok
+test wal::test::test_wal_write_read_lots ... ok
+test wal::test::test_wal_truncate_from_across_multiple_files_deletes_newer_files ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.11s
+

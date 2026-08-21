@@ -20,10 +20,20 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::process::Command;
 
-/// Files under the fork root whose content is not upstream's.
+/// What the fork actually authored, to LINE granularity.
+///
+/// File granularity over-attributes badly. Measured 2026-08-21: of 77 findings
+/// in files the fork touches, only 31 sat on lines the fork wrote. The other 46
+/// were upstream's own code in files the fork had modified for entirely
+/// unrelated reasons — `concept/tests/test_statistics.rs` differs by FOUR lines
+/// adding `.unwrap()` to a call whose signature the fork changed, and carried
+/// 19 findings, none of them on those four lines. Gating those would mean
+/// editing the upstream test corpus, which is the oracle (AGENTS.md §4).
 #[derive(Debug, Clone, Default)]
 pub struct ForkOwnership {
-    owned: BTreeSet<String>,
+    /// path -> lines the fork authored. `None` means a fork-only file, where
+    /// every line is ours.
+    owned: BTreeMap<String, Option<BTreeSet<u32>>>,
     pub upstream_identical: usize,
 }
 
@@ -32,12 +42,34 @@ impl ForkOwnership {
     /// always DERIVED by `detect`, never declared.
     #[cfg(test)]
     pub fn for_test(owned: &[&str], upstream_identical: usize) -> ForkOwnership {
-        ForkOwnership { owned: owned.iter().map(|s| s.to_string()).collect(), upstream_identical }
+        ForkOwnership { owned: owned.iter().map(|s| (s.to_string(), None)).collect(), upstream_identical }
     }
 
-    /// Is this path (relative to the fork root) ours to gate?
+    /// Tests only: a file the fork touched, owning just these lines.
+    #[cfg(test)]
+    pub fn for_test_lines(rel: &str, lines: &[u32], upstream_identical: usize) -> ForkOwnership {
+        ForkOwnership {
+            owned: [(rel.to_string(), Some(lines.iter().copied().collect()))].into_iter().collect(),
+            upstream_identical,
+        }
+    }
+
+    /// Is this path ours at all? A file the fork merely touched still answers
+    /// true here; use `owns_line` to decide whether a FINDING is ours.
     pub fn owns(&self, rel: &str) -> bool {
-        self.owned.contains(rel)
+        self.owned.contains_key(rel)
+    }
+
+    /// Did the fork author this specific line?
+    ///
+    /// A finding on a line the fork did not write is upstream's, however
+    /// heavily the fork edited the rest of the file.
+    pub fn owns_line(&self, rel: &str, line: u32) -> bool {
+        match self.owned.get(rel) {
+            None => false,
+            Some(None) => true, // fork-only file
+            Some(Some(lines)) => lines.contains(&line),
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -193,17 +225,69 @@ pub fn detect(
             rels.len()
         ));
     }
-    let mut owned = BTreeSet::new();
+    let mut owned: BTreeMap<String, Option<BTreeSet<u32>>> = BTreeMap::new();
     let mut identical = 0usize;
     for (rel, id) in rels.iter().zip(ids.iter()) {
         match upstream.get(rel) {
             Some(up) if up == id => identical += 1,
-            _ => {
-                owned.insert(rel.clone());
+            Some(up) => {
+                // A file the fork MODIFIED: only the lines it actually wrote.
+                owned.insert(rel.clone(), Some(changed_lines(&checkout, up, &fork_root.join(rel))?));
+            }
+            None => {
+                owned.insert(rel.clone(), None); // fork-only file, all ours
             }
         }
     }
     Ok(ForkOwnership { owned, upstream_identical: identical })
+}
+
+/// Line numbers in the FORK file that differ from the upstream blob.
+///
+/// Uses git's own diff at zero context and reads the hunk headers, rather than
+/// reimplementing a diff: `@@ -a,b +c,d @@` means d lines starting at c are new
+/// or changed on our side. `d == 0` is a pure deletion, which occupies no line
+/// in our file and therefore owns nothing.
+fn changed_lines(checkout: &Path, upstream_oid: &str, fork_file: &Path) -> Result<BTreeSet<u32>, String> {
+    let blob = Command::new("git")
+        .arg("-C")
+        .arg(checkout)
+        .args(["cat-file", "blob", upstream_oid])
+        .output()
+        .map_err(|e| format!("could not read upstream blob {upstream_oid}: {e}"))?;
+    if !blob.status.success() {
+        return Err(format!("git cat-file blob {upstream_oid} failed"));
+    }
+    let tmp = std::env::temp_dir().join(format!("xtask-upstream-{upstream_oid}.blob"));
+    std::fs::write(&tmp, &blob.stdout).map_err(|e| format!("cannot stage upstream blob: {e}"))?;
+    let out = Command::new("git")
+        .args(["diff", "--no-index", "--unified=0", "--no-color"])
+        .arg(&tmp)
+        .arg(fork_file)
+        .output()
+        .map_err(|e| format!("could not diff {}: {e}", fork_file.display()))?;
+    let _ = std::fs::remove_file(&tmp);
+    // `git diff --no-index` exits 1 when the files differ, which is the whole
+    // point here; only a spawn failure or exit >1 is an error.
+    if out.status.code().is_some_and(|c| c > 1) {
+        return Err(format!("git diff --no-index on {} failed", fork_file.display()));
+    }
+    let mut lines = BTreeSet::new();
+    for h in String::from_utf8_lossy(&out.stdout).lines().filter(|l| l.starts_with("@@")) {
+        // @@ -12,0 +13,4 @@ optional section heading
+        let Some(plus) = h.split('+').nth(1) else { continue };
+        let spec = plus.split(&[' ', '@'][..]).next().unwrap_or("");
+        let (start, count) = match spec.split_once(',') {
+            Some((a, b)) => (a.parse::<u32>().ok(), b.parse::<u32>().ok()),
+            None => (spec.parse::<u32>().ok(), Some(1)),
+        };
+        if let (Some(start), Some(count)) = (start, count) {
+            for n in start..start + count {
+                lines.insert(n);
+            }
+        }
+    }
+    Ok(lines)
 }
 
 #[cfg(test)]
@@ -221,11 +305,28 @@ mod tests {
 
     #[test]
     fn ownership_answers_only_for_paths_it_was_given() {
-        let o = ForkOwnership { owned: ["storage/slate.rs".to_string()].into_iter().collect(), upstream_identical: 7 };
+        let o = ForkOwnership::for_test(&["storage/slate.rs"], 7);
         assert!(o.owns("storage/slate.rs"));
         assert!(!o.owns("resource/profile.rs"));
         assert!(!o.is_empty());
         assert_eq!(o.len(), 1);
+        // a fork-ONLY file: every line is ours
+        assert!(o.owns_line("storage/slate.rs", 1));
+        assert!(o.owns_line("storage/slate.rs", 9_999));
+        assert!(!o.owns_line("resource/profile.rs", 1));
+    }
+
+    #[test]
+    fn a_file_the_fork_merely_touched_owns_only_the_lines_it_wrote() {
+        // The real case this exists for: concept/tests/test_statistics.rs
+        // differs from upstream by four lines and carried 19 clippy findings,
+        // none of them on those four. Gating the other 15 would mean editing
+        // the upstream test corpus, which is the oracle.
+        let o = ForkOwnership::for_test_lines("concept/tests/test_statistics.rs", &[397, 440, 475, 510], 742);
+        assert!(o.owns("concept/tests/test_statistics.rs"), "the file is ours to consider");
+        assert!(o.owns_line("concept/tests/test_statistics.rs", 397), "a line the fork wrote");
+        assert!(!o.owns_line("concept/tests/test_statistics.rs", 120), "upstream's line in our file");
+        assert!(!o.owns_line("concept/tests/test_statistics.rs", 398), "one line past ours");
     }
 
     #[test]

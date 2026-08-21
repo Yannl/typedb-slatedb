@@ -536,7 +536,7 @@ fn a_checkpoint_bound_to_a_different_backend_identity_refuses_restore() {
         &resources,
         &context,
     );
-    let error = result.err().expect("a cross-identity cut must refuse the load");
+    let error = result.expect_err("a cross-identity cut must refuse the load");
     assert!(
         matches!(error, StorageOpenError::CheckpointIdentityRefused { .. }),
         "a cross-identity cut must be the typed CheckpointIdentityRefused, got: {error:?}",
@@ -911,7 +911,7 @@ fn a_legacy_cut_without_identity_refuses_recovery_until_explicitly_imported() {
         &resources,
         &context,
     );
-    let error = result.err().expect("a legacy identity-less cut must refuse ordinary recovery");
+    let error = result.expect_err("a legacy identity-less cut must refuse ordinary recovery");
     assert!(
         matches!(error, StorageOpenError::CheckpointLegacyIdentityRefused { .. }),
         "expected the typed CheckpointLegacyIdentityRefused, got: {error:?}"

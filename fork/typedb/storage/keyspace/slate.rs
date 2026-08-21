@@ -235,31 +235,32 @@ impl AdmissionRefused {
 }
 
 fn settings() -> Settings {
-    let mut settings = Settings::default();
-    settings.wal_enabled = false;
-    settings.flush_interval = None;
-    settings.compactor_options = None;
-    settings.garbage_collector_options = None;
-    settings.compression_codec = None;
-    // With the compactor disabled, L0 only ever grows; the default
-    // l0_max_ssts=8 backpressure would permanently stall memtable flush
-    // dispatch (and eventually every put) once reached. Trade read
-    // amplification for liveness — the same posture SlateDB's own
-    // compactor-less tests take (settings.l0_max_ssts = 10_000). The TypeDB
-    // admission bound (EXPERIMENTAL_NO_COMPACTOR_MAX_L0_SSTS, S-05) sits far
-    // below this, so a typed write refusal — not this opaque backpressure
-    // stall — is what a saturated lane surfaces first.
-    settings.l0_max_ssts = 1_000_000;
-    settings.l0_max_ssts_per_key = 1_000_000;
-    // Q-13: SlateDB's wrapper-level object-store retries default to None,
-    // which is documented as "retry transient errors indefinitely". An
-    // infinite lower-layer retry converts an outage into a silent hang that
-    // no caller deadline can see past. Bounded here; the exhausted error
-    // surfaces through the fallible seam and get_prev's own bounded retry
-    // policy decides what is transient (A10). Containment default, not an
-    // SLO (docs/owner-decisions.json OD-006).
-    settings.object_store_max_retries = Some(8);
-    settings
+    Settings {
+        wal_enabled: false,
+        flush_interval: None,
+        compactor_options: None,
+        garbage_collector_options: None,
+        compression_codec: None,
+        // With the compactor disabled, L0 only ever grows; the default
+        // l0_max_ssts=8 backpressure would permanently stall memtable flush
+        // dispatch (and eventually every put) once reached. Trade read
+        // amplification for liveness — the same posture SlateDB's own
+        // compactor-less tests take (settings.l0_max_ssts = 10_000). The TypeDB
+        // admission bound (EXPERIMENTAL_NO_COMPACTOR_MAX_L0_SSTS, S-05) sits far
+        // below this, so a typed write refusal — not this opaque backpressure
+        // stall — is what a saturated lane surfaces first.
+        l0_max_ssts: 1_000_000,
+        l0_max_ssts_per_key: 1_000_000,
+        // Q-13: SlateDB's wrapper-level object-store retries default to None,
+        // which is documented as "retry transient errors indefinitely". An
+        // infinite lower-layer retry converts an outage into a silent hang that
+        // no caller deadline can see past. Bounded here; the exhausted error
+        // surfaces through the fallible seam and get_prev's own bounded retry
+        // policy decides what is transient (A10). Containment default, not an
+        // SLO (docs/owner-decisions.json OD-006).
+        object_store_max_retries: Some(8),
+        ..Default::default()
+    }
 }
 
 /// The SlateDB store subtree under a keyspace root: LocalFS keyspaces put it
@@ -3994,10 +3995,12 @@ mod posture_tests {
         let error = assert_pre_g13_posture(&gc_on).unwrap_err().to_string();
         assert!(error.contains("report-only"), "{error}");
 
-        let mut all_on = Settings::default();
-        all_on.wal_enabled = true;
-        all_on.compactor_options = Some(CompactorOptions::default());
-        all_on.garbage_collector_options = Some(GarbageCollectorOptions::default());
+        let all_on = Settings {
+            wal_enabled: true,
+            compactor_options: Some(CompactorOptions::default()),
+            garbage_collector_options: Some(GarbageCollectorOptions::default()),
+            ..Default::default()
+        };
         let error = assert_pre_g13_posture(&all_on).unwrap_err().to_string();
         assert!(error.matches(';').count() >= 2, "every violated clause must be named: {error}");
     }
@@ -4388,7 +4391,9 @@ mod admission_bound_tests {
         // a finite, non-zero ceiling that leaves headroom below SlateDB's own
         // l0_max_ssts backpressure so the typed refusal — not an opaque stall
         // — is what a saturated lane surfaces first.
-        assert!(EXPERIMENTAL_NO_COMPACTOR_MAX_L0_SSTS > 0, "the envelope must be a positive bound");
+        // Checked at COMPILE time: the operand is a constant, so a runtime
+        // assert here never actually guards anything.
+        const _: () = assert!(EXPERIMENTAL_NO_COMPACTOR_MAX_L0_SSTS > 0, "the envelope must be a positive bound");
         assert!(
             EXPERIMENTAL_NO_COMPACTOR_MAX_L0_SSTS < super::settings().l0_max_ssts,
             "the admission bound must fire before SlateDB's own l0_max_ssts backpressure stall",
@@ -5237,10 +5242,11 @@ mod multipart_journal_budget_tests {
             admit_multipart_bytes(u64::MAX, 1, u64::MAX),
             Err(MultipartBudgetRefused::Bytes { reserved: u64::MAX, incoming: 1, max: u64::MAX })
         );
-        // and the production budgets are real, positive bounds
-        assert!(MULTIPART_MAX_OPEN_ATTEMPTS > 0);
-        assert!(MULTIPART_MAX_JOURNALED_BYTES > 0);
-        assert!(MULTIPART_TERMINAL_RECEIPTS > 0);
+        // and the production budgets are real, positive bounds — checked at
+        // COMPILE time, since every operand is a constant
+        const _: () = assert!(MULTIPART_MAX_OPEN_ATTEMPTS > 0);
+        const _: () = assert!(MULTIPART_MAX_JOURNALED_BYTES > 0);
+        const _: () = assert!(MULTIPART_TERMINAL_RECEIPTS > 0);
     }
 
     #[test]
@@ -5396,8 +5402,8 @@ mod metrics_budget_tests {
             Ok::<u64, ()>(7)
         };
 
-        let first = key_count_with_memo(&memo, ttl, true, &scan).unwrap();
-        let second = key_count_with_memo(&memo, ttl, true, &scan).unwrap();
+        let first = key_count_with_memo(&memo, ttl, true, scan).unwrap();
+        let second = key_count_with_memo(&memo, ttl, true, scan).unwrap();
 
         assert_eq!(first, 7);
         assert_eq!(second, 7, "the memoised count is served inside the TTL");
@@ -5416,7 +5422,7 @@ mod metrics_budget_tests {
             scans.set(scans.get() + 1);
             Ok::<u64, ()>(9)
         };
-        let count = key_count_with_memo(&memo, ttl, true, &scan).unwrap();
+        let count = key_count_with_memo(&memo, ttl, true, scan).unwrap();
         assert_eq!(count, 9, "an expired memo rescans");
         assert_eq!(scans.get(), 1);
     }
@@ -5446,8 +5452,8 @@ mod metrics_budget_tests {
             scans.set(scans.get() + 1);
             Ok::<u64, ()>(1)
         };
-        key_count_with_memo(&memo, ttl, false, &scan).unwrap();
-        key_count_with_memo(&memo, ttl, false, &scan).unwrap();
+        key_count_with_memo(&memo, ttl, false, scan).unwrap();
+        key_count_with_memo(&memo, ttl, false, scan).unwrap();
         assert_eq!(scans.get(), 2, "the local lane bypasses the memo");
         assert!(memo.lock().unwrap().is_none(), "the local lane never writes the memo");
     }
@@ -5996,11 +6002,11 @@ mod r6_multipart_integrity_tests {
         // R6-STOR-02: the per-object maximum is INDEPENDENT of the aggregate
         // journal budget and strictly tighter than it, and the fallback's
         // materialised cap is tighter still.
-        assert!(
+        const _: () = assert!(
             MULTIPART_MAX_MATERIALISED_PROMOTE_BYTES < MULTIPART_MAX_OBJECT_BYTES,
             "the materialised-promote cap must be strictly tighter than the per-object maximum",
         );
-        assert!(
+        const _: () = assert!(
             MULTIPART_MAX_OBJECT_BYTES < super::MULTIPART_MAX_JOURNALED_BYTES,
             "the per-object maximum must be independent of, and tighter than, the aggregate budget",
         );
@@ -6077,7 +6083,7 @@ mod r6_multipart_integrity_tests {
             let admitted = tokio::time::timeout(Duration::from_secs(10), CompletionPermit::acquire()).await;
             assert!(admitted.is_ok(), "releasing a permit must admit the waiter");
         });
-        assert!(MULTIPART_MAX_CONCURRENT_COMPLETIONS > 0, "the budget is positive");
+        const _: () = assert!(MULTIPART_MAX_CONCURRENT_COMPLETIONS > 0, "the budget is positive");
     }
 
     // ------------------------------------------------------------------

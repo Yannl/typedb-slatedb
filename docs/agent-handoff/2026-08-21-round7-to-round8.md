@@ -12,6 +12,30 @@ it was measured this time.
 
 ## 0. The one-line state
 
+> **Round 7b (same day, after the round-7 PR merged as `ea1c732`).**
+> `cargo xtask quality fast` now reports **0 policy violations, 0 quality
+> failures**. Every gate that can run on this machine passes:
+>
+> ```
+> pass                    policy.waivers
+> pass                    policy.toolchain_pin
+> pass                    policy.scope_classification
+> pass                    rust.fmt
+> pass                    rust.clippy          <- was 77 findings, now 0
+> infrastructure_failure  rust.tests           <- fork/typedb needs 30 GB, has 15.5
+> ```
+>
+> The one remaining item is a MACHINE limit, not a quality verdict, and it says
+> so in its own status. Disk accounting: ~38 GB total, ~22 GB of it toolchains,
+> registries, `node_modules` and `sources/`; the fork's `--all-features` test
+> build measured >23 GB and did not finish. Cleaning every other build tree
+> reaches ~19 GB free. **`rust.tests` on `fork/typedb` cannot run here and has
+> never run anywhere** — do not read its absence as a pass.
+>
+> What round 7b changed, beyond the clippy work: §11.
+
+
+
 Plan coverage **13,582 of 23,138 rows (58.7%)**, up from 9,056 (39%). The U0
 lane exists for the first time. G0 is still `OPEN_RED` and Mode-Q is still
 `ABSENT`. Nothing in the ledger claims otherwise.
@@ -736,3 +760,98 @@ implemented, so the work below is what those decisions opened up:
   target-name identity" was corrected in `cc4aad8` once the owner asked for it,
   and now names the three bundles, their roots, and the fact that CD-003 is
   answered by comparing 455 leaf CASES rather than target names.
+
+---
+
+## 11. Round 7b — what happened after the round-7 PR merged
+
+Same day, branch restarted from `main` at `ea1c732`. Five commits.
+
+### 11.1 Lint attribution is per LINE now, and that changed the number
+
+OD-011 said "gate the code the fork wrote". File granularity does not implement
+that. Of the 77 findings in files the fork touches, **only 31 sat on lines the
+fork authored**:
+
+```
+concept/tests/test_statistics.rs    differs by 4 lines (adding `.unwrap()` to a
+                                    call whose signature the fork changed)
+                                    carried 19 findings, NONE on those 4 lines
+encoding/tests/test_type_vertex.rs  differs by 5 added lines
+                                    carried 7 findings, none on those 5
+```
+
+Both are upstream **test** files, and AGENTS.md §4 makes the upstream corpus the
+oracle. Gating those 26 `const_item_mutation` findings would have pushed us to
+edit tests we do not own so that our own gate would pass.
+
+Lines come from `git diff --no-index --unified=0` hunk headers. Cross-checked
+against an independent Python implementation: both say 31.
+
+### 11.2 All 31 fixed, and the fix chosen per finding
+
+Real fixes where the lint had a point: `private_interfaces` (a `pub` error enum
+was carrying a `pub(crate)` type — callers could receive it and not name it);
+`assertions_on_constants` ×8 (every operand was a `const`, so the runtime
+asserts were decorative — now `const _: () = assert!(...)`, checked at compile
+time, strictly stronger); `type_complexity` ×2 (named aliases). Then the
+mechanical set: `err_expect`, `op_ref`, `collapsible_if`,
+`redundant_pattern_matching`, `needless_borrows_for_generic_args`,
+`field_reassign_with_default`.
+
+Documented trade-offs, `#[allow]` with the reason at the site (§3.5):
+`result_large_err` ×2 (the `Err` type is upstream's public `DatabaseOpenError`)
+and `large_enum_variant` ×2 (in both, the large variant IS the payload).
+
+**Verified behaviour-preserving:** `cargo test -p storage --tests --locked` →
+**261 passed, 0 failed, 1 ignored**, the same 261/0 round 6 recorded.
+
+`fork_staging.staged_tree_sha256` moved `1c847428…` → `b48288f1…`, so the
+workspace lock is regenerated. **The sealed U0/U1/U2 bundles were produced
+against the OLD digest.** They still verify from their own bytes, but they now
+describe a tree that differs from HEAD by these lint fixes. Re-running those
+lanes to restore correspondence is the first real job for round 8.
+
+### 11.3 Two wrangler instances were fighting over one port
+
+`rust_client_full_protocol_against_the_managed_surface` passed alone in 3s and
+failed in the full run with `did not open port … within 180s`. **I diagnosed
+that as a cold start and was wrong.** The spawn sent wrangler's output to
+/dev/null; capturing it named the fault at once:
+
+```
+Fatal uncaught kj::Exception: ::bind(...): Address already in use;
+toString() = 127.0.0.1:9229
+```
+
+workerd binds a debug **inspector** port as well as the HTTP one, fixed at 9229,
+and `--port` does not move it. `l1_stack` and `l1_managed_stack` each had unique
+HTTP ports, booted concurrently, and both grabbed 9229. `--inspector-port` is
+now derived from the HTTP port. 249/250 → **250/250**.
+
+Note the pattern: three separate defects this round were *invisible because a
+tool discarded the output that explained it* — `run_u0.discover_executables`,
+this spawn, and `release verify`. Worth treating as a class.
+
+### 11.4 The release plane: "could not check" read as "checked"
+
+`collect()` skipped the artifact digest and member-root checks when the file was
+absent, and `verify` still printed OK with no field saying so. The report now
+carries `artifact_checked`, and `ARTIFACT_NOT_CHECKED` is a **release-grade
+blocker** rather than an integrity issue — record-only verification stays valid
+on a machine without the tarball, but nothing is release grade when its artifact
+was never hashed. Carries a two-sided forgery control.
+
+`release_mutants.py` also got the mutation-landed guard (round 7's §4.5, the one
+of six left unfixed): a control refused at `ARTIFACT_MISSING` before reaching
+its check now reports **N/A**, not SURVIVED. 23 killed/1 survived → **24 killed,
+0 survived, 1 N/A**.
+
+### 11.5 A trap worth knowing
+
+**The assembly archive path is not lane-qualified.** `sources/assembly-artifacts/
+typedb-all-linux-x86_64.tar.gz` is one path shared by every lane, but U0 needs
+one built from the pristine tree and the release evidence pins one built from
+the fork. Dropping the U0-built archive there made `release_mutants`' control of
+controls fail with `ARTIFACT_DIGEST_MISMATCH`. Build it for the lane you are
+running, and remove it afterwards.

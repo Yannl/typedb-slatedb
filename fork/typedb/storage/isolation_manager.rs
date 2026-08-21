@@ -444,10 +444,10 @@ impl Timeline {
             Some(watermark) => watermark, // Invariant
             None => return,
         };
-        if let Some(watermark_window_end) = { self.try_get_window(predecessor).map(|w| w.end()) } {
-            if watermark >= watermark_window_end {
-                self.may_free_windows();
-            }
+        if let Some(watermark_window_end) = { self.try_get_window(predecessor).map(|w| w.end()) }
+            && watermark >= watermark_window_end
+        {
+            self.may_free_windows();
         }
     }
 
@@ -752,6 +752,10 @@ pub(crate) enum CommitStatus<'a> {
 /// only the states the WAL can actually certify. `MissingStatus` means the
 /// commit record exists but no status record certifies its verdict — the
 /// caller must refuse with a typed error, never assume or panic.
+// `Applied` carrying the whole CommitRecord is the point: recovery needs the
+// record, not a handle to it. Boxing would allocate per recovered commit on the
+// replay path to shrink an enum that is matched and destructured immediately.
+#[allow(clippy::large_enum_variant, reason = "the large variant IS the payload; destructured at once")]
 #[derive(Debug)]
 pub(crate) enum DiskCommitStatus {
     Applied(CommitRecord),

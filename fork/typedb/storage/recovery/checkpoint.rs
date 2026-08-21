@@ -2728,7 +2728,10 @@ mod restore_durability_barrier_tests {
         );
         let expected = newest.into_iter().next().unwrap().1.puts()[0].0.clone();
         assert_eq!(probes[0].1, expected, "probe selection walks the recovered commits newest first");
-        assert!(RESTORE_WITNESS_MAX_PROBES > 0 && RESTORE_WITNESS_MAX_PROBES <= 4096, "the probe set stays bounded");
+        const _: () = assert!(
+            RESTORE_WITNESS_MAX_PROBES > 0 && RESTORE_WITNESS_MAX_PROBES <= 4096,
+            "the probe set stays bounded"
+        );
     }
 }
 

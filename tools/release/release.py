@@ -527,7 +527,12 @@ def collect(rdir, required, artifact_path, digest):
     record = read_json(rdir / "release.json")
     if record["artifact"]["sha256"] != digest:
         issues.append(f"RECORD_DIGEST_MISMATCH {record['artifact']['sha256']}")
-    if artifact_path is not None and artifact_path.exists():
+    # Whether the ARTIFACT itself was checked, as opposed to the record that
+    # describes it. An absent artifact silently skipped both the digest and the
+    # member-root check while `verify` still printed OK, so "I could not check
+    # this" was indistinguishable from "I checked it and it is correct".
+    artifact_checked = artifact_path is not None and artifact_path.exists()
+    if artifact_checked:
         live = sha256_file(artifact_path)
         if live != digest:
             issues.append(f"ARTIFACT_DIGEST_MISMATCH live={live}")
@@ -606,6 +611,7 @@ def collect(rdir, required, artifact_path, digest):
         res = read_json(rpath)
         if res.get("artifact_sha256") != digest:
             issues.append(f"FOREIGN_LANE_RESULT {rpath.name} bound to {res.get('artifact_sha256')}")
+    record["_artifact_checked"] = artifact_checked
     return record, lane_states, issues
 
 
@@ -747,6 +753,12 @@ def cmd_verify(args):
                 )
 
     grade_issues = []
+    # Deliberately a GRADE blocker and not an integrity issue. A record-only
+    # verification is a legitimate thing to do on a machine that does not hold
+    # the tarball, so this must not turn today's passing runs red; but nothing
+    # may be called RELEASE GRADE when its artifact was never hashed.
+    if not record.get("_artifact_checked"):
+        grade_issues.append("ARTIFACT_NOT_CHECKED")
     if record["profile"] != "RELEASE":
         grade_issues.append(f"PROFILE_{record['profile']}")
     if promotion and promotion.get("promotion_class") != "RELEASE":
@@ -783,6 +795,7 @@ def cmd_verify(args):
         "lane_attempts": {
             lane: (res or {}).get("_attempts") for lane, res in sorted(_lane_states.items())
         },
+        "artifact_checked": bool(record.get("_artifact_checked")),
         "integrity_issues": issues,
         "release_grade_blockers": grade_issues,
         "release_grade": not issues and not grade_issues,

@@ -1594,8 +1594,7 @@ mod tests {
         let error = storage
             .clone()
             .open_snapshot_write_at(SequenceNumber::MIN)
-            .err()
-            .expect("a historical write snapshot must be refused");
+            .expect_err("a historical write snapshot must be refused");
         assert!(
             matches!(
                 error,

@@ -718,17 +718,17 @@ impl BackendIdentity {
     /// identity, its serialisation, or its digest.
     pub fn from_spec_and_runtime(spec: &BackendSpec, runtime: Option<&S3RuntimeConfig>) -> Self {
         let mut identity = Self::from_spec(spec);
-        if let (BackendSpec::SlateDbR2(slate), Some(runtime)) = (spec, runtime) {
-            if slate.object_store_profile == "s3" {
-                identity.endpoint = Some(runtime.endpoint.clone());
-                identity.bucket = Some(runtime.bucket.clone());
-                identity.root_prefix = Some(runtime.root_prefix.clone());
-                identity.region = Some(runtime.region.clone());
-                identity.cache_budget = Some(match runtime.cache_bytes {
-                    None => "none".to_owned(),
-                    Some(bytes) => bytes.to_string(),
-                });
-            }
+        if let (BackendSpec::SlateDbR2(slate), Some(runtime)) = (spec, runtime)
+            && slate.object_store_profile == "s3"
+        {
+            identity.endpoint = Some(runtime.endpoint.clone());
+            identity.bucket = Some(runtime.bucket.clone());
+            identity.root_prefix = Some(runtime.root_prefix.clone());
+            identity.region = Some(runtime.region.clone());
+            identity.cache_budget = Some(match runtime.cache_bytes {
+                None => "none".to_owned(),
+                Some(bytes) => bytes.to_string(),
+            });
         }
         identity
     }
@@ -891,6 +891,11 @@ impl BackendIdentity {
 
 /// What the database directory's marker file persists: either the legacy v1
 /// kind-only discriminant, or the full v2 identity (R4-STOR-01).
+// The size gap between V1 and V2 is inherent: V2 carrying the FULL identity is
+// the point of the type. Boxing it would add an allocation to every marker read
+// and rewrite 13 construction and match sites, to save moving a struct that is
+// read once when a database is opened.
+#[allow(clippy::large_enum_variant, reason = "the large variant IS the payload; read once at open")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PersistedBackendMarker {
     /// Legacy v1 marker: a bare `classic`/`slatedb-r2` line. Read-compatible;
@@ -1534,7 +1539,7 @@ mod backend_seam_tests {
 
     #[test]
     fn an_unknown_profile_value_is_a_typed_error_not_a_silent_default() {
-        assert!(matches!(StorageBackendProfile::parse("U9"), None));
+        assert!(StorageBackendProfile::parse("U9").is_none());
         // and the parse-level fail-closed contract feeds the same seam: an
         // unset value defaults to the oracle profile EXPLICITLY (U1), while
         // any present-but-unknown value refuses in resolve_from_env — that
@@ -2208,13 +2213,16 @@ mod s3_admission_tests {
 
     #[test]
     fn every_behavior_affecting_s3_input_changes_the_identity_digest() {
+        /// One named edit to an S3 runtime config, for the digest table below.
+        type S3ConfigMutation = Box<dyn Fn(&mut S3RuntimeConfig)>;
+
         // R5-STOR-01 mutant (b): endpoint, bucket, root prefix, REGION, and
         // CACHE BUDGET (value change AND on/off) each move the configuration
         // digest — no input can change behaviour while the marker digest
         // stays put.
         let spec = BackendSpec::from_profile(StorageBackendProfile::U2S3SlateS3FileWal).unwrap();
         let base = BackendIdentity::from_spec_and_runtime(&spec, Some(&config_a())).config_digest();
-        let mutations: [(&str, Box<dyn Fn(&mut S3RuntimeConfig)>); 6] = [
+        let mutations: [(&str, S3ConfigMutation); 6] = [
             ("endpoint", Box::new(|c| c.endpoint = "http://other:9000".to_owned())),
             ("bucket", Box::new(|c| c.bucket = "bucket-other".to_owned())),
             ("root prefix", Box::new(|c| c.root_prefix = "prefix-other".to_owned())),

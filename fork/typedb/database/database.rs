@@ -824,8 +824,12 @@ pub(crate) fn attest_task_inventory(
     Ok(())
 }
 
+/// `pub`, not `pub(crate)`: `DatabaseOpenError::ForbiddenBackgroundWorker`
+/// carries this type and that enum is public, so a caller can receive one and
+/// could not name it. That is the `private_interfaces` defect, not a lint
+/// preference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ForbiddenWorkerError {
+pub enum ForbiddenWorkerError {
     IntervalCheckpointerOnControllerFrozenLane,
 }
 
@@ -902,6 +906,11 @@ fn make_checkpoint_fn(
 /// an argument, not read from the process-global env) so the "no touch before
 /// refusal" ordering is hermetically unit-testable and its mutant — creating
 /// the directory before the refusal — fails a named test.
+// The `Err` type is upstream's `DatabaseOpenError`, the shared enum every
+// database-open path returns. Boxing it to satisfy this lint would change a
+// public upstream type and add a divergence to the fork patch set — whose
+// digest binds every sealed evidence bundle — to buy nothing.
+#[allow(clippy::result_large_err, reason = "Err type is upstream's public DatabaseOpenError")]
 fn create_backend_bound_directory(
     path: &Path,
     name: &str,
@@ -919,6 +928,11 @@ fn create_backend_bound_directory(
 /// (`fs::remove_dir` refuses a non-empty directory atomically, so nothing
 /// another actor put there can ever be deleted). A pre-existing directory is
 /// never touched by the failure path.
+// The `Err` type is upstream's `DatabaseOpenError`, the shared enum every
+// database-open path returns. Boxing it to satisfy this lint would change a
+// public upstream type and add a divergence to the fork patch set — whose
+// digest binds every sealed evidence bundle — to buy nothing.
+#[allow(clippy::result_large_err, reason = "Err type is upstream's public DatabaseOpenError")]
 fn create_backend_bound_directory_with(
     path: &Path,
     name: &str,

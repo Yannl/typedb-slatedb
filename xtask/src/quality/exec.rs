@@ -220,12 +220,21 @@ impl Weight {
     /// The class default is a floor, never a ceiling: a workspace override may
     /// only raise it. Light gates parse sources and are unaffected by how big
     /// the workspace's build tree would be, so they keep the class number.
-    pub fn required_free_gb_for(self, exec: &super::policy::Execution, manifest: Option<&str>) -> f64 {
+    pub fn required_free_gb_for(self, exec: &super::policy::Execution, gate_id: &str, manifest: Option<&str>) -> f64 {
         let base = self.required_free_gb(exec);
         if self == Weight::Light {
             return base;
         }
-        manifest.and_then(|m| exec.workspace_free_disk_gb.get(m)).map_or(base, |o| o.max(base))
+        let Some(m) = manifest else { return base };
+        // Most specific first. Two gates differ enormously on the SAME
+        // workspace: `clippy` type-checks, while `nextest` links every test
+        // binary, and on the TypeDB fork that is the difference between a few
+        // GB and 23+. A workspace-wide number would refuse the cheap gate to
+        // protect the expensive one.
+        exec.workspace_free_disk_gb
+            .get(&format!("{gate_id}@{m}"))
+            .or_else(|| exec.workspace_free_disk_gb.get(m))
+            .map_or(base, |o| o.max(base))
     }
 }
 
@@ -350,15 +359,21 @@ mod tests {
         e.workspace_free_disk_gb.insert("fork/typedb/Cargo.toml".into(), 30.0);
         e.workspace_free_disk_gb.insert("tools/Cargo.toml".into(), 1.0);
 
-        // named workspace raises it
-        assert_eq!(Weight::Heavy.required_free_gb_for(&e, Some("fork/typedb/Cargo.toml")), 30.0);
+        let fork = Some("fork/typedb/Cargo.toml");
+        // named workspace raises it, for any gate
+        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.clippy", fork), 30.0);
         // an override BELOW the class floor cannot lower it
-        assert_eq!(Weight::Heavy.required_free_gb_for(&e, Some("tools/Cargo.toml")), 12.0);
+        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.clippy", Some("tools/Cargo.toml")), 12.0);
         // unnamed workspace keeps the class number
-        assert_eq!(Weight::Heavy.required_free_gb_for(&e, Some("other/Cargo.toml")), 12.0);
-        assert_eq!(Weight::Heavy.required_free_gb_for(&e, None), 12.0);
+        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.clippy", Some("other/Cargo.toml")), 12.0);
+        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.clippy", None), 12.0);
         // light gates parse sources; workspace size is irrelevant to them
-        assert_eq!(Weight::Light.required_free_gb_for(&e, Some("fork/typedb/Cargo.toml")), 0.5);
+        assert_eq!(Weight::Light.required_free_gb_for(&e, "rust.fmt", fork), 0.5);
+
+        // a gate-specific key beats the workspace key, for that gate only
+        e.workspace_free_disk_gb.insert("rust.tests@fork/typedb/Cargo.toml".into(), 45.0);
+        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.tests", fork), 45.0);
+        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.clippy", fork), 30.0);
     }
 
     #[test]

@@ -5,6 +5,7 @@
 //!   `policy`, `waivers`       - the protected policy and the exception register
 //!   `scope`                   - the single machine-readable scope manifest
 //!   `diff`                    - git change set + the §15 diff-to-gate matrix
+//!   `forkowned`               - which overlay files are ours, derived not declared
 //!   `tools`                   - pinned tool presence/version detection
 //!   `report`                  - the §4 unified evidence document
 //!   `gates`                   - gate catalogue and execution
@@ -16,6 +17,7 @@ pub mod date;
 pub mod diff;
 pub mod digest;
 pub mod exec;
+pub mod forkowned;
 pub mod gates;
 pub mod git;
 pub mod glob;

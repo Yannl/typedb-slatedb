@@ -1,0 +1,15 @@
+
+running 10 tests
+test interval_runner::tests::dropping_a_live_runner_still_waits_for_shutdown ... ok
+test tokio_task::tests::cannot_add_job_after_shutdown ... ok
+test tokio_task::tests::aborting_handle_cancels_task_and_tracker_still_completes ... ok
+test tokio_task::tests::initial_delay_ignores_shutdown_action ... ok
+test tokio_task::tests::interval_no_shutdown_action_when_disabled ... ok
+test tokio_task::tests::interval_shutdown_action_runs_on_shutdown ... ok
+test tokio_task::tests::tracked_even_if_handle_dropped ... ok
+test tokio_task::tests::spawn_returns_handle_and_is_tracked ... ok
+test tokio_task::tests::multiple_concurrent_jobs_work_correctly ... ok
+test interval_runner::tests::dropping_a_runner_whose_action_panicked_does_not_panic ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+

@@ -1,0 +1,15 @@
+
+running 10 tests
+test annotation::inference::match_inference::tests::basic_nested_graphs ... ok
+test annotation::inference::match_inference::tests::no_labels ... ok
+test annotation::inference::match_inference::tests::basic_binary_edges_fixed_labels ... ok
+test annotation::inference::match_inference::tests::basic_binary_edges ... ok
+test annotation::inference::match_inference::tests::test_functions ... ok
+test annotation::inference::match_inference::tests::no_type_constraints ... ok
+test annotation::inference::match_inference::tests::role_players ... ok
+test annotation::inference::match_inference::tests::type_constraints ... ok
+test annotation::inference::type_seeder::tests::test_comparison ... ok
+test annotation::inference::type_seeder::tests::test_has ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+

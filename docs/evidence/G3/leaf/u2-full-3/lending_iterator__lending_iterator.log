@@ -1,0 +1,10 @@
+
+running 5 tests
+test kmerge::tests::double_seek ... ok
+test kmerge::tests::empty_merge ... ok
+test kmerge::tests::merge_one ... ok
+test kmerge::tests::empty_seek ... ok
+test kmerge::tests::merge_two ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

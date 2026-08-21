@@ -1,0 +1,25 @@
+
+running 20 tests
+test byte_size::tests::deserialize_from_integer ... ok
+test byte_size::tests::deserialize_unquoted_unit_string_in_yaml ... ok
+test byte_size::tests::deserialize_negative_rejected ... ok
+test byte_size::tests::deserialize_from_string ... ok
+test byte_size::tests::display_round_trip ... ok
+test byte_size::tests::parses_explicit_byte_unit ... ok
+test byte_size::tests::parses_plain_bytes ... ok
+test byte_size::tests::parses_unit_alone_letter ... ok
+test byte_size::tests::parses_units_iec_all_caps ... ok
+test byte_size::tests::parses_units_lowercase ... ok
+test byte_size::tests::parses_units_mixed_case_and_iec_form ... ok
+test byte_size::tests::parses_units_uppercase ... ok
+test byte_size::tests::parses_with_internal_space ... ok
+test byte_size::tests::parses_with_outer_whitespace ... ok
+test byte_size::tests::rejects_decimals ... ok
+test byte_size::tests::rejects_empty ... ok
+test byte_size::tests::rejects_negative ... ok
+test byte_size::tests::rejects_no_number ... ok
+test byte_size::tests::rejects_overflow ... ok
+test byte_size::tests::rejects_unknown_unit ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

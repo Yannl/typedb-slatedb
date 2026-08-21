@@ -1,0 +1,360 @@
+
+running 1 test
+Feature: Driver User :: Users can be created and deleted, connection is only available for existing users
+  Scenario: Users can be created and deleted, connection is only available for existing users
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  Then connection has 1 user
+   ✔  Then get all users contains: admin
+   ✔  Then get all users does not contain: user
+   ✔  When create user with username 'user', password 'password'
+   ✔  When create user with username 'user2', password 'password2'
+   ✔  When create user with username 'user3', password 'password3'
+   ✔  Then get all users contains: user
+   ✔  Then get all users contains: user2
+   ✔  Then get all users contains: user3
+   ✔  When delete user: user2
+   ✔  Then get all users contains: user
+   ✔  Then get all users does not contain: user2
+   ✔  Then get all users contains: user3
+   ✔  Then connection has 3 user
+   ✔  Then get all users:
+       | admin |
+       | user  |
+       | user3 |
+   ✔  When connection closes
+   ✔  Then connection opens with username 'user2', password 'password'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'user2', password 'password2'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'user2', password 'password3'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'user', password 'password2'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'user', password 'password3'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'user', password 'password'
+   ✔  When connection closes
+   ✔  Then connection opens with username 'user3', password 'password'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'user3', password 'password3'
+   ✔  When connection closes
+   ✔  Then connection opens with username 'admin', password 'password2'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'admin', password 'password3'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'admin', password 'password'
+   ✔  When delete user: user
+   ✔  Then get all users does not contain: user
+Feature: Driver User :: User names can contain valid identifier characters, the validation is case-sensitive (bob)
+  Scenario Outline: User names can contain valid identifier characters, the validation is case-sensitive (bob)
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username 'bob', password 'password'
+   ✔  Then get user(bob) get name: bob
+   ✔  Then get all users contains: bob
+   ✔  Then get all users does not contain: BoB
+   ✔  Then get all users:
+       | admin |
+       | bob   |
+   ✔  Then get user(bob) get name: bob
+   ✔  When connection closes
+   ✔  Then connection opens with username 'BoB', password 'password'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'bob', password 'password'
+Feature: Driver User :: User names can contain valid identifier characters, the validation is case-sensitive (BoB)
+  Scenario Outline: User names can contain valid identifier characters, the validation is case-sensitive (BoB)
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username 'BoB', password 'password'
+   ✔  Then get user(BoB) get name: BoB
+   ✔  Then get all users contains: BoB
+   ✔  Then get all users does not contain: Bob
+   ✔  Then get all users:
+       | admin |
+       | BoB   |
+   ✔  Then get user(BoB) get name: BoB
+   ✔  When connection closes
+   ✔  Then connection opens with username 'Bob', password 'password'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'BoB', password 'password'
+Feature: Driver User :: User names can contain valid identifier characters, the validation is case-sensitive (Bob)
+  Scenario Outline: User names can contain valid identifier characters, the validation is case-sensitive (Bob)
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username 'Bob', password 'password'
+   ✔  Then get user(Bob) get name: Bob
+   ✔  Then get all users contains: Bob
+   ✔  Then get all users does not contain: bob
+   ✔  Then get all users:
+       | admin |
+       | Bob   |
+   ✔  Then get user(Bob) get name: Bob
+   ✔  When connection closes
+   ✔  Then connection opens with username 'bob', password 'password'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'Bob', password 'password'
+Feature: Driver User :: User names can contain valid identifier characters, the validation is case-sensitive (cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile)
+  Scenario Outline: User names can contain valid identifier characters, the validation is case-sensitive (cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile)
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username 'cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile', password 'password'
+   ✔  Then get user(cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile) get name: cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile
+   ✔  Then get all users contains: cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile
+   ✔  Then get all users does not contain: c
+   ✔  Then get all users:
+       | admin                                                                     |
+       | cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile     |
+   ✔  Then get user(cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile) get name: cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile
+   ✔  When connection closes
+   ✔  Then connection opens with username 'c', password 'password'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile', password 'password'
+Feature: Driver User :: User names can contain valid identifier characters, the validation is case-sensitive (資料庫)
+  Scenario Outline: User names can contain valid identifier characters, the validation is case-sensitive (資料庫)
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username '資料庫', password 'password'
+   ✔  Then get user(資料庫) get name: 資料庫
+   ✔  Then get all users contains: 資料庫
+   ✔  Then get all users does not contain: 資料
+   ✔  Then get all users:
+       | admin     |
+       | 資料庫       |
+   ✔  Then get user(資料庫) get name: 資料庫
+   ✔  When connection closes
+   ✔  Then connection opens with username '資料', password 'password'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username '資料庫', password 'password'
+Feature: Driver User :: Cannot create user with an emoji in its name (·‿·)
+  Scenario Outline: Cannot create user with an emoji in its name (·‿·)
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username '·‿·', password 'password'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then get all users does not contain: ·‿·
+   ✔  When connection closes
+   ✔  Then connection opens with username '·‿·', password 'password'; fails with a message containing: "Invalid credential supplied"
+Feature: Driver User :: Cannot create user with an emoji in its name (😎)
+  Scenario Outline: Cannot create user with an emoji in its name (😎)
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username '😎', password 'password'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then get all users does not contain: 😎
+   ✔  When connection closes
+   ✔  Then connection opens with username '😎', password 'password'; fails with a message containing: "Invalid credential supplied"
+Feature: Driver User :: Cannot create user with an emoji in its name (my😎user)
+  Scenario Outline: Cannot create user with an emoji in its name (my😎user)
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username 'my😎user', password 'password'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then get all users does not contain: my😎user
+   ✔  When connection closes
+   ✔  Then connection opens with username 'my😎user', password 'password'; fails with a message containing: "Invalid credential supplied"
+Feature: Driver User :: User passwords can contain any UTF symbols, the validation is case-sensitive (bob)
+  Scenario Outline: User passwords can contain any UTF symbols, the validation is case-sensitive (bob)
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username 'user', password 'bob'
+   ✔  When connection closes
+   ✔  Then connection opens with username 'user', password 'BoB'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'user', password 'bob'
+Feature: Driver User :: User passwords can contain any UTF symbols, the validation is case-sensitive (BoB)
+  Scenario Outline: User passwords can contain any UTF symbols, the validation is case-sensitive (BoB)
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username 'user', password 'BoB'
+   ✔  When connection closes
+   ✔  Then connection opens with username 'user', password 'Bob'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'user', password 'BoB'
+Feature: Driver User :: User passwords can contain any UTF symbols, the validation is case-sensitive (Bob)
+  Scenario Outline: User passwords can contain any UTF symbols, the validation is case-sensitive (Bob)
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username 'user', password 'Bob'
+   ✔  When connection closes
+   ✔  Then connection opens with username 'user', password 'bob'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'user', password 'Bob'
+Feature: Driver User :: User passwords can contain any UTF symbols, the validation is case-sensitive (cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile)
+  Scenario Outline: User passwords can contain any UTF symbols, the validation is case-sensitive (cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile)
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username 'user', password 'cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile'
+   ✔  When connection closes
+   ✔  Then connection opens with username 'user', password 'c'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'user', password 'cAn-be_Like-that_WITH-a_pretty-looooooooooooong_name-and·even‿a·smile'
+Feature: Driver User :: User passwords can contain any UTF symbols, the validation is case-sensitive (資料庫)
+  Scenario Outline: User passwords can contain any UTF symbols, the validation is case-sensitive (資料庫)
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username 'user', password '資料庫'
+   ✔  When connection closes
+   ✔  Then connection opens with username 'user', password '資料'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'user', password '資料庫'
+Feature: Driver User :: User passwords can contain any UTF symbols, the validation is case-sensitive (·‿·)
+  Scenario Outline: User passwords can contain any UTF symbols, the validation is case-sensitive (·‿·)
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username 'user', password '·‿·'
+   ✔  When connection closes
+   ✔  Then connection opens with username 'user', password '=)'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'user', password '·‿·'
+Feature: Driver User :: User passwords can contain any UTF symbols, the validation is case-sensitive (😎)
+  Scenario Outline: User passwords can contain any UTF symbols, the validation is case-sensitive (😎)
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username 'user', password '😎'
+   ✔  When connection closes
+   ✔  Then connection opens with username 'user', password 'B)'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'user', password '😎'
+Feature: Driver User :: User cannot be created multiple times
+  Scenario: User cannot be created multiple times
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username 'user', password 'password'
+   ✔  Then create user with username 'user', password 'password'; fails with a message containing: "User already exists"
+   ✔  Then create user with username 'user', password 'new-password'; fails with a message containing: "User already exists"
+   ✔  Then create user with username 'admin', password 'password'; fails with a message containing: "User already exists"
+   ✔  Then create user with username 'admin', password 'new-password'; fails with a message containing: "User already exists"
+Feature: Driver User :: User can be created after deletion
+  Scenario: User can be created after deletion
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username 'user', password 'password'
+   ✔  When delete user: user
+   ✔  When connection closes
+   ✔  Then connection opens with username 'user', password 'password'; fails with a message containing: "Invalid credential supplied"
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  Then create user with username 'user', password 'password'
+   ✔  When delete user: user
+   ✔  Then create user with username 'user', password 'new-password'
+   ✔  When connection closes
+   ✔  Then connection opens with username 'user', password 'password'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'user', password 'new-password'
+Feature: Driver User :: Admin user cannot be deleted
+  Scenario: Admin user cannot be deleted
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  Then delete user: admin; fails with a message containing: "Default user cannot be deleted"
+   ✔  When create user with username 'user', password 'password'
+   ✔  Then delete user: admin; fails with a message containing: "Default user cannot be deleted"
+   ✔  Then delete user: user
+   ✔  When create user with username 'user2', password 'password'
+   ✔  When connection closes
+   ✔  When connection opens with username 'user2', password 'password'
+   ✔  Then delete user: admin; fails with a message containing: "The user is not permitted to execute the operation"
+Feature: Driver User :: User cannot be deleted multiple times
+  Scenario: User cannot be deleted multiple times
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username 'user', password 'password'
+   ✔  When delete user: user
+   ✔  Then delete user: user; fails with a message containing: "User not found"
+   ✔  Then delete user: user2; fails with a message containing: "User not found"
+   ✔  Then delete user: surely-non-existing-user; fails with a message containing: "User not found"
+Feature: Driver User :: Updating the password of a non-existent user fails
+  Scenario: Updating the password of a non-existent user fails
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  Then get user(surely-non-existing-user) update password to 'anything'; fails with a message containing: "User not found"
+Feature: Driver User :: User's name is retrievable only by admin
+  Scenario: User's name is retrievable only by admin
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username 'user', password 'password'
+   ✔  When create user with username 'user2', password 'password'
+   ✔  Then get user(user) get name: user
+   ✔  Then get user(user2) get name: user2
+   ✔  Then get user(admin) get name: admin
+   ✔  When connection closes
+   ✔  When connection opens with username 'user', password 'password'
+   ✔  Then get user(user) get name: user
+   ✔  Then get user: user2; fails with a message containing: "The user is not permitted to execute the operation"
+   ✔  Then get user: admin; fails with a message containing: "The user is not permitted to execute the operation"
+Feature: Driver User :: All users are retrievable only by admin
+  Scenario: All users are retrievable only by admin
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username 'user', password 'password'
+   ✔  When create user with username 'user2', password 'password'
+   ✔  Then get all users:
+       | admin |
+       | user  |
+       | user2 |
+   ✔  When connection closes
+   ✔  When connection opens with username 'user', password 'password'
+   ✔  Then get all users; fails with a message containing: "The user is not permitted to execute the operation"
+Feature: Driver User :: Users can be created only by admin
+  Scenario: Users can be created only by admin
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  Then create user with username 'user', password 'password'
+   ✔  Then create user with username 'user2', password 'password'
+   ✔  When connection closes
+   ✔  When connection opens with username 'user', password 'password'
+   ✔  Then create user with username 'user3', password 'password'; fails with a message containing: "The user is not permitted to execute the operation"
+   ✔  Then create user with username 'user2', password 'password'; fails with a message containing: "The user is not permitted to execute the operation"
+   ✔  Then create user with username 'user', password 'password'; fails with a message containing: "The user is not permitted to execute the operation"
+   ✔  When connection closes
+   ✔  When connection opens with username 'admin', password 'password'
+   ✔  Then create user with username 'user3', password 'password'
+   ✔  Then get all users:
+       | admin |
+       | user  |
+       | user2 |
+       | user3 |
+Feature: Driver User :: Users can be deleted only by admin
+  Scenario: Users can be deleted only by admin
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username 'user', password 'password'
+   ✔  When create user with username 'user2', password 'password'
+   ✔  When create user with username 'user3', password 'password'
+   ✔  When create user with username 'user4', password 'password'
+   ✔  When create user with username 'user5', password 'password'
+   ✔  Then delete user: user4
+   ✔  When connection closes
+   ✔  When connection opens with username 'user', password 'password'
+   ✔  Then delete user: user5; fails with a message containing: "The user is not permitted to execute the operation"
+   ✔  Then delete user: user4; fails with a message containing: "The user is not permitted to execute the operation"
+   ✔  When connection closes
+   ✔  When connection opens with username 'admin', password 'password'
+   ✔  Then delete user: user5
+Feature: Driver User :: User's password can be changed through user only by admin or by this user
+  Scenario: User's password can be changed through user only by admin or by this user
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  Given create user with username 'user', password 'password'
+   ✔  Given create user with username 'user2', password 'password2'
+   ✔  When get user(user) update password to 'password'
+   ✔  When connection closes
+   ✔  Then connection opens with username 'user', password 'password'
+   ✔  When connection closes
+   ✔  When connection opens with username 'admin', password 'password'
+   ✔  When get user(user) update password to 'new-password'
+   ✔  When connection closes
+   ✔  Then connection opens with username 'admin', password 'new-password'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'user', password 'password'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'user', password 'new-password'
+   ✔  Then get user(admin) update password to 'password'; fails with a message containing: "The user is not permitted to execute the operation"
+   ✔  Then get user(admin) update password to 'new-password'; fails with a message containing: "The user is not permitted to execute the operation"
+   ✔  Then get user(admin) update password to 'password'; fails with a message containing: "The user is not permitted to execute the operation"
+   ✔  Then get user(user2) update password to 'new-password'; fails with a message containing: "The user is not permitted to execute the operation"
+   ✔  Then get user(user2) update password to 'password'; fails with a message containing: "The user is not permitted to execute the operation"
+   ✔  Then get user(user) update password to 'password'
+   ✔  Then connection closes
+   ✔  Then connection opens with username 'admin', password 'new-password'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'user2', password 'new-password'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'user', password 'new-password'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'user', password 'password'
+   ✔  Then connection closes
+   ✔  When connection opens with username 'admin', password 'password'
+   ✔  Then get user(admin) update password to 'new-password'
+   ✔  Then connection closes
+   ✔  Then connection opens with username 'admin', password 'password'; fails with a message containing: "Invalid credential supplied"
+   ✔  Then connection opens with username 'admin', password 'new-password'
+   ✔  Then connection opens with username 'admin', password 'new-password'
+   ✔  Then get user(admin) update password to 'password'
+Feature: Driver User :: Connected username is retrievable
+  Scenario: Connected username is retrievable
+   ✔  Given typedb starts
+   ✔  Given connection opens with username 'admin', password 'password'
+   ✔  When create user with username 'user', password 'password'
+   ✔  Then get current username: admin
+   ✔  When connection closes
+   ✔  When connection opens with username 'user', password 'password'
+   ✔  Then get current username: user
+[Summary]
+27 features
+27 scenarios (27 passed)
+276 steps (276 passed)
+test test ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 56.43s
+

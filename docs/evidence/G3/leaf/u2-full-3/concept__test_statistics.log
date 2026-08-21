@@ -1,0 +1,14 @@
+
+running 9 tests
+test delete_relation ... ok
+test delete_attribute ... ok
+test create_entity ... ok
+test delete_twice ... ok
+test relation_index_counts ... ok
+test remove_player ... ok
+test put_plays ... ok
+test put_has_twice ... ok
+test unset_has ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+

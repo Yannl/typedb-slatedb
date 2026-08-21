@@ -1,0 +1,31 @@
+{
+ "producer": "tools/qualification/run_cucumber_leaf.py",
+ "schema": "typedb-r2-cucumber-leaf-evidence-v1",
+ "profile": "U2",
+ "profile_in_plan": true,
+ "toolchain_id": "rust-1.93.0:x86_64-unknown-linux-gnu",
+ "plan_root": "72020aa01fafebddc41321e0c6100c158f80ae997037430871212049054a7a41",
+ "catalog_sha256": "569448d1a259c64c789ad8b6e65973f51c7e9a678b89079592b9ca450c41c57e",
+ "sources": [
+  {
+   "bundle": "docs/evidence/G3/leaf/u2-full-3",
+   "bundle_root": "b03164afe8c3b74a873179e0f941597162647ff555db85c518ea1d942f95091c",
+   "refusals": []
+  }
+ ],
+ "observation": {
+  "features_catalogued": 47,
+  "features_published": 47,
+  "features_refused": 0,
+  "scenarios_catalogued": 4099,
+  "leaves": 4071,
+  "leaves_passed": 4071,
+  "leaves_failed": 0,
+  "leaves_ignored": 0,
+  "scenarios_not_run": 28,
+  "logs_read": 10,
+  "logs_refused": 0
+ },
+ "bundle_root": "1111aadcc6459f066eb9c08916666fd0eee408809d5713c20d81b735a8a651e8",
+ "statement": "This bundle records per-SCENARIO outcomes, not a pass. COVERED means an outcome was RECORDED for that scenario in this lane; a FAILED leaf would be covered evidence of a failure. Scenarios the runner's ignore-tag filter never executed are reported NOT_RUN and cover nothing."
+}

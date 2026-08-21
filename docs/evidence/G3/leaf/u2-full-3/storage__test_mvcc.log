@@ -1,0 +1,11 @@
+
+running 4 tests
+[2m2026-08-21T13:32:18.492623Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-21T13:32:18.495180Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+test test_commit_increments_watermark ... ok
+test test_reading_snapshots ... ok
+test test_concurrent_writes_to_same_key ... ok
+test test_conflicting_update_fails ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+

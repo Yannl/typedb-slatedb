@@ -1,0 +1,326 @@
+
+running 1 test
+[2m2026-08-21T13:31:42.559119Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running schema query:
+define attribute name, value string; attribute age, value integer; relation friendship, relates friend @card(0..); entity person, owns name @card(0..), owns age, plays friendship:friend @card(0..);
+[2m2026-08-21T13:31:42.561455Z[0m [32m INFO[0m [2mquery::query_manager[0m[2m:[0m Schema query done.
+Query profile[measurements_enabled=true, total micros: 0]
+  CompileIR[enabled=true, total micros=0]
+    validation micros: 0
+    annotation micros: 0
+    compilation micros: 0
+  -----
+  Stage[root pattern id=0]
+    Define ~~ 0 us
+    Define pattern
+    [0] Define execution
+        ==> batches: 0, rows: 0, micros: 0, micros/row: NaN (raw seeks: 3, raw advances: 0, advances mvcc visible: 0, advances mvcc invisible: 0, advances deleted invisible: 0)
+
+[2m2026-08-21T13:31:42.561977Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-21T13:31:42.563926Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[1]
+[2m2026-08-21T13:31:42.567301Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running write query:
+
+        insert
+          $x isa person, has age 10, has name "Alice", has name "Alicia", has name "Jones";
+          $y isa person, has age 11, has name "Bob";
+          $z isa person, has age 12, has name "Charlie";
+          $p isa person, has age 13, has name "Dixie";
+          $q isa person, has age 14, has name "Ellie";
+          (friend: $x, friend: $y) isa friendship;
+          (friend: $y, friend: $z) isa friendship;
+          (friend: $z, friend: $p) isa friendship;
+          (friend: $p, friend: $q) isa friendship;
+    
+[2m2026-08-21T13:31:42.589016Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+[2m2026-08-21T13:31:42.590122Z[0m [34mDEBUG[0m [2mdurability::wal[0m[2m:[0m Writing unsequenced record with SeqNr[2]
+[2m2026-08-21T13:31:42.593666Z[0m [35mTRACE[0m [2mquery::query_manager[0m[2m:[0m Running read query:
+
+match
+    $x isa person, has $a;
+    $a isa! $t; $t label age;
+    $a == 10;
+fetch {
+    "single type": $t,
+    "single attr": $a,
+    "single-card attributes": $x.age,
+    "single value expression": $a + 1,
+    "single answer block": (
+        match
+        $x has name $name;
+        return first $name;
+    ),
+    "reduce answer block": (
+        match
+        $x has name $name, has age $age;
+        return count($name);
+    ),
+    "list pipeline": [
+        match
+        $x has name $n,
+            has age $a;
+        fetch {
+            "name": $n
+        };
+    ],
+    "list higher-card attributes": [ $x.name ],
+#    "list attributes": $x.name[], # TODO: Uncomment when it's implemented
+    "all attributes": { $x.* }
+};
+[2m2026-08-21T13:31:42.597421Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Planning conjunction:
+(1) Conjunction
+  $0 isa person
+  $0 has $1
+  $1 isa! $2
+  $2 label age
+  $1 == Param[Value(integer:0)]
+
+[2m2026-08-21T13:31:42.597640Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 0
+[2m2026-08-21T13:31:42.597664Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [] ONGOING: {} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-21T13:31:42.597714Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(3) = |TypeId| <-- cost: 0.02 heuristic: Cost { cost: 4.77, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.597745Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 1
+[2m2026-08-21T13:31:42.597751Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [] ONGOING: {} STASH: [P(3)] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-21T13:31:42.597792Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(1) = |$0 has $1| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 9.61, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.597821Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$1 isa $2| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 9.61, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-21T13:31:42.597841Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 isa person| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 9.8, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-21T13:31:42.597875Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 2
+[2m2026-08-21T13:31:42.597881Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [P(3), V(1)] ONGOING: {P(1)} STASH: [] COST: Cost { cost: 0.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 9.61, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.597906Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(2) = |$1 isa $2| <-- cost: 0.0 heuristic: Cost { cost: 8.341342812499999, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.597920Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [P(3), V(1)] ONGOING: {P(2)} STASH: [] COST: Cost { cost: 0.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 9.61, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.597937Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(4) = |$1 comp Param[Value(integer:0)]| <-- cost: 0.02 heuristic: Cost { cost: 8.483518749999998, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.597951Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [P(3), V(1)] ONGOING: {P(0)} STASH: [] COST: Cost { cost: 0.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 9.8, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.597978Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(1) = |$0 has $1| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 14.463518749999999, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.597999Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$1 isa $2| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 14.463518749999999, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-21T13:31:42.598031Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 3
+[2m2026-08-21T13:31:42.598037Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [P(3), V(1)] ONGOING: {P(1)} STASH: [P(2)] COST: Cost { cost: 0.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 9.61, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.598055Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(4) = |$1 comp Param[Value(integer:0)]| <-- cost: 0.02 heuristic: Cost { cost: 7.587561874999999, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.598070Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [P(3), V(1)] ONGOING: {P(2)} STASH: [P(4)] COST: Cost { cost: 0.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 9.61, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.598100Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 isa person| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 13.567561874999999, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-21T13:31:42.598123Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(1) = |$0 has $1| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 13.567561874999999, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.598143Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [P(3), V(1), P(0), V(2)] ONGOING: {P(2)} STASH: [] COST: Cost { cost: 6.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 14.463518749999999, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.598161Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(4) = |$1 comp Param[Value(integer:0)]| <-- cost: 0.02 heuristic: Cost { cost: 13.6690125, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.598176Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [P(3), V(1), P(0), V(2)] ONGOING: {P(1)} STASH: [] COST: Cost { cost: 6.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 14.463518749999999, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.598196Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(2) = |$1 isa $2| <-- cost: 0.0 heuristic: Cost { cost: 13.6490125, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.598226Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 4
+[2m2026-08-21T13:31:42.598231Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [P(3), V(1)] ONGOING: {P(1)} STASH: [P(2), P(4)] COST: Cost { cost: 0.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 9.61, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.598249Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(0) = |$0 isa person| <-- cost: 0.0 heuristic: Cost { cost: 6.02, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.598263Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [P(3), V(1), P(2), V(0), P(4)] ONGOING: {P(1)} STASH: [] COST: Cost { cost: 6.039999999999999, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.04, io_ratio: 1.0 } HEURISTIC: Cost { cost: 13.567561874999999, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.598281Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(0) = |$0 isa person| <-- cost: 0.0 heuristic: Cost { cost: 12.04, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.598293Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [P(3), V(1), P(2), V(0), P(4)] ONGOING: {P(0)} STASH: [] COST: Cost { cost: 6.039999999999999, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.04, io_ratio: 1.0 } HEURISTIC: Cost { cost: 13.567561874999999, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.598313Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(1) = |$0 has $1| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 18.04, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.598331Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [P(3), V(1), P(0), V(2)] ONGOING: {P(2)} STASH: [P(4)] COST: Cost { cost: 6.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 14.463518749999999, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.598350Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(1) = |$0 has $1| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 18.02, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.598380Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [P(3), V(1), P(0), V(2)] ONGOING: {P(1)} STASH: [P(2)] COST: Cost { cost: 6.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 14.463518749999999, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.598398Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(4) = |$1 comp Param[Value(integer:0)]| <-- cost: 0.02 heuristic: Cost { cost: 12.04, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.598445Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m 
+ Final plan (before lowering):
+ --> Order: [P(3), V(1), P(1), V(2), V(0), P(2), P(4), P(0)] --> MetaData 
+ {P(4): None, P(1): Direction(Canonical), P(2): None, P(3): None, P(0): None}
+[2m2026-08-21T13:31:42.598703Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Finished planning conjunction:
+(1) Conjunction
+  $0 isa person
+  $0 has $1
+  $1 isa! $2
+  $2 label age
+  $1 == Param[Value(integer:0)]
+
+[2m2026-08-21T13:31:42.598729Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Lowered plan:
+Conjunction executable plan [selected=[p1, p0, p2], output_width=3]:
+  0: Sorted Iterator Intersection [bound_vars=[], selected=[p0], output_size=1, sort_by=p0]
+      [p0 type ([AttributeType:[0001]])] filter [] with (outputs=p0, )
+  1: Sorted Iterator Intersection [bound_vars=[], selected=[p1, p0, p2], output_size=3, sort_by=p1]
+      [p1 has p2] filter [Check[p2 == Param[Value(integer:0)]] ] with (outputs=p1, p2, )
+  2: Check [selected=[p1, p0, p2], output_width=3]
+      Check[p2 isa! p0] 
+  3: Check [selected=[p1, p0, p2], output_width=3]
+      Check[p1 isa [EntityType:[0000]]] 
+[2m2026-08-21T13:31:42.598828Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Planning conjunction:
+(1) Conjunction
+  $_3 = (Proper formatting has not yet been implemented for ir::pattern::expression::ExpressionTree<answer::variable::Variable>)
+The error is: ExpressionTree { preorder_tree: [Variable($1), Constant(Param[Value(integer:1)]), Operation(Operation { operator: Add, left_expression_id: 0, right_expression_id: 1, source_span: Some(Span { begin_offset: 201, end_offset: 207 }) })] }
+
+
+[2m2026-08-21T13:31:42.598897Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 0
+[2m2026-08-21T13:31:42.598905Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-21T13:31:42.598926Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(0) = |Expr of [$1]| <-- cost: 0.02 heuristic: Cost { cost: 0.02, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.598954Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m 
+ Final plan (before lowering):
+ --> Order: [V(0), P(0), V(1)] --> MetaData 
+ {P(0): None}
+[2m2026-08-21T13:31:42.599097Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Finished planning conjunction:
+(1) Conjunction
+  $_3 = (Proper formatting has not yet been implemented for ir::pattern::expression::ExpressionTree<answer::variable::Variable>)
+The error is: ExpressionTree { preorder_tree: [Variable($1), Constant(Param[Value(integer:1)]), Operation(Operation { operator: Add, left_expression_id: 0, right_expression_id: 1, source_span: Some(Span { begin_offset: 201, end_offset: 207 }) })] }
+
+
+[2m2026-08-21T13:31:42.599126Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Lowered plan:
+Conjunction executable plan [selected=[p0, p1], output_width=2]:
+  0: Assignment [inputs=[p0], selected=[p0, p1], output_size=2]
+      ExecutableExpression { instructions: [LoadVariable, LoadConstant, OpIntegerAddInteger], variables: [p0], constants: [Param[Value(integer:1)]], return_type: Single(integer) }
+[2m2026-08-21T13:31:42.599200Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Planning conjunction:
+(1) Conjunction
+  $0 has $3
+  $3 isa name
+  $0 has $4
+  $4 isa age
+
+[2m2026-08-21T13:31:42.599269Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 0
+[2m2026-08-21T13:31:42.599278Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-21T13:31:42.599311Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 has $3| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 9.61, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.599333Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(1) = |$3 isa name| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 9.61, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-21T13:31:42.599351Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$0 has $4| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 9.61, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.599376Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(3) = |$4 isa age| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 9.61, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-21T13:31:42.599407Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 1
+[2m2026-08-21T13:31:42.599413Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {P(0)} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 9.61, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.599443Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(1) = |$3 isa name| <-- cost: 0.0 heuristic: Cost { cost: 8.572125, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.599458Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {P(2)} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 9.61, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.599476Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(3) = |$4 isa age| <-- cost: 0.0 heuristic: Cost { cost: 8.572125, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.599489Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {P(1)} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 9.61, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.599517Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$0 has $4| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 14.443518749999999, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.599537Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(3) = |$4 isa age| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 14.443518749999999, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-21T13:31:42.599595Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 has $3| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 14.572125, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.599622Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {P(3)} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 9.61, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.599655Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 has $3| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 14.443518749999999, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.599674Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(1) = |$3 isa name| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 14.443518749999999, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-21T13:31:42.599693Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$0 has $4| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 14.572125, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.599731Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 2
+[2m2026-08-21T13:31:42.599737Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {P(0)} STASH: [P(1)] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 9.61, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.599762Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$0 has $4| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 13.6290125, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.599783Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(3) = |$4 isa age| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 13.6290125, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-21T13:31:42.599802Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {P(2)} STASH: [P(3)] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 9.61, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.599826Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 has $3| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 13.6290125, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.599845Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(1) = |$3 isa name| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 13.6290125, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-21T13:31:42.599864Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0), P(1), V(2)] ONGOING: {P(2)} STASH: [] COST: Cost { cost: 6.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 14.443518749999999, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.599883Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(3) = |$4 isa age| <-- cost: 0.0 heuristic: Cost { cost: 13.6290125, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.599902Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0), P(3), V(1)] ONGOING: {P(0)} STASH: [] COST: Cost { cost: 6.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 14.443518749999999, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.599927Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(1) = |$3 isa name| <-- cost: 0.0 heuristic: Cost { cost: 13.6290125, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.599940Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0), P(3), V(1)] ONGOING: {P(1)} STASH: [] COST: Cost { cost: 6.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 14.443518749999999, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.599965Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 has $3| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 19.6290125, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.599982Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$0 has $4| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 19.6290125, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.599998Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0), P(1), V(2)] ONGOING: {P(3)} STASH: [] COST: Cost { cost: 6.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 14.443518749999999, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.600023Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 has $3| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 19.6290125, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.600041Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$0 has $4| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 19.6290125, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.600058Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0), P(3), V(1)] ONGOING: {P(2)} STASH: [] COST: Cost { cost: 6.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 14.572125, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.600080Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 has $3| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 19.71475, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.600097Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(1) = |$3 isa name| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 19.71475, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-21T13:31:42.600135Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 3
+[2m2026-08-21T13:31:42.600142Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0), P(0), V(2), P(1)] ONGOING: {P(2)} STASH: [] COST: Cost { cost: 6.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 13.6290125, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.600160Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(3) = |$4 isa age| <-- cost: 0.0 heuristic: Cost { cost: 12.02, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.600175Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0), P(2), V(1), P(3)] ONGOING: {P(0)} STASH: [] COST: Cost { cost: 6.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 13.6290125, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.600198Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(1) = |$3 isa name| <-- cost: 0.0 heuristic: Cost { cost: 12.02, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.600212Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0), P(0), V(2), P(1)] ONGOING: {P(3)} STASH: [] COST: Cost { cost: 6.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 13.6290125, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.600231Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$0 has $4| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 18.02, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.600250Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0), P(2), V(1), P(3)] ONGOING: {P(1)} STASH: [] COST: Cost { cost: 6.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 13.6290125, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.600269Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 has $3| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 18.02, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.600286Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0), P(3), V(1)] ONGOING: {P(0)} STASH: [P(1)] COST: Cost { cost: 6.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 14.443518749999999, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.600304Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$0 has $4| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 18.0, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.600323Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0), P(1), V(2)] ONGOING: {P(2)} STASH: [P(3)] COST: Cost { cost: 6.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 14.443518749999999, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.600341Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 has $3| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 18.0, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.600395Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m 
+ Final plan (before lowering):
+ --> Order: [V(0), P(0), V(2), P(1), P(2), V(1), P(3)] --> MetaData 
+ {P(2): Direction(Canonical), P(0): Direction(Canonical), P(3): None, P(1): None}
+[2m2026-08-21T13:31:42.600548Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Finished planning conjunction:
+(1) Conjunction
+  $0 has $3
+  $3 isa name
+  $0 has $4
+  $4 isa age
+
+[2m2026-08-21T13:31:42.600593Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Lowered plan:
+Conjunction executable plan [selected=[p1, p0, p2], output_width=3]:
+  0: Sorted Iterator Intersection [bound_vars=[p0], selected=[p1, p0], output_size=2, sort_by=p1]
+      [p0 has p1] filter [] with (inputs=p0, outputs=p1, )
+  1: Check [selected=[p1, p0], output_width=2]
+      Check[p1 isa [AttributeType:[0000]]] 
+  2: Sorted Iterator Intersection [bound_vars=[p0], selected=[p1, p0, p2], output_size=3, sort_by=p2]
+      [p0 has p2] filter [] with (inputs=p0, outputs=p2, )
+  3: Check [selected=[p1, p0, p2], output_width=3]
+      Check[p2 isa [AttributeType:[0001]]] 
+[2m2026-08-21T13:31:42.600705Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Planning conjunction:
+(1) Conjunction
+  $0 has $3
+  $3 isa name
+  $0 has $1
+  $1 isa age
+
+[2m2026-08-21T13:31:42.600774Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 0
+[2m2026-08-21T13:31:42.600782Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(1), V(0)] ONGOING: {} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-21T13:31:42.600816Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(3) = |$1 isa age| <-- cost: 0.0 heuristic: Cost { cost: 3.61, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.600836Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 1
+[2m2026-08-21T13:31:42.600841Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(1), V(0)] ONGOING: {} STASH: [P(3)] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-21T13:31:42.600866Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 has $3| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 8.572125, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.600888Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(1) = |$3 isa name| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 8.572125, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-21T13:31:42.600906Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$0 has $1| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 8.7075, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.600934Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 2
+[2m2026-08-21T13:31:42.600940Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(1), V(0), P(3)] ONGOING: {P(0)} STASH: [] COST: Cost { cost: 0.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 8.572125, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.600960Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(1) = |$3 isa name| <-- cost: 0.0 heuristic: Cost { cost: 7.6490124999999995, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.600974Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(1), V(0), P(3)] ONGOING: {P(1)} STASH: [] COST: Cost { cost: 0.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 8.572125, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.601000Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 has $3| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 13.6490125, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.601017Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$0 has $1| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 13.6490125, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.601033Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(1), V(0), P(3)] ONGOING: {P(2)} STASH: [] COST: Cost { cost: 0.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 8.7075, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.601061Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 has $3| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 13.73475, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.601082Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(1) = |$3 isa name| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 13.73475, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-21T13:31:42.601117Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 3
+[2m2026-08-21T13:31:42.601123Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(1), V(0), P(3)] ONGOING: {P(0)} STASH: [P(1)] COST: Cost { cost: 0.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 8.572125, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.601141Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$0 has $1| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 12.02, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.601161Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(1), V(0), P(3), P(1), V(2)] ONGOING: {P(2)} STASH: [] COST: Cost { cost: 6.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 13.6490125, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.601179Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 has $3| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 18.02, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.601196Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(1), V(0), P(3), P(1), V(2)] ONGOING: {P(0)} STASH: [] COST: Cost { cost: 6.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 13.6490125, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.601214Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(2) = |$0 has $1| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 18.02, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.601230Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(1), V(0), P(3), P(2)] ONGOING: {P(0)} STASH: [] COST: Cost { cost: 6.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 13.73475, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.601248Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(1) = |$3 isa name| <-- cost: 0.0 heuristic: Cost { cost: 12.02, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.601263Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(1), V(0), P(3), P(2)] ONGOING: {P(1)} STASH: [] COST: Cost { cost: 6.02, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 12.02, io_ratio: 1.0 } HEURISTIC: Cost { cost: 13.73475, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.601281Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 has $3| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 18.02, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.601323Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m 
+ Final plan (before lowering):
+ --> Order: [V(1), V(0), P(3), P(0), V(2), P(1), P(2)] --> MetaData 
+ {P(0): Direction(Canonical), P(1): None, P(3): None, P(2): Direction(Canonical)}
+[2m2026-08-21T13:31:42.601466Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Finished planning conjunction:
+(1) Conjunction
+  $0 has $3
+  $3 isa name
+  $0 has $1
+  $1 isa age
+
+[2m2026-08-21T13:31:42.601483Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Lowered plan:
+Conjunction executable plan [selected=[p0, p1, p2], output_width=3]:
+  0: Check [selected=[p0, p1], output_width=2]
+      Check[p0 isa [AttributeType:[0001]]] 
+  1: Sorted Iterator Intersection [bound_vars=[p1], selected=[p0, p1, p2], output_size=3, sort_by=p2]
+      [p1 has p2] filter [] with (inputs=p1, outputs=p2, )
+  2: Check [selected=[p0, p1, p2], output_width=3]
+      Check[p2 isa [AttributeType:[0000]]] 
+  3: Check [selected=[p0, p1, p2], output_width=3]
+      Check[p1 has p0] 
+[2m2026-08-21T13:31:42.601603Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Planning conjunction:
+(1) Conjunction
+  $0 has $3
+  $3 isa name
+
+[2m2026-08-21T13:31:42.601663Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 0
+[2m2026-08-21T13:31:42.601671Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 0.0, io_ratio: 1.0 } = Cost { cost: 0.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: inf, io_ratio: 0.0 }
+[2m2026-08-21T13:31:42.601698Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 has $3| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 7.805, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.601719Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(1) = |$3 isa name| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 7.805, io_ratio: 1.0 } metadata: Direction(Reverse)
+[2m2026-08-21T13:31:42.601747Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m     PLANNER STEP 1
+[2m2026-08-21T13:31:42.601753Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {P(0)} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 7.805, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.601772Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Stash P(1) = |$3 isa name| <-- cost: 0.0 heuristic: Cost { cost: 6.0, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.601786Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m         PLAN: [V(0)] ONGOING: {P(1)} STASH: [] COST: Cost { cost: 0.0, io_ratio: 1.0 } + Cost { cost: 6.0, io_ratio: 1.0 } = Cost { cost: 6.0, io_ratio: 1.0 } HEURISTIC: Cost { cost: 7.805, io_ratio: 1.0 }
+[2m2026-08-21T13:31:42.601804Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m             Choice P(0) = |$0 has $3| <-- join: None, cost: Cost { cost: 6.0, io_ratio: 1.0 }, heuristic: Cost { cost: 12.0, io_ratio: 1.0 } metadata: Direction(Canonical)
+[2m2026-08-21T13:31:42.601834Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner::plan[0m[2m:[0m 
+ Final plan (before lowering):
+ --> Order: [V(0), P(0), V(1), P(1)] --> MetaData 
+ {P(0): Direction(Canonical), P(1): None}
+[2m2026-08-21T13:31:42.601926Z[0m [35mTRACE[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Finished planning conjunction:
+(1) Conjunction
+  $0 has $3
+  $3 isa name
+
+[2m2026-08-21T13:31:42.601940Z[0m [34mDEBUG[0m [2mcompiler::executable::match_::planner[0m[2m:[0m Lowered plan:
+Conjunction executable plan [selected=[p0, p1], output_width=2]:
+  0: Sorted Iterator Intersection [bound_vars=[p0], selected=[p0, p1], output_size=2, sort_by=p1]
+      [p0 has p1] filter [] with (inputs=p0, outputs=p1, )
+  1: Check [selected=[p0, p1], output_width=2]
+      Check[p1 isa [AttributeType:[0000]]] 
+test fetch ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+

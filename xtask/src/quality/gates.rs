@@ -192,7 +192,46 @@ pub fn commands(id: &str, ctx: &Ctx) -> Vec<Cmd> {
         }
         "rust.tests" => {
             for m in &ctx.rust_manifests_all {
-                out.push(Cmd::new("cargo", &["nextest", "run", "--manifest-path", m, "--workspace", "--all-features"]));
+                let cmd = Cmd::new("cargo", &["nextest", "run", "--manifest-path", m, "--workspace", "--all-features"]);
+                // An overlay workspace runs UPSTREAM's tests, and upstream's
+                // server tests each bind fixed addresses (gRPC 11729,
+                // monitoring 4104) because they were written assuming one
+                // server at a time. nextest runs tests as parallel processes,
+                // so they fight over those ports and lose — a red that is not
+                // a defect. Every test binary is therefore invoked through a
+                // wrapper that gives it its OWN network namespace, so each has
+                // its own loopback and its own port space. Structural: it
+                // keeps holding when upstream adds another server test, which
+                // a hand-maintained list of serial tests would not.
+                match (overlay_of(ctx, m), exec::host_target_triple()) {
+                    (Some((_, fork_root, _, _)), Some(triple)) => {
+                        let runner = ctx.repo_root.join(exec::NETNS_EXEC).to_string_lossy().to_string();
+                        // Build FIRST, then stage, then run. The assembly
+                        // archive is packaged from the server binaries this
+                        // build produces, so it cannot be staged any earlier;
+                        // and the behaviour suites read their Cucumber
+                        // features through links that must exist next to the
+                        // workspace actually under test.
+                        out.push(
+                            Cmd::new(
+                                "cargo",
+                                &["nextest", "run", "--manifest-path", m, "--workspace", "--all-features", "--no-run"],
+                            )
+                            .with_env(&exec::target_runner_var(&triple), &runner),
+                        );
+                        out.push(Cmd::new(
+                            "python3",
+                            &["tools/catalog/stage_test_fixtures.py", "--workspace-root", fork_root],
+                        ));
+                        // `.already_built()`: the `--no-run` command above is
+                        // unconditional and precedes this one, so the build
+                        // floor has already been met and paid. Asking for it
+                        // again would refuse the run for want of the space
+                        // that build just consumed.
+                        out.push(cmd.with_env(&exec::target_runner_var(&triple), &runner).already_built());
+                    }
+                    _ => out.push(cmd),
+                }
             }
         }
         "rust.deny" => {
@@ -531,10 +570,15 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
     }
 
     // Build space. An ENOSPC part-way through a compile is indistinguishable
-    // from a tool bug, so refuse up front and say exactly why. This applies to
-    // internal gates too: the trusted-baseline gate compiles a whole worktree.
+    // from a tool bug, so refuse up front and say exactly why. INTERNAL gates
+    // only: they run no commands of their own (the trusted-baseline gate
+    // compiles a whole worktree from inside Rust), so nothing else will check
+    // them. Every other gate is checked per command below, which knows both
+    // the workspace and whether the command compiles at all — a class number
+    // applied on top of that only ever refuses a gate for space it does not
+    // need, which is how a green machine turns red for no reason.
     let required = d.weight.required_free_gb(&ctx.policy.execution);
-    if let Some(free) = exec::free_disk_gb(ctx.repo_root) {
+    if let Some(free) = exec::free_disk_gb(ctx.repo_root).filter(|_| is_internal(id)) {
         if free < required {
             let mut r = GateResult::new(
                 id,
@@ -558,6 +602,38 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
         return internal(id, d, ctx);
     }
 
+    // An overlay workspace must NEVER be tested without isolation. Wiring the
+    // runner in needs the host target triple, and if that could not be read the
+    // commands above quietly degrade to a plain parallel run — which does not
+    // fail, it manufactures port collisions and reports them as defects. That
+    // is the worst available outcome, so it is refused here instead.
+    // Scoped to the gate that EXECUTES the overlay's tests. `rust.fmt` and
+    // `rust.clippy` name the same workspace but never start a server, so
+    // demanding a runner of them refuses two gates that were working.
+    if let Some(cmd) = cmds.iter().find(|c| {
+        id == "rust.tests"
+            && exec::is_cargo_invocation(&c.program)
+            && exec::manifest_of(c).is_some_and(|m| overlay_of(ctx, &m).is_some())
+            && !c.env.iter().any(|(k, _)| k.ends_with("_RUNNER"))
+    }) {
+        let mut r = GateResult::new(
+            id,
+            d.tier,
+            d.language,
+            d.advisory,
+            Status::InfrastructureFailure,
+            &format!(
+                "gate `{id}` would run an overlay workspace's tests WITHOUT the per-test network                  isolation they need, because the host target triple could not be read from rustc"
+            ),
+        );
+        r.command = Some(cmd.display());
+        r.remediation = Some(
+            "ensure `rustc -vV` reports a host triple; the gate was NOT run, because upstream's              server tests bind fixed ports and a parallel run without isolation produces failures              that are not defects"
+                .to_string(),
+        );
+        return r;
+    }
+
     let timeout = Duration::from_secs(ctx.policy.execution.gate_timeout_secs);
     let mut total_ms = 0u128;
     let mut last_command = None;
@@ -568,7 +644,7 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
         // `tools` workspace and the whole TypeDB fork: 14 GB free passed the
         // 12 GB heavy floor and then ran out at 23 GB mid-compile.
         let manifest = exec::manifest_of(cmd);
-        let need = d.weight.required_free_gb_for(&ctx.policy.execution, id, manifest.as_deref());
+        let need = d.weight.required_free_gb_for(&ctx.policy.execution, id, manifest.as_deref(), cmd.builds);
         if let Some(free) = exec::free_disk_gb(ctx.repo_root) {
             if free < need {
                 let where_ = manifest.as_deref().unwrap_or("this workspace");
@@ -591,6 +667,32 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
                      quality conclusion may be drawn from this run",
                     need - free
                 ));
+                return r;
+            }
+        }
+        // If a command asks for network isolation, it must actually get it.
+        // Running without it restores the very collisions it exists to
+        // prevent, and reports them as though they were code defects.
+        if cmd.env.iter().any(|(k, _)| k.ends_with("_RUNNER")) {
+            if let Err(why) = exec::network_namespaces_available(ctx.repo_root) {
+                let mut r = GateResult::new(
+                    id,
+                    d.tier,
+                    d.language,
+                    d.advisory,
+                    Status::InfrastructureFailure,
+                    &format!(
+                        "gate `{id}` needs a private network namespace per test binary, and this \
+                         machine cannot provide one: {why}"
+                    ),
+                );
+                r.command = Some(cmd.display());
+                r.remediation = Some(
+                    "run where CAP_SYS_ADMIN or unprivileged user namespaces are available; the \
+                     gate was NOT run without isolation, because upstream's server tests bind \
+                     fixed ports and would collide, producing failures that are not defects"
+                        .to_string(),
+                );
                 return r;
             }
         }
@@ -1624,6 +1726,84 @@ mod tests {
         let mutation = display("rust.mutation.diff");
         assert!(mutation[0].contains("--in-diff artifacts/quality/pr.diff"), "{:?}", mutation);
         assert!(mutation[0].contains("--test-tool=nextest"), "{:?}", mutation);
+    }
+
+    #[test]
+    fn an_overlay_workspace_is_tested_through_the_isolation_wrapper() {
+        let f = fixture(Vec::new());
+        let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/.."));
+        let mut c = ctx(&f, root);
+        c.rust_manifests_all = vec![OVERLAYS[0].0.to_string()];
+        let cmds = commands("rust.tests", &c);
+
+        // build, stage, run — in that order. The archive is packaged from the
+        // binaries the build produces, so staging cannot precede the build.
+        assert_eq!(cmds.len(), 3, "{:?}", cmds.iter().map(|x| x.display()).collect::<Vec<_>>());
+        assert!(cmds[0].display().contains("--no-run"), "{}", cmds[0].display());
+        assert!(cmds[1].display().contains("stage_test_fixtures.py"), "{}", cmds[1].display());
+        assert!(!cmds[2].display().contains("--no-run"), "{}", cmds[2].display());
+
+        // Both cargo commands carry the runner; the run is not charged the
+        // build floor a second time.
+        for i in [0, 2] {
+            let runner = cmds[i].env.iter().find(|(k, _)| k.ends_with("_RUNNER"));
+            let (_, path) = runner.unwrap_or_else(|| panic!("command {i} must carry a runner: {}", cmds[i].display()));
+            assert!(path.ends_with(exec::NETNS_EXEC), "{path}");
+        }
+        assert!(cmds[0].builds, "the --no-run command is the build");
+        assert!(!cmds[2].builds, "the test run must not be charged the build floor again");
+    }
+
+    /// Regression: the refusal below is scoped to the gate that EXECUTES the
+    /// overlay's tests. `rust.fmt` and `rust.clippy` name the same workspace
+    /// and legitimately carry no runner — demanding one of them refused two
+    /// gates that had been passing, which is how this test came to exist.
+    #[test]
+    fn lint_gates_on_an_overlay_are_not_asked_for_a_test_runner() {
+        let f = fixture(Vec::new());
+        let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/.."));
+        let mut c = ctx(&f, root);
+        c.rust_manifests_all = vec![OVERLAYS[0].0.to_string()];
+        for id in ["rust.fmt", "rust.clippy"] {
+            for cmd in commands(id, &c) {
+                assert!(
+                    !cmd.env.iter().any(|(k, _)| k.ends_with("_RUNNER")),
+                    "{id} must not carry a runner: {}",
+                    cmd.display()
+                );
+            }
+            // Not "the gate passes" — the test fixture pins no tools, so it
+            // cannot. The claim is narrower and exact: it is not refused for
+            // want of ISOLATION.
+            let r = run(id, &c);
+            assert!(!r.detail.contains("network isolation"), "{id} refused for isolation: {}", r.detail);
+        }
+    }
+
+    /// The failure this refuses is not a red gate — it is a GREEN-shaped one:
+    /// running upstream's fixed-port server tests in parallel without isolation
+    /// manufactures failures that read as defects.
+    #[test]
+    fn an_overlay_that_could_not_be_isolated_is_refused_not_run() {
+        let f = fixture(Vec::new());
+        let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/.."));
+        let mut c = ctx(&f, root);
+        c.rust_manifests_all = vec![OVERLAYS[0].0.to_string()];
+
+        // Exactly what `commands` produces when the host triple is unreadable.
+        let degraded =
+            [Cmd::new("cargo", &["nextest", "run", "--manifest-path", OVERLAYS[0].0, "--workspace", "--all-features"])];
+        let offender = degraded.iter().find(|x| {
+            exec::is_cargo_invocation(&x.program)
+                && exec::manifest_of(x).is_some_and(|m| overlay_of(&c, &m).is_some())
+                && !x.env.iter().any(|(k, _)| k.ends_with("_RUNNER"))
+        });
+        assert!(offender.is_some(), "a runner-less overlay command must be detected");
+
+        // …and the staging step, which names the same workspace as a
+        // directory, must NOT be mistaken for one.
+        let staging = Cmd::new("python3", &["tools/catalog/stage_test_fixtures.py", "--workspace-root", OVERLAYS[0].1]);
+        assert!(!exec::is_cargo_invocation(&staging.program), "the staging step compiles nothing and needs no runner");
     }
 
     #[test]

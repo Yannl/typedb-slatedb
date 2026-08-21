@@ -20,3 +20,17 @@ tools/s3-cert-corpus/evidence/
 # surfaced through CI job summaries). The corpus and staging tooling refuse
 # to run on a dirty tree, so a quality run must not dirty it.
 artifacts/
+
+# Test fixtures and run output staged into the fork workspace when the quality
+# controller runs its tests there. Both are created by tooling, never authored:
+#   typedb_behaviour+  the Bazel-equivalent runfiles symlink the behaviour
+#                      suites read Cucumber features through
+#                      (tools/catalog/run_u0.py ensure_behaviour_fixture)
+#   typedb-logs/       the server's own rolling log directory, which a RUN
+#                      writes and no crate compiles
+/fork/typedb_behaviour+
+/fork/typedb/typedb-logs/
+
+# pytest --cov writes its data file into the repository root on every
+# `py.pytest` gate run.
+.coverage

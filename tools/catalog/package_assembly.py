@@ -18,6 +18,7 @@ Binary permissions 0744 per binary_permissions (BUILD L59); the wrapper needs
 exec permission for the test to spawn it.
 """
 
+import argparse
 import gzip
 import hashlib
 import json
@@ -32,10 +33,9 @@ TB = REPO / "sources" / "typedb"
 FIX = REPO / "sources" / "fixtures"
 VERSION = "0.0.0"
 NAME = f"typedb-all-linux-x86_64-{VERSION}"
-# built straight into the install location; nothing is left inside the
-# pinned checkout (an intermediate there reads as staging drift to
-# tools/fork/stage.py and the source-lock lint)
-OUT = REPO / "sources" / "assembly-artifacts" / "typedb-all-linux-x86_64.tar.gz"
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import run_u0  # noqa: E402
 
 
 def locked_fixture_sha(node_id):
@@ -55,8 +55,30 @@ def sha256(p):
 
 
 def main():
-    server_bin = TB / "target" / "debug" / "typedb_server_bin"
-    admin_bin = TB / "target" / "debug" / "typedb_admin_bin"
+    ap = argparse.ArgumentParser(description=__doc__)
+    # The archive contains ONE tree's binaries. Which tree is therefore not a
+    # detail the caller can leave implicit: `sources/typedb` (the pristine
+    # upstream checkout) is only the default because it is what the release
+    # records pin. The fork workspace packages its own, into its own slot.
+    ap.add_argument(
+        "--workspace-root",
+        default=str(TB),
+        help="cargo workspace whose built binaries are packaged (default: sources/typedb)",
+    )
+    args = ap.parse_args()
+    root = pathlib.Path(args.workspace_root)
+    if not root.is_absolute():
+        root = REPO / root
+    root = root.resolve()
+    if not (root / "Cargo.toml").is_file():
+        sys.exit(f"{root} is not a cargo workspace (no Cargo.toml)")
+    # built straight into the install location; nothing is left inside the
+    # pinned checkout (an intermediate there reads as staging drift to
+    # tools/fork/stage.py and the source-lock lint)
+    out = run_u0.assembly_archive_for(root)
+
+    server_bin = root / "target" / "debug" / "typedb_server_bin"
+    admin_bin = root / "target" / "debug" / "typedb_admin_bin"
     for b in (server_bin, admin_bin):
         if not b.exists():
             sys.exit(f"missing cargo-built binary: {b} (run cargo build first)")
@@ -71,16 +93,17 @@ def main():
     if sha256(loader_tar) != locked_fixture_sha("TLOADER"):
         sys.exit("loader fixture hash mismatch against source-lock.json")
 
+    wsroot = root
     with tempfile.TemporaryDirectory() as td:
         td = pathlib.Path(td)
         root = td / NAME
         (root / "server").mkdir(parents=True)
         (root / "admin").mkdir()
-        shutil.copy2(TB / "binary" / "typedb", root / "typedb")
+        shutil.copy2(wsroot / "binary" / "typedb", root / "typedb")
         (root / "typedb").chmod(0o755)
-        shutil.copy2(TB / "LICENSE", root / "LICENSE")
+        shutil.copy2(wsroot / "LICENSE", root / "LICENSE")
         shutil.copy2(server_bin, root / "server" / "typedb_server_bin")
-        shutil.copy2(TB / "server" / "config.yml", root / "server" / "config.yml")
+        shutil.copy2(wsroot / "server" / "config.yml", root / "server" / "config.yml")
         shutil.copy2(admin_bin, root / "admin" / "typedb_admin_bin")
 
         # console: artifact strip prefix typedb-console-linux-x86_64-3.12.0,
@@ -130,9 +153,9 @@ def main():
             (p, f"{NAME}/{p.relative_to(root).as_posix()}")
             for p in sorted(root.rglob("*"), key=lambda p: p.relative_to(root).as_posix())
         ]
-        OUT.parent.mkdir(parents=True, exist_ok=True)
+        out.parent.mkdir(parents=True, exist_ok=True)
         with (
-            open(OUT, "wb") as raw,
+            open(out, "wb") as raw,
             gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as gz,
             tarfile.open(fileobj=gz, mode="w", format=tarfile.GNU_FORMAT) as tf,
         ):
@@ -141,7 +164,7 @@ def main():
 
     # this is the location the corpus runner (run_u0.py) hard-links from; a
     # stale copy here silently runs assembly tests against an old binary
-    print(f"installed {OUT} sha256={sha256(OUT)}")
+    print(f"installed {out} sha256={sha256(out)}")
 
 
 if __name__ == "__main__":

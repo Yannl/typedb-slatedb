@@ -226,16 +226,57 @@
   },
   {
    "id": "OD-017",
-   "status": "OPEN",
+   "status": "RESOLVED_NO_DECISION_REQUIRED",
    "title": "Should rust.tests cover an overlay workspace whose corpus is certified by the lane runners?",
    "question": "`rust.tests` runs `cargo nextest run --manifest-path fork/typedb/Cargo.toml --workspace --all-features`. That parallelises a test corpus upstream wrote assuming one server at a time, and manufactures failures that do not exist. Should the gate cover this workspace at all, and if so under what execution model?",
-   "default_in_force": "The gate runs and reports 3 failures, all in server/service/admin/admin_service_test.rs, a file BYTE-IDENTICAL to the pinned upstream revision. Measured 2026-08-21: alone 10/10 pass; as a binary under nextest 7/10; with --no-capture (serial) 10/10; in the sealed U1 bundle 10/10 exit 0; in the sealed U2 bundle 10/10 exit 0. The server binds fixed addresses (gRPC 11729, monitoring 4104), which is why run_leaf.py executes one target at a time and why the handoff's trap 8 records that concurrent lanes collide.",
-   "why_safe": "Reporting the failures is safer than hiding them: the gate is red and says so, and nothing claims the fork's corpus is green on its strength. It is not CORRECT, though — the corpus is already gated by the U1/U2 lanes, which produce sealed bundles, a leaf differential (0 regressions over 455 cases) and 16/16 mutants, and which pass these exact tests. A red gate that cannot be made green without either serialising the runner or excluding the workspace will either be worked around or ignored, and both are worse than deciding it.",
-   "owner_decision_changes": "One of: a nextest test-group in .config/nextest.toml serialising the server binaries (keeps the gate, costs wall-clock); a scope rule excluding overlay workspaces from rust.tests on the grounds that the lane runners certify them (the same reasoning OD-011 applied to lints); or accepting the red. All three touch protected policy.",
+   "resolution": "The question is withdrawn because its premise no longer holds. It asked which coverage or wall-clock the repository should GIVE UP to stop a parallel runner manufacturing failures. A fourth answer gives up neither: every test binary is invoked through tools/dev/netns_exec.py, which puts it in its OWN network namespace (unshare(CLONE_NEWNET), loopback brought up via SIOCSIFFLAGS). Each test then has its own loopback and its own port space, so any number of servers may bind 11729, 4104, 1729 and 8000 at once. The gate keeps the whole workspace, keeps nextest's parallelism, and needs no scope rule, no serial test group and no accepted red.",
+   "resolved_by": "implementation, 2026-08-21 — no owner choice was needed, because no coverage, policy or guarantee was traded away. An owner decision remains required for anything that would REDUCE what the gate covers; see OD-018 for the one cost this leaves on the table.",
+   "measured": {
+    "before": "cargo nextest run --manifest-path fork/typedb/Cargo.toml --workspace --all-features --no-fail-fast: 711 tests, 655 passed, 56 FAILED across 10 binaries. (The '3 failures' in the original default_in_force was itself an artefact: nextest had cancelled the run.)",
+    "with_isolation_only": "711 tests, 659 passed, 52 failed, ZERO 'Address already in use'. Every remaining failure was a missing runtime FIXTURE, not a port: 49 behaviour targets reading Cucumber features through a Bazel-equivalent runfiles link cargo does not create, and 3 assembly-family targets needing the packaged server in their working directory.",
+    "with_isolation_and_fixtures": "711 tests, 711 passed, 1 skipped (upstream's own #[ignore] in storage/tests/test_isolation.rs, TODO typedb#7033), exit 0, 1215 s. Re-measured THROUGH the controller: `cargo xtask quality fast` reports rust.tests pass, 1929 s.",
+    "side_effect": "typedb_server_bin::test_fail_points::test_fail_point_always, which the U0 lane recorded as FAILED after 1753 s with 'Could not serve HTTP on 0.0.0.0:8000: Address already in use', PASSES under isolation in 599 s. The lane runner already executes one target at a time, so that failure was a collision with something else on the machine — a class of false red isolation removes from the LANES too, not only from the gate."
+   },
+   "why_safe": "The scheme cannot fail silently. netns_exec.py NEVER falls back to running unisolated: if the namespace cannot be created it exits 79 with the reason. The controller refuses in the same direction — before running any command that carries a _RUNNER variable it probes whether this machine can actually give out namespaces, and reports InfrastructureFailure rather than run without them. A machine that cannot isolate therefore gets 'this gate did not run', never a red that looks like a defect. The property the whole scheme rests on is regression-tested directly: exec::tests::two_isolated_processes_can_hold_the_same_port asserts that two processes bind 11729 simultaneously.",
+   "why_structural": "It keeps working when upstream adds another server test, which is exactly what a hand-maintained list of serial tests would not. Nothing names a port, a test or a binary.",
    "referenced_by": [
-    ".quality/policy.toml",
+    "tools/dev/netns_exec.py",
+    "tools/catalog/stage_test_fixtures.py",
+    "xtask/src/quality/exec.rs",
     "xtask/src/quality/gates.rs",
     "docs/agent-handoff/2026-08-21-round7-to-round8.md"
+   ]
+  },
+  {
+   "id": "OD-018",
+   "status": "OPEN",
+   "title": "Should the fork's 711-test corpus run in the INNER loop, or only in `pr` and `full`?",
+   "question": "rust.tests is tier A, so `cargo xtask quality fast` runs the whole fork corpus on every invocation. Measured 2026-08-21: 1215 s standalone, 1929 s inside a controller run whose clippy pass preceded it — roughly 20-32 minutes of wall clock for a change that may not touch fork/ at all. Should the corpus stay unconditional, or become diff-conditional in `fast`?",
+   "default_in_force": "It runs, unconditionally, in every mode. Maximum coverage, maximum wall clock. Nothing is hidden and no result is weakened; the cost is paid by whoever runs the inner loop.",
+   "why_safe": "Over-running a gate can only cost time; under-running one can cost a regression. The safe default is therefore the expensive one. It is not obviously CORRECT: the same function already makes the TypeScript and Python gates diff-conditional in `fast` for exactly this reason, and fork/typedb's only path dependency outside its own tree is sources/slatedb-fork, which is materialised from source-lock rather than authored here — so a diff touching only tools/ or control-plane/ cannot change what the corpus does.",
+   "owner_decision_changes": "gates::targets() would narrow rust_manifests_all for `fast` to workspaces the diff can affect (fork/**, source-lock/**, the toolchain pin), leaving `pr` and `full` unchanged. That is a change to gate SELECTION, which is protected policy, and it trades a small real risk (a change that affects the fork through a route not modelled here) for ~20 minutes per inner loop. The implementation must not make that trade on its own.",
+   "referenced_by": [
+    "xtask/src/quality/gates.rs",
+    ".quality/policy.toml"
+   ]
+  },
+  {
+   "id": "OD-019",
+   "status": "OPEN",
+   "title": "Protected-path disclosure: two disk guards inside the quality controller were LOOSENED",
+   "question": "Round 7d modified xtask/src/quality/{exec,gates}.rs, which `xtask/**` protects. Most of that diff adds capability or refusals, but two changes RELAX a guard. Are both relaxations accepted?",
+   "relaxations": [
+    "(1) The per-workspace disk floor is no longer charged to a command that compiles nothing. `Cmd` gained `builds`, derived from `is_cargo_invocation` and lowered explicitly only by `.already_built()`. Before: every command of a heavy gate was charged the workspace floor. After: `rust.tests`'s staging step and its test RUN are charged the light floor (0.5 GB), because the build that precedes them in the same gate has already spent and met that floor.",
+    "(2) The gate-level cost-class floor now applies to INTERNAL gates only. Before: every gate was charged its class floor (12 GB heavy) before any command ran, AND each command was charged again. After: gates with commands are charged per command, which knows the workspace and whether the command builds; internal gates, which run no commands, keep the class check."
+   ],
+   "default_in_force": "Both relaxations are IN EFFECT in the merged tree, because without them `rust.tests` on the fork workspace cannot run at all on the 37 GB machine this project is required to work on: measured 2026-08-21, the build leaves 9.4 GB free and the run was then refused for wanting 16 GB — the space its own build had just spent.",
+   "why_safe": "Neither changes what a gate CONCLUDES, only whether it is attempted. The purpose of the floor is to stop an ENOSPC mid-compile being mistaken for a tool bug; a command that compiles nothing cannot produce that failure, and if the disk does run out anyway ENOSPC is typed InfrastructureFailure, so being wrong here fails safe — a refused run, never a false pass. The cold-tree build floor (16 GB for rust.tests@fork/typedb/Cargo.toml) is UNCHANGED and was met with roughly 0.2 GB to spare in the verifying run.",
+   "not_self_approved": "The implementation did NOT record an owner approval for this, unlike OD-012 where one was given explicitly. It is disclosed here so the loosening is visible in the register rather than absorbed into a large diff. Every other change in that diff adds a refusal or a capability and takes nothing away.",
+   "owner_decision_changes": "Accepting closes this entry. Rejecting means `rust.tests` cannot cover the fork workspace on a machine of this size, which returns the repository to the choice OD-017 was raised for.",
+   "referenced_by": [
+    "xtask/src/quality/exec.rs",
+    "xtask/src/quality/gates.rs",
+    ".quality/policy.toml"
    ]
   }
  ]

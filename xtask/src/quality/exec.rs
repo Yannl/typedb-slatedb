@@ -15,15 +15,48 @@ pub struct Cmd {
     pub args: Vec<String>,
     /// Repository-relative working directory.
     pub cwd: Option<String>,
+    /// Extra environment for THIS command, applied after the hermetic cargo
+    /// defaults so a gate overrides them deliberately, never by accident.
+    pub env: Vec<(String, String)>,
+    /// Does this command COMPILE the workspace it names?
+    ///
+    /// The per-workspace disk floor sizes a build. Applying it to a command
+    /// that only runs what a previous command in the same gate already built
+    /// double-counts: the space the floor protects is by then already spent
+    /// and sitting in `target/`, so the check would refuse the run for lacking
+    /// room to do work it is not going to do.
+    pub builds: bool,
 }
 
 impl Cmd {
     pub fn new(program: &str, args: &[&str]) -> Cmd {
-        Cmd { program: program.to_string(), args: args.iter().map(|s| s.to_string()).collect(), cwd: None }
+        Cmd {
+            program: program.to_string(),
+            args: args.iter().map(|s| s.to_string()).collect(),
+            cwd: None,
+            env: Vec::new(),
+            // Derived, not declared: a cargo invocation may compile, anything
+            // else may not. A new gate therefore gets the protective answer
+            // without having to remember the field.
+            builds: is_cargo_invocation(program),
+        }
     }
 
     pub fn in_dir(mut self, dir: &str) -> Cmd {
         self.cwd = Some(dir.to_string());
+        self
+    }
+
+    /// Mark a command as running inside a tree an EARLIER command of the same
+    /// gate has already built. Only correct when that build is unconditional
+    /// and precedes this command in the same `commands_for` sequence.
+    pub fn already_built(mut self) -> Cmd {
+        self.builds = false;
+        self
+    }
+
+    pub fn with_env(mut self, key: &str, value: &str) -> Cmd {
+        self.env.push((key.to_string(), value.to_string()));
         self
     }
 
@@ -101,6 +134,10 @@ pub fn run(repo_root: &Path, cmd: &Cmd, timeout: Duration) -> CmdResult {
             .env("CARGO_PROFILE_DEV_DEBUG", "false")
             .env("CARGO_PROFILE_TEST_DEBUG", "false");
     }
+    // Applied LAST so a gate can deliberately override the hermetic defaults.
+    for (k, v) in &cmd.env {
+        builder.env(k, v);
+    }
     let child = builder.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn();
 
     let mut child = match child {
@@ -163,6 +200,47 @@ pub fn run(repo_root: &Path, cmd: &Cmd, timeout: Duration) -> CmdResult {
         stderr,
         duration_ms: started.elapsed().as_millis(),
     }
+}
+
+/// The wrapper that gives each test binary its own loopback and port space.
+pub const NETNS_EXEC: &str = "tools/dev/netns_exec.py";
+
+/// The host target triple, from rustc itself rather than a guess.
+///
+/// Needed to name `CARGO_TARGET_<TRIPLE>_RUNNER`, which is how cargo and
+/// nextest are told to invoke every test binary through a wrapper.
+pub fn host_target_triple() -> Option<String> {
+    let out = Command::new("rustc").arg("-vV").output().ok()?;
+    String::from_utf8_lossy(&out.stdout).lines().find_map(|l| l.strip_prefix("host: ")).map(|t| t.trim().to_string())
+}
+
+/// `CARGO_TARGET_<TRIPLE>_RUNNER`, in cargo's spelling: uppercase, dashes to
+/// underscores.
+pub fn target_runner_var(triple: &str) -> String {
+    format!("CARGO_TARGET_{}_RUNNER", triple.to_uppercase().replace('-', "_"))
+}
+
+/// Can this machine give a process its own network namespace?
+///
+/// Probed by actually doing it, not by inspecting capabilities: the answer
+/// depends on the kernel, the container runtime and the user at once, and only
+/// the real syscall knows. A gate that needs isolation must report
+/// InfrastructureFailure when it is unavailable rather than run without it —
+/// running without it restores exactly the port collisions the isolation
+/// exists to prevent, and reports them as though they were code defects.
+pub fn network_namespaces_available(repo_root: &Path) -> Result<(), String> {
+    let wrapper = repo_root.join(NETNS_EXEC);
+    if !wrapper.is_file() {
+        return Err(format!("{NETNS_EXEC} is missing"));
+    }
+    let out = Command::new(&wrapper)
+        .args(["python3", "-c", "import socket; socket.socket().bind(('127.0.0.1', 11729))"])
+        .output()
+        .map_err(|e| format!("could not run {NETNS_EXEC}: {e}"))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
 }
 
 /// Does this program invoke cargo, and so need the hermetic build settings?
@@ -237,10 +315,24 @@ impl Weight {
     /// The class default is a floor, never a ceiling: a workspace override may
     /// only raise it. Light gates parse sources and are unaffected by how big
     /// the workspace's build tree would be, so they keep the class number.
-    pub fn required_free_gb_for(self, exec: &super::policy::Execution, gate_id: &str, manifest: Option<&str>) -> f64 {
+    pub fn required_free_gb_for(
+        self,
+        exec: &super::policy::Execution,
+        gate_id: &str,
+        manifest: Option<&str>,
+        builds: bool,
+    ) -> f64 {
         let base = self.required_free_gb(exec);
         if self == Weight::Light {
             return base;
+        }
+        // A command that compiles nothing is sized like a light one. The
+        // gate-level class floor still applies before any command runs, so
+        // this removes a double-count, not the protection: without it the
+        // three-command form of `rust.tests` refuses its own test RUN for
+        // lacking the space its own preceding BUILD just consumed.
+        if !builds {
+            return exec.min_free_disk_gb_light;
         }
         let Some(m) = manifest else { return base };
         // Most specific first. Two gates differ enormously on the SAME
@@ -353,6 +445,60 @@ mod tests {
     }
 
     #[test]
+    fn the_runner_variable_is_spelled_the_way_cargo_reads_it() {
+        assert_eq!(target_runner_var("x86_64-unknown-linux-gnu"), "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER");
+        assert_eq!(target_runner_var("aarch64-apple-darwin"), "CARGO_TARGET_AARCH64_APPLE_DARWIN_RUNNER");
+    }
+
+    #[test]
+    fn the_host_triple_comes_from_rustc_not_a_guess() {
+        let t = host_target_triple().expect("rustc must report its host triple");
+        assert!(t.contains('-'), "a target triple has dashes, got {t:?}");
+        assert!(!t.contains(' '), "and no spaces, got {t:?}");
+    }
+
+    #[test]
+    fn a_per_command_env_is_applied_on_top_of_the_hermetic_defaults() {
+        let c = Cmd::new("env", &[]).with_env("XTASK_PROBE", "applied");
+        let r = run(Path::new("/"), &c, Duration::from_secs(30));
+        assert!(r.stdout.contains("XTASK_PROBE=applied"), "per-command env must reach the child");
+    }
+
+    /// The property the whole isolation scheme rests on: two processes may hold
+    /// the SAME fixed port at the same time. If this ever stops being true, the
+    /// server tests go back to fighting over 11729 and the gate lies.
+    #[test]
+    fn two_isolated_processes_can_hold_the_same_port() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        if network_namespaces_available(root).is_err() {
+            // Recorded, not silently skipped: on a machine without namespaces
+            // the gate itself reports InfrastructureFailure, which is the
+            // behaviour this test's absence must not be mistaken for.
+            eprintln!("network namespaces unavailable here; the gate refuses rather than mis-reports");
+            return;
+        }
+        let wrapper = root.join(NETNS_EXEC);
+        let hold = "import socket,time; s=socket.socket(); s.bind(('127.0.0.1',11729)); s.listen(1); print('bound'); time.sleep(1.5)";
+        let spawn = || {
+            Command::new(&wrapper)
+                .args(["python3", "-c", hold])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .expect("spawn isolated holder")
+        };
+        let (a, b) = (spawn(), spawn());
+        for (who, child) in [("first", a), ("second", b)] {
+            let out = child.wait_with_output().expect("holder finished");
+            assert!(
+                out.status.success() && String::from_utf8_lossy(&out.stdout).contains("bound"),
+                "the {who} isolated process failed to bind 11729: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+    }
+
+    #[test]
     fn only_cargo_invocations_get_the_hermetic_build_env() {
         assert!(is_cargo_invocation("cargo"));
         assert!(is_cargo_invocation("cargo-machete"), "gates that call a cargo-* binary directly");
@@ -403,19 +549,23 @@ mod tests {
 
         let fork = Some("fork/typedb/Cargo.toml");
         // named workspace raises it, for any gate
-        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.clippy", fork), 30.0);
+        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.clippy", fork, true), 30.0);
         // an override BELOW the class floor cannot lower it
-        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.clippy", Some("tools/Cargo.toml")), 12.0);
+        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.clippy", Some("tools/Cargo.toml"), true), 12.0);
         // unnamed workspace keeps the class number
-        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.clippy", Some("other/Cargo.toml")), 12.0);
-        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.clippy", None), 12.0);
+        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.clippy", Some("other/Cargo.toml"), true), 12.0);
+        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.clippy", None, true), 12.0);
         // light gates parse sources; workspace size is irrelevant to them
-        assert_eq!(Weight::Light.required_free_gb_for(&e, "rust.fmt", fork), 0.5);
+        assert_eq!(Weight::Light.required_free_gb_for(&e, "rust.fmt", fork, true), 0.5);
 
         // a gate-specific key beats the workspace key, for that gate only
         e.workspace_free_disk_gb.insert("rust.tests@fork/typedb/Cargo.toml".into(), 45.0);
-        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.tests", fork), 45.0);
-        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.clippy", fork), 30.0);
+        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.tests", fork, true), 45.0);
+        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.clippy", fork, true), 30.0);
+
+        // A command that compiles nothing is not asked a second time for the
+        // space its own gate's build already spent.
+        assert_eq!(Weight::Heavy.required_free_gb_for(&e, "rust.tests", fork, false), 0.5);
     }
 
     #[test]

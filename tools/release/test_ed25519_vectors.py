@@ -86,7 +86,8 @@ def cross_implementation_checks():
     return failures
 
 
-def main():
+def published_vector_checks():
+    """Every RFC 8032 §7.1 vector, plus the rejections a verifier must make."""
     failures = []
     for i, (seed_h, pub_h, msg_h, sig_h) in enumerate(VECTORS, 1):
         seed = bytes.fromhex(seed_h)
@@ -116,6 +117,11 @@ def main():
         if node(["verify", want_pub.hex(), msg.hex(), bytes(bad).hex()]) != "NOT_VERIFIED":
             failures.append(f"vector {i}: independent Node verifier accepted a corrupted signature")
 
+    return failures
+
+
+def main():
+    failures = published_vector_checks()
     failures.extend(cross_implementation_checks())
 
     for f in failures:
@@ -125,6 +131,25 @@ def main():
         f"agreements checked, {len(failures)} failures"
     )
     return 1 if failures else 0
+
+
+# --- pytest entry points ---------------------------------------------------
+# The checks are written to RETURN their failures so `main()` can report all of
+# them in one pass. pytest collects functions, so these wrap the same functions
+# rather than restating the checks: one body, two callers. Without them the
+# `py.pytest` gate collected nothing at all and exited 5 — a tier-A gate with
+# nothing to run, which is indistinguishable in a report from one that ran and
+# was satisfied.
+
+
+def test_rfc8032_published_vectors():
+    failures = published_vector_checks()
+    assert not failures, "\n".join(failures)
+
+
+def test_python_and_node_implementations_agree():
+    failures = cross_implementation_checks()
+    assert not failures, "\n".join(failures)
 
 
 if __name__ == "__main__":

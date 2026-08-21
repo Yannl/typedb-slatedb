@@ -943,3 +943,167 @@ Third instance of one pattern this round, now worth stating as a rule:
 runner.** wrangler's inspector 9229 (§11.3), the admin service's 11729/4104
 here, and upstream's `Context::DEFAULT_ADDRESS` in trap 8 are the same bug three
 times.
+
+---
+
+## 13. Round 7d — the fork corpus goes green, without giving anything up
+
+### 13.1 The measurement that killed the framing of OD-017
+
+§12.4 said "3 upstream tests". That number was wrong, and wrong in the
+direction that flatters. `nextest` had **cancelled** the run after the first
+failures, so 423 of 711 tests had executed. Run to completion:
+
+```
+--no-fail-fast, no isolation      711 tests, 655 passed, 56 FAILED, 10 binaries
+```
+
+Rule this cost, again: **a run that stopped early is not a result.** Before
+quoting a pass/fail count, check that the runner reached the end.
+
+### 13.2 What isolation alone fixed, and what it did not
+
+Every test binary is now invoked through `tools/dev/netns_exec.py`, wired in as
+`CARGO_TARGET_<TRIPLE>_RUNNER`. It calls `unshare(CLONE_NEWNET)` in-process via
+ctypes and brings `lo` up with a `SIOCSIFFLAGS` ioctl (no iproute2 dependency).
+Each test then owns its loopback and its port space.
+
+```
+isolation only                    711 tests, 659 passed, 52 failed
+                                  "Address already in use": ZERO occurrences
+```
+
+All 56 port collisions gone. The 52 that remained were never about ports — they
+were **missing runtime fixtures**, and they fail success-shaped:
+
+| fixture | symptom | targets |
+|---|---|---|
+| behaviour features | `0 features / 0 scenarios / 1 parsing error` in ~2 s | 49 |
+| assembly archive | server extracted from the test's own cwd, absent | 3 |
+
+`run_leaf.py` already stages both, per target — which is exactly why the sealed
+lane bundles are green while a bare `cargo nextest run` over the same tree was
+not. `tools/catalog/stage_test_fixtures.py` now stages them for the controller
+**from the same definitions in `run_u0`**, rather than growing a second copy.
+
+```
+isolation + fixtures              711 tests, 711 passed, 1 skipped, exit 0, 1215 s
+through the controller            rust.tests PASS, 1929 s
+```
+
+The 1 skipped is upstream's own `#[ignore]` in `storage/tests/test_isolation.rs`
+(TODO typedb#7033). Not ours, and not hidden.
+
+### 13.3 The assembly archive is a build product, and now says so
+
+`sources/assembly-artifacts/typedb-all-linux-x86_64.tar.gz` was a single shared
+path. It contains **one tree's `typedb_server_bin`**, so handing it to another
+tree's assembly test makes that test certify the wrong server while reporting
+green — the trap §11 recorded after `release_mutants` failed with
+`ARTIFACT_DIGEST_MISMATCH`.
+
+`run_u0.assembly_archive_for(root)` is now the one place that answers "which
+archive belongs to this workspace". `sources/typedb` keeps the unqualified path
+because the release records pin it there by path; `fork/typedb` gets
+`assembly-artifacts/fork-typedb/`. `netns_exec.py` derives the workspace from
+the test binary's own path (`<root>/target/debug/deps/...`) rather than from an
+env var, so it cannot be pointed at the wrong one.
+
+### 13.4 A disk floor must not be charged twice
+
+`rust.tests` on an overlay is three commands: build (`--no-run`), stage, run.
+The per-workspace floor (16 GB for `rust.tests@fork/typedb/Cargo.toml`) sizes a
+BUILD. Charging it to the run as well refuses the gate for want of the space its
+own build just spent — 9.4 GB free after a build that started from 20 GB.
+
+`Cmd` now carries `builds`, derived (`is_cargo_invocation`) so a new gate gets
+the protective answer without remembering the field, and lowered explicitly by
+`.already_built()` only where an unconditional build precedes the command in the
+same sequence. The gate-level class floor now applies to INTERNAL gates only:
+they run no commands, so nothing else would check them, while for every other
+gate the per-command check knows strictly more.
+
+Measured, cold tree, whole `quality fast` run: 20.0 GB free → 8.8 GB. clippy on
+fork/typedb takes ~4 GB of that and runs first; the 16 GB floor was met with
+roughly 0.2 GB to spare. **It fits on this machine, but only just.** Do not add
+a heavy Rust gate on the fork workspace without re-measuring.
+
+### 13.5 Residual: leaked servers
+
+nextest reports `1 leaky` per corpus run — a test that exits leaving its server
+running (~94 MB RSS). Isolation makes them harmless (a leaked server sits in a
+dead namespace and can collide with nothing), but they accumulate until the
+container restarts. The structural fix is `CLONE_NEWPID` as well: the test
+becomes PID 1 of its namespace and the kernel reaps everything when it exits.
+It was NOT done here because `unshare(CLONE_NEWPID)` only affects the next
+`fork()`, so the wrapper would have to fork, wait, and forward signals — new
+failure modes on a path that must never mis-report, for a 94 MB leak.
+
+### 13.6 py.typecheck now runs, and fails
+
+`basedpyright` and `pytest` were installed this round, which turns two recorded
+InfrastructureFailures into real measurements.
+
+`pytest` collected **nothing**: the repository's one Python test file,
+`tools/release/test_ed25519_vectors.py`, is a SCRIPT with a `main()` and no test
+functions, so `pytest tools` exited 5. A tier-A gate with nothing to run reads
+in a report exactly like one that ran and was satisfied. Its two check
+functions now have pytest wrappers — one body, two callers, the script still
+runs standalone — and the gate reports `2 passed`.
+
+`basedpyright` does not pass:
+
+```
+no config (the tool's own default, "recommended")   515 errors, 12762 warnings
+pyrightconfig.json {"typeCheckingMode":"standard"}   86 errors
+  reportOptionalSubscript / MemberAccess / Iterable   43   genuine None-safety
+  reportArgumentType / AttributeAccessIssue           23   genuine
+  reportMissingImports                                18   the sys.path.insert idiom,
+                                                           fixable with extraPaths
+by directory: qualification 31 · catalog 15 · drivers 9 · release 9 · rest 22
+```
+
+There is **no type-checker config in the repository at all**, so the tool's own
+default applies and the tier-A gate cannot pass as specified.
+
+One trap found while measuring, worth the four minutes it saves: **basedpyright
+reads `pyrightconfig.json`, and IGNORES `basedpyrightconfig.json`** in this
+invocation form — with the latter at the repo root the count stayed at exactly
+515, with or without `--project .`. A config that is silently not read looks
+identical to a config that changed nothing.
+
+Left measured rather than papered over, and deliberately NOT bundled with the
+isolation change: 68 of the 86 are real None-safety findings in the tooling that
+produces the evidence, so each fix is a change to a truth-plane tool and needs
+its own verification pass (`leaf_mutants`, `release_mutants`, the source-lock
+lint). That is the next unit of work, not a tail of this one.
+
+### 13.7 Gate state at the end of round 7d
+
+One `cargo xtask quality fast`, cold fork tree, whole run:
+
+```
+pass  policy.waivers · policy.toolchain_pin · policy.scope_classification
+pass  rust.fmt
+pass  rust.clippy       366 s
+pass  rust.tests        711/711 on fork/typedb, 1821 s           <- was red
+pass  py.ruff.check · py.ruff.format
+pass  py.pytest         2 passed                                 <- was INFRA (and empty)
+red   py.typecheck      newly executable; 515 errors, no config  <- was INFRA
+
+0 policy violation(s) · 1 quality failure(s) · 0 infrastructure failure(s)
+```
+
+**Running it needs a cold fork tree.** `rust.tests@fork/typedb/Cargo.toml`
+requires 16 GB free and the build leaves ~8 GB, so a second run in the same
+container is refused until `cargo clean --manifest-path fork/typedb/Cargo.toml`
+gives the space back. That is the sequential-lane discipline applying to the
+quality plane as well, not a defect — but it is why "just re-run it" costs 45
+minutes here.
+
+`OD-017` is resolved with no coverage, policy or guarantee traded away.
+`OD-018` is raised for the one cost that remains: the corpus runs in the inner
+loop, ~20-36 minutes, on every `quality fast` — narrowing that is gate
+SELECTION, which is protected policy and the owner's call.
+`OD-019` discloses the two disk guards this round LOOSENED inside the protected
+controller, and is deliberately NOT self-approved.

@@ -26,9 +26,10 @@ began with **30 GB free, no `sources/` directory at all, and no toolchain
 beyond rustc**. `sources/` is gitignored and materialised from `source-lock/`,
 so a fresh container has *nothing* to build.
 
-Disk was never the binding constraint in round 7. **Bootstrap completeness
-was.** Six separate prerequisites were missing, and each one failed in a way
-that did not name itself. The full sequence, in order, all of it verified:
+Bootstrap completeness was the constraint for most of the round — six
+prerequisites were missing and none of them named itself. **But disk came back
+at the very end and won**, so round 6's warning stands; see §4.6. The full
+bootstrap sequence, in order, all of it verified:
 
 ```bash
 df -h /                                          # 30 GB free here, not 2 GB
@@ -87,6 +88,11 @@ byte-identical to the one that produced every prior round's evidence.**
 `cargo_gc.py` reclaimed **0 MB** here — it collects stale hash-suffixed
 artifacts, and a container that has built once has none. It is a repeat-session
 tool, not a bootstrap one. Do not budget for it on a fresh box.
+
+**One build tree at a time, always.** Round 7 ran U0 in `sources/typedb`
+(12 GB), cleaned it, then let the quality controller build `fork/typedb`
+(23 GB and still not enough — §4.6). Those two never have to coexist, and on
+this allowance they cannot.
 
 ---
 
@@ -364,6 +370,49 @@ check, per control, rather than a generic diff).
 immutability check. Same class as §4.4: a control that never ran, reported as a
 survivor. Build the archive first and it is 24/24.
 
+### 4.6 `rust.tests` exhausts the disk, and calls it a QUALITY failure
+
+The last act of the round. `cargo xtask quality fast` reached its `rust.tests`
+gate, which runs
+
+```
+cargo test --no-run --message-format json-render-diagnostics --workspace --all-features
+```
+
+against `fork/typedb`, and died:
+
+```
+error: failed to write to `fork/typedb/target/debug/deps/rmetaFfMMj9/full.rmeta`:
+       No space left on device (os error 28)
+error: could not compile `http_steps` (lib)
+```
+
+Measured: `fork/typedb/target` had reached **~23 GB** and was still not
+finished (`df` went to 100%, 856K free; deleting that one directory returned
+23 GB). It started from 14 GB free, so **the floor let it start a build it
+could not finish.** `--all-features` pulls in every behaviour test binary, and
+each statically links the server plus rocksdb plus slatedb — round 6 measured
+those at ~245 MB each.
+
+Two things to fix, both the owner's:
+
+1. **The per-cost-class free-disk floor is checked once, before the gate, and
+   14 GB passed it.** A floor that admits a 23 GB build is not a floor. It
+   needs a per-workspace number — round 6 already noted the existing 12 GB
+   figure is blunt enough to refuse clippy on the tiny `tools` workspace.
+2. **ENOSPC is reported as `quality_failure`, not `InfrastructureFailure`.**
+   The final report reads `0 policy violation(s), 2 quality failure(s),
+   0 infrastructure failure(s)`. AGENTS.md §3.7 insists an infrastructure
+   failure is never a pass; the converse matters just as much, because a
+   `quality_failure` sends the next agent hunting for a defect in code that
+   compiles fine. "No space left on device" is the least ambiguous
+   infrastructure signal there is and it should be typed as one, with the
+   remediation being `cargo clean` on the other tree.
+
+Practical consequence for round 8: **`rust.tests` on `fork/typedb` has never
+completed here.** Do not treat its absence as a pass, and clean every other
+build tree before attempting it.
+
 ---
 
 ## 5. Re-verified independently this round
@@ -514,9 +563,11 @@ Then, in the order the owner's decisions unblock them:
 
 ## 10. What did NOT happen this round, stated plainly
 
-- **`cargo xtask quality full` never returned a clean result.** `fast` was run
-  repeatedly; `full` was not completed. The clippy scope question (§4.1) blocks
-  it regardless of machine.
+- **`cargo xtask quality full` never returned a clean result, and `fast` never
+  returned a clean one either.** Its final state was two quality failures:
+  `rust.clippy` (the upstream-lint scope question, §4.1) and `rust.tests`
+  (out of disk, §4.6). `full` was never attempted, because `fast` never got
+  past those. The clippy question blocks it regardless of machine.
 - **Phase 1 of the quality programme — the CRAP baseline, per-package
   `llvm-cov`, differential mutation — was not started.** The eight tools are
   now installed and pinned, which is the prerequisite, but no baseline exists.

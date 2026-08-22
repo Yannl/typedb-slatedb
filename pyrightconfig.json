@@ -1,10 +1,38 @@
+// The repository's declared type-checking level (OD-020).
+//
+// NAME: this must be `pyrightconfig.json`. basedpyright IGNORES a
+// `basedpyrightconfig.json` in the invocation the `py.typecheck` gate uses
+// (`basedpyright tools`, with or without `--project .`): measured 2026-08-21,
+// the error count stayed at exactly 515 with that name and dropped to 86 with
+// this one. A config that is silently not read looks identical to a config
+// that changed nothing.
+//
+// LEVEL: "recommended" for the INFERENCE, with the annotation programme turned
+// off explicitly below. OD-020 chose "the rules that can hide a defect, not the
+// ones that ask for a type annotation", and that does not decompose the way it
+// sounds: enabling reportIndexIssue and friends on top of "standard" finds 6
+// things, because they fire on the stricter inference "recommended" brings, not
+// on their own. Hence this shape. The disabling has to be EXPLICIT because
+// basedpyright exits 1 on warnings as well as errors (measured: 0 errors + 5
+// warnings -> exit 1), so a rule left at its default warning level is a gate
+// failure, not a note.
+//
+// executionEnvironments, not a flat extraPaths list: every tool script does
+// `sys.path.insert(0, str(HERE))`, and two directories both define a
+// `common.py`. One shared path list resolves `import common` in tools/drivers
+// to tools/catalog's module and invents 95 attribute errors that do not exist
+// at runtime. Each root therefore lists ITS OWN directory plus exactly the
+// directories that root's scripts insert — e.g. tools/modeq reads tools/bazel
+// because produce_modeq.py imports bazel_parity's reviewed exclusion list
+// rather than keeping a second copy of it.
 {
   "typeCheckingMode": "recommended",
   "executionEnvironments": [
     {
       "root": "tools/bazel",
       "extraPaths": [
-        "tools/bazel"
+        "tools/bazel",
+        "tools/source-lock"
       ]
     },
     {
@@ -62,7 +90,8 @@
     {
       "root": "tools/modeq",
       "extraPaths": [
-        "tools/modeq"
+        "tools/modeq",
+        "tools/bazel"
       ]
     },
     {

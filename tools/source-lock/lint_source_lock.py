@@ -54,6 +54,16 @@ GIT_DIRS = {
     "TDRIVER": "typedb-driver",
     "CF_CTR_SOURCE": "cloudflare-containers",
     "CF_WORKERS_SDK": "cloudflare-workers-sdk",
+    # The bats toolchain aspect_bazel_lib registers. Checked out as GIT rather
+    # than downloaded as an archive because this environment's egress denies
+    # github.com/.../archive/*.tar.gz with 403 while serving anonymous git
+    # reads; tools/bazel/vendor_bats.py rebuilds the exact archives from these
+    # checkouts. Without them Bazel's analysis phase cannot run at all, and
+    # Mode-Q (SI-G0-1) is unproducible.
+    "BATS_CORE": "bats-core",
+    "BATS_SUPPORT": "bats-support",
+    "BATS_ASSERT": "bats-assert",
+    "BATS_FILE": "bats-file",
 }
 
 ARTIFACTS = {

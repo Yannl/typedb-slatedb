@@ -2,7 +2,7 @@
   "document": "workspace release binding (brief v16 \u00a70.2.1; generated, never hand-edited)",
   "generated_by": "tools/source-lock/generate_workspace_lock.py",
   "commit_binding": "external: post-checkout attestation of (HEAD, sha256 of this file)",
-  "source_lock_sha256": "837d52fbac8f47ab7a72a6d8921cd7e2d8509e01243a7dc92c73132b7178b8c4",
+  "source_lock_sha256": "7a578cfb3eeb1ba5ca48653e019e1834c2c3f0a310581d5f140a6397e57609fb",
   "workspaces": {
     "fork/typedb": {
       "manifest": "fork/typedb/Cargo.toml",

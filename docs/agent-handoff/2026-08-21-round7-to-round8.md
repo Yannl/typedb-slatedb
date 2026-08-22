@@ -1331,3 +1331,94 @@ leaf_diff u1-full-3 vs u2-full-3    ->  0 regressions over 455 leaf cases
 Both headline numbers reproduce EXACTLY. That is the check that matters for a
 change of this size: the tooling was rewritten in 38 files, and the evidence it
 derives did not move by one row.
+
+---
+
+## 16. Round 7g — SI-G0-1 is closed. Bazel's analysis phase runs here.
+
+G0 has been OPEN_RED since round 6 on one finding: Mode-Q Bazel `cquery`
+evidence is absent because the ANALYSIS phase cannot run in this environment.
+That is now false, and the reason it was ever true is narrower than the ledger
+said.
+
+### 16.1 The blocker was one fetch, and the fetch had another door
+
+`aspect_bazel_lib` REGISTERS `bats_toolchains`. A registered toolchain must
+load before Bazel resolves toolchains for ANY configured target, so four
+archives fetched from `github.com/bats-core/*/archive/<tag>.tar.gz` gated the
+whole analysis phase. This environment's egress denies those with 403 —
+still true, re-measured 2026-08-22 with curl on github.com and
+codeload.github.com alike.
+
+**But it serves anonymous git reads of the same repositories.** And a GitHub
+release tarball is not a bespoke artefact: it is `git archive` of the tag,
+gzipped. Measured, all four reproduce BYTE-FOR-BYTE:
+
+```
+git archive --format=tar --prefix=<repo>-<version>/ <tag> | gzip -n -6
+
+bats-core    v1.10.0  a1a9f787…   bats-support v0.3.0  7815237a…
+bats-assert  v2.1.0   98ca3b68…   bats-file    v0.4.0  9b690432…
+```
+
+Those are the digests `aspect_bazel_lib` itself pins, so **Bazel verifies this
+work independently** — a wrong byte and `--distdir` is ignored, the fetch is
+attempted, and the 403 comes back. The reconstruction cannot forge a pass.
+
+Both gzip flags are load-bearing. `-n` drops the filename and mtime from the
+header (with them the digest depends on when you ran it); `-6` is the level
+GitHub uses — `-9` gives a valid archive with a different digest
+(`1461ab68…`) that Bazel rejects.
+
+### 16.2 What landed
+
+  - `tools/bazel/vendor_bats.py` rebuilds the four archives from the locked
+    tags and refuses on any mismatch — wrong revision, wrong tree, wrong
+    digest. It writes nothing on failure: a half-populated distdir makes Bazel
+    fall through to the network for the rest and fail on the original 403,
+    which reads as "the vendoring did nothing" rather than "it is wrong".
+  - Four new `source-lock` nodes (`BATS_CORE`, `BATS_SUPPORT`, `BATS_ASSERT`,
+    `BATS_FILE`), materialisable like every other git node, so a fresh
+    container reproduces this without touching the blocked URL.
+  - `produce_modeq.py` gained `--distdir`, and a REAL crosswalk.
+
+### 16.3 The crosswalk was the actual work
+
+`catalog_by_label()` assumed the catalogue records a `//`-prefixed Bazel label
+for every target. It does not: 142 of 303 do, and the 114 CARGO targets carry
+none at all. So the producer had never mapped a single target — it had never
+run far enough to find out.
+
+Three kinds of target, three joins, all anchored on the catalogue:
+
+| kind | join |
+|---|---|
+| checkstyle / rustfmt / shell | the recorded label, normalised (`//.:x` in the catalogue, `//:x` from Bazel — `bazel_parity.norm` is the one place that is written down) |
+| `rust_test` with `srcs` | the source file itself: the catalogue's `source_files[].path` is the join |
+| `rust_test` with `crate` | the crate root's DIRECTORY. `//admin/client:client` is cargo package `typedb-admin` with Bazel crate name `client`; joining on either NAME misses it, joining on the directory cannot. |
+
+Two of the 228 enumerated rules (`//:Release_validate_deps_gen`,
+`//:release-validate-deps`) are release plumbing, already carried by
+`bazel_parity.py` as reviewed non-denominator targets. They are imported from
+there — not restated — dropped from the cquery set, and RECORDED in the bundle
+as a declared exclusion. Hence 226, not 228, with the bundle's targets, its
+cquery stdout and its crosswalk one single set.
+
+### 16.4 Result
+
+```
+tools/modeq/validate_modeq.py     MODEQ: VALID
+tools/modeq/modeq_mutants.py      all 11 killed — against a REAL bundle,
+                                  where before there was nothing to validate
+bundle root  522dc2ea831bea564192ad6fdede487546d115e63effd9d2732852416678514a
+             226 targets, bazel 8.5.1, one-to-one into the catalogue
+```
+
+**G0 moves OPEN_RED -> OPEN.** It is not closed: its second blocker, the raw
+artifact retrievability archive, is untouched by this work and no part of this
+touches it. G1's Mode-Q crosswalk blocker closes with it.
+
+The ledger's G1 entry was also corrected here: it had claimed "0 rows fully
+covered" and "the six official driver rows are NOT_IMPLEMENTED" long after both
+stopped being true. A ledger that describes a state its own evidence
+contradicts is the failure this plane exists to prevent.

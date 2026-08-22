@@ -22,14 +22,11 @@
   {
    "id": "G0",
    "title": "Source graph, identities, tools, fixtures, document truth",
-   "state": "OPEN_RED",
+   "state": "OPEN",
    "authority": "v16 brief G0; v17 addendum Mode Q selection",
-   "why": "Mandatory Mode-Q Bazel cquery evidence is ABSENT (SI-G0-1). Round 6 installed the pinned Bazel 8.5.1 (binary sha256 61d89402f0368e64b6c827be5de79d8e65382e8124c3cbb97325611a1851392e, verified against the release .sha256) and measured the blocker exactly rather than restating it: Bazel's LOADING phase works here and answers the test-graph question (see the bazel-parity evidence and the nightly gate), but the ANALYSIS phase cannot run, because aspect_bazel_lib registers bats_toolchains fetched from github.com/bats-core and this environment's egress policy denies that fetch with 403 - reproduced directly with curl on both github.com and codeload.github.com. A registered toolchain must load before Bazel resolves toolchains for any configured target, so even a single-target cquery aborts. A second, independent wall exists for the whole-universe form: //:deploy-mac-installer-pkg is an upstream mac-only alias whose select() has no default, so it fails analysis on Linux regardless of network; tools/modeq/produce_modeq.py works around that legitimately by enumerating in the loading phase and configuring only the resulting test labels, which keeps all 228 targets instead of the 223 a narrowed universe would leave. The producer exists and is wired into the release-qualification workflow, where egress is not restricted; it writes NOTHING when cquery fails, so Mode-Q stays ABSENT and this gate stays honestly open rather than being broken by a half-written bundle. G0 closes when that job runs and validate_modeq.py reports VALID.",
-   "blocking_findings": [
-    "SI-G0-1"
-   ],
+   "why": "SI-G0-1 IS CLOSED (2026-08-22). Mandatory Mode-Q Bazel cquery evidence now EXISTS and validates: docs/evidence/G0/mode-q, schema modeq-bundle/v1, bazel 8.5.1 (binary sha256 61d89402f0368e64b6c827be5de79d8e65382e8124c3cbb97325611a1851392e), 226 configured test targets crosswalked one-to-one into the canonical catalogue, root 522dc2ea831bea564192ad6fdede487546d115e63effd9d2732852416678514a; tools/modeq/validate_modeq.py reports MODEQ: VALID and tools/modeq/modeq_mutants.py kills all 11 controls against that real bundle rather than a synthesised one. WHAT CHANGED, precisely: the blocker was never 'Bazel cannot run here'. aspect_bazel_lib REGISTERS bats_toolchains, and a registered toolchain must load before Bazel resolves toolchains for any configured target, so four archives fetched from github.com/bats-core/*/archive/<tag>.tar.gz - which this egress policy denies with 403 - gated the whole ANALYSIS phase. The same policy SERVES anonymous git reads of those repositories, and GitHub's release tarball is `git archive` of the tag, gzipped: measured 2026-08-22, `git archive --format=tar --prefix=<repo>-<ver>/ <tag> | gzip -n -6` reproduces all four BYTE-FOR-BYTE, matching the digests aspect_bazel_lib itself pins. tools/bazel/vendor_bats.py rebuilds them from the locked tags (now source-lock nodes BATS_CORE / BATS_SUPPORT / BATS_ASSERT / BATS_FILE) and REFUSES on any mismatch; Bazel verifies the same digests independently, so the reconstruction cannot forge a pass. With --distdir pointing at them, cquery analysed 226 targets. The second wall recorded here still stands and is still worked around legitimately: //:deploy-mac-installer-pkg is an upstream mac-only alias whose select() has no default, so a whole-universe cquery fails on Linux regardless of network; the producer enumerates in the loading phase and configures only the resulting test labels. Two of the 228 enumerated rules (//:Release_validate_deps_gen, //:release-validate-deps) are release plumbing, already carried as reviewed non-denominator targets by tools/bazel/bazel_parity.py, and the bundle records them as a declared exclusion rather than dropping them silently - hence 226, not 228. G0 stays OPEN on its remaining blocker, the raw artifact retrievability archive, which is untouched by this work.",
+   "blocking_findings": [],
    "blockers": [
-    "SI-G0-1 Mode-Q evidence or explicit owner amendment to v17",
     "raw artifact retrievability archive"
    ]
   },
@@ -38,15 +35,15 @@
    "title": "Models, catalogue as qualification denominator, platform contracts, budgets, controller/container separation",
    "state": "OPEN",
    "authority": "v16 brief G1",
-   "why": "The DENOMINATOR exists: catalogue v2 with canonical shared identity and the immutable leaf/profile/fixture qualification plan v2 (23,132 rows + 6 driver rows) landed with R3-H, and the leaf-level evidence producer/validator chain landed with PR3/R4-D. What keeps G1 open is EXECUTION and the remaining models: plan coverage is honestly RED (0 rows fully covered), the Mode-Q crosswalk side of the plan is Bazel-blocked (SI-G0-1), the six official driver rows are NOT_IMPLEMENTED (E-P0-08), and the ContainerDO is advisory-only - no real Container resource/process or controller lifecycle integration exists (R3-F remainder; round-5 R5-SEC-06/07).",
+   "why": "The DENOMINATOR exists: catalogue v2 with canonical shared identity and the immutable leaf/profile/fixture qualification plan v2 (23,132 rows + 6 driver rows) landed with R3-H, and the leaf-level evidence producer/validator chain landed with PR3/R4-D. CORRECTED 2026-08-22 (this paragraph said '0 rows fully covered' and 'the six official driver rows are NOT_IMPLEMENTED' long after both had stopped being true; a ledger that describes a state its own evidence contradicts is the failure this plane exists to prevent). MEASURED at fc2694b by tools/qualification/leaf_coverage.py over the seven archived bundles: 13,582 of 23,138 rows carry a leaf-granularity outcome, 46 are PARTIAL, 9,510 are uncovered. Four of the six official-driver rows are COVERED and two PARTIAL (R6-QUAL-01 + OD-010). What keeps G1 open is the REMAINDER, and the remainder is not mostly test execution: 9,196 of the uncovered rows are the U3 and U4 profiles, which are product code that does not exist (lane U3.0 is RED, U3_U4_PRODUCT is TYPED_UNAVAILABLE_BY_DESIGN); the Mode-Q crosswalk side of the plan is now PRODUCED and VALID (SI-G0-1 closed 2026-08-22, see G0); and the ContainerDO is advisory-only - no real Container resource/process or controller lifecycle integration exists (R3-F remainder; round-5 R5-SEC-06/07). Of the 13,942 rows reachable WITHOUT new product code, 360 remain: 141 STATIC_CHECK + 1 SCRIPT (execution), 132 FAILPOINT (upstream emits 2 tests over ~110 fail points, not one case each), 84 cucumber scenarios upstream's own runner filters by @ignore tag, and the 2 PARTIAL driver rows.",
    "blocking_findings": [
     "E-P0-08"
    ],
    "blockers": [
-    "plan execution coverage (0 of 23,138 obligations fully covered; the denominator is not a pass)",
-    "Mode-Q crosswalk (Bazel-blocked, SI-G0-1)",
-    "official driver suites (E-P0-08)",
-    "real Container resource/lifecycle + registry-provisioned ContainerDO (advisory-only today)"
+    "plan execution coverage (13,582 of 23,138 rows covered at fc2694b; the denominator is not a pass, and 9,196 of the remainder are U3/U4 product profiles that do not exist)",
+    "official driver suites (E-P0-08): 4 of 6 rows COVERED, 2 PARTIAL",
+    "real Container resource/lifecycle + registry-provisioned ContainerDO (advisory-only today)",
+    "(closed 2026-08-22) Mode-Q crosswalk: 226 targets crosswalked, MODEQ VALID"
    ]
   },
   {

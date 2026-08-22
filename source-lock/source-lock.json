@@ -403,6 +403,78 @@
     "candidate_local_s3_backend"
    ],
    "status": "locked"
+  },
+  {
+   "id": "BATS_CORE",
+   "kind": "git_tag",
+   "repository": "https://github.com/bats-core/bats-core",
+   "tag": "v1.10.0",
+   "resolved_revision": "f7defb94362f2053a3e73d13086a167448ea9133",
+   "tree": "fc014e1a7d3759dfda3785b693d5651feba4f6d3",
+   "license": "MIT",
+   "role": [
+    "build_toolchain_dependency"
+   ],
+   "status": "locked",
+   "archive_url": "https://github.com/bats-core/bats-core/archive/v1.10.0.tar.gz",
+   "archive_sha256": "a1a9f7875aa4b6a9480ca384d5865f1ccf1b0b1faead6b47aa47d79709a5c5fd",
+   "archive_prefix": "bats-core-1.10.0",
+   "archive_provenance": "aspect_bazel_lib lib/private/bats_toolchain.bzl BATS_*_VERSIONS; the digest Bazel itself verifies. RECONSTRUCTED here from the git tag rather than downloaded: this environment's egress denies github.com/.../archive/*.tar.gz with 403 while serving anonymous git reads, and `git archive --format=tar --prefix=<name>-<ver>/ <tag> | gzip -n -6` reproduces GitHub's tarball BYTE-FOR-BYTE (verified against this digest by tools/bazel/vendor_bats.py, which refuses on any mismatch).",
+   "why": "aspect_bazel_lib REGISTERS bats_toolchains, and a registered toolchain must load before Bazel can resolve toolchains for any configured target - so the whole ANALYSIS phase, and with it Mode-Q (SI-G0-1), aborted here on a fetch this project does not otherwise need. Vendoring these four archives is what makes `bazel cquery` run."
+  },
+  {
+   "id": "BATS_SUPPORT",
+   "kind": "git_tag",
+   "repository": "https://github.com/bats-core/bats-support",
+   "tag": "v0.3.0",
+   "resolved_revision": "24a72e14349690bcbf7c151b9d2d1cdd32d36eb1",
+   "tree": "f98e0eca01a8e93ef953bcb11481397eee6de6a6",
+   "license": "CC0-1.0",
+   "role": [
+    "build_toolchain_dependency"
+   ],
+   "status": "locked",
+   "archive_url": "https://github.com/bats-core/bats-support/archive/v0.3.0.tar.gz",
+   "archive_sha256": "7815237aafeb42ddcc1b8c698fc5808026d33317d8701d5ec2396e9634e2918f",
+   "archive_prefix": "bats-support-0.3.0",
+   "archive_provenance": "aspect_bazel_lib lib/private/bats_toolchain.bzl BATS_*_VERSIONS; the digest Bazel itself verifies. RECONSTRUCTED here from the git tag rather than downloaded: this environment's egress denies github.com/.../archive/*.tar.gz with 403 while serving anonymous git reads, and `git archive --format=tar --prefix=<name>-<ver>/ <tag> | gzip -n -6` reproduces GitHub's tarball BYTE-FOR-BYTE (verified against this digest by tools/bazel/vendor_bats.py, which refuses on any mismatch).",
+   "why": "aspect_bazel_lib REGISTERS bats_toolchains, and a registered toolchain must load before Bazel can resolve toolchains for any configured target - so the whole ANALYSIS phase, and with it Mode-Q (SI-G0-1), aborted here on a fetch this project does not otherwise need. Vendoring these four archives is what makes `bazel cquery` run."
+  },
+  {
+   "id": "BATS_ASSERT",
+   "kind": "git_tag",
+   "repository": "https://github.com/bats-core/bats-assert",
+   "tag": "v2.1.0",
+   "resolved_revision": "78fa631d1370562d2cd4a1390989e706158e7bf0",
+   "tree": "298e21ec794b911994c0954ca13d4a6c1b0785a6",
+   "license": "CC0-1.0",
+   "role": [
+    "build_toolchain_dependency"
+   ],
+   "status": "locked",
+   "archive_url": "https://github.com/bats-core/bats-assert/archive/v2.1.0.tar.gz",
+   "archive_sha256": "98ca3b685f8b8993e48ec057565e6e2abcc541034ed5b0e81f191505682037fd",
+   "archive_prefix": "bats-assert-2.1.0",
+   "archive_provenance": "aspect_bazel_lib lib/private/bats_toolchain.bzl BATS_*_VERSIONS; the digest Bazel itself verifies. RECONSTRUCTED here from the git tag rather than downloaded: this environment's egress denies github.com/.../archive/*.tar.gz with 403 while serving anonymous git reads, and `git archive --format=tar --prefix=<name>-<ver>/ <tag> | gzip -n -6` reproduces GitHub's tarball BYTE-FOR-BYTE (verified against this digest by tools/bazel/vendor_bats.py, which refuses on any mismatch).",
+   "why": "aspect_bazel_lib REGISTERS bats_toolchains, and a registered toolchain must load before Bazel can resolve toolchains for any configured target - so the whole ANALYSIS phase, and with it Mode-Q (SI-G0-1), aborted here on a fetch this project does not otherwise need. Vendoring these four archives is what makes `bazel cquery` run."
+  },
+  {
+   "id": "BATS_FILE",
+   "kind": "git_tag",
+   "repository": "https://github.com/bats-core/bats-file",
+   "tag": "v0.4.0",
+   "resolved_revision": "13ad5e2ffcc360281432db3d43a306f7b3667d60",
+   "tree": "e621cd838d53c7c730ac2d9dcdf04f5f0920a7fd",
+   "license": "CC0-1.0",
+   "role": [
+    "build_toolchain_dependency"
+   ],
+   "status": "locked",
+   "archive_url": "https://github.com/bats-core/bats-file/archive/v0.4.0.tar.gz",
+   "archive_sha256": "9b69043241f3af1c2d251f89b4fcafa5df3f05e97b89db18d7c9bdf5731bb27a",
+   "archive_prefix": "bats-file-0.4.0",
+   "archive_provenance": "aspect_bazel_lib lib/private/bats_toolchain.bzl BATS_*_VERSIONS; the digest Bazel itself verifies. RECONSTRUCTED here from the git tag rather than downloaded: this environment's egress denies github.com/.../archive/*.tar.gz with 403 while serving anonymous git reads, and `git archive --format=tar --prefix=<name>-<ver>/ <tag> | gzip -n -6` reproduces GitHub's tarball BYTE-FOR-BYTE (verified against this digest by tools/bazel/vendor_bats.py, which refuses on any mismatch).",
+   "why": "aspect_bazel_lib REGISTERS bats_toolchains, and a registered toolchain must load before Bazel can resolve toolchains for any configured target - so the whole ANALYSIS phase, and with it Mode-Q (SI-G0-1), aborted here on a fetch this project does not otherwise need. Vendoring these four archives is what makes `bazel cquery` run."
   }
  ],
  "policies": {

@@ -1,0 +1,906 @@
+[
+  {
+    "bazel_target": "//:checkstyle",
+    "catalog_target_id": "static:BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//:checkstyle_license",
+    "catalog_target_id": "static:BUILD:checkstyle_license"
+  },
+  {
+    "bazel_target": "//:rustfmt_test",
+    "catalog_target_id": "static:BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//admin:checkstyle",
+    "catalog_target_id": "static:admin/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//admin:test_admin_assembly",
+    "catalog_target_id": "cargo:typedb_admin_bin:test:test_admin_assembly"
+  },
+  {
+    "bazel_target": "//admin/client:checkstyle",
+    "catalog_target_id": "static:admin/client/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//admin/client:test_crate_client",
+    "catalog_target_id": "cargo:typedb-admin:unit:typedb_admin"
+  },
+  {
+    "bazel_target": "//answer:checkstyle",
+    "catalog_target_id": "static:answer/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//answer:rustfmt_test",
+    "catalog_target_id": "static:answer/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//binary:checkstyle",
+    "catalog_target_id": "static:binary/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//common/bytes:checkstyle",
+    "catalog_target_id": "static:common/bytes/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//common/bytes:rustfmt_test",
+    "catalog_target_id": "static:common/bytes/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//common/cache:checkstyle",
+    "catalog_target_id": "static:common/cache/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//common/cache:rustfmt_test",
+    "catalog_target_id": "static:common/cache/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//common/cache:test_crate_cache",
+    "catalog_target_id": "cargo:cache:unit:cache"
+  },
+  {
+    "bazel_target": "//common/concurrency:checkstyle",
+    "catalog_target_id": "static:common/concurrency/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//common/concurrency:rustfmt_test",
+    "catalog_target_id": "static:common/concurrency/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//common/concurrency:test_crate_concurrency",
+    "catalog_target_id": "cargo:concurrency:unit:concurrency"
+  },
+  {
+    "bazel_target": "//common/error:checkstyle",
+    "catalog_target_id": "static:common/error/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//common/error:rustfmt_test",
+    "catalog_target_id": "static:common/error/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//common/fail_point:checkstyle",
+    "catalog_target_id": "static:common/fail_point/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//common/fail_point:rustfmt_test",
+    "catalog_target_id": "static:common/fail_point/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//common/iterator:checkstyle",
+    "catalog_target_id": "static:common/iterator/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//common/iterator:rustfmt_test",
+    "catalog_target_id": "static:common/iterator/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//common/lending_iterator:checkstyle",
+    "catalog_target_id": "static:common/lending_iterator/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//common/lending_iterator:rustfmt_test",
+    "catalog_target_id": "static:common/lending_iterator/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//common/lending_iterator:test_crate_lending_iterator",
+    "catalog_target_id": "cargo:lending_iterator:unit:lending_iterator"
+  },
+  {
+    "bazel_target": "//common/logger:checkstyle",
+    "catalog_target_id": "static:common/logger/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//common/logger:checkstyle-copies",
+    "catalog_target_id": "static:common/logger/BUILD:checkstyle-copies"
+  },
+  {
+    "bazel_target": "//common/logger:rustfmt_test",
+    "catalog_target_id": "static:common/logger/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//common/logger:test_crate_logger",
+    "catalog_target_id": "cargo:logger:unit:logger"
+  },
+  {
+    "bazel_target": "//common/options:checkstyle",
+    "catalog_target_id": "static:common/options/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//common/options:rustfmt_test",
+    "catalog_target_id": "static:common/options/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//common/options:test_crate_options",
+    "catalog_target_id": "cargo:options:unit:options"
+  },
+  {
+    "bazel_target": "//common/primitive:checkstyle",
+    "catalog_target_id": "static:common/primitive/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//common/primitive:rustfmt_test",
+    "catalog_target_id": "static:common/primitive/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//common/structural_equality:checkstyle",
+    "catalog_target_id": "static:common/structural_equality/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//common/structural_equality:rustfmt_test",
+    "catalog_target_id": "static:common/structural_equality/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//compiler:checkstyle",
+    "catalog_target_id": "static:compiler/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//compiler:rustfmt_test",
+    "catalog_target_id": "static:compiler/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//compiler:test_crate_compiler",
+    "catalog_target_id": "cargo:compiler:unit:compiler"
+  },
+  {
+    "bazel_target": "//compiler/tests:checkstyle",
+    "catalog_target_id": "static:compiler/tests/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//compiler/tests:rustfmt_test",
+    "catalog_target_id": "static:compiler/tests/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//compiler/tests:transformation",
+    "catalog_target_id": "cargo:compiler:test:transformation"
+  },
+  {
+    "bazel_target": "//concept:checkstyle",
+    "catalog_target_id": "static:concept/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//concept:rustfmt_test",
+    "catalog_target_id": "static:concept/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//concept:test_crate_concept",
+    "catalog_target_id": "cargo:concept:unit:concept"
+  },
+  {
+    "bazel_target": "//concept/benches:bench_thing_write",
+    "catalog_target_id": "cargo:concept:bench:bench_thing_write"
+  },
+  {
+    "bazel_target": "//concept/benches:checkstyle",
+    "catalog_target_id": "static:concept/benches/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//concept/benches:rustfmt_test",
+    "catalog_target_id": "static:concept/benches/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//concept/tests:checkstyle",
+    "catalog_target_id": "static:concept/tests/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//concept/tests:rustfmt_test",
+    "catalog_target_id": "static:concept/tests/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//concept/tests:test_statistics",
+    "catalog_target_id": "cargo:concept:test:test_statistics"
+  },
+  {
+    "bazel_target": "//concept/tests:test_thing",
+    "catalog_target_id": "cargo:concept:test:test_thing"
+  },
+  {
+    "bazel_target": "//concept/tests:test_type",
+    "catalog_target_id": "cargo:concept:test:test_type"
+  },
+  {
+    "bazel_target": "//config/brew:checkstyle",
+    "catalog_target_id": "static:config/brew/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//database:checkstyle",
+    "catalog_target_id": "static:database/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//database:rustfmt_test",
+    "catalog_target_id": "static:database/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//database:test_crate_database",
+    "catalog_target_id": "cargo:database:unit:database"
+  },
+  {
+    "bazel_target": "//database/tests:checkstyle",
+    "catalog_target_id": "static:database/tests/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//database/tests:rustfmt_test",
+    "catalog_target_id": "static:database/tests/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//database/tests:test_database",
+    "catalog_target_id": "cargo:database:test:test_database"
+  },
+  {
+    "bazel_target": "//database/tests:test_diagnostics_posthog_pii",
+    "catalog_target_id": "cargo:database:test:test_diagnostics_posthog_pii"
+  },
+  {
+    "bazel_target": "//database/tests:test_statistics_synchronization",
+    "catalog_target_id": "cargo:database:test:test_statistics_synchronization"
+  },
+  {
+    "bazel_target": "//database/tests:test_transaction",
+    "catalog_target_id": "cargo:database:test:test_transaction"
+  },
+  {
+    "bazel_target": "//database/tests:test_transaction_isolation",
+    "catalog_target_id": "cargo:database:test:test_transaction_isolation"
+  },
+  {
+    "bazel_target": "//database/tools:checkstyle",
+    "catalog_target_id": "static:database/tools/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//database/tools:rustfmt_test",
+    "catalog_target_id": "static:database/tools/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//diagnostics:checkstyle",
+    "catalog_target_id": "static:diagnostics/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//diagnostics:rustfmt_test",
+    "catalog_target_id": "static:diagnostics/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//diagnostics:test_crate_diagnostics",
+    "catalog_target_id": "cargo:diagnostics:unit:diagnostics"
+  },
+  {
+    "bazel_target": "//docker:checkstyle",
+    "catalog_target_id": "static:docker/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//durability:checkstyle",
+    "catalog_target_id": "static:durability/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//durability:rustfmt_test",
+    "catalog_target_id": "static:durability/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//durability:test_crate_durability",
+    "catalog_target_id": "cargo:durability:unit:durability"
+  },
+  {
+    "bazel_target": "//durability/benches:checkstyle",
+    "catalog_target_id": "static:durability/benches/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//durability/benches:rustfmt_test",
+    "catalog_target_id": "static:durability/benches/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//durability/benches:throughput",
+    "catalog_target_id": "cargo:durability:bench:throughput"
+  },
+  {
+    "bazel_target": "//durability/tests:basic",
+    "catalog_target_id": "cargo:durability:test:basic"
+  },
+  {
+    "bazel_target": "//durability/tests:checkstyle",
+    "catalog_target_id": "static:durability/tests/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//durability/tests:crash",
+    "catalog_target_id": "cargo:durability:test:crash"
+  },
+  {
+    "bazel_target": "//durability/tests:rustfmt_test",
+    "catalog_target_id": "static:durability/tests/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//durability/tests/common:checkstyle",
+    "catalog_target_id": "static:durability/tests/common/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//durability/tests/common:rustfmt_test",
+    "catalog_target_id": "static:durability/tests/common/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//durability/tests/crash/recoverer:checkstyle",
+    "catalog_target_id": "static:durability/tests/crash/recoverer/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//durability/tests/crash/recoverer:rustfmt_test",
+    "catalog_target_id": "static:durability/tests/crash/recoverer/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//durability/tests/crash/streamer:checkstyle",
+    "catalog_target_id": "static:durability/tests/crash/streamer/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//durability/tests/crash/streamer:rustfmt_test",
+    "catalog_target_id": "static:durability/tests/crash/streamer/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//encoding:checkstyle",
+    "catalog_target_id": "static:encoding/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//encoding:rustfmt_test",
+    "catalog_target_id": "static:encoding/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//encoding:test_crate_encoding",
+    "catalog_target_id": "cargo:encoding:unit:encoding"
+  },
+  {
+    "bazel_target": "//encoding/benches:benchmark",
+    "catalog_target_id": "cargo:encoding:bench:benchmark"
+  },
+  {
+    "bazel_target": "//encoding/benches:checkstyle",
+    "catalog_target_id": "static:encoding/benches/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//encoding/benches:rustfmt_test",
+    "catalog_target_id": "static:encoding/benches/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//encoding/tests:checkstyle",
+    "catalog_target_id": "static:encoding/tests/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//encoding/tests:rustfmt_test",
+    "catalog_target_id": "static:encoding/tests/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//encoding/tests:test_attribute_vertex",
+    "catalog_target_id": "cargo:encoding:test:test_attribute_vertex"
+  },
+  {
+    "bazel_target": "//encoding/tests:test_definitions",
+    "catalog_target_id": "cargo:encoding:test:test_definitions"
+  },
+  {
+    "bazel_target": "//encoding/tests:test_type_vertex",
+    "catalog_target_id": "cargo:encoding:test:test_type_vertex"
+  },
+  {
+    "bazel_target": "//executor:checkstyle",
+    "catalog_target_id": "static:executor/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//executor:rustfmt_test",
+    "catalog_target_id": "static:executor/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//executor:test_crate_executor",
+    "catalog_target_id": "cargo:executor:unit:executor"
+  },
+  {
+    "bazel_target": "//executor/benches:bench_instructions",
+    "catalog_target_id": "cargo:executor:bench:bench_instructions"
+  },
+  {
+    "bazel_target": "//executor/benches:checkstyle",
+    "catalog_target_id": "static:executor/benches/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//executor/benches:rustfmt_test",
+    "catalog_target_id": "static:executor/benches/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//executor/tests:checkstyle",
+    "catalog_target_id": "static:executor/tests/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//executor/tests:rustfmt_test",
+    "catalog_target_id": "static:executor/tests/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//executor/tests:test_compile_execute",
+    "catalog_target_id": "cargo:executor:test:test_compile_execute"
+  },
+  {
+    "bazel_target": "//executor/tests:test_efficiency",
+    "catalog_target_id": "cargo:executor:test:test_efficiency"
+  },
+  {
+    "bazel_target": "//executor/tests:test_execute_expression",
+    "catalog_target_id": "cargo:executor:test:test_execute_expression"
+  },
+  {
+    "bazel_target": "//executor/tests:test_execute_has",
+    "catalog_target_id": "cargo:executor:test:test_execute_has"
+  },
+  {
+    "bazel_target": "//executor/tests:test_execute_isa",
+    "catalog_target_id": "cargo:executor:test:test_execute_isa"
+  },
+  {
+    "bazel_target": "//executor/tests:test_execute_links",
+    "catalog_target_id": "cargo:executor:test:test_execute_links"
+  },
+  {
+    "bazel_target": "//executor/tests:test_execute_relation_index",
+    "catalog_target_id": "cargo:executor:test:test_execute_relation_index"
+  },
+  {
+    "bazel_target": "//executor/tests:test_functions",
+    "catalog_target_id": "cargo:executor:test:test_functions"
+  },
+  {
+    "bazel_target": "//executor/tests:test_pipelines",
+    "catalog_target_id": "cargo:executor:test:test_pipelines"
+  },
+  {
+    "bazel_target": "//executor/tests:test_select",
+    "catalog_target_id": "cargo:executor:test:test_select"
+  },
+  {
+    "bazel_target": "//executor/tests:test_writes",
+    "catalog_target_id": "cargo:executor:test:test_writes"
+  },
+  {
+    "bazel_target": "//function:checkstyle",
+    "catalog_target_id": "static:function/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//function:rustfmt_test",
+    "catalog_target_id": "static:function/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//function:test_crate_function",
+    "catalog_target_id": "cargo:function:unit:function"
+  },
+  {
+    "bazel_target": "//function/tests:checkstyle",
+    "catalog_target_id": "static:function/tests/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//function/tests:rustfmt_test",
+    "catalog_target_id": "static:function/tests/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//function/tests:test_definition",
+    "catalog_target_id": "cargo:function:test:test_definition"
+  },
+  {
+    "bazel_target": "//ir:checkstyle",
+    "catalog_target_id": "static:ir/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//ir:rustfmt_test",
+    "catalog_target_id": "static:ir/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//ir:test_crate_ir",
+    "catalog_target_id": "cargo:ir:unit:ir"
+  },
+  {
+    "bazel_target": "//ir/tests:binding_modes",
+    "catalog_target_id": "cargo:ir:test:binding_modes"
+  },
+  {
+    "bazel_target": "//ir/tests:checkstyle",
+    "catalog_target_id": "static:ir/tests/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//ir/tests:pattern",
+    "catalog_target_id": "cargo:ir:test:pattern"
+  },
+  {
+    "bazel_target": "//ir/tests:pipeline",
+    "catalog_target_id": "cargo:ir:test:pipeline"
+  },
+  {
+    "bazel_target": "//ir/tests:rustfmt_test",
+    "catalog_target_id": "static:ir/tests/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//ir/tests:test_structural_equality",
+    "catalog_target_id": "cargo:ir:test:test_structural_equality"
+  },
+  {
+    "bazel_target": "//query:checkstyle",
+    "catalog_target_id": "static:query/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//query:rustfmt_test",
+    "catalog_target_id": "static:query/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//query:test_crate_query",
+    "catalog_target_id": "cargo:query:unit:query"
+  },
+  {
+    "bazel_target": "//query/benches:bench_insert_queries",
+    "catalog_target_id": "cargo:query:bench:bench_insert_queries"
+  },
+  {
+    "bazel_target": "//query/benches:bench_insert_queries_multithreaded",
+    "catalog_target_id": "cargo:query:bench:bench_insert_queries_multithreaded"
+  },
+  {
+    "bazel_target": "//query/benches:checkstyle",
+    "catalog_target_id": "static:query/benches/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//query/benches:rustfmt_test",
+    "catalog_target_id": "static:query/benches/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//query/tests:checkstyle",
+    "catalog_target_id": "static:query/tests/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//query/tests:rustfmt_test",
+    "catalog_target_id": "static:query/tests/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//query/tests:test_define",
+    "catalog_target_id": "cargo:query:test:test_define"
+  },
+  {
+    "bazel_target": "//query/tests:test_fetch",
+    "catalog_target_id": "cargo:query:test:test_fetch"
+  },
+  {
+    "bazel_target": "//query/tests:test_pipeline_stages_limit",
+    "catalog_target_id": "cargo:query:test:test_pipeline_stages_limit"
+  },
+  {
+    "bazel_target": "//query/tests:test_query_cache",
+    "catalog_target_id": "cargo:query:test:test_query_cache"
+  },
+  {
+    "bazel_target": "//query/tests:test_query_profile",
+    "catalog_target_id": "cargo:query:test:test_query_profile"
+  },
+  {
+    "bazel_target": "//query/tests:test_unimplemented",
+    "catalog_target_id": "cargo:query:test:test_unimplemented"
+  },
+  {
+    "bazel_target": "//resource:checkstyle",
+    "catalog_target_id": "static:resource/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//resource:rustfmt_test",
+    "catalog_target_id": "static:resource/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//server:checkstyle",
+    "catalog_target_id": "static:server/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//server:rustfmt_test",
+    "catalog_target_id": "static:server/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//server:test_admin_service",
+    "catalog_target_id": "cargo:server:test:test_admin_service"
+  },
+  {
+    "bazel_target": "//server:test_crate_server",
+    "catalog_target_id": "cargo:server:unit:server"
+  },
+  {
+    "bazel_target": "//server/service/admin/proto:checkstyle",
+    "catalog_target_id": "static:server/service/admin/proto/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//storage:checkstyle",
+    "catalog_target_id": "static:storage/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//storage:rustfmt_test",
+    "catalog_target_id": "static:storage/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//storage:test_crate_storage",
+    "catalog_target_id": "cargo:storage:unit:storage"
+  },
+  {
+    "bazel_target": "//storage/benches:bench_mvcc_storage",
+    "catalog_target_id": "cargo:storage:bench:bench_mvcc_storage"
+  },
+  {
+    "bazel_target": "//storage/benches:bench_rocks",
+    "catalog_target_id": "cargo:storage:bench:bench_rocks"
+  },
+  {
+    "bazel_target": "//storage/benches:checkstyle",
+    "catalog_target_id": "static:storage/benches/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//storage/benches:rustfmt_test",
+    "catalog_target_id": "static:storage/benches/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//storage/tests:checkstyle",
+    "catalog_target_id": "static:storage/tests/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//storage/tests:rustfmt_test",
+    "catalog_target_id": "static:storage/tests/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//storage/tests:test_isolation",
+    "catalog_target_id": "cargo:storage:test:test_isolation"
+  },
+  {
+    "bazel_target": "//storage/tests:test_mvcc",
+    "catalog_target_id": "cargo:storage:test:test_mvcc"
+  },
+  {
+    "bazel_target": "//storage/tests:test_recovery",
+    "catalog_target_id": "cargo:storage:test:test_recovery"
+  },
+  {
+    "bazel_target": "//storage/tests:test_snapshot",
+    "catalog_target_id": "cargo:storage:test:test_snapshot"
+  },
+  {
+    "bazel_target": "//storage/tests:test_storage",
+    "catalog_target_id": "cargo:storage:test:test_storage"
+  },
+  {
+    "bazel_target": "//system:checkstyle",
+    "catalog_target_id": "static:system/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//system:rustfmt_test",
+    "catalog_target_id": "static:system/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//tests/assembly:checkstyle",
+    "catalog_target_id": "static:tests/assembly/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//tests/assembly:rustfmt_test",
+    "catalog_target_id": "static:tests/assembly/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//tests/assembly:test_assembly",
+    "catalog_target_id": "cargo:typedb_server_bin:test:test_assembly"
+  },
+  {
+    "bazel_target": "//tests/assembly:test_fail_points",
+    "catalog_target_id": "cargo:typedb_server_bin:test:test_fail_points"
+  },
+  {
+    "bazel_target": "//tests/behaviour:checkstyle",
+    "catalog_target_id": "static:tests/behaviour/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//tests/behaviour/concept:checkstyle",
+    "catalog_target_id": "static:tests/behaviour/concept/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//tests/behaviour/concept:rustfmt_test",
+    "catalog_target_id": "static:tests/behaviour/concept/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//tests/behaviour/concept:test_concept",
+    "catalog_target_id": "cargo:typedb_server_bin:test:test_concept"
+  },
+  {
+    "bazel_target": "//tests/behaviour/connection:checkstyle",
+    "catalog_target_id": "static:tests/behaviour/connection/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//tests/behaviour/connection:rustfmt_test",
+    "catalog_target_id": "static:tests/behaviour/connection/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//tests/behaviour/connection:test_connection",
+    "catalog_target_id": "cargo:typedb_server_bin:test:test_connection"
+  },
+  {
+    "bazel_target": "//tests/behaviour/debug:checkstyle",
+    "catalog_target_id": "static:tests/behaviour/debug/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//tests/behaviour/debug:rustfmt_test",
+    "catalog_target_id": "static:tests/behaviour/debug/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//tests/behaviour/debug:test_debug",
+    "catalog_target_id": "cargo:typedb_server_bin:test:test_debug"
+  },
+  {
+    "bazel_target": "//tests/behaviour/query:checkstyle",
+    "catalog_target_id": "static:tests/behaviour/query/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//tests/behaviour/query:rustfmt_test",
+    "catalog_target_id": "static:tests/behaviour/query/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//tests/behaviour/query:test_query",
+    "catalog_target_id": "cargo:typedb_server_bin:test:test_query"
+  },
+  {
+    "bazel_target": "//tests/behaviour/service:checkstyle",
+    "catalog_target_id": "static:tests/behaviour/service/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//tests/behaviour/service/http:checkstyle",
+    "catalog_target_id": "static:tests/behaviour/service/http/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//tests/behaviour/service/http/connection:checkstyle",
+    "catalog_target_id": "static:tests/behaviour/service/http/connection/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//tests/behaviour/service/http/connection:rustfmt_test",
+    "catalog_target_id": "static:tests/behaviour/service/http/connection/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//tests/behaviour/service/http/connection:test_http_database",
+    "catalog_target_id": "cargo:typedb_server_bin:test:test_http_database"
+  },
+  {
+    "bazel_target": "//tests/behaviour/service/http/connection:test_http_transaction",
+    "catalog_target_id": "cargo:typedb_server_bin:test:test_http_transaction"
+  },
+  {
+    "bazel_target": "//tests/behaviour/service/http/debug:checkstyle",
+    "catalog_target_id": "static:tests/behaviour/service/http/debug/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//tests/behaviour/service/http/debug:rustfmt_test",
+    "catalog_target_id": "static:tests/behaviour/service/http/debug/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//tests/behaviour/service/http/debug:test_http_debug",
+    "catalog_target_id": "cargo:typedb_server_bin:test:test_http_debug"
+  },
+  {
+    "bazel_target": "//tests/behaviour/service/http/driver:checkstyle",
+    "catalog_target_id": "static:tests/behaviour/service/http/driver/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//tests/behaviour/service/http/driver:rustfmt_test",
+    "catalog_target_id": "static:tests/behaviour/service/http/driver/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//tests/behaviour/service/http/driver:test_http_driver_concept",
+    "catalog_target_id": "cargo:typedb_server_bin:test:test_http_driver_concept"
+  },
+  {
+    "bazel_target": "//tests/behaviour/service/http/driver:test_http_driver_connection",
+    "catalog_target_id": "cargo:typedb_server_bin:test:test_http_driver_connection"
+  },
+  {
+    "bazel_target": "//tests/behaviour/service/http/driver:test_http_driver_http",
+    "catalog_target_id": "cargo:typedb_server_bin:test:test_http_driver_http"
+  },
+  {
+    "bazel_target": "//tests/behaviour/service/http/driver:test_http_driver_query",
+    "catalog_target_id": "cargo:typedb_server_bin:test:test_http_driver_query"
+  },
+  {
+    "bazel_target": "//tests/behaviour/service/http/driver:test_http_driver_user",
+    "catalog_target_id": "cargo:typedb_server_bin:test:test_http_driver_user"
+  },
+  {
+    "bazel_target": "//tests/behaviour/service/http/http_steps:checkstyle",
+    "catalog_target_id": "static:tests/behaviour/service/http/http_steps/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//tests/behaviour/service/http/http_steps:rustfmt_test",
+    "catalog_target_id": "static:tests/behaviour/service/http/http_steps/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//tests/behaviour/steps:checkstyle",
+    "catalog_target_id": "static:tests/behaviour/steps/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//tests/behaviour/steps:rustfmt_test",
+    "catalog_target_id": "static:tests/behaviour/steps/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//tests/behaviour/steps/params:checkstyle",
+    "catalog_target_id": "static:tests/behaviour/steps/params/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//tests/behaviour/steps/params:rustfmt_test",
+    "catalog_target_id": "static:tests/behaviour/steps/params/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//tests/benchmarks/concurrent_ops:bench_concurrency",
+    "catalog_target_id": "cargo:typedb_server_bin:test:bench_concurrency"
+  },
+  {
+    "bazel_target": "//tests/benchmarks/concurrent_ops:checkstyle",
+    "catalog_target_id": "static:tests/benchmarks/concurrent_ops/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//tests/benchmarks/concurrent_ops:rustfmt_test",
+    "catalog_target_id": "static:tests/benchmarks/concurrent_ops/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//tests/benchmarks/iam:bench_iam",
+    "catalog_target_id": "cargo:typedb_server_bin:test:bench_iam"
+  },
+  {
+    "bazel_target": "//tests/benchmarks/iam:checkstyle",
+    "catalog_target_id": "static:tests/benchmarks/iam/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//tests/benchmarks/iam:rustfmt_test",
+    "catalog_target_id": "static:tests/benchmarks/iam/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//tests/distribution:checkstyle",
+    "catalog_target_id": "static:tests/distribution/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//tool/release:checkstyle",
+    "catalog_target_id": "static:tool/release/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//tool/rust:checkstyle",
+    "catalog_target_id": "static:tool/rust/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//tool/test:checkstyle",
+    "catalog_target_id": "static:tool/test/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//user:checkstyle",
+    "catalog_target_id": "static:user/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//user:rustfmt_test",
+    "catalog_target_id": "static:user/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//util/project:checkstyle",
+    "catalog_target_id": "static:util/project/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//util/project:rustfmt_test",
+    "catalog_target_id": "static:util/project/BUILD:rustfmt_test"
+  },
+  {
+    "bazel_target": "//util/test:checkstyle",
+    "catalog_target_id": "static:util/test/BUILD:checkstyle"
+  },
+  {
+    "bazel_target": "//util/test:rustfmt_test",
+    "catalog_target_id": "static:util/test/BUILD:rustfmt_test"
+  }
+]

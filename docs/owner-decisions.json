@@ -357,6 +357,17 @@
    "what_a_decision_would_change": "BUILD: add a `fuzz/` workspace with libFuzzer targets for the named surfaces, set implemented = true, and give the campaign a time budget and a corpus/crash artefact bound to the commit and the tool version. NARROW: record the narrowing here, remove the campaign's claim from the nightly and release workflow prose, and mark the gate advisory \u2014 which is a policy change, not a controller default.",
    "raised_by": "R8-P0-05",
    "raised_on": "2026-08-22"
+  },
+  {
+   "id": "OD-025",
+   "status": "OPEN",
+   "title": "Upstream's 16 dependency advisories: carry them, or fork the lockfile",
+   "question": "The materialised TypeDB fork's transitive graph carries 16 RUSTSEC advisories at the pinned revision - 9 vulnerabilities/unsound and 7 unmaintained crates. None was selected by this project, and none can be fixed without re-resolving upstream's Cargo.lock. Does the owner want them CARRIED (the fork stays byte-identical to the pinned upstream revision, and the qualification corpus keeps measuring that exact tree), or the LOCKFILE FORKED (bump h2, rustls-webpki, quick-xml, remove_dir_all and replace tempdir, then re-run every lane against the new tree)?",
+   "safe_default": "R8-P1-05: each advisory is listed INDIVIDUALLY in fork/typedb/deny.toml with its reason, so the gate passes on exactly this set and fails on any addition. A NEW advisory, or one on a crate this project introduces, is a real red.",
+   "why_safe_not_correct": "It is safe because the set is enumerated and cannot grow silently, and because the reachability of most of them here is nil: the rustls-webpki and rustls-pemfile findings are on a TLS path no lane exercises (no cluster, no certificates), quick-xml parses no attacker-supplied XML, pprof is a profiling dependency no gate enables, and remove_dir_all is reached only through tempdir in a dev-dependency. It is not correct because h2 IS on the server's request path, and because 'upstream will fix it' is not a schedule.",
+   "what_a_decision_would_change": "CARRY: the entries stay, with review dates, and a G2 run states them in its risk record. FORK THE LOCK: fork/typedb/Cargo.lock diverges from the pinned upstream revision, which changes the executed-tree identity every sealed leaf bundle is bound to - so every lane is re-run and every bundle re-sealed. That is a deliberate, expensive choice, which is why it is the owner's.",
+   "raised_by": "R8-P1-05",
+   "raised_on": "2026-08-22"
   }
  ]
 }

@@ -1,0 +1,120 @@
+{
+ "crates": {
+  "concept": [
+   "logger",
+   "sentry"
+  ],
+  "concurrency": [
+   "tokio-test"
+  ],
+  "diagnostics": [
+   "futures",
+   "tonic",
+   "tonic-types",
+   "typeql"
+  ],
+  "durability": [
+   "bincode"
+  ],
+  "durability_test_common": [
+   "bincode"
+  ],
+  "encoding": [
+   "tracing"
+  ],
+  "executor": [
+   "durability",
+   "logger",
+   "tracing"
+  ],
+  "function": [
+   "logger",
+   "rand",
+   "tracing"
+  ],
+  "http_steps": [
+   "async-std",
+   "chrono",
+   "encoding",
+   "options",
+   "regex",
+   "serde",
+   "smol"
+  ],
+  "ir": [
+   "durability",
+   "resource",
+   "test_utils",
+   "test_utils_storage",
+   "tracing"
+  ],
+  "params": [
+   "chrono",
+   "chrono-tz"
+  ],
+  "primitive": [
+   "serde"
+  ],
+  "query": [
+   "bytes",
+   "durability",
+   "serde",
+   "tokio"
+  ],
+  "recoverer": [
+   "bincode"
+  ],
+  "server": [
+   "hyper",
+   "logger",
+   "moka",
+   "prost",
+   "pwhash",
+   "regex",
+   "rustls-pemfile",
+   "tokio-util",
+   "xxhash-rust",
+   "yaml-rust2"
+  ],
+  "server_admin_proto": [
+   "prost"
+  ],
+  "steps": [
+   "chrono",
+   "chrono-tz",
+   "durability",
+   "function",
+   "primitive"
+  ],
+  "storage": [
+   "database",
+   "typeql"
+  ],
+  "streamer": [
+   "bincode"
+  ],
+  "structural_equality": [
+   "serde"
+  ],
+  "test_utils_encoding": [
+   "logger",
+   "tracing"
+  ],
+  "test_utils_storage": [
+   "logger"
+  ],
+  "typedb-admin": [
+   "typeql"
+  ],
+  "user": [
+   "answer",
+   "executor",
+   "lending_iterator",
+   "query",
+   "typeql"
+  ]
+ },
+ "regenerate_with": "python3 tools/fork/check_machete.py --write",
+ "schema": "typedb-fork-machete-baseline-v1",
+ "why": "R8-P1-05. Upstream generates this fork's Cargo.toml files from Bazel, and that generation emits the full Bazel dependency set - including dependencies reached only through macros, build scripts, feature-gated code or re-exports, which cargo-machete's static scan cannot see. This file records the reconciled set so a NEW finding, especially one in a crate this project authors, fails the gate."
+}

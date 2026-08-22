@@ -336,7 +336,23 @@ pub fn commands(id: &str, ctx: &Ctx) -> Vec<Cmd> {
                 // keeps holding when upstream adds another server test, which
                 // a hand-maintained list of serial tests would not.
                 match (overlay_of(ctx, m), exec::host_target_triple()) {
-                    (Some((_, fork_root, _, _)), Some(triple)) => {
+                    // R8-P1-04: ISOLATION IF AVAILABLE, SERIAL IF NOT — never
+                    // parallel and unisolated.
+                    //
+                    // `unshare(CLONE_NEWNET)` needs CAP_SYS_ADMIN in the
+                    // current user namespace, which ordinary hosted runners
+                    // and restricted agent sandboxes commonly deny. The
+                    // previous wiring had two outcomes: isolated, or a refusal
+                    // that stopped the gate. The audit's point is that there
+                    // is a third, and it costs time rather than tests —
+                    // nextest with global concurrency 1, so the fixed ports
+                    // upstream's server tests bind are never contended.
+                    //
+                    // Which mechanism was selected is recorded in the gate's
+                    // pass detail, so a report never leaves it implicit.
+                    (Some((_, fork_root, _, _)), Some(triple))
+                        if exec::network_namespaces_available(ctx.repo_root).is_ok() =>
+                    {
                         let runner = ctx.repo_root.join(exec::NETNS_EXEC).to_string_lossy().to_string();
                         // Build FIRST, then stage, then run. The assembly
                         // archive is packaged from the server binaries this
@@ -362,20 +378,84 @@ pub fn commands(id: &str, ctx: &Ctx) -> Vec<Cmd> {
                         // that build just consumed.
                         out.push(cmd.with_env(&exec::target_runner_var(&triple), &runner).already_built());
                     }
+                    // Isolation unavailable: SERIAL. Same corpus, same
+                    // outcomes, more wall-clock — and no hand-maintained list
+                    // of "tests that must not run in parallel", which would go
+                    // stale the moment upstream adds another server test.
+                    (Some((_, fork_root, _, _)), _) => {
+                        out.push(Cmd::new(
+                            "cargo",
+                            &["nextest", "run", "--manifest-path", m, "--workspace", "--all-features", "--no-run"],
+                        ));
+                        out.push(Cmd::new(
+                            "python3",
+                            &["tools/catalog/stage_test_fixtures.py", "--workspace-root", fork_root],
+                        ));
+                        out.push(
+                            Cmd::new(
+                                "cargo",
+                                &[
+                                    "nextest",
+                                    "run",
+                                    "--manifest-path",
+                                    m,
+                                    "--workspace",
+                                    "--all-features",
+                                    "--test-threads",
+                                    "1",
+                                ],
+                            )
+                            .already_built(),
+                        );
+                    }
                     _ => out.push(cmd),
                 }
             }
         }
+        // R8-P1-05: EXPLICIT, SEPARATE policy per production workspace, and the
+        // configuration digest bound into the report.
+        //
+        // The two trees have genuinely different licensing and source models:
+        // the authored workspace is ours end to end and passes with no
+        // exceptions at all, while the materialised TypeDB fork is an upstream
+        // checkout whose members carry no per-crate license field, whose
+        // dependencies include two source-locked git repositories, and whose
+        // transitive graph carries advisories nobody here selected. One policy
+        // could serve both only by widening the authored one to accommodate a
+        // graph this project does not own.
         "rust.deny" => {
             for m in &ctx.rust_manifests_all {
-                out.push(Cmd::new("cargo", &["deny", "--manifest-path", m, "check"]));
+                let workspace = m.trim_end_matches("/Cargo.toml");
+                let config = format!("{workspace}/deny.toml");
+                if ctx.repo_root.join(&config).is_file() {
+                    out.push(Cmd::new("cargo", &["deny", "--manifest-path", m, "--config", &config, "check"]));
+                    // and the per-crate clarifications must still describe the
+                    // workspace they claim to: a member that appears or leaves
+                    // without the list moving is the drift this catches.
+                    if ctx.repo_root.join("tools/fork/deny_clarify.py").is_file() && workspace.starts_with("fork/") {
+                        out.push(Cmd::new("python3", &["tools/fork/deny_clarify.py", "--check"]));
+                        out.push(Cmd::new("python3", &["tools/fork/deny_clarify.py", "--check-wildcards"]));
+                    }
+                } else {
+                    out.push(Cmd::new("cargo", &["deny", "--manifest-path", m, "check"]));
+                }
             }
         }
         "rust.machete" => {
             // Plain binary, not the `cargo machete` subcommand form; see the
             // note on [tool.cargo-machete] in .quality/tools.lock.toml.
             for m in &ctx.rust_manifests_all {
-                out.push(Cmd::new("cargo-machete", &["--with-metadata", m.trim_end_matches("/Cargo.toml")]));
+                let workspace = m.trim_end_matches("/Cargo.toml");
+                // R8-P1-05: a workspace whose manifests are GENERATED upstream
+                // is reconciled against a committed baseline instead of being
+                // hand-edited crate by crate — and the wrapper refuses an
+                // incomplete analysis rather than reading its silence as
+                // "no findings".
+                if ctx.repo_root.join(format!("{workspace}/machete-baseline.json")).is_file() {
+                    out.push(Cmd::new("python3", &["tools/fork/check_machete.py"]));
+                } else {
+                    out.push(Cmd::new("cargo-machete", &["--with-metadata", workspace]));
+                }
             }
         }
         "rust.hack.each_feature" => {
@@ -1095,6 +1175,21 @@ fn overlay_of<'a>(_ctx: &Ctx, manifest: &str) -> Option<&'a (&'a str, &'a str, &
 /// passed.
 fn pass_detail(id: &str, ctx: &Ctx, n: usize) -> String {
     let mut detail = format!("{n} command(s) succeeded");
+    // R8-P1-04: the report must say WHICH execution mechanism was selected. A
+    // green `rust.tests` that ran serially and one that ran under per-test
+    // network isolation are the same verdict about the code and a different
+    // statement about how it was obtained, and a reader cannot tell them apart
+    // from the exit code.
+    if id == "rust.tests" && OVERLAYS.iter().any(|(m, ..)| ctx.rust_manifests_all.iter().any(|x| x == m)) {
+        detail.push_str(match exec::network_namespaces_available(ctx.repo_root) {
+            Ok(()) => "; overlay tests ran under PER-TEST NETWORK ISOLATION (each test binary in its own netns)",
+            Err(_) => {
+                "; overlay tests ran SERIALLY (--test-threads 1) because this host cannot provide \
+                 network namespaces. Same corpus and same outcomes, more wall-clock; no test was \
+                 skipped and nothing ran parallel-and-unisolated"
+            }
+        });
+    }
     if id == "rust.tests" && overlay_tests_are_skippable(ctx) {
         let skipped: Vec<&str> = OVERLAYS.iter().map(|(m, ..)| *m).collect();
         detail.push_str(&format!(

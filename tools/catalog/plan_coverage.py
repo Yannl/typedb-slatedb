@@ -102,14 +102,14 @@ def load_leaf_evidence(dirs, plan, catalog):
     if not dirs:
         return {}, []
     sys.path.insert(0, str(REPO / "tools" / "qualification"))
-    import leaf_coverage  # noqa: E402
+    import leaf_evidence  # noqa: E402
 
     catalog_leaves = {}
     for lc in catalog["leaf_cases"]:
         if lc["kind"] == "LIBTEST":
             catalog_leaves.setdefault(lc["target_id"], {})[lc["display_name"]] = lc
     targets = {t["target_id"]: t for t in catalog["targets"]}
-    return leaf_coverage.load_leaf_evidence(dirs, plan, catalog_leaves, targets)
+    return leaf_evidence.load_leaf_evidence(dirs, plan, catalog_leaves, targets)
 
 
 def load_evidence(dirs, plan_profiles):
@@ -458,9 +458,11 @@ def main():
     # leaf-granularity evidence exists for them. Driver rows are the only
     # rows that can be covered today, and only through a bundle whose seal
     # re-derived above.
-    covered = sum(n for (f, s), n in counts.items() if s == "COVERED")
-    partial = sum(n for (f, s), n in counts.items() if s == "PARTIAL")
-    uncovered = sum(n for (f, s), n in counts.items() if s in ("UNCOVERED", "NOT_IMPLEMENTED"))
+    covered = sum(n for (_family, s), n in counts.items() if s == "COVERED")
+    partial = sum(n for (_family, s), n in counts.items() if s == "PARTIAL")
+    uncovered = sum(
+        n for (_family, s), n in counts.items() if s in ("UNCOVERED", "NOT_IMPLEMENTED")
+    )
 
     by_family = {}
     for (family, status), n in sorted(counts.items()):

@@ -227,7 +227,7 @@ def sha256(path: pathlib.Path) -> str:
 # ---------------------------------------------------------------------------
 
 
-def validate_git(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
+def validate_git(nid: str, node: dict, _repo_root: pathlib.Path, failures: list):
     """git / git_tag: commit and tree must both be locked as 40-hex ids.
 
     A commit hash alone is not enough once anything downstream is allowed to
@@ -249,7 +249,7 @@ def validate_git(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
         failures.append(f"{nid}: git_tag node without a tag")
 
 
-def validate_registry(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
+def validate_registry(nid: str, node: dict, _repo_root: pathlib.Path, failures: list):
     """crates.io registry node: pinned version + sha256 for the crate and
     every companion crate, each cross-checked against every listed consumer
     Cargo.lock (the consumer check happens in the REGISTRY_NODES loop)."""
@@ -267,7 +267,7 @@ def validate_registry(nid: str, node: dict, repo_root: pathlib.Path, failures: l
             failures.append(f"{nid}: crate {cname} checksum_sha256 missing or not 64-hex: {cs!r}")
 
 
-def validate_cargo_dependency(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
+def validate_cargo_dependency(nid: str, node: dict, _repo_root: pathlib.Path, failures: list):
     """Transitively-pinned crate: same shape rules as a registry node; the
     consumer Cargo.lock agreement is checked in the CARGO_DEP_NODES loop."""
     if not node.get("name"):
@@ -321,7 +321,7 @@ def validate_npm(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
             )
 
 
-def validate_artifact(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
+def validate_artifact(nid: str, node: dict, _repo_root: pathlib.Path, failures: list):
     """artifact node: policy artifacts_require_url_sha256_license, plus a
     well-formed digest (the on-disk digest check is the ARTIFACTS loop)."""
     cs = node.get("sha256")
@@ -337,7 +337,7 @@ def validate_artifact(nid: str, node: dict, repo_root: pathlib.Path, failures: l
         failures.append(f"{nid}: malformed version {ver!r}")
 
 
-def validate_oci_image(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
+def validate_oci_image(nid: str, node: dict, _repo_root: pathlib.Path, failures: list):
     """oci_image node: policy oci_requires_digest. One documented exception:
     a node whose status records an open architecture decision
     (architecture_choice_required) has nothing to pin yet — anything else
@@ -352,7 +352,7 @@ def validate_oci_image(nid: str, node: dict, repo_root: pathlib.Path, failures: 
         failures.append(f"{nid}: oci digest missing or not sha256:<64-hex>: {digest!r}")
 
 
-def validate_toolchain(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
+def validate_toolchain(nid: str, node: dict, _repo_root: pathlib.Path, failures: list):
     """toolchain node: a named tool with a well-formed version string."""
     if not node.get("name"):
         failures.append(f"{nid}: toolchain without a name")
@@ -361,7 +361,7 @@ def validate_toolchain(nid: str, node: dict, repo_root: pathlib.Path, failures: 
         failures.append(f"{nid}: malformed toolchain version {ver!r}")
 
 
-def validate_toolchain_set(nid: str, node: dict, repo_root: pathlib.Path, failures: list):
+def validate_toolchain_set(nid: str, node: dict, _repo_root: pathlib.Path, failures: list):
     """toolchain_set node: a non-empty member map, every member recorded as a
     non-empty identity string (path or version banner)."""
     members = node.get("members")
@@ -373,6 +373,9 @@ def validate_toolchain_set(nid: str, node: dict, repo_root: pathlib.Path, failur
             failures.append(f"{nid}: toolchain_set member {mname!r} has no identity")
 
 
+# One signature for every kind, whether or not that kind reads the repo root:
+# the dispatch below calls them all the same way, and a per-kind signature
+# would make the table a lie. `_repo_root` marks the ones that do not.
 KIND_VALIDATORS = {
     "git": validate_git,
     "git_tag": validate_git,

@@ -40,6 +40,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 
+import common  # noqa: E402
 import verdict as verdict_policy  # noqa: E402
 
 failures = []
@@ -334,7 +335,7 @@ def bundle_controls():
         ad = tree / ARCHIVE_REL
         m = json.loads((ad / "log-manifest.json").read_text())
         for name in log_names:
-            m["logs"][name] = vp.common.sha256_file(ad / name)
+            m["logs"][name] = common.sha256_file(ad / name)
         rows = json.loads((ad / "u0-results.json").read_text())["results"]
         m["bundle_root"], _ = vp.compute_bundle_root(
             ad, rows, ledger_path=tree / "docs" / "evidence" / "flake-ledger.json", repo=tree
@@ -480,7 +481,7 @@ def bundle_controls():
             f.write("\n")  # count-neutral tamper
         # the forger regenerates the manifest but cannot rewrite the sealed root
         m = json.loads((ad / "log-manifest.json").read_text())
-        m["logs"]["storage__storage.log"] = vp.common.sha256_file(ad / "storage__storage.log")
+        m["logs"]["storage__storage.log"] = common.sha256_file(ad / "storage__storage.log")
         m["bundle_root"], _ = vp.compute_bundle_root(
             ad, rows, ledger_path=sealed / "docs" / "evidence" / "flake-ledger.json", repo=sealed
         )

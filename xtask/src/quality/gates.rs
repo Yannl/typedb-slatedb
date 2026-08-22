@@ -191,7 +191,11 @@ pub fn commands(id: &str, ctx: &Ctx) -> Vec<Cmd> {
             }
         }
         "rust.tests" => {
+            let skip_overlays = overlay_tests_are_skippable(ctx);
             for m in &ctx.rust_manifests_all {
+                if skip_overlays && overlay_of(ctx, m).is_some() {
+                    continue;
+                }
                 let cmd = Cmd::new("cargo", &["nextest", "run", "--manifest-path", m, "--workspace", "--all-features"]);
                 // An overlay workspace runs UPSTREAM's tests, and upstream's
                 // server tests each bind fixed addresses (gRPC 11729,
@@ -754,14 +758,7 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
         return r;
     }
 
-    let mut r = GateResult::new(
-        id,
-        d.tier,
-        d.language,
-        d.advisory,
-        Status::Pass,
-        &format!("{} command(s) succeeded", cmds.len()),
-    );
+    let mut r = GateResult::new(id, d.tier, d.language, d.advisory, Status::Pass, &pass_detail(id, ctx, cmds.len()));
     r.command = last_command;
     r.duration_ms = Some(total_ms);
     r
@@ -774,8 +771,55 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
 /// repository is ours end to end and is gated whole.
 const OVERLAYS: &[(&str, &str, &str, &str)] = &[("fork/typedb/Cargo.toml", "fork/typedb", "sources/typedb", "TB")];
 
+/// Path prefixes that cannot change what an overlay workspace's tests DO.
+///
+/// Deliberately a list of what is INERT rather than a list of what is
+/// relevant. `tools/**` is absent on purpose: `rust.tests` runs an overlay
+/// through `tools/dev/netns_exec.py` and stages its fixtures with
+/// `tools/catalog/stage_test_fixtures.py`, so a change there changes the run.
+/// Anything not named here runs the corpus, which is the direction a mistake
+/// should fail in.
+const FORK_INERT_PREFIXES: &[&str] = &["docs/", "control-plane/"];
+
+fn cannot_affect_an_overlay(path: &str) -> bool {
+    path.ends_with(".md") || FORK_INERT_PREFIXES.iter().any(|p| path.starts_with(p))
+}
+
+/// May `rust.tests` skip the overlay workspaces this run?
+///
+/// OD-018, decided 2026-08-22: the fork corpus is 20-32 minutes, and running
+/// it for a change that cannot touch it is the whole cost of the inner loop.
+/// This is the same rule `targets()` already applies to the TypeScript and
+/// Python gates, and it is scoped to `fast` alone — `pr`, the merge gate, and
+/// `full` still execute every workspace, so nothing reaches the default branch
+/// on the strength of this.
+///
+/// An EMPTY change set is not inert. `fast` with no diff is the "verify this
+/// tree" run, and there is nothing there to prove irrelevant.
+fn overlay_tests_are_skippable(ctx: &Ctx) -> bool {
+    ctx.mode == Mode::Fast
+        && !ctx.changes.is_empty()
+        && ctx.changes.all_paths().iter().all(|p| cannot_affect_an_overlay(p))
+}
+
 fn overlay_of<'a>(_ctx: &Ctx, manifest: &str) -> Option<&'a (&'a str, &'a str, &'a str, &'a str)> {
     OVERLAYS.iter().find(|(m, _, _, _)| *m == manifest)
+}
+
+/// What a passing gate says it did — including what it deliberately did NOT
+/// do. A skipped workspace that goes unmentioned reads as a workspace that
+/// passed.
+fn pass_detail(id: &str, ctx: &Ctx, n: usize) -> String {
+    let mut detail = format!("{n} command(s) succeeded");
+    if id == "rust.tests" && overlay_tests_are_skippable(ctx) {
+        let skipped: Vec<&str> = OVERLAYS.iter().map(|(m, ..)| *m).collect();
+        detail.push_str(&format!(
+            "; {} NOT executed — every changed path is documentation or control-plane, \
+             which cannot change what its tests do (OD-018). `pr` and `full` run it.",
+            skipped.join(", ")
+        ));
+    }
+    detail
 }
 
 /// One compiler diagnostic, reduced to what deciding needs.
@@ -1726,6 +1770,69 @@ mod tests {
         let mutation = display("rust.mutation.diff");
         assert!(mutation[0].contains("--in-diff artifacts/quality/pr.diff"), "{:?}", mutation);
         assert!(mutation[0].contains("--test-tool=nextest"), "{:?}", mutation);
+    }
+
+    fn changed(paths: &[&str]) -> ChangeSet {
+        ChangeSet {
+            entries: paths
+                .iter()
+                .map(|p| super::super::diff::ChangeEntry {
+                    status: "M".into(),
+                    path: (*p).to_string(),
+                    previous_path: None,
+                })
+                .collect(),
+        }
+    }
+
+    /// OD-018. The saving is the whole point (20-32 minutes), but every clause
+    /// of the condition is load-bearing, so each gets an assertion.
+    #[test]
+    fn the_fork_corpus_is_skipped_only_for_a_diff_that_cannot_reach_it() {
+        let f = fixture(Vec::new());
+        let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/.."));
+        let overlay = OVERLAYS[0].0;
+
+        let runs_overlay = |mode: Mode, cs: &ChangeSet| {
+            let mut c = ctx(&f, root);
+            c.mode = mode;
+            c.changes = cs;
+            c.rust_manifests_all = vec!["tools/Cargo.toml".into(), overlay.into()];
+            let cmds = commands("rust.tests", &c);
+            cmds.iter().any(|x| x.display().contains(overlay))
+        };
+
+        let docs = changed(&["docs/agent-handoff/x.md", "control-plane/src/a.ts", "README.md"]);
+        assert!(!runs_overlay(Mode::Fast, &docs), "a docs/control-plane diff must skip the corpus");
+
+        // `pr` is the merge gate: it runs everything, whatever the diff.
+        assert!(runs_overlay(Mode::Pr, &docs), "pr must never skip the corpus");
+
+        // Nothing to prove irrelevant.
+        assert!(runs_overlay(Mode::Fast, &changed(&[])), "an empty diff must not skip the corpus");
+
+        // tools/** is how the corpus RUNS — the runner and the fixture staging
+        // both live there. Skipping on it would be skipping on the thing under
+        // test.
+        for p in ["tools/dev/netns_exec.py", "tools/catalog/stage_test_fixtures.py"] {
+            assert!(runs_overlay(Mode::Fast, &changed(&[p])), "{p} can change the run");
+        }
+        for p in ["fork/typedb/server/lib.rs", "xtask/src/quality/gates.rs", ".quality/policy.toml"] {
+            assert!(runs_overlay(Mode::Fast, &changed(&[p])), "{p} is not inert");
+        }
+
+        // One non-inert path among inert ones still runs it.
+        let mixed = changed(&["docs/x.md", "tools/catalog/run_u0.py"]);
+        assert!(runs_overlay(Mode::Fast, &mixed), "a mixed diff must run the corpus");
+
+        // And the skip is stated, never silent.
+        let mut c = ctx(&f, root);
+        c.mode = Mode::Fast;
+        c.changes = &docs;
+        c.rust_manifests_all = vec!["tools/Cargo.toml".into(), overlay.into()];
+        let detail = pass_detail("rust.tests", &c, 1);
+        assert!(detail.contains(overlay) && detail.contains("NOT executed"), "{detail}");
+        assert!(!pass_detail("rust.clippy", &c, 1).contains("NOT executed"));
     }
 
     #[test]

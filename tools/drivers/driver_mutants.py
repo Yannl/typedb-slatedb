@@ -151,12 +151,12 @@ def _first_executed_suite(data):
 # ------------------------------------------------------------------ mutants
 
 
-def m_empty_result_file(bundle, data, repo=None):
+def m_empty_result_file(bundle, _data=None, _repo=None):
     (bundle / "driver-results.json").write_text("")
     return "NAIVE"
 
 
-def m_empty_log(bundle, data, repo=None):
+def m_empty_log(bundle, data, _repo=None):
     s = _first_executed_suite(data)
     log_path(bundle, s["raw_log"]).write_text("")
     return "NAIVE"
@@ -304,14 +304,14 @@ def m_backend_witness_stripped(bundle, data, repo=None):
     return "RESEALED"
 
 
-def m_forged_verdict_enum(bundle, data, repo=None):
+def m_forged_verdict_enum(bundle, _data=None, _repo=None):
     v = json.loads((bundle / "verdict.json").read_text())
     v["policy_verdict"] = "TOTAL_QUALITY_PASS"
     (bundle / "verdict.json").write_text(json.dumps(v, indent=1) + "\n")
     return "NAIVE"
 
 
-def m_unsealed_edit(bundle, data, repo=None):
+def m_unsealed_edit(bundle, data, _repo=None):
     data["counts"]["plan_leaves_passed"] = 999999
     save(bundle, data)  # deliberately NOT resealed
     return "NAIVE"

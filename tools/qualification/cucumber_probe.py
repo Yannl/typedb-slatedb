@@ -200,7 +200,8 @@ def inventory(catalog):
         }
         for (rid, case), feats in sorted(mapping.items())
     ]
-    covered = {f for r in rows for f in r["features"]}
+    # From `mapping`, not back out of the `rows` records just built from it.
+    covered = {f for feats in mapping.values() for f in feats}
     catalogued = {t.split(":", 1)[1] for t in scen}
     return {
         "behaviour_cases_mapped_to_a_feature": len(rows),
@@ -290,7 +291,7 @@ def measure(spec, archive, catalog):
     }
 
 
-def costing(catalog, inv, measurements, lane_bundles, cores):
+def costing(_catalog, inv, measurements, lane_bundles, cores):
     """What a full cucumber leaf lane costs, from MEASURED rates and from the
     behaviour targets' own archived durations - never from a guess.
 

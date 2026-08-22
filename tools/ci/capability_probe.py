@@ -315,7 +315,10 @@ def self_test() -> int:
     )
     if not ok:
         failures += 1
-    ok = EX_BLOCKED_GATE not in (0, 1)
+    # int(), so this stays a real check: with the literal the checker proves it
+    # true today, and a future edit setting the constant to 0 or 1 would then
+    # be a "condition always false" rather than a failing self-test.
+    ok = int(EX_BLOCKED_GATE) not in (0, 1)
     print(
         f"  {'ok  ' if ok else 'FAIL'} BLOCKED is distinguishable from success (0) and source failure (1)"
     )

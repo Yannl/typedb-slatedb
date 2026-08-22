@@ -112,12 +112,64 @@ import hashlib
 import pathlib
 import re
 import sys
+from typing import TypedDict
 
 HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(REPO / "tools" / "catalog"))
 import common  # noqa: E402
+
+
+class ExamplesTable(TypedDict):
+    tags: list[str]
+    rows: list[list[str]]
+
+
+class GherkinScenario(TypedDict):
+    """One Scenario or Scenario Outline as read from the .feature source."""
+
+    kind: str
+    name: str
+    tags: list[str]
+    examples: list[ExamplesTable]
+    line: int
+
+
+class FeatureIndexEntry(TypedDict):
+    """One catalogue target joined to its feature file.
+
+    `problems` accumulates every reason the join cannot be trusted; leaving the
+    record's type to inference made `rec["problems"].append(...)` unprovable,
+    which is a poor property for the list that decides joinability.
+    """
+
+    target_id: str
+    ref: str
+    feature_title: str | None
+    source_path: str
+    source_sha256: str | None
+    catalogue_source_hash: list[str] | None
+    entries: list[dict[str, object]]
+    problems: list[str]
+    joinable: bool
+
+
+class SummaryBlock(TypedDict):
+    """One `[Summary]` block of a cucumber run's output."""
+
+    line: int
+    features: int | None
+    rules: int
+    scenarios: int | None
+    scenario_stats: dict[str, int] | None
+    steps: int | None
+    step_stats: dict[str, int] | None
+    parsing_errors: int
+    hook_errors: int
+    problems: list[str]
+    raw: list[str]
+
 
 BH = REPO / "sources" / "typedb-behaviour"
 TB = REPO / "sources" / "typedb"
@@ -199,30 +251,30 @@ def parse_feature_file(path):
             if kw == "Feature":
                 title, pending_tags = rest, []
             elif kw in ("Scenario Outline", "Scenario Template"):
-                cur = {
-                    "kind": "outline",
-                    "name": rest,
-                    "tags": pending_tags,
-                    "examples": [],
-                    "line": i + 1,
-                }
+                cur = GherkinScenario(
+                    kind="outline",
+                    name=rest,
+                    tags=pending_tags,
+                    examples=[],
+                    line=i + 1,
+                )
                 scenarios.append(cur)
                 pending_tags = []
             elif kw in ("Scenario", "Example"):
-                cur = {
-                    "kind": "scenario",
-                    "name": rest,
-                    "tags": pending_tags,
-                    "examples": [],
-                    "line": i + 1,
-                }
+                cur = GherkinScenario(
+                    kind="scenario",
+                    name=rest,
+                    tags=pending_tags,
+                    examples=[],
+                    line=i + 1,
+                )
                 scenarios.append(cur)
                 pending_tags = []
             elif kw == "Background":
                 cur, pending_tags = None, []
             else:  # Examples / Scenarios / Rule
                 if kw in ("Examples", "Scenarios") and cur is not None and cur["kind"] == "outline":
-                    cur["examples"].append({"tags": pending_tags, "rows": []})
+                    cur["examples"].append(ExamplesTable(tags=pending_tags, rows=[]))
                 pending_tags = []
             continue
         if s.startswith("|") and cur is not None and cur["kind"] == "outline" and cur["examples"]:
@@ -326,17 +378,17 @@ def build_corpus_index(catalog, plan, behaviour_root=BH):
     for tid, leaves in sorted(by_target.items()):
         ref = tid.split("cucumber-corpus:", 1)[1]
         path = pathlib.Path(behaviour_root) / ref
-        rec = {
-            "target_id": tid,
-            "ref": ref,
-            "feature_title": None,
-            "source_path": str(path),
-            "source_sha256": None,
-            "catalogue_source_hash": None,
-            "entries": [],
-            "problems": [],
-            "joinable": False,
-        }
+        rec = FeatureIndexEntry(
+            target_id=tid,
+            ref=ref,
+            feature_title=None,
+            source_path=str(path),
+            source_sha256=None,
+            catalogue_source_hash=None,
+            entries=[],
+            problems=[],
+            joinable=False,
+        )
         index[tid] = rec
         if not path.is_file():
             rec["problems"].append(
@@ -555,19 +607,19 @@ def parse_summaries(text):
     for i, line in enumerate(lines):
         if line.strip() != "[Summary]":
             continue
-        block = {
-            "line": i + 1,
-            "features": None,
-            "rules": 0,
-            "scenarios": None,
-            "scenario_stats": None,
-            "steps": None,
-            "step_stats": None,
-            "parsing_errors": 0,
-            "hook_errors": 0,
-            "problems": [],
-            "raw": [],
-        }
+        block = SummaryBlock(
+            line=i + 1,
+            features=None,
+            rules=0,
+            scenarios=None,
+            scenario_stats=None,
+            steps=None,
+            step_stats=None,
+            parsing_errors=0,
+            hook_errors=0,
+            problems=[],
+            raw=[],
+        )
         j = i + 1
         while j < len(lines) and j <= i + 6:
             s = lines[j].strip()

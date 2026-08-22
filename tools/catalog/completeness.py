@@ -366,7 +366,7 @@ def self_test():
         calls = scan_build_declarations(
             'NAME = "x"\nrust_test(\n  name = NAME,\n  srcs = ["a.rs"],\n)\n', "B"
         )
-        for callee, args, offset in calls:
+        for callee, args, _offset in calls:
             if callee.endswith("_test") and extract_name_literal(args) is None:
                 error("B: unparseable")
 
@@ -375,7 +375,7 @@ def self_test():
     # 2. the balanced walk still finds a declaration a line-anchored regex misses
     reformatted = 'rust_test(srcs = ["a.rs"], name = "tucked_at_the_end")\n'
     calls = scan_build_declarations(reformatted, "B")
-    names = [extract_name_literal(a) for c, a, o in calls if c == "rust_test"]
+    names = [extract_name_literal(a) for c, a, _o in calls if c == "rust_test"]
     if names != ["tucked_at_the_end"]:
         failures.append(f"self-test: reformatted declaration not fully parsed: {names}")
     legacy_regex = re.findall(r'rust_test\s*\(\s*\n\s*name\s*=\s*"([^"]+)"', reformatted)
@@ -387,7 +387,7 @@ def self_test():
     # 3. parens inside strings must not unbalance the walk
     tricky = 'rust_test(\n  name = "with_paren",\n  args = ["--filter=(a|b)"],\n)\n'
     calls = scan_build_declarations(tricky, "B")
-    if [extract_name_literal(a) for c, a, o in calls if c == "rust_test"] != ["with_paren"]:
+    if [extract_name_literal(a) for c, a, _o in calls if c == "rust_test"] != ["with_paren"]:
         failures.append("self-test: string-embedded parens broke the declaration walk")
 
     # 4. dead outline: zero leaves, visibly reported, never a phantom 1
@@ -521,8 +521,8 @@ def main():
     catalog = json.loads(CATALOG.read_text())
     build_found = check_build_declarations(catalog)
     cucumber_files, cucumber_leaves = check_cucumber(catalog)
-    fp_actual, fp_expected = check_failpoints(catalog)
-    report = {
+    fp_actual, _fp_expected = check_failpoints(catalog)
+    report: dict[str, object] = {
         "build_declarations": len(build_found),
         "build_rules": sorted({b["rule"] for b in build_found}),
         "cucumber_features_checked": cucumber_files,

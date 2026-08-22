@@ -248,7 +248,7 @@ def self_test():
     # invalid proves nothing about the mutants)
     errs = []
     validate(base, schema, schema, "$", errs)
-    sem, profs = semantic_checks(base)
+    sem, _profs = semantic_checks(base)
     if errs or sem:
         failures.append(f"self-test: valid baseline rejected: {errs + sem}")
 

@@ -97,8 +97,16 @@ class TypeDBServer:
         )
         self.grpc_port, self.http_port = grpc_port, http_port
         self.proc = None
-        self.probes = []
+        self.probes: list[dict[str, object]] = []
         self.log_path = self.run_dir / "server.log"
+        # Set by start()/wait_ready(), declared here. evidence() used to read
+        # them with `getattr(self, ..., None)`, which is the same admission
+        # written in a way that cannot be checked: a typo in the attribute name
+        # would have archived None for the server's own argv.
+        self.argv: list[str] | None = None
+        self._out = None
+        self.ready_after_s: float | None = None
+        self.version: object | None = None
 
     # ---------------------------------------------------------------- facts
     def identity(self):
@@ -212,7 +220,7 @@ class TypeDBServer:
     def backend_witness(self):
         """Read and check the on-disk backend identity the server wrote."""
         marker = self.run_dir / "server-data" / "_system" / "backend-spec.marker"
-        out = {
+        out: dict[str, object] = {
             "marker_path": str(marker),
             "present": marker.is_file(),
             "expected_kind": EXPECTED_BACKEND_KIND.get(self.profile),
@@ -272,20 +280,21 @@ class TypeDBServer:
                     self.proc.kill()
                     self.proc.wait(timeout=30)
             rc = self.proc.returncode
-        try:
-            self._out.close()
-        except Exception:
-            pass
+        if self._out is not None:
+            try:
+                self._out.close()
+            except OSError:
+                pass
         return rc
 
     def evidence(self):
         e = self.identity()
         e.update(
             {
-                "argv": getattr(self, "argv", None),
+                "argv": self.argv,
                 "ready_probes": self.probes,
-                "ready_after_seconds": getattr(self, "ready_after_s", None),
-                "version_endpoint": getattr(self, "version", None),
+                "ready_after_seconds": self.ready_after_s,
+                "version_endpoint": self.version,
                 "log": common.rel(self.log_path),
                 "log_sha256": (
                     common.sha256_file(self.log_path) if self.log_path.is_file() else None

@@ -38,6 +38,7 @@ raises; a placeholder with no matching column raises.
 
 import pathlib
 import re
+from typing import TypedDict
 import sys
 
 SCENARIO_RE = re.compile(r"^(Scenario Outline|Scenario Template|Scenario|Example):\s*(.*)$")
@@ -46,6 +47,19 @@ KEYWORD_BREAK_RE = re.compile(
     r"^(Scenario|Scenario Outline|Scenario Template|Example|Feature|Rule|Background)\b"
 )
 TAG_RE = re.compile(r"^@\S")
+
+
+class ExamplesBlock(TypedDict):
+    """One `Examples:` table of a Scenario Outline.
+
+    `header` is None until the first row is read — the comment that used to say
+    so could not stop `block["rows"].append(...)` being written against a
+    `block` the checker knew might still be None.
+    """
+
+    tags: list[str]
+    header: list[str] | None
+    rows: list[list[str]]
 
 
 class GherkinError(Exception):
@@ -114,7 +128,7 @@ def enumerate_leaves(feature_path, ref):
             }
             pending_tags = []
             j = i + 1
-            block = None  # {"tags": [...], "header": [...], "rows": [...]}
+            block: ExamplesBlock | None = None
             block_tags = []
             while j < n:
                 l2 = lines[j].strip()
@@ -129,20 +143,21 @@ def enumerate_leaves(feature_path, ref):
                     break
                 me = EXAMPLES_RE.match(l2)
                 if me:
-                    block = {"tags": list(block_tags), "header": None, "rows": []}
+                    block = ExamplesBlock(tags=list(block_tags), header=None, rows=[])
                     rec["examples"].append(block)
                     block_tags = []
                     j += 1
                     continue
                 if l2.startswith("|") and block is not None:
                     row = _split_row(l2)
-                    if block["header"] is None:
+                    header = block["header"]
+                    if header is None:
                         block["header"] = row
                     else:
-                        if len(row) != len(block["header"]):
+                        if len(row) != len(header):
                             raise GherkinError(
                                 f"{ref}:{j + 1}: Examples row has {len(row)} cells "
-                                f"but the header has {len(block['header'])}"
+                                f"but the header has {len(header)}"
                             )
                         block["rows"].append(row)
                     j += 1

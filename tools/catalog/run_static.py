@@ -212,7 +212,7 @@ def run_rustfmt_batch(targets):
     """Run rustfmt --check once per package; map verdicts to targets."""
     results = []
     for target_id in targets:
-        _, build_rel, rule_name = target_id.split(":", 2)
+        _, build_rel, _rule_name = target_id.split(":", 2)
         package_dir = (TYPEDB / build_rel).parent
         files = package_rs_files(package_dir)
         if not files:

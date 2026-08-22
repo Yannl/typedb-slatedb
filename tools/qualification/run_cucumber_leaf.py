@@ -75,6 +75,7 @@ import collections
 import json
 import pathlib
 import sys
+from typing import NotRequired, TypedDict
 
 HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parents[1]
@@ -86,20 +87,100 @@ import verify_leaf  # noqa: E402
 import cucumber_common as cc  # noqa: E402
 
 
-def load_source(d, plan, catalog_leaves, catalog_targets, repo=REPO):
+class SourceRecord(TypedDict):
+    """One source bundle, as this producer records it.
+
+    `total=False` because the fields after `logs` are filled in only once the
+    bundle has re-verified — a record that stops at `refusals` is a refusal.
+    Declared rather than inferred so `rec["logs"].append(...)` in main() is
+    checked against a list rather than against a union of every value type in
+    the literal.
+    """
+
+    bundle: str
+    refusals: list[str]
+    logs: list["LogRecord"]
+    # filled in only once the bundle re-verified
+    verify_anomalies: NotRequired[list[str]]
+    bundle_root: NotRequired[str | None]
+    complete_marker: NotRequired[str | None]
+    profile: NotRequired[str | None]
+    profile_in_plan: NotRequired[object]
+    toolchain_id: NotRequired[str | None]
+    plan_root: NotRequired[object]
+    catalog_sha256: NotRequired[object]
+    executed_tree: NotRequired[object]
+    fixtures: NotRequired[object]
+
+
+class LogRecord(TypedDict):
+    """One archived log, as analyse_log() judges it."""
+
+    runner_row_id: object
+    cargo_target: object
+    raw_log: str
+    log_sha256: object
+    runner: object
+    features_declared: list[str]
+    refusals: list[str]
+    publishable: bool
+    log_sha256_recomputed: NotRequired[str]
+    libtest_counts: NotRequired[object]
+    libtest_cases: NotRequired[object]
+    scanned_scenarios: NotRequired[object]
+    keyword_lines: NotRequired[object]
+    features_observed: NotRequired[object]
+    features_missing_from_log: NotRequired[object]
+    features_not_declared_by_target: NotRequired[object]
+    unattributed_feature_markers: NotRequired[object]
+    summary_blocks: NotRequired[object]
+    summaries: NotRequired[list[dict[str, object]]]
+    summary_scenarios_total: NotRequired[object]
+    source_bundle: NotRequired[str]
+
+
+class FeatureRecord(TypedDict):
+    """One catalogue feature, joined to whatever observed it."""
+
+    target_id: str
+    ref: object
+    feature_title: object
+    source_sha256: object
+    catalogued_scenarios: int
+    joinable: object
+    corpus_problems: object
+    observations: int
+    refusals: list[str]
+    owner: object
+    corroborations: list[object]
+    templates: list[object]
+    leaves_published: int
+    not_run: int
+    corroborator_only_scenarios: int
+
+
+def load_source(d, plan, catalog_leaves, catalog_targets, repo=REPO) -> tuple[SourceRecord, object]:
     """One sealed leaf bundle, re-verified before a single byte of it is used."""
     p = pathlib.Path(d)
     p = p if p.is_absolute() else pathlib.Path(repo) / p
-    rec = {
-        "bundle": str(p.relative_to(repo)) if p.is_relative_to(repo) else str(p),
-        "refusals": [],
-        "logs": [],
-    }
+    # Heterogeneous record, declared as such: `refusals` and `logs` are lists
+    # that get appended to long after the literal, and inference from the first
+    # three keys made every one of those appends unprovable.
+    # The two accumulators are LOCALS that the record merely holds: appending
+    # through `rec["refusals"]` means appending to whatever the dict's inferred
+    # value type happens to be, which is not a list as far as anything can tell.
+    refusals: list[str] = []
+    logs: list[LogRecord] = []
+    rec = SourceRecord(
+        bundle=str(p.relative_to(repo)) if p.is_relative_to(repo) else str(p),
+        refusals=refusals,
+        logs=logs,
+    )
     anomalies, facts = verify_leaf.verify(p, plan, catalog_leaves, catalog_targets, repo=repo)
     rec["verify_anomalies"] = anomalies
     rec["bundle_root"] = facts.get("bundle_root")
     if anomalies:
-        rec["refusals"].append(
+        refusals.append(
             f"the source bundle does not re-verify from its own bytes "
             f"({len(anomalies)} anomaly/anomalies) - evidence derived from it "
             f"would inherit the defect"
@@ -108,7 +189,7 @@ def load_source(d, plan, catalog_leaves, catalog_targets, repo=REPO):
     marker = p / "COMPLETE"
     rec["complete_marker"] = marker.read_text().strip() if marker.is_file() else None
     if rec["complete_marker"] != f"COMPLETE {facts['bundle_root']}":
-        rec["refusals"].append(
+        refusals.append(
             f"the source bundle's COMPLETE marker is {rec['complete_marker']!r}, "
             f"not the root it recomputes to ({facts['bundle_root']}) - an "
             f"unsealed or resealed archive is a run in progress, not evidence"
@@ -127,9 +208,9 @@ def load_source(d, plan, catalog_leaves, catalog_targets, repo=REPO):
         }
     )
     if bundle.get("profile") not in plan["profiles"]:
-        rec["refusals"].append(f"profile {bundle.get('profile')!r} is not a plan profile")
+        refusals.append(f"profile {bundle.get('profile')!r} is not a plan profile")
     if bundle.get("toolchain_id") is None:
-        rec["refusals"].append("the source bundle's toolchain matches no toolchain the plan names")
+        refusals.append("the source bundle's toolchain matches no toolchain the plan names")
     return rec, bundle
 
 
@@ -140,25 +221,26 @@ def analyse_log(row, corpus, declared_refs, runner, repo=REPO):
     checked against the row the sealed bundle recorded. No count and no name
     comes from any JSON.
     """
-    out = {
-        "runner_row_id": row.get("runner_row_id"),
-        "cargo_target": row.get("cargo_target"),
-        "raw_log": row.get("raw_log"),
-        "log_sha256": row.get("log_sha256"),
-        "runner": runner,
-        "features_declared": sorted(declared_refs),
-        "refusals": [],
-        "publishable": False,
-    }
+    log_refusals: list[str] = []
+    out = LogRecord(
+        runner_row_id=row.get("runner_row_id"),
+        cargo_target=row.get("cargo_target"),
+        raw_log=row.get("raw_log"),
+        log_sha256=row.get("log_sha256"),
+        runner=runner,
+        features_declared=sorted(declared_refs),
+        refusals=log_refusals,
+        publishable=False,
+    )
     p = pathlib.Path(row["raw_log"])
     p = p if p.is_absolute() else pathlib.Path(repo) / p
     if not p.is_file():
-        out["refusals"].append(f"the archived log {row['raw_log']} does not exist")
+        log_refusals.append(f"the archived log {row['raw_log']} does not exist")
         return out, {}
     actual = common.sha256_file(p)
     out["log_sha256_recomputed"] = actual
     if actual != row.get("log_sha256"):
-        out["refusals"].append(
+        log_refusals.append(
             f"the archived log hashes {actual} but the sealed bundle recorded "
             f"{row.get('log_sha256')} - the log changed under its own seal"
         )
@@ -171,19 +253,19 @@ def analyse_log(row, corpus, declared_refs, runner, repo=REPO):
     out["libtest_counts"] = counts
     out["libtest_cases"] = len(cases)
     if not lc.has_summary(text):
-        out["refusals"].append(
+        log_refusals.append(
             "the log carries no libtest 'test result:' summary - it is "
             "truncated or the binary died mid-run"
         )
     else:
-        out["refusals"] += lc.reconcile(cases, counts, parse_problems)
+        log_refusals += lc.reconcile(cases, counts, parse_problems)
     if row.get("timed_out"):
-        out["refusals"].append(
+        log_refusals.append(
             "the source row records a TIMEOUT - a killed process's partial "
             "output is never a complete scenario enumeration"
         )
     if "No space left on device" in text:
-        out["refusals"].append(
+        log_refusals.append(
             "the log contains 'No space left on device' - the environment failed during this target"
         )
 
@@ -199,7 +281,7 @@ def analyse_log(row, corpus, declared_refs, runner, repo=REPO):
         {"line": ln, "column": col, "text": t} for ln, col, t in unattributed
     ]
     if unattributed:
-        out["refusals"].append(
+        log_refusals.append(
             f"{len(unattributed)} 'Feature: ' marker(s) in the log name a "
             f"feature title the catalogue does not carry, e.g. line "
             f"{unattributed[0][0]}: {unattributed[0][2]!r} - a scenario this "
@@ -211,7 +293,7 @@ def analyse_log(row, corpus, declared_refs, runner, repo=REPO):
     not_all_passed = [s for s in summaries if not cc.all_passed(s)]
     if not_all_passed:
         s = not_all_passed[0]
-        out["refusals"].append(
+        log_refusals.append(
             f"{len(not_all_passed)} of {len(summaries)} cucumber [Summary] "
             f"block(s) are not all-passed (line {s['line']}: {s['raw'] if 'raw' in s else s}) "
             f"- with several libtest cases interleaving into one stream a "
@@ -222,20 +304,20 @@ def analyse_log(row, corpus, declared_refs, runner, repo=REPO):
     summed = sum(s["scenarios"] or 0 for s in summaries)
     out["summary_scenarios_total"] = summed
     if summed != len(scanned):
-        out["refusals"].append(
+        log_refusals.append(
             f"the log's own cucumber summaries count {summed} scenario(s) but "
             f"{len(scanned)} scenario line(s) were scanned from it - the "
             f"enumeration contradicts the runtime's own tally"
         )
     for s in summaries:
         if s["features"] != s["scenarios"]:
-            out["refusals"].append(
+            log_refusals.append(
                 f"the [Summary] block at line {s['line']} reports "
                 f"{s['features']} feature(s) but {s['scenarios']} scenario(s); "
                 f"SingletonParser makes every scenario its own feature, so a "
                 f"difference means the log is not what this producer can read"
             )
-        out["refusals"] += [f"[Summary] at line {s['line']}: {x}" for x in s["problems"]]
+        log_refusals += [f"[Summary] at line {s['line']}: {x}" for x in s["problems"]]
 
     by_title = collections.defaultdict(list)
     for ln, col, title, name in scanned:
@@ -247,19 +329,19 @@ def analyse_log(row, corpus, declared_refs, runner, repo=REPO):
     out["features_missing_from_log"] = missing
     out["features_not_declared_by_target"] = extra
     if missing:
-        out["refusals"].append(
+        log_refusals.append(
             f"the cargo target declares feature(s) {missing} that produced NO "
             f"scenario line in this log - a feature that did not run cannot be "
             f"covered from it"
         )
     if extra:
-        out["refusals"].append(
+        log_refusals.append(
             f"the log names feature(s) {extra} that this cargo target's crate "
             f"sources do not reference - the log is not this target's"
         )
     plain, outline = cc.count_keyword_lines(text)
     out["keyword_lines"] = {"scenario": plain, "scenario_outline": outline}
-    out["publishable"] = not out["refusals"]
+    out["publishable"] = not log_refusals
     return out, by_title
 
 
@@ -305,8 +387,8 @@ def main():
         if bundle is None or rec["refusals"]:
             print(f"SOURCE REFUSED {d}: {rec['refusals']}", file=sys.stderr)
             continue
-        profiles.add(rec["profile"])
-        tcids.add(rec["toolchain_id"])
+        profiles.add(rec.get("profile"))
+        tcids.add(rec.get("toolchain_id"))
         for row in bundle.get("targets", []):
             tgt = row.get("cargo_target")
             declared = [r for r in target_refs.get(tgt, []) if f"cucumber-corpus:{r}" in corpus]
@@ -336,7 +418,7 @@ def main():
                         "runner_row_id": row["runner_row_id"],
                         "runner": runner,
                         "items": items,
-                        "summary_lines": [s["line"] for s in log["summaries"]],
+                        "summary_lines": [s["line"] for s in log.get("summaries", [])],
                     }
                 )
 
@@ -352,29 +434,30 @@ def main():
     for tid in sorted(corpus):
         rec = corpus[tid]
         obs = observations.get(tid, [])
-        frec = {
-            "target_id": tid,
-            "ref": rec["ref"],
-            "feature_title": rec["feature_title"],
-            "source_sha256": rec["source_sha256"],
-            "catalogued_scenarios": len(rec["entries"]),
-            "joinable": rec["joinable"],
-            "corpus_problems": rec["problems"],
-            "observations": len(obs),
-            "refusals": [],
-            "owner": None,
-            "corroborations": [],
-            "templates": [],
-            "leaves_published": 0,
-            "not_run": 0,
-            "corroborator_only_scenarios": 0,
-        }
+        frefusals: list[str] = []
+        frec = FeatureRecord(
+            target_id=tid,
+            ref=rec["ref"],
+            feature_title=rec["feature_title"],
+            source_sha256=rec["source_sha256"],
+            catalogued_scenarios=len(rec["entries"]),
+            joinable=rec["joinable"],
+            corpus_problems=rec["problems"],
+            observations=len(obs),
+            refusals=frefusals,
+            owner=None,
+            corroborations=[],
+            templates=[],
+            leaves_published=0,
+            not_run=0,
+            corroborator_only_scenarios=0,
+        )
         features.append(frec)
         if not rec["joinable"]:
-            frec["refusals"].append(f"the feature is not joinable: {rec['problems'][:1]}")
+            frefusals.append(f"the feature is not joinable: {rec['problems'][:1]}")
             continue
         if not obs:
-            frec["refusals"].append("no publishable log in any source bundle carries this feature")
+            frefusals.append("no publishable log in any source bundle carries this feature")
             continue
         # ---- P3, per observation: the runtime SEQUENCE must be the expansion
         sound = []
@@ -391,7 +474,7 @@ def main():
                     ),
                     0,
                 )
-                frec["refusals"].append(
+                frefusals.append(
                     f"P3 FAILED in {o['raw_log']} ({o['cargo_target']}): the "
                     f"runtime printed {len(got)} scenario(s) where the "
                     f"expansion predicts {len(want)} runnable one(s); first "
@@ -453,7 +536,7 @@ def main():
                 }
             )
             if disagree:
-                frec["refusals"].append(
+                frefusals.append(
                     f"corroborating log {o['raw_log']} disagrees with the owner "
                     f"on {disagree} scenario(s) - two executions of one leaf "
                     f"cannot both be right, so the feature is refused"
@@ -478,7 +561,7 @@ def main():
                 },
             )
             t["catalogued_examples"] += 1
-        for e, (ln, col, name) in zip(owner["run"], owner["items"]):
+        for e, (ln, col, _name) in zip(owner["run"], owner["items"]):
             if e["template"] is None:
                 continue
             t = per_t[(e["template"], e["declaration_line"])]
@@ -492,14 +575,14 @@ def main():
             elif t["example_indices_bound"] != sorted(t["example_indices_bound"]):
                 bad_t.append(t)
         if bad_t:
-            frec["refusals"].append(
+            frefusals.append(
                 f"per-template reconciliation FAILED for {len(bad_t)} template(s), e.g. {bad_t[0]}"
             )
             continue
         frec["templates"] = list(per_t.values())
         # ---- publish
         fs_ok_cache = {}
-        for e, (ln, col, name) in zip(owner["run"], owner["items"]):
+        for e, (ln, col, _name) in zip(owner["run"], owner["items"]):
             fs_id = e.get("fixture_set_id", "fs:none")
             if fs_id not in fs_ok_cache:
                 fs_ok_cache[fs_id] = lc.fixture_set_satisfied(fs_id, plan, fixtures)

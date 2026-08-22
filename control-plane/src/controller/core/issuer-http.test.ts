@@ -18,9 +18,9 @@ import assert from "node:assert/strict";
 // as the e2e drivers (and later the Rust client's local runner) do
 // @ts-ignore: plain .mjs script module
 import { createIssuer, startIssuerServer } from "../../../scripts/issuer.mjs";
-import { verifyCapabilityToken, type VerificationKeyring } from "./capability.ts";
-import { verifyProvisionToken } from "./registry.ts";
-import { parseVerificationKeyring } from "./key-config.ts";
+import { verifyCapabilityToken, type VerificationKeyring } from "../../shared/capability.ts";
+import { verifyProvisionToken } from "../../shared/registry.ts";
+import { parseVerificationKeyring } from "../../shared/key-config.ts";
 
 const ENV_NAME = "managed-e2e";
 const BEARER = "test-bearer-token-0123456789abcdef";

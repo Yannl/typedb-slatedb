@@ -31,7 +31,7 @@
 // Temporary credentials.
 // ---------------------------------------------------------------------------
 
-export const TEMP_CREDENTIAL_PERMISSIONS = [
+const TEMP_CREDENTIAL_PERMISSIONS = [
   "admin-read-write",
   "admin-read-only",
   "object-read-write",
@@ -125,7 +125,7 @@ export function validateTempCredentialsResponse(v: unknown): CloudflareEnvelope<
 // Bucket locks.
 // ---------------------------------------------------------------------------
 
-export type BucketLockCondition =
+type BucketLockCondition =
   | { type: "Age"; maxAgeSeconds: number }
   | { type: "Date"; date: string }
   | { type: "Indefinite" };
@@ -141,7 +141,7 @@ export interface BucketLockRulesBody {
   rules: BucketLockRule[];
 }
 
-export function validateBucketLockCondition(v: unknown): BucketLockCondition {
+function validateBucketLockCondition(v: unknown): BucketLockCondition {
   const o = asObject(v, "bucket-lock condition");
   switch (o.type) {
     case "Age":
@@ -161,7 +161,7 @@ export function validateBucketLockCondition(v: unknown): BucketLockCondition {
   }
 }
 
-export function validateBucketLockRule(v: unknown): BucketLockRule {
+function validateBucketLockRule(v: unknown): BucketLockRule {
   const o = asObject(v, "bucket-lock rule");
   if (typeof o.id !== "string" || o.id.length === 0) fail("bucket-lock rule", "id (string) is required");
   if (typeof o.enabled !== "boolean") fail("bucket-lock rule", "enabled (boolean) is required");

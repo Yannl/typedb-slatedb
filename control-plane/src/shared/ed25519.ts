@@ -26,12 +26,12 @@ import { hex } from "./journal-crypto.ts";
 
 /** The fixed PKCS#8 prefix for an Ed25519 private key: a 48-byte PKCS#8
  *  document is this prefix followed by the 32-byte seed (RFC 8410). */
-export const ED25519_PKCS8_PREFIX = Uint8Array.from([
+const ED25519_PKCS8_PREFIX = Uint8Array.from([
   0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
 ]);
 
-export const ED25519_PUBLIC_KEY_BYTES = 32;
-export const ED25519_SIGNATURE_BYTES = 64;
+const ED25519_PUBLIC_KEY_BYTES = 32;
+const ED25519_SIGNATURE_BYTES = 64;
 
 /** Wrap a raw 32-byte Ed25519 seed as the PKCS#8 document WebCrypto imports. */
 export function pkcs8FromSeed(seed: Uint8Array): Uint8Array {
@@ -51,7 +51,7 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
  *  request, so the cache is keyed by hex value, not object identity. */
 const VERIFY_KEY_CACHE = new Map<string, Promise<CryptoKey>>();
 
-export function importEd25519PublicKey(publicKey: Uint8Array): Promise<CryptoKey> {
+function importEd25519PublicKey(publicKey: Uint8Array): Promise<CryptoKey> {
   if (publicKey.length !== ED25519_PUBLIC_KEY_BYTES) {
     throw new Error(`ed25519 public key must be ${ED25519_PUBLIC_KEY_BYTES} bytes, got ${publicKey.length}`);
   }

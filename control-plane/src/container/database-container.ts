@@ -57,11 +57,11 @@
  */
 
 import { DurableObject } from "cloudflare:workers";
-import { resolveKeyConfig } from "../controller/core/key-config.ts";
+import { resolveKeyConfig } from "../shared/key-config.ts";
 import {
   checkBinding, verifyProvisionToken, type ProvisionBinding,
-} from "../controller/core/registry.ts";
-import type { VerificationKeyring } from "../controller/core/capability.ts";
+} from "../shared/registry.ts";
+import type { VerificationKeyring } from "../shared/capability.ts";
 
 /** The identity a container instance is bound to. All four components are
  *  load-bearing: a container serves ONE database, at ONE generation, under
@@ -148,15 +148,18 @@ export const OBSERVATION_STORED_BYTES_LOW_WATER = MAX_OBSERVATION_STORED_BYTES /
 export const MAX_OBSERVATION_REQUEST_BYTES = 16 * 1024;
 
 /** Max UTF-8 bytes of the provisioned startupSessionId / protocolVersion. */
-export const MAX_PROVISION_FIELD_BYTES = 64;
+const MAX_PROVISION_FIELD_BYTES = 64;
 
 /** Default page size for getObservations; hard-capped at the ring size. */
 const DEFAULT_OBSERVATION_PAGE = 256;
 
 /** Kinds the container lifecycle produces. Free-form strings are accepted (an
- *  observation is opaque advisory data), but the known set is documented. */
-export type ObservationKind =
-  | "STARTED" | "STOPPED" | "PLATFORM_ERROR" | "HEALTH_OK" | "HEALTH_FAIL";
+ *  observation is opaque advisory data); the known set is documented here as
+ *  prose because no signature narrows to it — a type alias nothing referenced
+ *  is a claim of enforcement this module does not make (R8-P1-03).
+ *
+ *  STARTED | STOPPED | PLATFORM_ERROR | HEALTH_OK | HEALTH_FAIL
+ */
 
 /**
  * The registry-derived container DO name (R5-SEC-06): the ONE name the
@@ -232,7 +235,7 @@ export interface ContainerEnv {
  * and never a full oversized body materialize. Returns null when the cap
  * is exceeded.
  */
-export async function readBodyCapped(body: ReadableStream<Uint8Array> | null, maxBytes: number): Promise<Uint8Array | null> {
+async function readBodyCapped(body: ReadableStream<Uint8Array> | null, maxBytes: number): Promise<Uint8Array | null> {
   if (body === null) return new Uint8Array(0);
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];

@@ -18,6 +18,7 @@ import argparse
 import json
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import fnmatch
@@ -27,6 +28,84 @@ TYPEDB = REPO / "sources" / "typedb"
 DEPS = REPO / "sources" / "typedb-dependencies"
 CATALOG = REPO / "docs" / "evidence" / "G1" / "upstream-test-catalog.json"
 RUSTFMT_TOOLCHAIN = "nightly-2026-04-15"
+
+
+def resolve_rustfmt():
+    """The rustfmt binary to run, and the identity that goes into evidence.
+
+    R8-P2-01: the producer and the independent verifier both hardcoded
+    `Path.home() / ".cargo/bin/rustfmt"`. A valid rustup installation under a
+    non-default `CARGO_HOME` — which is the normal shape on CI images and in
+    containers — has no such file, so the tools crashed or, worse, could not
+    execute the check they claim to have executed.
+
+    Resolution order, most explicit first, and every step is a REAL lookup, not
+    an assumption:
+
+      1. `$RUSTFMT`               — an operator naming the binary outright
+      2. `$CARGO_HOME/bin/rustfmt`— rustup's shim under the configured home
+      3. `rustup which --toolchain <pin> rustfmt` — rustup's own answer
+      4. `~/.cargo/bin/rustfmt`   — the default home, as a last resort
+      5. `rustfmt` on PATH
+
+    Returns (argv_prefix, identity). `identity` is the resolved path plus the
+    version string the binary REPORTS, so evidence records which binary ran
+    rather than which one was expected. A resolution that finds nothing raises,
+    because a static check that silently did not run is the failure this whole
+    lane exists to prevent.
+
+    The `+<toolchain>` argument is only passed to a rustup SHIM: a direct
+    `rustup which` path is already the pinned toolchain's own binary and
+    rejects the flag.
+    """
+    import os
+
+    def shim(path):
+        return [str(path), f"+{RUSTFMT_TOOLCHAIN}"]
+
+    explicit = os.environ.get("RUSTFMT")
+    if explicit:
+        return shim(explicit), _rustfmt_identity(shim(explicit))
+    cargo_home = os.environ.get("CARGO_HOME")
+    candidates = []
+    if cargo_home:
+        candidates.append(pathlib.Path(cargo_home) / "bin" / "rustfmt")
+    try:
+        which = subprocess.run(
+            ["rustup", "which", "--toolchain", RUSTFMT_TOOLCHAIN, "rustfmt"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if which.returncode == 0 and which.stdout.strip():
+            direct = [which.stdout.strip()]
+            return direct, _rustfmt_identity(direct)
+    except OSError:
+        pass
+    candidates.append(pathlib.Path.home() / ".cargo" / "bin" / "rustfmt")
+    for candidate in candidates:
+        if candidate.is_file():
+            return shim(candidate), _rustfmt_identity(shim(candidate))
+    found = shutil.which("rustfmt")
+    if found:
+        return shim(found), _rustfmt_identity(shim(found))
+    raise RuntimeError(
+        f"cannot resolve rustfmt for toolchain {RUSTFMT_TOOLCHAIN}: set $RUSTFMT, or "
+        f"`rustup component add rustfmt --toolchain {RUSTFMT_TOOLCHAIN}`. Refusing rather than "
+        f"skipping: a static check that did not run must never read as one that passed."
+    )
+
+
+def _rustfmt_identity(argv):
+    """`<resolved path> <version the binary reports>`, or a typed refusal."""
+    proc = subprocess.run(argv + ["--version"], capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"resolved rustfmt {argv[0]} cannot run ({proc.returncode}): "
+            f"{(proc.stderr or proc.stdout).strip()[:300]}"
+        )
+    return f"{argv[0]} {proc.stdout.strip()}"
+
 
 HEADER_FILES = {
     "mpl-header": DEPS / "tool/checkstyle/config/checkstyle-file-mpl-header.txt",
@@ -231,13 +310,16 @@ def run_rustfmt_batch(targets):
                 }
             )
             continue
-        cmd = [
-            str(pathlib.Path.home() / ".cargo/bin/rustfmt"),
-            f"+{RUSTFMT_TOOLCHAIN}",
-            "--check",
-            "--config-path",
-            str(TYPEDB / "rustfmt.toml"),
-        ] + [str(f) for f in files]
+        argv, _identity = resolve_rustfmt()
+        cmd = (
+            argv
+            + [
+                "--check",
+                "--config-path",
+                str(TYPEDB / "rustfmt.toml"),
+            ]
+            + [str(f) for f in files]
+        )
         proc = subprocess.run(cmd, capture_output=True, text=True, cwd=TYPEDB)
         if proc.returncode == 0:
             results.append(

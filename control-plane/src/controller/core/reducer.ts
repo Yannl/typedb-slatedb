@@ -27,7 +27,7 @@ export interface WalRecordEvent {
   logicalKey: string | null;
 }
 
-export interface ReducedGeneration {
+interface ReducedGeneration {
   headLsn: bigint;
   typeSequenceHead: bigint;
   records: Map<bigint, { payloadKey: string; payloadDigest: string; typeSequence: bigint; recordType: number }>;
@@ -38,13 +38,13 @@ export interface ReducedState {
   generations: Map<string, ReducedGeneration>; // `${databaseId}#${generation}`
 }
 
-export function emptyState(): ReducedState {
+function emptyState(): ReducedState {
   return { generations: new Map() };
 }
 
 /** Pure, deterministic, event-at-a-time. Throws on any contiguity violation:
  *  a reducer that silently tolerates holes would mask allocator defects. */
-export function applyEvent(state: ReducedState, event: WalRecordEvent): ReducedState {
+function applyEvent(state: ReducedState, event: WalRecordEvent): ReducedState {
   const appendLsn = u64FromWire(event.appendLsn, "event.appendLsn");
   const typeSequence = u64FromWire(event.typeSequence, "event.typeSequence");
   const key = `${event.databaseId}#${event.generation}`;

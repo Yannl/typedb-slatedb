@@ -73,6 +73,7 @@ VERIFIER = HERE / "verify_cucumber_leaf.py"
 COVERAGE = HERE / "leaf_coverage.py"
 
 failures, checks = [], 0
+na: list[str] = []
 
 
 def expect(label, ok, detail="", verb=("KILLED", "SURVIVED")):
@@ -83,6 +84,23 @@ def expect(label, ok, detail="", verb=("KILLED", "SURVIVED")):
     print(f"  {verb[0] if ok else verb[1]}  {label}")
     if not ok and detail:
         print(f"      {detail}", file=sys.stderr)
+
+
+def not_applicable(label, detail=""):
+    """R8-P2-02: a control with no positive subject IN THIS DATA.
+
+    Distinct from SURVIVED, and distinct from held. The round-8 audit found
+    control T reported as missing/survived on `cucumber-u2-3` simply because
+    that bundle happens to contain no torn line — a data-dependent verdict
+    dressed as a semantic one, which is neither "the verifier accepts a
+    forgery" nor "the verifier is proved". It is counted separately, never
+    toward "all controls held", and the semantic property it exists for is
+    proved by a DETERMINISTIC synthetic subject instead.
+    """
+    na.append(label)
+    print(f"  N/A      {label}")
+    if detail:
+        print(f"      {detail}")
 
 
 class Copy:
@@ -224,6 +242,40 @@ def _log_lines(c, raw):
 
 def _write_log(c, raw, lines):
     (c.tree / raw).write_text("\n".join(lines) + "\n")
+
+
+def fuse_feature_marker(c):
+    """R8-P2-02: build the torn-line shape deterministically, from real bytes.
+
+    Concurrent libtest writers interleave: one thread's `Feature: <title> ::
+    <scenario>` announcement lands appended to another thread's partial line,
+    so the marker sits at a column > 1. The scanner is written to accept the
+    marker anywhere in a line for exactly that reason, and control Ts proves it
+    — by taking a leaf whose marker IS at column 1, prefixing its line with a
+    realistic fragment of another writer's output, and moving the leaf's
+    recorded column to match.
+
+    Nothing else changes: same scenario, same log, same outcome. If the scanner
+    only ever looked at column 1, this bundle would stop verifying.
+    """
+    b = c.load()
+    victim = next((leaf for leaf in b["leaves"] if leaf.get("log_column") == 1), None)
+    if victim is None:
+        raise SystemExit("no column-1 leaf to fuse — control Ts has no subject to build from")
+    raw = victim["raw_log"]
+    lines = _log_lines(c, raw)
+    n = victim["log_line"]
+    # a real fragment of another writer's line, chosen to contain no
+    # `Feature: ` marker of its own
+    prefix = "test integration::concurrent::other_writer ... "
+    lines[n - 1] = prefix + lines[n - 1]
+    _write_log(c, raw, lines)
+    # every leaf pointing at THIS line moves with it; leaves on other lines of
+    # the same log are untouched, which is what makes this one edit
+    for leaf in b["leaves"]:
+        if leaf["raw_log"] == raw and leaf["log_line"] == n:
+            leaf["log_column"] = leaf["log_column"] + len(prefix)
+    c.refresh(b)
 
 
 def delete_scenario(c):
@@ -499,18 +551,48 @@ def main():
     control("0  intact bundle copy verifies (control of controls)", src, None, expect_ok=True)
 
     # T ------------------------------------------- positive property control
+    #
+    # R8-P2-02: this is now TWO controls, because the audited single one
+    # conflated a semantic property with a property of one bundle's bytes.
+    #
+    #   Ts  the SEMANTIC control. A deterministic synthetic subject is built
+    #       from real sealed bytes — one scenario's `Feature:` marker is FUSED
+    #       into another writer's line, exactly the shape concurrent libtest
+    #       output produces — and the verifier must still VERIFY, i.e. the
+    #       scanner must still find that scenario at its non-1 column. It has
+    #       a positive subject by construction, in every bundle, forever.
+    #   Tr  the DATA control. Does the real bundle under test happen to carry
+    #       a torn line? Informative, N/A when it does not, and never counted
+    #       toward "all controls held".
+    control(
+        "Ts a scenario whose 'Feature:' marker is FUSED into another writer's "
+        "line (deterministic synthetic subject) is still found and covered",
+        src,
+        fuse_feature_marker,
+        expect_ok=True,
+    )
+
     b = json.loads((REPO / src / cc.RESULTS_NAME).read_text())
     torn = [leaf for leaf in b["leaves"] if leaf["log_column"] > 1]
-    expect(
-        f"T  scenario(s) whose 'Feature:' marker was FUSED into another "
-        f"writer's line by concurrent libtest output are still covered "
-        f"({len(torn)} such leaf/leaves, e.g. "
-        f"{(torn[0]['raw_log'].rsplit('/', 1)[-1] + ':' + str(torn[0]['log_line']) + ' col ' + str(torn[0]['log_column'])) if torn else 'none'})",
-        bool(torn),
-        detail="the archive this bundle derives from contains a torn line; "
-        "if none is covered the scanner silently lost a scenario",
-        verb=("HOLDS", "MISSING"),
+    label = (
+        f"Tr the REAL archive {src} carries a torn 'Feature:' line "
+        f"({len(torn)} such leaf/leaves"
+        + (
+            f", e.g. {torn[0]['raw_log'].rsplit('/', 1)[-1]}:{torn[0]['log_line']} "
+            f"col {torn[0]['log_column']})"
+            if torn
+            else ")"
+        )
     )
+    if torn:
+        expect(label, True, verb=("HOLDS", "MISSING"))
+    else:
+        not_applicable(
+            label,
+            detail="this bundle's runtime happened not to interleave; the SEMANTIC property "
+            "is proved by control Ts against a synthetic subject, which is why that control "
+            "exists (R8-P2-02).",
+        )
 
     control(
         "1  a scenario deleted from a log (the forger renumbers the source "
@@ -631,9 +713,18 @@ def main():
         detail=f"intact={cuke_covered(clean)} mutated={cuke_covered(mutated)}",
     )
 
-    print(f"\n{checks - len(failures)}/{checks} controls held ({len(failures)} SURVIVED)")
+    # R8-P2-02: N/A is reported separately and never counted as held. A suite
+    # that says "21/21 held" while one of them had nothing to act on is making
+    # a claim about proof it did not obtain.
+    print(
+        f"\n{checks - len(failures)}/{checks} controls held ({len(failures)} SURVIVED"
+        + (f", {len(na)} NOT APPLICABLE to this bundle's data" if na else "")
+        + ")"
+    )
     for f in failures:
         print(f"SURVIVED: {f}", file=sys.stderr)
+    for label in na:
+        print(f"NOT APPLICABLE: {label}")
     return 1 if failures else 0
 
 

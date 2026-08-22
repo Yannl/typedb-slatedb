@@ -99,7 +99,9 @@ def historical_sections(node, path="") -> list[str]:
 
 def strings_outside(node, exclude_paths: set[str], path="") -> list[tuple[str, str]]:
     """(json path, string) for every string NOT under one of `exclude_paths`."""
-    if any(path == e or path.startswith(e + ".") or path.startswith(e + "[") for e in exclude_paths):
+    if any(
+        path == e or path.startswith(e + ".") or path.startswith(e + "[") for e in exclude_paths
+    ):
         return []
     if isinstance(node, str):
         return [(path, node)]
@@ -149,7 +151,9 @@ def check_single_canonical_current(ledger: dict, failures: list[str]) -> None:
 
     for gid, row in (current.get("gates") or {}).items():
         if row.get("state") not in REQUIRED_GATE_STATES:
-            failures.append(f"current.gates.{gid}: state {row.get('state')!r} not a recognised gate state")
+            failures.append(
+                f"current.gates.{gid}: state {row.get('state')!r} not a recognised gate state"
+            )
 
     # every historical section must say when it was true and what replaced it
     for path in historical_sections(ledger):

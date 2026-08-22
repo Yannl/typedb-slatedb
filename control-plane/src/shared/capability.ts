@@ -150,7 +150,7 @@ export interface VerificationKeyring {
 
 /** The scope a method's tokens must be signed under: the PROVISION power
  *  lives under "prov:<env>", everything else under "cap:<env>". */
-export function requiredScope(method: string): "cap" | "prov" {
+function requiredScope(method: string): "cap" | "prov" {
   return method === "PROVISION" ? "prov" : "cap";
 }
 

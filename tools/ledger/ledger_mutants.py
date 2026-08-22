@@ -128,7 +128,6 @@ def main() -> int:
                 lambda ledger: ledger["actions"].append(dict(ledger["actions"][0])),
                 "duplicate action id",
             ),
-
             (
                 "lane-state-outside-enum",
                 lambda ledger: ledger["lanes"][0].__setitem__("state", "GREEN"),

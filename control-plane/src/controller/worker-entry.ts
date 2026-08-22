@@ -81,8 +81,8 @@ export { DatabaseContainerDO };
 import { MAX_BATCH_BYTES, MAX_BATCH_MEMBERS, u64FromWire, type FinalizeRequest,
          type ReadLeaseGrant, type ReadOutcome, type ReadRequest } from "./core/procedures.ts";
 import { devOnlyRoute } from "./surface.ts";
-import { canonicalJson } from "./core/journal-crypto.ts";
-import { verifyCapabilityToken, type CapabilityPayload } from "./core/capability.ts";
+import { canonicalJson } from "../shared/journal-crypto.ts";
+import { verifyCapabilityToken, type CapabilityPayload } from "../shared/capability.ts";
 import type { CapabilityEffect } from "./core/procedures.ts";
 
 /**
@@ -123,8 +123,8 @@ export const MUTATION_ROUTES = {
   CHECKPOINT_ACTIVATE: "POST /checkpoint/:databaseId/cut/:cutId/activate",
 } as const;
 export type MutationRouteId = keyof typeof MUTATION_ROUTES;
-import { resolveKeyConfig, type ResolvedKeys } from "./core/key-config.ts";
-import { checkBinding, verifyProvisionToken, controllerDoName, type ProvisionBinding } from "./core/registry.ts";
+import { resolveKeyConfig, type ResolvedKeys } from "../shared/key-config.ts";
+import { checkBinding, verifyProvisionToken, controllerDoName, type ProvisionBinding } from "../shared/registry.ts";
 
 export interface Env {
   CONTROLLER: DurableObjectNamespace<DatabaseControllerDO>;
@@ -656,7 +656,7 @@ async function verifiedPayloadBase64(
  *  keep item order; concurrency is capped so a 1000-record page cannot open
  *  1000 simultaneous R2 reads. */
 async function mapBounded<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results = new Array<R>(items.length);
+  const results: R[] = Array.from({ length: items.length });
   let next = 0;
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
     while (next < items.length) {

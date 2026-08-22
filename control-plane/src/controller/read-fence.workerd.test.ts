@@ -22,7 +22,7 @@
 import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { DatabaseControllerDO } from "./database-controller.ts";
-import { DEV_ISSUER_SECRET } from "./core/key-config.ts";
+import { DEV_ISSUER_SECRET } from "../shared/key-config.ts";
 import { localDoName, provisionViaSelf } from "./workerd-test-support.ts";
 
 interface TestEnv {

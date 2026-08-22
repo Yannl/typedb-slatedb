@@ -34,7 +34,6 @@
  *   ... --envelope <path>    override the envelope file (tests only)
  */
 
-import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";

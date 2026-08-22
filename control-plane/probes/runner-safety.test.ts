@@ -25,7 +25,6 @@ import { captureLockBaseline, restoreLockBaseline } from "./lock-baseline.ts";
 import { EvidenceBundle, RecordingProvider, SealViolationError } from "./evidence.ts";
 import type { PlatformProvider, SeamRequest, SeamResponse } from "./provider.ts";
 import { utf8 } from "./provider.ts";
-import { execFileSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";

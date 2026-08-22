@@ -130,7 +130,11 @@ def coverage_run(ledger: dict, failures: list[str]):
         failures.append(f"current.coverage names bundles that do not exist: {missing}")
         return None, None
     proc = run(argv)
-    match = SUMMARY_RE.search(proc.stdout)
+    # leaf_coverage.py prints its JSON report on stdout and its human summary on
+    # STDERR, and exits nonzero while the plan is unsatisfied — which it is, by
+    # design, and will be until every profile exists. Neither is an error here:
+    # what this verifier compares is the re-derived NUMBERS.
+    match = SUMMARY_RE.search(proc.stdout + proc.stderr)
     if match is None:
         failures.append(
             "leaf_coverage.py produced no parsable summary line — the coverage claim cannot be "
@@ -167,7 +171,9 @@ def derive_coverage(match, ledger: dict, failures: list[str]) -> dict:
 def derive_drivers(report, ledger: dict, failures: list[str]) -> dict:
     claim = ledger["current"]["drivers"]
     if report is None:
-        failures.append("the coverage run produced no JSON report, so driver rows cannot be re-derived")
+        failures.append(
+            "the coverage run produced no JSON report, so driver rows cannot be re-derived"
+        )
         return {}
     rows = report.get("driver_rows_detail") or []
     derived = {
@@ -207,7 +213,9 @@ def derive_gates(ledger: dict, failures: list[str]) -> dict:
     derived = {}
     for gid, row in ledger["current"]["gates"].items():
         blockers = list(row.get("blockers") or []) + list(row.get("blocking_findings") or [])
-        open_decisions = [d for d in (row.get("owner_decisions") or []) if statuses.get(d) == "OPEN"]
+        open_decisions = [
+            d for d in (row.get("owner_decisions") or []) if statuses.get(d) == "OPEN"
+        ]
         may_be_closed = not blockers and not open_decisions
         derived[gid] = {
             "state": row.get("state"),

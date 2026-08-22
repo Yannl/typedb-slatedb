@@ -481,15 +481,17 @@ for (const kase of CASES) {
     const revived = restart();
     const conflicting = serve(revived, "n-1", `${kase.useDigest}-MUTATED`, kase.effect,
       (op) => kase.execute(revived, op), "DELIVERED", clock.t);
-    assert.equal((conflicting?.body as { error?: string }).error, "CAPABILITY_REPLAYED",
+    assert.ok(conflicting !== null, `${kase.route}: the conflicting request produced no response`);
+    assert.equal((conflicting.body as { error?: string }).error, "CAPABILITY_REPLAYED",
       `${kase.route}: a different request under a used nonce was admitted`);
 
     // permanent: it is still refused after the use settles and after another
     // restart, and the ORIGINAL request still replays correctly
     const again = restart();
-    assert.equal((serve(again, "n-1", `${kase.useDigest}-MUTATED`, kase.effect,
-      (op) => kase.execute(again, op), "DELIVERED", clock.t)?.body as { error?: string }).error,
-      "CAPABILITY_REPLAYED");
+    const stillRefused = serve(again, "n-1", `${kase.useDigest}-MUTATED`, kase.effect,
+      (op) => kase.execute(again, op), "DELIVERED", clock.t);
+    assert.ok(stillRefused !== null, `${kase.route}: the post-restart retry produced no response`);
+    assert.equal((stillRefused.body as { error?: string }).error, "CAPABILITY_REPLAYED");
     const original = serve(again, "n-1", kase.useDigest, kase.effect,
       (op) => kase.execute(again, op), "DELIVERED", clock.t);
     assert.ok(original !== null && original.status >= 200 && original.status < 300,
@@ -558,7 +560,8 @@ test("MUTANT: renewal does NOT extend authority a second time under the same non
     clock.t = T0 + advance;
     const revived = restart();
     const replay = serve(revived, "n-renew", "ud-renew", effect, renew(revived), "DELIVERED", clock.t);
-    assert.equal((replay?.body as { leaseDeadlineMs: number }).leaseDeadlineMs, T0 + 60_000,
+    assert.ok(replay !== null, `a retry at +${advance}ms produced no response`);
+    assert.equal((replay.body as { leaseDeadlineMs: number }).leaseDeadlineMs, T0 + 60_000,
       `a retry at +${advance}ms recomputed the deadline instead of replaying it`);
     assert.equal((db.prepare(
       `SELECT lease_deadline_ms AS v FROM startup_sessions WHERE startup_session_id='sess-x'`)

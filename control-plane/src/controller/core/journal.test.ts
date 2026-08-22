@@ -16,7 +16,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type Database from "better-sqlite3";
 import { ControllerCore, u64Blob } from "./procedures.ts";
-import { canonicalJson, framedHash, fromHex, hex, hmacSha256, sha256, utf8 } from "./journal-crypto.ts";
+import { canonicalJson, framedHash, fromHex, hex, hmacSha256, sha256, utf8 } from "../../shared/journal-crypto.ts";
 import { boot as bootFixture, makeSql, reqFactory } from "./test-support.ts";
 
 const KEY = utf8("journal-test-key");

@@ -81,7 +81,7 @@ function makeHarness(token: string | undefined): FakeHarness {
 }
 
 function req(path: string, opts: { method?: string; token?: string; body?: unknown; headers?: Record<string, string> } = {}): Request {
-  const headers: Record<string, string> = { ...(opts.headers ?? {}) };
+  const headers: Record<string, string> = { ...opts.headers };
   if (opts.token !== undefined) headers["authorization"] = `Bearer ${opts.token}`;
   if (opts.body !== undefined) headers["content-type"] = "application/json";
   return new Request(`${BASE}${path}`, {

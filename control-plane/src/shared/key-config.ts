@@ -63,7 +63,9 @@ import {
 
 // Re-export the shared requirement lists so TypeScript consumers (tests,
 // construction proofs) get them from the config module they exercise.
-export { MANAGED_DEPLOYMENT_VARS, MANAGED_FIXED_VARS, MANAGED_RUNTIME_INPUTS, MANAGED_SECRETS, RETIRED_MANAGED_INPUTS };
+// Re-exported for the consumers that read the managed-input contract;
+// MANAGED_FIXED_VARS is used only inside this module (R8-P1-03).
+export { MANAGED_DEPLOYMENT_VARS, MANAGED_RUNTIME_INPUTS, MANAGED_SECRETS, RETIRED_MANAGED_INPUTS };
 
 /** The known development constants. Centralised so "is this dev material?"
  *  is a set-membership question, not a grep. */
@@ -80,8 +82,8 @@ export const DEV_ENVIRONMENT = "local";
  * on any transcription drift. A managed profile REFUSES these public keys
  * exactly as it refused the old dev HMAC constants.
  */
-export const DEV_CAPABILITY_SIGNING_SEED_LABEL = "typedb-r2 DEV-INSECURE capability signing seed v3";
-export const DEV_PROVISION_SIGNING_SEED_LABEL = "typedb-r2 DEV-INSECURE provision signing seed v3";
+const DEV_CAPABILITY_SIGNING_SEED_LABEL = "typedb-r2 DEV-INSECURE capability signing seed v3";
+const DEV_PROVISION_SIGNING_SEED_LABEL = "typedb-r2 DEV-INSECURE provision signing seed v3";
 export const DEV_CAPABILITY_PUBLIC_KEY_HEX = "c65f92651a3ec9f70b12a8cd427addb8d5c407621a35b95f423f4b0572112319";
 export const DEV_PROVISION_PUBLIC_KEY_HEX = "b5d190e5f8572021a7fec73ad77898c2637e77a6f24cf69626ae97a4c5d40e4d";
 export const DEV_CAPABILITY_KID = `cap:${DEV_ENVIRONMENT}`;

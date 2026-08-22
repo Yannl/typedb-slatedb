@@ -11,8 +11,8 @@
  */
 
 import { SELF } from "cloudflare:test";
-import { DEV_ENVIRONMENT, DEV_PROVISION_KID, devProvisionSigningKey } from "./core/key-config.ts";
-import { controllerDoName, type ProvisionBinding } from "./core/registry.ts";
+import { DEV_ENVIRONMENT, DEV_PROVISION_KID, devProvisionSigningKey } from "../shared/key-config.ts";
+import { controllerDoName, type ProvisionBinding } from "../shared/registry.ts";
 import { mintProvisionToken } from "./core/issuer.ts";
 import type { DatabaseControllerDO } from "./database-controller.ts";
 

@@ -41,8 +41,8 @@
 
 import { createHash, createHmac, randomBytes } from "node:crypto";
 
-export type ProviderService = "r2" | "cfapi" | "harness";
-export type CfApiPrincipal = "admin" | "runtime";
+type ProviderService = "r2" | "cfapi" | "harness";
+type CfApiPrincipal = "admin" | "runtime";
 
 export interface SeamCredentials {
   keyId: string;
@@ -120,10 +120,6 @@ export function utf8(text: string): Uint8Array {
 
 export function text(body: Uint8Array): string {
   return new TextDecoder().decode(body);
-}
-
-export function json(body: Uint8Array): unknown {
-  return JSON.parse(text(body));
 }
 
 // ---------------------------------------------------------------------------
@@ -239,7 +235,7 @@ export function realConfigFromEnv(env: NodeJS.ProcessEnv): RealProviderConfig {
 }
 
 /** Default per-request deadline when the caller does not set one (P-04). */
-export const DEFAULT_REQUEST_DEADLINE_MS = 30_000;
+const DEFAULT_REQUEST_DEADLINE_MS = 30_000;
 
 function abortSignalFor(deadlineMs: number | undefined): AbortSignal {
   return AbortSignal.timeout(deadlineMs ?? DEFAULT_REQUEST_DEADLINE_MS);
@@ -379,7 +375,7 @@ export class RealPlatformProvider implements PlatformProvider {
             headers: {
               authorization: `Bearer ${token}`,
               "content-type": "application/json",
-              ...(req.headers ?? {}),
+              ...req.headers,
             },
             body: req.body && req.body.length ? req.body : undefined,
             redirect: "manual",
@@ -403,7 +399,7 @@ export class RealPlatformProvider implements PlatformProvider {
         }
         const res = await fetch(target, {
           method: req.method,
-          headers: { authorization: `Bearer ${hn.apiToken}`, ...(req.headers ?? {}) },
+          headers: { authorization: `Bearer ${hn.apiToken}`, ...req.headers },
           body: req.body && req.body.length ? req.body : undefined,
           redirect: "manual", // a cross-origin redirect must never carry the token
           signal: abortSignalFor(req.deadlineMs),

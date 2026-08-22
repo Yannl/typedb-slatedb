@@ -25,7 +25,7 @@
  *    exact — a missing row is a typed NOT_FOUND, never treated as EOF.
  */
 
-import { bytesEqual, canonicalJson, CANONICAL_U64, framedHash, fromHex as fromHexInternal, hex, hmacSha256, sha256, utf8 } from "./journal-crypto.ts";
+import { bytesEqual, canonicalJson, CANONICAL_U64, framedHash, fromHex as fromHexInternal, hex, hmacSha256, sha256, utf8 } from "../../shared/journal-crypto.ts";
 
 export interface SqlRow {
   [column: string]: unknown;
@@ -193,7 +193,7 @@ export function u64Blob(value: bigint, context: string): Uint8Array {
 /** Decode an authoritative sequence read back from SQL. Blobs only: any
  *  other representation under a sequence column is a corruption of the
  *  storage contract and fails closed. */
-export function u64FromSql(value: unknown, context: string): bigint {
+function u64FromSql(value: unknown, context: string): bigint {
   const bytes =
     value instanceof Uint8Array ? value : value instanceof ArrayBuffer ? new Uint8Array(value) : null;
   if (bytes === null || bytes.byteLength !== 8) {

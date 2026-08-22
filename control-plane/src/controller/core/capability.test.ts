@@ -19,9 +19,9 @@ import assert from "node:assert/strict";
 import {
   verifyCapabilityToken, MAX_CAPABILITY_BYTES,
   type CapabilityPayload, type VerificationKeyring,
-} from "./capability.ts";
+} from "../../shared/capability.ts";
 import { mintCapabilityToken } from "./issuer.ts";
-import { generateEd25519KeyPair } from "./ed25519.ts";
+import { generateEd25519KeyPair } from "../../shared/ed25519.ts";
 
 const NOW = 1_000_000;
 
@@ -49,9 +49,9 @@ function token(overrides: Partial<CapabilityPayload> = {}, signWith = ISSUER.pri
 /** Sign an arbitrary (possibly deliberately malformed) payload, bypassing
  *  the issuer's own refusals - the adversarial mint the mutants need. */
 async function rawToken(payload: Record<string, unknown>, signWith = ISSUER.privateKeyPkcs8): Promise<string> {
-  const { canonicalJson, hex, utf8 } = await import("./journal-crypto.ts");
-  const { ed25519Sign } = await import("./ed25519.ts");
-  const { base64urlEncode } = await import("./capability.ts");
+  const { canonicalJson, hex, utf8 } = await import("../../shared/journal-crypto.ts");
+  const { ed25519Sign } = await import("../../shared/ed25519.ts");
+  const { base64urlEncode } = await import("../../shared/capability.ts");
   const body = utf8(canonicalJson(payload));
   return `${base64urlEncode(body)}.${hex(await ed25519Sign(signWith, body))}`;
 }

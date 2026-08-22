@@ -41,7 +41,7 @@ export interface LockBaseline {
 }
 
 /** Run-owned rule-id prefix: only these may be added and removed by a run. */
-export function runOwnedRuleIdPrefix(runNonce: string): string {
+function runOwnedRuleIdPrefix(runNonce: string): string {
   return `probe-lock-${runNonce}`;
 }
 

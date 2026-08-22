@@ -37,7 +37,7 @@
  * allowlist by construction: a new secret-bearing header added by a
  * provider is invisible to evidence until someone consciously lists it.
  */
-export const HEADER_ALLOWLIST: ReadonlySet<string> = new Set([
+const HEADER_ALLOWLIST: ReadonlySet<string> = new Set([
   "content-type",
   "content-length",
   "etag",
@@ -111,7 +111,7 @@ export function redactHeaders(raw: Record<string, string>): RedactedHeaders {
 // ---------------------------------------------------------------------------
 
 /** JSON key names whose values are secrets regardless of value shape. */
-export const SECRET_KEY_PATTERN =
+const SECRET_KEY_PATTERN =
   /key|token|secret|password|passwd|credential|authorization|cookie|signature|cert|private/i;
 
 /**
@@ -184,7 +184,7 @@ export function classifyRoute(service: string, path: string): RedactionClass {
     return "credential-endpoint";
   }
   // The authority-token surface mints bearer-like tokens.
-  if (service === "harness" && /\/do\/authority\/mint$/.test(p)) return "credential-endpoint";
+  if (service === "harness" && p.endsWith("/do/authority/mint")) return "credential-endpoint";
   return "generic";
 }
 

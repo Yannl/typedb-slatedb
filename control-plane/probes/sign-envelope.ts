@@ -21,7 +21,6 @@
  */
 
 import { generateKeyPairSync } from "node:crypto";
-import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";

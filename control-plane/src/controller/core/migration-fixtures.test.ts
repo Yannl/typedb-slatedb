@@ -20,7 +20,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { ControllerCore, u64FromWire } from "./procedures.ts";
-import { utf8 } from "./journal-crypto.ts";
+import { utf8 } from "../../shared/journal-crypto.ts";
 import { sqlOver, TEST_BUDGETS } from "./test-support.ts";
 
 const KEY = utf8("migration-fixture-key");

@@ -45,7 +45,7 @@ export type ProbeMode = "real" | "mock";
 export type AssertionClass = "provider-fact" | "product-conformance";
 
 /** One planned assertion. The plan exists before any result does. */
-export interface AssertionSpec {
+interface AssertionSpec {
   /** Stable id, unique within the probe (e.g. "cond-create-412"). */
   id: string;
   /** What the assertion claims when it passes. */

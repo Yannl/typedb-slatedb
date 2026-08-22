@@ -39,15 +39,15 @@
 import { createHash, createPrivateKey, createPublicKey, sign as edSign, verify as edVerify, type KeyObject } from "node:crypto";
 import {
   closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync,
-  statSync, writeFileSync, writeSync,
+  writeSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 export const ENVELOPE_SCHEMA = "probe-run-envelope/v2";
 
 /** Binding fields the envelope must carry — each one names an aspect of
  *  the run that a copied/replayed envelope would get wrong. */
-export interface EnvelopeBinding {
+interface EnvelopeBinding {
   /** exact commit the runner must be executing (git HEAD, 40-hex) */
   release_commit: string;
   /** sha256 root over the probes implementation (computeProbesSourceRoot) */
@@ -74,7 +74,7 @@ export interface SignedEnvelope {
 }
 
 /** Recursive key-sorted canonical JSON (same rule as the token layer). */
-export function canonicalJson(value: unknown): string {
+function canonicalJson(value: unknown): string {
   if (value === null) return "null";
   switch (typeof value) {
     case "string":
@@ -101,7 +101,7 @@ function signableBody(doc: Record<string, unknown>): Buffer {
   return Buffer.from(canonicalJson(rest), "utf8");
 }
 
-export function publicKeyFingerprint(publicKey: KeyObject): string {
+function publicKeyFingerprint(publicKey: KeyObject): string {
   const spki = publicKey.export({ type: "spki", format: "der" });
   return createHash("sha256").update(spki).digest("hex").slice(0, 16);
 }
@@ -339,7 +339,7 @@ function fsyncDir(dir: string): void {
   }
 }
 
-export interface ClaimRecord {
+interface ClaimRecord {
   schema: "probe-run-claim/v1";
   run_id: string;
   envelope_body_sha256: string;

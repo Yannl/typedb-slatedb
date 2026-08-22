@@ -17,7 +17,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type Database from "better-sqlite3";
 import { ControllerCore, u64Blob } from "./procedures.ts";
-import { utf8 } from "./journal-crypto.ts";
+import { utf8 } from "../../shared/journal-crypto.ts";
 import { boot as bootFixture, reqFactory } from "./test-support.ts";
 
 const req = reqFactory("sop");

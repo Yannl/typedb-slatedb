@@ -26,11 +26,11 @@
 
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
-import { generateEd25519KeyPair } from "../src/controller/core/ed25519.ts";
+import { generateEd25519KeyPair } from "../src/shared/ed25519.ts";
 import { mintCapabilityToken, mintProvisionToken } from "../src/controller/core/issuer.ts";
-import { hex } from "../src/controller/core/journal-crypto.ts";
-import { capabilityKid, provisionKid, validOpaqueId } from "../src/controller/core/registry.ts";
-import { isKnownCapabilityMethod } from "../src/controller/core/capability.ts";
+import { hex } from "../src/shared/journal-crypto.ts";
+import { capabilityKid, provisionKid, validOpaqueId } from "../src/shared/registry.ts";
+import { isKnownCapabilityMethod } from "../src/shared/capability.ts";
 
 const DEFAULT_TTL_MS = 60_000;
 const MAX_TTL_MS = 3_600_000;

@@ -20,11 +20,11 @@ import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import {
   capabilityKid, checkBinding, controllerDoName, provisionKid, validOpaqueId, verifyProvisionToken,
-} from "./registry.ts";
-import { verifyCapabilityToken, type VerificationKeyring } from "./capability.ts";
+} from "../../shared/registry.ts";
+import { verifyCapabilityToken, type VerificationKeyring } from "../../shared/capability.ts";
 import { mintCapabilityToken, mintProvisionToken } from "./issuer.ts";
-import { generateEd25519KeyPair } from "./ed25519.ts";
-import { utf8 } from "./journal-crypto.ts";
+import { generateEd25519KeyPair } from "../../shared/ed25519.ts";
+import { utf8 } from "../../shared/journal-crypto.ts";
 import { ControllerCore } from "./procedures.ts";
 import { sqlOver } from "./test-support.ts";
 

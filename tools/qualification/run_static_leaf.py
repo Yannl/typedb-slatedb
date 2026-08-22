@@ -143,6 +143,12 @@ def main() -> int:
     tree_before = lc.executed_tree_identity()
     started = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
+    try:
+        _argv, rustfmt_identity = run_static.resolve_rustfmt()
+    except RuntimeError as error:
+        print(f"REFUSED: {error}", file=sys.stderr)
+        return 2
+
     checkstyle = [t for t in target_ids if rule_of(t) == "checkstyle"]
     rustfmt = [t for t in target_ids if rule_of(t) == "rustfmt"]
     results: dict[str, dict] = {}
@@ -211,6 +217,11 @@ def main() -> int:
         "plan_root": plan.get("plan_root"),
         "catalog_sha256": common.sha256_file(lc.CATALOG),
         "rustfmt_toolchain": run_static.RUSTFMT_TOOLCHAIN,
+        # R8-P2-01: WHICH binary ran, and what it reports itself to be — not
+        # which one the code expected to find. A bundle produced on a machine
+        # with a different CARGO_HOME is now distinguishable from one produced
+        # here, instead of both saying only "nightly-2026-04-15".
+        "rustfmt_identity": rustfmt_identity,
         "selection": {"targets": len(target_ids), "partial": bool(args.only)},
         "executed_tree": tree_before,
         "executed_tree_after_run": tree_after,

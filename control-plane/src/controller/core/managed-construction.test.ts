@@ -28,11 +28,11 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import {
   MANAGED_RUNTIME_INPUTS, resolveKeyConfig, type KeyConfigEnv,
-} from "./key-config.ts";
-import { hex } from "./journal-crypto.ts";
-import { generateEd25519KeyPair } from "./ed25519.ts";
+} from "../../shared/key-config.ts";
+import { hex } from "../../shared/journal-crypto.ts";
+import { generateEd25519KeyPair } from "../../shared/ed25519.ts";
 import { mintCapabilityToken } from "./issuer.ts";
-import { verifyCapabilityToken, type CapabilityPayload } from "./capability.ts";
+import { verifyCapabilityToken, type CapabilityPayload } from "../../shared/capability.ts";
 
 // The canonical graph — plain data .mjs shared with the stack tooling.
 // @ts-ignore: dependency-free stack module; its shape is asserted below.

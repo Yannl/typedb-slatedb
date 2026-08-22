@@ -10,7 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { ControllerCore } from "./procedures.ts";
-import { sha256, hmacSha256, utf8 } from "./journal-crypto.ts";
+import { sha256, hmacSha256, utf8 } from "../../shared/journal-crypto.ts";
 import { sqlOver, reqFactory, TEST_BUDGETS } from "./test-support.ts";
 
 const KEY = utf8("authority-r3-key");

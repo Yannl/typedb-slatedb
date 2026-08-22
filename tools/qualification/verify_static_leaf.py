@@ -143,10 +143,14 @@ def rederive(
     if rule == "rustfmt":
         if not files:
             return "FAIL"
+        # R8-P2-01: the SAME resolver as the producer (one definition of "which
+        # rustfmt"), while the verdict below is still re-derived independently.
+        # Sharing the resolver is not sharing the answer: the verifier runs the
+        # binary itself and compares its own exit status.
+        argv, _identity = run_static.resolve_rustfmt()
         proc = subprocess.run(
-            [
-                str(pathlib.Path.home() / ".cargo/bin/rustfmt"),
-                f"+{run_static.RUSTFMT_TOOLCHAIN}",
+            argv
+            + [
                 "--check",
                 "--config-path",
                 str(tb / "rustfmt.toml"),

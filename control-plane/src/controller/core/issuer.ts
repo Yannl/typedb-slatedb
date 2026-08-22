@@ -21,14 +21,14 @@
  * "stolen managed env vars cannot mint" mutant tests pin down.
  */
 
-import { hex } from "./journal-crypto.ts";
-import { ed25519Sign } from "./ed25519.ts";
+import { hex } from "../../shared/journal-crypto.ts";
+import { ed25519Sign } from "../../shared/ed25519.ts";
 import {
   base64urlEncode, capabilityBodyBytes, CAPABILITY_TOKEN_ALG, CAPABILITY_TOKEN_VERSION,
   isKnownCapabilityMethod, REQUIRED_RESTRICTIONS,
   type CapabilityPayload,
-} from "./capability.ts";
-import { provisionKid, type ProvisionBinding } from "./registry.ts";
+} from "../../shared/capability.ts";
+import { provisionKid, type ProvisionBinding } from "../../shared/registry.ts";
 
 /** Sign a fully-formed v3 payload. The payload's `v`/`alg` must be the
  *  current schema (the issuer refuses to sign anything it would itself not

@@ -92,6 +92,7 @@ def refuse(message: str) -> "typing.NoReturn":
     print(message, file=sys.stderr)
     raise SystemExit(EXIT_NO_ISOLATION)
 
+
 # Where per-process assembly working directories live, under the workspace's
 # `target/`. Named here so the staging step can clear it before a run.
 NETNS_ISO_DIR = "netns-iso"

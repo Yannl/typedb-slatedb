@@ -16,9 +16,9 @@ import {
   devCapabilitySigningKey, devProvisionSigningKey,
   KeyConfigError, MANAGED_DEPLOYMENT_VARS, MANAGED_RUNTIME_INPUTS, MANAGED_SECRETS, MIN_KEY_BYTES,
   parseVerificationKeyring, resolveKeyConfig, RETIRED_MANAGED_INPUTS,
-} from "./key-config.ts";
-import { hex } from "./journal-crypto.ts";
-import { ed25519PublicKeyFromPkcs8, generateEd25519KeyPair } from "./ed25519.ts";
+} from "../../shared/key-config.ts";
+import { hex } from "../../shared/journal-crypto.ts";
+import { ed25519PublicKeyFromPkcs8, generateEd25519KeyPair } from "../../shared/ed25519.ts";
 
 const CAP_PAIR = await generateEd25519KeyPair();
 const PROV_PAIR = await generateEd25519KeyPair();

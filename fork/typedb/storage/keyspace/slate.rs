@@ -750,9 +750,7 @@ fn classify_key(location: &ObjectPath) -> KeyClass {
         },
         // .typedb-staging/<attempt-token>/<encoded-target>
         [staging, attempt_token, encoded_target]
-            if staging == STAGING_SUBDIR
-                && is_attempt_token(attempt_token)
-                && is_encoded_segment(encoded_target) =>
+            if staging == STAGING_SUBDIR && is_attempt_token(attempt_token) && is_encoded_segment(encoded_target) =>
         {
             KeyClass::Staging(StagingPath {
                 attempt_token: attempt_token.clone(),
@@ -793,9 +791,7 @@ fn is_attempt_token(token: &str) -> bool {
 /// last segment carries anything else was not produced by this adapter.
 fn is_encoded_segment(segment: &str) -> bool {
     !segment.is_empty()
-        && segment
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b'='))
+        && segment.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b'='))
 }
 
 /// Is this key the SOLE conditional-CAS publication path (S-04)? Exact
@@ -4870,7 +4866,9 @@ mod immutability_boundary_tests {
         // else under the keyspace is immutable. The EXHAUSTIVE grammar matrix
         // — including every way a configurable name used to escalate — lives
         // in `r8_authority_grammar_tests`.
-        assert!(is_manifest_key(&ObjectPath::from(format!("keyspace/{MANIFEST_SUBDIR}/00000000000000000001.manifest"))));
+        assert!(is_manifest_key(&ObjectPath::from(format!(
+            "keyspace/{MANIFEST_SUBDIR}/00000000000000000001.manifest"
+        ))));
         assert!(!is_manifest_key(&ObjectPath::from("keyspace/01ABC.sst")));
         assert!(!is_manifest_key(&ObjectPath::from("keyspace/compacted/01ABC.sst")));
     }
@@ -5919,10 +5917,9 @@ mod r6_multipart_integrity_tests {
     use test_utils::create_tmp_dir;
 
     use super::{
-        CompletionPermit, KeyClass, MULTIPART_MAX_CONCURRENT_COMPLETIONS,
-        MULTIPART_MAX_MATERIALISED_PROMOTE_BYTES, MULTIPART_MAX_OBJECT_BYTES, MULTIPART_ORPHAN_FILE,
-        MultipartBudgetRefused, NoDeleteStore, STAGING_SUBDIR, StagingKey, admit_object_bytes, authority, bridge,
-        classify_key, content_witness,
+        CompletionPermit, KeyClass, MULTIPART_MAX_CONCURRENT_COMPLETIONS, MULTIPART_MAX_MATERIALISED_PROMOTE_BYTES,
+        MULTIPART_MAX_OBJECT_BYTES, MULTIPART_ORPHAN_FILE, MultipartBudgetRefused, NoDeleteStore, STAGING_SUBDIR,
+        StagingKey, admit_object_bytes, authority, bridge, classify_key, content_witness,
     };
 
     // ------------------------------------------------------------------
@@ -7070,7 +7067,10 @@ mod r8_authority_grammar_tests {
     /// Open a real remote keyspace under `base`, write and flush, and return
     /// the keyspace plus every key the engine published (as the prefix-scoped
     /// principal sees them).
-    fn opened_under(base: ObjectPath, tag: &str) -> (test_utils::TempDir, test_utils::TempDir, SlateKeyspace, Vec<ObjectPath>) {
+    fn opened_under(
+        base: ObjectPath,
+        tag: &str,
+    ) -> (test_utils::TempDir, test_utils::TempDir, SlateKeyspace, Vec<ObjectPath>) {
         let store_dir = create_tmp_dir(&format!("slate-r8-{tag}-store"));
         let inner: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*store_dir).unwrap());
         let keyspace_dir = create_tmp_dir(&format!("slate-r8-{tag}-ks"));
@@ -7443,7 +7443,11 @@ mod r8_multipart_admission_tests {
             Ok(Box::new(CountingUpload { inner, parts: self.parts.clone(), fail: self.fail_parts }))
         }
 
-        async fn get_opts(&self, location: &ObjectPath, options: GetOptions) -> slatedb::object_store::Result<GetResult> {
+        async fn get_opts(
+            &self,
+            location: &ObjectPath,
+            options: GetOptions,
+        ) -> slatedb::object_store::Result<GetResult> {
             self.inner.get_opts(location, options).await
         }
 

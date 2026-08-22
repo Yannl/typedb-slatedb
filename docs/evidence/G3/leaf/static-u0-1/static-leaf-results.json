@@ -12,6 +12,7 @@
  "plan_root": "72020aa01fafebddc41321e0c6100c158f80ae997037430871212049054a7a41",
  "catalog_sha256": "569448d1a259c64c789ad8b6e65973f51c7e9a678b89079592b9ca450c41c57e",
  "rustfmt_toolchain": "nightly-2026-04-15",
+ "rustfmt_identity": "/root/.rustup/toolchains/nightly-2026-04-15-x86_64-unknown-linux-gnu/bin/rustfmt rustfmt 1.9.0-nightly (a5c825cd82 2026-04-14)",
  "selection": {
   "targets": 141,
   "partial": false
@@ -173,13 +174,15 @@
    }
   ],
   "staged_delta_files": 36,
-  "staged_delta_sha256": "b9c0f179118e4c13251190f6c03e6d991eacd425303c6e2571102313f2eacbea",
+  "staged_delta_sha256": "9f9293f23c58693cfb369f96bccd5a75a86819a84df41b2b6716ae978e658dcc",
   "fork": {
    "files": 778,
-   "fork_tree_sha256": "45912c8ab0ec63420205d753d0a411e07a7ca1ae140880a29a6a13ce1420523d",
-   "outer_repo_commit": "1576b6db3d7867d14201f7188f08b76ba4be953d",
+   "fork_tree_sha256": "4dd2e613c430a2ba00d0f49c1b9cf94988dafd998ad8023e7dd271c56e2837a6",
+   "outer_repo_commit": "9e30340192c6bda6e0fddd952c9d8ce6723438e6",
    "outer_repo_dirty": true,
-   "outer_repo_fork_paths_modified": []
+   "outer_repo_fork_paths_modified": [
+    "fork/typedb/storage/keyspace/slate.rs"
+   ]
   }
  },
  "executed_tree_after_run": {
@@ -339,17 +342,19 @@
    }
   ],
   "staged_delta_files": 36,
-  "staged_delta_sha256": "b9c0f179118e4c13251190f6c03e6d991eacd425303c6e2571102313f2eacbea",
+  "staged_delta_sha256": "9f9293f23c58693cfb369f96bccd5a75a86819a84df41b2b6716ae978e658dcc",
   "fork": {
    "files": 778,
-   "fork_tree_sha256": "45912c8ab0ec63420205d753d0a411e07a7ca1ae140880a29a6a13ce1420523d",
-   "outer_repo_commit": "1576b6db3d7867d14201f7188f08b76ba4be953d",
+   "fork_tree_sha256": "4dd2e613c430a2ba00d0f49c1b9cf94988dafd998ad8023e7dd271c56e2837a6",
+   "outer_repo_commit": "9e30340192c6bda6e0fddd952c9d8ce6723438e6",
    "outer_repo_dirty": true,
-   "outer_repo_fork_paths_modified": []
+   "outer_repo_fork_paths_modified": [
+    "fork/typedb/storage/keyspace/slate.rs"
+   ]
   }
  },
  "tree_stable_across_run": true,
- "started_utc": "2026-08-22T10:42:12Z",
+ "started_utc": "2026-08-22T15:20:23Z",
  "targets": [
   {
    "runner_row_id": "static:BUILD:checkstyle",
@@ -1578,7 +1583,7 @@
    "catalog_target_id": "static:storage/BUILD:checkstyle",
    "rule": "checkstyle",
    "raw_log": "docs/evidence/G3/leaf/static-u0-1/static__storage-BUILD__checkstyle.log",
-   "log_sha256": "278399cc441813e62e5c7f960d9ffcc36f73a8aa259d21724a7ab498c977c38d",
+   "log_sha256": "2f1fbcc38f5c0e70b12fb650ea608b8e3f01cbbc58689ee4deaac32a43bfeebd",
    "log_bytes": 3772,
    "files_checked": 35,
    "status": "PASS",
@@ -1591,7 +1596,7 @@
    "catalog_target_id": "static:storage/BUILD:rustfmt_test",
    "rule": "rustfmt",
    "raw_log": "docs/evidence/G3/leaf/static-u0-1/static__storage-BUILD__rustfmt_test.log",
-   "log_sha256": "9ea4f6a182e77692fb429253199f6df8e9d17176660fa7e66ca0a6ba893ec493",
+   "log_sha256": "2648ea154fb1ed039a3502074cac8c8b2b3f3347503a9847c6a1e4a519908e29",
    "log_bytes": 3693,
    "files_checked": 34,
    "status": "PASS",
@@ -3415,7 +3420,7 @@
    "case_name": "checkstyle_test checkstyle",
    "outcome": "PASSED",
    "raw_log": "docs/evidence/G3/leaf/static-u0-1/static__storage-BUILD__checkstyle.log",
-   "log_sha256": "278399cc441813e62e5c7f960d9ffcc36f73a8aa259d21724a7ab498c977c38d",
+   "log_sha256": "2f1fbcc38f5c0e70b12fb650ea608b8e3f01cbbc58689ee4deaac32a43bfeebd",
    "log_line": 39,
    "outcome_line": 39,
    "fixture_set_id": "fs:none",
@@ -3428,7 +3433,7 @@
    "case_name": "rustfmt_test rustfmt_test",
    "outcome": "PASSED",
    "raw_log": "docs/evidence/G3/leaf/static-u0-1/static__storage-BUILD__rustfmt_test.log",
-   "log_sha256": "9ea4f6a182e77692fb429253199f6df8e9d17176660fa7e66ca0a6ba893ec493",
+   "log_sha256": "2648ea154fb1ed039a3502074cac8c8b2b3f3347503a9847c6a1e4a519908e29",
    "log_line": 38,
    "outcome_line": 38,
    "fixture_set_id": "fs:none",

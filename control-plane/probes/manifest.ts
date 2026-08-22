@@ -19,7 +19,7 @@
 export type ProbeVerdict = "PASS" | "FAIL" | "NOT_RUN" | "PREREQUISITE_MISSING";
 
 /** Provider capabilities a probe needs before it can genuinely execute. */
-export type ProbeRequirement = "r2" | "cfapi" | "cfapi_runtime" | "harness";
+type ProbeRequirement = "r2" | "cfapi" | "cfapi_runtime" | "harness";
 
 export interface ManifestEntry {
   /** Normative probe ID, exactly as written in the contract. */

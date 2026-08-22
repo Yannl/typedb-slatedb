@@ -1,0 +1,30 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "probes/sign-envelope.ts",
+    "probes/claim-race-child.mjs",
+    "scripts/issuer.mjs",
+    "**/*.test.ts",
+    "**/*.workerd.test.ts",
+    "**/*-test-support.ts"
+  ],
+  "project": [
+    "src/**/*.{ts,mts,mjs}",
+    "probes/**/*.{ts,mts,mjs}",
+    "scripts/**/*.mjs"
+  ],
+  "ignoreDependencies": [
+    "@cloudflare/containers",
+    "dependency-cruiser",
+    "oxlint",
+    "cloudflare"
+  ],
+  "vitest": {
+    "config": [
+      "vitest.config.*"
+    ]
+  },
+  "ignore": [
+    "**/*.d.mts"
+  ]
+}

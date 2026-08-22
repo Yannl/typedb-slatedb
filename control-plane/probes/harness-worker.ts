@@ -61,7 +61,7 @@ export interface HarnessEnv {
 }
 
 /** Build identity returned by /harness/health and bound into run bundles. */
-export const HARNESS_SOURCE = {
+const HARNESS_SOURCE = {
   entry: "control-plane/probes/harness-worker.ts",
   wrangler_config: "control-plane/wrangler.probe-harness.toml",
 } as const;
@@ -97,7 +97,7 @@ async function bodyJson(request: Request): Promise<Record<string, unknown>> {
  * Constant-time bearer comparison: both sides are SHA-256 hashed (fixed
  * length, no early exit) and the digests XOR-compared byte-wise.
  */
-export async function tokenMatches(presented: string, expected: string): Promise<boolean> {
+async function tokenMatches(presented: string, expected: string): Promise<boolean> {
   const enc = new TextEncoder();
   const a = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(presented)));
   const b = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(expected)));

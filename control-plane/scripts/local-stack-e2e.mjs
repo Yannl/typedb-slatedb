@@ -25,7 +25,7 @@ import { mintCapabilityToken, mintProvisionToken } from "../src/controller/core/
 import {
   DEV_CAPABILITY_KID, DEV_ENVIRONMENT, DEV_PROVISION_KID,
   devCapabilitySigningKey, devProvisionSigningKey,
-} from "../src/controller/core/key-config.ts";
+} from "../src/shared/key-config.ts";
 
 const BASE = process.argv[2] ?? "http://127.0.0.1:8787";
 const DB = `e2e-db-${process.pid}-${Date.now()}`;
@@ -52,9 +52,12 @@ function sha256hex(buffer) {
 }
 
 async function rawApi(method, path, body, raw = false, headers = {}) {
+  // A GET/HEAD request may not carry a body at all — not even `undefined`,
+  // which some runtimes still reject. Build the init so the key is ABSENT.
+  const payload = raw ? body : body !== undefined ? JSON.stringify(body) : undefined;
   const response = await fetch(`${BASE}${path}`, {
     method,
-    body: raw ? body : body !== undefined ? JSON.stringify(body) : undefined,
+    ...(payload === undefined ? {} : { body: payload }),
     headers: raw ? headers : { "content-type": "application/json", ...headers },
   });
   return { status: response.status, body: await response.json() };

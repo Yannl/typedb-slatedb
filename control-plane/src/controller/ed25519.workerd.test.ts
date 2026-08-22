@@ -9,9 +9,9 @@
  * primitive, instead of every capability test failing opaquely.
  */
 import { describe, expect, it } from "vitest";
-import { ed25519PublicKeyFromPkcs8, ed25519Sign, ed25519Verify, generateEd25519KeyPair, pkcs8FromSeed } from "./core/ed25519.ts";
-import { hex, utf8 } from "./core/journal-crypto.ts";
-import { DEV_CAPABILITY_PUBLIC_KEY_HEX, devCapabilitySigningKey } from "./core/key-config.ts";
+import { ed25519PublicKeyFromPkcs8, ed25519Sign, ed25519Verify, generateEd25519KeyPair, pkcs8FromSeed } from "../shared/ed25519.ts";
+import { hex, utf8 } from "../shared/journal-crypto.ts";
+import { DEV_CAPABILITY_PUBLIC_KEY_HEX, devCapabilitySigningKey } from "../shared/key-config.ts";
 
 describe("Ed25519 WebCrypto support (workerd, compat 2025-11-01)", () => {
   it("signs and verifies via pkcs8/raw imports; refuses tampering", async () => {

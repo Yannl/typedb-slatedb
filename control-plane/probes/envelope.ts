@@ -109,7 +109,7 @@ export interface EnvelopeBudget {
 export const PRICING_MODEL_VERSION = "probe-pricing/v1-conservative";
 
 /** micro-cents (1 cent = 1_000_000 µ¢) reserved per request class. */
-export const PRICE_MICRO_CENTS = {
+const PRICE_MICRO_CENTS = {
   /** R2 Class A (mutating: PUT/POST/DELETE/multipart) — $4.50/million ⇒ 0.45 µ¢/op, reserved 10× */
   r2ClassA: 5,
   /** R2 Class B (GET/HEAD/LIST) — $0.36/million ⇒ 0.036 µ¢/op, reserved ~30× */

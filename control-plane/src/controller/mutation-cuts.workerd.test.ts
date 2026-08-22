@@ -22,8 +22,8 @@
  */
 import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
-import { DEV_ISSUER_SECRET } from "./core/key-config.ts";
-import { canonicalJson } from "./core/journal-crypto.ts";
+import { DEV_ISSUER_SECRET } from "../shared/key-config.ts";
+import { canonicalJson } from "../shared/journal-crypto.ts";
 import { localDoName, provisionViaSelf, LOCAL_TENANT } from "./workerd-test-support.ts";
 import type { DatabaseControllerDO } from "./database-controller.ts";
 

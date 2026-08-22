@@ -6,26 +6,29 @@ handle structurally lacks delete authority). Every superseded or retired
 materialisation therefore remains in the bucket as orphan bytes (inv. 83).
 This tool is the SEPARATED maintenance principal that accounts for them:
 
-    python3 tools/maintenance/s3_gc.py               # report (the only mode that exists)
-    python3 tools/maintenance/s3_gc.py --delete m... # REFUSED before G13 (Q-25): no delete
-                                                     # implementation exists in this file
+    python3 tools/maintenance/s3_gc.py               # report — THE ONLY MODE THAT EXISTS
+    python3 tools/maintenance/s3_gc.py --delete m... # unconditionally REFUSED (Q-25)
+
+REPORT-ONLY IS THE WHOLE TOOL, TODAY (R8-P2-05)
+-----------------------------------------------
+This file contains NO delete request. Not a guarded one, not one behind a
+credential check — none. `--delete` exists only so that reaching for it
+produces the refusal and its reasons instead of sending an operator looking for
+another tool. Earlier revisions of this docstring described conditions under
+which delete mode "runs"; that was prose describing an implementation that does
+not exist, which is exactly the kind of claim this repository's truth plane is
+supposed to make impossible. When G13 builds deletion, it will arrive with its
+gate record, and this paragraph changes with the code, not before it.
 
 Report mode lists, per keyspace prefix, every materialisation with object
-count, bytes, and last-modified — and NEVER issues a delete. Delete mode
-refuses to run unless BOTH of the following hold, keeping the authority
-separation auditable pre-G13:
+count, bytes, and last-modified.
 
-  - the operator names explicit materialisation ids (no --all exists; the
-    operator states exactly what dies, the tool never infers "orphaned"
-    into "deletable");
-  - TYPEDB_S3_MAINT_ACCESS_KEY_ID / TYPEDB_S3_MAINT_SECRET_ACCESS_KEY are
-    set — a credential DISTINCT from the runtime's TYPEDB_S3_ACCESS_KEY_ID,
-    so the runtime principal's key material can never reach a delete call
-    even through this tool.
-
-S3 access goes through curl --aws-sigv4 (the same mechanism the local-dev
-docs use for bucket administration), so the tool works against MinIO and
-R2 alike without extra Python dependencies.
+CREDENTIALS ARE NEVER PASSED IN ARGV (R8-P2-05)
+------------------------------------------------
+S3 access goes through `curl --aws-sigv4`, but the key id and secret are handed
+to curl on a private CONFIG FILE FD rather than `--user key:secret`: an argv is
+world-readable in /proc on the same host, so a bucket credential in it leaks to
+every local observer for the lifetime of the request. See `s3_request`.
 """
 
 import argparse
@@ -46,28 +49,61 @@ def env(name, default=None):
 
 
 def s3_request(endpoint, bucket, region, key_id, secret, method, path="", query=None):
+    """One signed S3 request, with the credential OFF the command line.
+
+    R8-P2-05: this used to pass `--user {key_id}:{secret}` in curl's argv.
+    Process arguments are readable by any same-host observer through
+    `/proc/<pid>/cmdline` for the whole life of the request — including other
+    tenants of a shared runner and anything that snapshots the process table.
+    A bucket credential is exactly the kind of secret that must never be there.
+
+    curl reads the credential from a config file given as `--config /dev/fd/N`,
+    where N is an anonymous pipe this process writes and closes. Nothing
+    touches the filesystem, so there is no file to leak, race or forget to
+    delete; the fd is inherited only by this child; and argv carries the fd
+    path, never the secret.
+    """
+    import os
+
     url = f"{endpoint}/{bucket}"
     if path:
         url += "/" + urllib.parse.quote(path)
     if query:
         url += "?" + urllib.parse.urlencode(query)
-    result = subprocess.run(
-        [
-            "curl",
-            "-sS",
-            "--fail-with-body",
-            "-X",
-            method,
-            url,
-            "--user",
-            f"{key_id}:{secret}",
-            "--aws-sigv4",
-            f"aws:amz:{region}:s3",
-        ],
-        capture_output=True,
-        text=True,
-    )
+
+    # curl's config syntax: one directive per line, values quoted. Any quote or
+    # backslash in a credential would otherwise end the value early.
+    def escape(value):
+        return value.replace("\\", "\\\\").replace('"', '\\"')
+
+    config = f'user = "{escape(key_id)}:{escape(secret)}"\n'
+    read_fd, write_fd = os.pipe()
+    try:
+        os.write(write_fd, config.encode())
+    finally:
+        os.close(write_fd)
+    try:
+        result = subprocess.run(
+            [
+                "curl",
+                "-sS",
+                "--fail-with-body",
+                "--config",
+                f"/dev/fd/{read_fd}",
+                "-X",
+                method,
+                url,
+                "--aws-sigv4",
+                f"aws:amz:{region}:s3",
+            ],
+            capture_output=True,
+            text=True,
+            pass_fds=(read_fd,),
+        )
+    finally:
+        os.close(read_fd)
     if result.returncode != 0:
+        # the credential is not in argv, and must not be in the diagnostic either
         sys.exit(f"S3 {method} {url} failed: {result.stderr.strip() or result.stdout.strip()}")
     return result.stdout
 
@@ -177,8 +213,9 @@ def main():
             f"{entry['objects']:>8} {entry['bytes']:>14} {entry['last_modified']}"
         )
     print(
-        f"\n{len(per_materialization)} materialisations. This report is the ONLY default action; "
-        "deletion requires --delete with explicit ids and the separated maintenance credential."
+        f"\n{len(per_materialization)} materialisations. Report-only is the ONLY mode this tool "
+        "has: it contains no delete request at all. Deletion arrives with G13, behind its gate "
+        "record — it is not being withheld by a flag here (R8-P2-05)."
     )
 
 

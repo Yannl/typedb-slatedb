@@ -32,16 +32,16 @@ import {
   type SqlRow,
   type SyncSql,
 } from "./core/procedures.ts";
-import { resolveKeyConfig } from "./core/key-config.ts";
+import { resolveKeyConfig } from "../shared/key-config.ts";
 import {
   isKnownCapabilityMethod, verifyCapabilityToken, MAX_CAPABILITY_BYTES, REQUIRED_RESTRICTIONS,
   CAPABILITY_TOKEN_ALG, CAPABILITY_TOKEN_VERSION,
   type CapabilityCheck, type CapabilityPayload, type VerificationKeyring,
-} from "./core/capability.ts";
+} from "../shared/capability.ts";
 import { mintCapabilityToken } from "./core/issuer.ts";
 import {
   bindingsEqual, checkBinding, verifyProvisionToken, type ProvisionBinding,
-} from "./core/registry.ts";
+} from "../shared/registry.ts";
 
 /** Typed refusals of the registry-binding gate (R4 PR1): every ordinary
  *  call to an authority that has not been provisioned - or that is

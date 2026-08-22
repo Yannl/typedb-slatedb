@@ -24,7 +24,7 @@
  */
 import { SELF, env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { DEV_ISSUER_SECRET } from "./core/key-config.ts";
+import { DEV_ISSUER_SECRET } from "../shared/key-config.ts";
 import { streamedPayloadPut, type Env as WorkerEnv } from "./worker-entry.ts";
 import { provisionViaSelf } from "./workerd-test-support.ts";
 

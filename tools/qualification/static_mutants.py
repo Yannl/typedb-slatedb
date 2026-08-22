@@ -26,6 +26,7 @@ usage:
 
 import argparse
 import hashlib
+import os
 import json
 import pathlib
 import shutil
@@ -52,8 +53,26 @@ class Case:
     """One mutable copy of the bundle, inside a shadow repo."""
 
     def __init__(self, tmp: pathlib.Path, bundle: pathlib.Path):
+        """R8-P2-01: accept a bundle given by a RELATIVE path, and one copied
+        OUTSIDE the repository.
+
+        The harness used to call `bundle.relative_to(REPO)` on whatever it was
+        handed. A relative `--bundle docs/...` (resolved against the caller's
+        cwd, not REPO) or a bundle copied to /tmp for inspection raised
+        ValueError before a single control executed — the suite reported
+        nothing rather than reporting that it could not run. Both are now
+        deliberate: the path is normalised first, and a bundle outside the
+        repository is placed at its canonical evidence location inside the
+        shadow tree so the verifier's repo-relative bookkeeping still holds.
+        """
         self.repo = tmp
-        rel = bundle.relative_to(REPO)
+        bundle = bundle.resolve()
+        if bundle.is_relative_to(REPO):
+            rel = bundle.relative_to(REPO)
+        else:
+            # an external copy: give it the canonical evidence location, which
+            # is what the bundle's own manifest paths are expressed against
+            rel = DEFAULT_BUNDLE.relative_to(REPO).parent / bundle.name
         self.dir = tmp / rel
         self.dir.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(bundle, self.dir)
@@ -117,7 +136,12 @@ def first_target(body: dict, rule: str) -> dict:
     return next(t for t in body["targets"] if t["rule"] == rule and t["publishable"])
 
 
-def run_verifier(case: Case) -> tuple[int, str]:
+def run_verifier(case: Case, env_overrides: dict | None = None) -> tuple[int, str]:
+    import os
+
+    env = dict(os.environ)
+    if env_overrides:
+        env.update(env_overrides)
     proc = subprocess.run(
         [sys.executable, str(VERIFIER), str(case.dir), "--repo", str(case.repo)]
         if _verifier_takes_repo()
@@ -125,6 +149,7 @@ def run_verifier(case: Case) -> tuple[int, str]:
         capture_output=True,
         text=True,
         cwd=case.repo,
+        env=env,
     )
     return proc.returncode, proc.stdout + proc.stderr
 
@@ -250,6 +275,29 @@ def m_tab_hidden_behind_a_pass(case: Case) -> None:
     log.write_text("\n".join(lines) + "\n")
 
 
+def m_relative_bundle_path(_case: Case) -> None:
+    """R8-P2-01 portability: the harness is handed a RELATIVE bundle path.
+
+    No mutation of the bundle at all — the subject is the harness. Before the
+    normalisation in `Case.__init__`, this raised ValueError from
+    `relative_to(REPO)` before any control ran, so a suite invoked the ordinary
+    way from a different cwd reported nothing instead of reporting that it
+    could not run.
+    """
+
+
+def m_non_default_cargo_home(_case: Case) -> None:
+    """R8-P2-01 portability: rustfmt is resolved with a non-default CARGO_HOME.
+
+    Also not a mutation of the bundle. The producer and verifier used to
+    hardcode `~/.cargo/bin/rustfmt`; under a different CARGO_HOME that file
+    does not exist, and the check that claims to have run could not have. The
+    control runs the verifier with `CARGO_HOME` pointed at an empty directory
+    and requires it to still VERIFY — i.e. to have resolved a real rustfmt some
+    other way rather than crash or, worse, pass without running it.
+    """
+
+
 CONTROLS = [
     ("0  an intact copy verifies", m_clean, None),
     ("1  the RESULT line removed", m_result_line_removed, "no RESULT line"),
@@ -279,6 +327,8 @@ CONTROLS = [
         m_tab_hidden_behind_a_pass,
         "re-derivation says",
     ),
+    ("12 the bundle given by a RELATIVE path", m_relative_bundle_path, None),
+    ("13 rustfmt resolved under a non-default CARGO_HOME", m_non_default_cargo_home, None),
 ]
 
 
@@ -293,13 +343,27 @@ def main() -> int:
     killed = survived = 0
     for label, mutate, needle in CONTROLS:
         with tempfile.TemporaryDirectory(prefix="static-mutants-") as tmp:
-            case = Case(pathlib.Path(tmp), args.bundle)
+            # R8-P2-01 control 12: hand the harness the path the caller
+            # actually typed, un-normalised, exactly as an ordinary invocation
+            # from another cwd would.
+            given = (
+                pathlib.Path(os.path.relpath(args.bundle, pathlib.Path.cwd()))
+                if mutate is m_relative_bundle_path
+                else args.bundle
+            )
+            case = Case(pathlib.Path(tmp), given)
             mutate(case)
             case.refresh()
             if mutate is m_unsealed_root:
                 # break the seal AFTER the refresh, so it is the only defect
                 (case.dir / "COMPLETE").write_text("COMPLETE " + "0" * 64 + "\n")
-            rc, out = run_verifier(case)
+            overrides = None
+            if mutate is m_non_default_cargo_home:
+                # R8-P2-01 control 13: a CARGO_HOME with no bin/rustfmt in it
+                empty_home = pathlib.Path(tmp) / "empty-cargo-home"
+                (empty_home / "bin").mkdir(parents=True, exist_ok=True)
+                overrides = {"CARGO_HOME": str(empty_home)}
+            rc, out = run_verifier(case, overrides)
             if needle is None:
                 if rc == 0:
                     print(f"  ACCEPTED {label}")

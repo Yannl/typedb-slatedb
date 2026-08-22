@@ -25,8 +25,10 @@ def render() -> str:
     # R8-P0-02: the current-fact block comes FIRST, and every number in it is
     # read from the ledger's one canonical section — never restated in prose.
     cov, mq, drv = current["coverage"], current["mode_q"], current["drivers"]
-    lines.append(f"**Current state at `{current['as_of_commit'][:12]}`** (generated; "
-                 f"re-derived by `{current['derived_by']}`)")
+    lines.append(
+        f"**Current state at `{current['as_of_commit'][:12]}`** (generated; "
+        f"re-derived by `{current['derived_by']}`)"
+    )
     lines.append("")
     lines.append("| Fact | Value | Derived from |")
     lines.append("|---|---|---|")

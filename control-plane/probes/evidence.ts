@@ -60,7 +60,7 @@ import {
 // Exchange records (P-01 + P-04).
 // ---------------------------------------------------------------------------
 
-export type ExchangeOutcome =
+type ExchangeOutcome =
   | { type: "pending" }
   | { type: "success"; status: number }
   | { type: "error"; message: string }
@@ -125,7 +125,7 @@ export interface ProbeEvidence {
 }
 
 /** Error thrown when a recorded exchange exceeds its deadline (P-04). */
-export class ExchangeDeadlineError extends Error {
+class ExchangeDeadlineError extends Error {
   constructor(msg: string) {
     super(msg);
     this.name = "ExchangeDeadlineError";
@@ -278,7 +278,7 @@ export function fileSha256(path: string): string | null {
 // PlatformRunBundle v2.
 // ---------------------------------------------------------------------------
 
-export interface ArtifactEntry {
+interface ArtifactEntry {
   path: string;
   sha256: string;
   bytes: number;

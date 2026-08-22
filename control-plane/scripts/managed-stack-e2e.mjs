@@ -37,7 +37,7 @@
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mintCapabilityToken, mintProvisionToken } from "../src/controller/core/issuer.ts";
-import { devCapabilitySigningKey, DEV_ISSUER_SECRET } from "../src/controller/core/key-config.ts";
+import { devCapabilitySigningKey, DEV_ISSUER_SECRET } from "../src/shared/key-config.ts";
 import { createIssuer, startIssuerServer } from "./issuer.mjs";
 import { startWranglerDev } from "./wrangler-dev.mjs";
 
@@ -79,9 +79,11 @@ const { baseUrl, stop } = await startWranglerDev({
 });
 
 async function api(method, path, { body, raw, headers = {} } = {}) {
+  // See local-stack-e2e.mjs: a bodyless request omits the key entirely.
+  const payload = raw ?? (body !== undefined ? JSON.stringify(body) : undefined);
   const response = await fetch(`${baseUrl}${path}`, {
     method,
-    body: raw ?? (body !== undefined ? JSON.stringify(body) : undefined),
+    ...(payload === undefined ? {} : { body: payload }),
     headers: raw !== undefined ? headers : { "content-type": "application/json", ...headers },
   });
   let parsed = null;

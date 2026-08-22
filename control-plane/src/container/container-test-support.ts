@@ -13,9 +13,9 @@
 import { env } from "cloudflare:test";
 import {
   DEV_ENVIRONMENT, DEV_PROVISION_KID, devProvisionSigningKey,
-} from "../controller/core/key-config.ts";
+} from "../shared/key-config.ts";
 import { mintProvisionToken } from "../controller/core/issuer.ts";
-import type { ProvisionBinding } from "../controller/core/registry.ts";
+import type { ProvisionBinding } from "../shared/registry.ts";
 import {
   containerDoName,
   type ContainerIdentity, type ContainerRuntimeDescriptor, type DatabaseContainerDO,

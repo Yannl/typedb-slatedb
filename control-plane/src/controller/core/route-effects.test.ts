@@ -35,6 +35,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { LEGACY_REEXECUTE_EFFECT, RECEIPT_METHODS } from "./procedures.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (relative: string) => readFileSync(join(HERE, relative), "utf8");
@@ -132,12 +133,16 @@ function unionVariants(): string[] {
   return [...CORE.slice(at, end).matchAll(/\{ kind: "([A-Z_]+)"/g)].map((m) => m[1]);
 }
 
-/** The receipt methods the core declares. */
+/** The receipt methods the core declares.
+ *
+ *  R8-P1-03: IMPORTED rather than parsed out of the source text. Reading them
+ *  back through the module system is a stronger contract than grepping for the
+ *  literal word `export` — it cannot pass on a constant that no longer
+ *  type-checks — and it makes the use visible to the dead-export gate, which
+ *  otherwise reports a constant this suite depends on as unused. */
 function receiptMethods(): string[] {
-  const at = CORE.indexOf("export const RECEIPT_METHODS = [");
-  assert.notEqual(at, -1, "RECEIPT_METHODS is gone");
-  const end = CORE.indexOf("] as const;", at);
-  return [...CORE.slice(at, end).matchAll(/"([A-Z_]+)"/g)].map((m) => m[1]);
+  assert.ok(RECEIPT_METHODS.length > 0, "RECEIPT_METHODS is empty");
+  return [...RECEIPT_METHODS];
 }
 
 test("every declared mutation route has exactly one withMutation call, and vice versa", () => {
@@ -199,7 +204,7 @@ test("MUTANT: no route can construct the retired generic effect", () => {
   assert.equal(unionVariants().includes("IDEMPOTENT_REEXECUTE"), false,
     "IDEMPOTENT_REEXECUTE is back in CapabilityEffect: it is a legacy ROW value only");
   // ...and the legacy value is still understood, so pre-R6 rows resolve
-  assert.ok(CORE.includes('export const LEGACY_REEXECUTE_EFFECT = "IDEMPOTENT_REEXECUTE"'),
+  assert.equal(LEGACY_REEXECUTE_EFFECT, "IDEMPOTENT_REEXECUTE",
     "rows written by a pre-R6 build must still be interpretable");
 });
 

@@ -48,7 +48,7 @@ import { EvidenceBundle, fileSha256, gitDirtyCount, gitHead, RecordingProvider }
 import type { CheckRecord, ProbeEvidence } from "./evidence.ts";
 import { MockPlatformProvider } from "./mock-provider.ts";
 import type { PlatformProvider } from "./provider.ts";
-import { randomHex, realConfigFromEnv, RealPlatformProvider, utf8 } from "./provider.ts";
+import { randomHex, realConfigFromEnv, RealPlatformProvider } from "./provider.ts";
 import type { ProbeContext, ProbeImpl } from "./probe.ts";
 import { R2_PROBES } from "./probes-r2.ts";
 import { DO_PROBES } from "./probes-do.ts";

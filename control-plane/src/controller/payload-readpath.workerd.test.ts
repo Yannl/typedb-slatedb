@@ -11,7 +11,7 @@
  *   - a corrupted object (same length, different bytes) → digest mismatch 500.
  */
 import { SELF, env } from "cloudflare:test";
-import { DEV_ISSUER_SECRET } from "./core/key-config.ts";
+import { DEV_ISSUER_SECRET } from "../shared/key-config.ts";
 import { describe, expect, it } from "vitest";
 import { provisionViaSelf } from "./workerd-test-support.ts";
 

@@ -20,7 +20,7 @@
  */
 import { runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { devCapabilitySigningKey } from "../controller/core/key-config.ts";
+import { devCapabilitySigningKey } from "../shared/key-config.ts";
 import { mintProvisionToken } from "../controller/core/issuer.ts";
 import { containerDoName, type DatabaseContainerDO } from "./database-container.ts";
 import {

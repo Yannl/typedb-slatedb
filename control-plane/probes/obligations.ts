@@ -35,12 +35,12 @@ import type { ProbeImpl, ProbeMode } from "./probe.ts";
 import type { AssertionClass } from "./probe.ts";
 
 /** Reference to one declared probe assertion. */
-export interface ObligationRef {
+interface ObligationRef {
   probe: string;
   assertion: string;
 }
 
-export interface ContractObligation {
+interface ContractObligation {
   /** Stable obligation id, unique in the manifest. */
   id: string;
   /** What the contract requires. */
@@ -581,7 +581,7 @@ export function obligationViolations(
 // Per-run obligation status (emitted as obligations.json).
 // ---------------------------------------------------------------------------
 
-export type ObligationRunStatus =
+type ObligationRunStatus =
   | "SATISFIED"
   | "OPEN"
   | "NOT-EXERCISED-THIS-MODE"

@@ -18,13 +18,13 @@
 import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { DatabaseControllerDO } from "./database-controller.ts";
-import { canonicalJson, hex, utf8 } from "./core/journal-crypto.ts";
-import { DEV_CAPABILITY_KID, DEV_ENVIRONMENT, devCapabilitySigningKey } from "./core/key-config.ts";
-import { base64urlEncode, type CapabilityPayload } from "./core/capability.ts";
-import { ed25519Sign } from "./core/ed25519.ts";
+import { canonicalJson, hex, utf8 } from "../shared/journal-crypto.ts";
+import { DEV_CAPABILITY_KID, DEV_ENVIRONMENT, devCapabilitySigningKey } from "../shared/key-config.ts";
+import { base64urlEncode, type CapabilityPayload } from "../shared/capability.ts";
+import { ed25519Sign } from "../shared/ed25519.ts";
 import { mintCapabilityToken, mintProvisionToken } from "./core/issuer.ts";
 import {
-  devProvisionToken, localBinding, localDoName, provisionInstance, provisionViaSelf,
+  devProvisionToken, localBinding, localDoName, provisionViaSelf,
 } from "./workerd-test-support.ts";
 
 interface TestEnv {

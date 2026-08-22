@@ -100,7 +100,7 @@ export const PRODUCTION_VARS = Object.freeze({
 // keyrings), not secrets: the managed runtime verifies tokens but holds no
 // signing material. stack/wrangler-check.mjs cross-validates this list
 // against the runtime's own requirement declaration
-// (control-plane/src/controller/core/key-requirements.mjs), so the graph
+// (control-plane/src/shared/key-requirements.mjs), so the graph
 // and resolveKeyConfig cannot skew — that skew is exactly how the round-5
 // audit's "managed graph cannot boot" defect happened.
 export const PRODUCTION_DEPLOYMENT_VARS = Object.freeze([

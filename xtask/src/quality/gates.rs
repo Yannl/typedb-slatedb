@@ -179,6 +179,30 @@ fn baselined_workspaces(repo_root: &Path) -> Vec<String> {
     out
 }
 
+/// Which TypeScript projects `ts.tests` runs: ALL of the declared ones, not
+/// only those the diff touched.
+///
+/// Every other TypeScript gate is diff-conditional and should stay that way —
+/// linting an untouched project tells you nothing new. Tests are different,
+/// because a change in one project can break another: moving
+/// `key-requirements.mjs` from `controller/core/` into the new `shared/`
+/// contract layer (R8-P1-03) left `stack/wrangler-check.mjs` importing a path
+/// that no longer existed, and the diff was entirely inside `control-plane`, so
+/// `stack`'s tests were never selected. Five of its tests were failing on
+/// `main` before this run re-ran them by hand.
+///
+/// The whole TypeScript test surface here runs in seconds, so the cheap and
+/// correct rule is to run all of it rather than to derive a cross-project
+/// import graph and be wrong about it later.
+fn ts_test_projects(ctx: &Ctx) -> Vec<String> {
+    let declared = scope::ts_projects(ctx.policy, &[ScopeClass::Production, ScopeClass::Tooling]);
+    if declared.is_empty() {
+        ctx.ts_projects.clone()
+    } else {
+        declared
+    }
+}
+
 /// Everything a gate needs, assembled once per run.
 pub struct Ctx<'a> {
     pub repo_root: &'a Path,
@@ -729,8 +753,11 @@ pub fn commands(id: &str, ctx: &Ctx) -> Vec<Cmd> {
         // the report, because the alternative is a green verdict about tests
         // that do not exist.
         "ts.tests" => {
-            for p in &ctx.ts_projects {
-                out.push(Cmd::new("npm", &["run", "--silent", TS_TEST_SCRIPT]).in_dir(p));
+            // Every declared project, not only the touched ones — see
+            // `ts_test_projects`. A change in one project can break another's
+            // imports, and that is exactly how five stack tests went red.
+            for p in ts_test_projects(ctx) {
+                out.push(Cmd::new("npm", &["run", "--silent", TS_TEST_SCRIPT]).in_dir(&p));
             }
         }
         "ts.oxlint" => {
@@ -1077,7 +1104,7 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
     // the code; that is the wrong half of the report. Refuse as
     // INFRASTRUCTURE, naming the project and the script, before anything runs.
     if id == "ts.tests" {
-        if let Some(project) = ctx.ts_projects.iter().find(|p| !declares_script(ctx, p, TS_TEST_SCRIPT)) {
+        if let Some(project) = ts_test_projects(ctx).iter().find(|p| !declares_script(ctx, p, TS_TEST_SCRIPT)) {
             let mut r = GateResult::new(
                 id,
                 d.tier,
@@ -2160,6 +2187,21 @@ mod tests {
             // them. `capability.rs` owns the preflight's own tests.
             preflight: capability::Preflight::NotRun,
         }
+    }
+
+    /// `ts.tests` runs EVERY declared TypeScript project, even for a diff that
+    /// touched only one. The move that broke `stack` was entirely inside
+    /// `control-plane`, so a diff-conditional target set would have selected
+    /// `control-plane` alone and reported green while five stack tests failed.
+    #[test]
+    fn the_typescript_test_gate_covers_every_declared_project_not_only_the_touched_one() {
+        let f = fixture(vec![]);
+        let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/.."));
+        let mut c = ctx(&f, root);
+        c.ts_projects = vec!["control-plane".into()]; // as a control-plane-only diff would set it
+        let projects = ts_test_projects(&c);
+        assert!(projects.len() >= 2, "the fixture policy declares more than one project: {projects:?}");
+        assert!(projects.contains(&"control-plane".to_string()), "{projects:?}");
     }
 
     /// The fork is gated through the reconciling wrapper, and the controller

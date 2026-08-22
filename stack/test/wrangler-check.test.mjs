@@ -142,7 +142,7 @@ test("unparseable constructs fail closed", () => {
 
 // --- R5-SEC-01: managed BOOTABILITY (graph declaration == runtime need) ----
 // The runtime requirement list is the SHARED module
-// control-plane/src/controller/core/key-requirements.mjs; the checker must
+// control-plane/src/shared/key-requirements.mjs; the checker must
 // fail BEFORE deployment whenever the graph's declared inputs skew from it.
 
 test("R5-SEC-01: the committed graph declaration is bootable (no findings)", async () => {
@@ -161,7 +161,7 @@ test("MUTANT R5-SEC-01: dropping EACH required managed input in turn fails the g
   const { bootabilityFindings } = await import("../wrangler-check.mjs");
   const { toGraph, toWranglerView } = await import("../graph.data.mjs");
   const { MANAGED_DEPLOYMENT_VARS, MANAGED_SECRETS } =
-    await import("../../control-plane/src/controller/core/key-requirements.mjs");
+    await import("../../control-plane/src/shared/key-requirements.mjs");
   const view = toWranglerView();
   const healthy = {
     fixedVars: view.managed.vars,

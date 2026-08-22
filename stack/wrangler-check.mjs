@@ -30,7 +30,7 @@ import { REPO_ROOT, toGraph, toWranglerView } from "./graph.data.mjs";
 // refuse to boot. Enforced here, BEFORE any deployment.
 import {
   MANAGED_DEPLOYMENT_VARS, MANAGED_FIXED_VARS, MANAGED_SECRETS,
-} from "../control-plane/src/controller/core/key-requirements.mjs";
+} from "../control-plane/src/shared/key-requirements.mjs";
 
 export const WRANGLER_TOML = path.join(REPO_ROOT, "control-plane", "wrangler.toml");
 export const WRANGLER_LOCAL_DEV_TOML = path.join(REPO_ROOT, "control-plane", "wrangler.local-dev.toml");

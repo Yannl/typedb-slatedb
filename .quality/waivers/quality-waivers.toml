@@ -44,3 +44,15 @@ schema = 1
 # issue = "#1234"
 # created = "2026-08-20"
 # review_after = "2026-11-20"
+
+[[waiver]]
+id = "QW-0001"
+kind = "dependency-advisory"
+path = "control-plane/package-lock.json"
+symbol = "qs (via typed-rest-client, via @stryker-mutator/core)"
+reason = "R8-P0-04 committed the exact npm quality tools so `npm ci` can make `npx --no-install` find them at all; before this the TypeScript gates could not run. @stryker-mutator/core@10.0.0 pulls typed-rest-client, which depends on a qs range carrying GHSA-q8mj-m7cp-5q26 (moderate: qs.stringify crashes on null entries in comma-format arrays with encodeValuesOnly). `npm audit fix` does not resolve it - the fixed qs is outside typed-rest-client's declared range - and no newer Stryker line drops the dependency. The exposure here is bounded and stated rather than assumed: Stryker is a DEVELOPMENT mutation-testing tool selected only by tier-C `quality full`, it is never bundled into the deployed Worker (dependency-cruiser rule no-dev-dep-in-production, which is enforced and green), and the code path is a stringify of attacker-controlled query parameters that this repository never reaches. Removing the pin instead would put the TypeScript mutation campaign back to being unrunnable, which is the defect R8-P0-05 exists to close."
+owner = "quality-controller"
+approved_by = "human-technical-owner"
+issue = "R8-P0-04"
+created = "2026-08-22"
+review_after = "2026-11-20"

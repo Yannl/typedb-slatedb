@@ -1,13 +1,15 @@
 //! Command-line wiring. Contains no policy semantics: every threshold, path
 //! and rule comes from `.quality/`.
 
-use std::path::Path;
-use std::process::ExitCode;
-use std::time::Instant;
+use std::{path::Path, process::ExitCode, time::Instant};
 
-use super::diff::{self, ChangeSet, Mode};
-use super::report::{self, Decision, Status};
-use super::{date, digest, gates, git, policy, scope, tools, waivers};
+use super::{
+    date,
+    diff::{self, ChangeSet, Mode},
+    digest, exec, gates, git, policy,
+    report::{self, Decision, Status},
+    scope, tools, waivers,
+};
 
 const USAGE: &str = "\
 cargo xtask quality <MODE> [OPTIONS]
@@ -28,6 +30,10 @@ OPTIONS
   --base <SHA>    Trusted base revision. Required by `pr` and `policy-check`.
   --path <FILE>   Report path for `verify-report`
                   (default artifacts/quality/quality-report.json).
+  --plan          With `full`: PREFLIGHT only. Verify that every campaign the
+                  inventory declares is implementable and that every tool it
+                  needs is present, BEFORE spending hours compiling. Exit 3 if
+                  anything would block; exit 0 if the campaign can run.
   -h, --help      This text.
 
 EXIT CODES
@@ -60,10 +66,12 @@ fn dispatch(args: Vec<String>) -> Result<u8, String> {
     let mode_word = it.next().ok_or_else(|| format!("missing mode\n\n{USAGE}"))?;
     let mut base: Option<String> = None;
     let mut path: Option<String> = None;
+    let mut plan = false;
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--base" => base = Some(it.next().ok_or("--base requires a revision")?),
             "--path" => path = Some(it.next().ok_or("--path requires a file")?),
+            "--plan" => plan = true,
             "-h" | "--help" => {
                 println!("{USAGE}");
                 return Ok(0);
@@ -76,6 +84,7 @@ fn dispatch(args: Vec<String>) -> Result<u8, String> {
     match mode_word.as_str() {
         "fast" => quality(&repo_root, Mode::Fast, base),
         "pr" => quality(&repo_root, Mode::Pr, Some(base.ok_or("`quality pr` requires --base <SHA>")?)),
+        "full" if plan => preflight(&repo_root),
         "full" => quality(&repo_root, Mode::Full, base),
         "policy-check" => {
             quality(&repo_root, Mode::PolicyCheck, Some(base.ok_or("`quality policy-check` requires --base <SHA>")?))
@@ -83,6 +92,82 @@ fn dispatch(args: Vec<String>) -> Result<u8, String> {
         "verify-report" => verify_report(&repo_root, path.as_deref()),
         other => Err(format!("unknown mode {other:?}\n\n{USAGE}")),
     }
+}
+
+/// R8-P0-05: `cargo xtask quality full --plan`.
+///
+/// The audit's ninth requirement: "Add an end-to-end `full --plan`/preflight
+/// that verifies all campaigns are implementable before spending hours
+/// compiling." A six-hour Full run that dies in its last minute on a tool it
+/// never had is not a verdict; it is six hours.
+///
+/// This answers three questions and nothing else, in seconds:
+///   1. which gates would `full` select;
+///   2. for each, does the campaign inventory declare it IMPLEMENTED;
+///   3. is every tool it names present at its pinned version.
+///
+/// Exit 3 — the infrastructure code — if anything would block, so a scheduled
+/// workflow can gate its own long job on this step.
+fn preflight(repo_root: &Path) -> Result<u8, String> {
+    let policy = policy::Policy::load(repo_root)?;
+    let lock = tools::ToolsLock::load(repo_root)?;
+    let registry = tools::Registry::detect_all(repo_root, &lock);
+    let facts = diff::derive_facts(&policy, &ChangeSet::default(), &[]);
+    let selected = diff::select_gates(Mode::Full, &policy, &facts);
+    let campaigns = gates::campaigns(repo_root);
+
+    let mut blocking: Vec<String> = Vec::new();
+    println!("quality full --plan: {} gate(s) selected\n", selected.len());
+    for g in &selected {
+        let Some(d) = gates::definition(&g.id) else {
+            blocking.push(format!("{}: selected but has no definition (controller defect)", g.id));
+            continue;
+        };
+        let campaign = campaigns.iter().find(|c| c.gate == g.id);
+        let mut notes: Vec<String> = Vec::new();
+        if let Some(c) = campaign {
+            if c.implemented {
+                notes.push(format!("campaign {} implemented", c.name));
+                if c.shards.is_empty() && d.weight == exec::Weight::Campaign {
+                    notes.push("no shards declared".to_string());
+                }
+            } else {
+                let why =
+                    format!("{}: campaign `{}` is declared NOT IMPLEMENTED in {}", g.id, c.name, gates::CAMPAIGNS);
+                notes.push("NOT IMPLEMENTED".to_string());
+                if !d.advisory {
+                    blocking.push(why);
+                }
+            }
+        }
+        if let Some(missing) = registry.unpinned(d.tools) {
+            let why = format!("{}: tool `{missing}` is not pinned in the lock", g.id);
+            notes.push(format!("unpinned tool {missing}"));
+            blocking.push(why);
+        } else if let Some(problem) = registry.first_problem(d.tools) {
+            notes.push(format!("tool problem: {}", problem.problem()));
+            if !d.advisory {
+                blocking.push(format!("{}: {}", g.id, problem.problem()));
+            }
+        }
+        let state = if notes.is_empty() { "ok".to_string() } else { notes.join("; ") };
+        println!("  {:<26} {}", g.id, state);
+    }
+
+    if blocking.is_empty() {
+        println!("\nPREFLIGHT: PASS — every selected Full gate is implementable on this host");
+        return Ok(0);
+    }
+    eprintln!("\nPREFLIGHT: REFUSED — {} blocking condition(s):", blocking.len());
+    for b in &blocking {
+        eprintln!("  - {b}");
+    }
+    eprintln!(
+        "\nRunning `full` now would spend its budget and then report on campaigns that could not \
+         execute. Fix these first, or narrow the claim through {}.",
+        gates::CAMPAIGNS
+    );
+    Ok(Decision::InfrastructureFailure.exit_code())
 }
 
 fn quality(repo_root: &Path, mode: Mode, base: Option<String>) -> Result<u8, String> {
@@ -188,6 +273,7 @@ fn quality(repo_root: &Path, mode: Mode, base: Option<String>) -> Result<u8, Str
         base_sha,
         worktree_clean,
         toolchain_digest,
+        bootstrap_root(repo_root),
         policy_digest,
         policy_digest_inputs,
         protected_changes,
@@ -201,6 +287,20 @@ fn quality(repo_root: &Path, mode: Mode, base: Option<String>) -> Result<u8, Str
 
     print_summary(&report, &written);
     Ok(report.exit_code)
+}
+
+/// R8-P0-04: the bootstrap manifest's root, read back from the artefact
+/// `tools/quality/bootstrap.py` wrote, so the report NAMES the tool set that
+/// produced it. Deliberately parsed with a narrow scan rather than a JSON
+/// dependency: this must never be the reason a report cannot be produced.
+fn bootstrap_root(repo_root: &std::path::Path) -> Option<String> {
+    let text = std::fs::read_to_string(repo_root.join("artifacts/quality/bootstrap-manifest.json")).ok()?;
+    let at = text.find("\"bootstrap_root\"")?;
+    let rest = &text[at..];
+    let start = rest[rest.find(':')? + 1..].find('"')? + rest.find(':')? + 2;
+    let value = &rest[start..];
+    let end = value.find('"')?;
+    Some(value[..end].to_string())
 }
 
 fn describe(status: &Status) -> &'static str {

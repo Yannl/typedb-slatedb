@@ -836,6 +836,19 @@ jobs:
           python3 tools/source-lock/materialize_sources.py
           python3 tools/fork/materialize_slatedb.py
           python3 tools/fork/stage.py
+      - name: bootstrap the quality tools from the machine lock (R8-P0-04)
+        # The ONE installer. Before this, three CI jobs installed Python, Node,
+        # Rust and a few apt packages and then ran a controller that needs
+        # about twenty more tools; `.quality/tools.lock.toml` detected them and
+        # printed a remediation, but nothing installed them. "Pinned but not
+        # installed" is not hermetic execution.
+        #
+        # Every tool comes from the lock, the Python environment is hash-locked
+        # (`--require-hashes` over the complete closure), and the manifest root
+        # this writes is recorded in the quality report so a verdict names the
+        # exact tool set that produced it. Exit 3 = infrastructure, with the
+        # lock's own remediation.
+        run: python3 tools/quality/bootstrap.py --install
       - name: "quality gate: tier B on a pull request, tier A on a bare push"
         env:
           # consumed through env rather than interpolated into the shell:

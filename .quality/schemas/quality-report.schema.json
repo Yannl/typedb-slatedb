@@ -6,38 +6,117 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema", "mode", "generated_at", "head_sha", "base_sha",
-    "worktree_clean", "toolchain_digest", "policy_digest",
-    "protected_policy_changes", "tools", "waivers", "scope",
-    "selected_gates", "gates", "rust", "typescript", "python",
-    "architecture", "duplication", "blocking", "decision", "exit_code"
+    "schema",
+    "mode",
+    "generated_at",
+    "head_sha",
+    "base_sha",
+    "worktree_clean",
+    "toolchain_digest",
+    "policy_digest",
+    "protected_policy_changes",
+    "tools",
+    "waivers",
+    "scope",
+    "selected_gates",
+    "gates",
+    "rust",
+    "typescript",
+    "python",
+    "architecture",
+    "duplication",
+    "blocking",
+    "decision",
+    "exit_code",
+    "bootstrap_root"
   ],
   "properties": {
-    "schema": { "const": 1 },
-    "mode": { "enum": ["fast", "pr", "full", "policy-check", "verify-report"] },
-    "generated_at": { "type": "string", "description": "RFC3339 UTC timestamp" },
-    "duration_ms": { "type": "integer", "minimum": 0 },
-    "head_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
-    "base_sha": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40}$" },
+    "schema": {
+      "const": 1
+    },
+    "mode": {
+      "enum": [
+        "fast",
+        "pr",
+        "full",
+        "policy-check",
+        "verify-report"
+      ]
+    },
+    "generated_at": {
+      "type": "string",
+      "description": "RFC3339 UTC timestamp"
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "head_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "base_sha": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{40}$"
+    },
     "worktree_clean": {
       "type": "boolean",
       "description": "False means the evidence does not correspond exactly to head_sha and must not be used for certification."
     },
-    "toolchain_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
-    "policy_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
-    "policy_digest_inputs": { "type": "array", "items": { "type": "string" } },
+    "toolchain_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "bootstrap_root": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "R8-P0-04: the root of artifacts/quality/bootstrap-manifest.json - the exact tool identities tools/quality/bootstrap.py established before any gate ran. null means the bootstrap was not run for this report, so the verdict rests on whatever the host happened to have."
+    },
+    "policy_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "policy_digest_inputs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "protected_policy_changes": {
       "type": "array",
       "description": "Paths in the diff that match the protected-policy globs. Non-empty implies decision = policy_violation unless the run is an approved independent policy review.",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["path", "status", "matched_pattern", "source"],
+        "required": [
+          "path",
+          "status",
+          "matched_pattern",
+          "source"
+        ],
         "properties": {
-          "path": { "type": "string" },
-          "status": { "type": "string" },
-          "matched_pattern": { "type": "string" },
-          "source": { "enum": ["base", "head", "base+head"] }
+          "path": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "matched_pattern": {
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "base",
+              "head",
+              "base+head"
+            ]
+          }
         }
       }
     },
@@ -46,47 +125,140 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "expected_version", "mode", "status"],
+        "required": [
+          "name",
+          "expected_version",
+          "mode",
+          "status"
+        ],
         "properties": {
-          "name": { "type": "string" },
-          "expected_version": { "type": "string" },
-          "detected_version": { "type": ["string", "null"] },
-          "mode": { "enum": ["exact", "minimum", "presence"] },
-          "status": { "enum": ["ok", "absent", "version_mismatch", "detection_failed"] },
-          "advisory": { "type": "boolean" },
-          "conditional": { "type": "boolean" },
-          "remediation": { "type": "string" },
-          "detect_command": { "type": "string" }
+          "name": {
+            "type": "string"
+          },
+          "expected_version": {
+            "type": "string"
+          },
+          "detected_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "enum": [
+              "exact",
+              "minimum",
+              "presence"
+            ]
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "absent",
+              "version_mismatch",
+              "detection_failed"
+            ]
+          },
+          "advisory": {
+            "type": "boolean"
+          },
+          "conditional": {
+            "type": "boolean"
+          },
+          "remediation": {
+            "type": "string"
+          },
+          "detect_command": {
+            "type": "string"
+          }
         }
       }
     },
     "waivers": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["total", "active", "expired", "invalid", "entries"],
+      "required": [
+        "total",
+        "active",
+        "expired",
+        "invalid",
+        "entries"
+      ],
       "properties": {
-        "total": { "type": "integer", "minimum": 0 },
-        "active": { "type": "integer", "minimum": 0 },
-        "expired": { "type": "integer", "minimum": 0 },
-        "invalid": { "type": "integer", "minimum": 0 },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "active": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expired": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "invalid": {
+          "type": "integer",
+          "minimum": 0
+        },
         "entries": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["id", "status"],
+            "required": [
+              "id",
+              "status"
+            ],
             "properties": {
-              "id": { "type": "string" },
-              "kind": { "type": "string" },
-              "path": { "type": "string" },
-              "symbol": { "type": ["string", "null"] },
-              "reason": { "type": "string" },
-              "owner": { "type": "string" },
-              "approved_by": { "type": ["string", "null"] },
-              "issue": { "type": "string" },
-              "created": { "type": "string" },
-              "review_after": { "type": "string" },
-              "status": { "enum": ["active", "expired", "invalid"] },
-              "problems": { "type": "array", "items": { "type": "string" } }
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "symbol": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              },
+              "owner": {
+                "type": "string"
+              },
+              "approved_by": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "issue": {
+                "type": "string"
+              },
+              "created": {
+                "type": "string"
+              },
+              "review_after": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "expired",
+                  "invalid"
+                ]
+              },
+              "problems": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
             }
           }
         }
@@ -95,26 +267,70 @@
     "scope": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["changed_paths", "classified", "unclassified"],
+      "required": [
+        "changed_paths",
+        "classified",
+        "unclassified"
+      ],
       "properties": {
-        "changed_paths": { "type": "integer", "minimum": 0 },
+        "changed_paths": {
+          "type": "integer",
+          "minimum": 0
+        },
         "classified": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["path", "rule", "class", "tier"],
+            "required": [
+              "path",
+              "rule",
+              "class",
+              "tier"
+            ],
             "properties": {
-              "path": { "type": "string" },
-              "previous_path": { "type": ["string", "null"] },
-              "git_status": { "type": "string" },
-              "rule": { "type": "string" },
-              "class": { "enum": ["production", "tooling", "excluded"] },
-              "tier": { "enum": ["fast", "full"] },
-              "language": { "type": ["string", "null"] }
+              "path": {
+                "type": "string"
+              },
+              "previous_path": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "git_status": {
+                "type": "string"
+              },
+              "rule": {
+                "type": "string"
+              },
+              "class": {
+                "enum": [
+                  "production",
+                  "tooling",
+                  "excluded"
+                ]
+              },
+              "tier": {
+                "enum": [
+                  "fast",
+                  "full"
+                ]
+              },
+              "language": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
             }
           }
         },
-        "unclassified": { "type": "array", "items": { "type": "string" } }
+        "unclassified": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "selected_gates": {
@@ -122,11 +338,20 @@
       "description": "Gate ids selected by the diff-to-gate matrix, each with the matrix row that selected it.",
       "items": {
         "type": "object",
-        "required": ["id", "reason"],
+        "required": [
+          "id",
+          "reason"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "reason": { "type": "string" },
-          "matrix_row": { "type": "string" }
+          "id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "matrix_row": {
+            "type": "string"
+          }
         }
       }
     },
@@ -134,87 +359,248 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "tier", "status"],
+        "required": [
+          "id",
+          "tier",
+          "status"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "tier": { "enum": ["A", "B", "C"] },
-          "language": { "type": ["string", "null"] },
-          "advisory": { "type": "boolean" },
-          "status": {
-            "enum": ["pass", "quality_failure", "policy_violation", "infrastructure_failure", "not_applicable"]
+          "id": {
+            "type": "string"
           },
-          "command": { "type": ["string", "null"] },
-          "cwd": { "type": ["string", "null"] },
-          "exit_code": { "type": ["integer", "null"] },
-          "duration_ms": { "type": ["integer", "null"] },
-          "detail": { "type": "string" },
-          "remediation": { "type": ["string", "null"] },
-          "artifacts": { "type": "array", "items": { "type": "string" } }
+          "tier": {
+            "enum": [
+              "A",
+              "B",
+              "C"
+            ]
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "advisory": {
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "pass",
+              "quality_failure",
+              "policy_violation",
+              "infrastructure_failure",
+              "not_applicable"
+            ]
+          },
+          "command": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cwd": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "exit_code": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "duration_ms": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "remediation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         }
       }
     },
-    "rust": { "$ref": "#/$defs/languageSummary" },
-    "typescript": { "$ref": "#/$defs/languageSummary" },
-    "python": { "$ref": "#/$defs/languageSummary" },
-    "architecture": { "$ref": "#/$defs/gateSummary" },
-    "duplication": { "$ref": "#/$defs/gateSummary" },
+    "rust": {
+      "$ref": "#/$defs/languageSummary"
+    },
+    "typescript": {
+      "$ref": "#/$defs/languageSummary"
+    },
+    "python": {
+      "$ref": "#/$defs/languageSummary"
+    },
+    "architecture": {
+      "$ref": "#/$defs/gateSummary"
+    },
+    "duplication": {
+      "$ref": "#/$defs/gateSummary"
+    },
     "blocking": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["policy_violations", "quality_failures", "infrastructure_failures"],
+      "required": [
+        "policy_violations",
+        "quality_failures",
+        "infrastructure_failures"
+      ],
       "properties": {
-        "policy_violations": { "type": "integer", "minimum": 0 },
-        "quality_failures": { "type": "integer", "minimum": 0 },
-        "infrastructure_failures": { "type": "integer", "minimum": 0 }
+        "policy_violations": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "quality_failures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "infrastructure_failures": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "decision": {
-      "enum": ["pass", "quality_failure", "policy_violation", "infrastructure_failure"]
+      "enum": [
+        "pass",
+        "quality_failure",
+        "policy_violation",
+        "infrastructure_failure"
+      ]
     },
     "decision_code": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Stable machine code for the decision, e.g. POLICY_CHANGE_REQUIRES_INDEPENDENT_REVIEW."
     },
-    "exit_code": { "type": "integer", "enum": [0, 1, 2, 3] }
+    "exit_code": {
+      "type": "integer",
+      "enum": [
+        0,
+        1,
+        2,
+        3
+      ]
+    }
   },
   "$defs": {
     "gateSummary": {
       "type": "object",
-      "required": ["status"],
+      "required": [
+        "status"
+      ],
       "properties": {
         "status": {
-          "enum": ["pass", "quality_failure", "policy_violation", "infrastructure_failure", "not_applicable"]
+          "enum": [
+            "pass",
+            "quality_failure",
+            "policy_violation",
+            "infrastructure_failure",
+            "not_applicable"
+          ]
         },
-        "detail": { "type": "string" }
+        "detail": {
+          "type": "string"
+        }
       }
     },
     "languageSummary": {
       "type": "object",
       "description": "Section 4 shaped summary. `status` is the roll-up; named sub-gates mirror the section 4 example.",
-      "required": ["status"],
+      "required": [
+        "status"
+      ],
       "properties": {
         "status": {
-          "enum": ["pass", "quality_failure", "policy_violation", "infrastructure_failure", "not_applicable"]
+          "enum": [
+            "pass",
+            "quality_failure",
+            "policy_violation",
+            "infrastructure_failure",
+            "not_applicable"
+          ]
         },
-        "fmt": { "$ref": "#/$defs/gateSummary" },
-        "clippy": { "$ref": "#/$defs/gateSummary" },
-        "lint": { "$ref": "#/$defs/gateSummary" },
-        "typecheck": { "$ref": "#/$defs/gateSummary" },
-        "tests": { "$ref": "#/$defs/gateSummary" },
+        "fmt": {
+          "$ref": "#/$defs/gateSummary"
+        },
+        "clippy": {
+          "$ref": "#/$defs/gateSummary"
+        },
+        "lint": {
+          "$ref": "#/$defs/gateSummary"
+        },
+        "typecheck": {
+          "$ref": "#/$defs/gateSummary"
+        },
+        "tests": {
+          "$ref": "#/$defs/gateSummary"
+        },
         "coverage": {
-          "allOf": [{ "$ref": "#/$defs/gateSummary" }],
-          "properties": { "instrumentation_complete": { "type": ["boolean", "null"] } }
+          "allOf": [
+            {
+              "$ref": "#/$defs/gateSummary"
+            }
+          ],
+          "properties": {
+            "instrumentation_complete": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
         },
         "crap": {
-          "allOf": [{ "$ref": "#/$defs/gateSummary" }],
-          "properties": { "regressions": { "type": ["integer", "null"] } }
+          "allOf": [
+            {
+              "$ref": "#/$defs/gateSummary"
+            }
+          ],
+          "properties": {
+            "regressions": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
         },
         "mutation": {
-          "allOf": [{ "$ref": "#/$defs/gateSummary" }],
-          "properties": { "survivors": { "type": ["integer", "null"] } }
+          "allOf": [
+            {
+              "$ref": "#/$defs/gateSummary"
+            }
+          ],
+          "properties": {
+            "survivors": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
         },
-        "dependencies": { "$ref": "#/$defs/gateSummary" },
-        "dead_code": { "$ref": "#/$defs/gateSummary" }
+        "dependencies": {
+          "$ref": "#/$defs/gateSummary"
+        },
+        "dead_code": {
+          "$ref": "#/$defs/gateSummary"
+        }
       }
     }
   }

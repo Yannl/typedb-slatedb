@@ -34,3 +34,4 @@ artifacts/
 # pytest --cov writes its data file into the repository root on every
 # `py.pytest` gate run.
 .coverage
+.quality/.venv/

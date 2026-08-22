@@ -1,0 +1,8 @@
+ruff==0.15.8
+basedpyright==1.39.10
+pytest==9.1.1
+pytest-cov==7.1.0
+coverage==7.15.4
+pip-audit==2.10.1
+crap4py==0.1.1
+mutmut==3.7.0

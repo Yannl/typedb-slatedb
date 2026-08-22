@@ -326,6 +326,10 @@ jobs:
           python3 tools/source-lock/materialize_sources.py
           python3 tools/fork/materialize_slatedb.py
           python3 tools/fork/stage.py
+      - name: bootstrap the quality tools from the machine lock (R8-P0-04)
+        run: python3 tools/quality/bootstrap.py --install
+      - name: preflight the full campaign before spending its budget (R8-P0-05)
+        run: cargo xtask quality full --plan
       - name: full quality campaign
         run: cargo xtask quality full
       - name: the report was produced for THE COMMIT BEING RELEASED

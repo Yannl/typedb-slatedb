@@ -8,10 +8,12 @@
 //! silent skip (spec §4). That includes a gate killed by the timeout: a hung
 //! gate must not be able to look green.
 
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::{
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 #[derive(Debug, Clone)]
 pub struct Cmd {
@@ -125,6 +127,22 @@ pub fn run(repo_root: &Path, cmd: &Cmd, timeout: Duration) -> CmdResult {
 
     let mut builder = Command::new(&cmd.program);
     builder.args(&cmd.args).current_dir(&dir);
+    // R8-P0-04: the repository's own hash-locked Python environment comes FIRST
+    // on PATH for every gate command. `tools/quality/bootstrap.py` installs
+    // `.quality/requirements.lock` into `.quality/.venv`, and this is what makes
+    // the gates RUN that closure instead of whatever the base image shipped —
+    // which is the difference between "the version is pinned" and "these exact
+    // bytes ran". Absent venv: the PATH is untouched, and the tool-presence
+    // check reports the missing tool as infrastructure, as it always did.
+    if let Some(venv_bin) = quality_venv_bin(repo_root) {
+        let existing = std::env::var_os("PATH").unwrap_or_default();
+        let mut entries = vec![venv_bin.clone()];
+        entries.extend(std::env::split_paths(&existing));
+        if let Ok(joined) = std::env::join_paths(entries) {
+            builder.env("PATH", joined);
+        }
+        builder.env("VIRTUAL_ENV", venv_bin.parent().unwrap_or(&venv_bin));
+    }
     // Cargo invocations run under the SAME hermetic settings the evidence
     // runners use (tools/catalog/common.py CARGO_ENV). This is not a tuning
     // knob: with cargo's defaults, `cargo test --no-run` over the TypeDB fork
@@ -369,6 +387,14 @@ pub fn manifest_of(cmd: &Cmd) -> Option<String> {
         .iter()
         .find(|a| !a.starts_with('-') && (Path::new(a).join("Cargo.toml").is_file()))
         .map(|d| format!("{}/Cargo.toml", d.trim_end_matches('/')))
+}
+
+/// The repository-owned Python quality environment's `bin` directory, if the
+/// bootstrap has created it (R8-P0-04). Returning `None` is not a failure: the
+/// per-gate tool check is what decides whether a missing tool is a refusal.
+pub fn quality_venv_bin(repo_root: &Path) -> Option<PathBuf> {
+    let bin = repo_root.join(".quality").join(".venv").join(if cfg!(windows) { "Scripts" } else { "bin" });
+    bin.is_dir().then_some(bin)
 }
 
 /// R8-P0-03 / R8-P1-07: "this host cannot provide a capability I need".

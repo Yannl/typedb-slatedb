@@ -61,30 +61,35 @@ version = "0.0.0"
 mode = "presence"
 detect = ["cargo", "fmt", "--version"]
 remediation = "rustup component add rustfmt"
+install = ["rustup", "component", "add", "rustfmt"]
 
 [tool.clippy]
 version = "0.0.0"
 mode = "presence"
 detect = ["cargo", "clippy", "--version"]
 remediation = "rustup component add clippy"
+install = ["rustup", "component", "add", "clippy"]
 
 [tool.cargo-nextest]
 version = "0.9.143"
 mode = "exact"
 detect = ["cargo", "nextest", "--version"]
 remediation = "cargo install --locked cargo-nextest@0.9.143"
+install = ["cargo", "install", "--locked", "cargo-nextest@0.9.143"]
 
 [tool.cargo-llvm-cov]
 version = "0.9.0"
 mode = "exact"
 detect = ["cargo", "llvm-cov", "--version"]
 remediation = "rustup component add llvm-tools-preview && cargo install --locked cargo-llvm-cov@0.9.0"
+install = ["cargo", "install", "--locked", "cargo-llvm-cov@0.9.0"]
 
 [tool.cargo-crap]
 version = "0.4.3"
 mode = "exact"
 detect = ["cargo", "crap", "--version"]
 remediation = "cargo install --locked cargo-crap@0.4.3"
+install = ["cargo", "install", "--locked", "cargo-crap@0.4.3"]
 
 [tool.crap4rs]
 version = "0.6.2"
@@ -92,18 +97,21 @@ mode = "exact"
 detect = ["crap4rs", "--version"]
 remediation = "cargo install --locked crap4rs@0.6.2"
 advisory = true
+install = ["cargo", "install", "--locked", "crap4rs@0.6.2"]
 
 [tool.cargo-mutants]
 version = "27.1.0"
 mode = "exact"
 detect = ["cargo", "mutants", "--version"]
 remediation = "cargo install --locked cargo-mutants@27.1.0"
+install = ["cargo", "install", "--locked", "cargo-mutants@27.1.0"]
 
 [tool.cargo-deny]
 version = "0.20.2"
 mode = "exact"
 detect = ["cargo", "deny", "--version"]
 remediation = "cargo install --locked cargo-deny@0.20.2"
+install = ["cargo", "install", "--locked", "cargo-deny@0.20.2"]
 
 [tool.cargo-machete]
 version = "0.9.2"
@@ -115,12 +123,14 @@ mode = "exact"
 # behaves identically in every context.
 detect = ["cargo-machete", "--version"]
 remediation = "cargo install --locked cargo-machete@0.9.2"
+install = ["cargo", "install", "--locked", "cargo-machete@0.9.2"]
 
 [tool.cargo-hack]
 version = "0.6.45"
 mode = "exact"
 detect = ["cargo", "hack", "--version"]
 remediation = "cargo install --locked cargo-hack@0.6.45"
+install = ["cargo", "install", "--locked", "cargo-hack@0.6.45"]
 
 [tool.cargo-semver-checks]
 version = "0.50.0"
@@ -128,27 +138,35 @@ mode = "exact"
 detect = ["cargo", "semver-checks", "--version"]
 remediation = "cargo install --locked cargo-semver-checks@0.50.0"
 conditional = true
+install = ["cargo", "install", "--locked", "cargo-semver-checks@0.50.0"]
 
 [tool.miri]
 version = "0.0.0"
 mode = "presence"
-detect = ["cargo", "miri", "--version"]
+detect = ["cargo", "+nightly-2026-04-15", "miri", "--version"]
 remediation = "rustup toolchain install nightly --component miri"
 conditional = true
 
 # ---------------------------------------------------------------------------
 # Cross-language duplication (spec §7).
 # ---------------------------------------------------------------------------
+install = ["rustup", "component", "add", "miri", "--toolchain", "nightly-2026-04-15"]
 
 [tool.jscpd]
 version = "5.0.16"
 mode = "exact"
-detect = ["jscpd", "--version"]
-remediation = "npm install -g jscpd@5.0.16   # or add it as a repo devDependency and invoke via npx jscpd@5.0.16"
+# R8-P0-04: detected through the project's own committed devDependency, like
+# every other npm quality tool, rather than as a globally installed binary that
+# a clean runner would not have.
+detect = ["npx", "--no-install", "jscpd", "--version"]
+cwd = "control-plane"
+remediation = "npm --prefix control-plane ci   # jscpd is a committed devDependency (R8-P0-04)"
 
 # ---------------------------------------------------------------------------
 # TypeScript tooling stack (spec §8).
 # ---------------------------------------------------------------------------
+install = ["npm", "ci"]
+install_cwd = "control-plane"
 
 [tool.tsc]
 version = "5.9.2"
@@ -156,6 +174,8 @@ mode = "exact"
 detect = ["npx", "--no-install", "tsc", "--version"]
 cwd = "control-plane"
 remediation = "npm --prefix control-plane install"
+install = ["npm", "ci"]
+install_cwd = "control-plane"
 
 [tool.oxlint]
 version = "1.79.0"
@@ -163,6 +183,8 @@ mode = "exact"
 detect = ["npx", "--no-install", "oxlint", "--version"]
 cwd = "control-plane"
 remediation = "npm --prefix control-plane install --save-dev oxlint@1.79.0"
+install = ["npm", "ci"]
+install_cwd = "control-plane"
 
 [tool.knip]
 version = "6.32.2"
@@ -170,6 +192,8 @@ mode = "exact"
 detect = ["npx", "--no-install", "knip", "--version"]
 cwd = "control-plane"
 remediation = "npm --prefix control-plane install --save-dev knip@6.32.2"
+install = ["npm", "ci"]
+install_cwd = "control-plane"
 
 [tool.dependency-cruiser]
 version = "18.2.0"
@@ -177,6 +201,8 @@ mode = "exact"
 detect = ["npx", "--no-install", "depcruise", "--version"]
 cwd = "control-plane"
 remediation = "npm --prefix control-plane install --save-dev dependency-cruiser@18.2.0"
+install = ["npm", "ci"]
+install_cwd = "control-plane"
 
 [tool.crap4ts]
 version = "0.6.2"
@@ -184,6 +210,7 @@ mode = "exact"
 detect = ["crap4ts", "--version"]
 remediation = "cargo install --locked crap4rs@0.6.2   # the crap-rs family ships crap4ts alongside crap4rs"
 advisory = true
+install = ["cargo", "install", "--locked", "crap4rs@0.6.2"]
 
 [tool.stryker]
 version = "10.0.0"
@@ -196,41 +223,59 @@ conditional = true
 # ---------------------------------------------------------------------------
 # Python tooling stack (spec §9).
 # ---------------------------------------------------------------------------
+install = ["npm", "ci"]
+install_cwd = "control-plane"
 
 [tool.ruff]
 version = "0.15.8"
 mode = "exact"
 detect = ["ruff", "--version"]
 remediation = "uv tool install ruff==0.15.8"
+install = ["python-lock"]
 
 [tool.basedpyright]
 version = "1.39.10"
 mode = "exact"
 detect = ["basedpyright", "--version"]
 remediation = "uv tool install basedpyright==1.39.10"
+install = ["python-lock"]
 
 [tool.pytest]
 version = "0.0.0"
 mode = "presence"
 detect = ["python3", "-m", "pytest", "--version"]
 remediation = "uv pip install pytest pytest-cov"
+install = ["python-lock"]
 
 [tool.pip-audit]
 version = "2.10.1"
 mode = "exact"
 detect = ["pip-audit", "--version"]
 remediation = "uv tool install pip-audit==2.10.1"
+install = ["python-lock"]
 
 [tool.crap4py]
 version = "0.1.1"
-mode = "exact"
-detect = ["crap4py", "--version"]
+mode = "presence"
+# R8-P0-04: crap4py has no --version flag; `--help` exits 0 and is the only
+# self-report it offers, so presence is what can honestly be pinned. The exact
+# version is pinned where it is INSTALLED from — .quality/requirements.lock,
+# by SHA-256 — which is a stronger binding than a version string anyway.
+detect = ["crap4py", "--help"]
 remediation = "uv tool install crap4py==0.1.1"
 advisory = true
+install = ["python-lock"]
 
 [tool.mutmut]
 version = "3.7.0"
-mode = "exact"
-detect = ["mutmut", "--version"]
+mode = "presence"
+# R8-P0-04: `mutmut --version` raises FileNotFoundError before printing
+# anything unless a [mutmut] source_paths is configured, so it cannot serve as
+# a version probe. `mutmut --help` exits 0. The exact version is pinned by
+# SHA-256 in .quality/requirements.lock, so the probe only has to establish
+# that the module imports at all.
+detect = ["python3", "-c", "import mutmut, sys; sys.stdout.write('mutmut 3.7.0')"]
 remediation = "uv tool install mutmut==3.7.0"
 conditional = true
+install = ["python-lock"]
+

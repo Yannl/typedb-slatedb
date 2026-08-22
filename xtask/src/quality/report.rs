@@ -6,15 +6,11 @@
 //! selected gates and durations, and it distinguishes a gate failure from an
 //! infrastructure failure.
 
-use std::collections::BTreeMap;
-use std::path::Path;
+use std::{collections::BTreeMap, path::Path};
 
 use serde::{Deserialize, Serialize};
 
-use super::diff::SelectedGate;
-use super::scope::Classified;
-use super::tools::ToolReport;
-use super::waivers::WaiverSummary;
+use super::{diff::SelectedGate, scope::Classified, tools::ToolReport, waivers::WaiverSummary};
 
 pub const REPORT_PATH: &str = "artifacts/quality/quality-report.json";
 
@@ -177,6 +173,12 @@ pub struct Report {
     pub base_sha: Option<String>,
     pub worktree_clean: bool,
     pub toolchain_digest: String,
+    /// R8-P0-04: the root of `artifacts/quality/bootstrap-manifest.json` — the
+    /// exact tool identities `tools/quality/bootstrap.py` established before
+    /// any gate ran. `None` means the bootstrap was never run for this report,
+    /// which is itself the fact a reader needs: the verdict then rests on
+    /// whatever the host happened to have.
+    pub bootstrap_root: Option<String>,
     pub policy_digest: String,
     pub policy_digest_inputs: Vec<String>,
     pub protected_policy_changes: Vec<ProtectedChange>,
@@ -310,6 +312,7 @@ pub fn build(
     base_sha: Option<String>,
     worktree_clean: bool,
     toolchain_digest: String,
+    bootstrap_root: Option<String>,
     policy_digest: String,
     policy_digest_inputs: Vec<String>,
     protected_policy_changes: Vec<ProtectedChange>,
@@ -343,6 +346,7 @@ pub fn build(
         base_sha,
         worktree_clean,
         toolchain_digest,
+        bootstrap_root,
         policy_digest,
         policy_digest_inputs,
         protected_policy_changes,

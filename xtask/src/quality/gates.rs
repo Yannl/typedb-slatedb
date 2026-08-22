@@ -5,16 +5,17 @@
 //! is attempted, and an unmet precondition is an `InfrastructureFailure`
 //! carrying the exact remediation command — never a skip and never a pass.
 
-use std::path::Path;
-use std::time::Duration;
+use std::{path::Path, time::Duration};
 
-use super::diff::{ChangeSet, Facts, Mode};
-use super::exec::{self, Cmd, Weight};
-use super::policy::{Policy, ProtectedMatcher, ScopeClass};
-use super::report::{GateResult, ProtectedChange, Status};
-use super::scope;
-use super::tools::Registry;
-use super::waivers::WaiverSummary;
+use super::{
+    diff::{ChangeSet, Facts, Mode},
+    exec::{self, Cmd, Weight},
+    policy::{Policy, ProtectedMatcher, ScopeClass},
+    report::{GateResult, ProtectedChange, Status},
+    scope,
+    tools::Registry,
+    waivers::WaiverSummary,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct GateDef {
@@ -163,6 +164,102 @@ fn declares_script(ctx: &Ctx, project: &str, script: &str) -> bool {
 
 const ARTIFACTS: &str = "artifacts/quality";
 
+/// R8-P0-05: the machine-readable campaign inventory.
+pub const CAMPAIGNS: &str = ".quality/campaigns.toml";
+
+/// One campaign's declaration, read from [`CAMPAIGNS`].
+///
+/// Parsed with a deliberately small hand-rolled reader rather than a TOML
+/// dependency: the controller must be able to say "this campaign is not
+/// implementable" even in a tree where a dependency failed to build, and a
+/// campaign inventory that cannot be read is itself an infrastructure fact.
+#[derive(Debug, Clone, Default)]
+pub struct Campaign {
+    pub name: String,
+    pub gate: String,
+    pub implemented: bool,
+    pub reason: String,
+    pub owner_decision: Option<String>,
+    pub requires_network_isolation: bool,
+    /// `(manifest, packages)` pairs; empty packages means the whole workspace.
+    pub shards: Vec<(String, Vec<String>)>,
+    pub toolchain: Option<String>,
+}
+
+/// Every declared campaign, keyed by the gate id it governs.
+pub fn campaigns(repo_root: &Path) -> Vec<Campaign> {
+    let Ok(text) = std::fs::read_to_string(repo_root.join(CAMPAIGNS)) else { return Vec::new() };
+    let mut out: Vec<Campaign> = Vec::new();
+    let mut shard_manifest: Option<String> = None;
+    let mut shard_packages: Vec<String> = Vec::new();
+    let mut in_shard = false;
+    let flush_shard = |out: &mut Vec<Campaign>, manifest: &mut Option<String>, packages: &mut Vec<String>| {
+        if let (Some(m), Some(c)) = (manifest.take(), out.last_mut()) {
+            c.shards.push((m, std::mem::take(packages)));
+        }
+        packages.clear();
+    };
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.starts_with("[[campaign.") && line.contains(".shard]]") {
+            flush_shard(&mut out, &mut shard_manifest, &mut shard_packages);
+            in_shard = true;
+            continue;
+        }
+        if line.starts_with("[campaign.") {
+            flush_shard(&mut out, &mut shard_manifest, &mut shard_packages);
+            in_shard = false;
+            let name = line.trim_start_matches("[campaign.").trim_end_matches(']').to_string();
+            out.push(Campaign { name, implemented: true, ..Default::default() });
+            continue;
+        }
+        let Some(c) = out.last_mut() else { continue };
+        let Some((key, value)) = line.split_once('=') else { continue };
+        let (key, value) = (key.trim(), value.trim());
+        let unquoted = value.trim_matches('"').to_string();
+        match (in_shard, key) {
+            (true, "manifest") => shard_manifest = Some(unquoted),
+            (true, "packages") => {
+                shard_packages = value
+                    .trim_matches(['[', ']'].as_ref())
+                    .split(',')
+                    .map(|p| p.trim().trim_matches('"').to_string())
+                    .filter(|p| !p.is_empty())
+                    .collect();
+            }
+            (false, "gate") => c.gate = unquoted,
+            (false, "implemented") => c.implemented = value == "true",
+            (false, "owner_decision") => c.owner_decision = Some(unquoted),
+            (false, "toolchain") => c.toolchain = Some(unquoted),
+            (false, "requires_network_isolation") => c.requires_network_isolation = value == "true",
+            (false, "not_implemented_reason") => {
+                // the value is a triple-quoted block; keep the marker so the
+                // full text can be read back from the file when reporting
+                c.reason = "see .quality/campaigns.toml".to_string();
+            }
+            _ => {}
+        }
+    }
+    flush_shard(&mut out, &mut shard_manifest, &mut shard_packages);
+    out
+}
+
+/// The campaign governing `gate`, if the inventory declares one.
+pub fn campaign_for(repo_root: &Path, gate: &str) -> Option<Campaign> {
+    campaigns(repo_root).into_iter().find(|c| c.gate == gate)
+}
+
+/// R8-P0-05: an artefact path a command may be given AFTER its cwd changes.
+///
+/// The Rust CRAP commands ran `cargo crap ... --lcov artifacts/quality/x.lcov`
+/// with `.in_dir(workspace)`, so the tool resolved the path below the
+/// WORKSPACE and wrote (or failed to find) `fork/typedb/artifacts/quality/...`
+/// instead of the repository artefact directory. Every artefact path is now
+/// absolute before any cwd is applied.
+fn artifact_path(repo_root: &Path, rel: &str) -> String {
+    repo_root.join(rel).to_string_lossy().to_string()
+}
+
 /// R8-P0-03: the canonical per-project test script the `ts.tests` gate runs.
 /// One name, declared by every TypeScript project in scope, so the controller
 /// never has to guess which of `test` / `test:core` / `test:unit` is the one
@@ -295,10 +392,17 @@ pub fn commands(id: &str, ctx: &Ctx) -> Vec<Cmd> {
             }
         }
         "rust.coverage" => {
+            // R8-P0-05 item 6: coverage runs the SAME test corpus as
+            // `rust.tests`, so it needs the same per-test network isolation.
+            // Without it an overlay workspace's server tests fight over fixed
+            // ports and the collisions are recorded as coverage failures —
+            // the exact defect the isolation runner exists to prevent,
+            // reintroduced by a second runner that did not wire it.
+            let isolate = campaign_for(ctx.repo_root, id).is_some_and(|c| c.requires_network_isolation);
             for m in &ctx.rust_manifests_production {
-                let lcov = format!("{ARTIFACTS}/{}.lcov", slug(m));
+                let lcov = artifact_path(ctx.repo_root, &format!("{ARTIFACTS}/{}.lcov", slug(m)));
                 out.push(Cmd::new("cargo", &["llvm-cov", "clean", "--manifest-path", m, "--workspace"]));
-                out.push(Cmd::new(
+                let mut cmd = Cmd::new(
                     "cargo",
                     &[
                         "llvm-cov",
@@ -311,14 +415,25 @@ pub fn commands(id: &str, ctx: &Ctx) -> Vec<Cmd> {
                         "--output-path",
                         &lcov,
                     ],
-                ));
+                );
+                if isolate {
+                    if let (Some(_), Some(triple)) = (overlay_of(ctx, m), exec::host_target_triple()) {
+                        let runner = ctx.repo_root.join(exec::NETNS_EXEC).to_string_lossy().to_string();
+                        cmd = cmd.with_env(&exec::target_runner_var(&triple), &runner);
+                    }
+                }
+                out.push(cmd);
             }
         }
         "rust.crap" => {
             for m in &ctx.rust_manifests_production {
                 let s = slug(m);
-                let lcov = format!("{ARTIFACTS}/{s}.lcov");
-                let json = format!("{ARTIFACTS}/cargo-crap-{s}.json");
+                // R8-P0-05: ABSOLUTE before the cwd change below. These
+                // commands run `.in_dir(dir)`, so a repository-relative path
+                // resolved under the workspace and the LCOV the coverage gate
+                // produced was never found.
+                let lcov = artifact_path(ctx.repo_root, &format!("{ARTIFACTS}/{s}.lcov"));
+                let json = artifact_path(ctx.repo_root, &format!("{ARTIFACTS}/cargo-crap-{s}.json"));
                 let mut args: Vec<String> = vec![
                     "crap".into(),
                     "--workspace".into(),
@@ -337,8 +452,8 @@ pub fn commands(id: &str, ctx: &Ctx) -> Vec<Cmd> {
                 // Regression comparison against the immutable trusted baseline
                 // generated from the base SHA, never from the PR tree (§2.1).
                 if ctx.base_sha.is_some() && ctx.policy.crap.rust.fail_regression {
-                    let baseline = format!("{ARTIFACTS}/base/cargo-crap-{s}.json");
-                    let delta = format!("{ARTIFACTS}/cargo-crap-delta-{s}.json");
+                    let baseline = artifact_path(ctx.repo_root, &format!("{ARTIFACTS}/base/cargo-crap-{s}.json"));
+                    let delta = artifact_path(ctx.repo_root, &format!("{ARTIFACTS}/cargo-crap-delta-{s}.json"));
                     args = vec![
                         "crap".into(),
                         "--workspace".into(),
@@ -368,13 +483,13 @@ pub fn commands(id: &str, ctx: &Ctx) -> Vec<Cmd> {
                             "crap",
                             "--workspace",
                             "--lcov",
-                            &format!("{ARTIFACTS}/{s}.lcov"),
+                            &artifact_path(ctx.repo_root, &format!("{ARTIFACTS}/{s}.lcov")),
                             "--missing",
                             &ctx.policy.crap.rust.missing_coverage,
                             "--format",
                             "json",
                             "--output",
-                            &format!("{ARTIFACTS}/cargo-crap-trend-{s}.json"),
+                            &artifact_path(ctx.repo_root, &format!("{ARTIFACTS}/cargo-crap-trend-{s}.json")),
                         ],
                     )
                     .in_dir(m.trim_end_matches("/Cargo.toml")),
@@ -389,7 +504,7 @@ pub fn commands(id: &str, ctx: &Ctx) -> Vec<Cmd> {
             }
         }
         "rust.mutation.diff" => {
-            let diff = format!("{ARTIFACTS}/pr.diff");
+            let diff = artifact_path(ctx.repo_root, &format!("{ARTIFACTS}/pr.diff"));
             for m in &ctx.rust_manifests_production {
                 out.push(Cmd::new(
                     "cargo",
@@ -397,14 +512,51 @@ pub fn commands(id: &str, ctx: &Ctx) -> Vec<Cmd> {
                 ));
             }
         }
+        // R8-P0-05: SHARDED by authored package, from the campaign inventory.
+        // The previous command mutated each entire production workspace —
+        // including ~40 materialised upstream packages in the TypeDB fork —
+        // which measures upstream's test suite and fits no credible budget.
         "rust.mutation.full" => {
-            for m in &ctx.rust_manifests_production {
-                out.push(Cmd::new("cargo", &["mutants", "--manifest-path", m, "--workspace", "--test-tool=nextest"]));
+            let campaign = campaign_for(ctx.repo_root, id);
+            for (manifest, packages) in campaign.map(|c| c.shards).unwrap_or_default() {
+                if !ctx.rust_manifests_production.contains(&manifest) {
+                    continue; // the inventory names a workspace this run has no production scope for
+                }
+                if packages.is_empty() {
+                    out.push(Cmd::new(
+                        "cargo",
+                        &["mutants", "--manifest-path", &manifest, "--workspace", "--test-tool=nextest"],
+                    ));
+                    continue;
+                }
+                for package in packages {
+                    out.push(Cmd::new(
+                        "cargo",
+                        &["mutants", "--manifest-path", &manifest, "--package", &package, "--test-tool=nextest"],
+                    ));
+                }
             }
         }
+        // R8-P0-05: SCOPED to the pure-Rust targets the inventory declares, on
+        // the PINNED nightly. `cargo +nightly miri test --workspace` over a
+        // tree that links RocksDB, protobuf and libclang is not a slow Miri
+        // run — Miri cannot execute foreign functions, so it is one that
+        // cannot start, and the runner installs no `nightly` alias either.
         "rust.miri" | "rust.miri.full" => {
-            for m in &ctx.rust_manifests_production {
-                out.push(Cmd::new("cargo", &["+nightly", "miri", "test", "--manifest-path", m, "--workspace"]));
+            let campaign = campaign_for(ctx.repo_root, "rust.miri.full");
+            let toolchain =
+                campaign.as_ref().and_then(|c| c.toolchain.clone()).unwrap_or_else(|| "nightly".to_string());
+            let plus = format!("+{toolchain}");
+            for (manifest, packages) in campaign.map(|c| c.shards).unwrap_or_default() {
+                if !ctx.rust_manifests_production.contains(&manifest) {
+                    continue;
+                }
+                for package in packages {
+                    out.push(Cmd::new(
+                        "cargo",
+                        &[&plus, "miri", "test", "--manifest-path", &manifest, "--package", &package],
+                    ));
+                }
             }
         }
         "rust.semver" => {
@@ -639,6 +791,36 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
                  and no quality conclusion may be drawn from this run",
                 required - free
             ));
+            return r;
+        }
+    }
+
+    // R8-P0-05: a campaign the inventory declares NOT IMPLEMENTED is
+    // infrastructure, and it says so. Not a pass, not a placeholder
+    // NotApplicable that a workflow's prose can be read as "the campaign ran",
+    // and not a non-advisory QualityFailure — which is a red verdict about
+    // code, for a campaign that was never built.
+    if let Some(campaign) = campaign_for(ctx.repo_root, id) {
+        if !campaign.implemented {
+            let mut r = GateResult::new(
+                id,
+                d.tier,
+                d.language,
+                d.advisory,
+                Status::InfrastructureFailure,
+                &format!(
+                    "campaign `{}` is declared NOT IMPLEMENTED in {CAMPAIGNS}, so gate `{id}` did not \
+                     run and no conclusion — green or red — may be drawn from it (R8-P0-05)",
+                    campaign.name
+                ),
+            );
+            r.remediation = Some(match &campaign.owner_decision {
+                Some(od) => format!(
+                    "either implement the campaign, or narrow the documented claim through owner \
+                     decision {od}; {CAMPAIGNS} records the surfaces it must target"
+                ),
+                None => format!("implement the campaign or remove its declaration from {CAMPAIGNS}"),
+            });
             return r;
         }
     }
@@ -1590,8 +1772,10 @@ pub fn targets(policy: &Policy, mode: Mode, facts: &Facts) -> (Vec<String>, Vec<
 
 #[cfg(test)]
 mod tests {
-    use super::super::tools::{MatchMode, ToolReport, ToolStatus};
-    use super::*;
+    use super::{
+        super::tools::{MatchMode, ToolReport, ToolStatus},
+        *,
+    };
 
     fn test_policy() -> Policy {
         let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../.quality/policy.toml")).unwrap();
@@ -1863,14 +2047,18 @@ mod tests {
         );
         let cov = display("rust.coverage");
         assert!(cov[1].contains("llvm-cov nextest"), "{:?}", cov);
-        assert!(cov[1].contains("--lcov --output-path artifacts/quality/tools.lcov"), "{:?}", cov);
+        // R8-P0-05: ABSOLUTE. These commands are given a cwd, so a
+        // repository-relative artefact path resolves below the workspace.
+        assert!(cov[1].contains("--lcov --output-path /"), "the LCOV path must be absolute: {cov:?}");
+        assert!(cov[1].contains("artifacts/quality/tools.lcov"), "{cov:?}");
         let crap = display("rust.crap");
         assert!(crap[0].contains("--missing pessimistic"), "{:?}", crap);
         // Regression guard: `cargo machete <args>` misparses its own
         // subcommand name when spawned from inside a cargo-started process.
         assert_eq!(display("rust.machete"), vec!["cargo-machete --with-metadata tools"]);
         let mutation = display("rust.mutation.diff");
-        assert!(mutation[0].contains("--in-diff artifacts/quality/pr.diff"), "{:?}", mutation);
+        assert!(mutation[0].contains("--in-diff /"), "the diff path must be absolute: {mutation:?}");
+        assert!(mutation[0].contains("artifacts/quality/pr.diff"), "{mutation:?}");
         assert!(mutation[0].contains("--test-tool=nextest"), "{:?}", mutation);
     }
 
@@ -2023,7 +2211,12 @@ mod tests {
         c.base_sha = Some("f".repeat(40));
         let crap: Vec<String> = commands("rust.crap", &c).iter().map(|x| x.display()).collect();
         assert_eq!(crap.len(), 2, "with a base SHA the regression comparison is added");
-        assert!(crap[1].contains("--baseline artifacts/quality/base/cargo-crap-tools.json"), "{:?}", crap);
+        // R8-P0-05: the baseline path is ABSOLUTE, because this command runs
+        // with `.in_dir(tools)` and a relative path resolved to
+        // `tools/artifacts/quality/...`, which is not where the trusted
+        // baseline was written.
+        assert!(crap[1].contains("--baseline /"), "the baseline path must be absolute: {crap:?}");
+        assert!(crap[1].contains("artifacts/quality/base/cargo-crap-tools.json"), "{crap:?}");
         assert!(crap[1].contains("--fail-regression"), "{:?}", crap);
     }
 

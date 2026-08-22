@@ -6,9 +6,11 @@
 
 use serde::Serialize;
 
-use super::glob;
-use super::policy::{Policy, ScopeClass, ScopeTier};
-use super::scope::{self, Classification, Classified};
+use super::{
+    glob,
+    policy::{Policy, ScopeClass, ScopeTier},
+    scope::{self, Classification, Classified},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChangeEntry {
@@ -746,8 +748,7 @@ mod tests {
     const ALWAYS: &[&str] = &["policy.waivers", "policy.toolchain_pin", "policy.scope_classification"];
     const RUST_TIER_A: &[&str] = &["rust.fmt", "rust.clippy", "rust.tests"];
     const TS_TIER_A: &[&str] = &["ts.typecheck", "ts.tests", "ts.oxlint", "ts.knip", "ts.depcruise"];
-    const PY_TIER_A: &[&str] =
-        &["py.ruff.check", "py.ruff.format", "py.typecheck", "py.pytest"];
+    const PY_TIER_A: &[&str] = &["py.ruff.check", "py.ruff.format", "py.typecheck", "py.pytest"];
 
     fn expect(groups: &[&[&str]]) -> Vec<&'static str> {
         let mut out: Vec<&'static str> = Vec::new();
@@ -770,17 +771,9 @@ mod tests {
         // no diff can narrow "is this tree sound", so every declared Tier-A
         // family runs.
         let gates = select_clean(Mode::Fast);
-        assert_selected(
-            "clean fast",
-            &gates,
-            &expect(&[ALWAYS, RUST_TIER_A, TS_TIER_A, PY_TIER_A]),
-        );
+        assert_selected("clean fast", &gates, &expect(&[ALWAYS, RUST_TIER_A, TS_TIER_A, PY_TIER_A]));
         let ts = gates.iter().find(|g| g.id == "ts.tests").expect("ts.tests must be selected");
-        assert!(
-            ts.matrix_row.contains("tree verification"),
-            "the report must say WHY it ran: {}",
-            ts.matrix_row
-        );
+        assert!(ts.matrix_row.contains("tree verification"), "the report must say WHY it ran: {}", ts.matrix_row);
     }
 
     #[test]
@@ -859,5 +852,4 @@ mod tests {
         assert!(!verifies_whole_tree(Mode::Fast, &docs), "a real diff is the change inner loop");
         assert!(verifies_whole_tree(Mode::Full, &docs), "full is always tree verification");
     }
-
 }

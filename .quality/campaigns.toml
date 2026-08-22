@@ -1,0 +1,146 @@
+# Machine-readable CAMPAIGN INVENTORY (R8-P0-05).
+#
+# PROTECTED FILE.
+#
+# The round-8 audit's finding: `cargo xtask quality full` selected campaigns it
+# could not execute, and the workflows described campaigns that did not exist.
+#   * `rust.fuzz.long` was selected unconditionally although no production
+#     workspace has a `fuzz/` directory, and the gate returned a NON-ADVISORY
+#     QualityFailure — a red verdict about code, for a campaign that was never
+#     built;
+#   * even with a fuzz directory the gate returned NotApplicable with "running
+#     them is Phase 2 work", while the workflow prose claimed a long fuzz
+#     campaign ran;
+#   * `rust.miri.full` ran `cargo +nightly miri test --workspace` over the
+#     COMPLETE TypeDB workspace including RocksDB and its native FFI, which is
+#     not a valid Miri target, on a runner that installs neither a `nightly`
+#     alias nor Miri;
+#   * `rust.mutation.full` mutated each entire production workspace unsharded,
+#     which is not credible inside a six-hour job;
+#   * `ts.mutation` selected Stryker with no installed package and no committed
+#     configuration.
+#
+# The rule this file exists to enforce is the audit's: **every non-advisory
+# selected Full gate must either execute the named campaign and produce bound
+# evidence, or fail as infrastructure/quality for a truthful reason. A
+# placeholder NotApplicable may not satisfy a workflow claim that the campaign
+# ran.**
+#
+# So each campaign declares, in one machine-readable place, what it supports,
+# what it excludes and why, its budget, its shards, the artefacts it must
+# produce, and whether it is IMPLEMENTED at all. `cargo xtask quality full
+# --plan` reads this and refuses before spending hours compiling; the gates read
+# it to build their commands, so the scope a campaign runs at and the scope it
+# claims cannot drift apart.
+
+schema = 1
+
+# ---------------------------------------------------------------------------
+# Rust mutation. Sharded by AUTHORED package: mutating a materialised upstream
+# workspace wholesale is neither credible in the budget nor informative, since
+# the mutants land in code this project does not own.
+# ---------------------------------------------------------------------------
+[campaign.rust_mutation_full]
+implemented = true
+gate = "rust.mutation.full"
+tool = "cargo-mutants"
+timeout_minutes = 300
+# One shard per authored package. The controller runs them as separate
+# commands so a timeout names the shard it exhausted rather than the campaign.
+[[campaign.rust_mutation_full.shard]]
+manifest = "tools/Cargo.toml"
+packages = ["protocol-models", "remote-wal-spike", "storage-diff-spike"]
+[[campaign.rust_mutation_full.shard]]
+manifest = "fork/typedb/Cargo.toml"
+packages = ["storage"]
+exclusion_reason = """
+The TypeDB fork is a materialised upstream checkout with a small authored
+overlay. `storage` is the package this project actually owns changes in (the
+SlateDB keyspace adapter, the recovery/checkpoint protocol); mutating the other
+~40 upstream packages measures upstream's test suite, not this project's, and
+does not fit any credible budget. The overlay is enumerated by
+tools/fork/stage.py, so this exclusion is checkable rather than asserted.
+"""
+
+# ---------------------------------------------------------------------------
+# Miri. Scoped to PURE-RUST targets only. A workspace-wide Miri run over a tree
+# that links RocksDB, protobuf and libclang is not a slow Miri run — it is one
+# that cannot start.
+# ---------------------------------------------------------------------------
+[campaign.rust_miri_full]
+implemented = true
+gate = "rust.miri.full"
+tool = "miri"
+toolchain = "nightly-2026-04-15"
+timeout_minutes = 120
+[[campaign.rust_miri_full.shard]]
+manifest = "tools/Cargo.toml"
+packages = ["protocol-models"]
+exclusion_reason = """
+`remote-wal-spike` and `storage-diff-spike` link native and filesystem-backed
+engines; the TypeDB fork links RocksDB through librocksdb-sys. Miri cannot
+execute foreign functions, so those targets need sanitizers or native-specific
+tooling, not a Miri pass that would fail for a reason unrelated to the code
+under test. `protocol-models` is pure Rust encoding/decoding, which is exactly
+the shape Miri is informative about.
+"""
+
+# ---------------------------------------------------------------------------
+# Rust fuzzing. DECLARED-AHEAD, and the gate says so rather than passing.
+# ---------------------------------------------------------------------------
+[campaign.rust_fuzz_long]
+implemented = false
+gate = "rust.fuzz.long"
+tool = "cargo-fuzz"
+owner_decision = "OD-024"
+not_implemented_reason = """
+No production workspace carries a `fuzz/` directory, so there is no libFuzzer
+target to run and there never was: the previous gate returned a non-advisory
+QualityFailure about code for a campaign that had not been built. Narrowing
+this claim is an owner decision (OD-024) rather than a controller default, and
+until it is taken the gate reports INFRASTRUCTURE with this text — never a pass,
+never NotApplicable, and never a red verdict about the code.
+
+The surfaces a fuzz campaign should target when it is built are named here so
+the eventual work is scoped rather than invented: the object-store key-class
+grammar (fork/typedb/storage/keyspace/slate.rs::classify_key), the recovery
+record and checkpoint-metadata parsers, the backend-identity marker, the object
+digest/manifest framing, and capability canonicalisation.
+"""
+targets = [
+  "storage::keyspace::slate::classify_key",
+  "storage::recovery::checkpoint::CheckpointManifest::parse",
+  "storage::factory::PersistedBackendMarker::parse",
+]
+
+[campaign.rust_fuzz_smoke]
+implemented = false
+gate = "rust.fuzz.smoke"
+tool = "cargo-fuzz"
+owner_decision = "OD-024"
+not_implemented_reason = "Same absence as rust_fuzz_long; the PR-tier smoke campaign shares its targets."
+
+# ---------------------------------------------------------------------------
+# Coverage. Runs under the SAME per-test network isolation as `rust.tests`:
+# the fork's server tests bind fixed ports, and a parallel unisolated run
+# manufactures collisions that are then reported as coverage failures.
+# ---------------------------------------------------------------------------
+[campaign.rust_coverage]
+implemented = true
+gate = "rust.coverage"
+tool = "cargo-llvm-cov"
+timeout_minutes = 180
+requires_network_isolation = true
+artifacts = ["artifacts/quality/*.lcov"]
+
+# ---------------------------------------------------------------------------
+# TypeScript mutation. Stryker is now a committed devDependency with a
+# committed configuration, so the campaign is runnable.
+# ---------------------------------------------------------------------------
+[campaign.ts_mutation]
+implemented = true
+gate = "ts.mutation"
+tool = "stryker"
+timeout_minutes = 90
+config = "control-plane/stryker.conf.json"
+artifacts = ["artifacts/quality/stryker"]

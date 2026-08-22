@@ -1229,3 +1229,105 @@ Three owner decisions are OPEN and none of them blocks anything today:
 **OD-018** (should the 32-minute corpus run in the inner loop), **OD-019** (the
 two disk guards this round loosened inside the protected controller, disclosed
 and NOT self-approved), **OD-020** (the type-checking level).
+
+---
+
+## 15. Round 7f — the three owner decisions, and what implementing them found
+
+`OD-018` → **B**, `OD-019` → **A**, `OD-020` → **C**. Recorded 2026-08-22.
+
+### 15.1 OD-018-B — the fork corpus is diff-conditional in `fast` alone
+
+The condition is a list of what is provably **inert** (`docs/**`,
+`control-plane/**`, `*.md`), not a list of what is relevant, so anything
+unmodelled runs the corpus. Two clauses are load-bearing and each has its own
+assertion:
+
+  - **`tools/**` is NOT inert.** `rust.tests` runs an overlay through
+    `tools/dev/netns_exec.py` and stages its fixtures with
+    `tools/catalog/stage_test_fixtures.py`. Skipping on a change there would be
+    skipping on the thing under test.
+  - **An empty change set is not inert.** `fast` with no diff is the "verify
+    this tree" run; there is nothing there to prove irrelevant.
+
+`pr` — the merge gate — and `full` are untouched. The skip is STATED in the
+gate's own pass detail: a skipped workspace that goes unmentioned reads as a
+workspace that passed.
+
+### 15.2 OD-020-C — what "only the rules that can hide a defect" actually means
+
+The split I put to the owner did not decompose the way I described, and the
+correction matters for anyone reading OD-020:
+
+```
+"standard" + the bug-finding rules turned on individually      6 findings
+"recommended" − the two annotation rules                     172 findings
+```
+
+Enabling `reportIndexIssue` and friends on top of `"standard"` finds almost
+nothing, because those rules fire on the stricter INFERENCE that
+`"recommended"` brings, not on their own. The configuration that expresses the
+decision is therefore `"recommended"` with the annotation programme explicitly
+disabled — and disabling it has to be explicit, because **basedpyright exits 1
+on warnings as well as errors** (measured: 0 errors + 5 warnings → exit 1). A
+rule left at its default warning level is a gate failure, not a note.
+
+Final count: **214 findings, all fixed** — 172 errors plus 42 warnings in the
+same families.
+
+### 15.3 The recurring shape, and the two rules that came out of it
+
+Nearly every finding was one pattern: **a heterogeneous record whose type was
+left to inference, then read back out of.** A dict literal mixing counts,
+lists, sub-objects and booleans infers a union, and every `len(...)`, `[...]`,
+`+=` and `for` over it afterwards is unprovable. That is not a typing
+inconvenience — it is how `run_rust_behaviour.py` came to index a `bool`, and
+how four runners came to read `server.proc.returncode` on a server that never
+started.
+
+Two rules now applied throughout:
+
+  - **Don't read a value back out of the JSON blob you just built.**
+    `results["counts"]["suites_executed"]` became a local `suites_executed`
+    computed once and used three times. Same value, minus the round trip
+    through a type nobody can state.
+  - **An accumulator is a local that the record HOLDS, not a field you append
+    through.** `refusals: list[str] = []` then `{"refusals": refusals}`; the
+    dict holds the same object, and `refusals.append(...)` is checkable while
+    `rec["refusals"].append(...)` is not.
+
+Where a record really is a schema, it is now a `TypedDict` — `cucumber_log`'s
+parser output, the wheel provenance, the harness layout, the cucumber summary
+block, the `[Examples]` table. One of those (`ParsedLog`) resolved about 80
+findings across four files on its own, because four runners index it.
+
+### 15.4 Defects found, beyond the ones §14.2 already listed
+
+| where | what |
+|---|---|
+| `verify_drivers.verify()` | took a `qualification=` parameter it never read. `row_status.py` passed `qualification=True` and got no extra strictness. Removed; the caller reads `qualification_pass` from the result, which was always computed. |
+| `plan_coverage` ⇄ `leaf_coverage` | a genuine import CYCLE, hidden by a function-level import. Broken by extracting `load_leaf_evidence` into `tools/qualification/leaf_evidence.py`, which both now read. |
+| `cucumber_probe.py` | `cmd += (generator) and [] or (...)` — a generator is always truthy, so the first two terms were dead and the line did only what its third term said. |
+| `generate_catalog.py` | `TB` is REBOUND by `--tree`, so an all-caps name claimed a constancy the module does not have. Renamed `tb_root`. |
+| `typedb_server.py` | four instance attributes existed only after `start()`, and `evidence()` read them with `getattr(self, ..., None)` — the same admission written so it cannot be checked: a typo in the name would have archived `None` for the server's own argv. |
+| `lanes.py` | a `status is not None` that could never be false, on a call that returns `int`. |
+
+### 15.5 Re-verified after all of it
+
+```
+leaf_mutants 16/16 · release_mutants 24 killed/0 survived/1 N/A
+catalog evidence_mutants 32/32 · s3-cert evidence_mutants 28/28
+evidence_v2_mutants 15/15 · cucumber_mutants 21/21 · ledger_mutants 16/16
+lock_mutants 7/7 · modeq_mutants 11/11
+lint_source_lock PASS · lint_ledger PASS
+release_identity_selftest 6/6 · check_npm_advisories 11/11 · ed25519 vectors 0 failures
+projection_check ok · verify_drivers rust:slatedb 0 anomalies, GREEN, sealed
+row_status: all six driver rows unchanged
+
+leaf_coverage --min-covered 13582   ->  13582 covered, FLOOR PASS
+leaf_diff u1-full-3 vs u2-full-3    ->  0 regressions over 455 leaf cases
+```
+
+Both headline numbers reproduce EXACTLY. That is the check that matters for a
+change of this size: the tooling was rewritten in 38 files, and the evidence it
+derives did not move by one row.

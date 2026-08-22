@@ -249,7 +249,7 @@
   },
   {
    "id": "OD-018",
-   "status": "OPEN",
+   "status": "DECIDED",
    "title": "Should the fork's 711-test corpus run in the INNER loop, or only in `pr` and `full`?",
    "question": "rust.tests is tier A, so `cargo xtask quality fast` runs the whole fork corpus on every invocation. Measured 2026-08-21: 1215 s standalone, 1929 s inside a controller run whose clippy pass preceded it — roughly 20-32 minutes of wall clock for a change that may not touch fork/ at all. Should the corpus stay unconditional, or become diff-conditional in `fast`?",
    "default_in_force": "It runs, unconditionally, in every mode. Maximum coverage, maximum wall clock. Nothing is hidden and no result is weakened; the cost is paid by whoever runs the inner loop.",
@@ -258,11 +258,14 @@
    "referenced_by": [
     "xtask/src/quality/gates.rs",
     ".quality/policy.toml"
-   ]
+   ],
+   "decision": "Option B. The fork corpus becomes diff-conditional in `fast` ALONE: it is skipped only when every changed path is documentation or control-plane — a list of what is provably INERT, not a list of what is relevant, so an unmodelled route runs the corpus rather than skipping it. `tools/**` is deliberately NOT inert: `rust.tests` runs an overlay through tools/dev/netns_exec.py and stages its fixtures with tools/catalog/stage_test_fixtures.py, so a change there changes the run. An EMPTY change set is not inert either — `fast` with no diff is the ‘verify this tree’ run and has nothing to prove irrelevant. `pr`, the merge gate, and `full` are unchanged and still execute every workspace.",
+   "decided_by": "release owner, recorded 2026-08-22",
+   "why_this_is_not_a_loophole": "It is the rule gates::targets() already applies to the TypeScript and Python gates, for the same reason. fork/typedb's only path dependency outside its own tree is sources/slatedb-fork, which is materialised from source-lock rather than authored here. Nothing can reach the default branch on the strength of a skip: `pr` runs the corpus unconditionally. The skip is also STATED in the gate's own pass detail, never silent — a skipped workspace that goes unmentioned reads as a workspace that passed."
   },
   {
    "id": "OD-019",
-   "status": "OPEN",
+   "status": "DECIDED",
    "title": "Protected-path disclosure: two disk guards inside the quality controller were LOOSENED",
    "question": "Round 7d modified xtask/src/quality/{exec,gates}.rs, which `xtask/**` protects. Most of that diff adds capability or refusals, but two changes RELAX a guard. Are both relaxations accepted?",
    "relaxations": [
@@ -277,11 +280,14 @@
     "xtask/src/quality/exec.rs",
     "xtask/src/quality/gates.rs",
     ".quality/policy.toml"
-   ]
+   ],
+   "decision": "Option A: both relaxations ACCEPTED as they stand, with no further change. The per-workspace build floor is not charged to a command that compiles nothing, and the gate-level cost-class floor applies to internal gates only.",
+   "decided_by": "release owner, recorded 2026-08-22",
+   "residual": "A non-building command keeps the light floor (0.5 GB), which is a number chosen for gates that parse source files rather than for a test run that extracts three ~250 MB archives and writes RocksDB data (measured consumption ~0.6-1 GB). Declining to replace it with a measured scratch floor is safe because the failure mode is ENOSPC, which is typed InfrastructureFailure: being wrong costs a wasted run, never a wrong verdict."
   },
   {
    "id": "OD-020",
-   "status": "OPEN",
+   "status": "DECIDED",
    "title": "How strict is this repository's Python type checking?",
    "question": "`py.typecheck` runs `basedpyright tools`. The repository had no type-checker config at all, so the tool's own default applied and the tier-A gate could not pass. A level had to be declared for the gate to mean anything. Which level is the repository's?",
    "default_in_force": "pyrightconfig.json declares typeCheckingMode \"standard\" — pyright's own documented default — and all 86 findings at that level are FIXED, so the gate passes on merit rather than on a lowered bar.",
@@ -297,7 +303,10 @@
    "referenced_by": [
     "pyrightconfig.json",
     "xtask/src/quality/gates.rs"
-   ]
+   ],
+   "decision": "Option C. typeCheckingMode stays \"standard\", and the strict rules that CAN hide a defect are enabled individually on top of it. The ~201 findings that are annotation and idiom work (reportMissingTypeArgument, reportAttributeAccessIssue) stay off: `dict` instead of `dict[str, int]` cannot make a verifier accept a forgery.",
+   "decided_by": "release owner, recorded 2026-08-22",
+   "expected_yield": "The 69 findings fixed at \"standard\" produced 7 genuine defects — roughly one in ten, and of the kind that matters here (release.py hashing a None payload so an artifact digest could match an archive MISSING a file; leaf_diff.py reporting ‘0 regressions’ over an empty intersection). The rules enabled here are the same family. The rate will be lower on the marginal rules — the \"standard\" set is the one most correlated with runtime failure — so the yield is expected to be smaller than one in ten, not larger."
   }
  ]
 }

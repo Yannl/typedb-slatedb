@@ -49,6 +49,7 @@ import re
 import shutil
 import subprocess
 import sys
+from typing import TypedDict
 import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -135,12 +136,19 @@ BAZEL_STEPS_TSCONFIG = {
 }
 
 
-def materialise(run_dir):
+class CopyReport(TypedDict):
+    source: str
+    work_tree: str
+    files_copied: int
+    hash_mismatches: list[str]
+
+
+def materialise(run_dir) -> tuple[pathlib.Path, CopyReport]:
     work = run_dir / "http-ts"
     if work.exists():
         shutil.rmtree(work)
     shutil.copytree(HTTPTS, work)
-    mismatches = []
+    mismatches: list[str] = []
     files = 0
     for src in HTTPTS.rglob("*"):
         if not src.is_file():
@@ -149,12 +157,12 @@ def materialise(run_dir):
         dst = work / src.relative_to(HTTPTS)
         if not dst.is_file() or common.sha256_file(dst) != common.sha256_file(src):
             mismatches.append(src.relative_to(HTTPTS).as_posix())
-    return work, {
-        "source": common.rel(HTTPTS),
-        "work_tree": str(work),
-        "files_copied": files,
-        "hash_mismatches": mismatches,
-    }
+    return work, CopyReport(
+        source=common.rel(HTTPTS),
+        work_tree=str(work),
+        files_copied=files,
+        hash_mismatches=mismatches,
+    )
 
 
 def run(argv, cwd, log, env=None, timeout=1800):
@@ -184,7 +192,24 @@ def run(argv, cwd, log, env=None, timeout=1800):
     }
 
 
-def parse_messages(path):
+class TsScenario(TypedDict):
+    name: str | None
+    status: str
+    steps_total: int
+    steps_passed: int
+    steps_failed: int
+    steps_skipped: int
+    attempt: int
+
+
+class TsParsedMessages(TypedDict):
+    scenarios: list[TsScenario]
+    undefined_steps: int
+    ambiguous_steps: int
+    pickles: int
+
+
+def parse_messages(path) -> TsParsedMessages:
     """cucumber-js `message` NDJSON -> ordered executed scenarios."""
     pickles, cases, started, finished = {}, {}, [], {}
     undefined = ambiguous = 0
@@ -209,7 +234,7 @@ def parse_messages(path):
                 undefined += 1
             if r.get("status") == "AMBIGUOUS":
                 ambiguous += 1
-    out = []
+    out: list[TsScenario] = []
     for st in started:
         case = cases.get(st.get("testCaseId")) or {}
         pk = pickles.get(case.get("pickleId")) or {}
@@ -224,24 +249,22 @@ def parse_messages(path):
             else "EMPTY"
         )
         out.append(
-            {
-                "name": pk.get("name"),
-                "status": status,
-                "steps_total": len(statuses),
-                "steps_passed": sum(1 for s in statuses if s == "PASSED"),
-                "steps_failed": sum(
-                    1 for s in statuses if s in ("FAILED", "UNDEFINED", "AMBIGUOUS")
-                ),
-                "steps_skipped": sum(1 for s in statuses if s in ("SKIPPED", "PENDING")),
-                "attempt": st.get("attempt", 0),
-            }
+            TsScenario(
+                name=pk.get("name"),
+                status=status,
+                steps_total=len(statuses),
+                steps_passed=sum(1 for s in statuses if s == "PASSED"),
+                steps_failed=sum(1 for s in statuses if s in ("FAILED", "UNDEFINED", "AMBIGUOUS")),
+                steps_skipped=sum(1 for s in statuses if s in ("SKIPPED", "PENDING")),
+                attempt=st.get("attempt", 0),
+            )
         )
-    return {
-        "scenarios": [s for s in out if s["attempt"] == 0],
-        "undefined_steps": undefined,
-        "ambiguous_steps": ambiguous,
-        "pickles": len(pickles),
-    }
+    return TsParsedMessages(
+        scenarios=[s for s in out if s["attempt"] == 0],
+        undefined_steps=undefined,
+        ambiguous_steps=ambiguous,
+        pickles=len(pickles),
+    )
 
 
 def main():
@@ -502,7 +525,8 @@ def main():
             anomalies.append(f"{name}: the TypeDB server died during the suite")
         rec = server.evidence()
         rec["suite_id"] = name
-        w = rec.get("backend_witness") or {}
+        witness = rec.get("backend_witness")
+        w = witness if isinstance(witness, dict) else {}
         if w.get("marker_text"):
             marker = out_dir / f"backend-spec-{name}.marker"
             marker.write_text(w["marker_text"])
@@ -631,6 +655,10 @@ def main():
     for leaf in leaf_rows:
         counts[leaf["status"]] = counts.get(leaf["status"], 0) + 1
 
+    # Counted once here rather than read back out of `results` further down: a
+    # value recovered from the JSON blob you just built is the same value with
+    # its type thrown away.
+    suites_executed = sum(1 for r in suite_rows if r.get("status") == "EXECUTED")
     results = {
         "schema": "typedb-r2-driver-lane-v1",
         "harness": "typescript-cucumberjs-messages",
@@ -662,7 +690,7 @@ def main():
         "leaves": leaf_rows,
         "counts": {
             "suites_selected": len(selected),
-            "suites_executed": sum(1 for r in suite_rows if r.get("status") == "EXECUTED"),
+            "suites_executed": suites_executed,
             "leaf_rows": len(leaf_rows),
             "leaf_rows_in_plan": len(in_plan),
             "leaf_rows_outside_plan": len(leaf_rows) - len(in_plan),
@@ -715,7 +743,7 @@ def main():
         "caveats": [c["id"] for c in caveats],
         "observation": {
             "suites_selected": len(selected),
-            "suites_executed": results["counts"]["suites_executed"],
+            "suites_executed": suites_executed,
             "plan_leaves_in_scope": len(scope),
             "plan_leaves_with_outcome": len(covered),
             "plan_leaves_passed": len(passed),
@@ -731,7 +759,7 @@ def main():
     print(json.dumps(verdict, indent=1))
     print(
         f"DRIVER LANE {results['row_id']} ({args.lane}): "
-        f"{results['counts']['suites_executed']}/{len(selected)} suites, "
+        f"{suites_executed}/{len(selected)} suites, "
         f"{len(covered)}/{len(scope)} plan leaves with an outcome, "
         f"{len(passed)} passed, {len(anomalies)} anomaly(ies), "
         f"{len(caveats)} caveat(s) -> {'GREEN' if green else 'RED'}",

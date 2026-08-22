@@ -38,6 +38,7 @@ which is exactly the forgery/truncation class this lane must refuse.
 """
 
 import re
+from typing import TypedDict
 
 FEATURE_RE = re.compile(r"^Feature: (.*?) :: (.*)$")
 SCENARIO_RE = re.compile(r"^ {2}(Scenario Outline|Scenario Template|Scenario|Example): (.*)$")
@@ -56,13 +57,85 @@ class CucumberLogError(Exception):
     pass
 
 
+# The shapes below are the parser's CONTRACT with everything downstream: the
+# driver runners index these keys, and the values reach sealed evidence. Written
+# as TypedDicts rather than left to inference because a plain dict literal of
+# mixed value types infers a union, and every `len(...)`, `[...]` and `+=` on
+# one then has to be re-proved at the call site — which is how four runners came
+# to index a `bool` and a `None` without anyone noticing.
+
+
+class _Block(TypedDict):
+    """A scenario block while it is still being read."""
+
+    feature_name: str
+    feature_scenario: str
+    scenario_keyword: str | None
+    scenario_name: str | None
+    steps: list[str]
+    hook_failed: bool
+    line_index: int
+
+
+class ScenarioRecord(TypedDict):
+    """A finished scenario block, as the evidence rows consume it."""
+
+    feature_name: str
+    feature_scenario: str
+    scenario_keyword: str | None
+    scenario_name: str | None
+    hook_failed: bool
+    line_index: int
+    steps_passed: int
+    steps_failed: int
+    steps_skipped: int
+    status: str
+    steps_total: int
+
+
+class SummaryStats(TypedDict):
+    """One `N scenarios (a passed, b skipped, c failed)` line."""
+
+    total: int
+    passed: int
+    skipped: int
+    failed: int
+    retried: int
+
+
+class CucumberSummary(TypedDict):
+    features: SummaryStats | None
+    rules: SummaryStats | None
+    scenarios: SummaryStats | None
+    steps: SummaryStats | None
+    parsing_errors: int
+    hook_errors: int
+    raw: list[str]
+
+
+class LibtestResult(TypedDict):
+    outcome: str
+    passed: int
+    failed: int
+    ignored: int
+    measured: int
+    filtered_out: int
+
+
+class ParsedLog(TypedDict):
+    scenarios: list[ScenarioRecord]
+    repeat_scenarios: list[ScenarioRecord]
+    summary: CucumberSummary | None
+    libtest: LibtestResult | None
+    saw_summary: bool
+
+
 def _strip_ansi(text):
     return re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
 
 
-def parse(text):
-    """-> dict with keys: scenarios, repeat_scenarios, summary, libtest,
-    saw_summary. `scenarios` is the PRIMARY (pre-[Summary]) sequence."""
+def parse(text) -> ParsedLog:
+    """-> ParsedLog. `scenarios` is the PRIMARY (pre-[Summary]) sequence."""
     text = _strip_ansi(text)
     lines = text.splitlines()
 
@@ -76,7 +149,7 @@ def parse(text):
     repeat = _scan_blocks(lines[summary_at:]) if summary_at is not None else []
 
     summary = _parse_summary(lines[summary_at:]) if summary_at is not None else None
-    libtest = None
+    libtest: LibtestResult | None = None
     for ln in lines:
         m = LIBTEST_RESULT_RE.match(ln)
         if m:
@@ -97,23 +170,23 @@ def parse(text):
     }
 
 
-def _scan_blocks(lines):
-    blocks = []
-    cur = None
+def _scan_blocks(lines) -> list[ScenarioRecord]:
+    blocks: list[ScenarioRecord] = []
+    cur: _Block | None = None
     for idx, ln in enumerate(lines):
         mf = FEATURE_RE.match(ln)
         if mf:
             if cur is not None:
                 blocks.append(_finish(cur))
-            cur = {
-                "feature_name": mf.group(1),
-                "feature_scenario": mf.group(2),
-                "scenario_keyword": None,
-                "scenario_name": None,
-                "steps": [],
-                "hook_failed": False,
-                "line_index": idx,
-            }
+            cur = _Block(
+                feature_name=mf.group(1),
+                feature_scenario=mf.group(2),
+                scenario_keyword=None,
+                scenario_name=None,
+                steps=[],
+                hook_failed=False,
+                line_index=idx,
+            )
             continue
         if cur is None:
             continue
@@ -138,7 +211,7 @@ def _scan_blocks(lines):
     return blocks
 
 
-def _finish(b):
+def _finish(b: _Block) -> ScenarioRecord:
     marks = b["steps"]
     passed = sum(1 for m in marks if m.startswith("✔"))
     failed = sum(1 for m in marks if m.startswith("✘"))
@@ -151,29 +224,34 @@ def _finish(b):
         status = PASSED
     else:
         status = EMPTY
-    b.update(
-        {
-            "steps_passed": passed,
-            "steps_failed": failed,
-            "steps_skipped": skipped,
-            "status": status,
-            "steps_total": len(marks),
-        }
+    # Built rather than mutated-and-pruned: `steps` is working state, not part
+    # of the record. Key order is deliberately the order the old
+    # update-then-delete produced, so the serialised bytes do not move.
+    return ScenarioRecord(
+        feature_name=b["feature_name"],
+        feature_scenario=b["feature_scenario"],
+        scenario_keyword=b["scenario_keyword"],
+        scenario_name=b["scenario_name"],
+        hook_failed=b["hook_failed"],
+        line_index=b["line_index"],
+        steps_passed=passed,
+        steps_failed=failed,
+        steps_skipped=skipped,
+        status=status,
+        steps_total=len(marks),
     )
-    del b["steps"]
-    return b
 
 
 def _parse_summary(lines):
-    out = {
-        "features": None,
-        "rules": None,
-        "scenarios": None,
-        "steps": None,
-        "parsing_errors": 0,
-        "hook_errors": 0,
-        "raw": [],
-    }
+    out = CucumberSummary(
+        features=None,
+        rules=None,
+        scenarios=None,
+        steps=None,
+        parsing_errors=0,
+        hook_errors=0,
+        raw=[],
+    )
     stat_re = re.compile(
         r"^(\d+) (features?|rules?|scenarios?|steps?)"
         r"(?: \(([^)]*)\))?(?: with (\d+) retr(?:y|ies))?\s*$"
@@ -197,19 +275,27 @@ def _parse_summary(lines):
                 "step": "steps",
                 "steps": "steps",
             }[m.group(2)]
-            stats = {
-                "total": int(m.group(1)),
-                "passed": 0,
-                "skipped": 0,
-                "failed": 0,
-                "retried": int(m.group(4) or 0),
-            }
+            stats = SummaryStats(
+                total=int(m.group(1)),
+                passed=0,
+                skipped=0,
+                failed=0,
+                retried=int(m.group(4) or 0),
+            )
             for n, what in re.findall(r"(\d+) (passed|skipped|failed)", m.group(3) or ""):
-                stats[what] = int(n)
+                if what == "passed":
+                    stats["passed"] = int(n)
+                elif what == "skipped":
+                    stats["skipped"] = int(n)
+                else:
+                    stats["failed"] = int(n)
             out[key] = stats
             continue
         for n, what in err_re.findall(s):
-            out["parsing_errors" if what.startswith("parsing") else "hook_errors"] += int(n)
+            if what.startswith("parsing"):
+                out["parsing_errors"] += int(n)
+            else:
+                out["hook_errors"] += int(n)
         if s.startswith("test result:") or s.startswith("test test"):
             continue
     return out

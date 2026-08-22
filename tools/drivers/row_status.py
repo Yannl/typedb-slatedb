@@ -108,7 +108,8 @@ def main():
         # newest bundle wins, but every bundle is verified and reported
         checks = []
         for bdir, data in found:
-            rep = verify_drivers.verify(bdir, REPO, qualification=True)
+            # `qualification_pass` is always computed; this caller reads it below.
+            rep = verify_drivers.verify(bdir, REPO)
             checks.append(
                 {
                     "bundle": common.rel(bdir),

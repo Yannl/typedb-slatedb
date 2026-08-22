@@ -45,7 +45,9 @@ ENV = common.CARGO_ENV
 # use:
 #     git -C sources/typedb worktree add ../typedb-pristine <locked-revision>
 #     python3 tools/catalog/generate_catalog.py --tree sources/typedb-pristine
-TB = REPO / "sources" / "typedb"
+# lower-case because `--tree` REBINDS it: an all-caps name would claim a
+# constancy this module does not have.
+tb_root = REPO / "sources" / "typedb"
 BH = REPO / "sources" / "typedb-behaviour"
 TOOLCHAIN = "+1.93.0"
 OUT = REPO / "docs" / "evidence" / "G1" / "upstream-test-catalog.json"
@@ -75,7 +77,7 @@ def sha256_file(p: pathlib.Path) -> str:
 def cargo_metadata():
     out = subprocess.check_output(
         ["cargo", TOOLCHAIN, "metadata", "--locked", "--format-version", "1", "--no-deps"],
-        cwd=TB,
+        cwd=tb_root,
         text=True,
         env=ENV,
     )
@@ -83,7 +85,7 @@ def cargo_metadata():
 
 
 def rel(p: str) -> str:
-    return str(pathlib.Path(p).resolve().relative_to(TB.resolve()))
+    return str(pathlib.Path(p).resolve().relative_to(tb_root.resolve()))
 
 
 def collect_cargo_targets(meta):
@@ -127,7 +129,7 @@ def libtest_cases():
             "--message-format",
             "json",
         ],
-        cwd=TB,
+        cwd=tb_root,
         text=True,
         stderr=subprocess.DEVNULL,
         env=ENV,
@@ -145,13 +147,13 @@ def libtest_cases():
             execs[(pkg_name, tgt["name"])] = (msg["executable"], tgt)
     for (pkg, tname), (exe, tgt) in sorted(execs.items()):
         listing = subprocess.run(
-            [exe, "--list", "--format", "terse"], capture_output=True, text=True, cwd=TB
+            [exe, "--list", "--format", "terse"], capture_output=True, text=True, cwd=tb_root
         )
         ignored = subprocess.run(
             [exe, "--list", "--format", "terse", "--ignored"],
             capture_output=True,
             text=True,
-            cwd=TB,
+            cwd=tb_root,
         )
         # completeness contract: an executable that cannot even be listed must
         # fail the generation loudly, never contribute zero cases silently.
@@ -185,7 +187,7 @@ def libtest_cases():
 def cucumber_cases():
     """Each Scenario and each Scenario Outline example row is a leaf case."""
     refs = set()
-    for rs in TB.rglob("*.rs"):
+    for rs in tb_root.rglob("*.rs"):
         if "target" in rs.parts or "bazel-typedb" in rs.parts:
             continue
         try:
@@ -240,21 +242,21 @@ def cucumber_cases():
 
 
 def failpoint_cases():
-    lib = (TB / "common" / "fail_point" / "lib.rs").read_text()
+    lib = (tb_root / "common" / "fail_point" / "lib.rs").read_text()
     m = re.search(r"fail_points!\s*\{(.*?)\}", lib, re.S)
     if m is None:
         # The catalogue's fail-point leaf count comes from this macro. Silently
         # enumerating zero of them would under-count the corpus and read as
         # "there are none".
         sys.exit(
-            f"{TB / 'common' / 'fail_point' / 'lib.rs'}: no fail_points! {{ ... }} block found"
+            f"{tb_root / 'common' / 'fail_point' / 'lib.rs'}: no fail_points! {{ ... }} block found"
         )
     members = []
     for x in m.group(1).splitlines():
         x = x.strip().rstrip(",")
         if x and re.fullmatch(r"[A-Z0-9_]+", x):
             members.append(x)
-    fp_test = (TB / "tests" / "assembly" / "fail_points.rs").read_text()
+    fp_test = (tb_root / "tests" / "assembly" / "fail_points.rs").read_text()
     loops = [mm.start() for mm in re.finditer(r"for fail_point in fail_point::ALL", fp_test)]
     fn_names = []
     for pos in loops:
@@ -266,7 +268,7 @@ def failpoint_cases():
 def build_targets_recon():
     """Static BUILD-file reconnaissance (Mode-S style; Mode Q snapshot pending)."""
     recon = []
-    for build in TB.rglob("BUILD"):
+    for build in tb_root.rglob("BUILD"):
         if "target" in build.parts or "bazel-typedb" in build.parts:
             continue
         text = build.read_text()
@@ -286,7 +288,7 @@ def build_targets_recon():
 
 
 def main():
-    global TB
+    global tb_root
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--tree",
@@ -297,18 +299,18 @@ def main():
     ap.add_argument("--out", default=None, help="output path for the catalogue JSON")
     args = ap.parse_args()
     if args.tree:
-        TB = pathlib.Path(args.tree).resolve()
-        if not (TB / "Cargo.toml").exists():
-            sys.exit(f"{TB} does not look like a TypeDB checkout")
+        tb_root = pathlib.Path(args.tree).resolve()
+        if not (tb_root / "Cargo.toml").exists():
+            sys.exit(f"{tb_root} does not look like a TypeDB checkout")
     tree_state = subprocess.run(
-        ["git", "-C", str(TB), "status", "--porcelain"], capture_output=True, text=True
+        ["git", "-C", str(tb_root), "status", "--porcelain"], capture_output=True, text=True
     ).stdout.strip()
     tree_revision = subprocess.run(
-        ["git", "-C", str(TB), "rev-parse", "HEAD"], capture_output=True, text=True
+        ["git", "-C", str(tb_root), "rev-parse", "HEAD"], capture_output=True, text=True
     ).stdout.strip()
     if tree_state:
         print(
-            f"WARNING: {TB} is DIRTY ({len(tree_state.splitlines())} paths). The upstream "
+            f"WARNING: {tb_root} is DIRTY ({len(tree_state.splitlines())} paths). The upstream "
             f"denominator must come from a pristine checkout; fork-owned tests would inflate "
             f"it. Pass --tree with a clean worktree.",
             file=sys.stderr,
@@ -408,12 +410,12 @@ def main():
             "destination": "assembly-archive/loader",
         }
     )
-    script = TB / "tests" / "assembly" / "script.tql"
+    script = tb_root / "tests" / "assembly" / "script.tql"
     fixtures.append(
         {
             "fixture_id": "fixture:assembly-script.tql",
             "kind": "FILE",
-            "source": "tests/assembly/script.tql @ TB pin",
+            "source": "tests/assembly/script.tql @ tb_root pin",
             "sha256": sha256_file(script),
             "licence": "MPL-2.0",
             "destination": "tests/assembly/script.tql",
@@ -584,7 +586,7 @@ def main():
                 }
             )
 
-    crash_sh = TB / "tool" / "test" / "simulate-crash.sh"
+    crash_sh = tb_root / "tool" / "test" / "simulate-crash.sh"
     targets.append(
         {
             "target_id": "shell:tool/test/simulate-crash.sh",
@@ -630,7 +632,7 @@ def main():
                     "cargo_package": None,
                     "cargo_target": None,
                     "source_files": [
-                        {"path": r["build_file"], "sha256": sha256_file(TB / r["build_file"])}
+                        {"path": r["build_file"], "sha256": sha256_file(tb_root / r["build_file"])}
                     ],
                     "case_discovery": "STATIC_CHECK",
                     "platform_predicate": "any",
@@ -650,7 +652,7 @@ def main():
                     "target_id": tid,
                     "kind": "STATIC_CHECK",
                     "display_name": f"{r['rule']} {r['name']}",
-                    "source_hash": sha256_file(TB / r["build_file"]),
+                    "source_hash": sha256_file(tb_root / r["build_file"]),
                     "declared_ignored": False,
                     "resource_group": None,
                 }
@@ -787,7 +789,7 @@ def main():
         "fixtures": len(fixtures),
         "build_recon_targets": len(recon),
     }
-    summary["enumerated_tree"] = str(TB)
+    summary["enumerated_tree"] = str(tb_root)
     summary["enumerated_tree_revision"] = tree_revision
     summary["enumerated_tree_dirty"] = bool(tree_state)
     (out_path.parent / "catalog-summary.json").write_text(json.dumps(summary, indent=2) + "\n")

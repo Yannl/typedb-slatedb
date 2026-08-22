@@ -480,7 +480,13 @@ def main():
         return 1
     root = write_plan(body, args.out)
     rel = args.out.relative_to(REPO) if args.out.is_relative_to(REPO) else args.out
-    print(json.dumps({"plan": str(rel), "plan_root": root, **body["counts"]}, indent=1))
+    counts = body["counts"]
+    print(
+        json.dumps(
+            {"plan": str(rel), "plan_root": root, **(counts if isinstance(counts, dict) else {})},
+            indent=1,
+        )
+    )
     print(
         "NOTE: this plan is a denominator, not a result - nothing is proven "
         "executed by its existence.",

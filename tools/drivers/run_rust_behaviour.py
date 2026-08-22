@@ -65,6 +65,7 @@ import re
 import shutil
 import subprocess
 import sys
+from typing import TypedDict
 import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -143,7 +144,24 @@ def discover_suites():
     return dict(sorted(out.items()))
 
 
-def cargo_build(target_dir, toolchain=TOOLCHAIN):
+class BuildResult(TypedDict):
+    """The build record, ONE shape whether or not the build actually ran.
+
+    `--skip-build` used to return `{"skipped": True, "executables": {}}`, a
+    second shape that every reader had to know about; the union of the two is
+    also why `build["exit_code"]` could not be typed.
+    """
+
+    argv: list[str]
+    cwd: str
+    exit_code: int
+    cargo_target_dir: str
+    stderr_tail: str
+    executables: dict[str, str]
+    skipped: bool
+
+
+def cargo_build(target_dir, toolchain=TOOLCHAIN) -> BuildResult:
     """Build the projected test targets and resolve every test EXECUTABLE from
     cargo's own JSON message stream (R6-EVID-01: never a hardcoded
     target/debug path)."""
@@ -169,14 +187,15 @@ def cargo_build(target_dir, toolchain=TOOLCHAIN):
         tgt = msg.get("target") or {}
         if "test" in (tgt.get("kind") or []) or msg.get("profile", {}).get("test"):
             executables[tgt.get("name")] = msg["executable"]
-    return {
-        "argv": argv,
-        "cwd": common.rel(PROJ),
-        "exit_code": p.returncode,
-        "cargo_target_dir": str(target_dir),
-        "stderr_tail": p.stderr[-4000:],
-        "executables": executables,
-    }
+    return BuildResult(
+        argv=argv,
+        cwd=common.rel(PROJ),
+        exit_code=p.returncode,
+        cargo_target_dir=str(target_dir),
+        stderr_tail=p.stderr[-4000:],
+        executables=executables,
+        skipped=False,
+    )
 
 
 def toolchain_versions(toolchain=TOOLCHAIN):
@@ -218,7 +237,7 @@ def plan_leaf_ids(plan, ref):
     return sorted(k for k in plan["leaves"] if k.startswith(f"cucumber:{ref}::"))
 
 
-def run_suite(name, meta, executable, workdir, out_dir, timeout_s):
+def run_suite(name, _meta, executable, workdir, out_dir, timeout_s):
     log_path = out_dir / f"{name}.log"
     argv = [str(executable), "--nocapture"]
     t0 = time.time()
@@ -544,7 +563,10 @@ def main():
 
     proj = projection_check.check()
     if not proj["ok"]:
-        anomalies.extend(f"projection: {p}" for p in proj["problems"])
+        proj_problems = proj["problems"]
+        anomalies.extend(
+            f"projection: {p}" for p in (proj_problems if isinstance(proj_problems, list) else [])
+        )
 
     ignore_tags = upstream_ignore_tags()
 
@@ -556,7 +578,15 @@ def main():
                 f"cargo build exited {build['exit_code']}: {build['stderr_tail'][-600:]}"
             )
     else:
-        build = {"skipped": True, "executables": {}}
+        build = BuildResult(
+            argv=[],
+            cwd=common.rel(PROJ),
+            exit_code=0,
+            cargo_target_dir=str(args.target_dir or (run_dir / "target")),
+            stderr_tail="",
+            executables={},
+            skipped=True,
+        )
 
     selected = args.suite or sorted(suites)
     unknown = [s for s in selected if s not in suites]
@@ -611,7 +641,8 @@ def main():
                 rec["suite_id"] = name
                 rec["log"] = common.rel(out_dir / f"server-{name}.log")
                 marker = out_dir / f"backend-spec-{name}.marker"
-                w = rec.get("backend_witness") or {}
+                witness = rec.get("backend_witness")
+                w = witness if isinstance(witness, dict) else {}
                 if w.get("marker_text"):
                     marker.write_text(w["marker_text"])
                     w["archived_marker"] = common.rel(marker)
@@ -625,7 +656,8 @@ def main():
     finally:
         if server is not None:
             rec = server.evidence()
-            w = rec.get("backend_witness") or {}
+            witness = rec.get("backend_witness")
+            w = witness if isinstance(witness, dict) else {}
             if w.get("marker_text"):
                 marker = out_dir / "backend-spec.marker"
                 marker.write_text(w["marker_text"])
@@ -655,6 +687,10 @@ def main():
     covered = [leaf for leaf in in_plan_leaves if leaf["status"] in ("PASSED", "FAILED", "SKIPPED")]
     green = [leaf for leaf in in_plan_leaves if leaf["status"] == "PASSED"]
 
+    # Counted once here rather than read back out of `results` further down: a
+    # value recovered from the JSON blob you just built is the same value with
+    # its type thrown away.
+    suites_executed = sum(1 for r in suite_rows if r.get("status") == "EXECUTED")
     results = {
         "schema": "typedb-r2-driver-lane-v1",
         "statement": (
@@ -688,7 +724,7 @@ def main():
         "leaves": leaf_rows,
         "counts": {
             "suites_selected": len(selected),
-            "suites_executed": sum(1 for r in suite_rows if r.get("status") == "EXECUTED"),
+            "suites_executed": suites_executed,
             "leaf_rows": len(leaf_rows),
             "leaf_rows_in_plan": len(in_plan_leaves),
             "leaf_rows_outside_plan": len(fabricated),
@@ -743,7 +779,7 @@ def main():
         "anomalies": anomalies,
         "observation": {
             "suites_selected": len(selected),
-            "suites_executed": results["counts"]["suites_executed"],
+            "suites_executed": suites_executed,
             "plan_leaves_in_scope": len(plan_leaves_in_scope),
             "plan_leaves_with_outcome": len(covered),
             "plan_leaves_passed": len(green),
@@ -766,7 +802,7 @@ def main():
     print(json.dumps(verdict, indent=1))
     print(
         f"DRIVER LANE {results['row_id']} ({args.lane}): "
-        f"{results['counts']['suites_executed']}/{len(selected)} suites "
+        f"{suites_executed}/{len(selected)} suites "
         f"executed, {len(covered)}/{len(plan_leaves_in_scope)} plan leaves "
         f"with a leaf outcome, {len(green)} passed, "
         f"{len(anomalies)} anomaly(ies) -> "

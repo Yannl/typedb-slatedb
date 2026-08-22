@@ -257,7 +257,11 @@ def lock_node(lock_doc: dict, node_id: str) -> dict:
 def tool_record(path_or_name: str, version: str | None = None, required=True) -> dict:
     resolved = shutil.which(path_or_name) or path_or_name
     p = pathlib.Path(resolved)
-    rec = {"name": pathlib.Path(path_or_name).name, "path": str(p), "required": required}
+    rec: dict[str, object] = {
+        "name": pathlib.Path(path_or_name).name,
+        "path": str(p),
+        "required": required,
+    }
     if p.is_file():
         rec["sha256"] = sha256_file(p)
     elif required:
@@ -541,7 +545,7 @@ def main() -> int:
     for line in (evidence / "phases.tsv").read_text().splitlines():
         name, exit_code, log_file, detail = line.split("\t", 3)
         log_path = evidence / log_file
-        rec = {
+        rec: dict[str, object] = {
             "name": name,
             "exit_code": int(exit_code),
             "verdict": "PASS" if exit_code == "0" else "FAIL",
@@ -594,6 +598,10 @@ def main() -> int:
     if cmd_path.is_file():
         commands = [json.loads(line) for line in cmd_path.read_text().splitlines() if line.strip()]
 
+    # A local the record merely holds: filled in below, and read back for the
+    # rollup. Reaching through `bundle["artifacts"]` for either is reaching
+    # through a value whose type the record cannot state.
+    artifacts: dict[str, str] = {}
     bundle = {
         "schema": SCHEMA,
         "sealed_at": datetime.now(timezone.utc).isoformat(),
@@ -619,7 +627,7 @@ def main() -> int:
             "required_phases": list(REQUIRED_PHASES),
         },
         "phases": phases,
-        "artifacts": {},
+        "artifacts": artifacts,
     }
     bundle["attestation"] = {
         "attested_by": "tools/s3-cert-corpus/run-corpus.sh via seal-bundle.py",
@@ -644,11 +652,11 @@ def main() -> int:
     for path in sorted(evidence.iterdir()):
         if path.name in ("bundle.json", "root.txt") or not path.is_file():
             continue
-        bundle["artifacts"][path.name] = sha256_file(path)
+        artifacts[path.name] = sha256_file(path)
 
     (evidence / "bundle.json").write_text(json.dumps(bundle, indent=1, sort_keys=False) + "\n")
 
-    names = sorted([*bundle["artifacts"].keys(), "bundle.json"])
+    names = sorted([*artifacts, "bundle.json"])
     root = rollup((n, sha256_file(evidence / n)) for n in names)
     (evidence / "root.txt").write_text(root + "\n")
 

@@ -271,7 +271,7 @@ def main():
     # tests) never became leaves on either side; they are reported so the
     # comparison cannot silently ignore a whole module of new tests
     extra = {}
-    for side, bundle, tmap in (("oracle", o, o_targets), ("candidate", c, c_targets)):
+    for side, _bundle, tmap in (("oracle", o, o_targets), ("candidate", c, c_targets)):
         for rid, t in tmap.items():
             if t.get("extra_cases"):
                 extra.setdefault(rid, {})[side] = t["extra_cases"]

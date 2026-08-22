@@ -218,20 +218,25 @@ def main():
     for f in untracked:
         added += len(set(TESTFN.findall((TB / f).read_text())))
 
-    report = {
+    # The values the gate below acts on are computed HERE, as locals. The
+    # report is a serialisation of them, not the place to read them back from:
+    # counts, lists, sets and booleans share one record, and indexing it gives
+    # a union that no `len()` or `for` can be proved against.
+    unmatched = [r["bazel_target"] for r in crosswalk if not r["cargo"]]
+    bijective = len({r["cargo"] for r in matched}) == len(matched)
+    bazel_only_non_rust_test = [label for label in bazel_only if upstream[label] != "rust_test"]
+    report: dict[str, object] = {
         "bazel_test_targets_upstream": len(upstream),
         "by_kind": dict(collections.Counter(upstream.values())),
         "catalogue_only_labels": cat_only,
-        "bazel_only_labels_non_rust_test": [
-            label for label in bazel_only if upstream[label] != "rust_test"
-        ],
+        "bazel_only_labels_non_rust_test": bazel_only_non_rust_test,
         "bazel_only_rust_test_count": sum(
             1 for label in bazel_only if upstream[label] == "rust_test"
         ),
         "rust_test_total": len(crosswalk),
         "rust_test_matched_to_cargo": len(matched),
-        "rust_test_unmatched": [r["bazel_target"] for r in crosswalk if not r["cargo"]],
-        "crosswalk_is_bijective": len({r["cargo"] for r in matched}) == len(matched),
+        "rust_test_unmatched": unmatched,
+        "crosswalk_is_bijective": bijective,
         "cargo_only_targets": cargo_only,
         "catalogue_cargo_equals_live_cargo": cat_cargo == live_cargo,
         "upstream_tests_dropped_by_fork": dropped,
@@ -247,40 +252,36 @@ def main():
     # would have printed and been ignored — the exact "a number that looks
     # like evidence but enforces nothing" failure this audit round is about.
     failures = []
-    if report["rust_test_unmatched"]:
+    if unmatched:
         failures.append(
-            f"{len(report['rust_test_unmatched'])} Bazel rust_test target(s) have no "
-            f"cargo counterpart: {report['rust_test_unmatched'][:5]}. Something the "
+            f"{len(unmatched)} Bazel rust_test target(s) have no "
+            f"cargo counterpart: {unmatched[:5]}. Something the "
             "upstream build tests is not reachable from cargo, so the cargo runs "
             "are no longer a superset."
         )
-    if not report["crosswalk_is_bijective"]:
+    if not bijective:
         failures.append(
             "the Bazel->cargo crosswalk is not bijective: two Bazel "
             "targets map onto one cargo target, so per-target outcomes "
             "cannot be attributed."
         )
-    if not report["catalogue_cargo_equals_live_cargo"]:
+    if cat_cargo != live_cargo:
         failures.append(
             "the catalogue's cargo target set no longer equals the live "
             "`cargo metadata` set: the denominator has drifted from the "
             "workspace."
         )
-    if report["upstream_tests_dropped_by_fork"]:
+    if dropped:
         failures.append(
             f"the fork DROPPED upstream #[test] functions: "
-            f"{list(report['upstream_tests_dropped_by_fork'])[:5]}. Removing an "
+            f"{list(dropped)[:5]}. Removing an "
             "upstream test is how a fork quietly stops being comparable."
         )
-    new_cat_only = [
-        label for label in report["catalogue_only_labels"] if label not in KNOWN_CATALOGUE_ONLY
-    ]
+    new_cat_only = [label for label in cat_only if label not in KNOWN_CATALOGUE_ONLY]
     if new_cat_only:
         failures.append(f"new catalogue label(s) with no Bazel referent: {new_cat_only}")
     new_bazel_only = [
-        label
-        for label in report["bazel_only_labels_non_rust_test"]
-        if label not in KNOWN_BAZEL_ONLY_NON_RUST_TEST
+        label for label in bazel_only_non_rust_test if label not in KNOWN_BAZEL_ONLY_NON_RUST_TEST
     ]
     if new_bazel_only:
         failures.append(f"new Bazel test target(s) absent from the catalogue: {new_bazel_only}")

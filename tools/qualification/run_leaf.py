@@ -177,7 +177,18 @@ def run_one(e, out_dir, timeout):
     }
 
 
-def analyse(row, out_dir, catalog_target_id, catalog_leaves, plan, fixtures):
+def _fork_digest(tree):
+    """The fork sub-record's tree digest, or None if the run recorded no fork.
+
+    Reached through the identity record, whose values are of several shapes; a
+    missing `fork` here must read as "no digest", never as an exception raised
+    while writing the run's own provenance.
+    """
+    fork = tree.get("fork")
+    return fork.get("fork_tree_sha256") if isinstance(fork, dict) else None
+
+
+def analyse(row, _out_dir, catalog_target_id, catalog_leaves, plan, fixtures):
     """Turn one archived log into leaf rows, or into a refusal with a reason.
 
     Everything here is derived from the LOG FILE, re-read from disk after the
@@ -429,10 +440,12 @@ def main():
         got = analyse(row, out_dir, ctid, catalog_leaves, plan, fixtures)
         leaves += got
         targets.append(row)
+        row_refusals = row["refusals"]
+        first_refusal = row_refusals[0] if isinstance(row_refusals, list) and row_refusals else None
         print(
             f"rc={row['exit_code']} {row['parsed_cases']} case(s) -> "
             f"{len(got)} leaf/leaves"
-            + (f"  REFUSED: {row['refusals'][0]}" if row["refusals"] else "")
+            + (f"  REFUSED: {first_refusal}" if first_refusal else "")
             + f"  [{row['duration_seconds']}s]",
             flush=True,
         )
@@ -469,8 +482,7 @@ def main():
         "tree_stable_across_run": tree_before["staged_delta_sha256"]
         == tree_after["staged_delta_sha256"]
         and tree_before["checkout_revision"] == tree_after["checkout_revision"],
-        "fork_worktree_changed_during_run": tree_before["fork"]["fork_tree_sha256"]
-        != tree_after["fork"]["fork_tree_sha256"],
+        "fork_worktree_changed_during_run": _fork_digest(tree_before) != _fork_digest(tree_after),
         "started_utc": None,
         "targets": sorted(targets, key=lambda r: r["runner_row_id"]),
         "leaves": sorted(leaves, key=lambda r: r["leaf_case_id"]),

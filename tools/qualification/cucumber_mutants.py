@@ -339,7 +339,7 @@ def swap_identical_names(c):
                     leaf["runtime_name"],
                 )
             ].append(leaf)
-    pair = next(v for k, v in sorted(g.items()) if len(v) >= 2)[:2]
+    pair = next(v for _k, v in sorted(g.items()) if len(v) >= 2)[:2]
     a, d = pair
     for k in ("leaf_case_id", "display_name", "example_index", "anchor"):
         a[k], d[k] = d[k], a[k]

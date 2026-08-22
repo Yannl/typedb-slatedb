@@ -50,7 +50,7 @@ def checkout_identity(path):
             "error": (rev.stderr or tree.stderr or st.stderr).strip(),
         }
     changed = [ln for ln in st.stdout.splitlines() if ln.strip()]
-    out = {
+    out: dict[str, object] = {
         "path": rel(path),
         "revision": rev.stdout.strip(),
         "tree": tree.stdout.strip(),

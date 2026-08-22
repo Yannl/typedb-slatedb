@@ -64,7 +64,7 @@ def locked_revision(node: dict) -> str:
     return rev
 
 
-def fetch_git(nid: str, node: dict, dest: pathlib.Path, force: bool) -> str:
+def fetch_git(_nid: str, node: dict, dest: pathlib.Path, force: bool) -> str:
     """Clone/fetch a git node to its locked revision. Returns a status word."""
     rev = locked_revision(node)
     repo = node["repository"]

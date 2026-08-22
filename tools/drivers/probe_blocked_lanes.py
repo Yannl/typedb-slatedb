@@ -32,9 +32,11 @@ REPO = common.REPO
 OUT = REPO / "docs" / "evidence" / "G1" / "drivers" / "blocked-lanes.json"
 
 
-def which(tool):
+def which(tool: str):
+    # Annotated: shutil.which's PathLike overload is deprecated, and an
+    # unannotated argument matches it.
     p = shutil.which(tool)
-    out = {"tool": tool, "path": p, "present": bool(p)}
+    out: dict[str, object] = {"tool": tool, "path": p, "present": bool(p)}
     if p:
         r = subprocess.run([p, "--version"], capture_output=True, text=True)
         out["version"] = (r.stdout or r.stderr).strip().splitlines()[:1]

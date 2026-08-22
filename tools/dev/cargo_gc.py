@@ -114,7 +114,7 @@ def main() -> int:
             groups = scan(deps, args.include_libs)
             freed = kept = 0
             stale = 0
-            for (stem, suffix), entries in sorted(groups.items()):
+            for _key, entries in sorted(groups.items()):
                 kept += entries[0][1]
                 for _mtime, size, path in entries[1:]:
                     freed += size

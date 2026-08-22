@@ -46,6 +46,7 @@ import re
 import shutil
 import subprocess
 import sys
+from typing import NotRequired, TypedDict
 import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -205,18 +206,50 @@ def scan_python_behaviour():
 # --------------------------------------------------------- wheel provenance
 
 
-def wheel_provenance(venv):
+class OnlyInWheel(TypedDict):
+    file: str
+    bytes: int
+    sha256: str
+
+
+class WheelProvenance(TypedDict):
+    """What the installed wheel is, against the locked driver source.
+
+    Declared rather than inferred: main() reads six of these keys back, and a
+    dict literal of this shape infers a union in which `len(...)` and `[:5]`
+    are unprovable — which is how `prov["metadata"].get(...)` came to be
+    checked against nothing at all.
+    """
+
+    site_packages: str
+    metadata: dict[str, str]
+    locked_driver_version: str
+    identical_to_locked_source: int
+    differing_from_locked_source: list[str]
+    only_in_wheel: list[str]
+    only_in_wheel_nonempty: list[OnlyInWheel]
+    only_in_locked_source: list[str]
+    native_extensions: list[dict[str, str]]
+    note: str
+    # attached by main() once the interpreter has been probed
+    harness_environment: NotRequired[dict[str, object]]
+
+
+def wheel_provenance(venv) -> WheelProvenance:
     site = next(iter((venv / "lib").glob("python3*/site-packages")))
     pkg = site / "typedb"
     src = PYROOT / "typedb"
-    identical, differing, only_wheel, only_source = [], [], [], []
+    identical: list[str] = []
+    differing: list[str] = []
+    only_wheel: list[OnlyInWheel] = []
+    only_source: list[str] = []
     sfiles = {p.relative_to(src).as_posix() for p in src.rglob("*.py")}
     wfiles = {p.relative_to(pkg).as_posix() for p in pkg.rglob("*.py")}
     for f in sorted(sfiles | wfiles):
         a, b = src / f, pkg / f
         if not a.is_file():
             only_wheel.append(
-                {"file": f, "bytes": b.stat().st_size, "sha256": common.sha256_file(b)}
+                OnlyInWheel(file=f, bytes=b.stat().st_size, sha256=common.sha256_file(b))
             )
         elif not b.is_file():
             only_source.append(f)
@@ -225,24 +258,24 @@ def wheel_provenance(venv):
         else:
             differing.append(f)
     dist = next(iter(site.glob("typedb_driver-*.dist-info")), None)
-    meta = {}
+    meta: dict[str, str] = {}
     if dist is not None:
         for line in (dist / "METADATA").read_text(errors="replace").splitlines():
             if line.startswith(("Name:", "Version:")):
                 k, v = line.split(":", 1)
                 meta[k.strip()] = v.strip()
     native = sorted(p.name for p in pkg.iterdir() if p.suffix == ".so")
-    return {
-        "site_packages": str(site),
-        "metadata": meta,
-        "locked_driver_version": DRIVER_VERSION,
-        "identical_to_locked_source": len(identical),
-        "differing_from_locked_source": differing,
-        "only_in_wheel": [f["file"] for f in only_wheel],
-        "only_in_wheel_nonempty": [f for f in only_wheel if f["bytes"] > 0],
-        "only_in_locked_source": only_source,
-        "native_extensions": [{"file": n, "sha256": common.sha256_file(pkg / n)} for n in native],
-        "note": (
+    return WheelProvenance(
+        site_packages=str(site),
+        metadata=meta,
+        locked_driver_version=DRIVER_VERSION,
+        identical_to_locked_source=len(identical),
+        differing_from_locked_source=differing,
+        only_in_wheel=[f["file"] for f in only_wheel],
+        only_in_wheel_nonempty=[f for f in only_wheel if f["bytes"] > 0],
+        only_in_locked_source=only_source,
+        native_extensions=[{"file": n, "sha256": common.sha256_file(pkg / n)} for n in native],
+        note=(
             "The published wheel is used because the Python driver's SWIG "
             "wrapper and native extension are Bazel outputs and neither bazel "
             "nor swig exists in this environment. Every pure-Python module in "
@@ -250,7 +283,7 @@ def wheel_provenance(venv):
             "the only files the wheel may add are Bazel-generated package "
             "markers and the SWIG products, which are enumerated above."
         ),
-    }
+    )
 
 
 IANA_AREAS = (
@@ -287,7 +320,7 @@ def corpus_time_zones(refs):
     return sorted(zones)
 
 
-def harness_environment(venv, refs):
+def harness_environment(venv, refs) -> dict[str, object]:
     """Facts about the interpreter environment the suite runs in, checked
     against the corpus rather than assumed.
 
@@ -336,7 +369,33 @@ def harness_environment(venv, refs):
 # ----------------------------------------------------------------- behave IO
 
 
-def materialise(suite_id, meta, run_dir):
+class FileDigest(TypedDict):
+    source: str
+    sha256: str
+
+
+class FeatureCopy(TypedDict):
+    source: str
+    sha256: str
+    copy_sha256: str
+
+
+class HarnessLayout(TypedDict):
+    """The behave working directory this lane rebuilds for one suite.
+
+    `feature.sha256` vs `feature.copy_sha256` is the check that the copy is the
+    locked corpus; leaving the record's type to inference made that comparison
+    unprovable, which is a poor property for the one line that catches a
+    substituted feature file.
+    """
+
+    features_dir: str
+    environment: FileDigest
+    feature: FeatureCopy
+    steps: list[FileDigest]
+
+
+def materialise(suite_id, meta, run_dir) -> tuple[pathlib.Path, HarnessLayout]:
     """Rebuild the Bazel `prepare_py_behave_directory` output for one suite."""
     d = run_dir / "features" / suite_id.replace("/", "__")
     if d.exists():
@@ -346,21 +405,21 @@ def materialise(suite_id, meta, run_dir):
     shutil.copy(env_src, d / "environment.py")
     feature_src = BEHAVIOUR / meta["feature_ref"]
     shutil.copy(feature_src, d / feature_src.name)
-    copied = []
+    copied: list[FileDigest] = []
     for rel in meta["step_files"]:
         s = REPO / rel
         shutil.copy(s, d / "steps" / s.name)
-        copied.append({"source": rel, "sha256": common.sha256_file(s)})
-    return d, {
-        "features_dir": str(d),
-        "environment": {"source": common.rel(env_src), "sha256": common.sha256_file(env_src)},
-        "feature": {
-            "source": common.rel(feature_src),
-            "sha256": common.sha256_file(feature_src),
-            "copy_sha256": common.sha256_file(d / feature_src.name),
-        },
-        "steps": copied,
-    }
+        copied.append(FileDigest(source=rel, sha256=common.sha256_file(s)))
+    return d, HarnessLayout(
+        features_dir=str(d),
+        environment=FileDigest(source=common.rel(env_src), sha256=common.sha256_file(env_src)),
+        feature=FeatureCopy(
+            source=common.rel(feature_src),
+            sha256=common.sha256_file(feature_src),
+            copy_sha256=common.sha256_file(d / feature_src.name),
+        ),
+        steps=copied,
+    )
 
 
 def parse_behave_json(path):
@@ -454,10 +513,11 @@ def main():
             anomalies.append(f"{node_id}: checkout does not match the source lock")
 
     prov = wheel_provenance(venv)
-    prov["harness_environment"] = harness_environment(
-        venv, [m["feature_ref"] for m in suites.values()]
-    )
-    for problem in prov["harness_environment"]["problems"]:
+    henv = harness_environment(venv, [m["feature_ref"] for m in suites.values()])
+    prov["harness_environment"] = henv
+    # Read from the value, not back out of the record it was just filed into.
+    problems = henv.get("problems")
+    for problem in problems if isinstance(problems, list) else []:
         anomalies.append(f"harness environment: {problem}")
     if prov["differing_from_locked_source"]:
         anomalies.append(
@@ -598,7 +658,8 @@ def main():
             anomalies.append(f"{suite_id}: the TypeDB server died during the suite")
         rec = server.evidence()
         rec["suite_id"] = suite_id
-        w = rec.get("backend_witness") or {}
+        witness = rec.get("backend_witness")
+        w = witness if isinstance(witness, dict) else {}
         if w.get("marker_text"):
             marker = out_dir / f"backend-spec-{sid_flat}.marker"
             marker.write_text(w["marker_text"])
@@ -707,6 +768,10 @@ def main():
     for leaf in leaf_rows:
         counts[leaf["status"]] = counts.get(leaf["status"], 0) + 1
 
+    # Counted once here rather than read back out of `results` further down: a
+    # value recovered from the JSON blob you just built is the same value with
+    # its type thrown away.
+    suites_executed = sum(1 for r in suite_rows if r.get("status") == "EXECUTED")
     results = {
         "schema": "typedb-r2-driver-lane-v1",
         "harness": "python-behave-json",
@@ -735,7 +800,7 @@ def main():
         "leaves": leaf_rows,
         "counts": {
             "suites_selected": len(selected),
-            "suites_executed": sum(1 for r in suite_rows if r.get("status") == "EXECUTED"),
+            "suites_executed": suites_executed,
             "leaf_rows": len(leaf_rows),
             "leaf_rows_in_plan": len(in_plan),
             "leaf_rows_outside_plan": len(leaf_rows) - len(in_plan),
@@ -784,7 +849,7 @@ def main():
         "anomalies": anomalies,
         "observation": {
             "suites_selected": len(selected),
-            "suites_executed": results["counts"]["suites_executed"],
+            "suites_executed": suites_executed,
             "plan_leaves_in_scope": len(scope),
             "plan_leaves_with_outcome": len(covered),
             "plan_leaves_passed": len(passed),
@@ -800,7 +865,7 @@ def main():
     print(json.dumps(verdict, indent=1))
     print(
         f"DRIVER LANE {results['row_id']} ({args.lane}): "
-        f"{results['counts']['suites_executed']}/{len(selected)} suites, "
+        f"{suites_executed}/{len(selected)} suites, "
         f"{len(covered)}/{len(scope)} plan leaves with an outcome, "
         f"{len(passed)} passed, {len(anomalies)} anomaly(ies) -> "
         f"{'GREEN' if green else 'RED'}",

@@ -139,6 +139,10 @@ def slatedb_consumption() -> dict:
 
 
 def build() -> dict:
+    # Locals the document holds: filled in below, so the record's own value
+    # type never has to stand in for "a dict I am about to write into".
+    workspaces: dict[str, dict[str, str]] = {}
+    artifacts: dict[str, str] = {}
     doc = {
         "document": "workspace release binding (brief v16 §0.2.1; generated, never hand-edited)",
         "generated_by": "tools/source-lock/generate_workspace_lock.py",
@@ -147,14 +151,14 @@ def build() -> dict:
         # the module docstring)
         "commit_binding": "external: post-checkout attestation of (HEAD, sha256 of this file)",
         "source_lock_sha256": sha256(REPO / "source-lock" / "source-lock.json"),
-        "workspaces": {},
+        "workspaces": workspaces,
         "fork_staging": fork_staging(),
         "slatedb_consumption": slatedb_consumption(),
         "toolchains": TOOLCHAINS,
-        "artifacts": {},
+        "artifacts": artifacts,
     }
     for name, paths in WORKSPACES.items():
-        doc["workspaces"][name] = {
+        workspaces[name] = {
             "manifest": paths["manifest"],
             "manifest_sha256": sha256(REPO / paths["manifest"]),
             "lockfile": paths["lockfile"],
@@ -162,7 +166,7 @@ def build() -> dict:
         }
     for rel in ARTIFACTS:
         p = REPO / rel
-        doc["artifacts"][rel] = sha256(p) if p.exists() else "MISSING"
+        artifacts[rel] = sha256(p) if p.exists() else "MISSING"
     return doc
 
 

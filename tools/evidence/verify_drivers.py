@@ -180,13 +180,21 @@ def reparse_log(text):
     cut = next((i for i, ln in enumerate(lines) if ln.strip() == "[Summary]"), None)
     body = lines[:cut] if cut is not None else lines
 
-    scen, cur = [], None
+    scen = []
+    cur: dict[str, object] | None = None
     for idx, ln in enumerate(body):
         mf = re.match(r"^Feature: (.*?) :: (.*)$", ln)
         if mf:
             if cur:
                 scen.append(cur)
-            cur = {"name": None, "p": 0, "f": 0, "s": 0, "hook": False, "line": idx + 1}
+            cur = {
+                "name": None,
+                "p": 0,
+                "f": 0,
+                "s": 0,
+                "hook": False,
+                "line": idx + 1,
+            }
             continue
         if cur is None:
             continue
@@ -200,7 +208,9 @@ def reparse_log(text):
         mst = re.match(r"^ {3}(✔>|✔|✘>|✘|\?>|\?)\s", ln)
         if mst:
             k = mst.group(1)[0]
-            cur["p" if k == "✔" else "f" if k == "✘" else "s"] += 1
+            key = "p" if k == "✔" else "f" if k == "✘" else "s"
+            prior = cur[key]
+            cur[key] = (prior if isinstance(prior, int) else 0) + 1
     if cur:
         scen.append(cur)
 
@@ -377,7 +387,14 @@ def git(repo, *args):
     )
 
 
-def verify(bundle_dir, repo, qualification=False):
+def verify(bundle_dir, repo):
+    """Re-derive one driver bundle from its archived bytes.
+
+    There is no `qualification` switch: this function always computes
+    `qualification_pass`, and the CALLER decides whether to act on it. The
+    parameter that used to sit here changed nothing, so a caller passing
+    `qualification=True` was turning on a strictness that did not exist.
+    """
     bundle_dir = pathlib.Path(bundle_dir).resolve()
     repo = pathlib.Path(repo).resolve()
     A = []  # anomalies
@@ -980,7 +997,7 @@ def main():
     ap.add_argument("--repo", type=pathlib.Path, default=DEFAULT_REPO)
     ap.add_argument("--qualification", "--strict", dest="qualification", action="store_true")
     args = ap.parse_args()
-    rep = verify(args.bundle, args.repo, args.qualification)
+    rep = verify(args.bundle, args.repo)
     print(json.dumps(rep, indent=1))
     bad = bool(rep["anomalies"]) or (args.qualification and not rep["qualification_pass"])
     print(

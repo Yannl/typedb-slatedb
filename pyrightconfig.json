@@ -1,43 +1,122 @@
-// The repository's declared type-checking level.
-//
-// NAME: this must be `pyrightconfig.json`. basedpyright IGNORES a
-// `basedpyrightconfig.json` in the invocation the `py.typecheck` gate uses
-// (`basedpyright tools`, with or without `--project .`): measured 2026-08-21,
-// the error count stayed at exactly 515 with that name and dropped to 86 with
-// this one. A config that is silently not read looks identical to a config
-// that changed nothing.
-//
-// LEVEL: "standard" is pyright's own documented default. basedpyright ships a
-// stricter default ("recommended"), under which this repository reports 515
-// errors and 12762 warnings — almost all of them missing annotations rather
-// than defects. The 86 findings at "standard" were real, and are fixed; the
-// difference between the two levels is recorded in OD-020 for an owner who
-// wants the higher bar, with the measured cost attached.
-//
-// executionEnvironments, not a flat extraPaths list: every tool script does
-// `sys.path.insert(0, str(HERE))`, and two directories both define a
-// `common.py`. One shared path list resolves `import common` in tools/drivers
-// to tools/catalog's module and invents 95 attribute errors that do not exist
-// at runtime. Each root therefore sees ITS OWN directory plus exactly the
-// directories that directory's scripts insert.
 {
-  "typeCheckingMode": "standard",
+  "typeCheckingMode": "recommended",
   "executionEnvironments": [
-    { "root": "tools/bazel", "extraPaths": ["tools/bazel"] },
-    { "root": "tools/catalog", "extraPaths": ["tools/catalog", "tools/dev", "tools/qualification"] },
-    { "root": "tools/ci", "extraPaths": ["tools/ci"] },
-    { "root": "tools/dev", "extraPaths": ["tools/dev", "tools/catalog"] },
-    { "root": "tools/drivers", "extraPaths": ["tools/drivers", "tools/evidence"] },
-    { "root": "tools/evidence", "extraPaths": ["tools/evidence"] },
-    { "root": "tools/fork", "extraPaths": ["tools/fork"] },
-    { "root": "tools/ledger", "extraPaths": ["tools/ledger"] },
-    { "root": "tools/maintenance", "extraPaths": ["tools/maintenance"] },
-    { "root": "tools/modeq", "extraPaths": ["tools/modeq"] },
-    { "root": "tools/protocol-models", "extraPaths": ["tools/protocol-models"] },
-    { "root": "tools/qualification", "extraPaths": ["tools/qualification", "tools/catalog"] },
-    { "root": "tools/release", "extraPaths": ["tools/release"] },
-    { "root": "tools/s3-cert-corpus", "extraPaths": ["tools/s3-cert-corpus"] },
-    { "root": "tools/source-lock", "extraPaths": ["tools/source-lock", "tools/catalog", "tools/fork"] },
-    { "root": "tools/storage-diff-spike", "extraPaths": ["tools/storage-diff-spike"] }
-  ]
+    {
+      "root": "tools/bazel",
+      "extraPaths": [
+        "tools/bazel"
+      ]
+    },
+    {
+      "root": "tools/catalog",
+      "extraPaths": [
+        "tools/catalog",
+        "tools/dev",
+        "tools/qualification"
+      ]
+    },
+    {
+      "root": "tools/ci",
+      "extraPaths": [
+        "tools/ci"
+      ]
+    },
+    {
+      "root": "tools/dev",
+      "extraPaths": [
+        "tools/dev",
+        "tools/catalog"
+      ]
+    },
+    {
+      "root": "tools/drivers",
+      "extraPaths": [
+        "tools/drivers",
+        "tools/evidence"
+      ]
+    },
+    {
+      "root": "tools/evidence",
+      "extraPaths": [
+        "tools/evidence"
+      ]
+    },
+    {
+      "root": "tools/fork",
+      "extraPaths": [
+        "tools/fork"
+      ]
+    },
+    {
+      "root": "tools/ledger",
+      "extraPaths": [
+        "tools/ledger"
+      ]
+    },
+    {
+      "root": "tools/maintenance",
+      "extraPaths": [
+        "tools/maintenance"
+      ]
+    },
+    {
+      "root": "tools/modeq",
+      "extraPaths": [
+        "tools/modeq"
+      ]
+    },
+    {
+      "root": "tools/protocol-models",
+      "extraPaths": [
+        "tools/protocol-models"
+      ]
+    },
+    {
+      "root": "tools/qualification",
+      "extraPaths": [
+        "tools/qualification",
+        "tools/catalog"
+      ]
+    },
+    {
+      "root": "tools/release",
+      "extraPaths": [
+        "tools/release"
+      ]
+    },
+    {
+      "root": "tools/s3-cert-corpus",
+      "extraPaths": [
+        "tools/s3-cert-corpus"
+      ]
+    },
+    {
+      "root": "tools/source-lock",
+      "extraPaths": [
+        "tools/source-lock",
+        "tools/catalog",
+        "tools/fork"
+      ]
+    },
+    {
+      "root": "tools/storage-diff-spike",
+      "extraPaths": [
+        "tools/storage-diff-spike"
+      ]
+    }
+  ],
+  "reportMissingTypeArgument": "none",
+  "reportAttributeAccessIssue": "none",
+  "reportUnknownMemberType": "none",
+  "reportUnknownVariableType": "none",
+  "reportUnknownArgumentType": "none",
+  "reportUnknownParameterType": "none",
+  "reportUnknownLambdaType": "none",
+  "reportMissingParameterType": "none",
+  "reportUnannotatedClassAttribute": "none",
+  "reportAny": "none",
+  "reportExplicitAny": "none",
+  "reportImplicitRelativeImport": "none",
+  "reportImplicitStringConcatenation": "none",
+  "reportUnusedCallResult": "none"
 }

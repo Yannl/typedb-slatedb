@@ -398,7 +398,7 @@ def executed_tree_identity():
     # from stage.py is recorded alongside, so nothing is hidden by the split.
     unstaged_cargo = [r for r in unstaged if r not in NON_CARGO_INPUTS]
     unexplained = [c["path"] for c in classified if c["class"] == "UNEXPLAINED"]
-    state, state_line = stage_state()
+    _state, state_line = stage_state()
     # PRISTINE is decided on the SOURCE delta, not on raw `git status`.
     # `source_entries` already excludes RUNTIME_OUTPUT and NON_CARGO_INPUT, and
     # `staged_delta_sha256` is computed over exactly those entries — so testing

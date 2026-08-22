@@ -130,8 +130,9 @@ def lane_artifact_exec(tree, _record):
             problems.append("exit 127 (loader/not-found)")
         if expect["exit"] is not None and r.returncode != expect["exit"]:
             problems.append(f"exit {r.returncode} want {expect['exit']}")
-        if expect["must_contain"] not in out:
-            problems.append(f"output lacks {expect['must_contain']!r}")
+        must_contain = expect["must_contain"]
+        if isinstance(must_contain, str) and must_contain not in out:
+            problems.append(f"output lacks {must_contain!r}")
         if problems:
             ok = False
             log.append(f"FAIL {rel}: {'; '.join(problems)}; first-line={first!r}")
@@ -224,7 +225,7 @@ def lane_artifact_health(tree, _record):
                     # the server telling us it is serving, which is the claim
                     # this lane makes. Pinning 200 exactly would have made a
                     # healthy server look dead.
-                    if status is not None and 200 <= status < 300:
+                    if 200 <= status < 300:
                         break
                 except OSError:
                     status = None

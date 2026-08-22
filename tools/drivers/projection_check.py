@@ -100,7 +100,10 @@ def _lock_packages(path):
 
 def check():
     problems = []
-    report = {"schema": "driver-projection-check-v1", "problems": problems}
+    # A heterogeneous report record: sub-objects, counts, lists and a final
+    # boolean. Declared as such so each `report[...] = ...` is checked against
+    # the container rather than against whatever the first two keys implied.
+    report: dict[str, object] = {"schema": "driver-projection-check-v1", "problems": problems}
 
     if tomllib is None:
         problems.append("python tomllib unavailable; cannot parse manifests")
@@ -219,7 +222,7 @@ def check():
     # ---- 5 dependency spec parity ---------------------------------------
     up_ws = _toml(DRIVER / "Cargo.toml")["workspace"]["dependencies"]
     pj_ws = _toml(PROJ / "Cargo.toml")["workspace"]["dependencies"]
-    spec_report = {}
+    spec_report: dict[str, dict[str, object]] = {}
     for name, pj in sorted(pj_ws.items()):
         if "path" in pj and name in ("config", "steps"):
             continue
@@ -284,8 +287,10 @@ def main():
     ap.parse_args()
     rep = check()
     print(json.dumps(rep, indent=1))
+    problems = rep["problems"]
     if not rep["ok"]:
-        print(f"PROJECTION CHECK FAILED: {len(rep['problems'])} problem(s)", file=sys.stderr)
+        n = len(problems) if isinstance(problems, list) else 0
+        print(f"PROJECTION CHECK FAILED: {n} problem(s)", file=sys.stderr)
     return 0 if rep["ok"] else 1
 
 

@@ -60,6 +60,40 @@ def run_in(root, *args):
     )
 
 
+# The conditions under which an install control could not RUN, as pip reports
+# them: the index was unreachable, or the machine ran out of disk mid-install.
+# These are the ONLY reasons such a control may decline to conclude, and it
+# declines out loud — a skip, never a pass, because a control that did not
+# execute proves nothing. Anything else nonzero is a real finding about the
+# bootstrap. (Both were observed on this machine: the fork's build tree is 20 GB
+# and an ENOSPC install failure reads exactly like a broken bootstrap.)
+COULD_NOT_RUN = (
+    "Temporary failure in name resolution",
+    "Failed to establish a new connection",
+    "Connection reset by peer",
+    "Read timed out",
+    "ProxyError",
+    "SSLError",
+    "503 Server Error",
+    "502 Server Error",
+    "No matching distribution found",
+    "No space left on device",
+    "Errno 28",
+    "Disk quota exceeded",
+)
+
+
+def skip_if_the_control_could_not_run(proc) -> None:
+    combined = proc.stdout + proc.stderr
+    hit = next((marker for marker in COULD_NOT_RUN if marker in combined), None)
+    if hit is not None:
+        pytest.skip(
+            f"this control could not execute: {hit!r}. That is INFRASTRUCTURE — an unreachable "
+            f"package index or a full disk — not a verdict about the bootstrap, and it is reported "
+            f"as a skip rather than a pass because a control that did not run proves nothing."
+        )
+
+
 def test_the_plan_names_a_command_for_every_tool_in_the_lock():
     import tomllib
 
@@ -89,6 +123,7 @@ def test_a_clean_runner_with_no_python_environment_refuses_as_infrastructure(sha
 
 def test_a_clean_runner_installs_from_the_hash_locked_closure_and_then_verifies(shadow):
     proc = run_in(shadow, "--install", "--only", "tool.ruff", "--only", "tool.pip-audit")
+    skip_if_the_control_could_not_run(proc)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     venv = shadow / ".quality" / ".venv"
     assert venv.is_dir(), "the bootstrap must create the repository-owned Python environment"
@@ -104,7 +139,7 @@ def test_a_clean_runner_installs_from_the_hash_locked_closure_and_then_verifies(
 
 
 def test_the_manifest_root_changes_when_the_tool_set_does(shadow):
-    run_in(shadow, "--install", "--only", "tool.ruff")
+    skip_if_the_control_could_not_run(run_in(shadow, "--install", "--only", "tool.ruff"))
     first = json.loads((shadow / "artifacts" / "quality" / "bootstrap-manifest.json").read_text())
     run_in(shadow, "--check", "--only", "tool.ruff", "--only", "tool.pip-audit")
     second = json.loads((shadow / "artifacts" / "quality" / "bootstrap-manifest.json").read_text())

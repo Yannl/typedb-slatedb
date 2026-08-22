@@ -11,7 +11,7 @@ and platform operational behavior cannot be reproduced locally.
 
 | Lane | What runs | Backend | Fidelity | Status |
 |---|---|---|---|---|
-| **L0** | TypeDB server, native process | `StorageFactory` profile **U1** (RocksDB + file WAL), **U2** (SlateDB LocalFS), or **U2S3** (SlateDB over a local MinIO speaking the S3 API R2 serves — TB-P8) | Storage semantics exact; U2S3 additionally exercises the real S3 data-path protocol (conditional puts included); no distribution | U1/U2 adapter lanes run locally (TB-P7/TB-P8). Honesty (R4-EVID-02): the archived U2S3 run is a HISTORICAL dirty-tree target-aggregate smoke (`docs/evidence/G3/u2s3-full-3/CLASSIFICATION.json`), not qualification; leaf-level plan coverage is 0/23,138 (`docs/evidence/G1/plan-coverage-v2.json`) |
+| **L0** | TypeDB server, native process | `StorageFactory` profile **U1** (RocksDB + file WAL), **U2** (SlateDB LocalFS), or **U2S3** (SlateDB over a local MinIO speaking the S3 API R2 serves — TB-P8) | Storage semantics exact; U2S3 additionally exercises the real S3 data-path protocol (conditional puts included); no distribution | U1/U2 adapter lanes run locally (TB-P7/TB-P8). Honesty (R4-EVID-02): the archived U2S3 run is a HISTORICAL dirty-tree target-aggregate smoke (`docs/evidence/G3/u2s3-full-3/CLASSIFICATION.json`), not qualification; leaf-level plan coverage is whatever `current.coverage` says (rendered into `docs/operations.md`) — this cell used to restate it, and the restatement went stale (R8-P2-06) |
 | **L1** | Gateway Worker + `DatabaseControllerDO` under **workerd** (`wrangler dev --local -c wrangler.local-dev.toml`), payloads through the **local R2 binding**; TypeDB (or the Rust spike client) as native process | Remote WAL protocol against the real DO runtime | DO/Worker semantics = production engine; R2 = API-faithful simulator; **security posture = developer-convenience (dev issuer/admin routes), explicitly NON-PARITY (R4-STACK-01/R4-SEC-01)** | E2E green on the dev-issuer surface (`control-plane/scripts/local-stack-e2e.mjs`); it proves refusal mechanics and protocol shape, NOT the production authorization topology — the managed-posture parity lane lands with the private issuer/registry (R4-PR1) |
 | **L2** | Full topology: TypeDB in the production container image next to workerd, orchestrated by `wrangler dev` container support | Same as production wiring | Adds container lifecycle | Needs a Docker daemon — available on dev machines; absent in this CI sandbox |
 | **L3** | Real Cloudflare staging account | Real R2/DO/Containers/Bucket Lock | Platform facts, cost/latency envelopes | Blocked on credentials (SI-G0-3); the only lane that can close gate G2 |
@@ -107,9 +107,12 @@ exists precisely so this choice has no consequences:
 - **Application developers** (people building on TypeDB's query API): use
   the cheapest lane, L0/U1 — plain TypeDB semantics with local RocksDB +
   file WAL. Backend invisibility at the TypeQL/driver surface is the
-  INTENDED gate criterion, and today it is NOT yet measured: leaf-level
-  plan coverage is 0/23,138 and the official-driver lanes are
-  NOT_IMPLEMENTED (R4-EVID-02). U0–U4 structural equality (result sets,
+  INTENDED gate criterion, and it is measured by the leaf-level plan
+  coverage the ledger owns (`current.coverage`, rendered into
+  `docs/operations.md`) together with the official-driver lanes. The numbers
+  are deliberately NOT copied here: this paragraph carried a hand-typed
+  numerator and denominator for three rounds after the coverage lanes started
+  producing rows (R8-P2-06). U0–U4 structural equality (result sets,
   errors, transaction outcomes, visibility, recovery frontiers) is what
   G3/G5/G6 will certify. Only when those gates are green does
   "swap the backend" become a proven no-op for applications —

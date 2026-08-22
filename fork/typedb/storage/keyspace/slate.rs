@@ -4100,7 +4100,9 @@ mod materialisation_namespace_tests {
     //! hosts) cannot change the remote namespace, and distinct identities never
     //! alias.
 
-    use super::MaterialisationNamespace;
+    use std::path::Path;
+
+    use super::{DB_SUBDIR, FORMAT_VERSION_SEGMENT, MaterialisationNamespace, encode_segment};
 
     fn namespace() -> MaterialisationNamespace {
         MaterialisationNamespace {
@@ -4111,6 +4113,106 @@ mod materialisation_namespace_tests {
             materialisation: "m0001".to_owned(),
             keyspace: "data".to_owned(),
         }
+    }
+
+    /// R8-P2-05: the declared grammar must still describe what this adapter
+    /// WRITES.
+    ///
+    /// `schemas/materialisation-namespace.json` is read by
+    /// `tools/maintenance/namespace_codec.py`, so a GC report attributes objects
+    /// to databases through that declaration. Before it, the Python tool carried
+    /// its own copy of the segment positions and covered only the legacy shape.
+    /// A shared declaration only helps while it stays true, so this test holds
+    /// it against the code rather than against a reviewer's memory: the segment
+    /// NAMES and ORDER, the literal subdirectory that follows, the escape rules,
+    /// and — by rebuilding a prefix from the declaration — the encoding itself.
+    #[test]
+    fn the_declared_namespace_schema_still_describes_what_this_adapter_writes() {
+        let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."));
+        let text = std::fs::read_to_string(root.join("schemas/materialisation-namespace.json"))
+            .expect("schemas/materialisation-namespace.json must exist");
+        let doc: serde_json::Value = serde_json::from_str(&text).expect("schema must parse");
+        let versions = doc["versions"].as_array().expect("versions array");
+
+        let segments_of = |id: &str| -> Vec<String> {
+            versions
+                .iter()
+                .find(|v| v["id"] == id)
+                .unwrap_or_else(|| panic!("the schema must declare {id}"))["segments"]
+                .as_array()
+                .expect("segments array")
+                .iter()
+                .map(|s| s.as_str().expect("segment name").to_owned())
+                .collect()
+        };
+
+        // v2 is this struct, field for field and in order. A renamed or
+        // reordered field that the schema does not learn about would make the
+        // maintenance tool attribute one database's objects to another.
+        assert_eq!(
+            segments_of("v2-controller"),
+            vec!["environment", "tenant", "database_id", "generation", "materialisation", "keyspace"],
+            "MaterialisationNamespace::to_object_prefix joins its segments in this order"
+        );
+        // v1 is object_prefix() + FORMAT_VERSION_SEGMENT + the materialisation id.
+        assert_eq!(segments_of("v1-legacy-path"), vec!["keyspace", "format_version", "materialisation"],);
+
+        for version in versions {
+            assert_eq!(
+                version["followed_by"], DB_SUBDIR,
+                "the SlateDB subtree sits under `{DB_SUBDIR}/` in both lanes, and that segment is \
+                 what makes the two versions unambiguous"
+            );
+        }
+
+        // The escape rules, checked against the encoder rather than restated.
+        let escape = &doc["escape"];
+        assert_eq!(escape["escape_char"], "=");
+        assert_eq!(escape["unreserved"], "A-Za-z0-9._-");
+        assert_eq!(encode_segment("/"), escape["rules"][0]["encoded"].as_str().unwrap());
+        assert_eq!(encode_segment("="), escape["rules"][1]["encoded"].as_str().unwrap());
+        assert_eq!(encode_segment(" "), "=x20", "any other byte is =xHH, lowercase hex");
+
+        // And the whole derivation, rebuilt from the declaration alone.
+        let ns = namespace();
+        let by_declaration: Vec<String> = segments_of("v2-controller")
+            .iter()
+            .map(|name| {
+                encode_segment(match name.as_str() {
+                    "environment" => &ns.environment,
+                    "tenant" => &ns.tenant,
+                    "database_id" => &ns.database_id,
+                    "generation" => &ns.generation,
+                    "materialisation" => &ns.materialisation,
+                    "keyspace" => &ns.keyspace,
+                    other => panic!("the schema names a segment this struct does not have: {other}"),
+                })
+            })
+            .collect();
+        assert_eq!(
+            format!("typedb/{}", by_declaration.join("/")),
+            ns.to_object_prefix("typedb").as_ref(),
+            "a prefix rebuilt from the declaration must equal the one the adapter writes"
+        );
+
+        // The legacy shape's constraints must still match what it emits.
+        let v1 = versions.iter().find(|v| v["id"] == "v1-legacy-path").unwrap();
+        let fv = v1["constraints"]["format_version"].as_str().unwrap();
+        assert!(
+            regex_lite_matches(fv, FORMAT_VERSION_SEGMENT),
+            "the declared format-version pattern {fv} must accept {FORMAT_VERSION_SEGMENT}"
+        );
+    }
+
+    /// `^fv[0-9]+$`-shaped patterns only: enough to hold the declaration
+    /// against the constant without adding a regex dependency to the fork.
+    fn regex_lite_matches(pattern: &str, value: &str) -> bool {
+        let body = pattern.trim_start_matches('^').trim_end_matches('$');
+        let Some((literal, class)) = body.split_once("[0-9]+") else {
+            return body == value;
+        };
+        assert!(class.is_empty(), "this helper handles `^<literal>[0-9]+$` only, got {pattern}");
+        value.strip_prefix(literal).is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
     }
 
     #[test]

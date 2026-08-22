@@ -368,6 +368,17 @@
    "what_a_decision_would_change": "CARRY: the entries stay, with review dates, and a G2 run states them in its risk record. FORK THE LOCK: fork/typedb/Cargo.lock diverges from the pinned upstream revision, which changes the executed-tree identity every sealed leaf bundle is bound to - so every lane is re-run and every bundle re-sealed. That is a deliberate, expensive choice, which is why it is the owner's.",
    "raised_by": "R8-P1-05",
    "raised_on": "2026-08-22"
+  },
+  {
+   "id": "OD-026",
+   "status": "OPEN",
+   "title": "Pre-auth rate limiting on the managed Worker: which mechanism, and what budget",
+   "question": "R8-P2-04 requires that every unauthenticated or pre-auth surface be rate-limited as well as body-capped. The body cap is implemented and tested (MAX_REQUEST_BODY_BYTES / MAX_STRUCTURAL_BODY_BYTES in control-plane/src/controller/worker-entry.ts, with REQUEST_BODY_TOO_LARGE refusals proved by executed tests). Rate limiting is not, and it cannot be chosen here: a per-isolate token bucket is not a rate limit across a Cloudflare deployment, Cloudflare's native rate-limiting binding needs an account-level budget the owner sets, and WAF rate-limiting rules live outside this repository entirely. Which mechanism, and at what requests-per-period budget per client, for the pre-auth surfaces (/live, /ready, /health and the capability frame check that precedes any Durable Object contact)?",
+   "safe_default": "There is no public route today and the posture that removes one is machine-checked: wrangler.toml sets workers_dev = false and preview_urls = false, and stack/wrangler-check.mjs FAILS pre-deployment if either is anything but explicitly false, in both the config and the canonical graph. With no workers.dev URL, no preview URL and no declared route, there is no unauthenticated surface for an anonymous client to reach, so the absent rate limit currently guards a door that is not open.",
+   "why_safe_not_correct": "Safe only while that stays true. The first `[[routes]]` entry, or the first service that fronts this Worker, makes the pre-auth surfaces reachable and the rate limit load-bearing on the same day \u2014 and a default of 'none' is then indistinguishable from an oversight. It is also the wrong PLACE to be safe: the protection this project actually wants in front of a public route is an outer service identity (Cloudflare Access or mTLS), with the capability still required underneath, and a rate limit is the floor beneath that, not a substitute for it.",
+   "what_a_decision_would_change": "NATIVE BINDING: a rate-limiting binding is declared in wrangler.toml and in stack/graph.data.mjs, worker-entry.ts consults it before any pre-auth work, and the managed profile REFUSES to serve when the binding is absent (fail closed, like every other managed input). WAF RULE: the budget lives outside this repository, and the posture check gains an attestation field naming the rule so the gap is recorded rather than assumed. EITHER WAY the route-posture check below becomes enforceable: a declared route with no declared outer identity and no declared limiter fails pre-deployment.",
+   "raised_by": "R8-P2-04",
+   "raised_on": "2026-08-22"
   }
  ]
 }

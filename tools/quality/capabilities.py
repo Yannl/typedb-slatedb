@@ -172,7 +172,8 @@ def probe_npm_bin(spec: dict) -> tuple[bool, str]:
 def probe_python_module(spec: dict) -> tuple[bool, str]:
     interpreter = str(VENV_PYTHON) if spec.get("venv") else sys.executable
     if spec.get("venv") and not VENV_PYTHON.is_file():
-        return False, f"the repository-owned venv is absent ({VENV_PYTHON.relative_to(REPO)})"
+        where = VENV_PYTHON.relative_to(REPO) if VENV_PYTHON.is_relative_to(REPO) else VENV_PYTHON
+        return False, f"the repository-owned venv is absent ({where})"
     proc = subprocess.run(
         [interpreter, "-c", f"import {spec['module']} as m; print(getattr(m,'__version__',''))"],
         capture_output=True,
@@ -288,7 +289,15 @@ class InventoryError(Exception):
     pass
 
 
-def load(path: pathlib.Path = INVENTORY) -> dict:
+def load(path: pathlib.Path | None = None) -> dict:
+    """Read and validate the inventory.
+
+    `path` is resolved at CALL time rather than bound as a default: a default
+    argument would freeze the module constant at import, so redirecting the
+    inventory (a test fixture, a repository under test) would silently read the
+    real one and answer about the wrong tree.
+    """
+    path = path or INVENTORY
     try:
         inventory = tomllib.loads(path.read_text())
     except (OSError, tomllib.TOMLDecodeError) as error:

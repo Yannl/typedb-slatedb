@@ -48,6 +48,34 @@ Managed runtime inputs are declared once in `control-plane/src/controller/core/k
 
 The Worker reaches R2 through the platform `PAYLOADS` binding (no held S3 credential; `wrangler.toml`). The TypeDB/SlateDB S3 lane (native MinIO/RustFS locally, real R2 later) uses S3 credentials held by the storage workload — per-database scoping, delete-denial, and issuance ancestry are the open R5-SEC audit items owned by the storage/lifecycle workstreams, not implemented here.
 
+## Deployment posture: the service boundary stays private (R8-P2-04)
+
+The round-8 audit reviewed the authorization split and asked for **no second
+identity model**: TypeDB authenticates database users; control-plane and
+storage operations use short-lived machine capabilities; the managed Worker
+holds verifier keys only. Adding a password or JWT layer inside the storage
+adapter would not replace TypeDB auth — it would duplicate it, and two identity
+models is how a system ends up with one that is not maintained.
+
+What the audit requires instead is that the boundary itself stay private. Each
+requirement below names where it is ENFORCED, or says plainly that it is not.
+
+| Requirement | Enforced by | State |
+|---|---|---|
+| No public `workers.dev` or preview URL | `control-plane/wrangler.toml` (`workers_dev = false`, `preview_urls = false`) and `stack/wrangler-check.mjs`, which fails pre-deployment if either is anything but explicitly `false` in BOTH the config and the canonical graph | **machine-checked** |
+| Controller ↔ container over private in-runtime addressing, not a public URL | Both Durable Objects are reached by typed RPC on a registry-derived DO id (`registry.ts`, `worker-entry.ts`); `.quality/architecture/dependency-cruiser.cjs` refuses a production import across the two DOs in either direction, so neither can grow a second route into the other | **machine-checked** |
+| Body cap on every pre-auth surface | `MAX_REQUEST_BODY_BYTES` (8 MiB) and `MAX_STRUCTURAL_BODY_BYTES` (256 KiB) in `worker-entry.ts`; an absent or over-declared `content-length` is refused (`REQUEST_BODY_TOO_LARGE`, `REQUEST_BODY_LENGTH_MISMATCH`, `REQUEST_BODY_INCOMPLETE`), proved by executed tests | **implemented** |
+| Rate limit on every pre-auth surface | — | **OPEN: OD-026.** A per-isolate bucket is not a deployment-wide limit, and the native binding needs an owner-set budget. Safe today only because no route is declared; the first route makes it load-bearing the same day |
+| Outer service identity (Cloudflare Access / mTLS) if an HTTP route is ever exposed | — | **OPEN: OD-026.** The capability remains required underneath either way; the outer identity is defence in depth, never a replacement |
+| R2 credentials least privilege, bucket-scoped, runtime without delete | The Worker holds NO S3 credential — it reaches R2 through the platform `PAYLOADS` binding. The native SlateDB lane's runtime store is wrapped in `NoDeleteStore` (`fork/typedb/storage/keyspace/slate.rs`), which refuses a delete before it reaches the provider, so the runtime path contains no delete request to be misconfigured into working | **implemented for the runtime path;** issuance ancestry and bucket scoping are deployment-side and remain owner-side |
+| Maintenance authority separate from runtime authority | `tools/maintenance/s3_gc.py` is report-only and contains no delete request at all; deletion arrives with G13, behind its gate record, together with the separated IAM principal | **implemented (by absence, deliberately)** |
+| No capability, key material or S3 secret in logs | The GC tool passes credentials to `curl` on a private config-file FD, never in argv (R8-P2-05, proved by `test_the_bucket_secret_never_appears_in_the_child_process_argv`); `resolveKeysOr500` returns a stable `KEY_CONFIG_INVALID` code plus a correlation id to the caller and logs the detail internally (R8-P2-03) | **implemented** |
+
+The two OPEN rows are OD-026 and are deliberately not closed by prose. While
+they are open, no gate may be claimed on the strength of the safe default —
+that is the registry's own rule, and it is the reason this table records a
+dash rather than a paragraph explaining why a dash is fine.
+
 ## Explicit gaps (owned elsewhere, not silently claimed)
 
 - Private issuer as a deployed service + Rust client lifecycle issuance (R5-SEC-02 follow-up; the loopback HTTP issuer in `scripts/issuer.mjs` is its local seam).

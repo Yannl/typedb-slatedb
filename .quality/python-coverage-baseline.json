@@ -1,0 +1,26 @@
+{
+ "schema": "typedb-python-coverage-baseline-v1",
+ "why": "R8-P1-06: the branch rates a change may not fall below, and the floor every CHANGED measured module must reach. PROTECTED: lowering a number here is a reviewed act, which is what makes 'no regression' mean anything.",
+ "floor_changed": 0.55,
+ "as_of_commit": "7e6734ecedb9cc31945092dd79cb06e09a01dc12",
+ "modules": {
+  "tools/catalog/common.py": 0.0,
+  "tools/fork/stage.py": 0.2105,
+  "tools/fork/test_stage_runtime_output.py": 1.0,
+  "tools/maintenance/namespace_codec.py": 1.0,
+  "tools/maintenance/s3_gc.py": 0.5769,
+  "tools/maintenance/test_s3_gc.py": 1.0,
+  "tools/modeq/test_validate_modeq.py": 1.0,
+  "tools/modeq/validate_modeq.py": 0.6154,
+  "tools/qualification/leaf_common.py": 0.2353,
+  "tools/qualification/test_verifier_primitives.py": 1.0,
+  "tools/quality/capabilities.py": 0.9211,
+  "tools/quality/python_coverage_floor.py": 0.8684,
+  "tools/quality/python_inventory.py": 0.8542,
+  "tools/quality/test_bootstrap.py": 0.9167,
+  "tools/quality/test_capability_probes.py": 1.0,
+  "tools/quality/test_python_inventory.py": 1.0,
+  "tools/release/ed25519_ref.py": 0.75,
+  "tools/release/test_ed25519_vectors.py": 0.5294
+ }
+}

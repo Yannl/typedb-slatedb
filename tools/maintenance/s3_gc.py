@@ -33,10 +33,14 @@ every local observer for the lifetime of the request. See `s3_request`.
 
 import argparse
 import os
+import pathlib
 import subprocess
 import sys
 import urllib.parse
 import xml.etree.ElementTree as ET
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import namespace_codec  # noqa: E402
 
 NS = {"s3": "http://s3.amazonaws.com/doc/2006-03-01/"}
 
@@ -129,14 +133,30 @@ def list_all(endpoint, bucket, region, key_id, secret, prefix):
 
 
 def materialization_of(key, root_prefix):
-    """Split `<root>/<keyspace>/<fv>/<materialisation>/…` or None."""
-    if not key.startswith(root_prefix + "/"):
+    """Decode one object key through the SHARED namespace codec, or None.
+
+    R8-P2-05: this used to reimplement the layout — `parts[0], parts[1],
+    parts[2]`, with `parts[2].startswith("m")` standing in for a grammar. It
+    covered only the legacy host-path shape and would have mis-attributed every
+    object the moment the controller-derived namespace was wired, because a
+    copy of a layout is a layout that will disagree. The grammar now lives in
+    `schemas/materialisation-namespace.json`, which a Rust test holds against
+    what the adapter actually writes, and this reads it.
+
+    A key that decodes under no declared version returns None and is skipped —
+    a maintenance tool that GUESSES which database an object belongs to is
+    worse than one that says it does not know.
+    """
+    try:
+        fields = namespace_codec.parse(key, root_prefix)
+    except namespace_codec.NamespaceError:
         return None
-    parts = key[len(root_prefix) + 1 :].split("/")
-    if len(parts) < 4 or not parts[2].startswith("m"):
-        return None
-    keyspace, format_version, materialization = parts[0], parts[1], parts[2]
-    return keyspace, format_version, materialization
+    return (
+        fields["version"],
+        fields.get("keyspace", ""),
+        fields.get("format_version", fields.get("generation", "")),
+        fields["materialisation"],
+    )
 
 
 def main():
@@ -206,10 +226,15 @@ def main():
     if not per_materialization:
         print(f"no materialisations under {root_prefix}/")
         return
-    print(f"{'keyspace':<40} {'materialisation':<64} {'objects':>8} {'bytes':>14} last-modified")
-    for (keyspace, format_version, materialization), entry in sorted(per_materialization.items()):
+    print(
+        f"{'namespace':<16} {'keyspace':<40} {'materialisation':<64} "
+        f"{'objects':>8} {'bytes':>14} last-modified"
+    )
+    for (version, keyspace, generation, materialization), entry in sorted(
+        per_materialization.items()
+    ):
         print(
-            f"{keyspace[:40]:<40} {format_version + '/' + materialization:<64} "
+            f"{version:<16} {keyspace[:40]:<40} {generation + '/' + materialization:<64} "
             f"{entry['objects']:>8} {entry['bytes']:>14} {entry['last_modified']}"
         )
     print(

@@ -46,12 +46,6 @@ owner = "quality-controller"
 review_after = "2026-11-20"
 
 [[exclusion]]
-path = "tools/catalog/common.py"
-reason = "library. Catalogue/runner tooling driven by the U0/U1/U2 execution lanes. Its correctness is established by the sealed bundles those lanes produce and by the verifiers that re-derive them, not by a unit import. Module purpose: Shared facts for the catalogue toolchain (one definition each)."
-owner = "quality-controller"
-review_after = "2026-11-20"
-
-[[exclusion]]
 path = "tools/catalog/compare_u2s3.py"
 reason = "CLI. Catalogue/runner tooling driven by the U0/U1/U2 execution lanes. Its correctness is established by the sealed bundles those lanes produce and by the verifiers that re-derive them, not by a unit import. Module purpose: Symmetric, exact comparison of a SlateDB-over-S3 corpus run against the"
 owner = "quality-controller"
@@ -334,12 +328,6 @@ owner = "quality-controller"
 review_after = "2026-11-20"
 
 [[exclusion]]
-path = "tools/modeq/validate_modeq.py"
-reason = "CLI. Mode-Q producer/validator. Proved by tools/modeq/modeq_mutants.py, which runs the validator as a subprocess over mutated copies of the real sealed bundle. Module purpose: Semantic Mode-Q bundle validator (round-3 audit finding E-01)."
-owner = "quality-controller"
-review_after = "2026-11-20"
-
-[[exclusion]]
 path = "tools/qualification/cucumber_common.py"
 reason = "library. Evidence PRODUCER/VERIFIER for the qualification lanes. It is exercised by executing the lane it belongs to (a sealed bundle is produced, then independently re-verified, then attacked by its own mutant suite), not by importing it into pytest. Its executed controls are recorded in artifacts/quality/python-mutants.json. Instrumenting it under pytest would require replaying whole evidence lanes inside the unit run. Module purpose: Cucumber leaf evidence: the corpus, the runtime, and the join between them."
 owner = "quality-controller"
@@ -354,12 +342,6 @@ review_after = "2026-11-20"
 [[exclusion]]
 path = "tools/qualification/cucumber_probe.py"
 reason = "CLI. Evidence PRODUCER/VERIFIER for the qualification lanes. It is exercised by executing the lane it belongs to (a sealed bundle is produced, then independently re-verified, then attacked by its own mutant suite), not by importing it into pytest. Its executed controls are recorded in artifacts/quality/python-mutants.json. Instrumenting it under pytest would require replaying whole evidence lanes inside the unit run. Module purpose: Feasibility, by EXECUTION, of leaf-granularity evidence for the 20,495"
-owner = "quality-controller"
-review_after = "2026-11-20"
-
-[[exclusion]]
-path = "tools/qualification/leaf_common.py"
-reason = "library. Evidence PRODUCER/VERIFIER for the qualification lanes. It is exercised by executing the lane it belongs to (a sealed bundle is produced, then independently re-verified, then attacked by its own mutant suite), not by importing it into pytest. Its executed controls are recorded in artifacts/quality/python-mutants.json. Instrumenting it under pytest would require replaying whole evidence lanes inside the unit run. Module purpose: Leaf-granularity evidence: the shared facts, defined exactly once."
 owner = "quality-controller"
 review_after = "2026-11-20"
 
@@ -432,12 +414,6 @@ review_after = "2026-11-20"
 [[exclusion]]
 path = "tools/quality/bootstrap.py"
 reason = "CLI. Quality-controller support tooling, exercised by the controller itself. Module purpose: Install every tool the quality controller may invoke, from the machine lock."
-owner = "quality-controller"
-review_after = "2026-11-20"
-
-[[exclusion]]
-path = "tools/quality/python_inventory.py"
-reason = "CLI. Quality-controller support tooling, exercised by the controller itself. Module purpose: Python source inventory and instrumentation completeness (R8-P1-06)."
 owner = "quality-controller"
 review_after = "2026-11-20"
 
@@ -516,5 +492,17 @@ review_after = "2026-11-20"
 [[exclusion]]
 path = "tools/source-lock/materialize_sources.py"
 reason = "CLI. Source-graph materialiser/linter. It reconstructs and verifies the pinned source tree; its correctness is checked by the reconstruction itself refusing on any digest mismatch, which no unit import reproduces. Module purpose: Materialise sources/ from the source lock."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/quality/capability_mutants.py"
+reason = "CLI. Executed negative controls for the environment model (R8-P1-07). Each mutant builds a real denied environment — a mount namespace masking libclang, capsh dropping CAP_SYS_ADMIN, a read-only tmpfs, a venv without pytest-cov — which cannot be reached from inside a pytest process holding those same capabilities. Its evidence is its own recorded run in artifacts/quality/python-mutants.json, not a unit import."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/quality/mutant_manifest.py"
+reason = "CLI. The normalized manifest that RUNS the mutant suites (R8-P1-06 item 5). Importing it under coverage would nest a mutant run inside the pytest run it is meant to report on; its correctness is established by the manifest it writes and by the suites refusing to be counted when their tally cannot be read."
 owner = "quality-controller"
 review_after = "2026-11-20"

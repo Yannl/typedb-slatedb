@@ -46,6 +46,17 @@ EXCLUSIONS = REPO / ".quality" / "python-coverage-exclusions.toml"
 SKIP_DIRS = {"__pycache__", ".venv", "node_modules", "target", ".git"}
 
 
+def rel(path: pathlib.Path) -> str:
+    """Repo-relative when it can be, absolute otherwise.
+
+    A bare `.relative_to(REPO)` raises for any path outside the tree — which a
+    caller may legitimately pass (a report written to a temp directory, a
+    bundle copied elsewhere). Crashing while FORMATTING a message is the worst
+    place to crash: the finding is already known and gets lost.
+    """
+    return str(path.relative_to(REPO)) if path.is_relative_to(REPO) else str(path)
+
+
 def python_projects() -> list[str]:
     """The Python project roots the POLICY declares — never a hardcoded list."""
     policy = tomllib.loads(POLICY.read_text())
@@ -122,6 +133,11 @@ def main() -> int:
     instrumented = measured(args.coverage_xml)
     excluded = exclusions()
 
+    # The three categories are DISJOINT, and measurement wins. A module that is
+    # both instrumented and listed was counted twice before, so the split did
+    # not add up to the denominator — the exact defect item 7 exists to prevent,
+    # in the tool written to satisfy item 7.
+    redundant = [f for f in files if f in instrumented and f in excluded]
     unmeasured = [f for f in files if f not in instrumented and f not in excluded]
     stale = [p for p in excluded if p not in files]
 
@@ -152,9 +168,7 @@ def main() -> int:
                 'review_after = "2026-11-20"',
             ]
         EXCLUSIONS.write_text("\n".join(lines) + "\n")
-        print(
-            f"{EXCLUSIONS.relative_to(REPO)}: seeded {len(unmeasured)} exclusion(s) — now write the reasons"
-        )
+        print(f"{rel(EXCLUSIONS)}: seeded {len(unmeasured)} exclusion(s) — now write the reasons")
         return 0
 
     report = {
@@ -162,14 +176,14 @@ def main() -> int:
         "projects": python_projects(),
         "denominator_modules": len(files),
         "measured_modules": len([f for f in files if f in instrumented]),
-        "excluded_modules": len([f for f in files if f in excluded]),
+        "excluded_modules": len([f for f in files if f in excluded and f not in instrumented]),
+        "redundant_exclusions": len(redundant),
         "unmeasured_modules": len(unmeasured),
         "test_files": len(tests),
-        "coverage_xml": str(args.coverage_xml.relative_to(REPO))
-        if args.coverage_xml.is_relative_to(REPO)
-        else str(args.coverage_xml),
+        "coverage_xml": rel(args.coverage_xml),
         "measured": sorted(f for f in files if f in instrumented),
-        "excluded": sorted(f for f in files if f in excluded),
+        "excluded": sorted(f for f in files if f in excluded and f not in instrumented),
+        "redundant": sorted(redundant),
         "unmeasured": unmeasured,
     }
     args.json.parent.mkdir(parents=True, exist_ok=True)
@@ -181,13 +195,18 @@ def main() -> int:
         f"of {report['denominator_modules']} in-scope modules across {report['projects']}; "
         f"{report['test_files']} test file(s)"
     )
-    print(f"report: {args.json.relative_to(REPO)}")
+    print(f"report: {rel(args.json)}")
 
     problems = []
     for f in unmeasured:
         problems.append(f"UNMEASURED  {f} is neither instrumented nor excluded")
     for p in stale:
         problems.append(f"STALE       {p} is excluded but is not an in-scope module any more")
+    for p in redundant:
+        problems.append(
+            f"REDUNDANT   {p} is measured now, so its exclusion is no longer true — delete the "
+            f"entry rather than leaving a reason that says the run does not reach it"
+        )
     for path, entry in sorted(excluded.items()):
         for field in ("reason", "owner", "review_after"):
             if not entry.get(field):

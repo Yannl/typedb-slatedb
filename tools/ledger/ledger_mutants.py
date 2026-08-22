@@ -65,9 +65,23 @@ def main() -> int:
     failures: list[str] = []
     executed: list[str] = []
     try:
-        for rel in OVERLAY:
+        # R8-P2-06: overlay every LIVE DOCUMENT the guard scans, derived from
+        # the guard's own globs rather than from a second list here. The
+        # worktree is checked out at HEAD, so a document fixed in the working
+        # tree would otherwise still carry its stale number inside the mutant
+        # harness — every mutant would then "die for the wrong reason" and the
+        # suite would report a failure that is really a staleness in its own
+        # fixture. Deriving the set means the harness cannot fall behind the
+        # guard as the guard widens.
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+        import lint_ledger  # noqa: E402
+
+        for rel in list(dict.fromkeys(OVERLAY + lint_ledger.live_documents())):
+            source = REPO / rel
+            if not source.is_file():
+                continue
             (wt / rel).parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(REPO / rel, wt / rel)
+            shutil.copyfile(source, wt / rel)
         pristine_ledger = (wt / LEDGER_REL).read_text()
         pristine_ops = (wt / "docs" / "operations.md").read_text()
 
@@ -295,6 +309,79 @@ def main() -> int:
         elif "forbidden claim" not in out:
             failures.append(
                 f"mutant 'forbidden-claim-in-status-doc' died for the WRONG reason:\n{out}"
+            )
+        # R8-P2-06: the scan covers EVERY live document, not the four status
+        # paths. The audit found `13,582 rows`, `G0 red` and `Mode-Q absent`
+        # still readable as current in a workflow comment and a planning
+        # document — files nobody thinks of as status, and which therefore
+        # never got corrected. Each subject below is a file OUTSIDE the four,
+        # and each must be refused.
+        for name, rel, injected, expect in (
+            (
+                "stale-number-in-a-planning-document",
+                "docs/local-dev-parity-plan.md",
+                "\n\nLeaf coverage today is 13,723 of 23,138 rows.\n",
+                "owned by current.coverage",
+            ),
+            (
+                "stale-gate-state-in-a-workflow-comment",
+                ".github/workflows/gates.yml",
+                "\n# note: G0 is OPEN_RED, so the release job is expected to refuse.\n",
+                "owned by current.gates.G0.state",
+            ),
+            (
+                "superseded-count-revived-in-a-design-adjacent-live-document",
+                "docs/development.md",
+                "\n\nThe uncovered remainder is 22,115 rows.\n",
+                "superseded by",
+            ),
+            (
+                "forbidden-claim-in-a-document-outside-the-four-status-paths",
+                "docs/user-guide.md",
+                "\n\nOverall U3.0 is green now.\n",
+                "forbidden claim",
+            ),
+        ):
+            (wt / LEDGER_REL).write_text(pristine_ledger)
+            (wt / "docs" / "operations.md").write_text(pristine_ops)
+            target = wt / rel
+            pristine_target = target.read_text()
+            target.write_text(pristine_target + injected)
+            rc, out = run_linter(wt)
+            target.write_text(pristine_target)
+            executed.append(name)
+            if rc == 0:
+                failures.append(f"mutant {name!r} SURVIVED (linter passed)")
+            elif expect not in out:
+                failures.append(
+                    f"mutant {name!r} died for the WRONG reason (expected {expect!r}):\n{out}"
+                )
+
+        # A live document may declare itself HISTORICAL — but only by naming a
+        # commit that exists and is an ancestor. A marker that names nothing is
+        # provenance-shaped text with no provenance, and would otherwise be the
+        # one-line way to switch the whole guard off.
+        (wt / LEDGER_REL).write_text(pristine_ledger)
+        (wt / "docs" / "operations.md").write_text(pristine_ops)
+        target = wt / "docs" / "development.md"
+        pristine_target = target.read_text()
+        target.write_text(
+            "<!-- HISTORICAL AS OF deadbeefdeadbeefdeadbeefdeadbeefdeadbeef -->\n"
+            + pristine_target
+            + "\n\nThe uncovered remainder is 22,115 rows.\n"
+        )
+        rc, out = run_linter(wt)
+        target.write_text(pristine_target)
+        executed.append("historical-marker-naming-a-commit-that-does-not-exist")
+        if rc == 0:
+            failures.append(
+                "mutant 'historical-marker-naming-a-commit-that-does-not-exist' SURVIVED: a "
+                "document can disclaim itself out of the guard without dating itself"
+            )
+        elif "not a commit in this repository" not in out:
+            failures.append(
+                "mutant 'historical-marker-naming-a-commit-that-does-not-exist' died for the "
+                f"WRONG reason:\n{out}"
             )
     finally:
         subprocess.run(

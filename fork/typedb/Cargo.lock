@@ -5798,6 +5798,7 @@ dependencies = [
  "rocksdb",
  "same-file",
  "serde",
+ "serde_json",
  "slatedb",
  "test_utils",
  "test_utils_storage",

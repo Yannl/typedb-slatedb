@@ -24,15 +24,19 @@ name: release qualification (tier 3)
 # THE HONEST PART. Several tier-3 rows cannot be satisfied by this repository
 # today, and this workflow is built so that it CANNOT report otherwise:
 #
-#   * plan coverage is EXPECTED-RED. `plan_coverage.py` exits 1 because the
-#     23,138-row plan is not satisfied. Tier 3 asserts that exit code and the
-#     byte-identical committed report - a GREEN coverage result here would
-#     mean the plan or the report drifted, and fails the job.
-#   * Mode-Q evidence is ABSENT, so gate G0 is OPEN_RED. The validator
-#     enforces the two-directional rule (absent => G0 must be open), so a
-#     release attempt today fails at `release-predicate-summary` with the
-#     reason spelled out, rather than producing a signed artifact for a
-#     product that is not qualified.
+#   * plan coverage is EXPECTED-RED. `plan_coverage.py` exits 1 while the plan
+#     is unsatisfied. Tier 3 asserts that exit code and the byte-identical
+#     committed report - a GREEN coverage result here would mean the plan or
+#     the report drifted, and fails the job. The plan's SIZE is deliberately
+#     not written here: it lived in this comment as a hand-typed row count and
+#     stayed after the denominator moved (R8-P2-06). `current.coverage` owns it.
+#   * Mode-Q evidence gates G0, and the validator enforces the rule in both
+#     directions (absent => G0 must be open). Whether a bundle exists TODAY is
+#     read from `current.mode_q`, not asserted here: this comment declared the
+#     evidence absent for two rounds after a bundle validated. A release
+#     attempt without one fails at `release-predicate-summary` with the reason
+#     spelled out, rather than producing a signed artifact for a product that
+#     is not qualified.
 #   * upgrade / rollback / restore / disaster drills have no harness. They are
 #     named below as required predicates and asserted against the ledger, not
 #     silently omitted.
@@ -162,8 +166,9 @@ jobs:
         # aborts. This job is where that constraint does not apply.
         #
         # Producing nothing is the correct outcome when it cannot run: an
-        # ABSENT bundle keeps G0 honestly OPEN_RED, whereas a non-conforming
-        # directory would make the validator report INVALID.
+        # ABSENT bundle leaves G0 honestly unclosed, whereas a non-conforming
+        # directory would make the validator report INVALID. (The gate's state
+        # itself is the ledger's to say, not this comment's - R8-P2-06.)
         run: |
           set -euo pipefail
           version="$(cat sources/typedb/.bazelversion)"

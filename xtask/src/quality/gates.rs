@@ -759,6 +759,9 @@ pub fn commands(id: &str, ctx: &Ctx) -> Vec<Cmd> {
         }
         "py.pytest" => {
             for p in &ctx.python_projects {
+                // XML as well as LCOV: the XML is what the instrumentation
+                // completeness check and the branch floors read. LCOV is kept
+                // for the report consumers that already read it.
                 out.push(Cmd::new(
                     "python3",
                     &[
@@ -770,9 +773,50 @@ pub fn commands(id: &str, ctx: &Ctx) -> Vec<Cmd> {
                         "--cov-branch",
                         "--cov-report",
                         &format!("lcov:{ARTIFACTS}/python-{}.lcov", p.replace('/', "-")),
+                        "--cov-report",
+                        &format!("xml:{ARTIFACTS}/python-{}.xml", p.replace('/', "-")),
                     ],
                 ));
+                // R8-P1-06: a coverage percentage is meaningless without a
+                // declared DENOMINATOR. This refuses any in-scope module that
+                // is neither instrumented nor a reviewed exclusion, and it is
+                // what makes "adding a new Python file without tests or
+                // exclusion fails" true rather than aspirational.
+                out.push(Cmd::new(
+                    "python3",
+                    &[
+                        "tools/quality/python_inventory.py",
+                        "--coverage-xml",
+                        &format!("{ARTIFACTS}/python-{}.xml", p.replace('/', "-")),
+                    ],
+                ));
+                // Branch floors on CHANGED code and no regression against the
+                // trusted base — deliberately not one repository-wide
+                // percentage, which rewards trivial tests on whatever is
+                // easiest rather than on what this change touched.
+                let mut floor = vec![
+                    "tools/quality/python_coverage_floor.py".to_string(),
+                    "--coverage-xml".to_string(),
+                    format!("{ARTIFACTS}/python-{}.xml", p.replace('/', "-")),
+                ];
+                if let Some(base) = &ctx.base_sha {
+                    floor.push("--base".to_string());
+                    floor.push(base.clone());
+                }
+                let borrowed: Vec<&str> = floor.iter().map(String::as_str).collect();
+                out.push(Cmd::new("python3", &borrowed));
             }
+            // The mutant suites are the truth plane's own negative controls,
+            // and until now nothing in the controller proved they had RUN. In
+            // `fast` the slow suites are skipped and the manifest says so; a
+            // suite whose tally cannot be read fails rather than passing
+            // quietly (R8-P1-06 item 5).
+            let mut manifest = vec!["tools/quality/mutant_manifest.py".to_string()];
+            if ctx.mode == Mode::Fast {
+                manifest.push("--fast".to_string());
+            }
+            let borrowed: Vec<&str> = manifest.iter().map(String::as_str).collect();
+            out.push(Cmd::new("python3", &borrowed));
         }
         "py.pip_audit" => out.push(Cmd::new("pip-audit", &["--strict"])),
         "py.crap" => {

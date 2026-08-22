@@ -1,14 +1,18 @@
 # Spec vs. delivery — final comparison
 
-> **Round-3 correction (2026-08-18).** Two claims below are superseded by the
-> authoritative ledger (`docs/ledger/gates.json`) and the round-3 response:
-> (1) Mode S is NOT an accepted substitute for Mode Q — v17 SELECTS Mode Q,
-> so the static proof is lower-authority evidence and G0 stays OPEN_RED until
-> a validated cquery bundle exists (round-3 E-01). (2) "Delivered" verdicts
-> here describe PROTOCOL and MODEL progress and local runtime behavior, never
-> product wiring or a Cloudflare platform fact; the product link (TypeDB →
-> remote-WAL → R2) and U3/U4 remain unavailable by design. Where this
-> document and the ledger disagree, the ledger wins.
+> **Round-3 correction (2026-08-18), amended round 8.** Two claims below are
+> superseded by the authoritative ledger (`docs/ledger/gates.json`):
+> (1) Mode S is NOT an accepted substitute for Mode Q — v17 SELECTS Mode Q, so
+> the static proof is lower-authority evidence and a validated cquery bundle is
+> what the gate needs (round-3 E-01). The gate's CURRENT state is not restated
+> here: it lives in `current.gates` and is rendered into the generated block of
+> `docs/operations.md`, because a gate state typed into a second document is a
+> second copy that will go stale — this sentence used to carry one, and did
+> (R8-P2-06). (2) "Delivered" verdicts here describe PROTOCOL and MODEL
+> progress and local runtime behavior, never product wiring or a Cloudflare
+> platform fact; the product link (TypeDB → remote-WAL → R2) and U3/U4 remain
+> unavailable by design. Where this document and the ledger disagree, the
+> ledger wins.
 
 A work-package-level reconciliation of the inception contract
 ([docs/inception/](inception/ARCHIVE-NOTE.md): brief v16 + playbook +
@@ -82,8 +86,10 @@ sidecars) against what this branch actually delivers. Verdict legend:
 
 ## WP8 — Later phases (TB-P4…P6 productionisation, U3/U4, checkpoint/command planes at scale)
 
-The contract itself authorizes G0–G2 only ("broad semantic implementation
-remains prohibited until G0, G1 and G2 are green", brief header). Those
+The contract itself authorizes G0–G2 only: the brief header makes broad
+semantic implementation conditional on those three gates, and their current
+states are read from the ledger rather than quoted here — a quoted precondition
+and an assertion about today look identical three months later. Those
 phases are **NOT YET AUTHORIZED** by the document that defines them; the
 delivered TB-P4 spike client, protocol cores, and models are the
 authorized precursors and are green.

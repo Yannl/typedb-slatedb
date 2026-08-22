@@ -38,6 +38,12 @@ features = { external_epoch_required = ["slatedb/external_epoch_required"] }
 		version = "=0.6.0"
 		features = ["failpoints"]
 
+	# R8-P2-05: the namespace-schema drift test reads
+	# schemas/materialisation-namespace.json and holds it against what this
+	# adapter actually writes. TEST-ONLY: the shipped adapter parses no JSON.
+	[dev-dependencies.serde_json]
+		workspace = true
+
 	[dev-dependencies.test_utils]
 		workspace = true
 

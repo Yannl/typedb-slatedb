@@ -1,0 +1,58 @@
+{
+ "$comment": "R8-P2-05: the VERSIONED object-namespace grammar, declared once and read by every language that needs it. Before this file the Rust adapter owned the layout and tools/maintenance/s3_gc.py owned a copy of its segment positions, so the maintenance tool covered only the legacy shape and would have silently mis-parsed the controller-derived one the moment that seam was wired. A copy of a layout is a layout that will disagree.",
+ "schema": "typedb-materialisation-namespace-v1",
+ "escape": {
+  "$comment": "The injective byte escaping fork/typedb/storage/keyspace/slate.rs::encode_segment_byte applies to every opaque segment. `=` is the ONLY escape, so distinct byte strings never share an encoding and decoding is unambiguous.",
+  "escape_char": "=",
+  "unreserved": "A-Za-z0-9._-",
+  "rules": [
+   {
+    "byte": "/",
+    "encoded": "=s"
+   },
+   {
+    "byte": "=",
+    "encoded": "=="
+   },
+   {
+    "any_other_byte": "=xHH",
+    "hex": "lowercase"
+   }
+  ]
+ },
+ "versions": [
+  {
+   "id": "v1-legacy-path",
+   "status": "current",
+   "$comment": "What the local lanes produce today: object_prefix() derives the namespace from the host-local keyspace PATH, injectively encoded into a single segment beneath the root prefix. Its instability across checkout roots and hosts is the S-01 defect v2 exists to replace, which is exactly why a maintenance tool must still read it \u2014 the objects are already out there.",
+   "derived_from": "host-local keyspace path",
+   "segments": [
+    "keyspace",
+    "format_version",
+    "materialisation"
+   ],
+   "constraints": {
+    "format_version": "^fv[0-9]+$",
+    "materialisation": "^m[0-9a-f]+$"
+   },
+   "followed_by": "keyspace",
+   "$followed_by_comment": "slate.rs::DB_SUBDIR. The SlateDB subtree sits under a literal `keyspace/` directory immediately after the namespace, in BOTH lanes. It is the segment that makes the two versions unambiguous rather than a heuristic about which one looks more likely."
+  },
+  {
+   "id": "v2-controller",
+   "status": "declared",
+   "$comment": "fork/typedb/storage/keyspace/slate.rs::MaterialisationNamespace::to_object_prefix. Every segment is a controller-owned opaque identifier, injectively encoded, so the same identity resolves to the same prefix on any machine. `status: declared` states the honest position: the struct is the typed seam, and TypeDB does not yet carry the controller identifiers down to it.",
+   "derived_from": "controller identifiers",
+   "segments": [
+    "environment",
+    "tenant",
+    "database_id",
+    "generation",
+    "materialisation",
+    "keyspace"
+   ],
+   "followed_by": "keyspace",
+   "$followed_by_comment": "slate.rs::DB_SUBDIR. The SlateDB subtree sits under a literal `keyspace/` directory immediately after the namespace, in BOTH lanes. It is the segment that makes the two versions unambiguous rather than a heuristic about which one looks more likely."
+  }
+ ]
+}

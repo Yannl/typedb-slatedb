@@ -50,6 +50,46 @@ STATUS_DOCS = [
     "README.md",
 ]
 
+# R8-P2-06: "add stale-number mutants over ALL live documents, not only the
+# four current status paths".
+#
+# The four above are where a reader looks for status, so they were guarded
+# first. But the audit found `13,582 rows`, `G0 red` and `Mode-Q absent` still
+# readable as current in a workflow comment and a planning document — files
+# nobody thinks of as status, and which therefore never got corrected. A
+# document does not have to be titled "status" to be read as one.
+#
+# So every live document is scanned, and a document leaves the live set only
+# by being genuinely immutable evidence or by DECLARING itself historical.
+LIVE_DOC_GLOBS = [
+    "README.md",
+    "AGENTS.md",
+    "docs/**/*.md",
+    ".github/workflows/*.yml",
+    "control-plane/*.md",
+    "stack/*.md",
+    ".quality/*.md",
+]
+
+# Sealed evidence, recorded reviews and dated inception material. These are
+# immutable by design: rewriting them to match today's numbers would destroy
+# the record of what was true when they were written, which is the opposite of
+# the fix. They are excluded from the guard and kept out of the live set by
+# living under these prefixes.
+IMMUTABLE_PREFIXES = (
+    "docs/evidence/",
+    "docs/reviews/",
+    "docs/inception/",
+    "docs/agent-handoff/",
+    "docs/design/",
+    "docs/architecture/",
+)
+
+# The escape hatch, and it is narrow on purpose: a live document may carry this
+# marker to say "everything below was true at <commit>". It must name a real
+# ancestor commit, so it dates itself rather than merely disclaiming.
+HISTORICAL_MARKER = re.compile(r"HISTORICAL AS OF ([0-9a-f]{7,40})")
+
 REQUIRED_GATE_STATES = {"OPEN_RED", "OPEN", "NOT_READY_TO_EXECUTE", "NOT_REACHABLE", "CLOSED"}
 # The states that ASSERT a gate is finished. A gate with any blocker or any
 # OPEN owner decision may not be in one of these — see `check_gate_state_reducer`.
@@ -133,6 +173,58 @@ def search_keyed(pattern: str, path: str, text: str):
         if hit:
             return hit
     return None
+
+
+def git_ok(*args: str) -> bool:
+    """True when `git <args>` succeeds. The single place this repository asks
+    git a yes/no question about its own history."""
+    return (
+        subprocess.run(
+            ["git", "-C", str(REPO), *args],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode
+        == 0
+    )
+
+
+def live_documents() -> list[str]:
+    """Every document a reader could reasonably take as current.
+
+    Sealed evidence and dated reviews are excluded by PREFIX rather than by an
+    allowlist: an allowlist is a list somebody has to remember to extend, which
+    is exactly how a workflow comment kept saying `Mode-Q evidence is ABSENT`
+    long after a Mode-Q bundle validated.
+    """
+    seen: list[str] = []
+    for pattern in LIVE_DOC_GLOBS:
+        for path in sorted(REPO.glob(pattern)):
+            rel = str(path.relative_to(REPO))
+            if rel.startswith(IMMUTABLE_PREFIXES) or rel in seen or not path.is_file():
+                continue
+            seen.append(rel)
+    return seen
+
+
+def historical_marker(text: str, failures: list[str], rel: str) -> bool:
+    """True when this document declares itself historical AND dates itself.
+
+    A marker naming a commit that does not exist, or that is not an ancestor of
+    HEAD, is worse than no marker: it reads as provenance and carries none.
+    """
+    match = HISTORICAL_MARKER.search(text)
+    if match is None:
+        return False
+    sha = match.group(1)
+    if not git_ok("cat-file", "-e", f"{sha}^{{commit}}"):
+        failures.append(
+            f"{rel}: declares HISTORICAL AS OF {sha}, which is not a commit in this repository"
+        )
+        return False
+    if not git_ok("merge-base", "--is-ancestor", sha, "HEAD"):
+        failures.append(f"{rel}: declares HISTORICAL AS OF {sha}, which is not an ancestor of HEAD")
+        return False
+    return True
 
 
 def check_single_canonical_current(ledger: dict, failures: list[str]) -> None:
@@ -315,15 +407,9 @@ def check_semantics(ledger: dict, failures: list[str]) -> None:
     # a ledger claim about a commit this repository does not contain is a
     # forgery or a paste error, both fail-closed. Short hashes tolerated
     # (git resolves them); an ambiguous short hash fails like a missing one.
-    def git_ok(*args: str) -> bool:
-        return (
-            subprocess.run(
-                ["git", "-C", str(REPO), *args],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            ).returncode
-            == 0
-        )
+    # (`git_ok` is module-level: the HISTORICAL AS OF marker check needs the
+    # same question answered, and two copies of "does this commit exist" is
+    # one copy too many.)
 
     for action in ledger.get("actions", []):
         for commit in action.get("commits") or []:
@@ -540,11 +626,14 @@ def main() -> int:
     # 3. forbidden claims in live status docs. The GENERATED block is exempt:
     # it is the ledger's own rendered truth (which quotes the raw observation
     # and names stale claims in order to forbid them).
-    for rel in STATUS_DOCS:
+    scanned = live_documents()
+    for rel in scanned:
         p = REPO / rel
         if not p.exists():
             continue
-        text = p.read_text()
+        text = p.read_text(errors="replace")
+        if historical_marker(text, failures, rel):
+            continue
         if render_status.BEGIN in text and render_status.END in text:
             head, rest = text.split(render_status.BEGIN, 1)
             text = head + rest.split(render_status.END, 1)[1]
@@ -578,7 +667,7 @@ def main() -> int:
         return 1
     print(
         f"LEDGER LINT: PASS ({len(ledger['gates'])} gates, {len(ledger['lanes'])} lanes, "
-        f"{len(ledger['actions'])} actions, {len(STATUS_DOCS)} status docs scanned)"
+        f"{len(ledger['actions'])} actions, {len(scanned)} live documents scanned)"
     )
     return 0
 

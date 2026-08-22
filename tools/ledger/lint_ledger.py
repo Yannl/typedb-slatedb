@@ -115,6 +115,26 @@ def strings_outside(node, exclude_paths: set[str], path="") -> list[tuple[str, s
     return out
 
 
+def search_keyed(pattern: str, path: str, text: str):
+    """Search `text` both alone and UNDER ITS OWN KEY.
+
+    `q_dispositions.G0 = "OPEN_RED"` asserts a gate state exactly as plainly as
+    the sentence "G0 is OPEN_RED" does: the subject is the key, the predicate is
+    the value. A guard that reads only values cannot see that — and that is
+    precisely the shape of the round-8 defect (`gates[G0].state = OPEN` beside
+    `q_dispositions.G0 = OPEN_RED`), where the restated state lived in the key.
+    So every string is matched twice: alone, and joined to the leaf key naming
+    it.
+    """
+    leaf = re.split(r"[.\[]", path)[-1].rstrip("]")
+    candidates = [text] if not leaf or leaf.isdigit() else [text, f"{leaf} = {text}"]
+    for candidate in candidates:
+        hit = re.search(pattern, candidate)
+        if hit:
+            return hit
+    return None
+
+
 def check_single_canonical_current(ledger: dict, failures: list[str]) -> None:
     """R8-P0-02: exactly ONE mutable copy of every current fact.
 
@@ -180,7 +200,7 @@ def check_single_canonical_current(ledger: dict, failures: list[str]) -> None:
     for guard in current.get("guarded_patterns", []):
         pattern, owner = guard["pattern"], guard["owner"]
         for path, text in strings_outside(ledger, exempt):
-            m = re.search(pattern, text)
+            m = search_keyed(pattern, path, text)
             if m:
                 failures.append(
                     f"{path}: states {m.group(0)!r}, which is owned by {owner} (R8-P0-02). "
@@ -190,7 +210,7 @@ def check_single_canonical_current(ledger: dict, failures: list[str]) -> None:
     # values that are no longer true anywhere
     for stale in current.get("superseded_values", []):
         for path, text in strings_outside(ledger, exempt):
-            m = re.search(stale["pattern"], text)
+            m = search_keyed(stale["pattern"], path, text)
             if m:
                 failures.append(
                     f"{path}: states {m.group(0)!r} — {stale['was']}, superseded by "

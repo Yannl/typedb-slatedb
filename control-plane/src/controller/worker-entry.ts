@@ -18,7 +18,7 @@
  * deletes that actor's leases in its own transaction. A fence that commits
  * while bytes are in flight therefore refuses the read instead of racing it.
  *
- * Every endpoint except /health and POST /capability requires a
+ * Every endpoint except /live, /ready, /health and POST /capability requires a
  * controller-issued capability token (F9) in the `x-capability` header:
  * audience-bound (databaseId), method-bound, expiring, single-use (nonce
  * burned at the authority), incarnation-bound; payload writes additionally
@@ -29,7 +29,7 @@
  * contract under proof; production issuance is controller-internal).
  *
  * Endpoints (JSON unless noted):
- *   GET  /health
+ *   GET  /live | /ready   (/health is a retained alias of /live)
  *   POST /provision                internal provisioning transaction (R4 PR1): binds an
  *                                  uninitialized controller authority to its registry record
  *                                  {tenantId, databaseId, budgets?} + x-provision token
@@ -964,8 +964,60 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    if (request.method === "GET" && path === "/health") {
-      return json({ ok: true, runtime: "workerd", stack: "L1-local" });
+    // R8-P2-03: LIVENESS and READINESS are different questions, and one
+    // endpoint answering both answered neither.
+    //
+    // `GET /health` returned `{ ok: true, runtime: "workerd", stack:
+    // "L1-local" }` BEFORE resolving any managed configuration - so it said
+    // "ok" on a deployment whose key material was absent or malformed, and it
+    // said "L1-local" in managed posture, where that is simply false.
+    //
+    //   /live   the process is up and the event loop is turning. NO
+    //           dependency is consulted, deliberately: a liveness probe that
+    //           fails on a downstream outage causes a restart loop that fixes
+    //           nothing.
+    //   /ready  the posture is what this deployment declares, the required
+    //           bindings exist, and the key configuration RESOLVES. A 503 here
+    //           means "do not send traffic", which is the fact a load balancer
+    //           needs and the old endpoint could not express.
+    //
+    // `/health` is retained as an alias of `/live` so an existing probe does
+    // not silently start failing; it reports which endpoint it aliases, so a
+    // reader is told to move.
+    if (request.method === "GET" && (path === "/live" || path === "/health")) {
+      return json({
+        ok: true,
+        probe: "live",
+        runtime: "workerd",
+        ...(path === "/health" ? { note: "/health is an alias of /live; use /live or /ready" } : {}),
+      });
+    }
+    if (request.method === "GET" && path === "/ready") {
+      // The posture is reported from what this deployment IS, never from a
+      // constant. `CONTROLLER_SURFACE` is the declared surface; anything that
+      // is not the local-dev surface is managed.
+      const posture = env.CONTROLLER_SURFACE === "local-dev" ? "local-dev" : "managed";
+      try {
+        resolveKeyConfig(env);
+      } catch (error) {
+        // R8-P2-03: a stable EXTERNAL code and a correlation id, never the
+        // resolver's message. That message names environment variables,
+        // keyring entry indices, supplied kid values and profile strings -
+        // a map of the deployment's key configuration, handed to whoever
+        // can reach the endpoint. The detail goes to the log, not the wire.
+        const correlationId = crypto.randomUUID();
+        console.error(JSON.stringify({
+          event: "READINESS_KEY_CONFIG_INVALID",
+          correlationId,
+          posture,
+          // the resolver's own message is structured and non-secret BY ITS
+          // OWN CONTRACT, but it is still internal detail: logged, never
+          // returned
+          detail: error instanceof Error ? error.message : String(error),
+        }));
+        return json({ ok: false, probe: "ready", error: "NOT_READY", correlationId, posture }, 503);
+      }
+      return json({ ok: true, probe: "ready", posture, runtime: "workerd" });
     }
 
     // PR0 containment: on the production surface the dev-only routes do not
@@ -980,8 +1032,19 @@ export default {
       try {
         return { keys: resolveKeyConfig(env) };
       } catch (error) {
-        return { denied: json({ ok: false, error: "KEY_CONFIG_INVALID",
-                                detail: error instanceof Error ? error.message : String(error) }, 500) };
+        // R8-P2-03: the caller gets a STABLE CODE and a correlation id. It
+        // used to get `KeyConfigError.message`, which names environment
+        // variables, keyring entry indices, the supplied `kid` values and the
+        // profile string - i.e. the shape of the deployment's key
+        // configuration, to anyone who can reach the route. The diagnostic is
+        // logged instead, correlated, so an operator loses nothing.
+        const correlationId = crypto.randomUUID();
+        console.error(JSON.stringify({
+          event: "KEY_CONFIG_INVALID",
+          correlationId,
+          detail: error instanceof Error ? error.message : String(error),
+        }));
+        return { denied: json({ ok: false, error: "KEY_CONFIG_INVALID", correlationId }, 500) };
       }
     };
 

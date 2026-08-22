@@ -1,0 +1,520 @@
+# Python coverage exclusions (R8-P1-06).
+#
+# PROTECTED FILE.
+#
+# Every entry names a module the pytest coverage run does NOT instrument, and
+# says why that is acceptable, who owns it, and when it must be revisited.
+#
+# WHY THIS LIST IS LONG, AND WHY THAT IS THE HONEST OUTCOME.
+#
+# The round-8 audit found `py.pytest` reporting "63 % coverage" over FOUR
+# imported modules while the project carried 81 Python files. The percentage was
+# arithmetically correct and told the reader almost nothing, because its
+# denominator was "whatever pytest happened to import".
+#
+# Most of this repository's Python is EVIDENCE MACHINERY: producers that run a
+# qualification lane and seal a bundle, verifiers that independently re-derive
+# that bundle from its archived bytes, and mutant suites that attack the
+# verifiers as real subprocesses. Those are proved by EXECUTION - a mutant that
+# survives fails the suite - and a line-coverage number over them would be a
+# weaker statement, not a stronger one. What was missing was not coverage; it
+# was a place that SAYS SO, per module, with an owner and a date.
+#
+# `tools/quality/python_inventory.py` fails on any in-scope module that is
+# neither measured nor listed here, and on any entry that no longer names a real
+# file. So a NEW Python module cannot be added without either a test or a
+# deliberate, owned entry - which is R8-P1-06's acceptance criterion.
+
+schema = 1
+
+[[exclusion]]
+path = "tools/bazel/bazel_parity.py"
+reason = "CLI. Bazel parity/vendoring tooling. vendor_bats.py is proved by Bazel independently verifying the digests it reconstructs; bazel_parity.py by the Mode-Q crosswalk. Module purpose: Compare TypeDB's real Bazel target graph against this repo's catalogue and"
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/bazel/vendor_bats.py"
+reason = "CLI. Bazel parity/vendoring tooling. vendor_bats.py is proved by Bazel independently verifying the digests it reconstructs; bazel_parity.py by the Mode-Q crosswalk. Module purpose: Rebuild the bats archives Bazel needs, from the locked git tags (SI-G0-1)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/catalog/build_plan_v2.py"
+reason = "CLI. Catalogue/runner tooling driven by the U0/U1/U2 execution lanes. Its correctness is established by the sealed bundles those lanes produce and by the verifiers that re-derive them, not by a unit import. Module purpose: E-02: the immutable leaf/profile/fixture qualification plan (v2)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/catalog/common.py"
+reason = "library. Catalogue/runner tooling driven by the U0/U1/U2 execution lanes. Its correctness is established by the sealed bundles those lanes produce and by the verifiers that re-derive them, not by a unit import. Module purpose: Shared facts for the catalogue toolchain (one definition each)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/catalog/compare_u2s3.py"
+reason = "CLI. Catalogue/runner tooling driven by the U0/U1/U2 execution lanes. Its correctness is established by the sealed bundles those lanes produce and by the verifiers that re-derive them, not by a unit import. Module purpose: Symmetric, exact comparison of a SlateDB-over-S3 corpus run against the"
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/catalog/completeness.py"
+reason = "CLI. Catalogue/runner tooling driven by the U0/U1/U2 execution lanes. Its correctness is established by the sealed bundles those lanes produce and by the verifiers that re-derive them, not by a unit import. Module purpose: F10 remainder: denominator-completeness checks over the test catalogue."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/catalog/evidence_mutants.py"
+reason = "CLI. Catalogue/runner tooling driven by the U0/U1/U2 execution lanes. Its correctness is established by the sealed bundles those lanes produce and by the verifiers that re-derive them, not by a unit import. Module purpose: Executed negative controls for the evidence producers and checkers."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/catalog/generate_catalog.py"
+reason = "CLI. Catalogue/runner tooling driven by the U0/U1/U2 execution lanes. Its correctness is established by the sealed bundles those lanes produce and by the verifiers that re-derive them, not by a unit import. Module purpose: BT-P1: upstream test catalogue generator (v14 schema)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/catalog/package_assembly.py"
+reason = "CLI. Catalogue/runner tooling driven by the U0/U1/U2 execution lanes. Its correctness is established by the sealed bundles those lanes produce and by the verifiers that re-derive them, not by a unit import. Module purpose: BT-P2/BT-P4 (partial): reproduce the Bazel `assemble-typedb-all` archive"
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/catalog/plan_coverage.py"
+reason = "CLI. Catalogue/runner tooling driven by the U0/U1/U2 execution lanes. Its correctness is established by the sealed bundles those lanes produce and by the verifiers that re-derive them, not by a unit import. Module purpose: E-02 result side: join execution evidence onto the v2 qualification plan."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/catalog/run_static.py"
+reason = "CLI. Catalogue/runner tooling driven by the U0/U1/U2 execution lanes. Its correctness is established by the sealed bundles those lanes produce and by the verifiers that re-derive them, not by a unit import. Module purpose: Run the catalogue's 141 STATIC_CHECK cases in the cargo lane (BT-P2/SI-G0-4)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/catalog/run_u0.py"
+reason = "CLI. Catalogue/runner tooling driven by the U0/U1/U2 execution lanes. Its correctness is established by the sealed bundles those lanes produce and by the verifiers that re-derive them, not by a unit import. Module purpose: BT-P2 (partial): U0 pristine-baseline runner."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/catalog/stage_test_fixtures.py"
+reason = "CLI. Catalogue/runner tooling driven by the U0/U1/U2 execution lanes. Its correctness is established by the sealed bundles those lanes produce and by the verifiers that re-derive them, not by a unit import. Module purpose: Stage the runtime fixtures a TypeDB cargo workspace needs before its tests."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/catalog/validate_catalog.py"
+reason = "CLI. Catalogue/runner tooling driven by the U0/U1/U2 execution lanes. Its correctness is established by the sealed bundles those lanes produce and by the verifiers that re-derive them, not by a unit import. Module purpose: Validate the generated catalogue against the NORMATIVE contract schema."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/catalog/verdict.py"
+reason = "library. Catalogue/runner tooling driven by the U0/U1/U2 execution lanes. Its correctness is established by the sealed bundles those lanes produce and by the verifiers that re-derive them, not by a unit import. Module purpose: One fail-closed verdict policy, shared by every evidence producer."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/ci/capability_probe.py"
+reason = "CLI. CI-side checker run as its own workflow step, where its exit code is the assertion. Module purpose: R6-CI-01 - ENVIRONMENT-BLOCKED is a distinct non-green state."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/ci/check_dependency_sources.py"
+reason = "CLI. CI-side checker run as its own workflow step, where its exit code is the assertion. Module purpose: R6-TRUTH-01 - the SEMANTIC dependency-source linter."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/ci/check_npm_advisories.py"
+reason = "CLI. CI-side checker run as its own workflow step, where its exit code is the assertion. Module purpose: R6-SUPPLY-01 - the dependency-advisory gate."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/ci/check_workflow_checkouts.py"
+reason = "CLI. CI-side checker run as its own workflow step, where its exit code is the assertion. Module purpose: Every `actions/checkout` must drop its credentials (spec §19)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/ci/scan_secret_canaries.py"
+reason = "CLI. CI-side checker run as its own workflow step, where its exit code is the assertion. Module purpose: Secret canary scanner over evidence trees (round-3 audit finding P-01)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/ci/warning_ratchet.py"
+reason = "CLI. CI-side checker run as its own workflow step, where its exit code is the assertion. Module purpose: R6-HYGIENE-01 - a one-way ratchet toward `-D warnings`."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/dev/cargo_gc.py"
+reason = "CLI. Developer/runner utility. netns_exec.py in particular is a PROCESS WRAPPER whose behaviour is namespace creation and exec; it is exercised by every isolated test run and cannot be meaningfully imported. Module purpose: Reclaim stale cargo artifacts. Cargo never garbage-collects; this does."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/dev/doctor.py"
+reason = "CLI. Developer/runner utility. netns_exec.py in particular is a PROCESS WRAPPER whose behaviour is namespace creation and exec; it is exercised by every isolated test run and cannot be meaningfully imported. Module purpose: Check that this machine can run every local lane — before you find out"
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/dev/netns_exec.py"
+reason = "CLI. Developer/runner utility. netns_exec.py in particular is a PROCESS WRAPPER whose behaviour is namespace creation and exec; it is exercised by every isolated test run and cannot be meaningfully imported. Module purpose: Run a command in a PRIVATE network namespace, with loopback up."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/drivers/common.py"
+reason = "library. Tooling module exercised by the workflow that runs it rather than by a unit import. Module purpose: Shared primitives for the official-driver qualification lane."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/drivers/cucumber_log.py"
+reason = "library. Tooling module exercised by the workflow that runs it rather than by a unit import. Module purpose: Leaf-level parser for the official Rust driver behaviour suite's output."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/drivers/driver_mutants.py"
+reason = "CLI. Tooling module exercised by the workflow that runs it rather than by a unit import. Module purpose: Negative controls for the official-driver evidence lane."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/drivers/gherkin_leaves.py"
+reason = "CLI. Tooling module exercised by the workflow that runs it rather than by a unit import. Module purpose: Independent Gherkin leaf enumerator for the official-driver lane."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/drivers/live_mutants.py"
+reason = "CLI. Tooling module exercised by the workflow that runs it rather than by a unit import. Module purpose: EXECUTION-time negative controls for the driver-lane runner."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/drivers/probe_blocked_lanes.py"
+reason = "CLI. Tooling module exercised by the workflow that runs it rather than by a unit import. Module purpose: Executed probes for the driver-lane preconditions this environment imposes."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/drivers/projection_check.py"
+reason = "CLI. Tooling module exercised by the workflow that runs it rather than by a unit import. Module purpose: Fail-closed proof that the cargo projection compiles the LOCKED driver."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/drivers/row_status.py"
+reason = "CLI. Tooling module exercised by the workflow that runs it rather than by a unit import. Module purpose: Result-side status ledger for the plan's six official-driver rows."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/drivers/run_python_behaviour.py"
+reason = "CLI. Tooling module exercised by the workflow that runs it rather than by a unit import. Module purpose: E-05 official-driver lane: the OFFICIAL TypeDB PYTHON driver behaviour"
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/drivers/run_rust_behaviour.py"
+reason = "CLI. Tooling module exercised by the workflow that runs it rather than by a unit import. Module purpose: E-05 official-driver lane: execute the OFFICIAL TypeDB Rust driver"
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/drivers/run_ts_behaviour.py"
+reason = "CLI. Tooling module exercised by the workflow that runs it rather than by a unit import. Module purpose: E-05 official-driver lane: the OFFICIAL TypeDB HTTP/TypeScript driver"
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/drivers/typedb_server.py"
+reason = "library. Tooling module exercised by the workflow that runs it rather than by a unit import. Module purpose: TypeDB server lifecycle for the official-driver qualification lane."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/evidence/evidence_v2_mutants.py"
+reason = "CLI. Driver-evidence verifier, proved by its own executed mutant suite over mutated copies of the real archived bundles. Module purpose: E-04 executed negative controls for the INDEPENDENT verifier."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/evidence/verify_all.py"
+reason = "CLI. Driver-evidence verifier, proved by its own executed mutant suite over mutated copies of the real archived bundles. Module purpose: E-04: INDEPENDENT read-only verifier for an evidence bundle."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/evidence/verify_drivers.py"
+reason = "CLI. Driver-evidence verifier, proved by its own executed mutant suite over mutated copies of the real archived bundles. Module purpose: INDEPENDENT read-only verifier for an official-driver lane evidence bundle."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/fork/check_machete.py"
+reason = "CLI. Fork staging/materialisation tooling, exercised by every lane that stages the fork; the staged tree's digest is the assertion. Module purpose: Reconcile `cargo machete` against the fork's GENERATED manifests (R8-P1-05)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/fork/check_strict_epoch.py"
+reason = "CLI. Fork staging/materialisation tooling, exercised by every lane that stages the fork; the staged tree's digest is the assertion. Module purpose: Attest that the strict external-epoch fence is SHIPPED, not test-only."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/fork/check_strict_epoch_suite.py"
+reason = "CLI. Fork staging/materialisation tooling, exercised by every lane that stages the fork; the staged tree's digest is the assertion. Module purpose: Shipped-posture suite gate for the SlateDB fork (R6-FORK-01)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/fork/deny_clarify.py"
+reason = "CLI. Fork staging/materialisation tooling, exercised by every lane that stages the fork; the staged tree's digest is the assertion. Module purpose: Generate (or verify) the fork's per-crate license clarifications (R8-P1-05)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/fork/materialize_slatedb.py"
+reason = "CLI. Fork staging/materialisation tooling, exercised by every lane that stages the fork; the staged tree's digest is the assertion. Module purpose: Deterministically reconstruct the SlateDB fork from the pinned crate."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/ledger/ledger_mutants.py"
+reason = "CLI. Truth-plane linter/renderer/re-deriver. Its behaviour is proved by EXECUTED mutant suites (tools/ledger/ledger_mutants.py, ledger_semantic_mutants.py) that run it as a real subprocess against deliberately bad ledgers - a stronger control than line coverage, and the reason it is not additionally imported. Module purpose: Behavioral mutants for the ledger linter (round-5 R5-REL-01)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/ledger/ledger_semantic_mutants.py"
+reason = "CLI. Truth-plane linter/renderer/re-deriver. Its behaviour is proved by EXECUTED mutant suites (tools/ledger/ledger_mutants.py, ledger_semantic_mutants.py) that run it as a real subprocess against deliberately bad ledgers - a stronger control than line coverage, and the reason it is not additionally imported. Module purpose: Semantic mutants for the ledger's current facts (R8-P0-02)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/ledger/lint_ledger.py"
+reason = "CLI. Truth-plane linter/renderer/re-deriver. Its behaviour is proved by EXECUTED mutant suites (tools/ledger/ledger_mutants.py, ledger_semantic_mutants.py) that run it as a real subprocess against deliberately bad ledgers - a stronger control than line coverage, and the reason it is not additionally imported. Module purpose: Document-authority linter (audit §2.4/PR0; extended for round-3 E-07)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/ledger/render_status.py"
+reason = "CLI. Truth-plane linter/renderer/re-deriver. Its behaviour is proved by EXECUTED mutant suites (tools/ledger/ledger_mutants.py, ledger_semantic_mutants.py) that run it as a real subprocess against deliberately bad ledgers - a stronger control than line coverage, and the reason it is not additionally imported. Module purpose: Render the human gate table from the machine ledger (docs/ledger/gates.json)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/ledger/verify_ledger_semantics.py"
+reason = "CLI. Truth-plane linter/renderer/re-deriver. Its behaviour is proved by EXECUTED mutant suites (tools/ledger/ledger_mutants.py, ledger_semantic_mutants.py) that run it as a real subprocess against deliberately bad ledgers - a stronger control than line coverage, and the reason it is not additionally imported. Module purpose: Ledger SEMANTIC verify (R8-P0-02): re-derive every current fact, from evidence."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/modeq/modeq_mutants.py"
+reason = "CLI. Mode-Q producer/validator. Proved by tools/modeq/modeq_mutants.py, which runs the validator as a subprocess over mutated copies of the real sealed bundle. Module purpose: Executed mutants for the Mode-Q semantic validator (round-3 E-01)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/modeq/produce_modeq.py"
+reason = "CLI. Mode-Q producer/validator. Proved by tools/modeq/modeq_mutants.py, which runs the validator as a subprocess over mutated copies of the real sealed bundle. Module purpose: Produce the Mode-Q bundle by actually running `bazel cquery` (SI-G0-1, G0)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/modeq/validate_modeq.py"
+reason = "CLI. Mode-Q producer/validator. Proved by tools/modeq/modeq_mutants.py, which runs the validator as a subprocess over mutated copies of the real sealed bundle. Module purpose: Semantic Mode-Q bundle validator (round-3 audit finding E-01)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/qualification/cucumber_common.py"
+reason = "library. Evidence PRODUCER/VERIFIER for the qualification lanes. It is exercised by executing the lane it belongs to (a sealed bundle is produced, then independently re-verified, then attacked by its own mutant suite), not by importing it into pytest. Its executed controls are recorded in artifacts/quality/python-mutants.json. Instrumenting it under pytest would require replaying whole evidence lanes inside the unit run. Module purpose: Cucumber leaf evidence: the corpus, the runtime, and the join between them."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/qualification/cucumber_mutants.py"
+reason = "CLI. Evidence PRODUCER/VERIFIER for the qualification lanes. It is exercised by executing the lane it belongs to (a sealed bundle is produced, then independently re-verified, then attacked by its own mutant suite), not by importing it into pytest. Its executed controls are recorded in artifacts/quality/python-mutants.json. Instrumenting it under pytest would require replaying whole evidence lanes inside the unit run. Module purpose: Executed negative controls for the cucumber leaf producer and verifier."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/qualification/cucumber_probe.py"
+reason = "CLI. Evidence PRODUCER/VERIFIER for the qualification lanes. It is exercised by executing the lane it belongs to (a sealed bundle is produced, then independently re-verified, then attacked by its own mutant suite), not by importing it into pytest. Its executed controls are recorded in artifacts/quality/python-mutants.json. Instrumenting it under pytest would require replaying whole evidence lanes inside the unit run. Module purpose: Feasibility, by EXECUTION, of leaf-granularity evidence for the 20,495"
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/qualification/leaf_common.py"
+reason = "library. Evidence PRODUCER/VERIFIER for the qualification lanes. It is exercised by executing the lane it belongs to (a sealed bundle is produced, then independently re-verified, then attacked by its own mutant suite), not by importing it into pytest. Its executed controls are recorded in artifacts/quality/python-mutants.json. Instrumenting it under pytest would require replaying whole evidence lanes inside the unit run. Module purpose: Leaf-granularity evidence: the shared facts, defined exactly once."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/qualification/leaf_coverage.py"
+reason = "CLI. Evidence PRODUCER/VERIFIER for the qualification lanes. It is exercised by executing the lane it belongs to (a sealed bundle is produced, then independently re-verified, then attacked by its own mutant suite), not by importing it into pytest. Its executed controls are recorded in artifacts/quality/python-mutants.json. Instrumenting it under pytest would require replaying whole evidence lanes inside the unit run. Module purpose: Plan coverage WITH leaf-granularity evidence folded in."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/qualification/leaf_diff.py"
+reason = "CLI. Evidence PRODUCER/VERIFIER for the qualification lanes. It is exercised by executing the lane it belongs to (a sealed bundle is produced, then independently re-verified, then attacked by its own mutant suite), not by importing it into pytest. Its executed controls are recorded in artifacts/quality/python-mutants.json. Instrumenting it under pytest would require replaying whole evidence lanes inside the unit run. Module purpose: Backend equivalence at LEAF granularity: classic oracle vs SlateDB lane."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/qualification/leaf_evidence.py"
+reason = "library. Evidence PRODUCER/VERIFIER for the qualification lanes. It is exercised by executing the lane it belongs to (a sealed bundle is produced, then independently re-verified, then attacked by its own mutant suite), not by importing it into pytest. Its executed controls are recorded in artifacts/quality/python-mutants.json. Instrumenting it under pytest would require replaying whole evidence lanes inside the unit run. Module purpose: Load sealed leaf bundles into a coverage index — the one implementation."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/qualification/leaf_mutants.py"
+reason = "CLI. Evidence PRODUCER/VERIFIER for the qualification lanes. It is exercised by executing the lane it belongs to (a sealed bundle is produced, then independently re-verified, then attacked by its own mutant suite), not by importing it into pytest. Its executed controls are recorded in artifacts/quality/python-mutants.json. Instrumenting it under pytest would require replaying whole evidence lanes inside the unit run. Module purpose: Executed negative controls for the leaf evidence producer and verifier."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/qualification/run_cucumber_leaf.py"
+reason = "CLI. Evidence PRODUCER/VERIFIER for the qualification lanes. It is exercised by executing the lane it belongs to (a sealed bundle is produced, then independently re-verified, then attacked by its own mutant suite), not by importing it into pytest. Its executed controls are recorded in artifacts/quality/python-mutants.json. Instrumenting it under pytest would require replaying whole evidence lanes inside the unit run. Module purpose: Cucumber leaf evidence producer: per-SCENARIO outcomes for the 20,495 rows."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/qualification/run_leaf.py"
+reason = "CLI. Evidence PRODUCER/VERIFIER for the qualification lanes. It is exercised by executing the lane it belongs to (a sealed bundle is produced, then independently re-verified, then attacked by its own mutant suite), not by importing it into pytest. Its executed controls are recorded in artifacts/quality/python-mutants.json. Instrumenting it under pytest would require replaying whole evidence lanes inside the unit run. Module purpose: Leaf-granularity evidence producer for the cargo test families."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/qualification/run_static_leaf.py"
+reason = "CLI. Evidence PRODUCER/VERIFIER for the qualification lanes. It is exercised by executing the lane it belongs to (a sealed bundle is produced, then independently re-verified, then attacked by its own mutant suite), not by importing it into pytest. Its executed controls are recorded in artifacts/quality/python-mutants.json. Instrumenting it under pytest would require replaying whole evidence lanes inside the unit run. Module purpose: Produce a sealed leaf bundle for the catalogue's 141 STATIC_CHECK cases."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/qualification/static_mutants.py"
+reason = "CLI. Evidence PRODUCER/VERIFIER for the qualification lanes. It is exercised by executing the lane it belongs to (a sealed bundle is produced, then independently re-verified, then attacked by its own mutant suite), not by importing it into pytest. Its executed controls are recorded in artifacts/quality/python-mutants.json. Instrumenting it under pytest would require replaying whole evidence lanes inside the unit run. Module purpose: Executed negative controls for the STATIC_CHECK leaf producer and verifier."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/qualification/verify_cucumber_leaf.py"
+reason = "CLI. Evidence PRODUCER/VERIFIER for the qualification lanes. It is exercised by executing the lane it belongs to (a sealed bundle is produced, then independently re-verified, then attacked by its own mutant suite), not by importing it into pytest. Its executed controls are recorded in artifacts/quality/python-mutants.json. Instrumenting it under pytest would require replaying whole evidence lanes inside the unit run. Module purpose: Fail-closed verification of a cucumber leaf bundle, from the BYTES."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/qualification/verify_leaf.py"
+reason = "CLI. Evidence PRODUCER/VERIFIER for the qualification lanes. It is exercised by executing the lane it belongs to (a sealed bundle is produced, then independently re-verified, then attacked by its own mutant suite), not by importing it into pytest. Its executed controls are recorded in artifacts/quality/python-mutants.json. Instrumenting it under pytest would require replaying whole evidence lanes inside the unit run. Module purpose: Fail-closed verification of a leaf evidence bundle, from the BYTES."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/qualification/verify_static_leaf.py"
+reason = "CLI. Evidence PRODUCER/VERIFIER for the qualification lanes. It is exercised by executing the lane it belongs to (a sealed bundle is produced, then independently re-verified, then attacked by its own mutant suite), not by importing it into pytest. Its executed controls are recorded in artifacts/quality/python-mutants.json. Instrumenting it under pytest would require replaying whole evidence lanes inside the unit run. Module purpose: Re-derive a STATIC_CHECK leaf bundle from its own bytes and the pinned tree."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/quality/bootstrap.py"
+reason = "CLI. Quality-controller support tooling, exercised by the controller itself. Module purpose: Install every tool the quality controller may invoke, from the machine lock."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/quality/python_inventory.py"
+reason = "CLI. Quality-controller support tooling, exercised by the controller itself. Module purpose: Python source inventory and instrumentation completeness (R8-P1-06)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/release/lanes.py"
+reason = "library. Release identity/verification tooling, exercised by the release-qualification workflow. Module purpose: Release lanes: the tests that run against ONE built artifact."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/release/release.py"
+reason = "CLI. Release identity/verification tooling, exercised by the release-qualification workflow. Module purpose: Build once, test THAT artifact, promote by digest (round-6 R6-QUAL-01)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/release/release_identity.py"
+reason = "CLI. Release identity/verification tooling, exercised by the release-qualification workflow. Module purpose: R6-PORT-01 - one immutable release identity, resolvable in every posture."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/release/release_identity_selftest.py"
+reason = "CLI. Release identity/verification tooling, exercised by the release-qualification workflow. Module purpose: R6-PORT-01 - the four source postures, executed, not asserted."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/release/release_mutants.py"
+reason = "CLI. Release identity/verification tooling, exercised by the release-qualification workflow. Module purpose: Executed mutants for the release pipeline (round-6 R6-QUAL-01)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/s3-cert-corpus/evidence_mutants.py"
+reason = "CLI. Tooling module exercised by the workflow that runs it rather than by a unit import. Module purpose: Executed negative controls for the S3 corpus evidence chain (R6-EVID-01)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/s3-cert-corpus/s3op.py"
+reason = "CLI. Tooling module exercised by the workflow that runs it rather than by a unit import. Module purpose: Minimal SigV4 S3 operations for the certification runner (stdlib only)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/s3-cert-corpus/seal-bundle.py"
+reason = "CLI. Tooling module exercised by the workflow that runs it rather than by a unit import. Module purpose: Seal the corpus evidence bundle (R5-LOCAL-03, hardened for R6-EVID-01)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/s3-cert-corpus/verify-bundle.py"
+reason = "CLI. Tooling module exercised by the workflow that runs it rather than by a unit import. Module purpose: Independent verifier for a sealed corpus evidence bundle (R6-EVID-01)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/source-lock/generate_workspace_lock.py"
+reason = "CLI. Source-graph materialiser/linter. It reconstructs and verifies the pinned source tree; its correctness is checked by the reconstruction itself refusing on any digest mismatch, which no unit import reproduces. Module purpose: Generate (or verify) source-lock/workspace-lock.json — the release"
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/source-lock/lint_source_lock.py"
+reason = "CLI. Source-graph materialiser/linter. It reconstructs and verifies the pinned source tree; its correctness is checked by the reconstruction itself refusing on any digest mismatch, which no unit import reproduces. Module purpose: G0 source-lock linter (BT-P0 scope)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/source-lock/lock_mutants.py"
+reason = "CLI. Source-graph materialiser/linter. It reconstructs and verifies the pinned source tree; its correctness is checked by the reconstruction itself refusing on any digest mismatch, which no unit import reproduces. Module purpose: Behavioral negative controls for the source-lock linter (E-P0-02)."
+owner = "quality-controller"
+review_after = "2026-11-20"
+
+[[exclusion]]
+path = "tools/source-lock/materialize_sources.py"
+reason = "CLI. Source-graph materialiser/linter. It reconstructs and verifies the pinned source tree; its correctness is checked by the reconstruction itself refusing on any digest mismatch, which no unit import reproduces. Module purpose: Materialise sources/ from the source lock."
+owner = "quality-controller"
+review_after = "2026-11-20"

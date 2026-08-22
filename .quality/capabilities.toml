@@ -1,0 +1,284 @@
+# The ONE environment model (R8-P1-07).
+#
+# PROTECTED FILE: this is quality policy — it decides what counts as
+# "infrastructure is missing" rather than "the code is wrong".
+#
+# The round-8 audit found a missing native header condition surfacing as
+# `QualityFailure`: a Rust child exited nonzero, the classifier saw a nonzero
+# exit with no recognised substring, and the report said the code was broken.
+# It also found `tools/dev/doctor.py` checking a small, DIFFERENT subset of the
+# environment from the one the controller actually requires — two environment
+# models that could disagree, and did.
+#
+# This file is the single inventory both consume. `tools/quality/capabilities.py`
+# is the single PROBE implementation; `cargo xtask quality` runs it as a
+# per-gate preflight BEFORE invoking the code under test, and
+# `tools/dev/doctor.py` runs the same probes to answer "can this machine run
+# the lanes". There is no second list and no second implementation.
+#
+# What belongs here: an external capability whose absence means the gate could
+# not RUN. What does not: a pinned tool version, which is `.quality/tools.lock.toml`
+# (the probe runner reads that file for tool capabilities rather than restating
+# the pins here — restating them is how two models are born).
+#
+# probe kinds
+#   command         executable resolvable on PATH
+#   locked_tool     a tool from .quality/tools.lock.toml, checked through the
+#                   same bootstrap detection the controller installs with
+#   c_header        the header compiles in a one-line translation unit with $CC
+#   shared_library  the library actually LOADS (dlopen), not merely exists
+#   cargo_subcommand  `cargo <name> --version` answers
+#   python_module   importable by the interpreter the quality gates use
+#   npm_bin         resolvable inside a declared TypeScript project
+#   network_namespace  a private net namespace can be entered
+#   af_unix         an AF_UNIX socket can be bound and connected in $TMPDIR
+#   proc_supervision  /proc/self and /proc/<child> are readable (process supervision)
+#   path            a fixture/checkout exists at a repository-relative path
+
+schema = 1
+
+# --------------------------------------------------------------- native build
+
+[capability."native.cc"]
+kind = "command"
+lock_member = "cc"
+version_argv = ["cc", "--version"]
+version_pattern = "(\\d+\\.\\d+\\.\\d+)"
+program = "cc"
+why = "every vendored -sys crate in the fork (libz-sys, bzip2-sys, lz4-sys, librocksdb-sys) compiles C sources"
+remediation = "apt-get install -y build-essential"
+
+[capability."native.cxx"]
+kind = "command"
+lock_member = "c++"
+version_argv = ["c++", "--version"]
+version_pattern = "(\\d+\\.\\d+\\.\\d+)"
+program = "c++"
+why = "librocksdb-sys compiles RocksDB's C++ sources"
+remediation = "apt-get install -y build-essential"
+
+[capability."native.cmake"]
+kind = "command"
+lock_member = "cmake"
+version_argv = ["cmake", "--version"]
+version_pattern = "(\\d+\\.\\d+\\.\\d+)"
+program = "cmake"
+why = "aws-lc-sys drives its build through cmake"
+remediation = "apt-get install -y cmake"
+
+[capability."native.protoc"]
+kind = "command"
+lock_member = "protoc"
+version_argv = ["protoc", "--version"]
+version_pattern = "(\\d+\\.\\d+\\.\\d+)"
+program = "protoc"
+why = "typedb-protocol generates its Rust bindings from .proto sources"
+remediation = "apt-get install -y protobuf-compiler"
+
+[capability."native.pkg-config"]
+kind = "command"
+lock_member = "pkg-config"
+version_argv = ["pkg-config", "--version"]
+version_pattern = "(\\d+\\.\\d+)"
+program = "pkg-config"
+why = "several -sys build scripts locate system libraries through pkg-config"
+remediation = "apt-get install -y pkg-config"
+
+[capability."header.stdc"]
+kind = "c_header"
+header = "stdlib.h"
+language = "c"
+why = "a C toolchain whose standard headers are unreachable fails every vendored C build with an error that reads like a code defect"
+remediation = "apt-get install -y libc6-dev build-essential"
+
+[capability."header.cxx"]
+kind = "c_header"
+header = "memory"
+language = "c++"
+why = "RocksDB's C++ sources need the libstdc++ headers; their absence is an environment fact, not a defect in this repository"
+remediation = "apt-get install -y libstdc++-dev g++"
+
+[capability."library.libclang"]
+kind = "shared_library"
+candidates = ["libclang.so", "libclang.so.1", "libclang-18.so.1", "libclang-17.so.1"]
+env_hint = "LIBCLANG_PATH"
+why = "librocksdb-sys runs bindgen, which dlopens libclang at BUILD time; a present-but-unloadable libclang fails the build with a message that names no missing package"
+remediation = "apt-get install -y libclang-dev   # or set LIBCLANG_PATH to the directory holding libclang.so"
+
+[capability."native.git"]
+kind = "command"
+program = "git"
+why = "every lane derives its change set, base revision and evidence provenance from git"
+remediation = "apt-get install -y git"
+
+[capability."native.curl"]
+kind = "command"
+program = "curl"
+why = "the maintenance and Mode-Q lanes fetch over HTTP through curl"
+remediation = "apt-get install -y curl"
+
+[capability."native.make"]
+kind = "command"
+program = "make"
+why = "several vendored C builds drive themselves through make"
+remediation = "apt-get install -y build-essential"
+
+# --------------------------------------------------------------- rust harness
+
+[capability."cargo.nextest"]
+kind = "cargo_subcommand"
+subcommand = "nextest"
+why = "the Rust test gates run under nextest for per-test process isolation; plain `cargo test` shares one process and cannot provide it"
+remediation = "cargo install cargo-nextest --locked"
+
+[capability."cargo.deny"]
+kind = "cargo_subcommand"
+subcommand = "deny"
+why = "the supply-chain gate is cargo-deny"
+remediation = "cargo install cargo-deny --locked"
+
+# ------------------------------------------------------------------ node/npm
+
+[capability."npm.oxlint"]
+kind = "npm_bin"
+bin = "oxlint"
+project = "control-plane"
+why = "the TypeScript lint gate resolves oxlint from the project's own node_modules; a global copy is a different version"
+remediation = "cd control-plane && npm ci"
+
+[capability."npm.depcruise"]
+kind = "npm_bin"
+bin = "depcruise"
+project = "control-plane"
+why = "the architecture gate is dependency-cruiser, resolved from the project"
+remediation = "cd control-plane && npm ci"
+
+# --------------------------------------------------------------- python venv
+
+[capability."python.pytest"]
+kind = "python_module"
+module = "pytest"
+venv = true
+why = "the Python test gate runs pytest from the repository-owned venv, not the system interpreter"
+remediation = "python3 tools/quality/bootstrap.py --install"
+
+[capability."python.pytest_cov"]
+kind = "python_module"
+module = "pytest_cov"
+venv = true
+why = "coverage instrumentation completeness (R8-P1-06) is measured through pytest-cov; without it the gate would report tests passing and measure nothing"
+remediation = "python3 tools/quality/bootstrap.py --install"
+
+[capability."python.coverage"]
+kind = "python_module"
+module = "coverage"
+venv = true
+why = "the branch-coverage floors read coverage's own XML report"
+remediation = "python3 tools/quality/bootstrap.py --install"
+
+# ------------------------------------------------------------------ host/kernel
+
+[capability."kernel.network_namespace"]
+kind = "network_namespace"
+why = "upstream's server tests bind fixed ports; without a private net namespace per test binary a parallel run manufactures collisions and reports them as defects"
+remediation = "run where CAP_SYS_ADMIN or unprivileged user namespaces are available (`sysctl -w kernel.unprivileged_userns_clone=1`)"
+
+[capability."kernel.af_unix"]
+kind = "af_unix"
+why = "the container/process supervision tests communicate over AF_UNIX sockets under TMPDIR"
+remediation = "ensure $TMPDIR is a writable local filesystem that permits unix sockets (not noexec/nodev-restricted or a network mount)"
+
+[capability."kernel.proc_supervision"]
+kind = "proc_supervision"
+why = "process supervision reads /proc/<pid>/status for its children; a hidepid-restricted or absent /proc makes supervision report phantom deaths"
+remediation = "mount /proc without hidepid, or run outside a sandbox that hides it"
+
+# ------------------------------------------------------------------- fixtures
+
+[capability."fixture.sources"]
+kind = "path"
+path = "sources"
+why = "the pinned upstream checkouts the fork lanes build against"
+remediation = "python3 tools/source-lock/materialize_sources.py"
+
+[capability."fixture.node_modules"]
+kind = "path"
+path = "control-plane/node_modules"
+why = "the TypeScript gates resolve every tool from the project's own dependency tree"
+remediation = "cd control-plane && npm ci"
+
+# --------------------------------------------------------------------- gates
+#
+# What each gate needs BEFORE its command runs. A gate absent from this table
+# declares no external capability beyond its locked tools; that is a claim the
+# probe runner records, not a silent default (`--audit` lists them).
+
+[gates]
+#
+# Controller self-checks run in-process: they need no external capability.
+"policy.protected" = []
+"policy.waivers" = []
+"policy.toolchain_pin" = []
+"policy.scope_classification" = []
+
+# Rust. Everything that BUILDS the fork needs the native chain plus libclang,
+# because librocksdb-sys runs bindgen at build time.
+"rust.fmt" = []
+"rust.clippy" = ["native.cc", "native.cxx", "native.protoc", "header.stdc", "library.libclang"]
+"rust.tests" = [
+  "native.cc",
+  "native.cxx",
+  "native.cmake",
+  "native.protoc",
+  "native.pkg-config",
+  "header.stdc",
+  "header.cxx",
+  "library.libclang",
+  "cargo.nextest",
+  "kernel.network_namespace",
+  "kernel.af_unix",
+  "kernel.proc_supervision",
+  "fixture.sources",
+]
+"rust.deny" = ["cargo.deny"]
+"rust.machete" = []
+"rust.hack.each_feature" = ["native.cc", "native.cxx", "native.protoc", "header.stdc", "library.libclang"]
+"rust.coverage" = ["native.cc", "native.cxx", "native.protoc", "header.stdc", "header.cxx", "library.libclang", "cargo.nextest"]
+"rust.crap" = ["native.cc", "native.protoc", "header.stdc", "library.libclang", "cargo.nextest"]
+"rust.crap.baseline" = ["native.cc", "native.protoc", "header.stdc", "library.libclang", "cargo.nextest"]
+"rust.crap_advice" = ["native.cc", "header.stdc"]
+"rust.crap.trend" = ["native.cc", "header.stdc"]
+"rust.mutation.diff" = ["native.cc", "native.protoc", "header.stdc", "library.libclang", "cargo.nextest"]
+"rust.mutation.full" = ["native.cc", "native.protoc", "header.stdc", "library.libclang", "cargo.nextest"]
+"rust.miri" = ["native.cc", "header.stdc"]
+"rust.miri.full" = ["native.cc", "header.stdc"]
+"rust.fuzz.smoke" = ["native.cc", "header.stdc"]
+"rust.fuzz.long" = ["native.cc", "header.stdc"]
+"rust.property_tests" = ["native.cc", "header.stdc"]
+"rust.semver" = ["native.cc", "native.protoc", "header.stdc", "library.libclang"]
+"rust.semver.not_contracted" = []
+"rust.hack.powerset" = ["native.cc", "native.cxx", "native.protoc", "header.stdc", "library.libclang"]
+
+# TypeScript. Every tool resolves from the project's own dependency tree, so
+# the tree itself is the capability.
+"ts.typecheck" = ["fixture.node_modules"]
+"ts.tests" = ["fixture.node_modules"]
+"ts.oxlint" = ["npm.oxlint", "fixture.node_modules"]
+"ts.knip" = ["fixture.node_modules"]
+"ts.depcruise" = ["npm.depcruise", "fixture.node_modules"]
+"ts.crap" = ["fixture.node_modules"]
+"ts.mutation" = ["fixture.node_modules"]
+
+# Python. The gates run from the repository-owned venv, never the system
+# interpreter, so the modules are probed INSIDE it.
+"py.ruff.check" = []
+"py.ruff.format" = []
+"py.typecheck" = []
+"py.pytest" = ["python.pytest", "python.pytest_cov", "python.coverage"]
+"py.pip_audit" = []
+"py.crap" = []
+
+# Cross-language.
+"arch.rust_deps" = []
+"dup.jscpd_delta" = ["fixture.node_modules"]
+"dup.jscpd_full" = ["fixture.node_modules"]

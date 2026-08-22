@@ -16,9 +16,11 @@
 //! Nothing to keep in sync, and reverting a fork file to upstream's bytes
 //! correctly stops gating it — it is upstream's code again.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
-use std::process::Command;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+    process::Command,
+};
 
 /// What the fork actually authored, to LINE granularity.
 ///

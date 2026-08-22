@@ -7,8 +7,10 @@
 
 use serde::Serialize;
 
-use super::glob;
-use super::policy::{Policy, ScopeClass, ScopeRule, ScopeTier};
+use super::{
+    glob,
+    policy::{Policy, ScopeClass, ScopeRule, ScopeTier},
+};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Classified {

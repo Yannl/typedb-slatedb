@@ -4,7 +4,7 @@
 use std::{path::Path, process::ExitCode, time::Instant};
 
 use super::{
-    date,
+    capability, date,
     diff::{self, ChangeSet, Mode},
     digest, exec, gates, git, policy,
     report::{self, Decision, Status},
@@ -115,6 +115,11 @@ fn preflight(repo_root: &Path) -> Result<u8, String> {
     let facts = diff::derive_facts(&policy, &ChangeSet::default(), &[]);
     let selected = diff::select_gates(Mode::Full, &policy, &facts);
     let campaigns = gates::campaigns(repo_root);
+    // R8-P1-07: the plan consults the SAME environment model the run will, so
+    // "PREFLIGHT: PASS" and the run's first gate cannot disagree about whether
+    // this host is ready. A plan that only checked tool pins would still pass
+    // on a machine with no libclang and then lose the whole Full budget to it.
+    let environment = capability::Preflight::probe(repo_root);
 
     let mut blocking: Vec<String> = Vec::new();
     println!("quality full --plan: {} gate(s) selected\n", selected.len());
@@ -149,6 +154,15 @@ fn preflight(repo_root: &Path) -> Result<u8, String> {
             if !d.advisory {
                 blocking.push(format!("{}: {}", g.id, problem.problem()));
             }
+        }
+        if let Some(unmet) = environment.unmet_for(&g.id) {
+            notes.push("missing host capability".to_string());
+            blocking.push(format!(
+                "{}: {}\n      fix: {}",
+                g.id,
+                unmet.detail.lines().collect::<Vec<_>>().join(" "),
+                unmet.remediation
+            ));
         }
         let state = if notes.is_empty() { "ok".to_string() } else { notes.join("; ") };
         println!("  {:<26} {}", g.id, state);
@@ -222,6 +236,16 @@ fn quality(repo_root: &Path, mode: Mode, base: Option<String>) -> Result<u8, Str
     let waiver_summary = waivers::validate(&waiver_file, &policy.exceptions, date::Date::today_utc());
 
     let (rust_all, rust_prod, ts_projects, python_projects) = gates::targets(&policy, mode, &facts);
+
+    // R8-P1-07: probe the environment ONCE, before any gate runs, from the
+    // inventory `tools/dev/doctor.py` also reports. A gate whose external
+    // capability is missing is refused as infrastructure with the inventory's
+    // remediation — never invoked and never reported as a defect in code that
+    // was not compiled.
+    let environment = capability::Preflight::probe(repo_root);
+    if let capability::Preflight::Unavailable(why) = &environment {
+        eprintln!("xtask: WARNING: the environment model could not be consulted: {why}");
+    }
     let ctx = gates::Ctx {
         repo_root,
         policy: &policy,
@@ -238,6 +262,7 @@ fn quality(repo_root: &Path, mode: Mode, base: Option<String>) -> Result<u8, Str
         python_projects,
         policy_digest: policy_digest.clone(),
         toolchain_digest: toolchain_digest.clone(),
+        preflight: environment,
     };
 
     // `cargo mutants --in-diff` consumes a real diff file; produce it from the

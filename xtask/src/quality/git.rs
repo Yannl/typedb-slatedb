@@ -1,8 +1,10 @@
 //! Git plumbing. Every call is explicit and read-only: the controller never
 //! mutates the repository it is judging.
 
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 pub fn run(repo_root: &Path, args: &[&str]) -> Result<String, String> {
     let out =

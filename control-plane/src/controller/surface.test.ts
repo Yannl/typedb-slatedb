@@ -30,6 +30,10 @@ test("production physically excludes issuance, register/fence, budgets, batch, a
 
 test("the production protocol surface stays reachable", () => {
   const production = [
+    // R8-P2-03: liveness and readiness are separate probes; /health is a
+    // retained alias of /live.
+    "/live",
+    "/ready",
     "/health",
     // R4 PR1: the internal provisioning transaction is the PRODUCTION
     // bootstrap route - its authorization is the PROVISION capability

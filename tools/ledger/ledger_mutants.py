@@ -304,11 +304,19 @@ def main() -> int:
 
     for f in failures:
         print(f"LEDGER MUTANTS: FAIL - {f}")
+    # The tally names the SURVIVORS, not the roster. Printing every executed
+    # name after the word "killed" is how a failing suite reads like a passing
+    # one at a glance: the round-8 run reported
+    # "25 killed: ..., current-gate-state-copied-into-a-second-field, ..."
+    # while that very mutant was the one that survived.
+    survived = {name for name in executed if any(repr(name) in f for f in failures)}
+    killed = [name for name in executed if name not in survived]
     verdict = "FAIL" if failures else "PASS"
     print(
         f"LEDGER MUTANTS: {verdict} "
-        f"({len(executed)} mutants executed, "
-        f"{len(executed) - len(failures)} killed: {', '.join(executed)})"
+        f"({len(executed)} mutants executed, {len(killed)} killed"
+        + (f", {len(survived)} NOT killed: {', '.join(sorted(survived))}" if survived else "")
+        + ")"
     )
     return 1 if failures else 0
 

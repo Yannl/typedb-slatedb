@@ -9,8 +9,7 @@
 //! 2. Scope classification lives in exactly one place, the `[[scope.rule]]`
 //!    manifest, so the diff-to-gate matrix has a single source of truth.
 
-use std::collections::BTreeMap;
-use std::path::Path;
+use std::{collections::BTreeMap, path::Path};
 
 use serde::Deserialize;
 

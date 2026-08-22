@@ -5,9 +5,7 @@
 //! command. It is never a silent skip and it is never a pass. An uninstalled
 //! mutation tester must not be able to produce a green report.
 
-use std::collections::BTreeMap;
-use std::path::Path;
-use std::time::Duration;
+use std::{collections::BTreeMap, path::Path, time::Duration};
 
 use serde::{Deserialize, Serialize};
 

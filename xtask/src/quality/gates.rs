@@ -8,6 +8,7 @@
 use std::{path::Path, time::Duration};
 
 use super::{
+    capability,
     diff::{ChangeSet, Facts, Mode},
     exec::{self, Cmd, Weight},
     policy::{Policy, ProtectedMatcher, ScopeClass},
@@ -113,6 +114,43 @@ pub fn all_definitions() -> &'static [GateDef] {
     DEFS
 }
 
+/// Every gate id the controller can run. Used to prove the capability
+/// inventory names exactly this set (R8-P1-07): one environment model means
+/// neither side may drift.
+pub fn all_ids() -> Vec<&'static str> {
+    DEFS.iter().map(|d| d.id).collect()
+}
+
+/// R8-P1-07 item 5: what to clean, and nothing broader.
+///
+/// "Do not automatically delete broad targets, but report the exact affected
+/// package and safe targeted clean command." A remediation that says
+/// `cargo clean` costs the reader every other workspace's build tree — on a
+/// machine where the fork alone is 20 GB that is an hour, and it is usually
+/// not even the tree that filled the disk. So the advice names the manifest
+/// the failing command was pointed at, and the package when the command names
+/// one, and says explicitly that the broad form is not the remedy.
+fn targeted_clean_advice(cmd: &Cmd) -> String {
+    let Some(manifest) = exec::manifest_of(cmd) else {
+        return "clean a build tree you are not using (`cargo clean --manifest-path <that tree>`); \
+                do not clean this one blindly — a broad `cargo clean` discards every workspace's \
+                cache, including trees this run still needs"
+            .to_string();
+    };
+    let package =
+        cmd.args.iter().position(|a| a == "-p" || a == "--package").and_then(|i| cmd.args.get(i + 1)).cloned();
+    match package {
+        Some(pkg) => format!(
+            "targeted clean: `cargo clean --manifest-path {manifest} -p {pkg}` (that package only). \
+             A bare `cargo clean` discards every workspace's cache and is not the remedy"
+        ),
+        None => format!(
+            "targeted clean: `cargo clean --manifest-path {manifest}` (this workspace only). \
+             A bare `cargo clean` discards every workspace's cache and is not the remedy"
+        ),
+    }
+}
+
 /// Everything a gate needs, assembled once per run.
 pub struct Ctx<'a> {
     pub repo_root: &'a Path,
@@ -132,6 +170,9 @@ pub struct Ctx<'a> {
     pub python_projects: Vec<String>,
     pub policy_digest: String,
     pub toolchain_digest: String,
+    /// What this machine can actually provide, probed once per run before
+    /// anything is invoked (R8-P1-07).
+    pub preflight: capability::Preflight,
 }
 
 impl Ctx<'_> {
@@ -846,6 +887,22 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
         return r;
     }
 
+    // R8-P1-07: the environment PREFLIGHT, before anything is invoked.
+    //
+    // The audited controller discovered a missing native component the only way
+    // it could: by running the build and reading a nonzero exit with no
+    // recognised substring, which it recorded as a QualityFailure — a red
+    // verdict about code that was never compiled. Capability is decided here
+    // instead, structurally (a header by compiling it, a library by loading it,
+    // a namespace by entering one), from the same inventory
+    // `tools/dev/doctor.py` reports, which is what makes doctor and the gate
+    // agree by construction rather than by two lists staying in step.
+    if let Some(unmet) = ctx.preflight.unmet_for(id) {
+        let mut r = GateResult::new(id, d.tier, d.language, d.advisory, Status::InfrastructureFailure, &unmet.detail);
+        r.remediation = Some(unmet.remediation);
+        return r;
+    }
+
     // Build space. An ENOSPC part-way through a compile is indistinguishable
     // from a tool bug, so refuse up front and say exactly why. INTERNAL gates
     // only: they run no commands of their own (the trusted-baseline gate
@@ -997,10 +1054,11 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
                 r.command = Some(cmd.display());
                 r.cwd = cmd.cwd.clone();
                 r.remediation = Some(format!(
-                    "free at least {:.1} GB (`cargo clean` in any other build tree), or run this \
-                     gate on a machine with more disk; the command was not attempted and no \
-                     quality conclusion may be drawn from this run",
-                    need - free
+                    "free at least {:.1} GB, or run this gate on a machine with more disk; the \
+                     command was not attempted and no quality conclusion may be drawn from this \
+                     run. {}",
+                    need - free,
+                    targeted_clean_advice(cmd)
                 ));
                 return r;
             }
@@ -1090,6 +1148,22 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
                     res.tail(25)
                 ),
             )
+        } else if let Some(signal) = res.signal {
+            // R8-P1-07: "signal/timeout/cancellation/ENOSPC -> infrastructure
+            // unless a test deliberately asserts it". A child killed by the
+            // OOM killer, by a cancelled CI job, or by a crashing linker has
+            // NO exit code; `unwrap_or(-1)` would turn that into a number
+            // indistinguishable from a failing assertion.
+            (
+                Status::InfrastructureFailure,
+                format!(
+                    "`{}` was KILLED by signal {signal}; it did not finish, so no quality \
+                     conclusion may be drawn from it (out of memory, a cancelled job, or a \
+                     crashing tool — none of them a statement about this code)\n{}",
+                    res.command,
+                    res.tail(25)
+                ),
+            )
         } else if exec::looks_like_enospc(&res.tail(200)) {
             // The disk ran out mid-command. That is infrastructure, not a
             // statement about the code, and calling it a QualityFailure sends
@@ -1112,8 +1186,7 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
         };
         let mut r = GateResult::new(id, d.tier, d.language, d.advisory, status, &detail);
         if status == Status::InfrastructureFailure && r.remediation.is_none() {
-            r.remediation =
-                Some("free disk space (`cargo clean` in any other build tree) and re-run the gate".to_string());
+            r.remediation = Some(format!("free disk space and re-run the gate. {}", targeted_clean_advice(cmd)));
         }
         r.command = Some(res.command);
         r.cwd = cmd.cwd.clone();
@@ -2010,7 +2083,33 @@ mod tests {
             python_projects: vec!["tools".into()],
             policy_digest: "sha256:aa".into(),
             toolchain_digest: "sha256:bb".into(),
+            // These unit tests exercise gate LOGIC on a fixture; probing the
+            // host would make them assert facts about whatever machine runs
+            // them. `capability.rs` owns the preflight's own tests.
+            preflight: capability::Preflight::NotRun,
         }
+    }
+
+    /// R8-P1-07 item 5: the remediation names the exact tree, and says the
+    /// broad form is not the remedy. A `cargo clean` suggestion costs every
+    /// other workspace's cache — on this machine, the fork alone is 20 GB.
+    #[test]
+    fn the_clean_advice_names_one_tree_and_refuses_the_broad_form() {
+        let cmd = Cmd::new("cargo", &["clippy", "--manifest-path", "fork/typedb/Cargo.toml"]);
+        let advice = targeted_clean_advice(&cmd);
+        assert!(advice.contains("--manifest-path fork/typedb/Cargo.toml"), "{advice}");
+        assert!(advice.contains("not the remedy"), "{advice}");
+
+        let scoped = Cmd::new("cargo", &["test", "--manifest-path", "tools/Cargo.toml", "-p", "xtask"]);
+        let advice = targeted_clean_advice(&scoped);
+        assert!(advice.contains("-p xtask"), "a command that names a package gets package advice: {advice}");
+
+        // A command that builds no workspace cannot name one, and must not
+        // invent a target to clean.
+        let unknown = Cmd::new("npx", &["oxlint"]);
+        let advice = targeted_clean_advice(&unknown);
+        assert!(advice.contains("do not clean this one blindly"), "{advice}");
+        assert!(!advice.contains("cargo clean --manifest-path tools"), "{advice}");
     }
 
     #[test]

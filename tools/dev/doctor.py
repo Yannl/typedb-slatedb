@@ -2,11 +2,18 @@
 """Check that this machine can run every local lane — before you find out
 40 minutes into a build that `protoc` is missing.
 
-Everything checked here is already asserted somewhere in the repo: the
-native toolchain set is lock node NATIVE_TOOLCHAIN, the parity compiler is
-node RUST_PARITY, the checkouts are what lint_source_lock.py demands. The
-doctor just asks the questions in one place, before the lanes do, and says
-what to run when an answer is wrong.
+R8-P1-07: THERE IS ONE ENVIRONMENT MODEL. The audited doctor carried its own
+list of native tools and its own probes, and checked a different subset from
+the one `cargo xtask quality` requires. Two lists can disagree, and a doctor
+that reports "every local lane is runnable" moments before a gate refuses for a
+missing component is worse than no doctor at all.
+
+So the environment half of this report is not written here. It is
+`.quality/capabilities.toml`, probed by `tools/quality/capabilities.py` — the
+same declarations and the same probes the controller consults before it invokes
+anything. What remains here is what is genuinely doctor-specific: the rust
+toolchains the lanes pin, the source-lock materialisation, and the recorded
+versions the evidence was produced against.
 
     python3 tools/dev/doctor.py            # report, exit 1 if a lane is unrunnable
     python3 tools/dev/doctor.py --quiet    # only problems
@@ -28,31 +35,8 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parents[2]
 LOCK = REPO / "source-lock" / "source-lock.json"
 
-# lock NATIVE_TOOLCHAIN member -> (executable, version argv, regex capturing version)
-NATIVE = {
-    "cc": ("gcc", ["gcc", "--version"], r"(\d+\.\d+\.\d+)"),
-    "c++": ("g++", ["g++", "--version"], r"(\d+\.\d+\.\d+)"),
-    "cmake": ("cmake", ["cmake", "--version"], r"(\d+\.\d+\.\d+)"),
-    "protoc": ("protoc", ["protoc", "--version"], r"(\d+\.\d+\.\d+)"),
-    "pkg-config": ("pkg-config", ["pkg-config", "--version"], r"(\d+\.\d+)"),
-    "node": ("node", ["node", "--version"], r"v?(\d+\.\d+\.\d+)"),
-    "python": ("python3", ["python3", "--version"], r"(\d+\.\d+\.\d+)"),
-}
-
-# tools with no lock entry that lanes still need
-EXTRA = {
-    "git": ["git", "--version"],
-    "curl": ["curl", "--version"],
-    "make": ["make", "--version"],
-}
-
-INSTALL_HINT = {
-    "protoc": "apt-get install -y protobuf-compiler",
-    "cmake": "apt-get install -y cmake",
-    "cc": "apt-get install -y build-essential",
-    "c++": "apt-get install -y build-essential",
-    "make": "apt-get install -y build-essential",
-}
+sys.path.insert(0, str(REPO / "tools" / "quality"))
+import capabilities  # noqa: E402
 
 
 def version_of(argv, pattern) -> str | None:
@@ -83,33 +67,57 @@ class Report:
         print(f"  FAIL  {what:<34} {detail}")
 
 
-def check_native(rep: Report, lock: dict) -> None:
+def check_capabilities(rep: Report, lock: dict) -> None:
+    """The controller's own environment model, reported here verbatim.
+
+    Every entry is probed by `tools/quality/capabilities.py`, which is what
+    `cargo xtask quality` runs as its preflight. Agreement between doctor and
+    the gate is therefore structural rather than a matter of keeping two lists
+    in step.
+    """
+    print("environment (.quality/capabilities.toml — the controller's own model)")
+    try:
+        inventory = capabilities.load()
+    except capabilities.InventoryError as error:
+        rep.fail(
+            "capability inventory",
+            str(error),
+            "python3 tools/quality/capabilities.py --self-test",
+        )
+        return
+
     recorded = {}
-    for n in lock["nodes"]:
-        if n["id"] == "NATIVE_TOOLCHAIN":
-            recorded = n.get("members", {})
-    print("native toolchain (lock node NATIVE_TOOLCHAIN)")
-    for member, (exe, argv, pattern) in NATIVE.items():
-        if shutil.which(exe) is None:
-            rep.fail(member, f"{exe} not on PATH", INSTALL_HINT.get(member))
+    for node in lock["nodes"]:
+        if node["id"] == "NATIVE_TOOLCHAIN":
+            recorded = node.get("members", {})
+
+    for result in capabilities.probe_many(inventory, list(inventory["capability"])):
+        spec = inventory["capability"][result.id]
+        if not result.ok:
+            rep.fail(result.id, result.detail, spec.get("remediation"))
             continue
-        got = version_of(argv, pattern)
-        want = recorded.get(member, "")
-        want_v = re.search(r"(\d+\.\d+(\.\d+)?)", want)
-        if (
-            got
-            and want_v
-            and not want_v.group(1).startswith(got)
-            and not got.startswith(want_v.group(1))
-        ):
-            rep.warn(member, f"{got} (lock recorded {want_v.group(1)})")
+        member = spec.get("lock_member")
+        note = version_note(spec, recorded.get(member, "")) if member else None
+        if note:
+            rep.warn(result.id, note)
         else:
-            rep.ok(member, got or "present")
-    for name, argv in EXTRA.items():
-        if shutil.which(argv[0]) is None:
-            rep.fail(name, f"{argv[0]} not on PATH", INSTALL_HINT.get(name))
-        else:
-            rep.ok(name, version_of(argv, r"(\d+\.\d+(?:\.\d+)?)") or "present")
+            rep.ok(result.id, result.detail)
+
+
+def version_note(spec: dict, want: str) -> str | None:
+    """A recorded-version difference, or None. The lock records the environment
+    the sealed evidence was produced in; a different patch level is a fact worth
+    printing, not a reason to stop a lane."""
+    argv, pattern = spec.get("version_argv"), spec.get("version_pattern")
+    if not (argv and pattern and want):
+        return None
+    got = version_of(argv, pattern)
+    want_v = re.search(r"(\d+\.\d+(\.\d+)?)", want)
+    if not (got and want_v):
+        return None
+    if want_v.group(1).startswith(got) or got.startswith(want_v.group(1)):
+        return None
+    return f"{got} (source-lock recorded {want_v.group(1)})"
 
 
 def check_rust(rep: Report, lock: dict) -> None:
@@ -181,14 +189,6 @@ def check_sources(rep: Report) -> None:
         )
 
 
-def check_node_deps(rep: Report) -> None:
-    print("control-plane")
-    if (REPO / "control-plane" / "node_modules").is_dir():
-        rep.ok("node_modules", "installed")
-    else:
-        rep.fail("node_modules", "not installed", "cd control-plane && npm ci")
-
-
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -198,10 +198,9 @@ def main() -> int:
 
     lock = json.loads(LOCK.read_text())
     rep = Report(args.quiet)
-    check_native(rep, lock)
+    check_capabilities(rep, lock)
     check_rust(rep, lock)
     check_sources(rep)
-    check_node_deps(rep)
 
     print()
     if rep.failures:

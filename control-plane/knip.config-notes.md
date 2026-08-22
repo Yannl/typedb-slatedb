@@ -40,3 +40,11 @@ absent, so a new dead export fails the gate.
 Deliberately absent: any entry that would hide an unused source file or an
 unused export. Those were resolved by removing the export, so a new dead export
 still fails this gate.
+
+  * `@stryker-mutator/core`, `jscpd` — the same shape as dependency-cruiser and
+    oxlint: TOOLS the controller runs, committed as exact devDependencies so a
+    clean `npm ci` can run the tier-C campaigns at all (R8-P0-04/R8-P0-05). No
+    module imports them.
+  * `@stryker-mutator/command-runner` — named in `stryker.conf.json`, which
+    knip reads as a source of dependency references; Stryker resolves the
+    command runner itself from its own package.

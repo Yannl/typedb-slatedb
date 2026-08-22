@@ -6,9 +6,11 @@
 //! each `git` invocation is anchored with `-C <fixture>` and the fixture path is
 //! asserted to live under `std::env::temp_dir()` before anything runs.
 
-use std::path::PathBuf;
-use std::process::Command;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{
+    path::PathBuf,
+    process::Command,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 const XTASK: &str = env!("CARGO_BIN_EXE_xtask");
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -64,6 +66,30 @@ impl Fixture {
         std::fs::read_to_string(self.dir.join(rel)).unwrap()
     }
 
+    /// The R8-P1-07 environment model, in a HERMETIC form.
+    ///
+    /// The real inventory is copied for its structure but not its content: a
+    /// fixture that probed this machine for libclang and network namespaces
+    /// would fail these tests for a reason that has nothing to do with the
+    /// controller. So every gate is declared as needing nothing, except the
+    /// ones a caller deliberately burdens through `demanding`. The probe
+    /// RUNNER is the real one — the path under test is the real path.
+    fn install_capability_inventory(&self, demanding: &[(&str, &str)]) {
+        let src = repo_under_test();
+        std::fs::create_dir_all(self.dir.join("tools/quality")).unwrap();
+        std::fs::copy(src.join("tools/quality/capabilities.py"), self.dir.join("tools/quality/capabilities.py"))
+            .unwrap();
+        let mut toml = String::from(
+            "schema = 1\n\n[capability.\"fixture.repo\"]\nkind = \"path\"\npath = \".\"\n             why = \"the repository itself, always satisfied — the fixture needs one declared capability\"\n             remediation = \"none\"\n\n             [capability.\"fixture.impossible\"]\nkind = \"path\"\npath = \"no/such/thing\"\n             why = \"a capability this machine cannot have, so the refusal path is testable\"\n             remediation = \"materialise no/such/thing\"\n\n[gates]\n",
+        );
+        for id in xtask::quality::gates::all_ids() {
+            let needs =
+                demanding.iter().find(|(gate, _)| *gate == id).map(|(_, cap)| format!("\"{cap}\"")).unwrap_or_default();
+            toml.push_str(&format!("\"{id}\" = [{needs}]\n"));
+        }
+        self.write(".quality/capabilities.toml", &toml);
+    }
+
     /// The real `.quality/policy.toml` from the repository under test, so that
     /// these tests exercise the shipped protected list and scope manifest, plus
     /// a hermetic tool lock so the fixture does not depend on what happens to
@@ -79,6 +105,7 @@ impl Fixture {
         )
         .unwrap();
         self.write(".quality/waivers/quality-waivers.toml", "schema = 1\n");
+        self.install_capability_inventory(&[]);
         self.write(
             ".quality/tools.lock.toml",
             r#"
@@ -457,4 +484,120 @@ fn pr_and_policy_check_require_a_base_sha() {
         assert_eq!(code, 3, "{output}");
         assert!(output.contains("requires --base"), "{output}");
     }
+}
+
+/// R8-P1-07 acceptance, half one: a missing external capability produces exit
+/// 3 (infrastructure) and never exit 1 (a verdict about code).
+///
+/// The audited controller learned about a missing native component by running
+/// the build and reading a nonzero exit with no recognised substring, and
+/// recorded `QualityFailure` — a red verdict about code that was never
+/// compiled. The subject here is a fixture capability the machine cannot have,
+/// so the control is deterministic on every host: what it proves is the
+/// CLASSIFICATION and the refusal-before-invocation, which are the same for a
+/// missing header, protoc, nextest, libclang, an npm tool, pytest-cov, a
+/// namespace, an AF_UNIX socket or a fixture.
+#[test]
+fn an_unmet_host_capability_refuses_the_gate_as_infrastructure_and_never_as_a_defect() {
+    let f = Fixture::new("capability-unmet");
+    let base = seed(&f);
+    f.install_capability_inventory(&[("policy.protected", "fixture.impossible")]);
+    f.commit("burden one gate with a capability this machine cannot have");
+
+    let (code, output) = f.xtask(&["quality", "policy-check", "--base", &base]);
+    assert_eq!(code, 3, "an unmet capability is infrastructure (exit 3), not a quality verdict (exit 1): {output}");
+    assert!(output.contains("policy.protected") && output.contains("INFRASTRUCTURE FAILURE"), "{output}");
+
+    let report = f.report();
+    let gate = report["gates"].as_array().unwrap().iter().find(|g| g["id"] == "policy.protected").unwrap().clone();
+    assert_eq!(gate["status"], "infrastructure_failure");
+    let detail = gate["detail"].as_str().unwrap();
+    assert!(detail.contains("fixture.impossible"), "the report must name what is missing: {detail}");
+    assert!(detail.contains("NOT run"), "the report must say the gate did not run: {detail}");
+    assert_eq!(gate["remediation"], "materialise no/such/thing");
+}
+
+/// R8-P1-07 acceptance, half two: with every capability met, a REAL failure
+/// still produces exit 1. A preflight that made everything infrastructure
+/// would satisfy the first half and destroy the report.
+#[test]
+fn a_real_policy_violation_still_produces_a_verdict_when_capabilities_are_met() {
+    let f = Fixture::new("capability-met-verdict");
+    let base = seed(&f);
+    f.write("tools/remote-wal-spike/src/lib.rs", "pub fn ok() -> u8 { 3 }\n");
+    let policy = f.read(".quality/policy.toml");
+    f.write(".quality/policy.toml", &format!("{policy}\n# an implementation diff touching protected policy\n"));
+    f.commit("an implementation diff that also edits protected policy");
+
+    let (code, output) = f.xtask(&["quality", "policy-check", "--base", &base]);
+    assert_eq!(code, 2, "a real protected-policy violation is still a verdict: {output}");
+}
+
+/// A gate the inventory does not name is refused rather than silently treated
+/// as needing nothing. Without this, the ONE environment model goes stale the
+/// first time a gate is added and nobody updates the inventory.
+#[test]
+fn a_gate_missing_from_the_capability_inventory_is_refused_not_assumed_free() {
+    let f = Fixture::new("capability-undeclared");
+    let base = seed(&f);
+    let inventory = f.read(".quality/capabilities.toml");
+    f.write(
+        ".quality/capabilities.toml",
+        &inventory.lines().filter(|l| !l.starts_with("\"policy.waivers\"")).collect::<Vec<_>>().join("\n"),
+    );
+    f.commit("drop one gate from the inventory");
+
+    // `fast`, not `policy-check`: editing the inventory is ITSELF a protected
+    // change (it is quality policy), and a policy violation outranks an
+    // infrastructure refusal in the exit code. What this control is about is
+    // the refusal, so it is read where nothing else competes for the verdict.
+    let _ = base;
+    let (code, output) = f.xtask(&["quality", "fast"]);
+    assert_eq!(code, 3, "{output}");
+    let report = f.report();
+    let gate = report["gates"].as_array().unwrap().iter().find(|g| g["id"] == "policy.waivers").unwrap().clone();
+    assert!(gate["detail"].as_str().unwrap().contains("not declared in .quality/capabilities.toml"), "{gate}");
+}
+
+/// R8-P1-07 acceptance, the other half stated exactly: "one real assertion
+/// failure still produces exit 1". A preflight that turned everything into
+/// infrastructure would satisfy the unmet-capability control and destroy the
+/// report, so the quality verdict is proven to survive alongside it.
+///
+/// The expired waiver is written into the BASE commit on purpose: the waiver
+/// register is protected policy, and a diff that edits it would be refused as
+/// a POLICY violation (exit 2) before the quality finding could be read. Here
+/// the register is already expired at the base, the diff is ordinary, and the
+/// only thing wrong is a real finding about the repository.
+#[test]
+fn a_real_quality_failure_still_produces_exit_one_with_every_capability_met() {
+    let f = Fixture::new("capability-met-quality-failure");
+    f.write("docs/readme.md", "base\n");
+    f.write("deny.toml", "[bans]\nmultiple-versions = \"deny\"\n");
+    f.write(
+        ".quality/waivers/quality-waivers.toml",
+        r##"
+schema = 1
+[[waiver]]
+id = "QW-0001"
+kind = "mutation-equivalent"
+path = "tools/remote-wal-spike/src/lib.rs"
+reason = "Mutant changes an internal representation with no observable semantic difference."
+owner = "architecture"
+approved_by = "human-technical-owner"
+issue = "#1234"
+created = "2020-01-01"
+review_after = "2020-06-01"
+"##,
+    );
+    let base = f.commit("base, with a waiver that has already expired");
+
+    f.write("docs/readme.md", "an ordinary documentation change\n");
+    f.commit("an ordinary diff that touches no protected policy");
+
+    let (code, output) = f.xtask(&["quality", "policy-check", "--base", &base]);
+    assert_eq!(code, 1, "a real quality finding is a verdict, not infrastructure: {output}");
+    let report = f.report();
+    let gate = report["gates"].as_array().unwrap().iter().find(|g| g["id"] == "policy.waivers").unwrap().clone();
+    assert_eq!(gate["status"], "quality_failure", "{gate}");
 }

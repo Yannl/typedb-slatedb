@@ -97,6 +97,14 @@ pub struct CmdResult {
     pub exit_code: Option<i32>,
     pub timed_out: bool,
     pub spawn_error: Option<String>,
+    /// The signal that killed the child, if one did (R8-P1-07).
+    ///
+    /// A child killed by SIGKILL, SIGSEGV or SIGTERM has no exit code, and
+    /// `code().unwrap_or(-1)` turns that into a nonzero number that reads
+    /// exactly like a failing assertion. It is not one: the OOM killer, a
+    /// cancelled CI job and a crashing linker are all facts about the machine,
+    /// and the report must say so.
+    pub signal: Option<i32>,
     pub stdout: String,
     pub stderr: String,
     pub duration_ms: u128,
@@ -114,6 +122,19 @@ impl CmdResult {
         let start = all.len().saturating_sub(lines);
         all[start..].join("\n")
     }
+}
+
+/// The signal that terminated a child, if one did. `ExitStatus::code()` is
+/// `None` in exactly that case, which is why the two are read together.
+#[cfg(unix)]
+fn signal_of(status: std::process::ExitStatus) -> Option<i32> {
+    use std::os::unix::process::ExitStatusExt;
+    status.signal()
+}
+
+#[cfg(not(unix))]
+fn signal_of(_status: std::process::ExitStatus) -> Option<i32> {
+    None
 }
 
 /// Run a command under `repo_root`, capturing output, with a hard timeout.
@@ -168,6 +189,7 @@ pub fn run(repo_root: &Path, cmd: &Cmd, timeout: Duration) -> CmdResult {
             return CmdResult {
                 command: display,
                 exit_code: None,
+                signal: None,
                 timed_out: false,
                 spawn_error: Some(e.to_string()),
                 stdout: String::new(),
@@ -216,6 +238,7 @@ pub fn run(repo_root: &Path, cmd: &Cmd, timeout: Duration) -> CmdResult {
     CmdResult {
         command: display,
         exit_code: status.and_then(|s| s.code()),
+        signal: status.and_then(signal_of),
         timed_out,
         spawn_error: None,
         stdout,
@@ -508,6 +531,28 @@ mod tests {
         let c = Cmd::new("env", &[]).with_env("XTASK_PROBE", "applied");
         let r = run(Path::new("/"), &c, Duration::from_secs(30));
         assert!(r.stdout.contains("XTASK_PROBE=applied"), "per-command env must reach the child");
+    }
+
+    /// R8-P1-07: a child killed by a signal reports the SIGNAL, not a
+    /// fabricated exit code. `ExitStatus::code()` is None there, and
+    /// `unwrap_or(-1)` — which is what the classifier used to see — is
+    /// indistinguishable from a failing assertion.
+    #[test]
+    fn a_child_killed_by_a_signal_reports_the_signal_and_no_exit_code() {
+        let dir = std::env::temp_dir();
+        let cmd = Cmd::new("sh", &["-c", "kill -9 $$"]);
+        let res = run(&dir, &cmd, Duration::from_secs(30));
+        assert_eq!(res.exit_code, None, "a signalled child has no exit code");
+        assert_eq!(res.signal, Some(9), "the signal must be recorded: {res:?}");
+        assert!(!res.timed_out, "it died on its own, not on the gate timeout");
+    }
+
+    #[test]
+    fn a_child_that_exits_normally_records_no_signal() {
+        let dir = std::env::temp_dir();
+        let res = run(&dir, &Cmd::new("sh", &["-c", "exit 7"]), Duration::from_secs(30));
+        assert_eq!(res.exit_code, Some(7));
+        assert_eq!(res.signal, None);
     }
 
     /// The property the whole isolation scheme rests on: two processes may hold

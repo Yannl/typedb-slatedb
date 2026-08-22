@@ -18,6 +18,12 @@
 //      without an owner;
 //   5. a live pid that cannot be positively identified is never signalled.
 
+// R8-P0-03: CAPABILITY-REQUIRED. This suite drives real process supervision
+// and/or local networking; on a host without af-unix, proc-identity, loopback-bind it does not run
+// and reports INFRASTRUCTURE (exit 3), never a pass and never a silent skip.
+import { require_ as requireCapability } from "./capability.mjs";
+await requireCapability("af-unix", "proc-identity", "loopback-bind");
+
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

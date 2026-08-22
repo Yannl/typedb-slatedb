@@ -1,6 +1,10 @@
 //! Process execution and environment preconditions.
 //!
 //! A gate that cannot run is `InfrastructureFailure`, never a pass and never a
+//!
+//! R8-P0-03 / R8-P1-07: two STRUCTURAL exit codes carry that distinction from a
+//! child process back to the controller, so classification never rests on
+//! recognising a substring of someone else's error text.
 //! silent skip (spec §4). That includes a gate killed by the timeout: a hung
 //! gate must not be able to look green.
 
@@ -366,6 +370,22 @@ pub fn manifest_of(cmd: &Cmd) -> Option<String> {
         .find(|a| !a.starts_with('-') && (Path::new(a).join("Cargo.toml").is_file()))
         .map(|d| format!("{}/Cargo.toml", d.trim_end_matches('/')))
 }
+
+/// R8-P0-03 / R8-P1-07: "this host cannot provide a capability I need".
+///
+/// A gate command exits with this code to say it did NOT run — no assertion
+/// was evaluated, no conclusion may be drawn — because AF_UNIX, a readable
+/// `/proc`, a fixture, a native library or another host capability is absent.
+/// The controller maps it to `InfrastructureFailure`. Chosen to match the
+/// controller's own infrastructure exit code, so a nested `cargo xtask quality`
+/// propagates the same meaning outward.
+pub const EXIT_CAPABILITY_UNAVAILABLE: i32 = 3;
+
+/// `tools/dev/netns_exec.py`'s refusal code: per-test network isolation is
+/// unavailable and the runner refused to run the tests without it (R8-P1-04).
+/// Distinct from libtest's 0/101 and from nextest's codes, so "isolation
+/// unavailable" is never read as "the test failed".
+pub const EXIT_NO_ISOLATION: i32 = 79;
 
 /// Is this failure the disk running out, rather than anything about the code?
 ///

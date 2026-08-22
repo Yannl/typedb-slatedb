@@ -9,7 +9,9 @@
     "down": "node cli.mjs down --verify-clean",
     "graph": "node cli.mjs graph",
     "check:wrangler": "node cli.mjs check-wrangler",
-    "test": "node --test 'test/**/*.test.mjs'"
+    "test": "node --test 'test/**/*.test.mjs'",
+    "test:quality": "node --test test/graph-diff.test.mjs test/graph-honesty.test.mjs test/guard.test.mjs test/wrangler-check.test.mjs",
+    "test:capability": "node --test test/supervisor.test.mjs test/minio.test.mjs test/s3-provider.test.mjs test/fault-proxy.test.mjs test/local-parity.test.mjs test/managed-local-cli.test.mjs"
   },
   "dependencies": {
     "@effect/platform-node": "4.0.0-rc.110",

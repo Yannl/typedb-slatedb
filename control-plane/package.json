@@ -16,7 +16,9 @@
     "stack:local": "wrangler dev --local -c wrangler.local-dev.toml --port 8787",
     "stack:e2e": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/local-stack-e2e.mjs",
     "e2e": "node scripts/run-local-e2e.mjs",
-    "e2e:managed": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/managed-stack-e2e.mjs"
+    "e2e:managed": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/managed-stack-e2e.mjs",
+    "test:quality": "npm run --silent test:core && node --experimental-strip-types --test probes/recording.test.ts",
+    "test:capability": "vitest run"
   },
   "devDependencies": {
     "@cloudflare/containers": "0.3.7",

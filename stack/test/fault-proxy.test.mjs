@@ -1,5 +1,11 @@
 // Self-verifying test for fault-proxy.mjs (run: node stack/fault-proxy.test.mjs) — validates each fault action
 // deterministically against a loopback echo-ish HTTP server.
+// R8-P0-03: CAPABILITY-REQUIRED. This suite drives real process supervision
+// and/or local networking; on a host without loopback-bind it does not run
+// and reports INFRASTRUCTURE (exit 3), never a pass and never a silent skip.
+import { require_ as requireCapability } from "./capability.mjs";
+await requireCapability("loopback-bind");
+
 import net from "node:net";
 import http from "node:http";
 import { startFaultProxy } from "../fault-proxy.mjs";

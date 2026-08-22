@@ -65,6 +65,16 @@ const DEFS: &[GateDef] = &[
     def("rust.crap.trend", "C", Some("rust"), Weight::Heavy, &["cargo-crap"], true),
     // TypeScript.
     def("ts.typecheck", "A", Some("typescript"), Weight::Light, &["tsc"], false),
+    // R8-P0-03: a language's Tier-A contract includes its TESTS. Before this
+    // the controller could report TypeScript typecheck/lint/dead-code/
+    // architecture status and say nothing at all about whether the TypeScript
+    // tests ran — the `npm test` steps lived in the workflow, outside the
+    // report that is claimed as the authority.
+    // Tools: none named. `node` and `npm` are TOOLCHAIN pins
+    // ([toolchain.node] in .quality/tools.lock.toml), verified once by
+    // `policy.toolchain_pin` on every run; naming a nonexistent [tool.node]
+    // here would refuse the gate for a pin that is already enforced.
+    def("ts.tests", "A", Some("typescript"), Weight::Light, &[], false),
     def("ts.oxlint", "A", Some("typescript"), Weight::Light, &["oxlint"], false),
     def("ts.knip", "A", Some("typescript"), Weight::Light, &["knip"], false),
     def("ts.depcruise", "A", Some("typescript"), Weight::Light, &["dependency-cruiser"], false),
@@ -136,7 +146,28 @@ impl Ctx<'_> {
     }
 }
 
+/// Does `project`'s `package.json` declare `script`? Read as text and matched
+/// on the exact JSON key so the controller needs no JSON dependency; a missing
+/// or unreadable manifest answers `false`, which routes to the infrastructure
+/// refusal above rather than to a pass.
+fn declares_script(ctx: &Ctx, project: &str, script: &str) -> bool {
+    std::fs::read_to_string(ctx.repo_root.join(project).join("package.json"))
+        .ok()
+        .and_then(|text| {
+            let scripts = text.split("\"scripts\"").nth(1)?;
+            let body = scripts.split('}').next()?;
+            Some(body.contains(&format!("\"{script}\"")))
+        })
+        .unwrap_or(false)
+}
+
 const ARTIFACTS: &str = "artifacts/quality";
+
+/// R8-P0-03: the canonical per-project test script the `ts.tests` gate runs.
+/// One name, declared by every TypeScript project in scope, so the controller
+/// never has to guess which of `test` / `test:core` / `test:unit` is the one
+/// whose failure should fail the gate.
+pub const TS_TEST_SCRIPT: &str = "test:quality";
 
 fn slug(manifest: &str) -> String {
     manifest.trim_end_matches("/Cargo.toml").replace('/', "-")
@@ -391,6 +422,16 @@ pub fn commands(id: &str, ctx: &Ctx) -> Vec<Cmd> {
                 out.push(Cmd::new("npx", &["--no-install", "tsc", "--noEmit"]).in_dir(&p));
             }
         }
+        // R8-P0-03: one canonical script name per project. A declared
+        // TypeScript project WITHOUT it is an INFRASTRUCTURE failure, never a
+        // silent skip: "this project has no test command" must be visible in
+        // the report, because the alternative is a green verdict about tests
+        // that do not exist.
+        "ts.tests" => {
+            for p in &ctx.ts_projects {
+                out.push(Cmd::new("npm", &["run", "--silent", TS_TEST_SCRIPT]).in_dir(p));
+            }
+        }
         "ts.oxlint" => {
             for p in ctx.ts_projects_with(&["package.json"]) {
                 out.push(Cmd::new("npx", &["--no-install", "oxlint", "."]).in_dir(&p));
@@ -638,6 +679,34 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
         return r;
     }
 
+    // R8-P0-03: a declared TypeScript project that does not declare the
+    // canonical test script cannot be tested, and "cannot be tested" must
+    // never read as "tested and fine". `npm run <missing>` exits 1 with a
+    // usage error, which the classifier would record as a QUALITY failure of
+    // the code; that is the wrong half of the report. Refuse as
+    // INFRASTRUCTURE, naming the project and the script, before anything runs.
+    if id == "ts.tests" {
+        if let Some(project) = ctx.ts_projects.iter().find(|p| !declares_script(ctx, p, TS_TEST_SCRIPT)) {
+            let mut r = GateResult::new(
+                id,
+                d.tier,
+                d.language,
+                d.advisory,
+                Status::InfrastructureFailure,
+                &format!(
+                    "TypeScript project `{project}` declares no `{TS_TEST_SCRIPT}` script, so gate \
+                     `{id}` cannot say whether its tests pass (R8-P0-03)"
+                ),
+            );
+            r.remediation = Some(format!(
+                "add a \"{TS_TEST_SCRIPT}\" script to {project}/package.json running that project's \
+                 deterministic, host-independent tests; capability-required integration tests belong \
+                 in a separate script so their absence is reported as infrastructure, never as a pass"
+            ));
+            return r;
+        }
+    }
+
     let timeout = Duration::from_secs(ctx.policy.execution.gate_timeout_secs);
     let mut total_ms = 0u128;
     let mut last_command = None;
@@ -724,6 +793,39 @@ pub fn run(id: &str, ctx: &Ctx) -> GateResult {
                 format!(
                     "`{}` exceeded the {}s gate timeout and was killed",
                     res.command, ctx.policy.execution.gate_timeout_secs
+                ),
+            )
+        } else if res.exit_code == Some(exec::EXIT_CAPABILITY_UNAVAILABLE) {
+            // R8-P0-03 / R8-P1-07: the STRUCTURAL infrastructure signal. A
+            // gate command that cannot run for want of a host capability —
+            // network namespaces, AF_UNIX, a readable /proc, a fixture, a
+            // native library — exits with this exact code instead of hoping a
+            // substring in its output is recognised. The distinction is not
+            // cosmetic: a capability-required test that "fails" reads as a
+            // defect in the code, and the next reader goes hunting for one.
+            (
+                Status::InfrastructureFailure,
+                format!(
+                    "`{}` reported a MISSING HOST CAPABILITY (exit {}), so it did not run and no \
+                     quality conclusion may be drawn from it\n{}",
+                    res.command,
+                    exec::EXIT_CAPABILITY_UNAVAILABLE,
+                    res.tail(25)
+                ),
+            )
+        } else if res.exit_code == Some(exec::EXIT_NO_ISOLATION) {
+            // tools/dev/netns_exec.py's own refusal code (R8-P1-04). It never
+            // runs a test unisolated, so this is always "the host cannot
+            // provide isolation", never "the test failed".
+            (
+                Status::InfrastructureFailure,
+                format!(
+                    "`{}` could not obtain per-test network isolation (exit {}); the tests were NOT \
+                     run unisolated, which would manufacture port collisions and report them as \
+                     defects\n{}",
+                    res.command,
+                    exec::EXIT_NO_ISOLATION,
+                    res.tail(25)
                 ),
             )
         } else if exec::looks_like_enospc(&res.tail(200)) {

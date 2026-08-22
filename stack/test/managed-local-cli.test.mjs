@@ -10,6 +10,12 @@
 // exit status, and the second teardown must be a clean idempotent
 // ALREADY_CLEAN rather than an error.
 
+// R8-P0-03: CAPABILITY-REQUIRED. This suite drives real process supervision
+// and/or local networking; on a host without loopback-bind it does not run
+// and reports INFRASTRUCTURE (exit 3), never a pass and never a silent skip.
+import { require_ as requireCapability } from "./capability.mjs";
+await requireCapability("loopback-bind");
+
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

@@ -2,6 +2,12 @@
 // port released) + executed mutant (c): tampered binary hash → fetcher
 // refuses. Uses the source-locked binary from the sources/minio cache
 // (fetched+verified on demand; the full download happens once per machine).
+// R8-P0-03: CAPABILITY-REQUIRED. This suite drives real process supervision
+// and/or local networking; on a host without proc-identity, loopback-bind it does not run
+// and reports INFRASTRUCTURE (exit 3), never a pass and never a silent skip.
+import { require_ as requireCapability } from "./capability.mjs";
+await requireCapability("proc-identity", "loopback-bind");
+
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";

@@ -172,6 +172,23 @@ pub fn derive_facts(policy: &Policy, changes: &ChangeSet, added: &[(String, Stri
                     // Production non-source artefacts, e.g. slatedb patches.
                     source_paths.push(entry.path.as_str());
                 }
+                // R8-P0-03: a path with NO source language can still belong to
+                // a TypeScript or Python project — `tsconfig.json`,
+                // `package-lock.json`, `package.json`, `pyproject.toml`,
+                // `ruff.toml`. Those files change what the tests, the type
+                // checker and the linters run AGAINST, so a diff touching only
+                // them must still select that language's family. The project
+                // membership is already declared by the scope rule; before
+                // this, selection read only the file EXTENSION, so a lockfile
+                // bump selected nothing at all.
+                if let Some(rule) = policy.scope.rule.iter().find(|r| r.id == c.rule) {
+                    if rule.ts_project.is_some() {
+                        facts.typescript_any = true;
+                    }
+                    if rule.python_project.is_some() {
+                        facts.python_any = true;
+                    }
+                }
             }
             facts.classified.push(c);
         }
@@ -245,6 +262,28 @@ impl Mode {
             Mode::PolicyCheck => "policy-check",
         }
     }
+}
+
+/// R8-P0-03: **"no diff was supplied" is not "nothing to verify".**
+///
+/// TypeScript and Python gates used to be selected by `facts.typescript_any ||
+/// mode == Full`. On a CLEAN tree `fast` has no changed-file facts and is not
+/// Full, so both families were omitted entirely — and `.github/workflows/
+/// gates.yml`'s push path runs exactly `cargo xtask quality fast`. The
+/// controller could therefore report success on a tree whose TypeScript or
+/// Python was broken, as long as the breakage predated the invocation.
+///
+/// The two selection semantics are now explicit and named:
+///
+/// - **tree verification** — an empty change set, or `full`. The question is
+///   "is THIS TREE sound", which no diff can narrow, so every declared Tier-A
+///   project runs. An empty fact set is ambiguous, and ambiguity must fail
+///   toward broader execution.
+/// - **change inner loop** — a non-empty change set with a base or working-tree
+///   diff. Here the owner-approved inert-path optimisation applies, because a
+///   narrowed scope is a claim about the diff, not about the tree.
+pub fn verifies_whole_tree(mode: Mode, facts: &Facts) -> bool {
+    mode == Mode::Full || facts.empty
 }
 
 fn push(out: &mut Vec<SelectedGate>, id: &str, row: &str, reason: &str) {
@@ -350,9 +389,10 @@ pub fn select_gates(mode: Mode, policy: &Policy, facts: &Facts) -> Vec<SelectedG
     }
 
     // ---- §15 row: TypeScript tooling ----
-    if facts.typescript_any || mode == Mode::Full {
-        let row = "TypeScript";
+    if facts.typescript_any || verifies_whole_tree(mode, facts) {
+        let row = if facts.typescript_any { "TypeScript" } else { "tree verification (R8-P0-03)" };
         push(&mut out, "ts.typecheck", row, "one canonical type-checking truth (§8)");
+        push(&mut out, "ts.tests", row, "a language's Tier-A contract includes its tests (R8-P0-03)");
         push(&mut out, "ts.oxlint", row, "lint gate (§8)");
         push(&mut out, "ts.knip", row, "unused files/exports/dependencies (§8)");
         push(&mut out, "ts.depcruise", row, "TypeScript architecture rules (§8)");
@@ -363,8 +403,8 @@ pub fn select_gates(mode: Mode, policy: &Policy, facts: &Facts) -> Vec<SelectedG
     }
 
     // ---- §15 row: Python tooling ----
-    if facts.python_any || mode == Mode::Full {
-        let row = "Python";
+    if facts.python_any || verifies_whole_tree(mode, facts) {
+        let row = if facts.python_any { "Python" } else { "tree verification (R8-P0-03)" };
         push(&mut out, "py.ruff.check", row, "lint gate (§9)");
         push(&mut out, "py.ruff.format", row, "format gate (§9)");
         push(&mut out, "py.typecheck", row, "one canonical type checker (§9)");
@@ -671,4 +711,153 @@ mod tests {
             assert!(ids(&g).contains(&want), "expected {want} in fast mode");
         }
     }
+
+    // =================================================================
+    // R8-P0-03: the SELECTION self-tests.
+    //
+    // The audited controller selected TypeScript and Python gates on
+    // `facts.typescript_any || mode == Full`. A clean `fast` has no
+    // changed-file facts and is not Full, so both families vanished — and the
+    // push path in .github/workflows/gates.yml runs exactly
+    // `cargo xtask quality fast`. A tree with broken TypeScript could report
+    // success as long as the breakage predated the invocation.
+    //
+    // These assert the EXACT selected id set for each scenario, not a
+    // containment check: a containment assertion cannot notice a gate that
+    // silently disappeared, which is the whole defect.
+    // =================================================================
+
+    fn select_clean(mode: Mode) -> Vec<SelectedGate> {
+        let p = policy();
+        let cs = ChangeSet::parse_z(&[]).unwrap();
+        let facts = derive_facts(&p, &cs, &[]);
+        assert!(facts.empty, "an empty change set must be recorded as empty");
+        select_gates(mode, &p, &facts)
+    }
+
+    fn assert_selected(scenario: &str, gates: &[SelectedGate], expected: &[&str]) {
+        let mut got = ids(gates);
+        got.sort_unstable();
+        let mut want = expected.to_vec();
+        want.sort_unstable();
+        assert_eq!(got, want, "scenario {scenario}: selected gate ids differ");
+    }
+
+    const ALWAYS: &[&str] = &["policy.waivers", "policy.toolchain_pin", "policy.scope_classification"];
+    const RUST_TIER_A: &[&str] = &["rust.fmt", "rust.clippy", "rust.tests"];
+    const TS_TIER_A: &[&str] = &["ts.typecheck", "ts.tests", "ts.oxlint", "ts.knip", "ts.depcruise"];
+    const PY_TIER_A: &[&str] =
+        &["py.ruff.check", "py.ruff.format", "py.typecheck", "py.pytest"];
+
+    fn expect(groups: &[&[&str]]) -> Vec<&'static str> {
+        let mut out: Vec<&'static str> = Vec::new();
+        for g in groups {
+            for id in *g {
+                // SAFETY of the cast: every element is a 'static literal from
+                // the constants above.
+                let s: &'static str = unsafe { std::mem::transmute::<&str, &'static str>(*id) };
+                if !out.contains(&s) {
+                    out.push(s);
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn scenario_1_clean_fast_verifies_the_whole_tree_including_typescript_and_python() {
+        // The round-8 defect, pinned. A clean `fast` is a TREE VERIFICATION:
+        // no diff can narrow "is this tree sound", so every declared Tier-A
+        // family runs.
+        let gates = select_clean(Mode::Fast);
+        assert_selected(
+            "clean fast",
+            &gates,
+            &expect(&[ALWAYS, RUST_TIER_A, TS_TIER_A, PY_TIER_A]),
+        );
+        let ts = gates.iter().find(|g| g.id == "ts.tests").expect("ts.tests must be selected");
+        assert!(
+            ts.matrix_row.contains("tree verification"),
+            "the report must say WHY it ran: {}",
+            ts.matrix_row
+        );
+    }
+
+    #[test]
+    fn scenario_2_docs_only_diff_still_runs_rust_tier_a_and_nothing_language_specific() {
+        let gates = select_for(&["docs/operations.md"], "", Mode::Fast);
+        assert_selected("docs-only fast", &gates, &expect(&[ALWAYS, RUST_TIER_A]));
+    }
+
+    #[test]
+    fn scenario_3_a_control_plane_source_diff_selects_the_typescript_family() {
+        let gates = select_for(&["control-plane/src/controller/core/registry.ts"], "", Mode::Fast);
+        for id in TS_TIER_A {
+            assert!(ids(&gates).contains(id), "a TypeScript source diff must select {id}: {:?}", ids(&gates));
+        }
+        assert!(!ids(&gates).contains(&"py.pytest"), "a TypeScript diff must not select Python gates");
+    }
+
+    #[test]
+    fn scenario_4_a_typescript_config_or_lockfile_diff_selects_the_typescript_family() {
+        for path in ["control-plane/tsconfig.json", "control-plane/package-lock.json"] {
+            let gates = select_for(&[path], "", Mode::Fast);
+            assert!(
+                ids(&gates).contains(&"ts.tests"),
+                "{path} must select ts.tests (it can change what the tests run against): {:?}",
+                ids(&gates)
+            );
+        }
+    }
+
+    #[test]
+    fn scenario_5_a_python_tooling_diff_selects_the_python_family() {
+        let gates = select_for(&["tools/ledger/lint_ledger.py"], "", Mode::Fast);
+        for id in PY_TIER_A {
+            assert!(ids(&gates).contains(id), "a Python diff must select {id}: {:?}", ids(&gates));
+        }
+    }
+
+    #[test]
+    fn scenario_6_a_workflow_or_policy_diff_never_loses_tier_a() {
+        for path in [".github/workflows/gates.yml", ".quality/policy.toml"] {
+            let gates = select_for(&[path], "", Mode::Fast);
+            for id in RUST_TIER_A {
+                assert!(ids(&gates).contains(id), "{path} must not drop {id}: {:?}", ids(&gates));
+            }
+        }
+    }
+
+    #[test]
+    fn scenario_7_an_unknown_source_directory_is_recorded_and_still_gets_tier_a() {
+        let gates = select_for(&["some/unmapped/place/thing.rs"], "", Mode::Fast);
+        for id in RUST_TIER_A {
+            assert!(ids(&gates).contains(id), "an unclassified path must not drop {id}: {:?}", ids(&gates));
+        }
+        assert!(
+            ids(&gates).contains(&"policy.scope_classification"),
+            "an unclassified path must still face the classification gate"
+        );
+    }
+
+    #[test]
+    fn full_selects_every_tier_a_family_too() {
+        let gates = select_clean(Mode::Full);
+        for id in TS_TIER_A.iter().chain(PY_TIER_A) {
+            assert!(ids(&gates).contains(id), "full must select {id}: {:?}", ids(&gates));
+        }
+    }
+
+    #[test]
+    fn an_empty_fact_set_is_never_read_as_nothing_to_verify() {
+        // The rule, stated directly: emptiness widens execution, it never
+        // narrows it. Asserted against BOTH selection semantics.
+        let p = policy();
+        let empty = derive_facts(&p, &ChangeSet::parse_z(&[]).unwrap(), &[]);
+        assert!(verifies_whole_tree(Mode::Fast, &empty));
+        let docs = derive_facts(&p, &ChangeSet::parse_z(&zstream(&["M", "docs/x.md"])).unwrap(), &[]);
+        assert!(!verifies_whole_tree(Mode::Fast, &docs), "a real diff is the change inner loop");
+        assert!(verifies_whole_tree(Mode::Full, &docs), "full is always tree verification");
+    }
+
 }

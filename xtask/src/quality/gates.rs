@@ -151,6 +151,34 @@ fn targeted_clean_advice(cmd: &Cmd) -> String {
     }
 }
 
+/// Workspaces whose cargo-machete findings are reconciled against a committed
+/// baseline, read from the baseline's own `workspace` declaration.
+///
+/// Probing for `<workspace>/machete-baseline.json` was the previous form, and
+/// it broke silently the moment the baseline moved out of the fork tree (it had
+/// to: a JSON file cannot carry the MPL comment header the fork's checkstyle
+/// target requires). A gate that silently downgrades from "reconciled against a
+/// reviewed baseline" to "bare tool run" is worse than one that fails.
+fn baselined_workspaces(repo_root: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    let dir = repo_root.join(".quality");
+    let Ok(entries) = std::fs::read_dir(&dir) else { return out };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_none_or(|e| e != "json")
+            || !path.file_name().is_some_and(|n| n.to_string_lossy().contains("machete-baseline"))
+        {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else { continue };
+        let Ok(doc) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
+        if let Some(workspace) = doc.get("workspace").and_then(|v| v.as_str()) {
+            out.push(workspace.to_owned());
+        }
+    }
+    out
+}
+
 /// Everything a gate needs, assembled once per run.
 pub struct Ctx<'a> {
     pub repo_root: &'a Path,
@@ -492,7 +520,7 @@ pub fn commands(id: &str, ctx: &Ctx) -> Vec<Cmd> {
                 // hand-edited crate by crate — and the wrapper refuses an
                 // incomplete analysis rather than reading its silence as
                 // "no findings".
-                if ctx.repo_root.join(format!("{workspace}/machete-baseline.json")).is_file() {
+                if baselined_workspaces(ctx.repo_root).iter().any(|w| w == workspace) {
                     out.push(Cmd::new("python3", &["tools/fork/check_machete.py"]));
                 } else {
                     out.push(Cmd::new("cargo-machete", &["--with-metadata", workspace]));
@@ -2132,6 +2160,24 @@ mod tests {
             // them. `capability.rs` owns the preflight's own tests.
             preflight: capability::Preflight::NotRun,
         }
+    }
+
+    /// The fork is gated through the reconciling wrapper, and the controller
+    /// learns that from the baseline's own declaration rather than from a
+    /// filename. Probing for `<workspace>/machete-baseline.json` downgraded the
+    /// gate to a bare tool run the moment the baseline moved.
+    #[test]
+    fn the_fork_workspace_is_recognised_as_baselined_from_the_baselines_own_declaration() {
+        let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/.."));
+        let baselined = baselined_workspaces(root);
+        assert!(
+            baselined.iter().any(|w| w == "fork/typedb"),
+            "the fork must be recognised as baselined, got {baselined:?}"
+        );
+        assert!(
+            !baselined.iter().any(|w| w == "tools"),
+            "the authored workspace has no baseline and must run the tool directly: {baselined:?}"
+        );
     }
 
     /// R8-P1-07 item 5: the remediation names the exact tree, and says the

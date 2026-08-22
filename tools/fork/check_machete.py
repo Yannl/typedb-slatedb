@@ -42,7 +42,16 @@ import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 FORK = REPO / "fork" / "typedb"
-BASELINE = FORK / "machete-baseline.json"
+# R8-P2-07 follow-on: the baseline lives in `.quality/`, not inside the
+# materialised fork.
+#
+# Two reasons, and the second is the one that forced it. It is THIS project's
+# gate policy, not upstream content, so `.quality/` — already protected — is
+# where a reviewer expects to find it. And `fork/typedb/` is inside the
+# checkstyle target's file set: a JSON file cannot carry the three-line MPL
+# comment header the rule requires, so leaving it there failed a STATIC_CHECK
+# leaf that had nothing to do with dependencies.
+BASELINE = REPO / ".quality" / "fork-machete-baseline.json"
 
 CRATE_RE = re.compile(r"^(?P<crate>[A-Za-z0-9_\-]+) -- (?P<manifest>\S+):$")
 
@@ -99,6 +108,12 @@ def main() -> int:
             json.dumps(
                 {
                     "schema": "typedb-fork-machete-baseline-v1",
+                    # Which workspace this baseline covers. The quality
+                    # controller reads it to decide that the fork is gated
+                    # through this wrapper rather than through a bare
+                    # cargo-machete run — one declaration, two readers, so
+                    # moving the file cannot silently downgrade the gate.
+                    "workspace": "fork/typedb",
                     "why": (
                         "R8-P1-05. Upstream generates this fork's Cargo.toml files from Bazel, and "
                         "that generation emits the full Bazel dependency set - including "

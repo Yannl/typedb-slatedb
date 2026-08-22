@@ -109,8 +109,60 @@ SUMMARY_RE = re.compile(
 )
 
 
+def required_tree_state(ledger: dict) -> str | None:
+    """The tree state the ledger's own static bundles were produced against.
+
+    Read from the bundles, not declared here: the point of this file is that
+    every fact is re-derived from the evidence.
+    """
+    for rel in ledger["current"]["coverage"].get("static_bundles", []):
+        body_path = REPO / rel / "static-leaf-results.json"
+        if not body_path.is_file():
+            continue
+        declared = (json.loads(body_path.read_text()).get("executed_tree") or {}).get("tree_state")
+        if declared:
+            return declared
+    return None
+
+
+def refuse_on_wrong_tree(ledger: dict, failures: list[str]) -> bool:
+    """Refuse to re-derive coverage against a tree the evidence does not describe.
+
+    The static leaf bundle is produced with the fork STAGED into
+    `sources/typedb`. Re-derived against the pristine checkout, every one of its
+    files reads as changed, the bundle verifies as anomalous, and the coverage
+    run reports 141 fewer covered rows — then this verifier blames the LEDGER for
+    a number that is perfectly correct. A verifier that reports a false
+    discrepancy is worse than one that declines: it sends the next reader to
+    "fix" a document that was right.
+    """
+    declared = required_tree_state(ledger)
+    if declared is None:
+        return False
+    sys.path.insert(0, str(REPO / "tools" / "qualification"))
+    from leaf_common import stage_state  # noqa: E402
+
+    actual, line = stage_state()
+    if declared.startswith("FORK_STAGED") == (actual == "STAGED"):
+        return False
+    failures.append(
+        f"the coverage evidence was produced against a {declared} tree and this machine is "
+        f"{actual} ({line}). Re-deriving now would report a discrepancy that is about the TREE, "
+        f"not about the ledger. Run "
+        + (
+            "`python3 tools/fork/stage.py`"
+            if declared.startswith("FORK_STAGED")
+            else "`python3 tools/fork/stage.py --restore`"
+        )
+        + " and re-run this verifier."
+    )
+    return True
+
+
 def coverage_run(ledger: dict, failures: list[str]):
     """One coverage run over EXACTLY the bundles the ledger names."""
+    if refuse_on_wrong_tree(ledger, failures):
+        return None, None
     claim = ledger["current"]["coverage"]
     argv = [sys.executable, "tools/qualification/leaf_coverage.py"]
     for b in claim.get("leaf_bundles", []):

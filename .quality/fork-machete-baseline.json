@@ -1,4 +1,6 @@
 {
+ "schema": "typedb-fork-machete-baseline-v1",
+ "workspace": "fork/typedb",
  "crates": {
   "concept": [
    "logger",
@@ -115,6 +117,5 @@
   ]
  },
  "regenerate_with": "python3 tools/fork/check_machete.py --write",
- "schema": "typedb-fork-machete-baseline-v1",
  "why": "R8-P1-05. Upstream generates this fork's Cargo.toml files from Bazel, and that generation emits the full Bazel dependency set - including dependencies reached only through macros, build scripts, feature-gated code or re-exports, which cargo-machete's static scan cannot see. This file records the reconciled set so a NEW finding, especially one in a crate this project authors, fails the gate."
 }

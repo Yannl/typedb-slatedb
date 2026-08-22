@@ -21,7 +21,7 @@
   "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
   "dirty": true,
   "tree_state": "FORK_STAGED_EXACT",
-  "stage_check": "STAGED: sources/typedb carries every fork patch (36 paths differ from the locked revision)",
+  "stage_check": "STAGED: sources/typedb carries every fork patch (37 paths differ from the locked revision)",
   "unstaged_fork_patches": [],
   "unstaged_fork_patches_affecting_cargo": [],
   "unexplained_paths": [],
@@ -145,6 +145,10 @@
     "class": "FORK_PATCH"
    },
    {
+    "path": "deny.toml",
+    "class": "FORK_PATCH"
+   },
+   {
     "path": "storage/factory.rs",
     "class": "FORK_PATCH"
    },
@@ -173,16 +177,16 @@
     "class": "FORK_PATCH"
    }
   ],
-  "staged_delta_files": 36,
-  "staged_delta_sha256": "91ed65b1513f90d3a813e98db8ff91622cf1de93b2fa0ee48f991902999699e3",
+  "staged_delta_files": 37,
+  "staged_delta_sha256": "fe458365588aef28ec5b746cf8b2cc96dfa8ee9598dea0f7e018c982df6e666c",
   "fork": {
-   "files": 778,
-   "fork_tree_sha256": "8673b0c483f3594ae6be3882c8f3329ccb9c8cd663a1b37e5f9c7beefe522e60",
-   "outer_repo_commit": "3afee7159820be15ed85efd61d69f849f0a9a672",
+   "files": 779,
+   "fork_tree_sha256": "6b03ce498aa3e7f58720897beed77960194b310d10102d3104ad19dac4b5ec80",
+   "outer_repo_commit": "ec32b25abea23578bb50bc17d5f3a3261589114b",
    "outer_repo_dirty": true,
    "outer_repo_fork_paths_modified": [
-    "fork/typedb/storage/recovery/checkpoint.rs",
-    "fork/typedb/storage/recovery/commit_recovery.rs"
+    "fork/typedb/machete-baseline.json -> .quality/fork-machete-baseline.json",
+    "fork/typedb/deny.toml"
    ]
   }
  },
@@ -190,7 +194,7 @@
   "checkout_revision": "2256711abd532742dae8e822a9ad5cce63e69b1a",
   "dirty": true,
   "tree_state": "FORK_STAGED_EXACT",
-  "stage_check": "STAGED: sources/typedb carries every fork patch (36 paths differ from the locked revision)",
+  "stage_check": "STAGED: sources/typedb carries every fork patch (37 paths differ from the locked revision)",
   "unstaged_fork_patches": [],
   "unstaged_fork_patches_affecting_cargo": [],
   "unexplained_paths": [],
@@ -314,6 +318,10 @@
     "class": "FORK_PATCH"
    },
    {
+    "path": "deny.toml",
+    "class": "FORK_PATCH"
+   },
+   {
     "path": "storage/factory.rs",
     "class": "FORK_PATCH"
    },
@@ -342,30 +350,30 @@
     "class": "FORK_PATCH"
    }
   ],
-  "staged_delta_files": 36,
-  "staged_delta_sha256": "91ed65b1513f90d3a813e98db8ff91622cf1de93b2fa0ee48f991902999699e3",
+  "staged_delta_files": 37,
+  "staged_delta_sha256": "fe458365588aef28ec5b746cf8b2cc96dfa8ee9598dea0f7e018c982df6e666c",
   "fork": {
-   "files": 778,
-   "fork_tree_sha256": "8673b0c483f3594ae6be3882c8f3329ccb9c8cd663a1b37e5f9c7beefe522e60",
-   "outer_repo_commit": "3afee7159820be15ed85efd61d69f849f0a9a672",
+   "files": 779,
+   "fork_tree_sha256": "6b03ce498aa3e7f58720897beed77960194b310d10102d3104ad19dac4b5ec80",
+   "outer_repo_commit": "ec32b25abea23578bb50bc17d5f3a3261589114b",
    "outer_repo_dirty": true,
    "outer_repo_fork_paths_modified": [
-    "fork/typedb/storage/recovery/checkpoint.rs",
-    "fork/typedb/storage/recovery/commit_recovery.rs"
+    "fork/typedb/machete-baseline.json -> .quality/fork-machete-baseline.json",
+    "fork/typedb/deny.toml"
    ]
   }
  },
  "tree_stable_across_run": true,
- "started_utc": "2026-08-22T16:00:02Z",
+ "started_utc": "2026-08-22T18:37:56Z",
  "targets": [
   {
    "runner_row_id": "static:BUILD:checkstyle",
    "catalog_target_id": "static:BUILD:checkstyle",
    "rule": "checkstyle",
    "raw_log": "docs/evidence/G3/leaf/static-u0-1/static__BUILD__checkstyle.log",
-   "log_sha256": "e44e5880b4abcf9b445d4f3cb3899be62883287029cf2e8ebb7195b1d55d3e16",
-   "log_bytes": 1036,
-   "files_checked": 10,
+   "log_sha256": "24810e7acdfe1e1284a85f6093150a9597c454534b774570efd914148d2c24a4",
+   "log_bytes": 1124,
+   "files_checked": 11,
    "status": "PASS",
    "failures": 0,
    "refusals": [],
@@ -1585,7 +1593,7 @@
    "catalog_target_id": "static:storage/BUILD:checkstyle",
    "rule": "checkstyle",
    "raw_log": "docs/evidence/G3/leaf/static-u0-1/static__storage-BUILD__checkstyle.log",
-   "log_sha256": "937754fbc96de61b8583d44ce665eacc20a5a6f466acadc684b45be6b27b4892",
+   "log_sha256": "c01a12da6a1b561912b2e04b5fdc9bdc5093043b6d658033ce7c84748a15a6f8",
    "log_bytes": 3772,
    "files_checked": 35,
    "status": "PASS",
@@ -1598,7 +1606,7 @@
    "catalog_target_id": "static:storage/BUILD:rustfmt_test",
    "rule": "rustfmt",
    "raw_log": "docs/evidence/G3/leaf/static-u0-1/static__storage-BUILD__rustfmt_test.log",
-   "log_sha256": "4fda3b887be8909e7ae92f822aa9939ea316e146c81e88b66394d4479ebec522",
+   "log_sha256": "5ceac95ae8b2f25c03ac72a9b8ce36d016838f1c6be76449f9dde823deaaecb1",
    "log_bytes": 3693,
    "files_checked": 34,
    "status": "PASS",
@@ -2200,9 +2208,9 @@
    "case_name": "checkstyle_test checkstyle",
    "outcome": "PASSED",
    "raw_log": "docs/evidence/G3/leaf/static-u0-1/static__BUILD__checkstyle.log",
-   "log_sha256": "e44e5880b4abcf9b445d4f3cb3899be62883287029cf2e8ebb7195b1d55d3e16",
-   "log_line": 14,
-   "outcome_line": 14,
+   "log_sha256": "24810e7acdfe1e1284a85f6093150a9597c454534b774570efd914148d2c24a4",
+   "log_line": 15,
+   "outcome_line": 15,
    "fixture_set_id": "fs:none",
    "fixture_set_satisfied": true
   },
@@ -3422,7 +3430,7 @@
    "case_name": "checkstyle_test checkstyle",
    "outcome": "PASSED",
    "raw_log": "docs/evidence/G3/leaf/static-u0-1/static__storage-BUILD__checkstyle.log",
-   "log_sha256": "937754fbc96de61b8583d44ce665eacc20a5a6f466acadc684b45be6b27b4892",
+   "log_sha256": "c01a12da6a1b561912b2e04b5fdc9bdc5093043b6d658033ce7c84748a15a6f8",
    "log_line": 39,
    "outcome_line": 39,
    "fixture_set_id": "fs:none",
@@ -3435,7 +3443,7 @@
    "case_name": "rustfmt_test rustfmt_test",
    "outcome": "PASSED",
    "raw_log": "docs/evidence/G3/leaf/static-u0-1/static__storage-BUILD__rustfmt_test.log",
-   "log_sha256": "4fda3b887be8909e7ae92f822aa9939ea316e146c81e88b66394d4479ebec522",
+   "log_sha256": "5ceac95ae8b2f25c03ac72a9b8ce36d016838f1c6be76449f9dde823deaaecb1",
    "log_line": 38,
    "outcome_line": 38,
    "fixture_set_id": "fs:none",

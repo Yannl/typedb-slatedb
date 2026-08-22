@@ -105,21 +105,29 @@ def test_a_bazel_digest_that_is_not_a_sha256_is_refused(copy_of_the_real_bundle)
     doc = manifest_of(copy_of_the_real_bundle)
     doc["bazel"]["binary_sha256"] = "not-a-digest"
     rewrite(copy_of_the_real_bundle, doc)
-    assert any("binary_sha256" in e for e in validate_modeq.validate_bundle(copy_of_the_real_bundle))
+    assert any(
+        "binary_sha256" in e for e in validate_modeq.validate_bundle(copy_of_the_real_bundle)
+    )
 
 
 def test_a_missing_bazel_object_is_refused(copy_of_the_real_bundle):
     doc = manifest_of(copy_of_the_real_bundle)
     del doc["bazel"]
     rewrite(copy_of_the_real_bundle, doc)
-    assert any("missing 'bazel' object" in e for e in validate_modeq.validate_bundle(copy_of_the_real_bundle))
+    assert any(
+        "missing 'bazel' object" in e
+        for e in validate_modeq.validate_bundle(copy_of_the_real_bundle)
+    )
 
 
 def test_an_empty_bazel_version_is_refused(copy_of_the_real_bundle):
     doc = manifest_of(copy_of_the_real_bundle)
     doc["bazel"]["version"] = "   "
     rewrite(copy_of_the_real_bundle, doc)
-    assert any("bazel.version missing" in e for e in validate_modeq.validate_bundle(copy_of_the_real_bundle))
+    assert any(
+        "bazel.version missing" in e
+        for e in validate_modeq.validate_bundle(copy_of_the_real_bundle)
+    )
 
 
 # ----------------------------------------------------------- the CLI surface

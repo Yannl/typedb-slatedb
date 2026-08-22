@@ -198,6 +198,42 @@ def verify(bundle_dir, repo=REPO):
     if body.get("schema") != SCHEMA:
         A.append(f"schema is {body.get('schema')!r}, not {SCHEMA!r}")
 
+    # ---- the tree this bundle DESCRIBES vs the tree it is being read against.
+    #
+    # The static checks run over `sources/typedb`, which is either the pristine
+    # upstream checkout or the fork staged into it. A bundle produced against
+    # the staged tree, re-read against the pristine one, reports every file as
+    # "has changed since the check read it" — 141 anomalies that look like a
+    # forged bundle and are nothing of the kind, and which a coverage run then
+    # turns into "no evidence exists", silently removing 141 rows from a
+    # published number. That happened, and it is why this check is FIRST and
+    # says what to do.
+    #
+    # It is not a way to pass with the wrong tree: the anomaly still refuses the
+    # bundle. It names the remedy instead of the symptom.
+    declared_state = ((body.get("executed_tree") or {}).get("tree_state")) or "UNKNOWN"
+    if repo == REPO:
+        sys.path.insert(0, str(REPO / "tools" / "qualification"))
+        from leaf_common import stage_state  # noqa: E402
+
+        actual_state, actual_line = stage_state()
+        staged_now = actual_state == "STAGED"
+        staged_then = declared_state.startswith("FORK_STAGED")
+        facts["tree_state_declared"] = declared_state
+        facts["tree_state_now"] = actual_state
+        if staged_then != staged_now:
+            A.append(
+                f"this bundle was produced against a {declared_state} tree and is being verified "
+                f"against a {actual_state} one ({actual_line}). Every file-content check below "
+                f"would fail for that reason alone, which is not a statement about the bundle. "
+                + (
+                    "Run `python3 tools/fork/stage.py` first."
+                    if staged_then
+                    else "Run `python3 tools/fork/stage.py --restore` first."
+                )
+            )
+            return A, facts
+
     # ---- seal: the manifest must account for every file, and the root must
     # recompute from the bytes on disk
     man_path = bundle / "bundle-manifest.json"

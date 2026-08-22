@@ -44,7 +44,21 @@ SUITES = [
     ("cucumber.leaf", ["tools/qualification/cucumber_mutants.py"], True),
     ("leaf", ["tools/qualification/leaf_mutants.py"], True),
     ("modeq", ["tools/modeq/modeq_mutants.py"], False),
-    ("drivers", ["tools/evidence/verify_drivers.py", "--mutants"], True),
+    # The driver-lane controls mutate a REAL sealed bundle and require the
+    # independent verifier to refuse each one, so they need the bundle named.
+    # This entry used to invoke `verify_drivers.py --mutants`, a flag that does
+    # not exist: the suite exited on a usage error every time, and the manifest
+    # reported it as "no tally parsed" and PASSED. That is exactly the failure
+    # the uncounted-suite rule below now catches.
+    (
+        "drivers",
+        [
+            "tools/drivers/driver_mutants.py",
+            "--bundle",
+            "docs/evidence/G1/drivers/rust-slatedb-fork",
+        ],
+        True,
+    ),
     # R8-P1-07: the environment model's own negative controls. Slow, because
     # each mutant builds a real denied environment (a mount namespace, a
     # dropped capability, a virtualenv) rather than flipping a test hook.
@@ -64,6 +78,9 @@ TALLY_PATTERNS = [
     # "modeq mutants: all 11 killed" — no denominator of its own, because "all"
     # IS the denominator.
     re.compile(r"all\s+(?P<killed>\d+)\s+killed"),
+    # "MUTANTS: 16 killed, 0 survived, 0 errored" — the denominator is the sum,
+    # and `survived`/`errored` are read separately below.
+    re.compile(r"MUTANTS:\s*(?P<killed>\d+)\s+killed,\s*\d+\s+survived"),
 ]
 SURVIVED_RE = re.compile(r"\((?P<survived>\d+)\s+SURVIVED", re.I)
 NA_RE = re.compile(r"(?P<na>\d+)\s+NOT[ _]APPLICABLE", re.I)

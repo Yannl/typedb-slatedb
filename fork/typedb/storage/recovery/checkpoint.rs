@@ -36,7 +36,9 @@ use crate::{
         rocks_resources::RocksResources,
     },
     recovery::{
-        commit_recovery::{RecoveryCommitStatus, StorageRecoveryError, apply_recovered, load_commit_data_from},
+        commit_recovery::{
+            RecoveryCommitStatus, StorageRecoveryError, apply_recovered_observing, load_commit_data_from,
+        },
         sha256::{self, Sha256},
     },
     sequence_number::SequenceNumber,
@@ -269,21 +271,32 @@ impl CheckpointReader {
             // a cut that is hash-consistent but cannot open or cannot accept
             // its own replay fails HERE, with the predecessor intact.
             //
-            // R6-STOR-01: the probes are selected from the recovered commits
-            // BEFORE they are consumed by the replay, so the witness names the
-            // records that were replayed — including the commits strictly
-            // after the checkpoint cut, which are exactly the writes an
-            // unproven flush would lose.
-            let probes = select_replay_probes(&recovered_commits);
-            let replayed = {
+            // R8-P1-02: the expectation is captured from what REPLAY DECIDED
+            // to write, at the one point where that decision is final and the
+            // bytes have not yet reached a keyspace. It is not sampled and it
+            // is not an observation: see `ExpectedReplayWitness`.
+            let mut expected = ExpectedReplayWitness::default();
+            {
                 let scratch_keyspaces = Keyspaces::open::<KS>(&scratch_dir, rocks_resources, backend)
                     .map_err(|error| KeyspaceOpen { source: error })?;
                 trace!("Scratch keyspaces opened, replaying the fixed WAL head into scratch");
-                apply_recovered(database_name, recovered_commits, durability_client, &scratch_keyspaces)
-                    .map_err(|err| CommitRecoveryFailed { typedb_source: err })?;
-                let replayed = PostReplayWitness::capture(&scratch_keyspaces, &probes)
-                    .map_err(|source| RestoreWitnessUnreadable { dir: self.directory.clone(), source })?;
-                // (d2) R6-STOR-01: the EXPLICIT, FALLIBLE durability barrier.
+                apply_recovered_observing(
+                    database_name,
+                    recovered_commits,
+                    durability_client,
+                    &scratch_keyspaces,
+                    &mut |sequence_number, batches| expected.absorb(sequence_number, batches),
+                )
+                .map_err(|err| CommitRecoveryFailed { typedb_source: err })?;
+
+                // (d2a) R8-P1-02: every replayed key must be READABLE FROM THE
+                // LIVE ENGINE with the bytes replay resolved to write. This is
+                // the half the old barrier could not do at all: comparing two
+                // observations meant a replay that silently wrote nothing read
+                // `None` on both sides and agreed with itself.
+                self.witness_or_refuse(&expected, &scratch_keyspaces, "after replay")?;
+
+                // (d2b) R6-STOR-01: the EXPLICIT, FALLIBLE durability barrier.
                 // Previously the engine simply left scope and `Drop` closed it
                 // — swallowing every flush failure — after which activation
                 // renamed a possibly-unflushed materialisation over live state
@@ -293,31 +306,31 @@ impl CheckpointReader {
                     dir: self.directory.clone(),
                     detail: errors.iter().map(|error| error.to_string()).join("; "),
                 })?;
-                replayed
-            };
+            }
 
-            // (d3) R6-STOR-01: REOPEN the closed scratch materialisation and
-            // prove the post-replay witness survived the flush. A flush that
-            // reported success but did not durably carry the replayed records
-            // (short write, lost provider response, unpublished manifest) is
-            // caught here, still before any rename. The reopen is itself
-            // closed through the same fallible barrier.
+            // (d3) R8-P1-02: REOPEN the closed scratch materialisation and
+            // require the SAME expectation of it. A flush that reported success
+            // but did not durably carry the replayed records — a short write, a
+            // lost provider response, an unpublished manifest, a publication of
+            // only the last batch — is caught here, still before any rename,
+            // and it is caught for EVERY replayed key rather than for the
+            // newest 256 of them. The reopen is itself closed through the same
+            // fallible barrier.
             {
                 let reopened = Keyspaces::open::<KS>(&scratch_dir, rocks_resources, backend)
                     .map_err(|error| KeyspaceOpen { source: error })?;
-                let observed = PostReplayWitness::capture(&reopened, &probes)
-                    .map_err(|source| RestoreWitnessUnreadable { dir: self.directory.clone(), source })?;
+                let verdict = self.witness_or_refuse(&expected, &reopened, "after close and reopen");
                 reopened.flush_and_close().map_err(|errors| RestoreFlushBarrier {
                     dir: self.directory.clone(),
                     detail: errors.iter().map(|error| error.to_string()).join("; "),
                 })?;
-                if observed != replayed {
-                    return Err(RestoreWitnessMismatch {
-                        dir: self.directory.clone(),
-                        detail: replayed.difference(&observed),
-                    });
-                }
+                verdict?;
             }
+            trace!(
+                "post-replay durability witness holds over {} touched keys (logical root {})",
+                expected.expected.len(),
+                expected.root()
+            );
 
             // (d4) the durable ROOT of what is about to be activated: every
             // declared keyspace must have materialised at least one durable
@@ -352,6 +365,28 @@ impl CheckpointReader {
     /// The scratch and retired sibling directories this candidate's restore
     /// uses, both under the live keyspace directory's parent (same
     /// filesystem, so activation is two renames).
+    /// R8-P1-02: apply the expected-versus-durable witness at one observation
+    /// point, mapping its two failure modes onto the existing typed
+    /// checkpoint refusals. An unreadable keyspace is infrastructure
+    /// (`RestoreWitnessUnreadable`); a divergence is a lost or altered
+    /// replayed write (`RestoreWitnessMismatch`). Either way nothing is
+    /// renamed and the predecessor stays byte-identical and active.
+    fn witness_or_refuse(
+        &self,
+        expected: &ExpectedReplayWitness,
+        keyspaces: &Keyspaces,
+        where_: &str,
+    ) -> Result<(), CheckpointLoadError> {
+        expected.verify(keyspaces, where_).map_err(|divergence| match divergence {
+            RestoreWitnessDivergence::Unreadable { source } => {
+                CheckpointLoadError::RestoreWitnessUnreadable { dir: self.directory.clone(), source }
+            }
+            RestoreWitnessDivergence::Lost { detail } => {
+                CheckpointLoadError::RestoreWitnessMismatch { dir: self.directory.clone(), detail }
+            }
+        })
+    }
+
     fn restore_working_directories(&self, keyspaces_dir: &Path) -> Result<(PathBuf, PathBuf), CheckpointLoadError> {
         let root = keyspaces_dir.parent().ok_or_else(|| CheckpointLoadError::CheckpointRestore {
             dir: self.directory.clone(),
@@ -610,96 +645,151 @@ fn verify_scratch_against_manifest<KS: KeyspaceSet>(
     Ok(())
 }
 
-/// R6-STOR-01: how many replayed records the post-replay witness carries.
-/// Bounded so the barrier costs O(1) point reads, not a full store scan, and
-/// selected from the TAIL of the recovered commits — the writes strictly
-/// after the checkpoint cut are exactly the ones an unproven flush loses.
-const RESTORE_WITNESS_MAX_PROBES: usize = 256;
-
-/// R6-STOR-01: the records the post-replay witness reads back.
+/// R8-P1-02: the COMPLETE expected-versus-durable restore witness.
 ///
-/// Selection walks the recovered commits NEWEST FIRST and takes the exact
-/// per-keyspace MVCC keys the replay writes, so the witness is anchored on
-/// the replay frontier rather than on arbitrary pre-existing checkpoint
-/// bytes. `Rejected` statuses write nothing and are skipped. The list is a
-/// SAMPLE: it is compared observed-against-observed (before close, after
-/// reopen), so a key that the replay ends up not writing simply reads
-/// `None` in both captures and contributes no false verdict.
-fn select_replay_probes(recovered: &BTreeMap<SequenceNumber, RecoveryCommitStatus>) -> Vec<(KeyspaceId, Vec<u8>)> {
-    let mut probes = Vec::new();
-    'commits: for (sequence_number, status) in recovered.iter().rev() {
-        let record = match status {
-            RecoveryCommitStatus::Validated(record) | RecoveryCommitStatus::Pending(record) => record,
-            RecoveryCommitStatus::Rejected => continue,
-        };
-        for (index, batch) in WriteBatches::from_operations(*sequence_number, record.operations()) {
-            for (key, _) in batch.puts() {
-                probes.push((KeyspaceId(index as u8), key.clone()));
-                if probes.len() >= RESTORE_WITNESS_MAX_PROBES {
-                    break 'commits;
-                }
+/// What this replaces, and why.
+///
+/// The previous barrier sampled: `RESTORE_WITNESS_MAX_PROBES = 256` keys taken
+/// from the tail of the recovered commits, captured once from the live engine
+/// after replay and once from a reopen, and required the two CAPTURES to be
+/// equal. Two things follow from that shape, and the round-8 audit named both:
+///
+///  * it is observation versus observation. A replay defect that silently
+///    omitted a probed operation reads `None` before close and `None` after
+///    reopen — the two agree, and activation proceeds;
+///  * it is a SAMPLE. A flush defect that loses the 257th-newest replayed key,
+///    or any older one, is invisible: every probe still agrees. The existing
+///    test proved the bound was respected, never that the bound was
+///    semantically complete.
+///
+/// This type is expected SEMANTICS versus DURABLE OBSERVATION, over EVERY
+/// touched key:
+///
+///  * the expectation is captured at the one point where replay's decision is
+///    final and the bytes have not yet reached a keyspace
+///    ([`apply_recovered_observing`]) — not from the recovered records, because
+///    a `Pending` commit's write set is produced by validation and a
+///    non-reinserting `Put` writes nothing, so an input-derived expectation
+///    would be a guess about the engine's own decision;
+///  * every recorded key is read back and compared to the expected VALUE
+///    DIGEST, first from the live engine after replay (which catches a replay
+///    that silently wrote nothing) and again from the reopened materialisation
+///    (which catches a flush that reported success without carrying the bytes);
+///  * memory is bounded by the DEDUPLICATED TOUCHED-KEY INDEX plus one 32-byte
+///    digest per key — never by value bytes, however large the values are.
+///
+/// Tombstones need no special case: at this layer a logical delete IS a put of
+/// an empty value under a `Delete`-tagged MVCC key, so it is in the index like
+/// any other write and losing one is a divergence like any other.
+///
+/// Duplicate and reordered writes to one logical key are likewise handled by
+/// construction: an MVCC key embeds its sequence number, so two writes to the
+/// same logical key are two DISTINCT index entries, and replaying them in a
+/// different order cannot change the final set. Two writes at the same
+/// sequence number to the same MVCC key are the same byte string written
+/// twice, and the last one wins here exactly as it does in the engine.
+#[derive(Debug, Default)]
+struct ExpectedReplayWitness {
+    /// `(keyspace id, MVCC key) -> SHA-256 of the value replay decided to
+    /// write`. Values themselves are never retained.
+    expected: BTreeMap<(u8, Vec<u8>), [u8; 32]>,
+    /// The recovered WAL sequence range this witness is a statement about
+    /// (R8-P1-02 item 7): a witness that does not say WHICH replay it
+    /// describes cannot be compared with anything later.
+    sequence_range: Option<(SequenceNumber, SequenceNumber)>,
+    /// Writes absorbed, including ones that overwrote an identical earlier
+    /// entry. `expected.len()` is the deduplicated count; the difference is
+    /// reported so a suspicious duplicate rate is visible.
+    absorbed: usize,
+}
+
+impl ExpectedReplayWitness {
+    /// Absorb one batch set as replay resolved it, before it is written.
+    fn absorb(&mut self, sequence_number: SequenceNumber, batches: &WriteBatches) {
+        self.sequence_range = Some(match self.sequence_range {
+            None => (sequence_number, sequence_number),
+            Some((first, last)) => (first.min(sequence_number), last.max(sequence_number)),
+        });
+        for (index, batch) in batches.batches.iter().enumerate() {
+            let Some(batch) = batch else { continue };
+            for (key, value) in batch.puts() {
+                self.absorbed += 1;
+                self.expected.insert((index as u8, key.clone()), sha256::digest(value));
             }
         }
     }
-    probes
-}
 
-/// R6-STOR-01: what a restored-and-replayed scratch materialisation reads
-/// back for the selected records. Captured twice — from the live engine right
-/// after replay, and from a REOPEN of the same directory after the explicit
-/// flush/close barrier — and required to be identical before any rename.
-///
-/// The comparison is observed-against-observed, so it is a durability
-/// predicate, not a guess about what the replay ought to have written: a
-/// record that was in memory after replay and is gone after reopen is
-/// precisely the "flush swallowed by `Drop`" defect, and it refuses here with
-/// the predecessor still byte-identical and active.
-#[derive(Debug, PartialEq, Eq)]
-struct PostReplayWitness {
-    /// `(keyspace id, key, Some(value digest) | None)`, in probe order.
-    observed: Vec<(u8, Vec<u8>, Option<[u8; 32]>)>,
-}
-
-impl PostReplayWitness {
-    fn capture(keyspaces: &Keyspaces, probes: &[(KeyspaceId, Vec<u8>)]) -> Result<Self, KeyspaceError> {
-        let mut observed = Vec::with_capacity(probes.len());
-        for (keyspace_id, key) in probes {
-            let digest = keyspaces.get(*keyspace_id).get(key, sha256::digest)?;
-            observed.push((keyspace_id.0, key.clone(), digest));
+    /// The LOGICAL root of everything replay decided to write.
+    ///
+    /// R8-P1-02 item 6: a file-tree root is unstable under legitimate
+    /// compaction, so it cannot be compared across a close/reopen. This root is
+    /// over the touched-key index and its value digests, in BTreeMap order, so
+    /// it is stable under any storage-level rearrangement and changes if and
+    /// only if the replayed content does.
+    fn root(&self) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(b"typedb.storage.restore-replay-witness.v1\x00");
+        hasher.update(&(self.expected.len() as u64).to_be_bytes());
+        for ((keyspace, key), digest) in &self.expected {
+            hasher.update(&[*keyspace]);
+            hasher.update(&(key.len() as u64).to_be_bytes());
+            hasher.update(key);
+            hasher.update(digest);
         }
-        Ok(Self { observed })
+        hex_encode(&hasher.finalize())
     }
 
-    /// How many probed records were present — reported in the refusal so an
-    /// operator sees whether the reopen lost records or gained them.
-    fn present(&self) -> usize {
-        self.observed.iter().filter(|(_, _, digest)| digest.is_some()).count()
+    /// Read back EVERY touched key from `keyspaces` and require the expected
+    /// value. `where_` names the observation point in the refusal.
+    fn verify(&self, keyspaces: &Keyspaces, where_: &str) -> Result<(), RestoreWitnessDivergence> {
+        let mut absent = 0usize;
+        let mut differing = 0usize;
+        let mut first: Option<String> = None;
+        for ((keyspace, key), want) in &self.expected {
+            let got = keyspaces
+                .get(KeyspaceId(*keyspace))
+                .get(key, sha256::digest)
+                .map_err(|source| RestoreWitnessDivergence::Unreadable { source })?;
+            match got {
+                Some(got) if got == *want => {}
+                observed => {
+                    if observed.is_none() {
+                        absent += 1;
+                    } else {
+                        differing += 1;
+                    }
+                    if first.is_none() {
+                        first = Some(format!(
+                            "keyspace {keyspace} key {} expected value digest {} but {where_} reads {}",
+                            hex_encode(key),
+                            hex_encode(want),
+                            observed.map(|d| hex_encode(&d)).unwrap_or_else(|| "ABSENT".to_owned()),
+                        ));
+                    }
+                }
+            }
+        }
+        if absent == 0 && differing == 0 {
+            return Ok(());
+        }
+        Err(RestoreWitnessDivergence::Lost {
+            detail: format!(
+                "{absent} of {} replayed keys are ABSENT and {differing} hold different bytes {where_} \
+                 (replay wrote {} operations across sequence numbers {}); first divergence: {}",
+                self.expected.len(),
+                self.absorbed,
+                self.sequence_range.map(|(a, b)| format!("{a}..={b}")).unwrap_or_else(|| "<none>".to_owned()),
+                first.unwrap_or_else(|| "<none>".to_owned()),
+            ),
+        })
     }
+}
 
-    /// A precise, bounded description of the first divergence.
-    fn difference(&self, other: &Self) -> String {
-        let first = self
-            .observed
-            .iter()
-            .zip(other.observed.iter())
-            .find(|(replayed, reopened)| replayed != reopened)
-            .map(|((keyspace, key, replayed), (_, _, reopened))| {
-                format!(
-                    "keyspace {keyspace} key {} was {} after replay and {} after reopen",
-                    hex_encode(key),
-                    replayed.map(|d| hex_encode(&d)).unwrap_or_else(|| "absent".to_owned()),
-                    reopened.map(|d| hex_encode(&d)).unwrap_or_else(|| "absent".to_owned()),
-                )
-            })
-            .unwrap_or_else(|| "the probe sets differ in length".to_owned());
-        format!(
-            "{} of {} probed records present after replay, {} of {} after reopen; {first}",
-            self.present(),
-            self.observed.len(),
-            other.present(),
-            other.observed.len(),
-        )
-    }
+/// Why a restore witness refused.
+#[derive(Debug)]
+enum RestoreWitnessDivergence {
+    Unreadable { source: KeyspaceError },
+    Lost { detail: String },
 }
 
 /// R6-STOR-01 (root): the durable root of the materialisation that is about
@@ -2399,10 +2489,24 @@ mod complete_marker_tests {
 
 #[cfg(test)]
 mod restore_durability_barrier_tests {
-    //! R6-STOR-01: the restore commit protocol is an EXPLICIT, FALLIBLE
-    //! durability barrier plus a reopen-and-prove step, never a `Drop` side
-    //! effect. `Drop` stays best-effort for unwind safety; it is no longer
-    //! what decides whether a materialisation may be activated.
+    //! R6-STOR-01 + R8-P1-02: the restore commit protocol is an EXPLICIT,
+    //! FALLIBLE durability barrier plus a COMPLETE expected-versus-durable
+    //! proof — never a `Drop` side effect, and never a sample.
+    //!
+    //! The round-8 audit's finding was that the previous barrier compared two
+    //! OBSERVATIONS (after replay, after reopen) over the newest 256 replayed
+    //! keys. Two whole classes of defect passed it:
+    //!
+    //!   * a replay that silently omitted an operation read `None` on both
+    //!     sides — the observations agreed, and activation proceeded;
+    //!   * a flush that lost the 257th-newest key, or any older one, was
+    //!     outside the sample entirely.
+    //!
+    //! Every mutant the directive named is executed below against
+    //! [`ExpectedReplayWitness`], which states what replay RESOLVED to write
+    //! and requires every one of those keys to read back. `Drop` stays
+    //! best-effort for unwind safety; it is no longer what decides whether a
+    //! materialisation may be activated.
 
     use std::{collections::BTreeMap, fs, path::Path};
 
@@ -2411,8 +2515,7 @@ mod restore_durability_barrier_tests {
     use test_utils::create_tmp_dir;
 
     use super::{
-        PostReplayWitness, RESTORE_WITNESS_MAX_PROBES, RecoveryCommitStatus, SequenceNumber, WriteBatches,
-        activate_scratch, scratch_root, select_replay_probes,
+        ExpectedReplayWitness, RestoreWitnessDivergence, SequenceNumber, WriteBatches, activate_scratch, scratch_root,
     };
     use crate::{
         SnapshotId,
@@ -2448,126 +2551,394 @@ mod restore_durability_barrier_tests {
         Keyspaces::open::<TestKs>(dir, resources, StorageBackend::SlateLocalFs).expect("scratch keyspaces open")
     }
 
-    /// The record set a replay is proved by.
-    fn probe_set() -> Vec<(KeyspaceId, Vec<u8>)> {
-        (0u8..4).map(|i| (KeyspaceId(0), vec![b'r', b'e', b'p', b'l', b'a', b'y', i])).collect()
+    // ------------------------------------------------------------------
+    // A synthetic replay: N commits, each writing one key, in sequence order.
+    // ------------------------------------------------------------------
+
+    /// The write batches a replay of `count` commits resolves to, in the order
+    /// `apply_recovered_observing` would hand them to the observer.
+    fn synthetic_replay(count: u64, value: &[u8]) -> Vec<(SequenceNumber, WriteBatches)> {
+        let mut out = Vec::new();
+        for sequence in 1..=count {
+            let mut operations = OperationsBuffer::new();
+            operations
+                .writes_in_mut(KeyspaceId(0))
+                .insert(ByteArray::copy(format!("key-{sequence:08}").as_bytes()), ByteArray::copy(value));
+            let record = CommitRecord::new(
+                operations,
+                SequenceNumber::new(sequence.saturating_sub(1)),
+                CommitType::Data,
+                SnapshotId::new(),
+            );
+            let sequence_number = SequenceNumber::new(sequence);
+            out.push((sequence_number, WriteBatches::from_operations(sequence_number, record.operations())));
+        }
+        out
     }
 
-    fn write_probes(keyspaces: &Keyspaces, probes: &[(KeyspaceId, Vec<u8>)]) {
-        for (keyspace_id, key) in probes {
-            keyspaces.get(*keyspace_id).put(key, b"post-checkpoint-commit").expect("replayed write");
+    fn absorb_all(witness: &mut ExpectedReplayWitness, replay: &[(SequenceNumber, WriteBatches)]) {
+        for (sequence_number, batches) in replay {
+            witness.absorb(*sequence_number, batches);
         }
     }
 
+    /// Apply `replay` to `keyspaces`, optionally DROPPING the batches whose
+    /// index satisfies `skip`. That is how each "lose a write" mutant is
+    /// injected: the witness still expects them, the store never receives them.
+    fn apply(keyspaces: &Keyspaces, replay: Vec<(SequenceNumber, WriteBatches)>, skip: impl Fn(usize) -> bool) {
+        for (index, (_sequence_number, batches)) in replay.into_iter().enumerate() {
+            if skip(index) {
+                continue;
+            }
+            keyspaces.write(batches).expect("replayed write");
+        }
+    }
+
+    /// The refusal prints MVCC keys hex-encoded (they carry a binary sequence
+    /// suffix), so a test that names a lost record must name it the same way.
+    fn hex_key(sequence: u64) -> String {
+        super::hex_encode(format!("key-{sequence:08}").as_bytes())
+    }
+
+    fn lost_detail(result: Result<(), RestoreWitnessDivergence>) -> String {
+        match result {
+            Ok(()) => panic!("the witness accepted a materialisation that lost replayed writes"),
+            Err(RestoreWitnessDivergence::Lost { detail }) => detail,
+            Err(RestoreWitnessDivergence::Unreadable { source }) => {
+                panic!("the keyspace was unreadable rather than divergent: {source}")
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Positive controls first: the suite must not be "refuse always".
+    // ------------------------------------------------------------------
+
     #[test]
-    fn the_explicit_barrier_makes_the_replay_readable_after_a_reopen() {
-        // Positive control for the R6-STOR-01 protocol: replay -> capture
-        // witness -> `flush_and_close` (the explicit fallible barrier) ->
-        // reopen -> the witness reproduces. Without the barrier this
-        // materialisation's memtable is never flushed (the SlateDB lane runs
-        // with its own WAL disabled), which the next test pins.
-        let scratch = create_tmp_dir("r6-stor-01-barrier-ok");
+    fn a_complete_replay_verifies_before_and_after_the_barrier() {
+        let scratch = create_tmp_dir("r8-p1-02-complete");
         let resources = resources();
-        let probes = probe_set();
+        let replay = synthetic_replay(300, b"post-checkpoint-commit");
+        let mut expected = ExpectedReplayWitness::default();
+        absorb_all(&mut expected, &replay);
+        assert_eq!(expected.expected.len(), 300, "every replayed key is in the index, not a sample of them");
+        assert_eq!(expected.sequence_range, Some((SequenceNumber::new(1), SequenceNumber::new(300))));
 
-        let replayed = {
+        {
             let keyspaces = open(&scratch, &resources);
-            write_probes(&keyspaces, &probes);
-            let witness = PostReplayWitness::capture(&keyspaces, &probes).expect("witness readable");
+            apply(&keyspaces, replay, |_| false);
+            expected.verify(&keyspaces, "after replay").expect("a complete replay is readable from the live engine");
             keyspaces.flush_and_close().expect("the explicit durability barrier must succeed on a healthy lane");
-            witness
-        };
-        assert_eq!(replayed.present(), probes.len(), "every replayed record must be visible right after replay");
-
-        let reopened = {
-            let keyspaces = open(&scratch, &resources);
-            let witness = PostReplayWitness::capture(&keyspaces, &probes).expect("witness readable after reopen");
-            keyspaces.flush_and_close().expect("the reopen is closed through the same barrier");
-            witness
-        };
-        assert_eq!(reopened, replayed, "a proven flush must reproduce the post-replay witness after reopen");
+        }
+        let keyspaces = open(&scratch, &resources);
+        expected.verify(&keyspaces, "after close and reopen").expect("a proven flush carries every replayed key");
+        keyspaces.flush_and_close().expect("the reopen is closed through the same barrier");
     }
 
     #[test]
-    fn the_explicit_barrier_covers_the_rocks_lane_too() {
-        // The barrier is engine-neutral: `Keyspaces::flush_and_close` flushes
-        // a RocksDB keyspace (whose engine WAL is disabled, so an unflushed
-        // memtable is exactly the unproven state) and propagates its error.
-        let scratch = create_tmp_dir("r6-stor-01-barrier-rocks");
+    fn the_same_proof_holds_on_the_rocks_lane() {
+        // The barrier and the witness are engine-neutral.
+        let scratch = create_tmp_dir("r8-p1-02-rocks");
         let resources = resources();
-        let probes = probe_set();
-
-        let replayed = {
+        let replay = synthetic_replay(300, b"post-checkpoint-commit");
+        let mut expected = ExpectedReplayWitness::default();
+        absorb_all(&mut expected, &replay);
+        {
             let keyspaces =
                 Keyspaces::open::<TestKs>(&scratch, &resources, StorageBackend::Rocks).expect("rocks scratch opens");
-            write_probes(&keyspaces, &probes);
-            let witness = PostReplayWitness::capture(&keyspaces, &probes).expect("witness readable");
+            apply(&keyspaces, replay, |_| false);
+            expected.verify(&keyspaces, "after replay").expect("readable from the live rocks engine");
             keyspaces.flush_and_close().expect("the barrier must succeed on a healthy rocks lane");
-            witness
-        };
-        assert_eq!(replayed.present(), probes.len());
+        }
+        let keyspaces =
+            Keyspaces::open::<TestKs>(&scratch, &resources, StorageBackend::Rocks).expect("rocks scratch reopens");
+        expected.verify(&keyspaces, "after close and reopen").expect("a proven flush carries every key on Rocks too");
+        keyspaces.flush_and_close().expect("the reopen is closed through the same barrier");
+    }
 
-        let reopened = {
-            let keyspaces =
-                Keyspaces::open::<TestKs>(&scratch, &resources, StorageBackend::Rocks).expect("rocks scratch reopens");
-            let witness = PostReplayWitness::capture(&keyspaces, &probes).expect("witness readable after reopen");
-            keyspaces.flush_and_close().expect("the reopen is closed through the same barrier");
-            witness
-        };
-        assert_eq!(reopened, replayed, "a proven flush must reproduce the witness after reopen on Rocks too");
+    // ------------------------------------------------------------------
+    // The mandated mutants (report §P1-02). None may activate.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn mutant_drop_exactly_the_257th_newest_replayed_key() {
+        // THE audit's headline case: the old barrier probed the newest 256
+        // keys, so losing the 257th was invisible by construction.
+        let scratch = create_tmp_dir("r8-p1-02-257th");
+        let resources = resources();
+        let replay = synthetic_replay(300, b"v");
+        let mut expected = ExpectedReplayWitness::default();
+        absorb_all(&mut expected, &replay);
+        // newest is index 299; the 257th newest is index 300 - 257 = 43
+        let victim = 300 - 257;
+        let keyspaces = open(&scratch, &resources);
+        apply(&keyspaces, replay, |i| i == victim);
+        let detail = lost_detail(expected.verify(&keyspaces, "after replay"));
+        assert!(detail.contains(&hex_key(44)), "the refusal names the lost key: {detail}");
+        assert!(detail.contains("1 of 300 replayed keys are ABSENT"), "and counts it: {detail}");
+        keyspaces.flush_and_close().expect("close still works; the refusal is the verdict, not a crash");
     }
 
     #[test]
-    fn a_materialisation_whose_flush_never_ran_fails_the_reopen_witness() {
-        // MUTANT (audit R6-STOR-01): "let the value leave scope and trust
-        // Drop". Here the engine is leaked instead of closed, which is
-        // exactly what an ignored/failed close leaves behind — an in-memory
-        // replay that never reached durable objects. The reopen witness must
-        // NOT reproduce, so activation is refused.
-        let scratch = create_tmp_dir("r6-stor-01-no-barrier");
+    fn mutant_drop_the_oldest_replayed_key() {
+        let scratch = create_tmp_dir("r8-p1-02-oldest");
         let resources = resources();
-        let probes = probe_set();
-
-        let replayed = {
-            let keyspaces = open(&scratch, &resources);
-            write_probes(&keyspaces, &probes);
-            let witness = PostReplayWitness::capture(&keyspaces, &probes).expect("witness readable");
-            // no flush_and_close, no Drop: the unproven-flush state
-            std::mem::forget(keyspaces);
-            witness
-        };
-        assert_eq!(replayed.present(), probes.len(), "the records were in memory after replay");
-
-        let reopened = {
-            let keyspaces = open(&scratch, &resources);
-            let witness = PostReplayWitness::capture(&keyspaces, &probes).expect("witness readable after reopen");
-            std::mem::forget(keyspaces);
-            witness
-        };
-        assert_ne!(reopened, replayed, "an unflushed replay must not reproduce its witness after reopen");
-        assert_eq!(reopened.present(), 0, "none of the unflushed records are durable");
-        let detail = replayed.difference(&reopened);
-        assert!(detail.contains("after replay and absent after reopen"), "the refusal must name the loss: {detail}");
+        let replay = synthetic_replay(300, b"v");
+        let mut expected = ExpectedReplayWitness::default();
+        absorb_all(&mut expected, &replay);
+        let keyspaces = open(&scratch, &resources);
+        apply(&keyspaces, replay, |i| i == 0);
+        let detail = lost_detail(expected.verify(&keyspaces, "after replay"));
+        assert!(detail.contains(&hex_key(1)), "the refusal names the oldest key: {detail}");
+        keyspaces.flush_and_close().unwrap();
     }
 
+    #[test]
+    fn mutant_omit_an_operation_that_is_absent_in_both_observations() {
+        // The defect the OLD barrier structurally could not see: a replay that
+        // never wrote the record reads `None` after replay AND after reopen,
+        // so observation-versus-observation agrees. Expected-versus-durable
+        // does not.
+        let scratch = create_tmp_dir("r8-p1-02-omitted");
+        let resources = resources();
+        let replay = synthetic_replay(8, b"v");
+        let mut expected = ExpectedReplayWitness::default();
+        absorb_all(&mut expected, &replay);
+        {
+            let keyspaces = open(&scratch, &resources);
+            apply(&keyspaces, replay, |i| i == 3);
+            // BOTH observations agree that the key is absent...
+            assert!(
+                keyspaces.get(KeyspaceId(0)).get(b"anything-absent", |_| ()).unwrap().is_none(),
+                "sanity: an unwritten key reads None"
+            );
+            let detail = lost_detail(expected.verify(&keyspaces, "after replay"));
+            assert!(detail.contains(&hex_key(4)), "...and the EXPECTATION still catches it: {detail}");
+            keyspaces.flush_and_close().unwrap();
+        }
+        let keyspaces = open(&scratch, &resources);
+        let detail = lost_detail(expected.verify(&keyspaces, "after close and reopen"));
+        assert!(detail.contains("ABSENT"), "and it is still caught after the reopen: {detail}");
+        keyspaces.flush_and_close().unwrap();
+    }
+
+    #[test]
+    fn mutant_lose_a_tombstone() {
+        // A logical delete at this layer is a PUT of an empty value under a
+        // Delete-tagged MVCC key, so it is in the index like any other write —
+        // and losing one is a divergence like any other. That is the property
+        // being pinned: no special case, and no exemption for an empty value.
+        let scratch = create_tmp_dir("r8-p1-02-tombstone");
+        let resources = resources();
+        let mut replay = Vec::new();
+        for sequence in 1..=4u64 {
+            let mut operations = OperationsBuffer::new();
+            let key = ByteArray::copy(format!("key-{sequence:08}").as_bytes());
+            if sequence == 3 {
+                operations.writes_in_mut(KeyspaceId(0)).delete(key);
+            } else {
+                operations.writes_in_mut(KeyspaceId(0)).insert(key, ByteArray::copy(b"v"));
+            }
+            let record =
+                CommitRecord::new(operations, SequenceNumber::new(sequence - 1), CommitType::Data, SnapshotId::new());
+            let sequence_number = SequenceNumber::new(sequence);
+            replay.push((sequence_number, WriteBatches::from_operations(sequence_number, record.operations())));
+        }
+        let mut expected = ExpectedReplayWitness::default();
+        absorb_all(&mut expected, &replay);
+        assert_eq!(expected.expected.len(), 4, "the tombstone is a touched key like any other");
+
+        let keyspaces = open(&scratch, &resources);
+        apply(&keyspaces, replay, |i| i == 2); // drop the tombstone
+        let detail = lost_detail(expected.verify(&keyspaces, "after replay"));
+        assert!(detail.contains(&hex_key(3)), "a lost tombstone is a lost write: {detail}");
+        keyspaces.flush_and_close().unwrap();
+    }
+
+    #[test]
+    fn duplicate_and_reordered_writes_to_one_key_are_handled_by_construction() {
+        // An MVCC key embeds its sequence number, so two writes to one logical
+        // key are two DISTINCT index entries and a reorder cannot change the
+        // final set. Replaying the same batches twice, and in reverse order,
+        // must produce the same index and the same root.
+        let replay = synthetic_replay(16, b"v");
+        let mut straight = ExpectedReplayWitness::default();
+        absorb_all(&mut straight, &replay);
+
+        let mut duplicated = ExpectedReplayWitness::default();
+        absorb_all(&mut duplicated, &replay);
+        absorb_all(&mut duplicated, &replay);
+        assert_eq!(duplicated.expected.len(), straight.expected.len(), "a replayed duplicate is idempotent");
+        assert_eq!(duplicated.root(), straight.root(), "and does not move the logical root");
+        assert_eq!(duplicated.absorbed, 2 * straight.absorbed, "while the raw write count DOES record it");
+
+        let mut reversed = ExpectedReplayWitness::default();
+        for (sequence_number, batches) in replay.iter().rev() {
+            reversed.absorb(*sequence_number, batches);
+        }
+        assert_eq!(reversed.root(), straight.root(), "order cannot change the final expected set");
+        assert_eq!(reversed.sequence_range, straight.sequence_range, "and the bound WAL range is order-independent");
+    }
+
+    #[test]
+    fn mutant_flush_reports_success_but_publishes_only_the_last_batch() {
+        // A provider/engine defect in which the close returns Ok while only
+        // the newest batch is durable. Every older key is lost, and the old
+        // sampled barrier would have missed all but the newest 256 of them.
+        let scratch = create_tmp_dir("r8-p1-02-last-batch-only");
+        let resources = resources();
+        let replay = synthetic_replay(300, b"v");
+        let mut expected = ExpectedReplayWitness::default();
+        absorb_all(&mut expected, &replay);
+        let last = replay.len() - 1;
+        {
+            let keyspaces = open(&scratch, &resources);
+            apply(&keyspaces, replay, move |i| i != last);
+            keyspaces.flush_and_close().expect("the flush REPORTS success");
+        }
+        let keyspaces = open(&scratch, &resources);
+        let detail = lost_detail(expected.verify(&keyspaces, "after close and reopen"));
+        assert!(detail.contains("299 of 300 replayed keys are ABSENT"), "every lost key is counted: {detail}");
+        keyspaces.flush_and_close().unwrap();
+    }
+
+    #[test]
+    fn mutant_a_root_that_contains_only_checkpoint_bytes_and_no_replay() {
+        // The materialisation is a perfectly valid restored checkpoint that
+        // simply never received the replay. `scratch_root` is satisfied — it
+        // asks only that each keyspace left a durable file — so the FILE root
+        // cannot distinguish it. The LOGICAL witness can.
+        let scratch = create_tmp_dir("r8-p1-02-checkpoint-only");
+        let resources = resources();
+        let replay = synthetic_replay(64, b"v");
+        let mut expected = ExpectedReplayWitness::default();
+        absorb_all(&mut expected, &replay);
+        {
+            let keyspaces = open(&scratch, &resources);
+            // checkpoint bytes only: a write that is NOT part of the replay
+            keyspaces.get(KeyspaceId(0)).put(b"checkpoint-key", b"checkpoint-value").expect("checkpoint write");
+            keyspaces.flush_and_close().expect("the checkpoint-only tree closes cleanly");
+        }
+        let file_root = scratch_root::<TestKs>(&scratch);
+        assert!(file_root.is_ok(), "the FILE root is satisfied by checkpoint bytes alone: {file_root:?}");
+
+        let keyspaces = open(&scratch, &resources);
+        let detail = lost_detail(expected.verify(&keyspaces, "after close and reopen"));
+        assert!(detail.contains("64 of 64 replayed keys are ABSENT"), "the logical witness is not: {detail}");
+        keyspaces.flush_and_close().unwrap();
+    }
+
+    #[test]
+    fn mutant_a_replayed_value_that_changed_underneath_is_a_divergence_not_a_loss() {
+        let scratch = create_tmp_dir("r8-p1-02-changed");
+        let resources = resources();
+        let replay = synthetic_replay(4, b"v");
+        let mut expected = ExpectedReplayWitness::default();
+        absorb_all(&mut expected, &replay);
+        let mvcc_key = expected.expected.keys().next().unwrap().1.clone();
+        let keyspaces = open(&scratch, &resources);
+        apply(&keyspaces, replay, |_| false);
+        keyspaces.get(KeyspaceId(0)).put(&mvcc_key, b"tampered").expect("overwrite");
+        let detail = lost_detail(expected.verify(&keyspaces, "after replay"));
+        assert!(detail.contains("0 of 4 replayed keys are ABSENT"), "nothing is missing: {detail}");
+        assert!(detail.contains("1 hold different bytes"), "one holds the wrong bytes: {detail}");
+        keyspaces.flush_and_close().unwrap();
+    }
+
+    #[test]
+    fn an_unflushed_replay_never_activates() {
+        // The R6-STOR-01 mutant kept: "let the value leave scope and trust
+        // Drop". The engine is LEAKED instead of closed, which is what an
+        // ignored or failed close leaves behind.
+        let scratch = create_tmp_dir("r8-p1-02-no-barrier");
+        let resources = resources();
+        let replay = synthetic_replay(64, b"v");
+        let mut expected = ExpectedReplayWitness::default();
+        absorb_all(&mut expected, &replay);
+        {
+            let keyspaces = open(&scratch, &resources);
+            apply(&keyspaces, replay, |_| false);
+            expected.verify(&keyspaces, "after replay").expect("the records were in memory after replay");
+            std::mem::forget(keyspaces); // no flush_and_close, no Drop
+        }
+        let keyspaces = open(&scratch, &resources);
+        let detail = lost_detail(expected.verify(&keyspaces, "after close and reopen"));
+        assert!(detail.contains("64 of 64 replayed keys are ABSENT"), "an unflushed replay is fully lost: {detail}");
+        keyspaces.flush_and_close().unwrap();
+    }
+
+    // ------------------------------------------------------------------
+    // The logical root, and what it is bound to.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn the_logical_root_is_content_bound_and_stable_across_storage_rearrangement() {
+        let a = {
+            let mut w = ExpectedReplayWitness::default();
+            absorb_all(&mut w, &synthetic_replay(32, b"v"));
+            w
+        };
+        let same = {
+            let mut w = ExpectedReplayWitness::default();
+            absorb_all(&mut w, &synthetic_replay(32, b"v"));
+            w
+        };
+        let different_value = {
+            let mut w = ExpectedReplayWitness::default();
+            absorb_all(&mut w, &synthetic_replay(32, b"w"));
+            w
+        };
+        let fewer = {
+            let mut w = ExpectedReplayWitness::default();
+            absorb_all(&mut w, &synthetic_replay(31, b"v"));
+            w
+        };
+        assert_eq!(a.root(), same.root(), "the same replay has the same logical root");
+        assert_ne!(a.root(), different_value.root(), "changed replayed bytes change the root");
+        assert_ne!(a.root(), fewer.root(), "a lost write changes the root");
+        assert_eq!(a.root().len(), 64, "the root is a full SHA-256 digest in hex");
+    }
+
+    #[test]
+    fn the_witness_binds_the_recovered_sequence_range_it_describes() {
+        // R8-P1-02 item 7: a witness that does not say WHICH replay it is
+        // about cannot be compared with anything later.
+        let mut w = ExpectedReplayWitness::default();
+        assert_eq!(w.sequence_range, None, "an empty witness names no range");
+        absorb_all(&mut w, &synthetic_replay(5, b"v"));
+        assert_eq!(w.sequence_range, Some((SequenceNumber::new(1), SequenceNumber::new(5))));
+    }
+
+    #[test]
+    fn an_empty_replay_is_vacuously_proved_and_says_so() {
+        // Nothing was replayed, so nothing can be lost — but the witness must
+        // report an empty index rather than a pass over an unexamined store.
+        let scratch = create_tmp_dir("r8-p1-02-empty");
+        let resources = resources();
+        let expected = ExpectedReplayWitness::default();
+        assert!(expected.expected.is_empty());
+        let keyspaces = open(&scratch, &resources);
+        expected.verify(&keyspaces, "after replay").expect("an empty replay has nothing to lose");
+        keyspaces.flush_and_close().unwrap();
+    }
+
+    // ------------------------------------------------------------------
+    // Activation ordering: no divergence may rename anything.
+    // ------------------------------------------------------------------
+
     /// The exact post-replay ordering `restore_validated` runs, inlined so the
-    /// R6-STOR-01 mutants — activate although the barrier failed, activate
-    /// although the reopen witness diverged — are hermetic tests. The returned
-    /// sequence number is what recovery would advance to; the error paths
-    /// never produce one.
+    /// activation mutants are hermetic. The returned sequence number is what
+    /// recovery would advance to; the error paths never produce one.
     fn barrier_then_activate(
         barrier: Result<(), String>,
-        replayed: &PostReplayWitness,
-        reopened: &PostReplayWitness,
+        witness: Result<(), String>,
         next_sequence_number: SequenceNumber,
         scratch_dir: &Path,
         live_dir: &Path,
         retired_dir: &Path,
     ) -> Result<SequenceNumber, String> {
         barrier?;
-        if replayed != reopened {
-            return Err(replayed.difference(reopened));
-        }
+        witness?;
         activate_scratch(scratch_dir, live_dir, retired_dir).map_err(|error| error.to_string())?;
         Ok(next_sequence_number)
     }
@@ -2580,7 +2951,7 @@ mod restore_durability_barrier_tests {
     }
 
     fn trees() -> Trees {
-        let root = create_tmp_dir("r6-stor-01-trees");
+        let root = create_tmp_dir("r8-p1-02-trees");
         let (scratch, live, retired) =
             (root.join("restore-scratch"), root.join("storage"), root.join("restore-retired"));
         fs::create_dir_all(&scratch).unwrap();
@@ -2590,23 +2961,12 @@ mod restore_durability_barrier_tests {
         Trees { _root: root, scratch, live, retired }
     }
 
-    fn witness(present: bool) -> PostReplayWitness {
-        PostReplayWitness {
-            observed: vec![(0, b"replay0".to_vec(), present.then_some(crate::recovery::sha256::digest(b"v")))],
-        }
-    }
-
     #[test]
     fn an_unproven_flush_renames_nothing_and_advances_no_sequence() {
-        // MUTANT: swallow the barrier failure (what `Drop` did) and activate
-        // anyway. The predecessor must stay byte-identical AND active, the
-        // scratch must stay where it is (quarantined residue), and no
-        // sequence number may be produced.
         let trees = trees();
         let outcome = barrier_then_activate(
             Err("remote flush failed".to_owned()),
-            &witness(true),
-            &witness(true),
+            Ok(()),
             SequenceNumber::new(42),
             &trees.scratch,
             &trees.live,
@@ -2623,22 +2983,18 @@ mod restore_durability_barrier_tests {
     }
 
     #[test]
-    fn a_witness_that_does_not_reproduce_after_reopen_renames_nothing() {
-        // MUTANT: the flush REPORTS success but the reopen cannot read the
-        // replayed record back (short write / lost provider response /
-        // unpublished manifest). Activation must still be refused.
+    fn a_witness_that_does_not_hold_after_reopen_renames_nothing() {
         let trees = trees();
         let outcome = barrier_then_activate(
             Ok(()),
-            &witness(true),
-            &witness(false),
+            Err("3 of 300 replayed keys are ABSENT after close and reopen".to_owned()),
             SequenceNumber::new(42),
             &trees.scratch,
             &trees.live,
             &trees.retired,
         );
-        let error = outcome.expect_err("a witness mismatch must refuse activation");
-        assert!(error.contains("after replay and absent after reopen"), "the refusal names the lost record: {error}");
+        let error = outcome.expect_err("a witness divergence must refuse activation");
+        assert!(error.contains("replayed keys are ABSENT"), "the refusal names the loss: {error}");
         assert_eq!(
             fs::read(trees.live.join("MARK")).unwrap(),
             b"predecessor-bytes",
@@ -2648,21 +3004,12 @@ mod restore_durability_barrier_tests {
     }
 
     #[test]
-    fn a_proven_flush_and_reproduced_witness_activates_and_advances() {
-        // Positive control: the same composition with a proven barrier and a
-        // reproduced witness DOES swap and DOES yield the next sequence
-        // number — so the two refusals above are not simply "refuse always".
+    fn a_proven_flush_and_a_holding_witness_activates_and_advances() {
+        // Positive control: the two refusals above are not "refuse always".
         let trees = trees();
-        let advanced = barrier_then_activate(
-            Ok(()),
-            &witness(true),
-            &witness(true),
-            SequenceNumber::new(42),
-            &trees.scratch,
-            &trees.live,
-            &trees.retired,
-        )
-        .expect("a proven restore must activate");
+        let advanced =
+            barrier_then_activate(Ok(()), Ok(()), SequenceNumber::new(42), &trees.scratch, &trees.live, &trees.retired)
+                .expect("a proven restore must activate");
         assert_eq!(advanced, SequenceNumber::new(42));
         assert_eq!(fs::read(trees.live.join("MARK")).unwrap(), b"successor-bytes", "the successor is now live");
         assert!(!trees.scratch.exists(), "the scratch was renamed into place");
@@ -2671,8 +3018,11 @@ mod restore_durability_barrier_tests {
     #[test]
     fn the_root_check_refuses_a_keyspace_that_materialised_nothing() {
         // R6-STOR-01 root half: an engine that "closed cleanly" while writing
-        // no durable file is not an activatable materialisation.
-        let scratch = create_tmp_dir("r6-stor-01-root");
+        // no durable file is not an activatable materialisation. Kept because
+        // it catches a different thing from the logical witness: a keyspace
+        // that received NO replay at all has an empty expected set and would
+        // be vacuously proved.
+        let scratch = create_tmp_dir("r8-p1-02-root");
         fs::create_dir_all(scratch.join("keyspace")).unwrap();
         let empty = scratch_root::<TestKs>(&scratch);
         assert!(empty.is_err(), "an empty keyspace tree must not be activatable, got {empty:?}");
@@ -2688,50 +3038,41 @@ mod restore_durability_barrier_tests {
     }
 
     #[test]
-    fn probes_are_selected_from_the_replay_frontier_and_are_bounded() {
-        // The witness must be anchored on the commits strictly AFTER the
-        // checkpoint cut (the writes an unproven flush loses), newest first,
-        // and must stay bounded so the barrier is O(1) point reads.
-        let mut recovered = BTreeMap::new();
-        assert!(select_replay_probes(&recovered).is_empty(), "no recovered commits, no probes");
-
-        recovered.insert(SequenceNumber::new(1), RecoveryCommitStatus::Rejected);
-        assert!(select_replay_probes(&recovered).is_empty(), "a rejected commit writes nothing, so it probes nothing");
-
-        // one validated commit per sequence, each writing its own key
-        for sequence in 2u64..6 {
-            let mut operations = OperationsBuffer::new();
-            operations
-                .writes_in_mut(KeyspaceId(0))
-                .insert(ByteArray::copy(format!("key-{sequence}").as_bytes()), ByteArray::empty());
-            recovered.insert(
-                SequenceNumber::new(sequence),
-                RecoveryCommitStatus::Validated(CommitRecord::new(
-                    operations,
-                    SequenceNumber::new(sequence - 1),
-                    CommitType::Data,
-                    SnapshotId::new(),
-                )),
-            );
-        }
-        let probes = select_replay_probes(&recovered);
-        assert_eq!(probes.len(), 4, "one probe per validated commit");
-        assert!(probes.iter().all(|(keyspace, _)| *keyspace == KeyspaceId(0)));
-        // newest first: the newest commit's key must be encoded in the first
-        // probe's MVCC key (which embeds the raw key)
-        let newest = WriteBatches::from_operations(
-            SequenceNumber::new(5),
-            match recovered.get(&SequenceNumber::new(5)).unwrap() {
-                RecoveryCommitStatus::Validated(record) => record.operations(),
-                _ => unreachable!(),
-            },
+    fn the_expected_index_holds_no_value_bytes() {
+        // R8-P1-02: memory is bounded by the deduplicated touched-key index
+        // plus one 32-byte digest per key, whatever the values weigh. A
+        // 1 MiB-per-value replay must cost the same index as a 1-byte one.
+        let small = {
+            let mut w = ExpectedReplayWitness::default();
+            absorb_all(&mut w, &synthetic_replay(8, b"v"));
+            w
+        };
+        let huge = {
+            let mut w = ExpectedReplayWitness::default();
+            absorb_all(&mut w, &synthetic_replay(8, &vec![b'x'; 1 << 20]));
+            w
+        };
+        assert_eq!(small.expected.len(), huge.expected.len());
+        let index_bytes = |w: &ExpectedReplayWitness| {
+            w.expected.iter().map(|((_, key), digest)| key.len() + digest.len()).sum::<usize>()
+        };
+        assert_eq!(
+            index_bytes(&small),
+            index_bytes(&huge),
+            "the index must not grow with value size — that is the whole memory bound"
         );
-        let expected = newest.into_iter().next().unwrap().1.puts()[0].0.clone();
-        assert_eq!(probes[0].1, expected, "probe selection walks the recovered commits newest first");
-        const _: () = assert!(
-            RESTORE_WITNESS_MAX_PROBES > 0 && RESTORE_WITNESS_MAX_PROBES <= 4096,
-            "the probe set stays bounded"
-        );
+        assert_ne!(small.root(), huge.root(), "while still binding the value CONTENT through its digest");
+    }
+
+    #[test]
+    fn a_rejected_commit_contributes_nothing_to_the_expectation() {
+        // A rejected commit writes nothing, so it must expect nothing:
+        // `apply_recovered_observing` never calls the observer for one.
+        let mut recovered: BTreeMap<SequenceNumber, super::RecoveryCommitStatus> = BTreeMap::new();
+        recovered.insert(SequenceNumber::new(1), super::RecoveryCommitStatus::Rejected);
+        let witness = ExpectedReplayWitness::default();
+        assert!(witness.expected.is_empty(), "nothing observed, nothing expected");
+        assert_eq!(recovered.len(), 1, "the rejected row is still part of the recovered set");
     }
 }
 

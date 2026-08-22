@@ -262,6 +262,32 @@ pub(crate) fn apply_recovered(
     durability_client: &impl DurabilityClient,
     keyspaces: &Keyspaces,
 ) -> Result<(), StorageRecoveryError> {
+    apply_recovered_observing(database_name, recovered_commits, durability_client, keyspaces, &mut |_, _| {})
+}
+
+/// R8-P1-02: replay, with an OBSERVER over every batch that is about to be
+/// written.
+///
+/// The restore durability barrier needs to know exactly what replay decided to
+/// write, and it cannot derive that from the recovered records alone: a
+/// `Pending` commit's write set is produced by `validate_commit`, which may
+/// reject it outright, and a `Write::Put` whose `reinsert` flag is false emits
+/// nothing at all. A witness computed from the input would therefore be a
+/// guess about the engine's commit decision rather than a statement of it.
+///
+/// So the observer runs at the ONE point where the decision is final and the
+/// bytes have not yet been handed to a keyspace. Everything downstream —
+/// flush, close, reopen — is then checked against what replay actually
+/// resolved to write, which is the "expected semantics versus durable
+/// observation" comparison the round-8 audit required in place of the previous
+/// observation-versus-observation one.
+pub(crate) fn apply_recovered_observing(
+    database_name: &str,
+    recovered_commits: BTreeMap<SequenceNumber, RecoveryCommitStatus>,
+    durability_client: &impl DurabilityClient,
+    keyspaces: &Keyspaces,
+    observe: &mut dyn FnMut(SequenceNumber, &WriteBatches),
+) -> Result<(), StorageRecoveryError> {
     event!(Level::TRACE, "Applying recovered commits");
     use StorageRecoveryError::{DurabilityClientRead, DurabilityClientWrite, Internal, KeyspaceWrite};
 
@@ -276,6 +302,7 @@ pub(crate) fn apply_recovered(
             RecoveryCommitStatus::Validated(commit_record) => {
                 let write_batches = WriteBatches::from_operations(commit_sequence_number, commit_record.operations());
                 isolation_manager.load_validated(commit_sequence_number, commit_record);
+                observe(commit_sequence_number, &write_batches);
                 keyspaces.write(write_batches).map_err(|error| KeyspaceWrite { source: error })?;
                 fail_point!(RECOVERY_PARTIAL_WRITE);
                 isolation_manager
@@ -293,6 +320,7 @@ pub(crate) fn apply_recovered(
                     ValidatedCommit::Write(write_batches) => {
                         MVCCStorage::persist_commit_status(true, commit_sequence_number, durability_client)
                             .map_err(|error| DurabilityClientWrite { typedb_source: error })?;
+                        observe(commit_sequence_number, &write_batches);
                         keyspaces.write(write_batches).map_err(|error| KeyspaceWrite { source: error })?;
                         fail_point!(RECOVERY_PARTIAL_WRITE);
                         isolation_manager.applied(commit_sequence_number).map_err(|error| Internal {

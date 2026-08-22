@@ -174,14 +174,15 @@
    }
   ],
   "staged_delta_files": 36,
-  "staged_delta_sha256": "9f9293f23c58693cfb369f96bccd5a75a86819a84df41b2b6716ae978e658dcc",
+  "staged_delta_sha256": "91ed65b1513f90d3a813e98db8ff91622cf1de93b2fa0ee48f991902999699e3",
   "fork": {
    "files": 778,
-   "fork_tree_sha256": "4dd2e613c430a2ba00d0f49c1b9cf94988dafd998ad8023e7dd271c56e2837a6",
-   "outer_repo_commit": "9e30340192c6bda6e0fddd952c9d8ce6723438e6",
+   "fork_tree_sha256": "8673b0c483f3594ae6be3882c8f3329ccb9c8cd663a1b37e5f9c7beefe522e60",
+   "outer_repo_commit": "3afee7159820be15ed85efd61d69f849f0a9a672",
    "outer_repo_dirty": true,
    "outer_repo_fork_paths_modified": [
-    "fork/typedb/storage/keyspace/slate.rs"
+    "fork/typedb/storage/recovery/checkpoint.rs",
+    "fork/typedb/storage/recovery/commit_recovery.rs"
    ]
   }
  },
@@ -342,19 +343,20 @@
    }
   ],
   "staged_delta_files": 36,
-  "staged_delta_sha256": "9f9293f23c58693cfb369f96bccd5a75a86819a84df41b2b6716ae978e658dcc",
+  "staged_delta_sha256": "91ed65b1513f90d3a813e98db8ff91622cf1de93b2fa0ee48f991902999699e3",
   "fork": {
    "files": 778,
-   "fork_tree_sha256": "4dd2e613c430a2ba00d0f49c1b9cf94988dafd998ad8023e7dd271c56e2837a6",
-   "outer_repo_commit": "9e30340192c6bda6e0fddd952c9d8ce6723438e6",
+   "fork_tree_sha256": "8673b0c483f3594ae6be3882c8f3329ccb9c8cd663a1b37e5f9c7beefe522e60",
+   "outer_repo_commit": "3afee7159820be15ed85efd61d69f849f0a9a672",
    "outer_repo_dirty": true,
    "outer_repo_fork_paths_modified": [
-    "fork/typedb/storage/keyspace/slate.rs"
+    "fork/typedb/storage/recovery/checkpoint.rs",
+    "fork/typedb/storage/recovery/commit_recovery.rs"
    ]
   }
  },
  "tree_stable_across_run": true,
- "started_utc": "2026-08-22T15:20:23Z",
+ "started_utc": "2026-08-22T16:00:02Z",
  "targets": [
   {
    "runner_row_id": "static:BUILD:checkstyle",
@@ -1583,7 +1585,7 @@
    "catalog_target_id": "static:storage/BUILD:checkstyle",
    "rule": "checkstyle",
    "raw_log": "docs/evidence/G3/leaf/static-u0-1/static__storage-BUILD__checkstyle.log",
-   "log_sha256": "2f1fbcc38f5c0e70b12fb650ea608b8e3f01cbbc58689ee4deaac32a43bfeebd",
+   "log_sha256": "937754fbc96de61b8583d44ce665eacc20a5a6f466acadc684b45be6b27b4892",
    "log_bytes": 3772,
    "files_checked": 35,
    "status": "PASS",
@@ -1596,7 +1598,7 @@
    "catalog_target_id": "static:storage/BUILD:rustfmt_test",
    "rule": "rustfmt",
    "raw_log": "docs/evidence/G3/leaf/static-u0-1/static__storage-BUILD__rustfmt_test.log",
-   "log_sha256": "2648ea154fb1ed039a3502074cac8c8b2b3f3347503a9847c6a1e4a519908e29",
+   "log_sha256": "4fda3b887be8909e7ae92f822aa9939ea316e146c81e88b66394d4479ebec522",
    "log_bytes": 3693,
    "files_checked": 34,
    "status": "PASS",
@@ -3420,7 +3422,7 @@
    "case_name": "checkstyle_test checkstyle",
    "outcome": "PASSED",
    "raw_log": "docs/evidence/G3/leaf/static-u0-1/static__storage-BUILD__checkstyle.log",
-   "log_sha256": "2f1fbcc38f5c0e70b12fb650ea608b8e3f01cbbc58689ee4deaac32a43bfeebd",
+   "log_sha256": "937754fbc96de61b8583d44ce665eacc20a5a6f466acadc684b45be6b27b4892",
    "log_line": 39,
    "outcome_line": 39,
    "fixture_set_id": "fs:none",
@@ -3433,7 +3435,7 @@
    "case_name": "rustfmt_test rustfmt_test",
    "outcome": "PASSED",
    "raw_log": "docs/evidence/G3/leaf/static-u0-1/static__storage-BUILD__rustfmt_test.log",
-   "log_sha256": "2648ea154fb1ed039a3502074cac8c8b2b3f3347503a9847c6a1e4a519908e29",
+   "log_sha256": "4fda3b887be8909e7ae92f822aa9939ea316e146c81e88b66394d4479ebec522",
    "log_line": 38,
    "outcome_line": 38,
    "fixture_set_id": "fs:none",

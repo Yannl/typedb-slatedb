@@ -1,0 +1,14 @@
+STATIC-CHECK static:BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         c114cc457cc54e5067b0a32a209000c939f65202adeee4e3c6581735a4f1717a .bazelrc
+FILE         44716220807e6b3ac8379e31ed772c30480c149b3a01140ed9af626c34926194 .cargo/config.toml
+FILE         37be16adaeefa33d15839a9aa85d3bc522fb0b59b06f003552e7535f640c2974 .circleci/config.yml
+FILE         70e2c136ac8c4d0b92757efb3e0a71999c3eacb184f95587815a4bb53822b227 .factory/automation.yml
+FILE         2d981bb3d62993cd4e87de644a7a20d5984d9c826bd3537ad72d25b99dce7763 .gitignore
+FILE         857481a4c769efc0433e3889e510765484839c6232c697b920f240ded2a82e59 BUILD
+FILE         b420c2b7b59ca05cef1c1e096df6d20540a65b7c2fdb3321b5280e61fa430ad4 MODULE.bazel
+FILE         be6dd0449b1d98eaac1535be2d99402e7b1139a5dc46aa1686dd17973301b207 deployment.bzl
+FILE         e2fe061e15977f934150d01f71bdc4604bf4f6471c069f6ed5891d428ae0e1f8 main.rs
+FILE         8d996b301b3745dcac1774585896431c9ca1be40185ef303a2cddb03fac82762 rustfmt.toml
+RESULT       PASS files=10 failures=0

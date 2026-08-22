@@ -1,0 +1,5 @@
+STATIC-CHECK static:tests/behaviour/service/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         144d9c9c5d4ac9bb278b2059b5281b5d573998150fe8d778156acd04285a8e12 tests/behaviour/service/BUILD
+RESULT       PASS files=1 failures=0

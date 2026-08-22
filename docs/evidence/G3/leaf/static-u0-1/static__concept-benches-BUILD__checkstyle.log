@@ -1,0 +1,6 @@
+STATIC-CHECK static:concept/benches/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         4f282476690da899fb0e10e736538e3bd7f7acd01689983aa89e88000f8e6266 concept/benches/BUILD
+FILE         e724c63411010b64e4957ab8ebdfe93910d4a84270df605e024a38a1209b1903 concept/benches/bench_thing_write.rs
+RESULT       PASS files=2 failures=0

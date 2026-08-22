@@ -1,0 +1,7 @@
+STATIC-CHECK static:durability/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         e4d570c22ee79a19849be85873b48e1b60989827eb6ddb8bf3cacaf0bbb1adf9 durability/BUILD
+FILE         cfcb38dfdbc935ef00c8aceb0cdc6c3c7fdf1f871fb9029dc1c67b8c99221d09 durability/durability.rs
+FILE         20e5359f3fed956afb26ba61dc496ba51e1457e369140e6eae63d72778808522 durability/wal.rs
+RESULT       PASS files=3 failures=0

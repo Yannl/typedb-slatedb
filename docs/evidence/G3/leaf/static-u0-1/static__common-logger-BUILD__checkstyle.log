@@ -1,0 +1,7 @@
+STATIC-CHECK static:common/logger/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         c7729e5923fcd2339531c4993cef0acc83e197d3c84f09f85753a6aa51c717b7 common/logger/BUILD
+FILE         aa7067cff8432e08add0bb29a3f2fbd538f772d75e64bc2a6f68b4f036322272 common/logger/logger.rs
+FILE         e064d7d674c2c81a427be1b19ccb9d974019a53d1c8d535ce28c8147b02a237d common/logger/result.rs
+RESULT       PASS files=3 failures=0

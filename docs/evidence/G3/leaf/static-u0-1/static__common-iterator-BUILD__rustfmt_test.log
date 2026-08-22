@@ -1,0 +1,5 @@
+STATIC-CHECK static:common/iterator/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         93ddfaacac789b6f1b2fe65a0db7c1ccc1bc2a49c3071fc0308e55d7356ec975 common/iterator/mod.rs
+RESULT       PASS files=1 failures=0

@@ -1,0 +1,7 @@
+STATIC-CHECK static:common/error/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         775f3df2ec3de7a4d25db98ea64ad4b84b432948921fbcaf284d795ea446036c common/error/BUILD
+FILE         ee4c26ffbfda38c78aca573242461e07fc8e793923a576e98aa6d8df1cd4d72a common/error/error.rs
+FILE         5cc7c9d829b67ed3e7f4a0826d29002760b9c9c22346ef386e5160891bbcd057 common/error/typeql.rs
+RESULT       PASS files=3 failures=0

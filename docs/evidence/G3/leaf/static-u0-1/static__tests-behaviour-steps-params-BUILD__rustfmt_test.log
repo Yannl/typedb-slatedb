@@ -1,0 +1,5 @@
+STATIC-CHECK static:tests/behaviour/steps/params/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         b00cd74932e70bb2e585416334e684b5f611a28c2868248dc5b50235283cea58 tests/behaviour/steps/params/lib.rs
+RESULT       PASS files=1 failures=0

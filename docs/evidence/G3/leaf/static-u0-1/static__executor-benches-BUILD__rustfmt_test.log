@@ -1,0 +1,5 @@
+STATIC-CHECK static:executor/benches/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         ae8184ba7ee53455e68bfb35180e35d7993fcb989c185f2aed564ad78754527d executor/benches/bench_instructions.rs
+RESULT       PASS files=1 failures=0

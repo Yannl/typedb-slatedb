@@ -1,0 +1,6 @@
+STATIC-CHECK static:executor/benches/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         826a02f900449f4897248d52aa98b087808fc24bceac8c9ac0903c9f5cd3b58a executor/benches/BUILD
+FILE         ae8184ba7ee53455e68bfb35180e35d7993fcb989c185f2aed564ad78754527d executor/benches/bench_instructions.rs
+RESULT       PASS files=2 failures=0

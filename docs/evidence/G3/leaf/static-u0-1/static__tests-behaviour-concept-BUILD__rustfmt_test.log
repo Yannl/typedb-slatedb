@@ -1,0 +1,21 @@
+STATIC-CHECK static:tests/behaviour/concept/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         884ad3f795325d382237cef1a832cd4531ffad9bae89812711966db7d928a247 tests/behaviour/concept/main.rs
+FILE         76e23058742f06c4ccb3f7a05f700ac27b13428738dfa14a0b6ad5c95460a090 tests/behaviour/concept/migration/data_validation.rs
+FILE         6df1f0701c8b7b70acfc179aa645b36dd6fe5c3e9f0c3ffd1f34dc230640bb47 tests/behaviour/concept/migration/migration.rs
+FILE         79dc6f1c0d98356919d3457a1b63d62c18fd2ad2c4274c629628f6b10cb97efa tests/behaviour/concept/migration/mod.rs
+FILE         b8c85b3974eefb1e670d5fcbd0c15f5b9d55a0ddf16226ec9ab60718daa6eacf tests/behaviour/concept/thing/attribute.rs
+FILE         2620693af5e235f31eed2a4e083d7297d7380d45a28eada1328c0b4d26fd4f6a tests/behaviour/concept/thing/entity.rs
+FILE         65fa3d679ed9f356f9a9bed0de919926cfb57b51ba79115cd19befd4cd098e35 tests/behaviour/concept/thing/has.rs
+FILE         eef2d0629a3c3c9292896d1b32cd2d1d0be9512ed5af8c0a5c34e2973cef2622 tests/behaviour/concept/thing/links.rs
+FILE         d694f084c27a328d96dad13e5e4a46293cd6cf17f38da5cd0dfb3f9ca8032f74 tests/behaviour/concept/thing/mod.rs
+FILE         152ee7de66fd4eb35164a8ba218460ecd0b80e03367ce544617464250d52f1ec tests/behaviour/concept/thing/relation.rs
+FILE         606140ced67ae1b72757f5959ed159776b51fd8785283745860935ce6edbb81e tests/behaviour/concept/type/attribute_type.rs
+FILE         70d35614353d178c0d4278b011a7d7093c708883c9f3c4c879096a2324484408 tests/behaviour/concept/type/entity_type.rs
+FILE         2aa72cb04545d40781f507cc762c9cd25652bb5f2ef562c1d72b7baa1ac7a2a7 tests/behaviour/concept/type/mod.rs
+FILE         239ae9666056e8db5533c0474c59f3e03d4e527f9d2af758ba699a3362e067dd tests/behaviour/concept/type/owns.rs
+FILE         39c98827f1bb9eb5e48e21b394d528e39cfbbae93f6615937a7fb7db80942a05 tests/behaviour/concept/type/owns_annotations.rs
+FILE         051230e5987d856667781408e8085196a4c7570dda882a064b0edc391ab9b175 tests/behaviour/concept/type/plays.rs
+FILE         644f9641bac7927a71036eeb3fd6f7963d6782beac2cea95d2942277b447af27 tests/behaviour/concept/type/relation_type.rs
+RESULT       PASS files=17 failures=0

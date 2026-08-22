@@ -1,0 +1,9 @@
+STATIC-CHECK static:tests/benchmarks/iam/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         66d92f351b9980bc8c9c21bf75d534b4382f1e8bb60b5943e4ef1bf65beec6b2 tests/benchmarks/iam/BUILD
+FILE         306e2f0a9f70c20a8cc5049f34aed932087bc3b1de48fdb026d31d8dd0cb7167 tests/benchmarks/iam/bench_iam.rs
+FILE         00815867a8b62c490ed0c664c0822b37f0c555e62cd41aa8ca02eb6c91e3547a tests/benchmarks/iam/data.tql
+FILE         082fcb1af893fdb4dabb92c1fbe1bb775193eb95e81453d192daa692b3b0b42d tests/benchmarks/iam/functions.tql
+FILE         486e0bf8b687fb59eabdb5dfea76524c3c2bae41e47a839df549cf6eadfbb13a tests/benchmarks/iam/schema.tql
+RESULT       PASS files=5 failures=0

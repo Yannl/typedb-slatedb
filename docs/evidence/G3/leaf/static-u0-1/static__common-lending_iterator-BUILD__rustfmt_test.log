@@ -1,0 +1,8 @@
+STATIC-CHECK static:common/lending_iterator/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         00e4780274acb3200cddb9be345cf711633c49c68022cbe10cdc4f89c8f8175f common/lending_iterator/adaptors.rs
+FILE         87c570fffba59663df128fd90ecc91d3934f8e2151944954fa41fdfe79164d0d common/lending_iterator/higher_order.rs
+FILE         8b789f8b87c4beb23839a923c0506718afc5942278e9840479df35bfe232f74f common/lending_iterator/kmerge.rs
+FILE         f2a6e33490ba77e62d4b630798ef951d48b35fd47c9827436adcba86a17e8e65 common/lending_iterator/lending_iterator.rs
+RESULT       PASS files=4 failures=0

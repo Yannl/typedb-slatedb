@@ -1,0 +1,12 @@
+STATIC-CHECK static:database/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         148527572da4abde853f13915bc6ecb0d595bfa312906d31395d58a42131042d database/BUILD
+FILE         f940c6d61b4b1ce62c9f03a50b922051461dcb884fb518127559ef5755e09fd9 database/database.rs
+FILE         0ed5f0d942650d4c0a2a379d6ab4b8c0fb3da1af1aad3d0c11f901ed3441e4e1 database/database_manager.rs
+FILE         019ee91e8fcaf7d4a45847a85393bcc15d75c4aa48525d72aa8e4006658a45a7 database/lib.rs
+FILE         cc82856c0f421d7a7e3d09430bba5dbca55309d4dadec866ebb644806efb607d database/migration/database_importer.rs
+FILE         dfaa1dedd2de6c695242180d3853631e57999b36b3ac4b353849eab96697c860 database/migration/mod.rs
+FILE         f9d2005d1f7bed4dbcbf5187d34f34765183a0d24d9fa7b437ad4ac62936dfe6 database/query.rs
+FILE         6d6acc97a1799b29dfd8c7bba3442eb82462809b0a2f83ff24b4a14b94e924f1 database/transaction.rs
+RESULT       PASS files=8 failures=0

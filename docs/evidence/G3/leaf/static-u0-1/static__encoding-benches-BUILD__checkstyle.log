@@ -1,0 +1,6 @@
+STATIC-CHECK static:encoding/benches/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         e78d1ee36bb3eb9a9834a216855c1cc0b41e11f342fceb68bfa8bff45655de26 encoding/benches/BUILD
+FILE         3098904858e76f48a79d219164627a9b6bed766a027c61e5bebcdfb8a27ab40a encoding/benches/benchmark.rs
+RESULT       PASS files=2 failures=0

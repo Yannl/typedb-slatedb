@@ -1,0 +1,5 @@
+STATIC-CHECK static:tests/benchmarks/iam/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         306e2f0a9f70c20a8cc5049f34aed932087bc3b1de48fdb026d31d8dd0cb7167 tests/benchmarks/iam/bench_iam.rs
+RESULT       PASS files=1 failures=0

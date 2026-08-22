@@ -1,0 +1,44 @@
+STATIC-CHECK static:concept/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         1af89d347d121ba5408d5779fb72371df43fe03ed551fba1acfa41a088de40e7 concept/error.rs
+FILE         6b2810f5044abf987fe8055bb9637c11dab70b706732088ec84f4e853708f2cf concept/iterator.rs
+FILE         3d9f588b32213f8a6f94000526d2d619e0819555ee3a8628b9ae6274365cba28 concept/lib.rs
+FILE         c060292a35b473bed2c2e3b7945bdb595f935711903f71f7a27044e300f2b290 concept/thing/attribute.rs
+FILE         4760f6ecea0c419619fa411b4aadfe90042e7205be99b9b82d9cac55dbfc3a5e concept/thing/entity.rs
+FILE         bcdeeb853e66c4745d2d48b4f6f9a834a3a86e190f963c7b3f587a8f47c2850b concept/thing/has.rs
+FILE         de4501919ecc04998de5913936dd988ae0039dc774922a8d4ab9d4e835b9666a concept/thing/mod.rs
+FILE         69612dbfbad0ac3e0f248d062cd78bf142816dd699c1e73c50acab6bd0dc3910 concept/thing/object.rs
+FILE         877b363860959051e992752530eeab6fa74a9b19a2eea4ae4e8e2520cb4ce84a concept/thing/relation.rs
+FILE         4b73e21f6111919a968d46260eaceb06e91c0f4aef08f00d93465d788e95311e concept/thing/statistics.rs
+FILE         21a084ca4f10eb13aae57f2ea1228cba14a576ea412fe420baf9b325acf4c9ef concept/thing/struct.rs
+FILE         48def14490a5350e76adfe7982746891c7fdb95a20b9602f46bf469bbda6b253 concept/thing/thing_manager.rs
+FILE         c87f0529f0e91636aa9e9d2e0f2a14f118f078af27f1f95b1268e8b2a89d0d81 concept/thing/thing_manager/validation/cardinality_validation.rs
+FILE         de1067fb2af2451f7c740de3c292ed0f7b2e97330e488496afb101e9a0e0e0ed concept/thing/thing_manager/validation/mod.rs
+FILE         d8b2793be3e5853c09465adb0693d1c291958d28359773087b6b464bc44491e4 concept/thing/thing_manager/validation/operation_time_validation.rs
+FILE         44a319411d10622a7517e5639c22e7151084aed7694b769169b805e40fa5ea9c concept/thing/thing_manager/validation/validation.rs
+FILE         057a3674a3f3d3860ab414502cccd139e10db210e7d888b82f24155675a27335 concept/type_/annotation.rs
+FILE         bab882b4b304fef6206195dfb098d252a00a8ba6dc6bc7f0e1796a87bdfd68ce concept/type_/attribute_type.rs
+FILE         95334e9e1604ef853e1c6f68fcfd95fd10e3619deaf4a0daf8b40104e4adcbb9 concept/type_/constraint.rs
+FILE         f8464cd569fbf96e008e27ec8c6f9c44f48e029fe92195fd0bfbdcc0374163dd concept/type_/entity_type.rs
+FILE         85f2effd18458ce2c2995f76b0a470bd5109c3c4ad702035b3ebe43bf0c25955 concept/type_/mod.rs
+FILE         0b11df13f053aaff4724d8b1594f093d613582b957b6567ff61853e301885c0d concept/type_/object_type.rs
+FILE         33972c5c0b36fe947a83e4e51ec4768bd80076e53387b37a257430139acbf8a8 concept/type_/owns.rs
+FILE         d6ae14411b7b2eec85dfc27e66d8b29a43e6a12cfb072d2e11abf0393339e5b7 concept/type_/plays.rs
+FILE         92cd9989fc4c082c38e926f5ed5e23747144928fe8aadd09600d2ba61020cb6c concept/type_/relates.rs
+FILE         7b1db6b2193af7391cef4000af65aa80636d3eff1a9a02da4ed743fdd696f185 concept/type_/relation_type.rs
+FILE         32cc72d1ae818f723bc0f9031cb586a4e822e1cf8f891e26b020669dfcbd52c8 concept/type_/role_type.rs
+FILE         f67590dcb1f748d984a939dd24027fd7566fb57937984ce06ddae801041b29cf concept/type_/sub.rs
+FILE         3a60d170744c53b3365b6a1dcda87ee169e05bbecf8f717140e945528dc9daa5 concept/type_/type_manager.rs
+FILE         b0514e4d3d60599080a394f19d9cef1ee74b538b4933575e410fff1bdf60d929 concept/type_/type_manager/type_cache/kind_cache.rs
+FILE         d78ab0525a55df3e4dda5a439c82f7eb6b03116ed1f3ff8e00b18de4aa69329a concept/type_/type_manager/type_cache/mod.rs
+FILE         8ae2604a367d611ca89f331829fa7a42c180b2e1d99db7acc63860b535cfbc7d concept/type_/type_manager/type_cache/selection.rs
+FILE         c47bb10685b19fd815ff746b7c7f8b58df5ed37b14d75fe72b0c76373c0091bd concept/type_/type_manager/type_cache/struct_definition_cache.rs
+FILE         27ad4c5441103b931c320aced9b280a0da325a495ac6271356d60090302aa031 concept/type_/type_manager/type_cache/type_cache.rs
+FILE         9c659fb05d39ad4a10307f08dd90ec13fb6f0b701ab19fea8c4117535c862d99 concept/type_/type_manager/type_reader.rs
+FILE         d8bfc138a088fcf878fa52056f5ad3ef49bbc16f396881125418bccef713e194 concept/type_/type_manager/type_writer.rs
+FILE         9d3288e87ad7b63f5e1a711fa3c8027eb6e6ba61d877518f979dae027e1bd122 concept/type_/type_manager/validation/commit_time_validation.rs
+FILE         49ff7d1e64ab0c8f8d1f5cc3c62225124d5e15f79681ba204fea492a4e158d20 concept/type_/type_manager/validation/mod.rs
+FILE         9251bf057526a3b56b5f49e5485f48d5b5395b7531e28051a42971a6cd190ca2 concept/type_/type_manager/validation/operation_time_validation.rs
+FILE         a72c51856f03950f8f12abb83aa5e1d5e9f22e09f86f31bac20252a3695db611 concept/type_/type_manager/validation/validation.rs
+RESULT       PASS files=40 failures=0

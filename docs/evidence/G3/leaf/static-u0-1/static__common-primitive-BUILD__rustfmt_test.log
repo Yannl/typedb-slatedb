@@ -1,0 +1,8 @@
+STATIC-CHECK static:common/primitive/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         6b76c77e95206889e5c8272af2eb6d4dbec8961c5aa8fe9ac0561e0d398cd431 common/primitive/either.rs
+FILE         ac58628159720a8f91989574659463f7f25451b53339b54c81b06465faf99f49 common/primitive/maybe_owns.rs
+FILE         40fe06dd41c85863ebb0e2a0c85f83a3e9720492eb7d46ed123c9ef856cb9eaa common/primitive/prefix.rs
+FILE         5fa23ee1008407f01bea86660a647912abca93d5611a149acd0f470c0b51c6fc common/primitive/primitives.rs
+RESULT       PASS files=4 failures=0

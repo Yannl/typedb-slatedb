@@ -1,0 +1,14 @@
+STATIC-CHECK static:tests/behaviour/service/http/http_steps/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         41d85db6d918a46645d277495890a5cd7efbdfc2ced2cb8c9e90c1fa8ca95f57 tests/behaviour/service/http/http_steps/BUILD
+FILE         3b3f902c31a6daeea1b4cc82933f7f2218e8b1fb676574c2da8de1e21d6a83c9 tests/behaviour/service/http/http_steps/connection/database.rs
+FILE         749138f826a72f34a03b12a6ba48b927b0923240fa9746459d8e874fefc0a1da tests/behaviour/service/http/http_steps/connection/mod.rs
+FILE         ef873d6a06240b04563d7eebf439c52001de2ccbebde0c0c5151c6f499feb583 tests/behaviour/service/http/http_steps/connection/transaction.rs
+FILE         3cee0e3d14dfa10a79a1a3d8efa39c7ce6c69cd2c7f15f52d17eefeeaf4e22f7 tests/behaviour/service/http/http_steps/connection/user.rs
+FILE         e34ad2562e4edd98b0d03e5bb7e4f0efcbfe85dc21a0acd92b59a3288e0d8d13 tests/behaviour/service/http/http_steps/lib.rs
+FILE         9fffde0d6f451fd74f3f2fc8b84badf990dd9cb2f09c0a37116b1a5bb95ba425 tests/behaviour/service/http/http_steps/message.rs
+FILE         62fe91727457c433fdc20a3b36c33ae9f81e6ce00638e67cd525db9b5c5b901d tests/behaviour/service/http/http_steps/params.rs
+FILE         2af5154c22962e22698b7eb38751d44f381b997747e771175fbbd637b6344240 tests/behaviour/service/http/http_steps/query.rs
+FILE         0696f99f6bc3438f8aad0a8c2a3de2314be8f0206b4540ea8912c02e200dffb0 tests/behaviour/service/http/http_steps/util.rs
+RESULT       PASS files=10 failures=0

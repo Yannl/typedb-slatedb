@@ -1,0 +1,6 @@
+STATIC-CHECK static:common/options/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         2a42169f606a190a2803fd94d843adf226679196136bf9acd69d5914a235abe2 common/options/byte_size.rs
+FILE         e96c83e8f1fe1b188c4a609577e5698b8dd7a57563f8081a558d3ce2bf51cd6c common/options/options.rs
+RESULT       PASS files=2 failures=0

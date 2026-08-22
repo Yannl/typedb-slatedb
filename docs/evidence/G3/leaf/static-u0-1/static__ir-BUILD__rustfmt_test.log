@@ -1,0 +1,34 @@
+STATIC-CHECK static:ir/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         97cbd84367055df3e4aed0211ed93c690d0468d92076340f6892ce06d78db6ed ir/lib.rs
+FILE         778c8aaa0f6295808ef5f64a36d06eb3129c2c32311035bdda6b6957ddc0942b ir/pattern/conjunction.rs
+FILE         ac902b721d97c679a1365ae2dcae1f931f02995dbeddedd14a24752e7a13ddd9 ir/pattern/constraint.rs
+FILE         bbaa89172ec0cc5100df7346d5edffac476fff1849c6d5ea47ae8235b2e206c8 ir/pattern/disjunction.rs
+FILE         d5bf512e4bb0c0fe600689e890637f9b094ec2bd09b689824fcf4a26fbb53ec7 ir/pattern/expression.rs
+FILE         cc077b5bcbc07c1dbcbac4c578b817ed9d38d264dd6ad6c35aa5534026dc64ee ir/pattern/function_call.rs
+FILE         9117618bcca10df014bd65b1c5925bb868293b40866e92125d3505da8e462836 ir/pattern/mod.rs
+FILE         1ded03643df52a0bafd868ce4604cb92a1a7c0614f26a8c14afa40d26d422be4 ir/pattern/negation.rs
+FILE         1fb6f38705d066fd8fa6afb746c8e8b706a550c417b3bbcee39f6b8e056a868a ir/pattern/nested_pattern.rs
+FILE         dbc9ee70302e9b4bf79469b8f134ef55aa9650964231a192c01edb53a679478f ir/pattern/optional.rs
+FILE         92f585dfca9a03e79c5bf5a534d877d9ae1116de4fd5a9d863f3d7b765bb3773 ir/pattern/variable_category.rs
+FILE         87faa990ac8866408f90f5a31695c0cb394b390d172af9d4f84cb7494644d1df ir/pipeline/block.rs
+FILE         73d01a87d4e7c00a96052997b01ae505e3a8ff936c70c27551bc0eea066132bb ir/pipeline/fetch.rs
+FILE         1921c3830ffd724f40de4ddec5978250474a35de6212c35530d851f211b4dabd ir/pipeline/function.rs
+FILE         58789351149cd799a05eccea03853409334acf3bdbc7f3159a50d1659b9039c3 ir/pipeline/function_signature.rs
+FILE         16ae162309c546bfcdb8deb677148e17bd315b90a98f29b7f5d9a1c4c644a6b9 ir/pipeline/mod.rs
+FILE         f467f92f389d03a2d62cfd954a93121fa3454b52801fdbc830fb4a0b1b14c52f ir/pipeline/modifier.rs
+FILE         e0a50ab4e28c4e2c08d963248bcaf38e79090a2aabd5b267d01db00102b47d38 ir/pipeline/reduce.rs
+FILE         f0b4a941c1322d437bf5e3577921c167d68b25f1a56d97b326f3977344879127 ir/translation/constraints.rs
+FILE         c49dda12da1e23cc93ef268d4f84f60f64da9426e31853a0d3871e2a35d1bda2 ir/translation/expression.rs
+FILE         678c4e9e2eb88ad6e5b912a4951d728798f7a75feb9a42150c25fb4c7d5ab237 ir/translation/fetch.rs
+FILE         2b92923a95b8fa996265d8dc93f3c9562565885af2b95c02be4809795ab16688 ir/translation/function.rs
+FILE         f12d4e63b19dcd808fce3f7b2049d3556447d34f98ee998bb888d37f8648a30e ir/translation/literal.rs
+FILE         3821e5db180ebaad7dada59566bdd5592b1631edb53b06525d7c6b1a107b192d ir/translation/match_.rs
+FILE         2270b9525fffa2f93833d65f7eb9c1d4861ea28202fdcb2459f8fb4403abf527 ir/translation/mod.rs
+FILE         54a749c5d36dfc66ba0e03ea9c2108d3106247a8b4c24832db32cff79987d94f ir/translation/modifiers.rs
+FILE         bdfe95f72974f1300502a6af57084522160ebdb5622e4befc529bd2bcbf3e26c ir/translation/pipeline.rs
+FILE         b18455f60a4496dc6d8f64806d3258158b2c8e5fee09d35689d8564be0a0cf37 ir/translation/reduce.rs
+FILE         7a3537c2975296bd54b167fb6a58176763623c0f85c7d6e956d678a98a086203 ir/translation/tokens.rs
+FILE         c72446603dba4451cb79a3cf7fc23175ed254bac9ca48c8257e72022bb745494 ir/translation/writes.rs
+RESULT       PASS files=30 failures=0

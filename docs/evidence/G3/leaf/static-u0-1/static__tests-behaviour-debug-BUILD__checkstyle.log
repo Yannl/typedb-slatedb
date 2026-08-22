@@ -1,0 +1,7 @@
+STATIC-CHECK static:tests/behaviour/debug/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         c217600ab38404ab4731b713406f3a8d85a55d2c4c134a1c024e3899e9a3f8da tests/behaviour/debug/BUILD
+FILE         4d9dd8ed971abed2058ca8b6f2893c8cd9f003d5dab03f2f141a1839d599997a tests/behaviour/debug/debug.feature
+FILE         e15299f60bbb6d594a0c26433b542ef9e5c64c8c715908b2757ddbf6ac1cd712 tests/behaviour/debug/debug.rs
+RESULT       PASS files=3 failures=0

@@ -1,0 +1,5 @@
+STATIC-CHECK static:durability/tests/crash/recoverer/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         e39db54de7f6ac7014515bed444becff6ba9375d58ab37966f0e402f0eb5c894 durability/tests/crash/recoverer/recoverer.rs
+RESULT       PASS files=1 failures=0

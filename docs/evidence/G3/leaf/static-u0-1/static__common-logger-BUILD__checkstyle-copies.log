@@ -1,0 +1,5 @@
+STATIC-CHECK static:common/logger/BUILD:checkstyle-copies
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         880d1ba99c00eae3c6b346dfd3e2aedc4119aca1c6824928777b56361ef410e8 common/logger/log_panic.rs
+RESULT       PASS files=1 failures=0

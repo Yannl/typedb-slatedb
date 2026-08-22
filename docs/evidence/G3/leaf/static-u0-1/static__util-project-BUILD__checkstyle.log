@@ -1,0 +1,6 @@
+STATIC-CHECK static:util/project/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         e7083665232b9fe381f8702d8e167c1c774eb5af63e384e524ac0337ff11f612 util/project/BUILD
+FILE         9158b831e2f11ff73a279bf86f6b53206ed96c5613b022be6639436fc5b520b7 util/project/project.rs
+RESULT       PASS files=2 failures=0

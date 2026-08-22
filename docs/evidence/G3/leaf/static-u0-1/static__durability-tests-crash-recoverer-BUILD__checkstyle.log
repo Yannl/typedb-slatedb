@@ -1,0 +1,6 @@
+STATIC-CHECK static:durability/tests/crash/recoverer/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         549e08ab861658e811a6106f0b34fd844bce1d153073f17d29bea3554e9f0966 durability/tests/crash/recoverer/BUILD
+FILE         e39db54de7f6ac7014515bed444becff6ba9375d58ab37966f0e402f0eb5c894 durability/tests/crash/recoverer/recoverer.rs
+RESULT       PASS files=2 failures=0

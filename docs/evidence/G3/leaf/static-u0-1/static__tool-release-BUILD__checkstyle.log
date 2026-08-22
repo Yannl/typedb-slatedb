@@ -1,0 +1,6 @@
+STATIC-CHECK static:tool/release/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         5a2e73176dbb4e759f697832108a4aee2ef4c4230746c59727d2aefa36f2ac07 tool/release/BUILD
+FILE         af688623f53a751951e91d0dc4f763045513d6f6d2ad8f15bdf2595073af7705 tool/release/create_notes.sh
+RESULT       PASS files=2 failures=0

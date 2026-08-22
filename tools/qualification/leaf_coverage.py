@@ -55,7 +55,54 @@ import common  # noqa: E402
 import plan_coverage  # noqa: E402  (the owner of the coverage rules)
 import cucumber_common as cc  # noqa: E402
 import verify_cucumber_leaf  # noqa: E402
+import verify_static_leaf  # noqa: E402
 from leaf_evidence import load_leaf_evidence  # noqa: E402
+
+
+def load_static_evidence(dirs, repo=REPO):
+    """(leaf_index, notes) from STATIC_CHECK leaf bundles.
+
+    Same contract as the other two loaders: every bundle is re-verified from
+    its own bytes first — here by verify_static_leaf.py, which also re-derives
+    each verdict from the pinned tree — and a bundle with any anomaly
+    contributes NOTHING.
+    """
+    index, notes = {}, []
+    for d in dirs:
+        p = pathlib.Path(d)
+        p = p if p.is_absolute() else pathlib.Path(repo) / p
+        anomalies, facts = verify_static_leaf.verify(p, repo=repo)
+        note = {**facts, "bundle": str(d), "anomalies": anomalies, "counted": False}
+        if anomalies:
+            note["reason"] = (
+                f"{len(anomalies)} verification anomaly/anomalies - a bundle that does not "
+                f"re-derive from its own bytes contributes NOTHING"
+            )
+            notes.append(note)
+            continue
+        body = json.loads((p / verify_static_leaf.RESULTS_NAME).read_text())
+        profile = body["profile"]
+        tc_id = body.get("toolchain_id")
+        n = 0
+        for leaf in body["leaves"]:
+            if not leaf.get("fixture_set_satisfied"):
+                continue
+            index.setdefault((profile, leaf["leaf_case_id"]), []).append(
+                {
+                    "bundle": str(d),
+                    "profile": profile,
+                    "outcome": leaf["outcome"],
+                    "fixture_set_id": leaf["fixture_set_id"],
+                    "toolchain_id": tc_id,
+                    "raw_log": leaf["raw_log"],
+                    "log_line": leaf["log_line"],
+                    "log_sha256": leaf["log_sha256"],
+                }
+            )
+            n += 1
+        note.update({"counted": True, "leaves_indexed": n})
+        notes.append(note)
+    return index, notes
 
 
 def load_cucumber_evidence(dirs, plan, catalog, repo=REPO):
@@ -168,6 +215,14 @@ def main():
         "is re-verified by verify_cucumber_leaf.py before any "
         "row of it is counted",
     )
+    ap.add_argument(
+        "--static",
+        action="append",
+        default=[],
+        help="STATIC_CHECK leaf evidence bundle dir (repeatable); each is "
+        "re-verified by verify_static_leaf.py, which re-derives every "
+        "verdict from the pinned tree, before any row of it is counted",
+    )
     ap.add_argument("--out", type=pathlib.Path, default=None)
     ap.add_argument(
         "--min-covered",
@@ -205,8 +260,10 @@ def main():
     cuke_index, cuke_not_run, cuke_notes = load_cucumber_evidence(
         args.cucumber, plan, catalog, repo=args.repo
     )
-    for k, v in cuke_index.items():
-        leaf_index.setdefault(k, []).extend(v)
+    static_index, static_notes = load_static_evidence(args.static, repo=args.repo)
+    for other in (cuke_index, static_index):
+        for k, v in other.items():
+            leaf_index.setdefault(k, []).extend(v)
 
     leaves = plan["leaves"]
     counts, uncovered_reasons = {}, {}
@@ -328,6 +385,7 @@ def main():
         "target_granularity_bundles": notes,
         "leaf_bundles": leaf_notes,
         "cucumber_leaf_bundles": cuke_notes,
+        "static_leaf_bundles": static_notes,
         "driver_rows_detail": driver_detail,
         "plan_satisfied": False,
         "statement": (

@@ -1,0 +1,6 @@
+STATIC-CHECK static:common/fail_point/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         7b1daeccabf1b49f54566cbb7365930c3889cb3a9e6f5e81f257ba59d15f3de0 common/fail_point/BUILD
+FILE         d40f90046c66d8f39747f06c0a9d5405d8d021ca2c70971294b11c982eb78055 common/fail_point/lib.rs
+RESULT       PASS files=2 failures=0

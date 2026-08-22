@@ -1,0 +1,9 @@
+STATIC-CHECK static:function/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         fdfeccb93a37bd09c32d5e3e42627f7968295001e7c4a8688494440971e47431 function/BUILD
+FILE         06280411c7845f4a79f3e007d3787026b75c0d0e0f475ae296376ed918c9817c function/function.rs
+FILE         b6337cfc946283426df857d47b3fd3b566cc6a080e02b63098d41065e8280264 function/function_cache.rs
+FILE         73e71c986ccbe6dcc67267b8686268e96b033eae76f375e92c6f48181ca9bcb4 function/function_manager.rs
+FILE         0f5120c30ec6a0796eab147586110c043532758aac1e401bda41e89cde86cee7 function/lib.rs
+RESULT       PASS files=5 failures=0

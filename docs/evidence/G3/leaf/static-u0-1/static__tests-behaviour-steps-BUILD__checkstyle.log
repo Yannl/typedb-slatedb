@@ -1,0 +1,29 @@
+STATIC-CHECK static:tests/behaviour/steps/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         08351afcff257ced06a9bb386beb6014ded249950bccf77e869bde2356857d03 tests/behaviour/steps/BUILD
+FILE         95895c2e6cccaeecb19831bbaf6fe1321a4ff266cffd4ae5fbe8a6dbf2fe279d tests/behaviour/steps/concept/mod.rs
+FILE         4b1a6e9a509a470cdbaf61563e55e977615cccf5db7a706e18f80275e750459b tests/behaviour/steps/concept/thing/attribute.rs
+FILE         a83eadf3ce73ee9c29296aec612bf933ea2b9591117f4dd3f993584cf1950338 tests/behaviour/steps/concept/thing/common.rs
+FILE         e0b68db051d44414848c13c3101190a3d7c669effdb44e667c4e73b0c0d5e0ef tests/behaviour/steps/concept/thing/has.rs
+FILE         7f12a648ac53ccfa7a973f82b73ece7d0cf047f0e036a4e09838d0aa2092482f tests/behaviour/steps/concept/thing/mod.rs
+FILE         b93ff2da0f44189a2c0414ea2df67ae25250982334f25d95d61967b9e144c9bf tests/behaviour/steps/concept/thing/object.rs
+FILE         fa01ef37a493431aabe4914bc70786aeb32dfa218844b43657c1a857782141b3 tests/behaviour/steps/concept/thing/relation.rs
+FILE         7577b62ad2a72d2d19c835fad7094eaf400f03d1671f717f9feb9be20596992c tests/behaviour/steps/concept/type_/attribute_type.rs
+FILE         2d1ff4b93aa0e7df91f1a704ef08a7cfa264ed851bb8fa63ae886dc51a176947 tests/behaviour/steps/concept/type_/mod.rs
+FILE         a90cb0e8e3d95bb6269521a8478cf7d24c8d08ac42d388e49c4bb928a5c30b1f tests/behaviour/steps/concept/type_/owns.rs
+FILE         354af47310fc4e80c40824abad73ccef6980ee1af36e4e52a5905783797e2e9b tests/behaviour/steps/concept/type_/plays.rs
+FILE         9e72869a0461e3f203dafc3ffc6a5581b7bdf87cc0e06912a4bf9c01b4c59886 tests/behaviour/steps/concept/type_/relation_type.rs
+FILE         cc22591ed9a0f78315203cc0b164470733376bff06c4f0e702f552c8cfd8e21b tests/behaviour/steps/concept/type_/struct_definition.rs
+FILE         8a90b07d27505fdfe8afc3c8da4058d008a3a07331d13384dc828061fd1bb026 tests/behaviour/steps/concept/type_/thing_type.rs
+FILE         3fa83039e6d9c2cf12b0e84b9740f3d9e38d498a305396364466a6103f7be41a tests/behaviour/steps/connection/database.rs
+FILE         e4861899502e76bed84aff447e63709a0f9383535bc2be67ab433d069eb3e595 tests/behaviour/steps/connection/mod.rs
+FILE         aa7ab77d5e29ae460a6e50dcbe7f1f47ab0e812248ac2f185e0d6e88080f1156 tests/behaviour/steps/connection/transaction.rs
+FILE         1dac09010bac2ffbbd8bc7e34668b97e633974b55bcca5ff77c29bc0b7b67039 tests/behaviour/steps/json.rs
+FILE         2d43ff3f9dc7f94a0874204b22208051a1aa331c4c58ab12424e89bdb47e6e3c tests/behaviour/steps/lib.rs
+FILE         cb63314fcccbc0576029e311614524b1fd404a4c0c4fc0192d79b3bfcd74ba73 tests/behaviour/steps/query/mod.rs
+FILE         65138d72ae8934f531bc542a4cb1c59f7ab7b8b0c0ac56dca9b5b21cc77fe94f tests/behaviour/steps/query/typeql.rs
+FILE         c12590bd7a90706236196ada7104f9bd70df02f6755470d483372574fe42151d tests/behaviour/steps/query_answer_context.rs
+FILE         fbc440a3cb73df2523b6fe8e2f661ab10c7dff11d513ecaa5a9e9fac24d07864 tests/behaviour/steps/transaction_context.rs
+FILE         06aac90870ba8d6bc5212dff8d4af77154eb85212430b86ef64e36f3b1c091f1 tests/behaviour/steps/util.rs
+RESULT       PASS files=25 failures=0

@@ -1,0 +1,6 @@
+STATIC-CHECK static:tests/benchmarks/concurrent_ops/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         de7e0f7a7ff870fb8f454f75e2baab3dcb3f2d1fd5ed23a6ee012b89bb6910b6 tests/benchmarks/concurrent_ops/BUILD
+FILE         70659fe46d14cddfa69e3ac0d6dd6af504183d24b0ea7bbe415b7e3ad82de608 tests/benchmarks/concurrent_ops/bench_concurrency.rs
+RESULT       PASS files=2 failures=0

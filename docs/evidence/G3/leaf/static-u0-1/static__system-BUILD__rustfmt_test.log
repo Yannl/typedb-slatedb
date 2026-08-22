@@ -1,0 +1,8 @@
+STATIC-CHECK static:system/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         f5d5b99d5384d82911cd20db381cb630bdb2638e2bd89da9e7bcd1133e710238 system/concepts.rs
+FILE         bc5f4b069aac1dee70a2aec6189066e2472295330a8612c256fe79b2aa7f186e system/lib.rs
+FILE         d4052f8d1fc3e890c4c81aa7c0d6427cac69231e5c843a2cc185348e7076187e system/repositories.rs
+FILE         ce420d77d6f630af1223335dd877d74e7b6e23ca35cb809354afbbd188cc3031 system/util.rs
+RESULT       PASS files=4 failures=0

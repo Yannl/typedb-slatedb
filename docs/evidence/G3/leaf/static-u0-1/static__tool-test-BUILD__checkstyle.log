@@ -1,0 +1,6 @@
+STATIC-CHECK static:tool/test/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         5a2e73176dbb4e759f697832108a4aee2ef4c4230746c59727d2aefa36f2ac07 tool/test/BUILD
+FILE         2494e9dfc89f56906a5f7b9ae89f2c3fe26dfc19812904d7bc2f69ffb2b97f8d tool/test/simulate-crash.sh
+RESULT       PASS files=2 failures=0

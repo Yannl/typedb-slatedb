@@ -1,0 +1,6 @@
+STATIC-CHECK static:durability/tests/common/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         932e302dc0ccd6fa2f93114886c5b610a8d995d41dca903e5796988ae46676bd durability/tests/common/BUILD
+FILE         fae68c2c2263689c4d6bfd022c6cdf31e873bc673d906edc5ffc049599af9715 durability/tests/common/test_common.rs
+RESULT       PASS files=2 failures=0

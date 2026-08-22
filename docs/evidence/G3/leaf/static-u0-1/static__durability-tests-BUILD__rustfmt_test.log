@@ -1,0 +1,6 @@
+STATIC-CHECK static:durability/tests/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         d034cf39a2eee5afbe2f2c3d666edd3c83a74f63b1c9fcdfbcc33ae7078fa573 durability/tests/basic.rs
+FILE         7405faa2ac842217ac7325e66c962c77e1f19b13a318864d92f012e0290b3a58 durability/tests/crash.rs
+RESULT       PASS files=2 failures=0

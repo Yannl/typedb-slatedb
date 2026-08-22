@@ -1,0 +1,6 @@
+STATIC-CHECK static:tests/assembly/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         29207d9fccb3817f6edf04f9d7fdb844f8ab20d1ae1e0e203fcfdce30189cccb tests/assembly/assembly.rs
+FILE         34f358db3f1b3df3fde2a1a9a44a31b503a335e994bfcf0dde57fa5ecdf46101 tests/assembly/fail_points.rs
+RESULT       PASS files=2 failures=0

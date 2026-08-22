@@ -1,0 +1,6 @@
+STATIC-CHECK static:database/tools/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         36dcdb1d1283e490721119dff0a37b2fe78b2d13440bcb321548ed1c3687a90e database/tools/read_wal.rs
+FILE         58e79ec989608ecea385a95263866d730197b0a0f7cf9a74389a861f8f8b0d0f database/tools/replay_wal.rs
+RESULT       PASS files=2 failures=0

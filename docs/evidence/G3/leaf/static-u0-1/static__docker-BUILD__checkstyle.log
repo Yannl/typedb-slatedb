@@ -1,0 +1,5 @@
+STATIC-CHECK static:docker/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         60842751994d834403ed1cb44151d55c9bd9f0c114963937072de125b30fe385 docker/BUILD
+RESULT       PASS files=1 failures=0

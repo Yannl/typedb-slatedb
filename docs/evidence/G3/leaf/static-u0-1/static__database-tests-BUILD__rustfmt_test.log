@@ -1,0 +1,9 @@
+STATIC-CHECK static:database/tests/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         6a3ff66cfe95b85ffd1349624af346ec3fca369aa60a82eea65aa76ccd37ae91 database/tests/database.rs
+FILE         fe7d9cc8b3d424f8c1d9dc47b06f59cb3f9be65f55f5e242b5bfe38d099384f5 database/tests/diagnostics_posthog_pii.rs
+FILE         14e5d863c22844a04595012dbf358c3c8a1b73c323dd5769a74cf5b09add2b48 database/tests/statistics_synchronization.rs
+FILE         476a242e10be628bd9f6b17f2abbdc49f3ec8c3389910ed3603a5795c92c8ad5 database/tests/test_transaction_isolation.rs
+FILE         a1ca4751266a264b45f040af6dad80d7dfec9517a7ef622e400942ea358cbb1d database/tests/transaction.rs
+RESULT       PASS files=5 failures=0

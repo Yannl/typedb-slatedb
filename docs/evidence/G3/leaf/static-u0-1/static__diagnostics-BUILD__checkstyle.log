@@ -1,0 +1,21 @@
+STATIC-CHECK static:diagnostics/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         4b68707c7d2b942f0e1bea4b318ae4a54de336e6588ba02d94afd3b002a17192 diagnostics/BUILD
+FILE         506deb9386db01ac65a4648037c6815656f58f6b9b32bc28efbc8510c0d944c2 diagnostics/diagnostics_manager.rs
+FILE         268ddbf6ab3b1df3152049a46471af293d7493d7d7debcb41f6f5a108e185176 diagnostics/lib.rs
+FILE         287a18613030f83e9862bc3e7f4c25c28f76be8532ef3a9d461648a06df45cc1 diagnostics/metrics/core_metrics.rs
+FILE         5005efb1ec0e1ebb50ef9413d8fdcfa9459aace82a47623aa1e223263ba974b9 diagnostics/metrics/error_metrics.rs
+FILE         f69e05355a16fb7127cc90d1f1e928a7588a4194e737b76e3a8e426033016624 diagnostics/metrics/file_metrics.rs
+FILE         eef6832abbaace3a2ed6c536b9aa15218c9e4094c49456f7b12945fe0803980f diagnostics/metrics/histogram_metrics.rs
+FILE         3d6dc32c53eae9e787ca8c3709f08afe559777dd9162a53ff6b445554d4136b6 diagnostics/metrics/mod.rs
+FILE         b286cd1cd09db64aad100203b0fa80181a6f16901a85f7fe6707fdb38349490c diagnostics/metrics/system_sampler.rs
+FILE         ce8e5ee11536d41bbcab94020f7722b3ef039fe4a42edc517d7f78793610943c diagnostics/metrics/transaction_metrics.rs
+FILE         18d4bbd5f51669184807f59c78a938c46febf1607f55d81e0ab6c55773812a5d diagnostics/monitoring_server.rs
+FILE         3fab8db8ee05475ab0472a01a64c9723888081f0af7db0fe0fc934bef1e5a1d9 diagnostics/reporter.rs
+FILE         bf843fd2dbb2e5caf500ef2cba94a22142ed17a3dac796b12a2cd0134ec95489 diagnostics/reports/json_monitoring.rs
+FILE         00b21a6a2ba57fc5fb45cfdefcbe50dd654741511790314718b14f8312788abd diagnostics/reports/mod.rs
+FILE         dc8f31960999274af18025e89426719f8bf0e94e55cb76d16a030935f958b99e diagnostics/reports/monitoring_section.rs
+FILE         2826ccb2e9db9a9a99073711ae22559037d19d293fb6b346a228beba0949bbcf diagnostics/reports/posthog.rs
+FILE         85cc5d0700826491dc10739ee391497dab6a35af00f3546a1db17ae854415561 diagnostics/reports/prometheus_monitoring.rs
+RESULT       PASS files=17 failures=0

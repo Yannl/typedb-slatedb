@@ -1,0 +1,6 @@
+STATIC-CHECK static:common/iterator/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         66ecf0d674dce4859ddcb63137bfb1431124d1287c3ea9e04d90d30360a4d98e common/iterator/BUILD
+FILE         93ddfaacac789b6f1b2fe65a0db7c1ccc1bc2a49c3071fc0308e55d7356ec975 common/iterator/mod.rs
+RESULT       PASS files=2 failures=0

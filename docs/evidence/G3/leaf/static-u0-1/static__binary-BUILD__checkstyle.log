@@ -1,0 +1,8 @@
+STATIC-CHECK static:binary/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         1d8b5a10e4fdce8740c502c3044784a1a3b10eb066be1b8e4f5a9fc9ef001a1d binary/BUILD
+FILE         7032821d1c9a3022201b1abfbd4b703963ba1be40c850528cca991bea35a3a78 binary/typedb
+FILE         867fb60fe22983b9ae5debbe5d672f8aeb6192f9516c52683da89aa986ad7b88 binary/typedb.bat
+FILE         85e7383edbd6d78cb50e270ffdfaee7dab3b59837c380a23016967f2bfd2902e binary/typedb.service
+RESULT       PASS files=4 failures=0

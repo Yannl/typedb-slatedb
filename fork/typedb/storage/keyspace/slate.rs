@@ -652,33 +652,183 @@ async fn list_remote_prefix(store: &dyn ObjectStore, prefix: &ObjectPath) -> Res
     Ok(objects)
 }
 
-/// The immutable-data segment SlateDB writes its manifest under
-/// (`<materialisation>/keyspace/manifest/…`). The manifest is the SOLE typed
-/// conditional-CAS publication path (S-04) and is exempt from the create-only
-/// immutability guard below — its own `PutMode` carries the CAS precondition
-/// that publishes a new store version. Every other object under the keyspace
-/// (SSTs, blobs) is immutable once written.
-fn is_manifest_key(location: &ObjectPath) -> bool {
-    location.parts().any(|part| part.as_ref() == MANIFEST_SUBDIR)
+/// R8-P0-01: the CLOSED namespace grammar every authority decision is taken
+/// from.
+///
+/// The predicates this replaces were `location.parts().any(|p| p == "manifest")`
+/// and `location.as_ref().contains(".mpa-")`. Both read authority out of a
+/// SUBSTRING of a path whose leading segments are configurable — the object
+/// root, the environment, the tenant, the database id, the generation, the
+/// materialisation, the keyspace name. A tenant called `manifest` therefore
+/// made every SST under it eligible for the mutable conditional-CAS path
+/// (`manifest/keyspace/compacted/01ABC.sst` classified as a
+/// manifest), and any legitimate object name containing `.mpa-` was
+/// classified as reclaimable staging — i.e. the one capability in the process
+/// that can DELETE could be aimed at it. A name is not a capability.
+///
+/// Two changes remove the class of defect rather than one instance of it:
+///
+/// 1. **The wrapper is installed INSIDE the materialisation prefix**
+///    ([`SlateKeyspace::open_remote`]): `PrefixStore` is constructed first and
+///    the authority split wraps THAT, so every path reaching this grammar is
+///    DATABASE-RELATIVE (`keyspace/manifest/…`, `keyspace/compacted/…`,
+///    `.typedb-staging/…`). No configurable segment is in scope at all — a
+///    tenant named `manifest` is not spellable here, because the tenant is not
+///    part of the string.
+/// 2. **The grammar is exact and total.** Each key parses to exactly one
+///    [`KeyClass`] by position and shape, never by containment, and anything
+///    the grammar does not recognise is [`KeyClass::Immutable`] — the
+///    strictest class (create-only, no reclaim authority). Failing to parse
+///    can therefore only ever LOSE authority, never grant it.
+///
+/// Staging additionally gets its own adapter-owned namespace instead of an
+/// infix appended to a caller-controlled name (see [`STAGING_SUBDIR`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum KeyClass {
+    /// `keyspace/manifest/<20 digits>.manifest` — the SOLE conditional-CAS
+    /// publication path (S-04). Its own `PutMode` carries the precondition.
+    Manifest(ManifestKey),
+    /// `.typedb-staging/<attempt-token>/<encoded-target>` — transient bytes
+    /// owned by one multipart attempt, and the ONLY class the staging
+    /// capability may address (R6-STOR-04).
+    Staging(StagingPath),
+    /// Everything else under the materialisation: SSTs, the compactions
+    /// object, GC boundary objects, seeded checkpoint files. Create-only,
+    /// byte-idempotent replay, no reclaim authority (V16 inv. 81-83).
+    Immutable(ImmutableKey),
 }
 
-/// The infix every multipart STAGING key carries (R5-STOR-05). Staging keys
-/// are transient: a completed attempt is verified there and then atomically
-/// PROMOTED to its target name; the staging object is cleaned best-effort
-/// afterwards. Listings that feed durable artifacts (the remote checkpoint)
-/// exclude them by this infix.
-const MULTIPART_ATTEMPT_INFIX: &str = ".mpa-";
+/// A parsed manifest key. Carrying the generation makes the parse a real
+/// parse: a name that is not `<20 digits>.manifest` cannot produce one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ManifestKey {
+    generation: u64,
+}
 
-/// Is this key a multipart staging key (never authoritative state)?
+/// A parsed staging path — the attempt token and the encoded target name it
+/// stages for. This is the PARSE RESULT, deliberately NOT the staging
+/// capability token: [`authority::StagingKey`] is still constructible only by
+/// [`mint_attempt_location`], so recognising a path as staging-shaped never
+/// hands anyone the authority to act on it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StagingPath {
+    attempt_token: String,
+    encoded_target: String,
+}
+
+/// The default class. No payload: "not one of the exact authoritative
+/// grammars" is the whole fact, and it is the SAFE fact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ImmutableKey;
+
+/// The adapter-owned staging namespace (R8-P0-01). A leading `.` keeps it out
+/// of the SlateDB store root (`keyspace/`) entirely, so the engine never lists
+/// it, and one exact top-level segment — not an infix on a caller-controlled
+/// name — is what the reclaim capability is scoped to.
+const STAGING_SUBDIR: &str = ".typedb-staging";
+
+/// The manifest object's file extension, as SlateDB's manifest store writes
+/// it (`<root>/manifest/{id:020}.manifest`).
+const MANIFEST_SUFFIX: &str = ".manifest";
+
+/// How many decimal digits SlateDB zero-pads a manifest generation to. `u64`
+/// never needs more, so the width is exact, not a minimum.
+const MANIFEST_ID_DIGITS: usize = 20;
+
+/// Parse `location` — a path RELATIVE to the materialisation prefix — into
+/// its authority class. Total function: every input has exactly one class.
+fn classify_key(location: &ObjectPath) -> KeyClass {
+    let parts: Vec<String> = location.parts().map(|part| part.as_ref().to_owned()).collect();
+    match parts.as_slice() {
+        // keyspace/manifest/<20 digits>.manifest
+        [db, manifest, name] if db == DB_SUBDIR && manifest == MANIFEST_SUBDIR => match parse_manifest_name(name) {
+            Some(generation) => KeyClass::Manifest(ManifestKey { generation }),
+            // A file sitting in SlateDB's manifest directory that is not a
+            // manifest is NOT given manifest authority. Immutable is the
+            // strict class, so an unrecognised name loses authority.
+            None => KeyClass::Immutable(ImmutableKey),
+        },
+        // .typedb-staging/<attempt-token>/<encoded-target>
+        [staging, attempt_token, encoded_target]
+            if staging == STAGING_SUBDIR
+                && is_attempt_token(attempt_token)
+                && is_encoded_segment(encoded_target) =>
+        {
+            KeyClass::Staging(StagingPath {
+                attempt_token: attempt_token.clone(),
+                encoded_target: encoded_target.clone(),
+            })
+        }
+        _ => KeyClass::Immutable(ImmutableKey),
+    }
+}
+
+/// `{id:020}.manifest`, and nothing else. Exactly 20 ASCII digits: a name
+/// with 19, with 21, with a sign, with leading whitespace or with a non-ASCII
+/// digit is not a manifest.
+fn parse_manifest_name(name: &str) -> Option<u64> {
+    let digits = name.strip_suffix(MANIFEST_SUFFIX)?;
+    if digits.len() != MANIFEST_ID_DIGITS || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse::<u64>().ok()
+}
+
+/// The exact shape [`mint_attempt_location`] produces:
+/// `<8 hex>-<16 hex>-<24 hex>-<8 hex>` (pid, per-process seed, wall
+/// nanoseconds, per-store attempt id). Checked by SHAPE, not by containment.
+fn is_attempt_token(token: &str) -> bool {
+    let widths = [8usize, 16, 24, 8];
+    let mut fields = token.split('-');
+    for width in widths {
+        match fields.next() {
+            Some(field) if field.len() == width && field.bytes().all(|b| b.is_ascii_hexdigit()) => {}
+            _ => return false,
+        }
+    }
+    fields.next().is_none()
+}
+
+/// The alphabet [`encode_segment`] emits, and only it. A staging path whose
+/// last segment carries anything else was not produced by this adapter.
+fn is_encoded_segment(segment: &str) -> bool {
+    !segment.is_empty()
+        && segment
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b'='))
+}
+
+/// Is this key the SOLE conditional-CAS publication path (S-04)? Exact
+/// position and exact name — see [`KeyClass`] for why "any segment equals
+/// manifest" was an authority-escalation primitive.
+fn is_manifest_key(location: &ObjectPath) -> bool {
+    matches!(classify_key(location), KeyClass::Manifest(_))
+}
+
+/// Is this key inside the adapter-owned multipart STAGING namespace (never
+/// authoritative state)? Staging keys are transient: a completed attempt is
+/// verified there and then atomically PROMOTED to its target name; the
+/// staging object is reclaimed afterwards. Listings that feed durable
+/// artifacts (the remote checkpoint) exclude this class.
 fn is_multipart_attempt_key(location: &ObjectPath) -> bool {
-    location.as_ref().contains(MULTIPART_ATTEMPT_INFIX)
+    matches!(classify_key(location), KeyClass::Staging(_))
 }
 
 /// Mint the globally unique staging key one multipart attempt completes to
-/// before its create-only promote (R5-STOR-05). Uniqueness across processes:
-/// pid + a per-process random seed + wall nanoseconds + the per-store attempt
-/// id — two attempts (same or different processes) can never share a staging
-/// key, so the ONLY contended operation left is the atomic promote.
+/// before its create-only promote (R5-STOR-05).
+///
+/// R8-P0-01: the key is built in the adapter's OWN namespace —
+/// `.typedb-staging/<attempt-token>/<encoded-target>` — instead of appending
+/// an infix to the caller's target name. The target is carried as a single
+/// INJECTIVELY ENCODED segment ([`encode_segment`], which escapes `/` and
+/// `=`), so a caller-controlled name can neither add path segments nor spell
+/// a staging path it does not own, and the classifier never has to search a
+/// caller-controlled string for a marker.
+///
+/// Uniqueness across processes: pid + a per-process random seed + wall
+/// nanoseconds + the per-store attempt id — two attempts (same or different
+/// processes) can never share a staging key, so the ONLY contended operation
+/// left is the atomic promote.
 fn mint_attempt_location(location: &ObjectPath, attempt_id: u64) -> ObjectPath {
     static SEED: OnceLock<u64> = OnceLock::new();
     let seed = *SEED.get_or_init(|| {
@@ -691,10 +841,8 @@ fn mint_attempt_location(location: &ObjectPath, attempt_id: u64) -> ObjectPath {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| elapsed.as_nanos())
         .unwrap_or(0);
-    ObjectPath::from(format!(
-        "{location}{MULTIPART_ATTEMPT_INFIX}{:08x}-{seed:016x}-{nanos:024x}-{attempt_id:08x}",
-        std::process::id()
-    ))
+    let token = format!("{:08x}-{seed:016x}-{nanos:024x}-{attempt_id:08x}", std::process::id());
+    ObjectPath::from(STAGING_SUBDIR).join(token).join(encode_segment(location.as_ref()))
 }
 
 /// R6-STOR-03: the domain-separation tag every object-content digest is
@@ -1059,9 +1207,17 @@ impl OrphanInventory {
     }
 }
 
-/// Typed budget refusal (R5-STOR-08): exceeding an admission budget refuses,
-/// it never grows the journal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Typed multipart admission refusal (R5-STOR-08, R8-P1-01): a refusal never
+/// grows the journal, never reserves a byte and never reaches the provider.
+///
+/// R8-P1-01 widened this from "budget" to "admission": part upload used to be
+/// gated by budget ALONE, and `reserve_part_bytes` returned `Ok(())` when the
+/// attempt had no open journal row at all — so an unknown, aborted, committed
+/// or receipt-evicted attempt id was admitted, hashed and forwarded to the
+/// provider. The journal must PROVE the attempt is open and owns its target
+/// before a byte is accepted; there is now a variant for each way that proof
+/// can fail, and `put_part` reserves under the same lock that checks them.
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum MultipartBudgetRefused {
     Attempts {
         open: usize,
@@ -1077,6 +1233,27 @@ enum MultipartBudgetRefused {
         streamed: u64,
         incoming: u64,
         max: u64,
+    },
+    /// R8-P1-01: the attempt is not open — it is terminal, or it was never
+    /// journaled / has fallen out of the bounded receipt window.
+    State {
+        attempt_id: u64,
+        state: Option<AttemptState>,
+    },
+    /// R8-P1-01: the attempt is open, but for a DIFFERENT target than the one
+    /// the caller presented. A part must never be charged to, or streamed
+    /// under, another location's attempt.
+    ForeignTarget {
+        attempt_id: u64,
+        presented: String,
+    },
+    /// R8-P1-01: the attempt is open and owns its target, but a later attempt
+    /// superseded it. Superseded attempts stay ABORTABLE (so their staged
+    /// upload remains reclaimable, R4-STOR-04) but may upload no further
+    /// bytes and may not complete.
+    Superseded {
+        attempt_id: u64,
+        active: u64,
     },
 }
 
@@ -1095,6 +1272,31 @@ impl MultipartBudgetRefused {
                  the per-object maximum of {max} bytes (R6-STOR-02): one object is what completion must \
                  verify and, where the provider has no conditional copy, re-upload, so its size is \
                  bounded independently of the aggregate journal budget"
+            ),
+            Self::State { attempt_id, state } => {
+                let observed = match state {
+                    Some(AttemptState::Uncommitted) => "uncommitted".to_owned(),
+                    Some(AttemptState::Committed) => "already committed".to_owned(),
+                    Some(AttemptState::Aborted) => "aborted".to_owned(),
+                    None => "unknown to the journal (never opened, or retired beyond the bounded \
+                             receipt window)"
+                        .to_owned(),
+                };
+                format!(
+                    "attempt {attempt_id} is {observed} (R8-P1-01): a part is admitted only for an \
+                     attempt the journal proves is OPEN, so no provider byte is uploaded for a \
+                     terminal or unknown attempt"
+                )
+            }
+            Self::ForeignTarget { attempt_id, presented } => format!(
+                "attempt {attempt_id} does not own {presented} (R8-P1-01): the journal records this \
+                 attempt against a different target, and a part may never be charged to another \
+                 location's attempt"
+            ),
+            Self::Superseded { attempt_id, active } => format!(
+                "attempt {attempt_id} was superseded by attempt {active} (R8-P1-01): a superseded \
+                 attempt stays abortable so its staged upload remains reclaimable, but it uploads no \
+                 further bytes and cannot complete"
             ),
         };
         slatedb::object_store::Error::Precondition {
@@ -1162,9 +1364,11 @@ struct MultipartJournal {
     /// removed when that attempt retires, so this map is bounded by the open
     /// attempts.
     active: HashMap<String, u64>,
-    /// attempt id → bytes reserved by its streamed parts. ONLY unresolved
-    /// (uncommitted) attempts have rows here.
-    open_attempts: HashMap<u64, u64>,
+    /// attempt id → its open row. ONLY unresolved (uncommitted) attempts have
+    /// rows here. R8-P1-01: the row carries the TARGET as well as the reserved
+    /// byte count, so ownership is a journal fact rather than something the
+    /// caller asserts.
+    open_attempts: HashMap<u64, OpenAttempt>,
     /// Total bytes reserved across every open attempt.
     reserved_bytes: u64,
     /// Bounded terminal receipts, oldest at the front.
@@ -1188,6 +1392,17 @@ impl Default for MultipartJournal {
     }
 }
 
+/// One unresolved multipart attempt's journal row (R8-P1-01).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OpenAttempt {
+    /// The target key this attempt publishes to. Recorded at initiation and
+    /// never rewritten: it is what makes "this part belongs to this attempt"
+    /// checkable instead of assumed.
+    location: String,
+    /// Bytes this attempt has reserved against the aggregate journal budget.
+    reserved: u64,
+}
+
 impl MultipartJournal {
     /// The state of an attempt: open rows are `Uncommitted`; retired ids
     /// answer from the bounded receipt window; anything older is `None`
@@ -1203,31 +1418,80 @@ impl MultipartJournal {
     /// checked BEFORE any row is inserted or any provider upload opened.
     fn initiate(&mut self, location: &ObjectPath, attempt_id: u64) -> Result<(), MultipartBudgetRefused> {
         admit_multipart_attempt(self.open_attempts.len(), self.max_open_attempts)?;
-        self.open_attempts.insert(attempt_id, 0);
+        self.open_attempts.insert(attempt_id, OpenAttempt { location: location.to_string(), reserved: 0 });
         self.active.insert(location.to_string(), attempt_id);
         Ok(())
     }
 
-    /// Reserve `len` streamed bytes for an open attempt against the byte
-    /// budget; a refusal reserves nothing.
-    fn reserve_part_bytes(&mut self, attempt_id: u64, len: u64) -> Result<(), MultipartBudgetRefused> {
-        admit_multipart_bytes(self.reserved_bytes, len, self.max_journaled_bytes)?;
-        let Some(bytes) = self.open_attempts.get_mut(&attempt_id) else {
-            // no open row: nothing to reserve against (the caller's state
-            // gate reports the precise refusal)
-            return Ok(());
+    /// R8-P1-01: ADMIT a part — state, ownership, supersession and budget —
+    /// and reserve its bytes, ATOMICALLY under this one journal lock.
+    ///
+    /// The defect this replaces: the old `reserve_part_bytes` checked the byte
+    /// budget and then, finding no open row for the attempt, returned `Ok(())`
+    /// — "nothing to reserve against". `put_part` called it without any state
+    /// gate of its own, so an unknown, aborted, committed or receipt-evicted
+    /// attempt id was admitted, its payload hashed into the expected witness
+    /// and forwarded to the provider upload. The audit's diagnostic
+    /// `MultipartJournal::default().reserve_part_bytes(unknown, 1).is_err()`
+    /// failed for exactly that reason.
+    ///
+    /// The invariant restored here: **no provider byte is accepted or
+    /// attempted unless the journal proves, in one atomic section, that the
+    /// attempt is open, is the active attempt for THIS exact target, and that
+    /// the bytes fit the aggregate budget.** Every refusal reserves nothing.
+    fn admit_part_bytes(
+        &mut self,
+        attempt_id: u64,
+        location: &ObjectPath,
+        len: u64,
+    ) -> Result<(), MultipartBudgetRefused> {
+        // 1. state: the attempt must be OPEN. Terminal and unknown ids are
+        //    distinguished for the message, but both fail closed.
+        let Some(row) = self.open_attempts.get(&attempt_id) else {
+            return Err(MultipartBudgetRefused::State { attempt_id, state: self.state_of(attempt_id) });
         };
-        *bytes = bytes.saturating_add(len);
+        // 2. ownership: the open row's target must be the presented one.
+        if row.location != location.as_ref() {
+            return Err(MultipartBudgetRefused::ForeignTarget { attempt_id, presented: location.to_string() });
+        }
+        // 3. supersession: a superseded attempt stays abortable, never
+        //    writable (R4-STOR-04 keeps the reclaim path; R8-P1-01 closes the
+        //    write path).
+        match self.active.get(row.location.as_str()) {
+            Some(active) if *active == attempt_id => {}
+            Some(active) => return Err(MultipartBudgetRefused::Superseded { attempt_id, active: *active }),
+            None => return Err(MultipartBudgetRefused::State { attempt_id, state: self.state_of(attempt_id) }),
+        }
+        // 4. budget, and only then the reservation.
+        admit_multipart_bytes(self.reserved_bytes, len, self.max_journaled_bytes)?;
+        let row = self.open_attempts.get_mut(&attempt_id).expect("row observed under this same lock");
+        row.reserved = row.reserved.saturating_add(len);
         self.reserved_bytes = self.reserved_bytes.saturating_add(len);
         Ok(())
+    }
+
+    /// R8-P1-01: give back a reservation whose provider part upload FAILED.
+    ///
+    /// The reservation is taken before the provider call (it has to be — the
+    /// point is that no unbudgeted byte is ever attempted), so an immediate
+    /// provider error would otherwise hold budget for an attempt that never
+    /// transferred those bytes until the attempt retired. Releasing is exact:
+    /// it subtracts from the attempt's own row and the aggregate together, and
+    /// never below zero.
+    fn release_part_bytes(&mut self, attempt_id: u64, len: u64) {
+        if let Some(row) = self.open_attempts.get_mut(&attempt_id) {
+            let released = len.min(row.reserved);
+            row.reserved -= released;
+            self.reserved_bytes = self.reserved_bytes.saturating_sub(released);
+        }
     }
 
     /// Retire an attempt on proven abort/commit (R5-STOR-08): release its
     /// byte reservation, drop its open row (and its active-attempt entry when
     /// it holds one), and record a bounded terminal receipt.
     fn retire(&mut self, location: &str, attempt_id: u64, state: AttemptState) {
-        if let Some(bytes) = self.open_attempts.remove(&attempt_id) {
-            self.reserved_bytes = self.reserved_bytes.saturating_sub(bytes);
+        if let Some(row) = self.open_attempts.remove(&attempt_id) {
+            self.reserved_bytes = self.reserved_bytes.saturating_sub(row.reserved);
         }
         if self.active.get(location) == Some(&attempt_id) {
             self.active.remove(location);
@@ -1258,7 +1522,7 @@ impl MultipartJournal {
 ///   written, let alone executed.
 /// - [`StagingAuthority`] wraps `Arc<dyn StagingIo>`, whose every method takes
 ///   a [`StagingKey`]. A `StagingKey` is minted only from a target key plus an
-///   attempt id, always inside the `.mpa-` staging namespace, and the
+///   attempt id, always inside the adapter-owned `.typedb-staging/` namespace
 ///   implementation re-checks the namespace before it acts — so the one handle
 ///   that CAN delete can only ever address transient staging objects.
 ///
@@ -1336,8 +1600,9 @@ mod authority {
     }
 
     /// A key inside the multipart staging namespace. The only public
-    /// constructor mints one (always carrying [`MULTIPART_ATTEMPT_INFIX`]), so
-    /// no authoritative name can be spelled as a `StagingKey`.
+    /// constructor mints one (always inside [`STAGING_SUBDIR`], and always
+    /// matching the exact grammar [`classify_key`] parses), so no
+    /// authoritative name can be spelled as a `StagingKey`.
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub(super) struct StagingKey(ObjectPath);
 
@@ -1369,7 +1634,7 @@ mod authority {
             path: key.0.to_string(),
             source: format!(
                 "staging authority refused {} (R6-STOR-04): this principal may only address the \
-                 multipart staging namespace (keys carrying '{MULTIPART_ATTEMPT_INFIX}'); it has no \
+                 multipart staging namespace ('{STAGING_SUBDIR}/<attempt>/<encoded-target>'); it has no \
                  authority over any published name",
                 key.0
             )
@@ -1916,14 +2181,37 @@ impl ObjectStore for NoDeleteStore {
                     .into(),
             });
         }
-        if is_manifest_key(location) {
-            // the sole typed conditional-CAS publication path (S-04): its own
-            // PutMode carries the CAS precondition; passed through the
-            // authoritative handle's manifest-only method (R6-STOR-04), which
-            // refuses any non-manifest location.
-            return self.authoritative.put_manifest(location, payload, opts).await;
+        // R8-P0-01: ONE closed classification, taken from the exact
+        // database-relative grammar. The match is exhaustive by type, so a
+        // future key class cannot be silently absorbed into the wrong branch.
+        match classify_key(location) {
+            KeyClass::Manifest(_) => {
+                // the sole typed conditional-CAS publication path (S-04): its
+                // own PutMode carries the CAS precondition; passed through the
+                // authoritative handle's manifest-only method (R6-STOR-04),
+                // which re-derives the same grammar and refuses any
+                // non-manifest location.
+                self.authoritative.put_manifest(location, payload, opts).await
+            }
+            KeyClass::Staging(_) => {
+                // Defense in depth (R8-P0-01): the AUTHORITATIVE principal has
+                // no business writing into the staging namespace. Staging
+                // objects are created only by the disjoint staging capability,
+                // through a minted `StagingKey`. A put aimed here is either a
+                // confused code path or a caller trying to plant bytes at a
+                // name the reclaim capability may later delete.
+                Err(slatedb::object_store::Error::Precondition {
+                    path: location.to_string(),
+                    source: format!(
+                        "put refused for {location} (R8-P0-01): `{STAGING_SUBDIR}/…` is the \
+                         adapter-owned multipart staging namespace; only the disjoint staging \
+                         capability may write there, and only through a minted attempt key"
+                    )
+                    .into(),
+                })
+            }
+            KeyClass::Immutable(_) => self.put_immutable(location, payload, opts).await,
         }
-        self.put_immutable(location, payload, opts).await
     }
 
     async fn put_multipart_opts(
@@ -1941,6 +2229,20 @@ impl ObjectStore for NoDeleteStore {
                 source: "materialisation is quarantined (S-04): a prior immutable-key overwrite was refused; \
                          refusing multipart initiation"
                     .into(),
+            });
+        }
+        // R8-P0-01: a multipart aimed INTO the staging namespace is refused
+        // for the same reason a put is — staging keys are minted here, never
+        // supplied by a caller.
+        let target_class = classify_key(location);
+        if let KeyClass::Staging(_) = target_class {
+            return Err(slatedb::object_store::Error::Precondition {
+                path: location.to_string(),
+                source: format!(
+                    "multipart initiation refused for {location} (R8-P0-01): `{STAGING_SUBDIR}/…` is \
+                     the adapter-owned multipart staging namespace and is not a publishable target"
+                )
+                .into(),
             });
         }
         // Initiation at an occupied immutable key is admitted: until the
@@ -1981,7 +2283,7 @@ impl ObjectStore for NoDeleteStore {
             limits: self.limits.clone(),
             buffers: self.buffers.clone(),
             journal: self.multipart_journal.clone(),
-            manifest_key: is_manifest_key(location),
+            manifest_key: matches!(target_class, KeyClass::Manifest(_)),
         }))
     }
 
@@ -2114,7 +2416,7 @@ impl ObjectStore for NoDeleteStore {
 /// processes and restarts (R5-STOR-05). Staging cleanup is best-effort and
 /// scoped to THIS attempt's own staging key (a named exception to the
 /// no-delete posture: a staging object never became authoritative state); a
-/// failed cleanup leaves an inert `.mpa-` orphan for the separated
+/// failed cleanup leaves an inert `.typedb-staging/` orphan for the separated
 /// maintenance principal, and durable listings (the remote checkpoint)
 /// exclude staging keys by infix.
 struct JournaledMultipart {
@@ -2225,7 +2527,7 @@ impl JournaledMultipart {
     /// this instance minted — never a listing, never another attempt's key.
     /// A FAILED reclaim is no longer a swallowed `let _ = ..`: it produces a
     /// durable orphan record naming the key and the reason, so the inert
-    /// `.mpa-` object left behind is visible to the separated maintenance
+    /// staging object left behind is visible to the separated maintenance
     /// principal instead of being invisible state.
     async fn reclaim_staged(&mut self) {
         if let Err(error) = self.staging.reclaim(&self.attempt_location).await {
@@ -2322,10 +2624,11 @@ impl MultipartUpload for JournaledMultipart {
             let error = refused.into_store_error(&self.location);
             return Box::pin(async move { Err(error) });
         }
-        // R5-STOR-08: streamed bytes are reserved against the journal's byte
-        // budget as they arrive; a refusal reserves nothing and streams
-        // nothing — typed admission, not growth.
-        let admission = self.journal.lock().unwrap().reserve_part_bytes(self.attempt_id, len);
+        // R5-STOR-08 + R8-P1-01: ONE atomic journal admission — state,
+        // ownership, supersession and byte budget — BEFORE the payload is
+        // hashed and before a single byte reaches the provider. A refusal
+        // reserves nothing, hashes nothing and streams nothing.
+        let admission = self.journal.lock().unwrap().admit_part_bytes(self.attempt_id, &self.location, len);
         if let Err(refused) = admission {
             let error = refused.into_store_error(&self.location);
             return Box::pin(async move { Err(error) });
@@ -2336,7 +2639,24 @@ impl MultipartUpload for JournaledMultipart {
         for chunk in &data {
             self.streamed.update(chunk.as_ref());
         }
-        self.inner.put_part(data)
+        // R8-P1-01: the reservation is taken before the provider call, so a
+        // provider FAILURE must hand it back — otherwise an attempt that keeps
+        // retrying a failing part holds aggregate budget it never used. The
+        // streamed digest is deliberately NOT rewound: it has already absorbed
+        // bytes the provider may not hold, so completion's stage verification
+        // will refuse this attempt, which is the fail-closed outcome.
+        let journal = self.journal.clone();
+        let attempt_id = self.attempt_id;
+        let upload = self.inner.put_part(data);
+        Box::pin(async move {
+            match upload.await {
+                Ok(()) => Ok(()),
+                Err(error) => {
+                    journal.lock().unwrap().release_part_bytes(attempt_id, len);
+                    Err(error)
+                }
+            }
+        })
     }
 
     async fn complete(&mut self) -> slatedb::object_store::Result<PutResult> {
@@ -2570,7 +2890,14 @@ async fn upload_dir_to_remote(store: &dyn ObjectStore, prefix: &ObjectPath, root
         for part in relative {
             location = location.join(part);
         }
-        store.put(&location, PutPayload::from(bytes)).await.map_err(store_error)?;
+        // R8-P0-01 (design item 6): CREATE-ONLY, explicitly. A seed lands in a
+        // freshly minted materialisation namespace, so nothing may already be
+        // there; asking for `Create` means a namespace that is somehow already
+        // populated fails loudly instead of being silently overwritten. The
+        // manifest branch of the principal passes this mode through, so the
+        // seeded manifest is created, never replaced.
+        let options = PutOptions { mode: PutMode::Create, ..Default::default() };
+        store.put_opts(&location, PutPayload::from(bytes), options).await.map_err(store_error)?;
     }
     Ok(())
 }
@@ -2583,7 +2910,10 @@ async fn download_remote_objects(
     locations: &[ObjectPath],
     dir: &Path,
 ) -> Result<(), slatedb::Error> {
-    let prefix_str = format!("{prefix}/");
+    // R8-P0-01: the store handed here is prefix-scoped, so `prefix` is
+    // normally the scope ROOT (empty). An empty prefix must strip nothing —
+    // `format!("{prefix}/")` would be "/" and match no listed location.
+    let prefix_str = if prefix.as_ref().is_empty() { String::new() } else { format!("{prefix}/") };
     for location in locations {
         let relative =
             location.as_ref().strip_prefix(&prefix_str).expect("listed object location is under the listed prefix");
@@ -2647,11 +2977,19 @@ async fn stream_object_to_file(
     Ok(())
 }
 
-/// The remote half of an S3-backed keyspace: the no-delete-wrapped
-/// bucket-root store plus this open's exclusive materialisation prefix (the
-/// `Db` itself sees a `PrefixStore`).
+/// The remote half of an S3-backed keyspace.
+///
+/// R8-P0-01: `store` is the PREFIX-SCOPED no-delete principal — the same
+/// handle the `Db` is built on. Every path it takes or returns is relative to
+/// this open's materialisation, which is what makes the authority grammar
+/// ([`classify_key`]) a decision about SlateDB's own layout rather than about
+/// a configurable object root. `prefix` is retained for DIAGNOSTICS only (the
+/// GC report, log lines): nothing may join it onto a key handed to `store`,
+/// or the prefix would be applied twice.
 struct RemoteStore {
     store: Arc<dyn ObjectStore>,
+    /// Diagnostics only — see the struct docstring. NOT a path component of
+    /// any operation issued through [`Self::store`].
     prefix: ObjectPath,
 }
 
@@ -2751,24 +3089,45 @@ impl SlateKeyspace {
         cache_bytes: Option<usize>,
     ) -> Result<Self, Arc<slatedb::Error>> {
         fs::create_dir_all(path).map_err(|error| Arc::new(io_error(error)))?;
-        let principal = NoDeleteStore::new(store);
+        let materialization = mint_materialization_id();
+        let prefix = base_prefix.join(FORMAT_VERSION_SEGMENT).join(materialization.as_str());
+        // R8-P0-01: the PREFIX IS APPLIED FIRST, and the authority split wraps
+        // the prefix-scoped handle. Every path the authority grammar
+        // ([`classify_key`]) then sees is DATABASE-RELATIVE — `keyspace/…`,
+        // `.typedb-staging/…` — so no configurable segment (object root,
+        // environment, tenant, database id, generation, materialisation,
+        // keyspace name) is part of the string an authority decision is taken
+        // from. Previously the wrapper held the BUCKET-ROOT handle and the
+        // prefix was applied outside it, which is what let a root segment
+        // named `manifest` turn every immutable SST below it into a mutable
+        // manifest key.
+        //
+        // The scoping is also a containment boundary in its own right: this
+        // principal cannot address a byte outside its own materialisation,
+        // because `PrefixStore` prepends the prefix to every operation and
+        // there is no way to spell an escape (`..` is not a representable
+        // `PathPart`).
+        let scoped: Arc<dyn ObjectStore> = Arc::new(PrefixStore::new(store, prefix.clone()));
+        let principal = NoDeleteStore::new(scoped);
         // R6-STOR-04: bind the durable orphan inventory to the keyspace's
         // lifecycle-marker directory BEFORE anything can be staged, so a
         // failed staging reclaim always has somewhere durable to land.
         principal.bind_orphan_sink(path);
         let store: Arc<dyn ObjectStore> = Arc::new(principal);
-        let materialization = mint_materialization_id();
-        let prefix = base_prefix.join(FORMAT_VERSION_SEGMENT).join(materialization.as_str());
         let restored_root = path.join(DB_SUBDIR).is_dir().then(|| path.to_owned());
         if let Some(root) = restored_root {
             let store = store.clone();
-            let prefix = prefix.clone();
-            bridge(async move { upload_dir_to_remote(store.as_ref(), &prefix, &root).await }).map_err(Arc::new)?;
+            // R8-P0-01 (design item 6): the seed/restore upload goes through
+            // the SAME prefix-scoped create-only principal as everything else.
+            // It no longer needs — and no longer has — a raw provider handle,
+            // and it addresses the scope root, not an absolute prefix.
+            bridge(async move { upload_dir_to_remote(store.as_ref(), &ObjectPath::default(), &root).await })
+                .map_err(Arc::new)?;
         }
         // recorded for diagnostics and the GC report; written AFTER the seed
         // upload so it can never itself be uploaded as store state
         fs::write(path.join(MATERIALIZATION_FILE), &materialization).map_err(|error| Arc::new(io_error(error)))?;
-        let prefixed: Arc<dyn ObjectStore> = Arc::new(PrefixStore::new(store.clone(), prefix.clone()));
+        let prefixed: Arc<dyn ObjectStore> = store.clone();
         let mut settings = settings();
         if let Some(cache_bytes) = cache_bytes {
             // hydradb comparative review: SlateDB's local disk cache cuts the
@@ -3009,10 +3368,14 @@ impl SlateKeyspace {
     /// local file sync followed by [`Self::open_s3`]'s upload) needs no
     /// engine-specific code.
     fn checkpoint_remote(remote: &RemoteStore, checkpoint_keyspace_dir: &Path) -> Result<(), Arc<slatedb::Error>> {
-        let manifest_dir = remote.prefix.clone().join(DB_SUBDIR).join(MANIFEST_SUBDIR);
-        let manifest_prefix = format!("{manifest_dir}/");
+        // R8-P0-01: `remote.store` is prefix-scoped, so every path here is
+        // materialisation-relative. `remote.prefix` must NOT be joined on.
+        let manifest_dir = ObjectPath::from(DB_SUBDIR).join(MANIFEST_SUBDIR);
         let store = remote.store.clone();
-        let prefix = remote.prefix.clone();
+        let prefix = ObjectPath::default();
+        // diagnostics only: the operator needs the ABSOLUTE location to go
+        // looking for the objects, which the scoped handle never shows.
+        let absolute_prefix = remote.prefix.clone();
         let dir = checkpoint_keyspace_dir.to_owned();
         bridge(async move {
             // Pin FIRST, from a listing of the manifest prefix ALONE, and only
@@ -3031,26 +3394,37 @@ impl SlateKeyspace {
             // keyspace always has a published manifest, so an empty manifest
             // listing is missing or corrupt root state, never emptiness — the
             // checkpoint is refused before anything is downloaded.
-            // R5-STOR-05: transient multipart STAGING objects (`.mpa-` infix)
+            // R5-STOR-05: transient multipart STAGING objects (the
+            // `.typedb-staging/` namespace, R8-P0-01)
             // are never authoritative state — they are excluded both from the
             // pin (a staging name could sort after the newest real manifest)
             // and from the download set (a concurrently cleaned staging object
             // would otherwise fail the checkpoint with NotFound).
+            //
+            // R8-P0-01: the pin is by PARSED MANIFEST GENERATION, taken from
+            // the same closed grammar the authority boundary uses, instead of
+            // a lexicographic maximum over whatever names the listing
+            // returned. Anything in the manifest directory that is not a
+            // manifest does not classify as one and cannot be pinned.
             let pinned = manifests
                 .iter()
-                .map(|meta| &meta.location)
-                .filter(|location| !is_multipart_attempt_key(location))
-                .max()
-                .cloned()
+                .filter_map(|meta| match classify_key(&meta.location) {
+                    KeyClass::Manifest(key) => Some((key.generation, meta.location.clone())),
+                    _ => None,
+                })
+                .max_by_key(|(generation, _)| *generation)
+                .map(|(_, location)| location)
                 .ok_or_else(|| {
-                    missing_manifest_root_error(format!("empty remote manifest listing under {manifest_dir}"))
+                    missing_manifest_root_error(format!(
+                        "empty remote manifest listing under {manifest_dir} (materialisation \
+                         {absolute_prefix})"
+                    ))
                 })?;
             let objects = list_remote_prefix(store.as_ref(), &prefix).await?;
-            let is_manifest = |location: &ObjectPath| location.as_ref().starts_with(&manifest_prefix);
             let mut to_copy: Vec<ObjectPath> = objects
                 .iter()
                 .map(|meta| meta.location.clone())
-                .filter(|location| !is_manifest(location) && !is_multipart_attempt_key(location))
+                .filter(|location| matches!(classify_key(location), KeyClass::Immutable(_)))
                 .collect();
             to_copy.push(pinned);
             download_remote_objects(store.as_ref(), &prefix, &to_copy, &dir).await
@@ -4355,7 +4729,10 @@ mod materialization_tests {
         let target = bridge({
             let installed = installed.clone();
             async move {
-                let listing = list_remote_prefix(installed.as_ref(), &ObjectPath::from(BASE)).await.unwrap();
+                // R8-P0-01: the installed handle is PREFIX-SCOPED, so the
+                // materialisation base is no longer part of the paths it
+                // takes — list its whole scope.
+                let listing = list_remote_prefix(installed.as_ref(), &ObjectPath::default()).await.unwrap();
                 listing.into_iter().next().expect("flushed keyspace has objects").location
             }
         });
@@ -4490,10 +4867,12 @@ mod immutability_boundary_tests {
     #[test]
     fn manifest_keys_are_classified_apart_from_immutable_data_keys() {
         // the manifest is the sole CAS publication path (exempt); everything
-        // else under the keyspace is immutable.
-        assert!(is_manifest_key(&ObjectPath::from(format!("base/fv1/m1/keyspace/{MANIFEST_SUBDIR}/0001.manifest"))));
-        assert!(!is_manifest_key(&ObjectPath::from("base/fv1/m1/keyspace/01ABC.sst")));
-        assert!(!is_manifest_key(&ObjectPath::from("base/fv1/m1/keyspace/compacted/01ABC.sst")));
+        // else under the keyspace is immutable. The EXHAUSTIVE grammar matrix
+        // — including every way a configurable name used to escalate — lives
+        // in `r8_authority_grammar_tests`.
+        assert!(is_manifest_key(&ObjectPath::from(format!("keyspace/{MANIFEST_SUBDIR}/00000000000000000001.manifest"))));
+        assert!(!is_manifest_key(&ObjectPath::from("keyspace/01ABC.sst")));
+        assert!(!is_manifest_key(&ObjectPath::from("keyspace/compacted/01ABC.sst")));
     }
 
     #[test]
@@ -4513,7 +4892,7 @@ mod immutability_boundary_tests {
         // positive: create then an exact-bytes replay both succeed, the store
         // is never quarantined, and the bytes are unchanged.
         let (_dir, store) = wrapped_store();
-        let key = ObjectPath::from("base/fv1/m1/keyspace/01ABC.sst");
+        let key = ObjectPath::from("keyspace/01ABC.sst");
         bridge({
             let (store, key) = (store.clone(), key.clone());
             async move {
@@ -4538,7 +4917,7 @@ mod immutability_boundary_tests {
         // the quarantine flag. This is exactly what an unconditional
         // `put_opts` (the removed defect) would silently allow.
         let (_dir, store) = wrapped_store();
-        let key = ObjectPath::from("base/fv1/m1/keyspace/01ABC.sst");
+        let key = ObjectPath::from("keyspace/01ABC.sst");
         bridge({
             let (store, key) = (store.clone(), key.clone());
             async move { store.put(&key, PutPayload::from_static(b"authoritative")).await }
@@ -4570,8 +4949,8 @@ mod immutability_boundary_tests {
         // materialisation, even a write to a fresh, never-written key is
         // refused — the principal is no longer trustworthy.
         let (_dir, store) = wrapped_store();
-        let key = ObjectPath::from("base/fv1/m1/keyspace/01ABC.sst");
-        let fresh = ObjectPath::from("base/fv1/m1/keyspace/09XYZ.sst");
+        let key = ObjectPath::from("keyspace/01ABC.sst");
+        let fresh = ObjectPath::from("keyspace/09XYZ.sst");
         let refused_after = bridge({
             let (store, key, fresh) = (store.clone(), key.clone(), fresh.clone());
             async move {
@@ -4596,7 +4975,7 @@ mod immutability_boundary_tests {
         // refused (AlreadyExists reconciles to a differing-bytes refusal),
         // proving the guard is not merely rewriting the default mode.
         let (_dir, store) = wrapped_store();
-        let key = ObjectPath::from("base/fv1/m1/keyspace/01ABC.sst");
+        let key = ObjectPath::from("keyspace/01ABC.sst");
         let occupied = bridge({
             let (store, key) = (store.clone(), key.clone());
             async move {
@@ -4622,7 +5001,7 @@ mod immutability_boundary_tests {
         // at a manifest key passes through (SlateDB's manifest CAS depends on
         // this), and the wrapper does NOT quarantine on it.
         let (_dir, store) = wrapped_store();
-        let manifest = ObjectPath::from(format!("base/fv1/m1/keyspace/{MANIFEST_SUBDIR}/0001.manifest"));
+        let manifest = ObjectPath::from(format!("keyspace/{MANIFEST_SUBDIR}/00000000000000000001.manifest"));
         let republished = bridge({
             let (store, manifest) = (store.clone(), manifest.clone());
             async move {
@@ -4643,14 +5022,17 @@ mod immutability_boundary_tests {
         // completes. A wrapper that forwarded completion unconditionally (the
         // removed defect) would let the stale actor publish.
         let (_dir, store) = wrapped_store();
-        let location = ObjectPath::from("base/fv1/m1/keyspace/02DEF.sst");
+        let location = ObjectPath::from("keyspace/02DEF.sst");
 
         let outcome = bridge({
             let (store, location) = (store.clone(), location.clone());
             async move {
+                // R8-P1-01: a superseded attempt may upload no further parts,
+                // so the stale attempt streams its part BEFORE it is
+                // superseded. What this test is about is the COMPLETION gate.
                 let mut stale = store.put_multipart(&location).await?;
-                let mut active = store.put_multipart(&location).await?;
                 stale.put_part(PutPayload::from_static(b"stale part")).await?;
+                let mut active = store.put_multipart(&location).await?;
                 active.put_part(PutPayload::from_static(b"active part")).await?;
                 // completing the stale (superseded) attempt is refused
                 let stale_completion = stale.complete().await;
@@ -4681,7 +5063,7 @@ mod immutability_boundary_tests {
         // completion can never replace a committed object: a second complete()
         // on the same attempt is refused.
         let (_dir, store) = wrapped_store();
-        let location = ObjectPath::from("base/fv1/m1/keyspace/03GHI.sst");
+        let location = ObjectPath::from("keyspace/03GHI.sst");
         let second = bridge({
             let (store, location) = (store.clone(), location.clone());
             async move {
@@ -4706,7 +5088,7 @@ mod immutability_boundary_tests {
         // stale-completion refusal rests on) — while the first attempt's own
         // journal row survives, keeping it addressable for abort.
         let (_dir, store) = wrapped_store();
-        let location = ObjectPath::from("base/fv1/m1/keyspace/04JKL.sst");
+        let location = ObjectPath::from("keyspace/04JKL.sst");
         bridge({
             let (store, location) = (store.clone(), location.clone());
             async move {
@@ -4731,7 +5113,7 @@ mod immutability_boundary_tests {
         // the inner store opens a provider upload — for data keys AND the
         // manifest (the manifest has no initiation exemption).
         let (_dir, store) = wrapped_store();
-        let key = ObjectPath::from("base/fv1/m1/keyspace/01ABC.sst");
+        let key = ObjectPath::from("keyspace/01ABC.sst");
         bridge({
             let (store, key) = (store.clone(), key.clone());
             async move {
@@ -4743,7 +5125,7 @@ mod immutability_boundary_tests {
 
         let data_init = bridge({
             let store = store.clone();
-            async move { store.put_multipart(&ObjectPath::from("base/fv1/m1/keyspace/05MNO.sst")).await.map(|_| ()) }
+            async move { store.put_multipart(&ObjectPath::from("keyspace/05MNO.sst")).await.map(|_| ()) }
         });
         assert!(
             matches!(data_init, Err(slatedb::object_store::Error::Precondition { .. })),
@@ -4751,7 +5133,7 @@ mod immutability_boundary_tests {
         );
         let manifest_init = bridge({
             let store = store.clone();
-            let manifest = ObjectPath::from(format!("base/fv1/m1/keyspace/{MANIFEST_SUBDIR}/0009.manifest"));
+            let manifest = ObjectPath::from(format!("keyspace/{MANIFEST_SUBDIR}/00000000000000000009.manifest"));
             async move { store.put_multipart(&manifest).await.map(|_| ()) }
         });
         assert!(
@@ -4769,7 +5151,7 @@ mod immutability_boundary_tests {
         // changed-bytes branch), and the refused attempt's provider upload
         // remains abortable.
         let (_dir, store) = wrapped_store();
-        let key = ObjectPath::from("base/fv1/m1/keyspace/01ABC.sst");
+        let key = ObjectPath::from("keyspace/01ABC.sst");
         let (completion, abort) = bridge({
             let (store, key) = (store.clone(), key.clone());
             async move {
@@ -4803,13 +5185,15 @@ mod immutability_boundary_tests {
         // typed refusal, and its abort still succeeds so its provider upload
         // is reclaimed rather than stranded.
         let (_dir, store) = wrapped_store();
-        let location = ObjectPath::from("base/fv1/m1/keyspace/06PQR.sst");
+        let location = ObjectPath::from("keyspace/06PQR.sst");
         let (active_completion, stale_completion, stale_abort) = bridge({
             let (store, location) = (store.clone(), location.clone());
             async move {
+                // R8-P1-01: parts are streamed before supersession; the gate
+                // under test here is COMPLETION, not admission.
                 let mut superseded = store.put_multipart(&location).await.unwrap();
-                let mut active = store.put_multipart(&location).await.unwrap();
                 superseded.put_part(PutPayload::from_static(b"superseded part")).await.unwrap();
+                let mut active = store.put_multipart(&location).await.unwrap();
                 active.put_part(PutPayload::from_static(b"active part")).await.unwrap();
                 let active_completion = active.complete().await;
                 let stale_completion = superseded.complete().await;
@@ -4840,8 +5224,8 @@ mod immutability_boundary_tests {
         // initiated BEFORE the quarantine must not complete after it — the
         // completion is refused and the provider upload aborted.
         let (_dir, store) = wrapped_store();
-        let location = ObjectPath::from("base/fv1/m1/keyspace/07STU.sst");
-        let other = ObjectPath::from("base/fv1/m1/keyspace/01ABC.sst");
+        let location = ObjectPath::from("keyspace/07STU.sst");
+        let other = ObjectPath::from("keyspace/01ABC.sst");
         let (completion, second_abort) = bridge({
             let (store, location, other) = (store.clone(), location.clone(), other.clone());
             async move {
@@ -4886,7 +5270,7 @@ mod immutability_boundary_tests {
         // create-only completion check against the STORE is what refuses.
         let dir = create_tmp_dir("slate-s04-restart");
         let inner: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
-        let key = ObjectPath::from("base/fv1/m1/keyspace/08VWX.sst");
+        let key = ObjectPath::from("keyspace/08VWX.sst");
 
         let first = Arc::new(NoDeleteStore::new(inner.clone()));
         bridge({
@@ -4928,7 +5312,7 @@ mod immutability_boundary_tests {
         // an existing manifest is the normal published state, not tamper
         // evidence. Completion onto an ABSENT manifest key still succeeds.
         let (_dir, store) = wrapped_store();
-        let manifest = ObjectPath::from(format!("base/fv1/m1/keyspace/{MANIFEST_SUBDIR}/0001.manifest"));
+        let manifest = ObjectPath::from(format!("keyspace/{MANIFEST_SUBDIR}/00000000000000000001.manifest"));
         let (overwrite, fresh) = bridge({
             let (store, manifest) = (store.clone(), manifest.clone());
             async move {
@@ -4936,7 +5320,7 @@ mod immutability_boundary_tests {
                 let mut onto_existing = store.put_multipart(&manifest).await.unwrap();
                 onto_existing.put_part(PutPayload::from_static(b"manifest v2 via multipart")).await.unwrap();
                 let overwrite = onto_existing.complete().await;
-                let fresh_key = ObjectPath::from(format!("base/fv1/m1/keyspace/{MANIFEST_SUBDIR}/0002.manifest"));
+                let fresh_key = ObjectPath::from(format!("keyspace/{MANIFEST_SUBDIR}/00000000000000000002.manifest"));
                 let mut onto_absent = store.put_multipart(&fresh_key).await.unwrap();
                 onto_absent.put_part(PutPayload::from_static(b"manifest v2")).await.unwrap();
                 let fresh = onto_absent.complete().await;
@@ -5036,7 +5420,7 @@ mod multipart_promote_tests {
         let (_dir, inner) = raw_local_store();
         let store_a = Arc::new(NoDeleteStore::new(inner.clone()));
         let store_b = Arc::new(NoDeleteStore::new(inner.clone()));
-        let target = ObjectPath::from("base/fv1/m1/keyspace/10AAA.sst");
+        let target = ObjectPath::from("keyspace/10AAA.sst");
 
         let upload_a = staged_upload(&store_a, &target, b"completer-a bytes");
         let upload_b = staged_upload(&store_b, &target, b"completer-b bytes");
@@ -5069,7 +5453,9 @@ mod multipart_promote_tests {
         assert_eq!(read_target(&inner, &target), winner_bytes, "the published bytes are the winner's, never replaced");
         assert!(loser_store.is_quarantined(), "a changed-byte loser quarantines its own materialisation");
         // both staging objects are cleaned: only the published target remains
-        let remaining = objects_under(&inner, "base");
+        // R8-P0-01: list the WHOLE store — staging lives in its own
+        // top-level namespace now, not beside the target name.
+        let remaining = objects_under(&inner, "");
         assert_eq!(remaining, vec![target.to_string()], "staging objects must be cleaned: {remaining:?}");
     }
 
@@ -5081,7 +5467,7 @@ mod multipart_promote_tests {
         // idempotently on the published object: success, no quarantine, no
         // second object, bytes untouched.
         let (_dir, inner) = raw_local_store();
-        let target = ObjectPath::from("base/fv1/m1/keyspace/11BBB.sst");
+        let target = ObjectPath::from("keyspace/11BBB.sst");
 
         let first = Arc::new(NoDeleteStore::new(inner.clone()));
         let mut upload = staged_upload(&first, &target, b"published bytes");
@@ -5093,7 +5479,7 @@ mod multipart_promote_tests {
         assert!(converged.is_ok(), "a same-bytes replay after restart must converge, got: {converged:?}");
         assert!(!second.is_quarantined(), "idempotent convergence is not tamper evidence");
         assert_eq!(read_target(&inner, &target), b"published bytes");
-        assert_eq!(objects_under(&inner, "base"), vec![target.to_string()], "no staging object survives");
+        assert_eq!(objects_under(&inner, ""), vec![target.to_string()], "no staging object survives");
     }
 
     /// A store shim whose conditional copy is unsupported (the plain-S3
@@ -5175,7 +5561,7 @@ mod multipart_promote_tests {
         let dir = create_tmp_dir("slate-r5-promote-fallback");
         let local: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
         let shim: Arc<dyn ObjectStore> = Arc::new(NoConditionalCopyStore { inner: local.clone() });
-        let target = ObjectPath::from("base/fv1/m1/keyspace/12CCC.sst");
+        let target = ObjectPath::from("keyspace/12CCC.sst");
 
         let first = Arc::new(NoDeleteStore::new(shim.clone()));
         let mut upload = staged_upload(&first, &target, b"fallback bytes");
@@ -5191,7 +5577,7 @@ mod multipart_promote_tests {
             "the fallback path must stay create-only, got: {refused:?}",
         );
         assert_eq!(read_target(&local, &target), b"fallback bytes", "the published bytes are untouched");
-        assert_eq!(objects_under(&local, "base"), vec![target.to_string()], "staging cleaned on both paths");
+        assert_eq!(objects_under(&local, ""), vec![target.to_string()], "staging cleaned on both paths");
     }
 }
 
@@ -5261,7 +5647,7 @@ mod multipart_journal_budget_tests {
         for index in 0..3 {
             let upload = bridge({
                 let store = store.clone();
-                let location = ObjectPath::from(format!("base/fv1/m1/keyspace/2{index}ABC.sst"));
+                let location = ObjectPath::from(format!("keyspace/2{index}ABC.sst"));
                 async move { store.put_multipart(&location).await }
             })
             .expect("attempts below the budget are admitted");
@@ -5269,7 +5655,7 @@ mod multipart_journal_budget_tests {
         }
         let refused = bridge({
             let store = store.clone();
-            async move { store.put_multipart(&ObjectPath::from("base/fv1/m1/keyspace/29XYZ.sst")).await.map(|_| ()) }
+            async move { store.put_multipart(&ObjectPath::from("keyspace/29XYZ.sst")).await.map(|_| ()) }
         });
         let error = refused.expect_err("the attempt over the budget must be refused");
         assert!(
@@ -5285,7 +5671,7 @@ mod multipart_journal_budget_tests {
         bridge(async move { abandoned.pop().unwrap().abort().await }).unwrap();
         let admitted = bridge({
             let store = store.clone();
-            async move { store.put_multipart(&ObjectPath::from("base/fv1/m1/keyspace/29XYZ.sst")).await.map(|_| ()) }
+            async move { store.put_multipart(&ObjectPath::from("keyspace/29XYZ.sst")).await.map(|_| ()) }
         });
         assert!(admitted.is_ok(), "a proven abort must release the reservation, got: {admitted:?}");
     }
@@ -5299,7 +5685,7 @@ mod multipart_journal_budget_tests {
         let (_dir, store) = wrapped_store();
         store.set_multipart_budgets_for_test(4, 1_000_000, 2);
         for cycle in 0..5u32 {
-            let location = ObjectPath::from(format!("base/fv1/m1/keyspace/3{cycle}DEF.sst"));
+            let location = ObjectPath::from(format!("keyspace/3{cycle}DEF.sst"));
             bridge({
                 let (store, location) = (store.clone(), location.clone());
                 async move {
@@ -5313,7 +5699,7 @@ mod multipart_journal_budget_tests {
         bridge({
             let store = store.clone();
             async move {
-                let location = ObjectPath::from("base/fv1/m1/keyspace/39GHI.sst");
+                let location = ObjectPath::from("keyspace/39GHI.sst");
                 let mut upload = store.put_multipart(&location).await.unwrap();
                 upload.put_part(PutPayload::from_static(b"committed bytes")).await.unwrap();
                 upload.complete().await.unwrap();
@@ -5342,7 +5728,7 @@ mod multipart_journal_budget_tests {
         // exactly.
         let (_dir, store) = wrapped_store();
         store.set_multipart_budgets_for_test(4, 10, 8);
-        let location = ObjectPath::from("base/fv1/m1/keyspace/40JKL.sst");
+        let location = ObjectPath::from("keyspace/40JKL.sst");
         let mut upload = bridge({
             let (store, location) = (store.clone(), location.clone());
             async move { store.put_multipart(&location).await }
@@ -5362,7 +5748,7 @@ mod multipart_journal_budget_tests {
             assert_eq!(journal.reserved_bytes, 0, "abort must release the exact reservation");
         }
         // released budget admits the next attempt's parts again
-        let location2 = ObjectPath::from("base/fv1/m1/keyspace/41MNO.sst");
+        let location2 = ObjectPath::from("keyspace/41MNO.sst");
         let mut upload2 = bridge({
             let (store, location2) = (store.clone(), location2.clone());
             async move { store.put_multipart(&location2).await }
@@ -5533,9 +5919,10 @@ mod r6_multipart_integrity_tests {
     use test_utils::create_tmp_dir;
 
     use super::{
-        CompletionPermit, MULTIPART_ATTEMPT_INFIX, MULTIPART_MAX_CONCURRENT_COMPLETIONS,
+        CompletionPermit, KeyClass, MULTIPART_MAX_CONCURRENT_COMPLETIONS,
         MULTIPART_MAX_MATERIALISED_PROMOTE_BYTES, MULTIPART_MAX_OBJECT_BYTES, MULTIPART_ORPHAN_FILE,
-        MultipartBudgetRefused, NoDeleteStore, StagingKey, admit_object_bytes, authority, bridge, content_witness,
+        MultipartBudgetRefused, NoDeleteStore, STAGING_SUBDIR, StagingKey, admit_object_bytes, authority, bridge,
+        classify_key, content_witness,
     };
 
     // ------------------------------------------------------------------
@@ -5834,7 +6221,7 @@ mod r6_multipart_integrity_tests {
 
     fn tampered_staging_is_refused(tamper: Tamper, label: &str) {
         let (_dir, probe, store) = fixture();
-        let location = ObjectPath::from("base/fv1/m1/keyspace/01TAMPER.sst");
+        let location = ObjectPath::from("keyspace/01TAMPER.sst");
         probe.set_tamper(tamper);
         let outcome = upload(&store, &location, vec![b"first-part-".to_vec(), b"second-part".to_vec()]);
         let error = outcome.expect_err(&format!("{label} must be refused"));
@@ -5874,7 +6261,7 @@ mod r6_multipart_integrity_tests {
     fn an_untampered_upload_still_publishes() {
         // positive control: the refusals above are not "refuse everything".
         let (_dir, _probe, store) = fixture();
-        let location = ObjectPath::from("base/fv1/m1/keyspace/01CLEAN.sst");
+        let location = ObjectPath::from("keyspace/01CLEAN.sst");
         upload(&store, &location, vec![b"first-part-".to_vec(), b"second-part".to_vec()])
             .expect("a clean upload publishes");
         assert_eq!(read(&store, &location).unwrap(), b"first-part-second-part");
@@ -5885,7 +6272,7 @@ mod r6_multipart_integrity_tests {
         // R6-STOR-03: the immutability ledger's witness is length + 32 digest
         // bytes, never a u64.
         let (_dir, _probe, store) = fixture();
-        let location = ObjectPath::from("base/fv1/m1/keyspace/01LEDGER.sst");
+        let location = ObjectPath::from("keyspace/01LEDGER.sst");
         bridge({
             let (store, location) = (store.clone(), location.clone());
             async move { store.put(&location, PutPayload::from_static(b"ledger bytes")).await }
@@ -5913,7 +6300,7 @@ mod r6_multipart_integrity_tests {
         for (index, size) in [64 * 1024usize, 512 * 1024usize].into_iter().enumerate() {
             let (_dir, probe, store) = fixture();
             store.set_limits_for_test(WINDOW, MULTIPART_MAX_OBJECT_BYTES, MULTIPART_MAX_MATERIALISED_PROMOTE_BYTES);
-            let location = ObjectPath::from(format!("base/fv1/m1/keyspace/0{index}SIZE.sst"));
+            let location = ObjectPath::from(format!("keyspace/0{index}SIZE.sst"));
             probe.reset_observations();
             store.buffers.reset_peak();
             // stream the object as 16 KiB parts — four windows each
@@ -5948,7 +6335,7 @@ mod r6_multipart_integrity_tests {
         const WINDOW: u64 = 4 * 1024;
         let (_dir, probe, store) = fixture();
         store.set_limits_for_test(WINDOW, MULTIPART_MAX_OBJECT_BYTES, MULTIPART_MAX_MATERIALISED_PROMOTE_BYTES);
-        let location = ObjectPath::from("base/fv1/m1/keyspace/01RACE.sst");
+        let location = ObjectPath::from("keyspace/01RACE.sst");
         let parts: Vec<Vec<u8>> = (0..8).map(|part| vec![part as u8; 16 * 1024]).collect();
         upload(&store, &location, parts.clone()).expect("the winner publishes");
         probe.reset_observations();
@@ -5964,7 +6351,7 @@ mod r6_multipart_integrity_tests {
     fn an_occupied_target_holding_different_bytes_is_still_refused_and_quarantines() {
         // the streaming settlement must not have weakened the refusal
         let (_dir, _probe, store) = fixture();
-        let location = ObjectPath::from("base/fv1/m1/keyspace/01DIFF.sst");
+        let location = ObjectPath::from("keyspace/01DIFF.sst");
         upload(&store, &location, vec![b"published bytes".to_vec()]).expect("the winner publishes");
         let refused = upload(&store, &location, vec![b"different bytes".to_vec()]);
         assert!(
@@ -5985,7 +6372,7 @@ mod r6_multipart_integrity_tests {
         let (_dir, probe, store) = fixture();
         probe.deny_conditional_copy.store(true, Ordering::SeqCst);
         store.set_limits_for_test(WINDOW, MULTIPART_MAX_OBJECT_BYTES, MULTIPART_MAX_MATERIALISED_PROMOTE_BYTES);
-        let location = ObjectPath::from("base/fv1/m1/keyspace/01FALLBACK.sst");
+        let location = ObjectPath::from("keyspace/01FALLBACK.sst");
         let parts: Vec<Vec<u8>> = (0..4).map(|part| vec![part as u8 + 1; 16 * 1024]).collect();
         upload(&store, &location, parts).expect("the fallback promote publishes");
         // observations are captured BEFORE the test's own verification read
@@ -6031,7 +6418,7 @@ mod r6_multipart_integrity_tests {
         // ceiling must still fire, and the refusal must name it.
         let (_dir, _probe, store) = fixture();
         store.set_limits_for_test(4 * 1024, 16, MULTIPART_MAX_MATERIALISED_PROMOTE_BYTES);
-        let location = ObjectPath::from("base/fv1/m1/keyspace/01HUGE.sst");
+        let location = ObjectPath::from("keyspace/01HUGE.sst");
         let refused = upload(&store, &location, vec![vec![b'x'; 8], vec![b'y'; 9]])
             .expect_err("an object over the per-object maximum must be refused");
         assert!(
@@ -6040,7 +6427,7 @@ mod r6_multipart_integrity_tests {
         );
         assert!(read(&store, &location).is_none(), "nothing may be published for a refused object");
         // and an object AT the ceiling is still admitted
-        let admitted = ObjectPath::from("base/fv1/m1/keyspace/01FITS.sst");
+        let admitted = ObjectPath::from("keyspace/01FITS.sst");
         upload(&store, &admitted, vec![vec![b'x'; 8], vec![b'y'; 8]]).expect("an object at the ceiling is admitted");
         assert_eq!(read(&store, &admitted).unwrap().len(), 16);
     }
@@ -6054,7 +6441,7 @@ mod r6_multipart_integrity_tests {
         let (_dir, probe, store) = fixture();
         probe.deny_conditional_copy.store(true, Ordering::SeqCst);
         store.set_limits_for_test(4 * 1024, MULTIPART_MAX_OBJECT_BYTES, 8);
-        let location = ObjectPath::from("base/fv1/m1/keyspace/01BIGFALL.sst");
+        let location = ObjectPath::from("keyspace/01BIGFALL.sst");
         let refused = upload(&store, &location, vec![vec![b'z'; 32]])
             .expect_err("an object over the materialised-promote cap must be refused");
         assert!(refused.to_string().contains("R6-STOR-02"), "the refusal cites the bound: {refused}");
@@ -6063,7 +6450,7 @@ mod r6_multipart_integrity_tests {
 
         // an object AT the cap still publishes through the same fallback
         store.set_limits_for_test(4 * 1024, MULTIPART_MAX_OBJECT_BYTES, 32);
-        let fits = ObjectPath::from("base/fv1/m1/keyspace/01FITFALL.sst");
+        let fits = ObjectPath::from("keyspace/01FITFALL.sst");
         upload(&store, &fits, vec![vec![b'z'; 32]]).expect("an object at the cap publishes");
         assert_eq!(read(&store, &fits).unwrap().len(), 32);
     }
@@ -6097,7 +6484,7 @@ mod r6_multipart_integrity_tests {
         // boundary and the authoritative object survives.
         let dir = create_tmp_dir("slate-r6-staging-scope");
         let raw: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
-        let published = ObjectPath::from("base/fv1/m1/keyspace/01LIVE.sst");
+        let published = ObjectPath::from("keyspace/01LIVE.sst");
         bridge({
             let (raw, published) = (raw.clone(), published.clone());
             async move { raw.put(&published, PutPayload::from_static(b"authoritative")).await }
@@ -6122,9 +6509,12 @@ mod r6_multipart_integrity_tests {
         assert!(survives.is_ok(), "the authoritative object must survive a refused staging reclaim");
 
         // and a legitimately minted staging key IS reclaimable through it
-        let target = ObjectPath::from("base/fv1/m1/keyspace/01STAGE.sst");
+        let target = ObjectPath::from("keyspace/01STAGE.sst");
         let minted = StagingKey::mint(&target, 7);
-        assert!(minted.path().as_ref().contains(MULTIPART_ATTEMPT_INFIX), "a minted key is in the staging namespace");
+        assert!(
+            matches!(classify_key(minted.path()), KeyClass::Staging(_)),
+            "a minted key classifies as staging: {minted}"
+        );
         bridge({
             let (raw, minted) = (raw.clone(), minted.clone());
             async move { raw.put(minted.path(), PutPayload::from_static(b"staged")).await }
@@ -6142,18 +6532,18 @@ mod r6_multipart_integrity_tests {
         // R6-STOR-04: a swallowed `let _ = store.delete(..)` made orphan state
         // invisible. A reclaim that fails must leave a DURABLE record.
         let (dir, probe, store) = fixture();
-        let location = ObjectPath::from("base/fv1/m1/keyspace/01ORPHAN.sst");
+        let location = ObjectPath::from("keyspace/01ORPHAN.sst");
         probe.deny_reclaim.store(true, Ordering::SeqCst);
         upload(&store, &location, vec![b"published anyway".to_vec()]).expect("publication still succeeds");
 
         let records = store.orphans.records();
         assert_eq!(records.len(), 1, "a failed reclaim must record exactly one orphan, got {records:?}");
-        assert!(records[0].contains(MULTIPART_ATTEMPT_INFIX), "the record names the staging key: {}", records[0]);
+        assert!(records[0].contains(STAGING_SUBDIR), "the record names the staging key: {}", records[0]);
         assert!(records[0].contains("staging reclaim failed"), "the record names the reason: {}", records[0]);
         assert_eq!(store.orphans.undurable(), 0, "the record must have been made durable");
 
         let inventory = std::fs::read_to_string(dir.join(MULTIPART_ORPHAN_FILE)).expect("the durable inventory exists");
-        assert!(inventory.contains(MULTIPART_ATTEMPT_INFIX), "the durable inventory carries the orphan key");
+        assert!(inventory.contains(STAGING_SUBDIR), "the durable inventory carries the orphan key");
         assert_eq!(inventory.lines().count(), 1);
 
         // the published object is unaffected: cleanup is best effort, the
@@ -6171,7 +6561,7 @@ mod r6_multipart_integrity_tests {
         let probe = ProbeStore::new(raw);
         probe.deny_reclaim.store(true, Ordering::SeqCst);
         let store = Arc::new(NoDeleteStore::new(probe.clone() as Arc<dyn ObjectStore>));
-        let location = ObjectPath::from("base/fv1/m1/keyspace/01NOSINK.sst");
+        let location = ObjectPath::from("keyspace/01NOSINK.sst");
         upload(&store, &location, vec![b"bytes".to_vec()]).expect("publication succeeds");
         assert_eq!(store.orphans.records().len(), 1, "the orphan is recorded in memory");
         assert_eq!(store.orphans.undurable(), 1, "a record that cannot be made durable is COUNTED");
@@ -6184,7 +6574,7 @@ mod r6_multipart_integrity_tests {
         // COMMITTED attempt refuses abort outright — so no abort path can
         // remove published bytes.
         let (_dir, _probe, store) = fixture();
-        let location = ObjectPath::from("base/fv1/m1/keyspace/01ABORT.sst");
+        let location = ObjectPath::from("keyspace/01ABORT.sst");
         let refused = bridge({
             let (store, location) = (store.clone(), location.clone());
             async move {
@@ -6212,8 +6602,8 @@ mod r6_multipart_integrity_tests {
         let dir = create_tmp_dir("slate-r6-authoritative");
         let raw: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
         let (authoritative, _staging) = authority::split(raw.clone());
-        let occupied = ObjectPath::from("base/fv1/m1/keyspace/01OCC.sst");
-        let source = ObjectPath::from("base/fv1/m1/keyspace/01SRC.sst");
+        let occupied = ObjectPath::from("keyspace/01OCC.sst");
+        let source = ObjectPath::from("keyspace/01SRC.sst");
         bridge({
             let (authoritative, occupied, source) = (authoritative.clone(), occupied.clone(), source.clone());
             async move {
@@ -6264,6 +6654,945 @@ mod r6_multipart_integrity_tests {
         assert!(
             matches!(misaimed, Err(slatedb::object_store::Error::Precondition { .. })),
             "the CAS path must refuse a non-manifest location, got {misaimed:?}",
+        );
+    }
+}
+
+#[cfg(test)]
+mod r8_authority_grammar_tests {
+    //! R8-P0-01: **a name is not a capability.**
+    //!
+    //! The Round-8 audit constructed
+    //! `manifest/base/fv1/m1/keyspace/compacted/01ABC.sst` and observed
+    //! `is_manifest_key` return true — because ONE configurable segment of the
+    //! object root was spelled `manifest`. That put an immutable SST on the
+    //! mutable conditional-CAS path. It also observed that any legitimate
+    //! object name containing `.mpa-` classified as multipart staging, i.e. as
+    //! addressable by the one capability in this process that can DELETE.
+    //!
+    //! Both defects had the same shape: authority read out of a SUBSTRING of a
+    //! string whose leading segments the deployment controls. This module is
+    //! the permanent proof that the shape is gone, in three layers:
+    //!
+    //! 1. **The exact matrix** ([`CLASSIFICATION_MATRIX`]) — every prefix and
+    //!    name the audit named, plus the near misses, pinned to their class.
+    //! 2. **The executed mutants** — the two predicates the audit found,
+    //!    re-implemented here and required to DISAGREE with the real grammar
+    //!    on at least one matrix row. A matrix that could not tell the mutant
+    //!    from the real classifier would be a matrix that proves nothing.
+    //! 3. **The end-to-end boundary** — a real remote keyspace opened under a
+    //!    deliberately hostile object root (every segment named `manifest`, or
+    //!    every segment carrying `.mpa-`), driven through the real engine, and
+    //!    required to still refuse an overwrite of its own authoritative bytes.
+    //!
+    //! Layer 3 is the one that would have caught the defect: layers 1 and 2 are
+    //! about the parser, layer 3 is about the wiring — the authority wrapper is
+    //! now installed INSIDE the materialisation `PrefixStore`, so a configurable
+    //! segment is not part of the string an authority decision is taken from.
+
+    use std::sync::Arc;
+
+    use slatedb::object_store::{
+        ObjectStore, ObjectStoreExt, PutMode, PutOptions, PutPayload, local::LocalFileSystem, path::Path as ObjectPath,
+    };
+    use test_utils::create_tmp_dir;
+
+    use super::{
+        DB_SUBDIR, KeyClass, MANIFEST_SUBDIR, MaterialisationNamespace, NoDeleteStore, STAGING_SUBDIR, SlateKeyspace,
+        StagingKey, authority, bridge, classify_key, encode_segment, is_encoded_segment, is_manifest_key,
+        is_multipart_attempt_key, list_remote_prefix, mint_attempt_location,
+    };
+
+    /// What the grammar must say about a key. Spelled out per row so a change
+    /// to the parser cannot quietly reclassify anything.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Expect {
+        Manifest,
+        Staging,
+        Immutable,
+    }
+
+    fn actual(location: &str) -> Expect {
+        match classify_key(&ObjectPath::from(location)) {
+            KeyClass::Manifest(_) => Expect::Manifest,
+            KeyClass::Staging(_) => Expect::Staging,
+            KeyClass::Immutable(_) => Expect::Immutable,
+        }
+    }
+
+    /// The exact prefix/name matrix R8-P0-01 requires. Every row is a
+    /// DATABASE-RELATIVE key, because that is what the authority wrapper sees
+    /// now; the rows that begin with a configurable-looking segment are the
+    /// audit's own escalation paths, which must classify as `Immutable` even
+    /// if someone re-wires the wrapper outside the prefix by mistake.
+    const CLASSIFICATION_MATRIX: &[(&str, Expect, &str)] = &[
+        // --- the one real manifest position -------------------------------
+        ("keyspace/manifest/00000000000000000001.manifest", Expect::Manifest, "the exact SlateDB manifest position"),
+        (
+            "keyspace/manifest/18446744073709551615.manifest",
+            Expect::Manifest,
+            "u64::MAX is exactly 20 digits and is still a manifest",
+        ),
+        // --- the audit's escalation path ----------------------------------
+        (
+            "manifest/base/fv1/m1/keyspace/compacted/01ABC.sst",
+            Expect::Immutable,
+            "R8-P0-01 PROOF PATH: a configurable ROOT segment named `manifest` \
+             must never grant manifest authority to an immutable SST",
+        ),
+        (
+            "manifest/manifest/manifest/manifest/manifest/manifest/keyspace/compacted/01ABC.sst",
+            Expect::Immutable,
+            "every configurable segment named `manifest` still grants nothing",
+        ),
+        ("manifest/00000000000000000001.manifest", Expect::Immutable, "a manifest NAME outside the keyspace root"),
+        (
+            "keyspace/manifest/nested/00000000000000000001.manifest",
+            Expect::Immutable,
+            "a manifest name one level too deep is not the manifest position",
+        ),
+        // --- near misses on the manifest directory ------------------------
+        ("keyspace/manifest2/00000000000000000001.manifest", Expect::Immutable, "near miss: `manifest2`"),
+        ("keyspace/xmanifest/00000000000000000001.manifest", Expect::Immutable, "near miss: `xmanifest`"),
+        ("keyspace/manifest/0000000000000000001.manifest", Expect::Immutable, "19 digits is not a manifest name"),
+        ("keyspace/manifest/000000000000000000001.manifest", Expect::Immutable, "21 digits is not a manifest name"),
+        ("keyspace/manifest/0000000000000000000a.manifest", Expect::Immutable, "a hex digit is not a decimal digit"),
+        ("keyspace/manifest/latest.manifest", Expect::Immutable, "an unpadded manifest-ish name"),
+        (
+            "keyspace/manifest/00000000000000000001.manifest.bak",
+            Expect::Immutable,
+            "a manifest name with a trailing suffix",
+        ),
+        ("keyspace/manifest/00000000000000000001", Expect::Immutable, "the extension is part of the grammar"),
+        // --- ordinary SlateDB data ----------------------------------------
+        ("keyspace/compacted/01J79C21YKR31J2BS1EFXJZ7MR.sst", Expect::Immutable, "a compacted SST"),
+        ("keyspace/wal/00000000000000000003.sst", Expect::Immutable, "a WAL SST"),
+        ("keyspace/gc/manifest.boundary", Expect::Immutable, "the GC boundary object is not a manifest"),
+        ("keyspace/compactions/00000000000000000001.compactions", Expect::Immutable, "the compactions object"),
+        // --- the `.mpa-` escalation path ----------------------------------
+        (
+            "keyspace/compacted/01ABC.mpa-0001.sst",
+            Expect::Immutable,
+            "R8-P0-01 PROOF PATH: a legitimate object NAME containing `.mpa-` \
+             must never be reclaimable staging",
+        ),
+        (
+            "acme.mpa-1/base/fv1/m1/keyspace/compacted/01ABC.sst",
+            Expect::Immutable,
+            "a configurable tenant segment containing `.mpa-` grants nothing",
+        ),
+        (".mpa-/keyspace/compacted/01ABC.sst", Expect::Immutable, "near miss: a segment that IS the old infix"),
+        ("keyspace/compacted/01ABC.mpa.sst", Expect::Immutable, "near miss: `.mpa` without the dash"),
+        ("keyspace/compacted/01ABC.mpa--0001.sst", Expect::Immutable, "near miss: `.mpa--`"),
+        // --- the staging namespace, and its near misses --------------------
+        (
+            ".typedb-staging/0000002a-0123456789abcdef-000000000000000000000001-00000007/keyspace=scompacted=s01ABC.sst",
+            Expect::Staging,
+            "the exact minted staging grammar",
+        ),
+        (
+            ".typedb-staging/0000002a-0123456789abcdef-000000000000000000000001-00000007/a/b",
+            Expect::Immutable,
+            "four segments is not the staging grammar",
+        ),
+        (
+            ".typedb-staging/not-a-token/keyspace=s01ABC.sst",
+            Expect::Immutable,
+            "the attempt token is checked by SHAPE, not by position alone",
+        ),
+        (
+            ".typedb-staging/0000002a-0123456789abcdef-000000000000000000000001-0000000/x",
+            Expect::Immutable,
+            "a 7-hex-digit attempt field is not the token grammar",
+        ),
+        (
+            ".typedb-staging/0000002g-0123456789abcdef-000000000000000000000001-00000007/x",
+            Expect::Immutable,
+            "`g` is not a hex digit",
+        ),
+        (
+            ".typedb-staging/0000002a-0123456789abcdef-000000000000000000000001-00000007/has space",
+            Expect::Immutable,
+            "the encoded target must be in the encoder's alphabet",
+        ),
+        (
+            "typedb-staging/0000002a-0123456789abcdef-000000000000000000000001-00000007/x",
+            Expect::Immutable,
+            "near miss: the staging root without its leading dot",
+        ),
+        (
+            "keyspace/.typedb-staging/0000002a-0123456789abcdef-000000000000000000000001-00000007/x",
+            Expect::Immutable,
+            "the staging root is TOP-LEVEL; nested is not staging",
+        ),
+        // --- degenerate inputs ---------------------------------------------
+        ("", Expect::Immutable, "the empty key"),
+        ("keyspace", Expect::Immutable, "the db root itself"),
+        ("keyspace/manifest", Expect::Immutable, "the manifest DIRECTORY is not a manifest object"),
+    ];
+
+    #[test]
+    fn the_exact_prefix_and_name_matrix_classifies_as_declared() {
+        for (key, expected, why) in CLASSIFICATION_MATRIX {
+            assert_eq!(actual(key), *expected, "{key:?} must be {expected:?} — {why}");
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // The two diagnostics the audit wrote, kept permanently (report §3.6).
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn diagnostic_namespace_classifiers_do_not_confuse_prefixes_with_authority() {
+        // 1. an immutable SST below a configured root segment named `manifest`
+        //    is NOT a manifest
+        assert!(!is_manifest_key(&ObjectPath::from("manifest/base/fv1/m1/keyspace/compacted/01ABC.sst")));
+        // 2. a legitimate immutable filename merely containing `.mpa-` is NOT
+        //    multipart staging
+        assert!(!is_multipart_attempt_key(&ObjectPath::from("keyspace/compacted/01ABC.mpa-0001.sst")));
+        // 3. a key minted by the real attempt-key function IS staging
+        let minted = mint_attempt_location(&ObjectPath::from("keyspace/compacted/01ABC.sst"), 7);
+        assert!(is_multipart_attempt_key(&minted), "a minted attempt key must classify as staging: {minted}");
+    }
+
+    // ---------------------------------------------------------------------
+    // Executed mutants: the exact predicates the audit found.
+    // ---------------------------------------------------------------------
+
+    /// MUTANT A — the manifest predicate reverted to "any segment equals
+    /// `manifest`". This is the code the audit ran.
+    fn mutant_manifest_any_segment(location: &ObjectPath) -> bool {
+        location.parts().any(|part| part.as_ref() == MANIFEST_SUBDIR)
+    }
+
+    /// MUTANT B — the staging predicate reverted to substring containment of
+    /// the old `.mpa-` infix.
+    fn mutant_staging_substring(location: &ObjectPath) -> bool {
+        location.as_ref().contains(".mpa-")
+    }
+
+    #[test]
+    fn the_matrix_kills_the_parts_any_manifest_mutant() {
+        // The mutant must be DETECTED by the permanent matrix — otherwise the
+        // matrix is decoration. Every disagreement is reported, so a future
+        // edit that narrows the matrix shows up as a shrinking kill set.
+        let kills: Vec<&str> = CLASSIFICATION_MATRIX
+            .iter()
+            .filter(|(key, expected, _)| {
+                mutant_manifest_any_segment(&ObjectPath::from(*key)) != (*expected == Expect::Manifest)
+            })
+            .map(|(key, _, _)| *key)
+            .collect();
+        assert!(
+            kills.contains(&"manifest/base/fv1/m1/keyspace/compacted/01ABC.sst"),
+            "the audit's own proof path must kill the `parts().any` mutant; kills = {kills:?}"
+        );
+        assert!(kills.len() >= 3, "the matrix must kill this mutant on several independent rows: {kills:?}");
+    }
+
+    #[test]
+    fn the_matrix_kills_the_substring_staging_mutant() {
+        let kills: Vec<&str> = CLASSIFICATION_MATRIX
+            .iter()
+            .filter(|(key, expected, _)| {
+                mutant_staging_substring(&ObjectPath::from(*key)) != (*expected == Expect::Staging)
+            })
+            .map(|(key, _, _)| *key)
+            .collect();
+        assert!(
+            kills.contains(&"keyspace/compacted/01ABC.mpa-0001.sst"),
+            "a legitimate name carrying `.mpa-` must kill the substring mutant; kills = {kills:?}"
+        );
+        // and the mutant ALSO fails to recognise a real minted key, which is
+        // the other half of the defect: it would refuse a legitimate reclaim.
+        let minted = mint_attempt_location(&ObjectPath::from("keyspace/compacted/01ABC.sst"), 7);
+        assert!(
+            !mutant_staging_substring(&minted),
+            "the substring mutant does not recognise the minted staging grammar at all: {minted}"
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // Minting, encoding and the staging capability.
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn a_minted_staging_key_is_three_segments_in_the_adapter_namespace() {
+        for target in [
+            "keyspace/compacted/01ABC.sst",
+            "keyspace/manifest/00000000000000000001.manifest",
+            "keyspace/compacted/01ABC.mpa-0001.sst",
+        ] {
+            let minted = mint_attempt_location(&ObjectPath::from(target), 7);
+            let parts: Vec<String> = minted.parts().map(|part| part.as_ref().to_owned()).collect();
+            assert_eq!(parts.len(), 3, "a staging key is exactly <root>/<token>/<encoded-target>: {minted}");
+            assert_eq!(parts[0], STAGING_SUBDIR, "staging lives in the adapter's own namespace: {minted}");
+            assert_eq!(parts[2], encode_segment(target), "the target is carried injectively encoded");
+            assert!(matches!(classify_key(&minted), KeyClass::Staging(_)), "{minted} must classify as staging");
+        }
+    }
+
+    #[test]
+    fn hostile_target_names_cannot_add_segments_or_escape_the_staging_namespace() {
+        // `/`, `=`, Unicode and control bytes all have to survive as ONE
+        // segment, or a caller-controlled target name could spell a path the
+        // grammar was not asked about.
+        for target in [
+            "keyspace/compacted/01ABC.sst",
+            "keyspace/=/=s/==",
+            "keyspace/../../escape.sst",
+            "keyspace/compacted/\u{00e9}\u{4e2d}\u{6587}.sst",
+            "keyspace/compacted/ctl\u{0001}\u{001f}.sst",
+            ".typedb-staging/0000002a-0123456789abcdef-000000000000000000000001-00000007/x",
+        ] {
+            let minted = mint_attempt_location(&ObjectPath::from(target), 11);
+            let parts: Vec<String> = minted.parts().map(|part| part.as_ref().to_owned()).collect();
+            assert_eq!(parts.len(), 3, "target {target:?} must not add segments: {minted}");
+            assert!(is_encoded_segment(&parts[2]), "the encoded target stays in the encoder alphabet: {}", parts[2]);
+            assert!(matches!(classify_key(&minted), KeyClass::Staging(_)), "{minted} must classify as staging");
+        }
+    }
+
+    #[test]
+    fn the_target_encoding_is_injective() {
+        // two distinct targets can never share a staging name, or one attempt
+        // could reclaim another's bytes.
+        let targets = ["a/b", "a=sb", "a=b", "a==b", "ab", "a", "b", "=s", "=="];
+        for (i, left) in targets.iter().enumerate() {
+            for right in targets.iter().skip(i + 1) {
+                assert_ne!(encode_segment(left), encode_segment(right), "{left:?} and {right:?} encode alike");
+            }
+        }
+    }
+
+    #[test]
+    fn a_forged_staging_lookalike_is_refused_by_the_staging_capability() {
+        let dir = create_tmp_dir("slate-r8-forged");
+        let inner: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
+        let (_authoritative, staging) = authority::split(inner);
+        for forged in [
+            // an authoritative name
+            "keyspace/compacted/01ABC.sst",
+            // a name that merely carries the OLD infix
+            "keyspace/compacted/01ABC.mpa-0001.sst",
+            // staging-shaped, but the token is not the minted grammar
+            ".typedb-staging/not-a-token/keyspace=scompacted=s01ABC.sst",
+            // right root, right token shape, but nested one level too deep
+            ".typedb-staging/0000002a-0123456789abcdef-000000000000000000000001-00000007/a/b",
+        ] {
+            let key = StagingKey::forged_for_test(ObjectPath::from(forged));
+            let refused = bridge({
+                let staging = staging.clone();
+                async move { staging.reclaim(&key).await }
+            });
+            assert!(refused.is_err(), "the staging capability must refuse the forged key {forged:?}");
+        }
+        // the real thing is accepted by the boundary (it 404s at the provider,
+        // which is a different — and expected — outcome from a refusal)
+        let minted = StagingKey::mint(&ObjectPath::from("keyspace/compacted/01ABC.sst"), 3);
+        let outcome = bridge({
+            let staging = staging.clone();
+            async move { staging.reclaim(&minted).await }
+        });
+        assert!(
+            !matches!(outcome, Err(slatedb::object_store::Error::Precondition { .. })),
+            "a minted key must pass the namespace boundary, not be refused by it: {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn the_authoritative_principal_cannot_write_into_the_staging_namespace() {
+        let dir = create_tmp_dir("slate-r8-staging-write");
+        let inner: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
+        let store = Arc::new(NoDeleteStore::new(inner));
+        let minted = mint_attempt_location(&ObjectPath::from("keyspace/compacted/01ABC.sst"), 5);
+        let refused = bridge({
+            let store = store.clone();
+            let minted = minted.clone();
+            async move { store.put(&minted, PutPayload::from_static(b"planted")).await }
+        });
+        assert!(
+            matches!(refused, Err(slatedb::object_store::Error::Precondition { .. })),
+            "planting bytes at a staging name through the authoritative principal must be refused: {refused:?}"
+        );
+        let refused = bridge({
+            let store = store.clone();
+            async move { store.put_multipart(&minted).await.map(|_| ()) }
+        });
+        assert!(
+            matches!(refused, Err(slatedb::object_store::Error::Precondition { .. })),
+            "a multipart aimed at the staging namespace must be refused: {refused:?}"
+        );
+    }
+
+    #[test]
+    fn the_one_exact_manifest_location_still_takes_a_conditional_put() {
+        let dir = create_tmp_dir("slate-r8-manifest-cas");
+        let inner: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
+        let store = Arc::new(NoDeleteStore::new(inner));
+        let manifest = ObjectPath::from(format!("{DB_SUBDIR}/{MANIFEST_SUBDIR}/00000000000000000001.manifest"));
+        let created = bridge({
+            let (store, manifest) = (store.clone(), manifest.clone());
+            async move {
+                store
+                    .put_opts(
+                        &manifest,
+                        PutPayload::from_static(b"m1"),
+                        PutOptions { mode: PutMode::Create, ..Default::default() },
+                    )
+                    .await
+            }
+        });
+        assert!(created.is_ok(), "the manifest CAS path must still work at its exact location: {created:?}");
+        // and the CAS precondition is still honoured (a second Create fails)
+        let again = bridge({
+            let (store, manifest) = (store.clone(), manifest.clone());
+            async move {
+                store
+                    .put_opts(
+                        &manifest,
+                        PutPayload::from_static(b"m1-again"),
+                        PutOptions { mode: PutMode::Create, ..Default::default() },
+                    )
+                    .await
+            }
+        });
+        assert!(
+            matches!(again, Err(slatedb::object_store::Error::AlreadyExists { .. })),
+            "the caller's CAS precondition is passed through unchanged: {again:?}"
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // Layer 3: the end-to-end boundary under a hostile object root.
+    // ---------------------------------------------------------------------
+
+    /// Open a real remote keyspace under `base`, write and flush, and return
+    /// the keyspace plus every key the engine published (as the prefix-scoped
+    /// principal sees them).
+    fn opened_under(base: ObjectPath, tag: &str) -> (test_utils::TempDir, test_utils::TempDir, SlateKeyspace, Vec<ObjectPath>) {
+        let store_dir = create_tmp_dir(&format!("slate-r8-{tag}-store"));
+        let inner: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*store_dir).unwrap());
+        let keyspace_dir = create_tmp_dir(&format!("slate-r8-{tag}-ks"));
+        let keyspace = SlateKeyspace::open_remote(inner, base, &keyspace_dir, None).unwrap();
+        keyspace.put(b"k", b"v").unwrap();
+        {
+            let db = keyspace.shared_db();
+            bridge(async move { db.flush().await }).unwrap();
+        }
+        let scoped = keyspace.remote.as_ref().expect("remote lane").store.clone();
+        let keys = bridge(async move {
+            list_remote_prefix(scoped.as_ref(), &ObjectPath::default())
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|meta| meta.location)
+                .collect::<Vec<_>>()
+        });
+        (store_dir, keyspace_dir, keyspace, keys)
+    }
+
+    /// Every hostile object root the audit named, plus the controller-shaped
+    /// namespace with every identifier set to a hostile value.
+    fn hostile_roots() -> Vec<(String, ObjectPath)> {
+        let mut roots = vec![
+            ("root-named-manifest".to_owned(), ObjectPath::from("manifest")),
+            ("root-with-mpa-infix".to_owned(), ObjectPath::from("acme.mpa-1")),
+        ];
+        for hostile in ["manifest", "acme.mpa-1"] {
+            let namespace = MaterialisationNamespace {
+                environment: hostile.to_owned(),
+                tenant: hostile.to_owned(),
+                database_id: hostile.to_owned(),
+                generation: hostile.to_owned(),
+                materialisation: hostile.to_owned(),
+                keyspace: hostile.to_owned(),
+            };
+            roots.push((format!("every-identifier-{hostile}"), namespace.to_object_prefix(hostile)));
+        }
+        roots
+    }
+
+    #[test]
+    fn a_hostile_object_root_cannot_reclassify_authoritative_bytes() {
+        for (tag, base) in hostile_roots() {
+            let (_store_dir, _keyspace_dir, keyspace, keys) = opened_under(base.clone(), &tag);
+            assert!(!keys.is_empty(), "[{tag}] the engine published nothing to classify");
+
+            // Every published key is database-relative and classifies by the
+            // exact grammar — never by the hostile root, which is not even
+            // part of the string any more.
+            let mut manifests = 0usize;
+            for key in &keys {
+                assert!(
+                    !key.as_ref().starts_with(base.as_ref()),
+                    "[{tag}] the principal must see DATABASE-RELATIVE paths, got {key}"
+                );
+                match classify_key(key) {
+                    KeyClass::Manifest(_) => {
+                        manifests += 1;
+                        assert!(
+                            key.as_ref().starts_with(&format!("{DB_SUBDIR}/{MANIFEST_SUBDIR}/")),
+                            "[{tag}] only the exact manifest position may classify as manifest: {key}"
+                        );
+                    }
+                    KeyClass::Staging(_) => panic!("[{tag}] a published key classified as staging: {key}"),
+                    KeyClass::Immutable(_) => {}
+                }
+            }
+            assert!(
+                manifests >= 1,
+                "[{tag}] LAYOUT DRIFT: no published key matched the manifest grammar. SlateDB's \
+                 manifest position or naming has changed and `classify_key` must be updated — \
+                 keys were {keys:?}"
+            );
+
+            // The boundary that the misclassification bypassed: a
+            // different-bytes overwrite of an authoritative SST. Under the old
+            // wiring this key classified as a manifest (because the root said
+            // `manifest`) and the put went to the pass-through CAS path.
+            let victim = keys
+                .iter()
+                .find(|key| matches!(classify_key(key), KeyClass::Immutable(_)))
+                .expect("the engine published at least one immutable object")
+                .clone();
+            let scoped = keyspace.remote.as_ref().expect("remote lane").store.clone();
+            let refused = bridge({
+                let (scoped, victim) = (scoped.clone(), victim.clone());
+                async move { scoped.put(&victim, PutPayload::from_static(b"forged authoritative bytes")).await }
+            });
+            assert!(
+                matches!(refused, Err(slatedb::object_store::Error::Precondition { .. })),
+                "[{tag}] overwriting authoritative bytes at {victim} must be refused, got {refused:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_scoped_principal_has_no_delete_authority_under_a_hostile_root() {
+        for (tag, base) in hostile_roots() {
+            let (_store_dir, _keyspace_dir, keyspace, keys) = opened_under(base, &tag);
+            let scoped = keyspace.remote.as_ref().expect("remote lane").store.clone();
+            for key in &keys {
+                let refused = bridge({
+                    let (scoped, key) = (scoped.clone(), key.clone());
+                    async move { scoped.delete(&key).await }
+                });
+                assert!(refused.is_err(), "[{tag}] the runtime principal must not delete {key}");
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod r8_multipart_admission_tests {
+    //! R8-P1-01: **no provider byte is accepted or attempted unless the
+    //! journal proves the attempt is open and owns its target.**
+    //!
+    //! The Round-8 audit's second diagnostic was one line:
+    //!
+    //! ```text
+    //! MultipartJournal::default().reserve_part_bytes(unknown, 1).is_err()   // FAILED
+    //! ```
+    //!
+    //! `reserve_part_bytes` checked the byte budget, found no open row for the
+    //! attempt, and returned `Ok(())` — "nothing to reserve against". Its only
+    //! caller, `JournaledMultipart::put_part`, had no state gate of its own,
+    //! so an unknown, aborted, committed or receipt-evicted attempt was
+    //! admitted, its payload hashed into the expected witness, and the parts
+    //! forwarded to the provider upload. Fail-OPEN, on the path whose whole
+    //! job is admission.
+    //!
+    //! The end-to-end tests assert the refusal AND that the provider was
+    //! called ZERO times for it — "it errored somewhere later" is not the
+    //! property; "no byte was attempted" is.
+
+    use std::sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    };
+
+    use futures::stream::BoxStream;
+    use slatedb::object_store::{
+        CopyOptions, GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, ObjectStore, ObjectStoreExt,
+        PutMultipartOptions, PutOptions, PutPayload, PutResult, UploadPart, local::LocalFileSystem,
+        path::Path as ObjectPath,
+    };
+    use test_utils::create_tmp_dir;
+
+    use super::{AttemptState, MultipartBudgetRefused, MultipartJournal, NoDeleteStore, bridge};
+
+    fn target(name: &str) -> ObjectPath {
+        ObjectPath::from(format!("keyspace/compacted/{name}.sst"))
+    }
+
+    // =====================================================================
+    // The journal, directly. The audit's diagnostic and its whole family.
+    // =====================================================================
+
+    #[test]
+    fn diagnostic_unknown_multipart_attempt_must_fail_closed() {
+        // The audit's exact diagnostic, kept permanently.
+        let mut journal = MultipartJournal::default();
+        let refused = journal.admit_part_bytes(999, &target("01ABC"), 1);
+        assert_eq!(refused, Err(MultipartBudgetRefused::State { attempt_id: 999, state: None }));
+        assert_eq!(journal.reserved_bytes, 0, "a refusal reserves nothing");
+    }
+
+    #[test]
+    fn a_part_after_abort_or_commit_is_refused_from_the_receipt_window() {
+        for terminal in [AttemptState::Aborted, AttemptState::Committed] {
+            let mut journal = MultipartJournal::default();
+            let location = target("01ABC");
+            journal.initiate(&location, 1).unwrap();
+            assert_eq!(journal.admit_part_bytes(1, &location, 4), Ok(()), "an open attempt is admitted");
+            journal.retire(location.as_ref(), 1, terminal);
+            assert_eq!(
+                journal.admit_part_bytes(1, &location, 4),
+                Err(MultipartBudgetRefused::State { attempt_id: 1, state: Some(terminal) }),
+                "a {terminal:?} attempt must be refused with its recorded state"
+            );
+            assert_eq!(journal.reserved_bytes, 0, "retiring released the reservation and the refusal added none");
+        }
+    }
+
+    #[test]
+    fn a_part_after_terminal_receipt_eviction_is_refused_as_unknown() {
+        let mut journal = MultipartJournal::default();
+        journal.max_terminal_receipts = 2;
+        let location = target("01ABC");
+        journal.initiate(&location, 1).unwrap();
+        journal.retire(location.as_ref(), 1, AttemptState::Committed);
+        // push attempt 1's receipt out of the bounded window
+        for id in 2..=4u64 {
+            journal.initiate(&location, id).unwrap();
+            journal.retire(location.as_ref(), id, AttemptState::Aborted);
+        }
+        assert_eq!(
+            journal.admit_part_bytes(1, &location, 1),
+            Err(MultipartBudgetRefused::State { attempt_id: 1, state: None }),
+            "an id evicted from the receipt window is UNKNOWN, and unknown fails closed"
+        );
+    }
+
+    #[test]
+    fn a_part_under_a_foreign_location_is_refused() {
+        let mut journal = MultipartJournal::default();
+        let mine = target("01ABC");
+        let theirs = target("02DEF");
+        journal.initiate(&mine, 1).unwrap();
+        assert_eq!(
+            journal.admit_part_bytes(1, &theirs, 8),
+            Err(MultipartBudgetRefused::ForeignTarget { attempt_id: 1, presented: theirs.to_string() }),
+            "an attempt may only be charged for the target the journal recorded for it"
+        );
+        assert_eq!(journal.reserved_bytes, 0);
+    }
+
+    #[test]
+    fn a_superseded_attempt_uploads_no_further_parts_but_stays_abortable() {
+        let mut journal = MultipartJournal::default();
+        let location = target("01ABC");
+        journal.initiate(&location, 1).unwrap();
+        journal.initiate(&location, 2).unwrap();
+        assert_eq!(
+            journal.admit_part_bytes(1, &location, 8),
+            Err(MultipartBudgetRefused::Superseded { attempt_id: 1, active: 2 }),
+            "the superseded attempt may not stream more bytes"
+        );
+        assert_eq!(journal.admit_part_bytes(2, &location, 8), Ok(()), "the active attempt still may");
+        // ... and the superseded attempt is still uncommitted, i.e. abortable
+        assert_eq!(journal.state_of(1), Some(AttemptState::Uncommitted));
+    }
+
+    #[test]
+    fn releasing_a_failed_part_is_exact_and_never_underflows() {
+        let mut journal = MultipartJournal::default();
+        let location = target("01ABC");
+        journal.initiate(&location, 1).unwrap();
+        journal.admit_part_bytes(1, &location, 10).unwrap();
+        assert_eq!(journal.reserved_bytes, 10);
+        journal.release_part_bytes(1, 4);
+        assert_eq!(journal.reserved_bytes, 6, "the release is exact");
+        journal.release_part_bytes(1, 1_000);
+        assert_eq!(journal.reserved_bytes, 0, "a release larger than the row cannot underflow the aggregate");
+        journal.release_part_bytes(404, 10);
+        assert_eq!(journal.reserved_bytes, 0, "releasing for an unknown attempt is a no-op");
+    }
+
+    #[test]
+    fn the_budget_boundary_still_holds_for_an_open_attempt() {
+        let mut journal = MultipartJournal::default();
+        journal.max_journaled_bytes = 10;
+        let location = target("01ABC");
+        journal.initiate(&location, 1).unwrap();
+        assert_eq!(journal.admit_part_bytes(1, &location, 10), Ok(()), "exactly AT the budget is admitted");
+        assert_eq!(
+            journal.admit_part_bytes(1, &location, 1),
+            Err(MultipartBudgetRefused::Bytes { reserved: 10, incoming: 1, max: 10 }),
+            "one byte over refuses"
+        );
+        assert_eq!(
+            journal.admit_part_bytes(1, &location, u64::MAX),
+            Err(MultipartBudgetRefused::Bytes { reserved: 10, incoming: u64::MAX, max: 10 }),
+            "overflow refuses rather than wrapping into admission"
+        );
+        assert_eq!(journal.reserved_bytes, 10, "no refusal grew the reservation");
+    }
+
+    #[test]
+    fn a_retire_racing_a_part_admission_leaves_no_leaked_reservation() {
+        // Whichever order the two threads take the lock in, the journal must
+        // end with nothing reserved: either the admission won and `retire`
+        // released it, or `retire` won and the admission was refused.
+        for _ in 0..64 {
+            let journal = Arc::new(Mutex::new(MultipartJournal::default()));
+            let location = target("01ABC");
+            journal.lock().unwrap().initiate(&location, 1).unwrap();
+            let admitting = {
+                let (journal, location) = (journal.clone(), location.clone());
+                std::thread::spawn(move || journal.lock().unwrap().admit_part_bytes(1, &location, 16))
+            };
+            let retiring = {
+                let (journal, location) = (journal.clone(), location.clone());
+                std::thread::spawn(move || journal.lock().unwrap().retire(location.as_ref(), 1, AttemptState::Aborted))
+            };
+            let admitted = admitting.join().unwrap();
+            retiring.join().unwrap();
+            let journal = journal.lock().unwrap();
+            assert_eq!(journal.reserved_bytes, 0, "reservation leaked (admission returned {admitted:?})");
+            assert!(journal.open_attempts.is_empty(), "the retired row is gone");
+        }
+    }
+
+    // =====================================================================
+    // End to end, with the provider counting its own calls.
+    // =====================================================================
+
+    /// A provider that counts the parts it is asked to upload, and can be told
+    /// to fail every one of them. "The refusal happened before the provider"
+    /// is only checkable if something on the provider side is counting.
+    #[derive(Debug)]
+    struct CountingStore {
+        inner: Arc<dyn ObjectStore>,
+        parts: Arc<AtomicU64>,
+        fail_parts: bool,
+    }
+
+    impl CountingStore {
+        fn new(inner: Arc<dyn ObjectStore>, fail_parts: bool) -> (Arc<Self>, Arc<AtomicU64>) {
+            let parts = Arc::new(AtomicU64::new(0));
+            (Arc::new(Self { inner, parts: parts.clone(), fail_parts }), parts)
+        }
+    }
+
+    impl std::fmt::Display for CountingStore {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "CountingStore")
+        }
+    }
+
+    #[derive(Debug)]
+    struct CountingUpload {
+        inner: Box<dyn MultipartUpload>,
+        parts: Arc<AtomicU64>,
+        fail: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl MultipartUpload for CountingUpload {
+        fn put_part(&mut self, data: PutPayload) -> UploadPart {
+            self.parts.fetch_add(1, Ordering::SeqCst);
+            if self.fail {
+                return Box::pin(async {
+                    Err(slatedb::object_store::Error::Generic {
+                        store: "CountingStore",
+                        source: "synthetic provider part failure".into(),
+                    })
+                });
+            }
+            self.inner.put_part(data)
+        }
+
+        async fn complete(&mut self) -> slatedb::object_store::Result<PutResult> {
+            self.inner.complete().await
+        }
+
+        async fn abort(&mut self) -> slatedb::object_store::Result<()> {
+            self.inner.abort().await
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ObjectStore for CountingStore {
+        async fn put_opts(
+            &self,
+            location: &ObjectPath,
+            payload: PutPayload,
+            opts: PutOptions,
+        ) -> slatedb::object_store::Result<PutResult> {
+            self.inner.put_opts(location, payload, opts).await
+        }
+
+        async fn put_multipart_opts(
+            &self,
+            location: &ObjectPath,
+            opts: PutMultipartOptions,
+        ) -> slatedb::object_store::Result<Box<dyn MultipartUpload>> {
+            let inner = self.inner.put_multipart_opts(location, opts).await?;
+            Ok(Box::new(CountingUpload { inner, parts: self.parts.clone(), fail: self.fail_parts }))
+        }
+
+        async fn get_opts(&self, location: &ObjectPath, options: GetOptions) -> slatedb::object_store::Result<GetResult> {
+            self.inner.get_opts(location, options).await
+        }
+
+        fn list(&self, prefix: Option<&ObjectPath>) -> BoxStream<'static, slatedb::object_store::Result<ObjectMeta>> {
+            self.inner.list(prefix)
+        }
+
+        async fn list_with_delimiter(&self, prefix: Option<&ObjectPath>) -> slatedb::object_store::Result<ListResult> {
+            self.inner.list_with_delimiter(prefix).await
+        }
+
+        async fn copy_opts(
+            &self,
+            from: &ObjectPath,
+            to: &ObjectPath,
+            options: CopyOptions,
+        ) -> slatedb::object_store::Result<()> {
+            self.inner.copy_opts(from, to, options).await
+        }
+
+        fn delete_stream(
+            &self,
+            locations: BoxStream<'static, slatedb::object_store::Result<ObjectPath>>,
+        ) -> BoxStream<'static, slatedb::object_store::Result<ObjectPath>> {
+            self.inner.delete_stream(locations)
+        }
+    }
+
+    fn fixture(fail_parts: bool) -> (test_utils::TempDir, Arc<AtomicU64>, Arc<NoDeleteStore>) {
+        let dir = create_tmp_dir("slate-r8-admission");
+        let inner: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new_with_prefix(&*dir).unwrap());
+        let (counting, parts) = CountingStore::new(inner, fail_parts);
+        let store = Arc::new(NoDeleteStore::new(counting as Arc<dyn ObjectStore>));
+        (dir, parts, store)
+    }
+
+    #[test]
+    fn a_part_on_an_aborted_upload_reaches_no_provider() {
+        let (_dir, parts, store) = fixture(false);
+        let location = target("01ABC");
+        let (before, after, refused) = bridge({
+            let (store, location) = (store.clone(), location.clone());
+            let parts = parts.clone();
+            async move {
+                let mut upload = store.put_multipart(&location).await.unwrap();
+                upload.put_part(PutPayload::from_static(b"first")).await.unwrap();
+                let before = parts.load(Ordering::SeqCst);
+                upload.abort().await.unwrap();
+                let refused = upload.put_part(PutPayload::from_static(b"after abort")).await;
+                (before, parts.load(Ordering::SeqCst), refused)
+            }
+        });
+        assert_eq!(before, 1, "the legitimate part did reach the provider");
+        let error = refused.expect_err("a part after abort must be refused");
+        assert!(error.to_string().contains("R8-P1-01"), "the refusal names its invariant: {error}");
+        assert_eq!(after, before, "NO provider call was made for the refused part");
+    }
+
+    #[test]
+    fn a_part_on_a_committed_upload_reaches_no_provider() {
+        let (_dir, parts, store) = fixture(false);
+        let location = target("01ABC");
+        let (before, after, refused) = bridge({
+            let (store, location) = (store.clone(), location.clone());
+            let parts = parts.clone();
+            async move {
+                let mut upload = store.put_multipart(&location).await.unwrap();
+                upload.put_part(PutPayload::from_static(b"published bytes")).await.unwrap();
+                upload.complete().await.unwrap();
+                let before = parts.load(Ordering::SeqCst);
+                let refused = upload.put_part(PutPayload::from_static(b"after commit")).await;
+                (before, parts.load(Ordering::SeqCst), refused)
+            }
+        });
+        assert!(refused.is_err(), "a part after commit must be refused: {refused:?}");
+        assert_eq!(after, before, "NO provider call was made for the refused part");
+    }
+
+    #[test]
+    fn a_part_on_a_superseded_upload_reaches_no_provider_and_it_stays_abortable() {
+        let (_dir, parts, store) = fixture(false);
+        let location = target("01ABC");
+        let (before, after, refused, aborted) = bridge({
+            let (store, location) = (store.clone(), location.clone());
+            let parts = parts.clone();
+            async move {
+                let mut first = store.put_multipart(&location).await.unwrap();
+                // a second attempt at the same target supersedes the first
+                let _second = store.put_multipart(&location).await.unwrap();
+                let before = parts.load(Ordering::SeqCst);
+                let refused = first.put_part(PutPayload::from_static(b"stale")).await;
+                let after = parts.load(Ordering::SeqCst);
+                let aborted = first.abort().await;
+                (before, after, refused, aborted)
+            }
+        });
+        assert!(refused.is_err(), "a superseded attempt must upload no further bytes: {refused:?}");
+        assert_eq!(after, before, "NO provider call was made for the refused part");
+        assert!(aborted.is_ok(), "a superseded attempt must remain abortable: {aborted:?}");
+    }
+
+    #[test]
+    fn a_part_for_a_journal_row_that_was_retired_underneath_reaches_no_provider() {
+        // The race the audit's model implies: the attempt's row disappears
+        // between initiation and the next part. Nothing about the upload
+        // handle changed; only the journal knows, and only the journal can
+        // refuse. Retiring it directly is the deterministic form of it.
+        let (_dir, parts, store) = fixture(false);
+        let location = target("01ABC");
+        let journal = store.multipart_journal.clone();
+        let (before, after, refused) = bridge({
+            let (store, location) = (store.clone(), location.clone());
+            let parts = parts.clone();
+            async move {
+                let mut upload = store.put_multipart(&location).await.unwrap();
+                upload.put_part(PutPayload::from_static(b"first")).await.unwrap();
+                let before = parts.load(Ordering::SeqCst);
+                {
+                    let mut j = journal.lock().unwrap();
+                    let ids: Vec<u64> = j.open_attempts.keys().copied().collect();
+                    for id in ids {
+                        j.retire(location.as_ref(), id, AttemptState::Aborted);
+                    }
+                }
+                let refused = upload.put_part(PutPayload::from_static(b"orphaned")).await;
+                (before, parts.load(Ordering::SeqCst), refused)
+            }
+        });
+        assert!(refused.is_err(), "a part whose journal row is gone must be refused: {refused:?}");
+        assert_eq!(after, before, "NO provider call was made for the refused part");
+    }
+
+    #[test]
+    fn a_provider_part_failure_gives_the_reservation_back() {
+        let (_dir, parts, store) = fixture(true);
+        let location = target("01ABC");
+        let failed = bridge({
+            let (store, location) = (store.clone(), location.clone());
+            async move {
+                let mut upload = store.put_multipart(&location).await.unwrap();
+                upload.put_part(PutPayload::from_static(b"0123456789")).await
+            }
+        });
+        assert!(failed.is_err(), "the synthetic provider failure must surface: {failed:?}");
+        assert_eq!(parts.load(Ordering::SeqCst), 1, "the provider WAS asked (the reservation preceded it)");
+        assert_eq!(
+            store.multipart_journal.lock().unwrap().reserved_bytes,
+            0,
+            "a part the provider refused must not hold aggregate journal budget"
         );
     }
 }

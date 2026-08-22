@@ -50,7 +50,10 @@ STATUS_DOCS = [
     "README.md",
 ]
 
-REQUIRED_GATE_STATES = {"OPEN_RED", "OPEN", "NOT_READY_TO_EXECUTE", "NOT_REACHABLE"}
+REQUIRED_GATE_STATES = {"OPEN_RED", "OPEN", "NOT_READY_TO_EXECUTE", "NOT_REACHABLE", "CLOSED"}
+# The states that ASSERT a gate is finished. A gate with any blocker or any
+# OPEN owner decision may not be in one of these — see `check_gate_state_reducer`.
+CLOSED_GATE_STATES = {"CLOSED"}
 
 # E-07: closed enums. A new state is a deliberate policy change (edit here),
 # never a typo that silently parses.
@@ -73,6 +76,193 @@ ACTION_STATUSES = {
 CLOSED_ACTION_STATUSES = {"DONE", "DONE_WITH_RECORDED_REMAINDER"}
 # structured finding ids (SI-G0-1, C-P0-01, R4-CF-02, E-P0-08, ...)
 FINDING_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\-]*")
+
+
+def historical_sections(node, path="") -> list[str]:
+    """JSON paths of every sub-object explicitly marked `historical: true`.
+
+    A historical section records what was believed at an earlier commit. It is
+    EXEMPT from the single-canonical-current-fact rule below, and in exchange it
+    must say when it was true and what replaced it.
+    """
+    found = []
+    if isinstance(node, dict):
+        if node.get("historical") is True:
+            found.append(path)
+        for k, v in node.items():
+            found.extend(historical_sections(v, f"{path}.{k}" if path else k))
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            found.extend(historical_sections(v, f"{path}[{i}]"))
+    return found
+
+
+def strings_outside(node, exclude_paths: set[str], path="") -> list[tuple[str, str]]:
+    """(json path, string) for every string NOT under one of `exclude_paths`."""
+    if any(path == e or path.startswith(e + ".") or path.startswith(e + "[") for e in exclude_paths):
+        return []
+    if isinstance(node, str):
+        return [(path, node)]
+    out = []
+    if isinstance(node, dict):
+        for k, v in node.items():
+            out.extend(strings_outside(v, exclude_paths, f"{path}.{k}" if path else k))
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            out.extend(strings_outside(v, exclude_paths, f"{path}[{i}]"))
+    return out
+
+
+def check_single_canonical_current(ledger: dict, failures: list[str]) -> None:
+    """R8-P0-02: exactly ONE mutable copy of every current fact.
+
+    The round-8 audit found this document asserting, simultaneously and with
+    every existing check passing: `gates[G0].state = OPEN` and
+    `q_dispositions.G0 = OPEN_RED`; `current coverage 13,723 / 23,138` in one
+    place and `914 / 23,138 with 22,115 uncovered` in another; and a
+    forbidden-claim reason saying "G0 is OPEN_RED while Mode-Q evidence is
+    absent" while the bound Mode-Q bundle validated. Sixteen mutants passed the
+    contradictory file, because every one of them tested STRUCTURE.
+
+    The rule this enforces is not "these three fields agree" — that would be a
+    check against the three defects that happened. It is: a current fact has ONE
+    home (`current`), and any other field restating a value `current` owns is
+    refused, whether or not it currently agrees. Agreement between two mutable
+    copies is a coincidence with a maintenance schedule.
+    """
+    current = ledger.get("current")
+    if not isinstance(current, dict):
+        failures.append("ledger is missing the canonical `current` fact section (R8-P0-02)")
+        return
+
+    coverage = current.get("coverage") or {}
+    parts = ("covered", "partial", "uncovered")
+    if all(isinstance(coverage.get(k), int) for k in (*parts, "total")):
+        total = sum(coverage[k] for k in parts)
+        if total != coverage["total"]:
+            failures.append(
+                f"current.coverage: covered+partial+uncovered = {total} but total is "
+                f"{coverage['total']} — the split must account for the whole denominator"
+            )
+    else:
+        failures.append("current.coverage must carry integer covered/partial/uncovered/total")
+
+    for gid, row in (current.get("gates") or {}).items():
+        if row.get("state") not in REQUIRED_GATE_STATES:
+            failures.append(f"current.gates.{gid}: state {row.get('state')!r} not a recognised gate state")
+
+    # every historical section must say when it was true and what replaced it
+    for path in historical_sections(ledger):
+        node = ledger
+        for key in re.findall(r"[^.\[\]]+", path):
+            node = node[int(key)] if key.isdigit() and isinstance(node, list) else node[key]
+        for required in ("as_of_commit", "superseded_by"):
+            if not node.get(required):
+                failures.append(
+                    f"{path}: historical sections must carry {required} — a superseded fact that "
+                    f"does not say what replaced it reads as current"
+                )
+
+    # the guarded values: one home each.
+    #
+    # A CLOSED action row is historical by construction: it records what was
+    # done, cites the commits that did it, and the transition checks refuse it
+    # reopening or disappearing. Its prose is therefore a dated record, not a
+    # current claim, and is exempt — an action still IN FLIGHT is not.
+    exempt = {"current"} | set(historical_sections(ledger))
+    for i, act in enumerate(ledger.get("actions", [])):
+        if act.get("status") in CLOSED_ACTION_STATUSES and (act.get("commits") or []):
+            exempt.add(f"actions[{i}]")
+    for guard in current.get("guarded_patterns", []):
+        pattern, owner = guard["pattern"], guard["owner"]
+        for path, text in strings_outside(ledger, exempt):
+            m = re.search(pattern, text)
+            if m:
+                failures.append(
+                    f"{path}: states {m.group(0)!r}, which is owned by {owner} (R8-P0-02). "
+                    f"A current fact has exactly one home; reference {owner} or mark the section "
+                    f"historical: true with as_of_commit and superseded_by."
+                )
+    # values that are no longer true anywhere
+    for stale in current.get("superseded_values", []):
+        for path, text in strings_outside(ledger, exempt):
+            m = re.search(stale["pattern"], text)
+            if m:
+                failures.append(
+                    f"{path}: states {m.group(0)!r} — {stale['was']}, superseded by "
+                    f"{stale['superseded_by']} (R8-P0-02)"
+                )
+
+
+def render_forbidden_reason(ledger: dict, rule: dict) -> str:
+    """R8-P0-02: forbidden-claim reasons are GENERATED from canonical state.
+
+    The audited file carried the reason "G0 is OPEN_RED while Mode-Q evidence is
+    absent" beside a canonical row saying G0 is OPEN and a Mode-Q bundle that
+    validates. A hand-written reason is a third copy of current truth.
+    """
+    source = rule.get("generated_from")
+    if not source:
+        return rule.get("reason", "")
+    node = ledger
+    for key in source.split("."):
+        node = (node or {}).get(key, {})
+    if source.startswith("current.gates."):
+        gid = source.rsplit(".", 1)[-1]
+        blockers = node.get("blockers") or []
+        findings = node.get("blocking_findings") or []
+        detail = "; ".join(findings + blockers) or "no recorded blocker"
+        return f"{gid} is {node.get('state')} — remaining: {detail}"
+    return rule.get("reason", "")
+
+
+def check_generated_reasons(ledger: dict, failures: list[str]) -> None:
+    for i, rule in enumerate(ledger.get("forbidden_claims", [])):
+        if "generated_from" not in rule:
+            continue
+        expected = render_forbidden_reason(ledger, rule)
+        if rule.get("reason") not in (None, expected):
+            failures.append(
+                f"forbidden_claims[{i}]: reason is hand-written but declares "
+                f"generated_from={rule['generated_from']!r}; expected {expected!r}"
+            )
+
+
+def check_gate_state_reducer(ledger: dict, failures: list[str]) -> None:
+    """R8-P0-02: the gate state is REDUCED from its blockers and the OPEN owner
+    decisions it depends on — never asserted independently of them.
+
+    The reducer is deliberately one-directional and conservative: it does not
+    claim to compute the exact state, it refuses the states the evidence cannot
+    support. A gate with a live blocking finding cannot be merely OPEN; a gate
+    with any blocker or any OPEN owner decision cannot be CLOSED.
+    """
+    current = ledger.get("current") or {}
+    decisions = {}
+    registry = REPO / (ledger.get("owner_decisions_registry") or "")
+    if registry.is_file():
+        try:
+            for entry in json.loads(registry.read_text()).get("entries", []):
+                decisions[entry.get("id")] = entry.get("status")
+        except Exception as error:
+            failures.append(f"owner decision registry unreadable: {error}")
+    for gid, row in (current.get("gates") or {}).items():
+        state = row.get("state")
+        blockers = list(row.get("blockers") or []) + list(row.get("blocking_findings") or [])
+        open_decisions = [
+            oid for oid in (row.get("owner_decisions") or []) if decisions.get(oid) == "OPEN"
+        ]
+        for oid in row.get("owner_decisions") or []:
+            if oid not in decisions:
+                failures.append(
+                    f"current.gates.{gid}: names owner decision {oid}, which the registry "
+                    f"{ledger.get('owner_decisions_registry')} does not contain"
+                )
+        if state in CLOSED_GATE_STATES and (blockers or open_decisions):
+            failures.append(
+                f"current.gates.{gid}: state {state} with live blockers {blockers} and OPEN owner "
+                f"decisions {open_decisions} — a closed gate has neither"
+            )
 
 
 def check_semantics(ledger: dict, failures: list[str]) -> None:
@@ -193,19 +383,25 @@ def check_present_state_contradictions(ledger: dict, failures: list[str]) -> Non
             for f in closes:
                 closed_by.setdefault(f, aid)
 
-    for kind in ("gates", "lanes"):
-        for entry in ledger.get(kind, []):
-            eid = entry.get("id")
-            for f in id_list_ok(
-                f"{kind[:-1]} {eid}", "blocking_findings", entry.get("blocking_findings")
-            ):
-                if f in closed_by:
-                    failures.append(
-                        f"{kind[:-1]} {eid}: names finding {f} as still "
-                        f"blocking, but closed action {closed_by[f]} records "
-                        f"it closed - the gate state and the action history "
-                        f"contradict; reconcile the ledger data"
-                    )
+    # R8-P0-02: gate blocking findings live in the canonical `current` section;
+    # lanes still carry their own.
+    owners: list[tuple[str, str, object]] = [
+        (f"gate {gid}", "current.gates", row.get("blocking_findings"))
+        for gid, row in ((ledger.get("current") or {}).get("gates") or {}).items()
+    ]
+    owners += [
+        (f"lane {entry.get('id')}", "lanes", entry.get("blocking_findings"))
+        for entry in ledger.get("lanes", [])
+    ]
+    for owner, _where, value in owners:
+        for f in id_list_ok(owner, "blocking_findings", value):
+            if f in closed_by:
+                failures.append(
+                    f"{owner}: names finding {f} as still "
+                    f"blocking, but closed action {closed_by[f]} records "
+                    f"it closed - the gate state and the action history "
+                    f"contradict; reconcile the ledger data"
+                )
 
 
 def check_committed_transitions(ledger: dict, failures: list[str]) -> None:
@@ -268,14 +464,23 @@ def main() -> int:
         print(f"LEDGER LINT: FAIL - ledger unreadable: {error}")
         return 1
 
-    for key in ("gates", "lanes", "actions", "forbidden_claims", "adopted_audit"):
+    for key in ("current", "gates", "lanes", "actions", "forbidden_claims", "adopted_audit"):
         if key not in ledger:
             failures.append(f"ledger missing required key: {key}")
+    # R8-P0-02: a gate NARRATIVE row may not carry a state — the state lives in
+    # `current.gates` and only there.
     for g in ledger.get("gates", []):
-        if g.get("state") not in REQUIRED_GATE_STATES:
+        if "state" in g:
             failures.append(
-                f"gate {g.get('id')}: state {g.get('state')!r} not a recognised gate state"
+                f"gate {g.get('id')}: narrative rows must not carry `state` (R8-P0-02); the "
+                f"canonical state is current.gates.{g.get('id')}.state"
             )
+    declared = {g.get("id") for g in ledger.get("gates", [])}
+    canonical = set((ledger.get("current") or {}).get("gates") or {})
+    for missing in sorted(declared - canonical):
+        failures.append(f"gate {missing}: no canonical state in current.gates")
+    for extra in sorted(canonical - declared):
+        failures.append(f"current.gates.{extra}: no narrative gate row declares this id")
 
     # round-3 E-07 semantic checks (ids, enums, commit ancestry, evidence paths)
     check_semantics(ledger, failures)
@@ -284,6 +489,12 @@ def main() -> int:
     # impossible transitions against the last committed ledger
     check_present_state_contradictions(ledger, failures)
     check_committed_transitions(ledger, failures)
+
+    # round-8 R8-P0-02: one canonical current fact set, generated forbidden
+    # reasons, and a gate state reduced from its own blockers
+    check_single_canonical_current(ledger, failures)
+    check_generated_reasons(ledger, failures)
+    check_gate_state_reducer(ledger, failures)
 
     # 2. rendered-block drift
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -314,8 +525,27 @@ def main() -> int:
             head, rest = text.split(render_status.BEGIN, 1)
             text = head + rest.split(render_status.END, 1)[1]
         for rule in ledger.get("forbidden_claims", []):
+            reason = render_forbidden_reason(ledger, rule)
             for m in re.finditer(rule["pattern"], text):
-                failures.append(f"{rel}: forbidden claim {m.group(0)!r} - {rule['reason']}")
+                failures.append(f"{rel}: forbidden claim {m.group(0)!r} - {reason}")
+        # R8-P0-02 / R8-P2-06: a live status document may not restate a current
+        # fact either. The generated block (stripped above) is where these
+        # values belong; a hand-typed copy elsewhere in the same file is the
+        # "13,582 rows" / "G0 red" / "Mode-Q absent" staleness the round-8 audit
+        # found still readable as current.
+        current = ledger.get("current") or {}
+        for guard in current.get("guarded_patterns", []):
+            for m in re.finditer(guard["pattern"], text):
+                failures.append(
+                    f"{rel}: states {m.group(0)!r}, which is owned by {guard['owner']} "
+                    f"(R8-P0-02). Live status prose must read it from the generated block."
+                )
+        for stale in current.get("superseded_values", []):
+            for m in re.finditer(stale["pattern"], text):
+                failures.append(
+                    f"{rel}: states {m.group(0)!r} — {stale['was']}, superseded by "
+                    f"{stale['superseded_by']} (R8-P2-06)"
+                )
 
     if failures:
         print("LEDGER LINT: FAIL")

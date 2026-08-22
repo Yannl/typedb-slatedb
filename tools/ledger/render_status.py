@@ -20,11 +20,37 @@ END = "<!-- ledger-gate-table:end -->"
 
 def render() -> str:
     ledger = json.loads(LEDGER.read_text())
+    current = ledger["current"]
     lines = [BEGIN, ""]
+    # R8-P0-02: the current-fact block comes FIRST, and every number in it is
+    # read from the ledger's one canonical section — never restated in prose.
+    cov, mq, drv = current["coverage"], current["mode_q"], current["drivers"]
+    lines.append(f"**Current state at `{current['as_of_commit'][:12]}`** (generated; "
+                 f"re-derived by `{current['derived_by']}`)")
+    lines.append("")
+    lines.append("| Fact | Value | Derived from |")
+    lines.append("|---|---|---|")
+    lines.append(
+        f"| Qualification coverage | {cov['covered']:,} covered / {cov['partial']:,} partial / "
+        f"{cov['uncovered']:,} uncovered of {cov['total']:,} rows | `{cov['derived_by']}` |"
+    )
+    lines.append(f"| | _{cov['meaning']}_ | |")
+    lines.append(
+        f"| Mode-Q | {mq['state']}, {mq['targets']} configured test targets, root "
+        f"`{mq['bundle_root'][:16]}…` ({mq['bazel_version']}) | `{mq['derived_by']}` |"
+    )
+    lines.append(
+        f"| Official driver rows | {drv['covered']} covered / {drv['partial']} partial of "
+        f"{drv['total']} | `{drv['evidence']}` |"
+    )
+    lines.append("")
     lines.append("| Gate / lane | State | Why |")
     lines.append("|---|---|---|")
     for g in ledger["gates"]:
-        lines.append(f"| **{g['id']}** {g['title']} | **{g['state']}** | {g['why']} |")
+        row = current["gates"][g["id"]]
+        blockers = row.get("blocking_findings", []) + row.get("blockers", [])
+        remaining = ("<br>Remaining: " + "; ".join(blockers)) if blockers else ""
+        lines.append(f"| **{g['id']}** {g['title']} | **{row['state']}** | {g['why']}{remaining} |")
     for lane in ledger["lanes"]:
         lines.append(f"| {lane['id']} | **{lane['state']}** | {lane['why']} |")
     lines.append("")

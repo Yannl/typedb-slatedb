@@ -55,6 +55,7 @@ import shutil
 import socket
 import struct
 import sys
+import typing
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tools" / "catalog"))
@@ -71,6 +72,26 @@ IFF_RUNNING = 0x40
 # harness can tell "isolation unavailable" from "the test failed".
 EXIT_NO_ISOLATION = 79
 
+
+def refuse(message: str) -> "typing.NoReturn":
+    """Refuse with EXACTLY `EXIT_NO_ISOLATION`.
+
+    R8-P1-04: every refusal here used to be `sys.exit(<string>)`. Python's
+    `sys.exit` with a non-integer argument prints the string to stderr and
+    exits **1** — so a script whose whole contract is "79 means isolation is
+    unavailable, not a test failure" advertised 79 in its own message and
+    returned 1, which is indistinguishable from an ordinary failure. Measured:
+
+        netns_exec: unshare(CLONE_NEWNET) failed: Operation not permitted ...
+          exit 79
+        ACTUAL_RC=1
+
+    The exit code is the machine-readable half of this contract, so it is the
+    half that must not be prose.
+    """
+    print(message, file=sys.stderr)
+    raise SystemExit(EXIT_NO_ISOLATION)
+
 # Where per-process assembly working directories live, under the workspace's
 # `target/`. Named here so the staging step can clear it before a run.
 NETNS_ISO_DIR = "netns-iso"
@@ -81,7 +102,7 @@ def unshare_net() -> None:
     libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6", use_errno=True)
     if libc.unshare(CLONE_NEWNET) != 0:
         err = ctypes.get_errno()
-        sys.exit(
+        refuse(
             f"netns_exec: unshare(CLONE_NEWNET) failed: {os.strerror(err)} (errno {err}).\n"
             f"  This needs CAP_SYS_ADMIN, or unprivileged user namespaces.\n"
             f"  Refusing to run WITHOUT isolation: the tests bind fixed ports and would\n"
@@ -103,7 +124,7 @@ def loopback_up() -> None:
             )[1]
             fcntl.ioctl(s, SIOCSIFFLAGS, struct.pack("16sh", b"lo", flags | IFF_UP | IFF_RUNNING))
         except OSError as e:
-            sys.exit(
+            refuse(
                 f"netns_exec: could not bring loopback up: {e}.\n"
                 f"  Without it 127.0.0.1 binds but never connects.\n"
                 f"  exit {EXIT_NO_ISOLATION}"
@@ -149,7 +170,7 @@ def assembly_staging(binary: str):
         return None, {}
     root = workspace_root_of(binary)
     if root is None:
-        sys.exit(
+        refuse(
             f"netns_exec: cannot tell which workspace built {binary} (no `target/` "
             f"ancestor), so cannot tell which assembly archive belongs to it.\n"
             f"  Refusing rather than guess: the wrong archive makes {stem} certify a\n"
@@ -158,7 +179,7 @@ def assembly_staging(binary: str):
         )
     archive = run_u0.assembly_archive_for(root)
     if not archive.is_file():
-        sys.exit(
+        refuse(
             f"netns_exec: {stem} needs {archive}, which is absent.\n"
             f"  Build it with `python3 tools/catalog/package_assembly.py "
             f"--workspace-root {root}`\n"

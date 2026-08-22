@@ -3,9 +3,11 @@
 ## ⛔ 0. EXECUTABLE HARD STOP — read before touching any credential
 
 **A live Cloudflare run is NOT READY and MUST NOT be attempted from this
-document alone.** The machine truth is `docs/ledger/gates.json`
-(`adopted_audit_round4`, gate `G2: NOT_READY_TO_EXECUTE`) rendered into
-[operations.md](operations.md). Before ANY step below, run the two
+document alone.** The machine truth is `docs/ledger/gates.json` — its
+canonical `current` section, rendered into the generated block in
+[operations.md](operations.md). This document deliberately states NO gate
+state of its own: a second copy of current truth in prose is exactly what
+goes stale (R8-P0-02). Before ANY step below, run the two
 commands that enforce the stop and believe their exit codes, not this
 prose:
 
@@ -88,9 +90,9 @@ failed exits nonzero regardless of probe verdicts.
 
 ## 3. Orientation for a fresh session
 
-- **State machine**: `docs/ledger/gates.json` → rendered
-  [operations.md](operations.md). G0 OPEN_RED, G1 OPEN, G2
-  NOT_READY_TO_EXECUTE.
+- **State machine**: `docs/ledger/gates.json` (canonical `current` section)
+  → rendered into [operations.md](operations.md). Read the gate states
+  THERE; they are not restated here.
 - **Round-4 program**: `docs/reviews/deep-audit-2026-08-19-round4-response.md`
   (per-finding accounting, actions R4-A..R4-F).
 - **Local stack**: `node stack/cli.mjs dev` (loopback MinIO + Alchemy

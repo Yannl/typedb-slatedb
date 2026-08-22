@@ -28,6 +28,10 @@ LEDGER_REL = "docs/ledger/gates.json"
 OVERLAY = [
     "docs/ledger/gates.json",
     "docs/operations.md",
+    "docs/handoff-live-validation.md",
+    "docs/tasks/NEXT-SESSION.md",
+    "README.md",
+    "docs/owner-decisions.json",
     "tools/ledger/lint_ledger.py",
     "tools/ledger/render_status.py",
 ]
@@ -102,6 +106,10 @@ def main() -> int:
             return next(a for a in ledger["actions"] if a["id"] == aid)
 
         def gate(ledger, gid):
+            """R8-P0-02: the canonical gate row lives in `current.gates`."""
+            return ledger["current"]["gates"][gid]
+
+        def gate_narrative(ledger, gid):
             return next(g for g in ledger["gates"] if g["id"] == gid)
 
         MUTANTS = [
@@ -120,11 +128,7 @@ def main() -> int:
                 lambda ledger: ledger["actions"].append(dict(ledger["actions"][0])),
                 "duplicate action id",
             ),
-            (
-                "gate-state-outside-enum",
-                lambda ledger: gate(ledger, "G0").__setitem__("state", "CLOSED_GREEN"),
-                "not a recognised gate state",
-            ),
+
             (
                 "lane-state-outside-enum",
                 lambda ledger: ledger["lanes"][0].__setitem__("state", "GREEN"),
@@ -179,10 +183,85 @@ def main() -> int:
             ),
             (
                 "ledger-edit-without-rerender",
-                lambda ledger: gate(ledger, "G1").__setitem__(
-                    "why", gate(ledger, "G1")["why"] + " (mutated)"
+                lambda ledger: gate_narrative(ledger, "G1").__setitem__(
+                    "why", gate_narrative(ledger, "G1")["why"] + " (mutated)"
                 ),
                 "gate table drifted from the ledger",
+            ),
+            # ---------------------------------------------------------------
+            # R8-P0-02 semantic mutants. The model is static-mutant control 11:
+            # update every SHALLOW binding and require an independent
+            # re-derivation — or the single-home rule — to catch the lie.
+            # The five that need evidence re-derivation live in
+            # tools/ledger/ledger_semantic_mutants.py; these are the ones the
+            # cheap schema lint must catch by itself.
+            # ---------------------------------------------------------------
+            (
+                "current-gate-state-copied-into-a-second-field",
+                # the exact round-8 defect: `gates[G0].state = OPEN` beside
+                # `q_dispositions.G0 = OPEN_RED`
+                lambda ledger: ledger["q_dispositions"].__setitem__("G0", "OPEN_RED"),
+                "owned by current.gates.G0.state",
+            ),
+            (
+                "current-gate-state-restated-in-live-prose",
+                lambda ledger: gate_narrative(ledger, "G0").__setitem__(
+                    "why", gate_narrative(ledger, "G0")["why"] + " G0 is OPEN_RED."
+                ),
+                "owned by current.gates.G0.state",
+            ),
+            (
+                "coverage-count-copied-into-a-second-field",
+                lambda ledger: ledger["q_dispositions"].__setitem__(
+                    "mutant_probe", "coverage is 13,723 of 23,138 rows"
+                ),
+                "owned by current.coverage.covered",
+            ),
+            (
+                "superseded-count-revived-as-current",
+                lambda ledger: ledger["q_dispositions"].__setitem__(
+                    "mutant_probe", "execution coverage is 914 of 23,138 rows"
+                ),
+                "the round-6 leaf coverage numerator",
+            ),
+            (
+                "coverage-split-does-not-account-for-the-denominator",
+                lambda ledger: ledger["current"]["coverage"].__setitem__("uncovered", 9000),
+                "must account for the whole denominator",
+            ),
+            (
+                "historical-section-without-what-superseded-it",
+                lambda ledger: ledger["q_dispositions"]["evidence_denominator"].pop(
+                    "superseded_by"
+                ),
+                "historical sections must carry superseded_by",
+            ),
+            (
+                "gate-narrative-row-regrows-a-state-field",
+                lambda ledger: gate_narrative(ledger, "G0").__setitem__("state", "CLOSED"),
+                "narrative rows must not carry `state`",
+            ),
+            (
+                "canonical-gate-state-outside-enum",
+                lambda ledger: gate(ledger, "G0").__setitem__("state", "GREEN"),
+                "not a recognised gate state",
+            ),
+            (
+                "gate-closed-while-its-own-blockers-are-live",
+                lambda ledger: gate(ledger, "G0").__setitem__("state", "CLOSED"),
+                "a closed gate has neither",
+            ),
+            (
+                "forbidden-claim-reason-hand-written-over-the-generated-one",
+                lambda ledger: ledger["forbidden_claims"][0].__setitem__(
+                    "reason", "G0 is OPEN_RED while Mode-Q evidence is absent"
+                ),
+                "reason is hand-written but declares generated_from",
+            ),
+            (
+                "gate-names-an-owner-decision-the-registry-does-not-have",
+                lambda ledger: gate(ledger, "G1").__setitem__("owner_decisions", ["OD-999"]),
+                "does not contain",
             ),
             (
                 "ledger-references-missing-evidence-path",

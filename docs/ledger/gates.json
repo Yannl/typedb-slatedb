@@ -8,8 +8,150 @@
   "compatible ADRs",
   "reviews, evidence summaries, operations notes, handoff prose"
  ],
+ "current": {
+  "document": "R8-P0-02: the ONE canonical current-fact section. Every current gate state, count, root and derived status lives HERE and nowhere else in this ledger. Any other field that restates one of these values is a second mutable copy of current truth and is refused by tools/ledger/lint_ledger.py (`guarded_patterns` below); prose that legitimately records what was believed at an earlier commit must carry historical: true, as_of_commit and superseded_by. Every value here is RE-DERIVED from the named evidence by tools/ledger/verify_ledger_semantics.py \u2014 a number typed into this file is not authority either.",
+  "as_of_commit": "8014373a1c620b35b2cd984489e5ae17044bbb90",
+  "derived_by": "tools/ledger/verify_ledger_semantics.py",
+  "gates": {
+   "G0": {
+    "state": "OPEN",
+    "blocking_findings": [],
+    "blockers": [
+     "raw artifact retrievability archive"
+    ]
+   },
+   "G1": {
+    "state": "OPEN",
+    "blocking_findings": [
+     "E-P0-08"
+    ],
+    "blockers": [
+     "plan execution coverage (see current.coverage; the denominator is not a pass, and 9,196 of the remainder are U3/U4 product profiles that do not exist)",
+     "official driver suites (E-P0-08): see current.drivers",
+     "real Container resource/lifecycle + registry-provisioned ContainerDO (advisory-only today)"
+    ],
+    "owner_decisions": [
+     "OD-021",
+     "OD-022",
+     "OD-023"
+    ]
+   },
+   "G2": {
+    "state": "NOT_READY_TO_EXECUTE",
+    "blocking_findings": [
+     "SI-G0-3"
+    ],
+    "blockers": [
+     "owner-approved G2 numeric envelope file (absent by design until the owner signs one)",
+     "SI-G0-3 credentials (including real managed key provisioning for the R4-PR1 issuer hierarchy)",
+     "three OPEN product-conformance obligations in probes/obligations.ts"
+    ],
+    "owner_decisions": [
+     "OD-008"
+    ]
+   },
+   "G3_PLUS": {
+    "state": "NOT_REACHABLE",
+    "blocking_findings": [],
+    "blockers": [
+     "G0",
+     "G1",
+     "G2"
+    ]
+   }
+  },
+  "coverage": {
+   "covered": 13723,
+   "partial": 46,
+   "uncovered": 9369,
+   "total": 23138,
+   "meaning": "COVERED means an outcome was RECORDED for that (leaf, profile, fixture set, toolchain) row. It never means the row passed.",
+   "derived_by": "tools/qualification/leaf_coverage.py over exactly the bundles named below",
+   "leaf_bundles": [
+    "docs/evidence/G3/leaf/u0-full-1",
+    "docs/evidence/G3/leaf/u1-full-1",
+    "docs/evidence/G3/leaf/u1-http-2",
+    "docs/evidence/G3/leaf/u2-full-1"
+   ],
+   "cucumber_bundles": [
+    "docs/evidence/G3/leaf/cucumber-u0-1",
+    "docs/evidence/G3/leaf/cucumber-u1-1",
+    "docs/evidence/G3/leaf/cucumber-u2-1"
+   ],
+   "static_bundles": [
+    "docs/evidence/G3/leaf/static-u0-1"
+   ]
+  },
+  "mode_q": {
+   "state": "VALID",
+   "bundle": "docs/evidence/G0/mode-q",
+   "bundle_root": "522dc2ea831bea564192ad6fdede487546d115e63effd9d2732852416678514a",
+   "targets": 226,
+   "bazel_version": "bazel 8.5.1",
+   "bazel_binary_sha256": "61d89402f0368e64b6c827be5de79d8e65382e8124c3cbb97325611a1851392e",
+   "derived_by": "tools/modeq/validate_modeq.py --dir docs/evidence/G0/mode-q"
+  },
+  "drivers": {
+   "covered": 4,
+   "partial": 2,
+   "total": 6,
+   "evidence": "docs/evidence/G1/drivers/driver-row-status.json",
+   "derived_by": "tools/qualification/leaf_coverage.py driver rows (plan_coverage.driver_row_status)"
+  },
+  "guarded_patterns": [
+   {
+    "pattern": "\\b13[,.]?723\\b",
+    "owner": "current.coverage.covered"
+   },
+   {
+    "pattern": "\\b9[,.]?369\\b",
+    "owner": "current.coverage.uncovered"
+   },
+   {
+    "pattern": "\\b23[,.]?138\\b",
+    "owner": "current.coverage.total"
+   },
+   {
+    "pattern": "\\b226\\b",
+    "owner": "current.mode_q.targets"
+   },
+   {
+    "pattern": "\\b522dc2ea[0-9a-f]{8,}\\b",
+    "owner": "current.mode_q.bundle_root"
+   },
+   {
+    "pattern": "(?<![\\w-])G0\\b[^.\\n]{0,60}\\b(OPEN_RED|OPEN|CLOSED|NOT_READY_TO_EXECUTE|NOT_REACHABLE)\\b",
+    "owner": "current.gates.G0.state"
+   },
+   {
+    "pattern": "(?<![\\w-])G1\\b[^.\\n]{0,60}\\b(OPEN_RED|OPEN|CLOSED|NOT_READY_TO_EXECUTE|NOT_REACHABLE)\\b",
+    "owner": "current.gates.G1.state"
+   },
+   {
+    "pattern": "(?<![\\w-])G2\\b[^.\\n]{0,60}\\b(OPEN_RED|OPEN|CLOSED|NOT_READY_TO_EXECUTE|NOT_REACHABLE)\\b",
+    "owner": "current.gates.G2.state"
+   }
+  ],
+  "superseded_values": [
+   {
+    "pattern": "\\b914 of 23,?13[28]\\b",
+    "was": "the round-6 leaf coverage numerator",
+    "superseded_by": "current.coverage.covered"
+   },
+   {
+    "pattern": "\\b22,?115\\b",
+    "was": "the round-6 uncovered count",
+    "superseded_by": "current.coverage.uncovered"
+   },
+   {
+    "pattern": "Mode-Q evidence is absent|MODEQ: ABSENT|Mode-Q .{0,20}absent",
+    "was": "the pre-SI-G0-1 Mode-Q state",
+    "superseded_by": "current.mode_q.state"
+   }
+  ]
+ },
  "adopted_audit": {
-  "directive": "TypeDB × SlateDB × Cloudflare R2 round-5 deep audit and implementation directive, 2026-08-19",
+  "directive": "TypeDB \u00d7 SlateDB \u00d7 Cloudflare R2 round-5 deep audit and implementation directive, 2026-08-19",
   "audited_commit": "29fd0038c0fe1b3ddb6c9baebd6fadf2226c345c",
   "decision": "NO-GO for a live qualification run and NO-GO for a production claim; continue local implementation (R5 program adopted)"
  },
@@ -22,73 +164,43 @@
   {
    "id": "G0",
    "title": "Source graph, identities, tools, fixtures, document truth",
-   "state": "OPEN",
    "authority": "v16 brief G0; v17 addendum Mode Q selection",
-   "why": "SI-G0-1 IS CLOSED (2026-08-22). Mandatory Mode-Q Bazel cquery evidence now EXISTS and validates: docs/evidence/G0/mode-q, schema modeq-bundle/v1, bazel 8.5.1 (binary sha256 61d89402f0368e64b6c827be5de79d8e65382e8124c3cbb97325611a1851392e), 226 configured test targets crosswalked one-to-one into the canonical catalogue, root 522dc2ea831bea564192ad6fdede487546d115e63effd9d2732852416678514a; tools/modeq/validate_modeq.py reports MODEQ: VALID and tools/modeq/modeq_mutants.py kills all 11 controls against that real bundle rather than a synthesised one. WHAT CHANGED, precisely: the blocker was never 'Bazel cannot run here'. aspect_bazel_lib REGISTERS bats_toolchains, and a registered toolchain must load before Bazel resolves toolchains for any configured target, so four archives fetched from github.com/bats-core/*/archive/<tag>.tar.gz - which this egress policy denies with 403 - gated the whole ANALYSIS phase. The same policy SERVES anonymous git reads of those repositories, and GitHub's release tarball is `git archive` of the tag, gzipped: measured 2026-08-22, `git archive --format=tar --prefix=<repo>-<ver>/ <tag> | gzip -n -6` reproduces all four BYTE-FOR-BYTE, matching the digests aspect_bazel_lib itself pins. tools/bazel/vendor_bats.py rebuilds them from the locked tags (now source-lock nodes BATS_CORE / BATS_SUPPORT / BATS_ASSERT / BATS_FILE) and REFUSES on any mismatch; Bazel verifies the same digests independently, so the reconstruction cannot forge a pass. With --distdir pointing at them, cquery analysed 226 targets. The second wall recorded here still stands and is still worked around legitimately: //:deploy-mac-installer-pkg is an upstream mac-only alias whose select() has no default, so a whole-universe cquery fails on Linux regardless of network; the producer enumerates in the loading phase and configures only the resulting test labels. Two of the 228 enumerated rules (//:Release_validate_deps_gen, //:release-validate-deps) are release plumbing, already carried as reviewed non-denominator targets by tools/bazel/bazel_parity.py, and the bundle records them as a declared exclusion rather than dropping them silently - hence 226, not 228. G0 stays OPEN on its remaining blocker, the raw artifact retrievability archive, which is untouched by this work.",
-   "blocking_findings": [],
-   "blockers": [
-    "raw artifact retrievability archive"
-   ]
+   "why": "SI-G0-1 IS CLOSED (2026-08-22). Mandatory Mode-Q Bazel cquery evidence now EXISTS and validates: docs/evidence/G0/mode-q, schema modeq-bundle/v1, bazel 8.5.1 (binary sha256 61d89402f0368e64b6c827be5de79d8e65382e8124c3cbb97325611a1851392e), the configured test targets crosswalked one-to-one into the canonical catalogue (count and bundle root: current.mode_q); tools/modeq/validate_modeq.py reports MODEQ: VALID and tools/modeq/modeq_mutants.py kills all 11 controls against that real bundle rather than a synthesised one. WHAT CHANGED, precisely: the blocker was never 'Bazel cannot run here'. aspect_bazel_lib REGISTERS bats_toolchains, and a registered toolchain must load before Bazel resolves toolchains for any configured target, so four archives fetched from github.com/bats-core/*/archive/<tag>.tar.gz - which this egress policy denies with 403 - gated the whole ANALYSIS phase. The same policy SERVES anonymous git reads of those repositories, and GitHub's release tarball is `git archive` of the tag, gzipped: measured 2026-08-22, `git archive --format=tar --prefix=<repo>-<ver>/ <tag> | gzip -n -6` reproduces all four BYTE-FOR-BYTE, matching the digests aspect_bazel_lib itself pins. tools/bazel/vendor_bats.py rebuilds them from the locked tags (now source-lock nodes BATS_CORE / BATS_SUPPORT / BATS_ASSERT / BATS_FILE) and REFUSES on any mismatch; Bazel verifies the same digests independently, so the reconstruction cannot forge a pass. With --distdir pointing at them, cquery analysed the whole configured test universe (current.mode_q.targets). The second wall recorded here still stands and is still worked around legitimately: //:deploy-mac-installer-pkg is an upstream mac-only alias whose select() has no default, so a whole-universe cquery fails on Linux regardless of network; the producer enumerates in the loading phase and configures only the resulting test labels. Two of the enumerated rules (//:Release_validate_deps_gen, //:release-validate-deps) are release plumbing, already carried as reviewed non-denominator targets by tools/bazel/bazel_parity.py, and the bundle records them as a declared exclusion rather than dropping them silently - which is why the crosswalked count in current.mode_q is two below the enumerated count. The remaining blocker, the raw artifact retrievability archive, is untouched by this work and is recorded in current.gates.G0."
   },
   {
    "id": "G1",
    "title": "Models, catalogue as qualification denominator, platform contracts, budgets, controller/container separation",
-   "state": "OPEN",
    "authority": "v16 brief G1",
-   "why": "The DENOMINATOR exists: catalogue v2 with canonical shared identity and the immutable leaf/profile/fixture qualification plan v2 (23,132 rows + 6 driver rows) landed with R3-H, and the leaf-level evidence producer/validator chain landed with PR3/R4-D. CORRECTED 2026-08-22 (this paragraph said '0 rows fully covered' and 'the six official driver rows are NOT_IMPLEMENTED' long after both had stopped being true; a ledger that describes a state its own evidence contradicts is the failure this plane exists to prevent). MEASURED at fc2694b by tools/qualification/leaf_coverage.py over the seven archived bundles: 13,723 of 23,138 rows carry a leaf-granularity outcome, 46 are PARTIAL, 9,369 are uncovered (13,582 before the STATIC_CHECK lane landed on 2026-08-22). Four of the six official-driver rows are COVERED and two PARTIAL (R6-QUAL-01 + OD-010). What keeps G1 open is the REMAINDER, and the remainder is not mostly test execution: 9,196 of the uncovered rows are the U3 and U4 profiles, which are product code that does not exist (lane U3.0 is RED, U3_U4_PRODUCT is TYPED_UNAVAILABLE_BY_DESIGN); the Mode-Q crosswalk side of the plan is now PRODUCED and VALID (SI-G0-1 closed 2026-08-22, see G0); and the ContainerDO is advisory-only - no real Container resource/process or controller lifecycle integration exists (R3-F remainder; round-5 R5-SEC-06/07). Of the 13,942 rows reachable WITHOUT new product code, 219 remain, and NONE of them is execution work: 132 FAILPOINT rows at a granularity upstream does not emit (OD-022), 84 cucumber scenarios upstream's own runner filters by @ignore tag (OD-021), the 1 SCRIPT row whose script asserts nothing and whose Bazel target does not exist at the pin (OD-023), and the 2 PARTIAL driver rows (OD-010).",
-   "blocking_findings": [
-    "E-P0-08"
-   ],
-   "blockers": [
-    "plan execution coverage (13,723 of 23,138 rows covered at 2026-08-22; the denominator is not a pass, and 9,196 of the remainder are U3/U4 product profiles that do not exist)",
-    "official driver suites (E-P0-08): 4 of 6 rows COVERED, 2 PARTIAL",
-    "real Container resource/lifecycle + registry-provisioned ContainerDO (advisory-only today)",
-    "(closed 2026-08-22) Mode-Q crosswalk: 226 targets crosswalked, MODEQ VALID"
-   ]
+   "why": "The DENOMINATOR exists: catalogue v2 with canonical shared identity and the immutable leaf/profile/fixture qualification plan v2 (23,132 rows + 6 driver rows) landed with R3-H, and the leaf-level evidence producer/validator chain landed with PR3/R4-D. CORRECTED 2026-08-22 (this paragraph said '0 rows fully covered' and 'the six official driver rows are NOT_IMPLEMENTED' long after both had stopped being true; a ledger that describes a state its own evidence contradicts is the failure this plane exists to prevent). MEASURED at fc2694b by tools/qualification/leaf_coverage.py over the seven archived bundles: the counts recorded in current.coverage. Four of the six official-driver rows are COVERED and two PARTIAL (R6-QUAL-01 + OD-010). What keeps G1 open is the REMAINDER, and the remainder is not mostly test execution: 9,196 of the uncovered rows are the U3 and U4 profiles, which are product code that does not exist (lane U3.0 is RED, U3_U4_PRODUCT is TYPED_UNAVAILABLE_BY_DESIGN); the Mode-Q crosswalk side of the plan is now PRODUCED and VALID (SI-G0-1 closed 2026-08-22, see G0); and the ContainerDO is advisory-only - no real Container resource/process or controller lifecycle integration exists (R3-F remainder; round-5 R5-SEC-06/07). Of the 13,942 rows reachable WITHOUT new product code, 219 remain, and NONE of them is execution work: 132 FAILPOINT rows at a granularity upstream does not emit (OD-022), 84 cucumber scenarios upstream's own runner filters by @ignore tag (OD-021), the 1 SCRIPT row whose script asserts nothing and whose Bazel target does not exist at the pin (OD-023), and the 2 PARTIAL driver rows (OD-010)."
   },
   {
    "id": "G2",
    "title": "Real-platform probe run under an owner-approved envelope",
-   "state": "NOT_READY_TO_EXECUTE",
    "authority": "v16 brief G2; platform-probe spec (14 probe IDs)",
-   "why": "Round-4: the runner's destructive RED-preflight cleanup (R4-CF-00) is repaired with zero-authority refusal, lock-baseline restore and an enforced envelope meter (R4-CF-01), redaction is a serialization invariant (R4-CF-03), the nine /do|/ctr|/worker probes now have a deployable in-repo harness whose source digest is bound into the bundle (R4-CF-02, probes/harness-worker.ts + wrangler.probe-harness.toml), and every assertion is classified provider-fact vs product-conformance by the obligation manifest. ROUND-6 (R6-TRUTH-01 semantic pass, 2026-08-20 — what changed and what did NOT): (a) SELF-TEST COUNT: the harness now executes 26 controls, not 24. Executed 2026-08-20 on this branch: `bash probes/self-test.sh` → 'self-test: all 26 controls passed'. The 24 figure predated controls 7c and 7d. (b) ENVELOPE LIMITS: as of 09ce01e every signed envelope field now has an enforced global counter, including `max_cost_usd_cents`, which was previously signed and never priced; preflight refuses when the REMAINING signed validity is shorter than the credential TTL it would mint, and the displayed key fingerprint must equal the one derived from the trusted verification key. The claim 'all envelope limits are enforced' is TRUE for the LOCAL enforcement path, proved by budget-enforcement 9/9 including a schema-to-counter exhaustiveness test that fails when a signed field gains no counter. It is NOT a claim about provider-side enforcement: no credentialed run has ever occurred, so nothing here is attested against a real Cloudflare account. (c) AMBIGUITY: as of 3ac9ae9 all 16 mutation routes bind an explicit authoritative effect, IDEMPOTENT_REEXECUTE is gone from the union, and `deriveEffectOutcome` ends in `const unhandled: never` so a new variant cannot compile without an authoritative query. The four ambiguity cuts, restart resumption, one-physical-effect and byte-equal canonical replay are EXECUTED for every route. What that closes is the CODE-LEVEL obligation; the probe obligation `ambiguity-resolution-real` stays OPEN because it asks for the behaviour against a real Durable Object under real faults, which needs credentials. Recorded honestly with it: CUT_EXISTS/CUT_NOT_PENDING remain the typed refusals for a DIFFERENT token, and a reconstructed WAL receipt still differs in its `replayed` flag. (d) S3 EVIDENCE: as of 21780b0 the corpus bundle is schema v2 — clean-tree refusal BEFORE execution, provider digest RECOMPUTED from bytes and matched against the source lock, sealed lock bytes, structured per-phase results, and a path-independent stable root; evidence_mutants.py kills 28 of 28. The bundle is therefore SOURCE-AUTHENTIC and independently re-derivable. It is NOT 'qualification-grade' for the product: it certifies an S3 PROVIDER against the object-store corpus, not TypeDB against the upstream test corpus, and the two round-5 bundles are schema v1 and are REJECTED by the new verifier. The MinIO comparator bundle has not been regenerated. 'Attested' here means recorded-and-recomputable, not signed: there is no key infrastructure in that territory. Still blocking: no owner-approved envelope; no credentials; the production issuer/registry seam (R4-SEC-01) is implemented and proven locally (R4-PR1: opaque registry, provisioning transaction, mint/verify separation, managed-surface E2E) - what remains for live is provisioning real managed keys, under the credentials blocker; the three OPEN product-conformance obligations (ambiguity-resolution-real, runtime-cannot-delete, attempt-identity-changed-bytes-real).",
-   "blocking_findings": [
-    "SI-G0-3"
-   ],
-   "blockers": [
-    "owner-approved G2 numeric envelope file (absent by design until the owner signs one)",
-    "SI-G0-3 credentials (including real managed key provisioning for the R4-PR1 issuer hierarchy)",
-    "three OPEN product-conformance obligations in probes/obligations.ts"
-   ]
+   "why": "Round-4: the runner's destructive RED-preflight cleanup (R4-CF-00) is repaired with zero-authority refusal, lock-baseline restore and an enforced envelope meter (R4-CF-01), redaction is a serialization invariant (R4-CF-03), the nine /do|/ctr|/worker probes now have a deployable in-repo harness whose source digest is bound into the bundle (R4-CF-02, probes/harness-worker.ts + wrangler.probe-harness.toml), and every assertion is classified provider-fact vs product-conformance by the obligation manifest. ROUND-6 (R6-TRUTH-01 semantic pass, 2026-08-20 \u2014 what changed and what did NOT): (a) SELF-TEST COUNT: the harness now executes 26 controls, not 24. Executed 2026-08-20 on this branch: `bash probes/self-test.sh` \u2192 'self-test: all 26 controls passed'. The 24 figure predated controls 7c and 7d. (b) ENVELOPE LIMITS: as of 09ce01e every signed envelope field now has an enforced global counter, including `max_cost_usd_cents`, which was previously signed and never priced; preflight refuses when the REMAINING signed validity is shorter than the credential TTL it would mint, and the displayed key fingerprint must equal the one derived from the trusted verification key. The claim 'all envelope limits are enforced' is TRUE for the LOCAL enforcement path, proved by budget-enforcement 9/9 including a schema-to-counter exhaustiveness test that fails when a signed field gains no counter. It is NOT a claim about provider-side enforcement: no credentialed run has ever occurred, so nothing here is attested against a real Cloudflare account. (c) AMBIGUITY: as of 3ac9ae9 all 16 mutation routes bind an explicit authoritative effect, IDEMPOTENT_REEXECUTE is gone from the union, and `deriveEffectOutcome` ends in `const unhandled: never` so a new variant cannot compile without an authoritative query. The four ambiguity cuts, restart resumption, one-physical-effect and byte-equal canonical replay are EXECUTED for every route. What that closes is the CODE-LEVEL obligation; the probe obligation `ambiguity-resolution-real` stays OPEN because it asks for the behaviour against a real Durable Object under real faults, which needs credentials. Recorded honestly with it: CUT_EXISTS/CUT_NOT_PENDING remain the typed refusals for a DIFFERENT token, and a reconstructed WAL receipt still differs in its `replayed` flag. (d) S3 EVIDENCE: as of 21780b0 the corpus bundle is schema v2 \u2014 clean-tree refusal BEFORE execution, provider digest RECOMPUTED from bytes and matched against the source lock, sealed lock bytes, structured per-phase results, and a path-independent stable root; evidence_mutants.py kills 28 of 28. The bundle is therefore SOURCE-AUTHENTIC and independently re-derivable. It is NOT 'qualification-grade' for the product: it certifies an S3 PROVIDER against the object-store corpus, not TypeDB against the upstream test corpus, and the two round-5 bundles are schema v1 and are REJECTED by the new verifier. The MinIO comparator bundle has not been regenerated. 'Attested' here means recorded-and-recomputable, not signed: there is no key infrastructure in that territory. Still blocking: no owner-approved envelope; no credentials; the production issuer/registry seam (R4-SEC-01) is implemented and proven locally (R4-PR1: opaque registry, provisioning transaction, mint/verify separation, managed-surface E2E) - what remains for live is provisioning real managed keys, under the credentials blocker; the three OPEN product-conformance obligations (ambiguity-resolution-real, runtime-cannot-delete, attempt-identity-changed-bytes-real)."
   },
   {
    "id": "G3_PLUS",
    "title": "Conformance / release gates beyond G2",
-   "state": "NOT_REACHABLE",
    "authority": "v16 playbook ordering",
-   "why": "Earlier gates are open.",
-   "blockers": [
-    "G0",
-    "G1",
-    "G2"
-   ]
+   "why": "Earlier gates are open."
   }
  ],
  "lanes": [
   {
    "id": "U0",
    "state": "OPEN",
-   "why": "Round 7 executed the first fresh pristine U0 over the current tree. docs/evidence/G3/leaf/u0-full-1 (executed, tree_state PRISTINE, tree_stable_across_run true, 106/106 targets, 0 refused, 0 timed out, 455 leaves: 452 PASSED / 2 FAILED / 1 IGNORED, root 1fb52e70dbd3507df8444f9500e5d0b8bd01e315390ceb9cdbd64bbe2cc5cf94) and docs/evidence/G3/leaf/cucumber-u0-1 (DERIVED from that bundle's archived bytes, nothing re-run; 47/47 features, 0 refused, 4071 leaves all PASSED, 28 scenarios NOT_RUN, root 13a82c609998e4325afc617b3d41dd4570e191d04933dafdbe66cd1f5b54baa7). Both verify CLEAN with 0 anomalies; u0-full-1 also verifies CLEAN under --corroborate-tree. Adding them moved plan coverage 9056 -> 13582 of 23138 rows, i.e. 4526 of U0's 4740 plan rows now carry a leaf-granularity outcome. The lane stays OPEN because 214 U0 rows remain uncovered (failpoint rows that libtest does not print per fail point, and static rows) and because COVERED records an outcome, never a pass: the 2 FAILED leaves are upstream's own todo!() stubs in storage/tests/test_recovery.rs, which the fork implements (upstream 7 #[test] with 2 todo!(); fork 18 #[test] with 0), and both pass under U1 and U2. ROUND 7h (2026-08-22): the STATIC_CHECK family got its lane. docs/evidence/G3/leaf/static-u0-1 — 141 targets, 0 refused, 141 leaves all PASSED, root 8e98c5dbf46918a92839f3355239ea53cab1c92345a312c07bc2548417b57876 — is produced by tools/qualification/run_static_leaf.py and re-derived by tools/qualification/verify_static_leaf.py, which recomputes every checked file's digest against the pinned tree and RE-DERIVES each verdict rather than reading it (the tab and header predicates are deliberately reimplemented there; rustfmt is re-run). tools/qualification/static_mutants.py holds 12/12, including a control that hides a TAB behind a PASS with every shallower binding refreshed. Plan coverage 13,582 -> 13,723 of 23,138."
+   "why": "Round 7 executed the first fresh pristine U0 over the current tree. docs/evidence/G3/leaf/u0-full-1 (executed, tree_state PRISTINE, tree_stable_across_run true, 106/106 targets, 0 refused, 0 timed out, 455 leaves: 452 PASSED / 2 FAILED / 1 IGNORED, root 1fb52e70dbd3507df8444f9500e5d0b8bd01e315390ceb9cdbd64bbe2cc5cf94) and docs/evidence/G3/leaf/cucumber-u0-1 (DERIVED from that bundle's archived bytes, nothing re-run; 47/47 features, 0 refused, 4071 leaves all PASSED, 28 scenarios NOT_RUN, root 13a82c609998e4325afc617b3d41dd4570e191d04933dafdbe66cd1f5b54baa7). Both verify CLEAN with 0 anomalies; u0-full-1 also verifies CLEAN under --corroborate-tree. Adding them carried 4,526 of U0's 4,740 plan rows to a leaf-granularity outcome; the resulting totals are current.coverage. The lane stays OPEN because 214 U0 rows remain uncovered (failpoint rows that libtest does not print per fail point, and static rows) and because COVERED records an outcome, never a pass: the 2 FAILED leaves are upstream's own todo!() stubs in storage/tests/test_recovery.rs, which the fork implements (upstream 7 #[test] with 2 todo!(); fork 18 #[test] with 0), and both pass under U1 and U2. ROUND 7h (2026-08-22): the STATIC_CHECK family got its lane. docs/evidence/G3/leaf/static-u0-1 \u2014 141 targets, 0 refused, 141 leaves all PASSED, root 8e98c5dbf46918a92839f3355239ea53cab1c92345a312c07bc2548417b57876 \u2014 is produced by tools/qualification/run_static_leaf.py and re-derived by tools/qualification/verify_static_leaf.py, which recomputes every checked file's digest against the pinned tree and RE-DERIVES each verdict rather than reading it (the tab and header predicates are deliberately reimplemented there; rustfmt is re-run). tools/qualification/static_mutants.py holds 12/12, including a control that hides a TAB behind a PASS with every shallower binding refreshed. Plan coverage 13,582 -> the counts in current.coverage."
   },
   {
    "id": "U1",
    "state": "OPEN",
-   "why": "Re-run in round 7b against the CURRENT tree and superseding the round-6 bundles, which described a fork digest (4a163c9b) that the lint fixes in 6b68ac0 moved. docs/evidence/G3/leaf/u1-full-3: 106/106 targets, 0 refused, 0 non-zero exits, 0 timed out; 455 leaves = 454 PASSED / 0 FAILED / 1 IGNORED; tree_state FORK_STAGED_EXACT at fork digest 45912c8a; tree_stable_across_run true; root fbd0356029a0a03947e3ed01fb9155aab658343e2a8e71be23593876d986c989. docs/evidence/G3/leaf/cucumber-u1-3 derives 4071 leaves, all PASSED, from its archived bytes with nothing re-run (root 94659ed3…). Both verify CLEAN and leaf_mutants holds 16/16 against u1-full-3. CD-003 is answered: the oracle joins on leaf CASES, not target names. The 'pass BOTH u1 bundles as --oracle' trap is RETIRED — it existed because u1-full-1 refused four HTTP targets and u1-http-2 was their re-run; u1-full-3 refused nothing, so one bundle carries all 455 leaves. u1-full-1 and u1-http-2 are kept as valid evidence about the tree they were produced against. The lane stays OPEN because plan rows remain uncovered."
+   "why": "Re-run in round 7b against the CURRENT tree and superseding the round-6 bundles, which described a fork digest (4a163c9b) that the lint fixes in 6b68ac0 moved. docs/evidence/G3/leaf/u1-full-3: 106/106 targets, 0 refused, 0 non-zero exits, 0 timed out; 455 leaves = 454 PASSED / 0 FAILED / 1 IGNORED; tree_state FORK_STAGED_EXACT at fork digest 45912c8a; tree_stable_across_run true; root fbd0356029a0a03947e3ed01fb9155aab658343e2a8e71be23593876d986c989. docs/evidence/G3/leaf/cucumber-u1-3 derives 4071 leaves, all PASSED, from its archived bytes with nothing re-run (root 94659ed3\u2026). Both verify CLEAN and leaf_mutants holds 16/16 against u1-full-3. CD-003 is answered: the oracle joins on leaf CASES, not target names. The 'pass BOTH u1 bundles as --oracle' trap is RETIRED \u2014 it existed because u1-full-1 refused four HTTP targets and u1-http-2 was their re-run; u1-full-3 refused nothing, so one bundle carries all 455 leaves. u1-full-1 and u1-http-2 are kept as valid evidence about the tree they were produced against. The lane stays OPEN because plan rows remain uncovered."
   },
   {
    "id": "U2",
    "state": "HISTORICAL_EXPERIMENTAL_NON_QUALIFYING",
-   "why": "Round 7b: docs/evidence/G3/leaf/u2-full-3 is a CURRENT-tree SlateDB run — 106/106 targets, 0 refused, 455 leaves = 454 PASSED / 0 FAILED / 1 IGNORED, tree_state FORK_STAGED_EXACT at fork digest 45912c8a, root b03164af…, verify CLEAN, leaf_mutants 16/16 — with cucumber-u2-3 deriving 4071 leaves all PASSED (root 1111aadc…). Compared against the U1 oracle on the SAME tree and the same binaries, backend chosen at runtime: leaf_diff.py reports 0 regressions, 0 absent-on-candidate, 0 outcome-changed and 0 unexplained candidate-only over 455 leaf cases. That is the central result of this repository and it is now measured at HEAD rather than inherited. The lane state is UNCHANGED: this is single-node semantic parity evidence under OD-010's declared scope, not a conformance claim, and the earlier U2S3 archive it shares this row with remains historical observation only."
+   "why": "Round 7b: docs/evidence/G3/leaf/u2-full-3 is a CURRENT-tree SlateDB run \u2014 106/106 targets, 0 refused, 455 leaves = 454 PASSED / 0 FAILED / 1 IGNORED, tree_state FORK_STAGED_EXACT at fork digest 45912c8a, root b03164af\u2026, verify CLEAN, leaf_mutants 16/16 \u2014 with cucumber-u2-3 deriving 4071 leaves all PASSED (root 1111aadc\u2026). Compared against the U1 oracle on the SAME tree and the same binaries, backend chosen at runtime: leaf_diff.py reports 0 regressions, 0 absent-on-candidate, 0 outcome-changed and 0 unexplained candidate-only over 455 leaf cases. That is the central result of this repository and it is now measured at HEAD rather than inherited. The lane state is UNCHANGED: this is single-node semantic parity evidence under OD-010's declared scope, not a conformance claim, and the earlier U2S3 archive it shares this row with remains historical observation only."
   },
   {
    "id": "U2S3",
@@ -414,7 +526,7 @@
    "status": "DONE",
    "items": [
     "round-3 response document",
-    "ADR-0009/spec-delivery/handoff §18 corrections",
+    "ADR-0009/spec-delivery/handoff \u00a718 corrections",
     "ledger round-3 adoption",
     "source-lock truth for the shipped fork (CD-007)",
     "evidence reconciliation after R3-B flake-ledger change (bundle root re-sealed, all 5 evidence checks green)",
@@ -535,7 +647,7 @@
    ],
    "items": [
     "R4-SEC-04: closed capability method registry, exact per-action methods with REQUIRED restrictions; unknown method refused (CAPABILITY_METHOD_UNKNOWN)",
-    "R4-SEC-05: assertActiveReader — WAL_READ binds session+generation and is revalidated live at use time",
+    "R4-SEC-05: assertActiveReader \u2014 WAL_READ binds session+generation and is revalidated live at use time",
     "R4-SEC-03: Rust L1 client threads the exact generation through every mint (no default/zero fallback); bound actor; validating contract mock; live workerd 24/24",
     "R4-SEC-06: checkpoint activation takes the material checkpoint-restore-evidence/v2 manifest, validated field-by-field",
     "R4-PR1 / R4-SEC-01 (locally executable): opaque tenant registry + PROVISION transaction (first-call squat dead, race loser typed PROVISION_CONFLICT), registry-derived DO routing (idFromName from the VERIFIED token binding), private-issuer key hierarchy (root never reaches runtime; per-scope derived keys; capability-scope material cannot mint PROVISION), token schema v2 (v/kid/env/tenantId, closed field set), per-run ephemeral managed keys, managed-surface E2E (dev-route 404 matrix with zero side effects + full internal bootstrap). Node 96/96, workerd 25/25, e2e 94 PASS, e2e:managed 23 PASS.",
@@ -572,7 +684,7 @@
    "items": [
     "R4-STACK-04/05/06/09 + R4-LOCAL-05/06/07: semantic readiness, PID identity, transitive no-cloud guard, hardened downloader, secret hygiene (committed e37f9e8)",
     "PR2: provider-neutral S3 certification corpus EXECUTED GREEN on both providers (MinIO locked baseline AND pinned RustFS 1.0.0-rc.2): 9 semantic tests + kill -9 crash/restart persistence via object_store =0.14.1",
-    "OD-009: RustFS pinned in source-lock (zip dbe7b718…, binary d286e5f8…, commit e9f53180 cross-checked two ways); corpus runner hard-refuses digest mismatch",
+    "OD-009: RustFS pinned in source-lock (zip dbe7b718\u2026, binary d286e5f8\u2026, commit e9f53180 cross-checked two ways); corpus runner hard-refuses digest mismatch",
     "PR3 (partial): deterministic fault proxy (tested, 7 checks) + native-fidelity lane stack/native-fidelity.mjs EXECUTED GREEN on both providers: real typedb_server_bin over SlateDB-on-S3 through the proxy, official HTTP workload, kill -9 recovery, parallel isolation, injected-fault survival, and the U1 local-fallback witness mutant",
     "OPEN: remote-WAL (U3) product integration and TypeDB-driver-level suites in the lane; L2 container parity"
    ],
@@ -606,7 +718,7 @@
    "items": [
     "R5-SEC-03: capability + provision tokens are Ed25519 schema v3; the managed runtime holds ONLY public verification keys (mutant: stealing every managed env var yields no minting ability); minting lives solely in the issuer module; two-slot rotation keyring with explicit retirement; journal MAC deliberately stays symmetric (writer=verifier=same DO), documented",
     "R5-SEC-01: managed inputs resolved from ONE requirement source consumed verbatim by both the runtime resolver and the pre-deployment graph checker; construction test boots from exactly the graph-declared names; drop-each-input mutants fail before deployment",
-    "R5-SEC-08: docs/security-topology.md — principal/binding/key map, rotation per key, and the explicit statement that TypeDB end-user auth is NOT service auth, every claim citing its enforcing file",
+    "R5-SEC-08: docs/security-topology.md \u2014 principal/binding/key map, rotation per key, and the explicit statement that TypeDB end-user auth is NOT service auth, every claim citing its enforcing file",
     "Verified: tsc clean; node 108/108; workerd 27/27; e2e + e2e:managed ALL PASS; stack 64/64; wrangler consistency PASS"
    ],
    "commits": [
@@ -618,10 +730,10 @@
    "title": "Round-5 PR2: control lifecycle, ambiguity resolution and service integration (R5-SEC-02, R5-SEC-04, R5-SEC-06, R5-SEC-07, R5-SEC-09)",
    "status": "DONE",
    "items": [
-    "R5-SEC-04: capability uses are a durable operation/effect protocol — each claim records its authoritative effect, a recovery reducer settles AMBIGUOUS from that effect (present->exact original success, absent->re-execute, contradicted->QUARANTINED terminally), the retry path settles instead of answering 409 forever, and restart/alarm sweeps converge without any client retry. 10 mutants executed (7 core + 3 workerd)",
+    "R5-SEC-04: capability uses are a durable operation/effect protocol \u2014 each claim records its authoritative effect, a recovery reducer settles AMBIGUOUS from that effect (present->exact original success, absent->re-execute, contradicted->QUARANTINED terminally), the retry path settles instead of answering 409 forever, and restart/alarm sweeps converge without any client retry. 10 mutants executed (7 core + 3 workerd)",
     "R5-SEC-02: the exact Rust client operates the MANAGED surface as a pure bearer of issuer-granted v3 tokens (no local minting); new managed lane boots wrangler.toml + the private issuer sidecar and proves the dev-route 404 matrix from Rust before any bootstrap. 44 checks on the managed lane, 35 on local-dev, contract 17, lib 14",
     "R5-SEC-06: ContainerDO is registry-provisioned only (two-tenant race, squat, wrong principal, stale incarnation, unbound observation mutants); R5-SEC-09: observation bytes bounded per field, per request on ACTUAL bytes, and in aggregate",
-    "R5-SEC-07 (locally executable part): the graph marks the container execution facet declared-ahead/advisory, enforced by a stack honesty test; the DO records a typed containerRuntime descriptor so the future real Container resource binds an exact image identity. No actual Container process exists — recorded openly",
+    "R5-SEC-07 (locally executable part): the graph marks the container execution facet declared-ahead/advisory, enforced by a stack honesty test; the DO records a typed containerRuntime descriptor so the future real Container resource binds an exact image identity. No actual Container process exists \u2014 recorded openly",
     "Residual recorded: drain/revoke, checkpoint open/activate and the authenticated ambiguous-operation query are not yet in the Rust client"
    ],
    "commits": [
@@ -639,7 +751,7 @@
     "R5-STOR-05: multipart completion is provider-atomic create-only (staging key -> readback verify -> atomic promote); two independent completers yield one winner and no changed-byte overwrite",
     "R5-STOR-08: journal retires terminal rows to a bounded receipt window with hard attempt/byte admission budgets",
     "R5-STOR-10: silent legacy rebind is dead on both the marker and checkpoint sides; explicit imports require the acknowledged full identity and write sealed provenance",
-    "R5-STOR-04: the strict external-epoch fence SHIPS (unconditional on the storage crate's slatedb dependency, attested by cargo tree). The honest suite gate asserts that under the shipped posture EVERY failing upstream test fails BECAUSE the fence refused an unauthorized epoch-less open — which caught 3 genuine regressions hidden among 423 expected refusals (patch 0005)",
+    "R5-STOR-04: the strict external-epoch fence SHIPS (unconditional on the storage crate's slatedb dependency, attested by cargo tree). The honest suite gate asserts that under the shipped posture EVERY failing upstream test fails BECAUSE the fence refused an unauthorized epoch-less open \u2014 which caught 3 genuine regressions hidden among 423 expected refusals (patch 0005)",
     "R5-STOR-02: classic|slatedb-r2 is a product option resolved from server configuration; a conformance profile can never silently decide it (typed ProductBackendProfileMismatch); R5-STOR-03: the local epoch source documents what it is not, and the lanes that would claim cross-host fencing refuse at admission",
     "Verified: storage lib 180/0, test_recovery 18/0, durability 34/0, database 21/0; strict-epoch suite gate PASS"
    ],
@@ -655,7 +767,7 @@
    "status": "DONE",
    "items": [
     "R5-STOR-06: restore materialises into scratch, re-verifies, opens every keyspace, replays the fixed WAL head, and only then atomically activates; the kill-point matrix (before/during/after activation, unopenable cut) is executed and every pre-activation failure leaves the predecessor byte-identical AND active",
-    "R5-STOR-09: CHECKPOINT-COMPLETE v2 — streaming SHA-256 per file and root over length-prefix-framed raw path bytes; lossy-path collisions impossible; v1/64-bit manifests refused as unverifiable",
+    "R5-STOR-09: CHECKPOINT-COMPLETE v2 \u2014 streaming SHA-256 per file and root over length-prefix-framed raw path bytes; lossy-path collisions impossible; v1/64-bit manifests refused as unverifiable",
     "R5-STOR-11: attempt ordering and retention keyed by the sealed checkpoint sequence, never wall clock; clock-rollback and renamed-attempt mutants",
     "R5-STOR-12: the reachable todo!() in open_snapshot_write_at is a typed error"
    ],
@@ -668,7 +780,7 @@
    "title": "Round-5 PR5: local production-parity evidence (R5-LOCAL-01, R5-LOCAL-03) and the signed live envelope (R5-CF-01)",
    "status": "DONE",
    "items": [
-    "R5-LOCAL-01: the CAS gate can no longer accidentally serialize — barrier-released rounds (100x16 independent-client writers, 1 MiB pairwise-distinct bodies), current-ETag update races with post-race ABA refusal, and a multi-PROCESS lane (8 OS processes per round, start-file barrier, winner self-verifies byte-exact stored bytes). Executed green on BOTH pinned providers",
+    "R5-LOCAL-01: the CAS gate can no longer accidentally serialize \u2014 barrier-released rounds (100x16 independent-client writers, 1 MiB pairwise-distinct bodies), current-ETag update races with post-race ABA refusal, and a multi-PROCESS lane (8 OS processes per round, start-file barrier, winner self-verifies byte-exact stored bytes). Executed green on BOTH pinned providers",
     "R5-LOCAL-03: every corpus run seals a structured evidence bundle (provider binary digest, per-phase logs+digests, crash receipt, root seal) verified by an independent verifier",
     "R5-CF-01: the approval envelope is a SIGNED, run-bound, one-time authorization artifact (Ed25519 over the canonical body, verified against an out-of-band public key, bound to release commit/probes source root/account/bucket/nonce/one run id, validity <=7 days, consumed at authority acquisition). 16 mutants executed + self-test control 7c",
     "R5-LOCAL-02 remains OPEN: the single-command ladder combining managed Worker/DO + Rust client + TypeDB + RustFS + official drivers is not built"
@@ -685,7 +797,7 @@
    "status": "DONE",
    "items": [
     "PR #8 merged to main as 553febdec5c1cca6e7955b0971feeb6aa9f57046 (merge commit; branch head c0e8082).",
-    "TREE EQUALITY VERIFIED: `git diff HEAD origin/main` is EMPTY — the merged tree is byte-identical to the tree every gate in the final sweep was executed against, so no merge delta invalidates the evidence.",
+    "TREE EQUALITY VERIFIED: `git diff HEAD origin/main` is EMPTY \u2014 the merged tree is byte-identical to the tree every gate in the final sweep was executed against, so no merge delta invalidates the evidence.",
     "Commit-sensitive gates re-executed ON the merged commit: ledger lint PASS, ledger mutants 16/16 killed (including done-action-citing-non-ancestor-commit, which verifies every commit this ledger cites exists in main's history), catalogue --require-current-lock PASS, plan --check --require-current-lock PASS (23132 rows).",
     "Gate states unchanged by the merge and honest: G0 OPEN_RED, G1 OPEN, G2 NOT_READY_TO_EXECUTE, plan coverage 0/23138."
    ],
@@ -713,7 +825,7 @@
    "items": [
     "TIER 1 (.github/workflows/gates.yml, every push/PR) gains: a `hygiene` job (rustfmt on the tools workspace AND the TypeDB fork under the pinned nightly, `git diff --check` over the PR range and the working tree, clippy -D warnings on all three tools crates, the warning-ratchet mutants); a `supply-chain` job (advisory policy + lockfile provenance + their mutants, the dependency-source linter's mutants, the release-identity template check and its four-posture self-test, the capability-probe mutants); a short RustFS provider corpus with its capability probe; and, in the storage job, the durability unit lane, the shipped-fence attestation, the STRICT negative epoch suite (--quick) and the dependency-source truth gate.",
     "TIER 2 (.github/workflows/nightly.yml, NEW - nightly + manual pre-live) carries what previously ran nowhere or dispatch-only: storage/durability integration tests, bench compile-check, the FULL feature-off + feature-on fence suite, the full RustFS crash/fault corpus with the MinIO comparator and the evidence mutants, managed local Node and Rust E2Es, the pristine catalogue drift rebuild, npm + cargo advisory scans, and a ledger-honesty gate that turns red if a driver harness lands without the OFFICIAL_DRIVERS lane being updated.",
-    "TIER 3 (.github/workflows/release-qualification.yml, NEW - tag or explicit dispatch only): clean-tree refusal before anything is measured, an immutable digest-bound release identity, the hermetic truth plane, SBOM (npm CycloneDX) + resolved-graph cargo inventory + digests bound to the identity, and a final release-predicate job that evaluates EVERY gate and lane and fails while any is unmet. Today it fails by construction: G0 is OPEN_RED (Mode-Q absent), plan coverage is expected-RED, U3.0 is RED, OFFICIAL_DRIVERS is NOT_IMPLEMENTED.",
+    "TIER 3 (.github/workflows/release-qualification.yml, NEW - tag or explicit dispatch only): clean-tree refusal before anything is measured, an immutable digest-bound release identity, the hermetic truth plane, SBOM (npm CycloneDX) + resolved-graph cargo inventory + digests bound to the identity, and a final release-predicate job that evaluates EVERY gate and lane and fails while any is unmet. Today it fails by construction: the gate states recorded in current.gates.0 is RED, OFFICIAL_DRIVERS is NOT_IMPLEMENTED.",
     "NO `continue-on-error:` key exists on any job or step in any of the three workflows.",
     "ENVIRONMENT-BLOCKED is IMPLEMENTED, not described: tools/ci/capability_probe.py classifies the runner, the lane runs only when CAPABLE, and a dedicated `*-environment-blocked` job FAILS with exit 75 (EX_TEMPFAIL) and an `::error title=ENVIRONMENT-BLOCKED::` annotation naming the missing capability and the runner needed. `continue-on-error` was rejected because it reports SUCCESS; a bare `if:` was rejected because it reports SKIPPED, which branch protection also treats as satisfied.",
     "RECORDED REMAINDER: no SHA-pinned artifact-upload action exists in this repository, so blocked verdicts and attestation digests are written to the job summary rather than uploaded. Adding an artifact action requires resolving and recording its commit SHA, which this session could not verify."
@@ -774,17 +886,24 @@
   "checkpoint": "PARTIAL; enumeration/fsync integrity landed, global-cut protocol OPEN",
   "external_epochs": "SHIPPED AND RATIFIED (R6-TRUTH-01, 2026-08-20). The soft fork is what every crate in the product workspace links: `cargo metadata` resolves slatedb to path sources/slatedb-fork@0.15.0 with external_epoch_required enabled, via a workspace-global [patch.crates-io]. ADR-0012 status is 'accepted (shipped)'; ADR-0001 is SUPERSEDED in full. Enforced by tools/ci/check_dependency_sources.py against the resolved graph. Full PRODUCT integration of the epoch protocol end-to-end remains OPEN (post-G2): shipping the fenced engine is not the same as having exercised it against a real platform.",
   "no_fork_firewall": "NOT SELECTED. Candidate B (the publication firewall over stock SlateDB) is measured and its three spike defects are repaired, and its provider-enforced credential rotation remains a sound storage-side backstop underneath whatever ships - but Candidate A is what ships (ADR-0012, round-6 ratification). Candidate B's remaining unmeasured items are unchanged: provider-credential enforcement, the latency envelope of the gate's preflight reads, and a cooperating client for the typed transition envelope.",
-  "evidence_denominator": "DENOMINATOR_LANDED by R3-H (7f2ba55): immutable 23,132-row leaf/profile plan + independent verifier chain (R4-D). EXECUTION coverage is no longer zero and is no longer target-granular: as of R6-QUAL-01 (2026-08-20) 914 of 23,138 rows carry a LEAF-granularity outcome — 910 cargo-libtest rows (all 455 catalogued LIBTEST leaves across the two runnable plan lanes U1 and U2) plus the 4 covered official-driver rows. COVERED means an outcome was RECORDED, never that it passed; the split is carried in covered_row_outcomes (908 PASSED, 2 IGNORED). The U1-classic vs U2-SlateDB leaf differential over the same tree and binaries is 455 leaves compared, 454 AGREE_PASSED and 1 AGREE_IGNORED, with 0 regressions, 0 absent-on-candidate and 0 outcome-changed — the storage adapter changes no upstream per-case outcome it is compared on. G1 stays OPEN: 22,115 rows remain uncovered (20,495 cucumber, 1,302 cargo-libtest on the unreachable U0/U3/U4 lanes, 176 failpoint, 141 static, 1 script), the 44 FAILPOINT leaves are deliberately NOT claimed because libtest prints one line for a case that loops over 22 fail points and deriving 44 passes from that is inference dressed as observation, and plan_coverage.py exits nonzero printing NOT SATISFIED.",
+  "evidence_denominator": {
+   "historical": true,
+   "as_of_commit": "7f2ba55",
+   "superseded_by": "current.coverage",
+   "disposition": "DENOMINATOR_LANDED by R3-H (7f2ba55): an immutable leaf/profile plan plus an independent verifier chain (R4-D). The round-6 execution numbers this entry used to state inline are SUPERSEDED \u2014 current.coverage is the only place a current coverage count may live. What remains true and is not a count: COVERED means an outcome was RECORDED, never that it passed; the U1-classic vs U2-SlateDB leaf differential over the same tree and binaries found 0 regressions, 0 absent-on-candidate and 0 outcome-changed."
+  },
   "u2_u2s3_verdict": "HISTORICAL_NON_QUALIFYING",
-  "official_driver_parity": "EXECUTED_LEAF_PARTIAL (R6-QUAL-01, 2026-08-20). All six rows now carry executed, leaf-level evidence that tools/evidence/verify_drivers.py independently re-derives from the archived bytes: 1,132 official behaviour scenarios across 6 lanes, 1,102 in-plan leaf outcomes, 0 failures, 99/99 mutants killed. The SlateDB backend passes the full official Rust, Python and TypeScript suites identically to RocksDB, and the lane separation rests on the archived on-disk witness _system/backend-spec.marker (kind slatedb-r2 / object-store local-fs vs kind classic), not on an environment variable. The earlier 'blocked on external repositories and harness build-out' premise was false: the driver sources are source-locked and present, and only Bazel is missing. Rows are PARTIAL, never COVERED, because three preconditions remain unmet and are each named in docs/evidence/G1/drivers/driver-row-status.json: the cluster suites need a 3-node replicated deployment plus test certificates (TypeDB CE is single-node); the TypeScript lane's Bazel type surface is not reproducible outside Bazel (upstream emits no index.d.cts by its own BUILD TODO); and the pristine/U0 lane is disk-blocked, measured. The plan JSON itself is NOT edited - its driver_rows keep the NOT_IMPLEMENTED seed because the plan body feeds plan_root 72020aa0..., which archived verdicts pin; status is result-side by design.",
-  "G0": "OPEN_RED",
-  "G1": "OPEN",
-  "G2": "NOT_READY_TO_EXECUTE"
+  "official_driver_parity": {
+   "historical": true,
+   "as_of_commit": "R6-QUAL-01 (2026-08-20)",
+   "superseded_by": "current.drivers",
+   "disposition": "EXECUTED_LEAF_PARTIAL (R6-QUAL-01, 2026-08-20). All six rows now carry executed, leaf-level evidence that tools/evidence/verify_drivers.py independently re-derives from the archived bytes: 1,132 official behaviour scenarios across 6 lanes, 1,102 in-plan leaf outcomes, 0 failures, 99/99 mutants killed. The SlateDB backend passes the full official Rust, Python and TypeScript suites identically to RocksDB, and the lane separation rests on the archived on-disk witness _system/backend-spec.marker (kind slatedb-r2 / object-store local-fs vs kind classic), not on an environment variable. The earlier 'blocked on external repositories and harness build-out' premise was false: the driver sources are source-locked and present, and only Bazel is missing. Rows are PARTIAL, never COVERED, because three preconditions remain unmet and are each named in docs/evidence/G1/drivers/driver-row-status.json: the cluster suites need a 3-node replicated deployment plus test certificates (TypeDB CE is single-node); the TypeScript lane's Bazel type surface is not reproducible outside Bazel (upstream emits no index.d.cts by its own BUILD TODO); and the pristine/U0 lane is disk-blocked, measured. The plan JSON itself is NOT edited - its driver_rows keep the NOT_IMPLEMENTED seed because the plan body feeds plan_root 72020aa0..., which archived verdicts pin; status is result-side by design."
+  }
  },
  "forbidden_claims": [
   {
    "pattern": "G0.*\\bgreen\\b|\\bgreen\\b.*G0",
-   "reason": "G0 is OPEN_RED while Mode-Q evidence is absent"
+   "generated_from": "current.gates.G0"
   },
   {
    "pattern": "[Ee]verything local is done",
@@ -818,11 +937,11 @@
   "audited_commit": "e1f88a0ee6cd6d43f1fa6eeaa067161f58c2fc2a",
   "decision": "NO-GO for a product-labelled Cloudflare live qualification; continue local implementation. The credentialed probe runner was additionally under a DESTRUCTIVE STOP (R4-CF-00: RED preflight issued a lock-policy reset) until the zero-authority repair landed; the stop is lifted for the repaired runner but the run remains NOT READY pending the R4 program (deployable harness, obligation-manifest assertions, owner envelope, credentials).",
   "local_s3_decision": "OD-009: RustFS strategic target / MinIO loopback-confined transition baseline; promotion gated on the provider-neutral certification corpus",
-  "confidentiality_decision": "OD-008 OPEN: no confidentiality profile is decided; v16 §19.6 is NOT closed",
+  "confidentiality_decision": "OD-008 OPEN: no confidentiality profile is decided; v16 \u00a719.6 is NOT closed",
   "response": "docs/reviews/deep-audit-2026-08-19-round4-response.md"
  },
  "adopted_audit_round6": {
-  "directive": "TypeDB × SlateDB × Cloudflare R2 round-6 deep audit and implementation directive, 2026-08-20",
+  "directive": "TypeDB \u00d7 SlateDB \u00d7 Cloudflare R2 round-6 deep audit and implementation directive, 2026-08-20",
   "audited_commit": "29fd0038c0fe1b3ddb6c9baebd6fadf2226c345c",
   "decision": "NO-GO for a live qualification run and NO-GO for a production claim; continue local implementation (R6 program adopted)",
   "note": "This block records ADOPTION of the round-6 directive. It is not a claim that the round-6 program is complete; see the R6-* actions below for per-finding status."

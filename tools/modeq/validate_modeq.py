@@ -439,8 +439,14 @@ def validate_bundle(bundle_dir: pathlib.Path) -> list[str]:
 
 
 def g0_state(ledger_path: pathlib.Path) -> str:
+    """G0's state, from the ledger's ONE canonical current-fact section.
+
+    R8-P0-02: gate state used to live on the narrative `gates[]` row while a
+    second copy sat in `q_dispositions.G0`, and this reader took the first.
+    Both copies are gone; `current.gates` is the only home.
+    """
     ledger = json.loads(ledger_path.read_text())
-    return str(next(g for g in ledger["gates"] if g["id"] == "G0")["state"])
+    return str(ledger["current"]["gates"]["G0"]["state"])
 
 
 def main() -> int:

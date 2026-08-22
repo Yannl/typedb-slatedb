@@ -1,0 +1,7 @@
+STATIC-CHECK static:admin/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         0680625ac1433cfdfa6b2fd3f649a80074bff729a1119ee12e5736cc869b7597 admin/BUILD
+FILE         6580731bf48a27876980fedc4abda0778abb16f4217b7bad81ab6ce3532219c0 admin/main.rs
+FILE         63c3531b34d1fdb1192f5b0773aaea5cdb6b93e2d7622fff8876ee64a5c134d3 admin/tests/admin_assembly.rs
+RESULT       PASS files=3 failures=0

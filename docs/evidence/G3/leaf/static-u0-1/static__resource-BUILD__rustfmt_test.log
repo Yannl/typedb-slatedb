@@ -1,0 +1,10 @@
+STATIC-CHECK static:resource/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         3e06b232678f0429de941fabac3469f61bbd309ac9290aa5e8df5c7f40eb664c resource/constants.rs
+FILE         be97c9b894d91c7fd77e41f68ce4064f43edf82a6da01b9986d5aac63398087a resource/distribution_info.rs
+FILE         8f59a87c3564552c2edb780bb7a5da87dcec709004b9df227fe0f663a94e6645 resource/perf_counters.rs
+FILE         35023601e506bc8818ebcc7fdf75ce4980ae0a5c117b45f35256a65c8c68c7a3 resource/profile.rs
+FILE         9c06db103c057afbc190e9de40bc938388636484919f7eec26bc6ca67c7db9b1 resource/resource.rs
+FILE         ec8df64e9f457f68aa1d531c966818d8e5774b9f2cf34dc422b9a03e1ad4d76d resource/server_info.rs
+RESULT       PASS files=6 failures=0

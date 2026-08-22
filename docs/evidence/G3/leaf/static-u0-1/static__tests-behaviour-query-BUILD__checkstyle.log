@@ -1,0 +1,36 @@
+STATIC-CHECK static:tests/behaviour/query/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         918f5ff1d662a7755efe997d6e475172a9e519336f29c3319e80588fa166ce10 tests/behaviour/query/BUILD
+FILE         9e2eb17033663195728ff2ca88b3fcdc00d59433d012a9451762a319aa55c8e7 tests/behaviour/query/analyze/annotations.rs
+FILE         cf9cae60a6667743c1930bb4326fa3d059153fa29a99ccb78b6046b50df9050d tests/behaviour/query/analyze/mod.rs
+FILE         dcbe97aba5b87dc73eeda80442959a388b2fede8bc8518eaba8d2ee47de1d52a tests/behaviour/query/analyze/structure.rs
+FILE         aa5b1aa48206451cdb8e03fe3904a44abfaac4a2fafff3197066f76097edc66b tests/behaviour/query/functions/basic.rs
+FILE         d103200551c1bb7574f61c50f8077f94beaab88a196845854b465665186bd46e tests/behaviour/query/functions/definition.rs
+FILE         68ecee812eca4f1b19aefd09ca107357ebf77eb325b7d9f6b57df388cb2ee662 tests/behaviour/query/functions/mod.rs
+FILE         5feaf051bd0a23be5da26ac43089f11018be6dcf36837860039c9e6c6af48300 tests/behaviour/query/functions/recursion.rs
+FILE         275de47dbb6b95c2e8b1790853758b4a4e22d5de129e80ad12bdcdfa401f428c tests/behaviour/query/functions/signature.rs
+FILE         6193c2985198ff7830a55f4a365cbcf341a267e4cf5d89b7f26a4514344e48c2 tests/behaviour/query/functions/structure.rs
+FILE         a4fc4693f6f4dab8c9e0b87ed161c50ea73bcb3e13cdc3fbf13ea0a92d3ee176 tests/behaviour/query/functions/usage.rs
+FILE         a8c9057d8a3b2dc8ae50a563bc036081384b642e278eceeea0e52df8327116a1 tests/behaviour/query/language/define.rs
+FILE         4b5f8be2c276652c276ddee9aa15700fa130617436e3232010cd852a7a7b1e27 tests/behaviour/query/language/delete.rs
+FILE         c7334f991e70fc0ce67a4bf6ece8e2013d5c19b01d3d8eed595ed145cd13a18c tests/behaviour/query/language/disjunction.rs
+FILE         f7fcb2ed59b4b9527eea78265e03ad917e74bef132f78ff626b83d0f7f91bd98 tests/behaviour/query/language/expressions.rs
+FILE         e266962cb8f4e39de995001df09f3ba849a08f1b13c227d230effe32e1a771c5 tests/behaviour/query/language/fetch.rs
+FILE         78046e36eb71bc84be38c09a654d55aca7d063f0bed6301b847dc2658b975248 tests/behaviour/query/language/given.rs
+FILE         81d06d8150edac62a946b355bf48852fce37d6f38eb470857a6515fe95a966e2 tests/behaviour/query/language/insert.rs
+FILE         f734fb30e3187a66996b76e7218225034725f46a7a0039dcd6432b8a6d87a04b tests/behaviour/query/language/match.rs
+FILE         8a1b410156555705243ebcc010af23d562abb8abc16b830021c822d98951d0dd tests/behaviour/query/language/metadata.rs
+FILE         79c3d09bfe95cee1800f370606368546f13127417f9f861a020f02bd93790a9f tests/behaviour/query/language/mod.rs
+FILE         ff50beb60ca44a6d4ef4b532ca645600a14cecfa933be22a36acc91b59cc1a99 tests/behaviour/query/language/modifiers.rs
+FILE         508cb9ff663a51e50a6edea39aa4208bb5f69664fb1c6d85f309450dedeaace2 tests/behaviour/query/language/negation.rs
+FILE         9f2664a33056b10d37eb80e995640c49085ce33307f4a23b89a5a1d09651d7ec tests/behaviour/query/language/optional.rs
+FILE         1978382854125e4d756bc483bc86633e4f5eecebe373798463b40e5237b6bfff tests/behaviour/query/language/pipelines.rs
+FILE         34871eec5b5015dc05fbe8a9013870693cd3949340990013db3be6ea901dea6d tests/behaviour/query/language/put.rs
+FILE         58d3c6161b213ca3586977ed52e9bf768a52ed0a576f29b0e06b4345b4e1b8e0 tests/behaviour/query/language/redefine.rs
+FILE         d4d02e01dc1c99b61d40fed5705da6bdeff4e7e94ab69eeaaa6ac442ce64514d tests/behaviour/query/language/reduce.rs
+FILE         6c68a6e5402623de73366c84434881860d21875c9f9969053533a9014fd116e8 tests/behaviour/query/language/undefine.rs
+FILE         721a59fc28ff7932a649887a7ec582477af5fd48694927de84958ce055d3e615 tests/behaviour/query/language/update.rs
+FILE         e8bc1645fbfcf39fffb76c9244b42bfdda351cdd2e3a8de97b17ee171c4cfd01 tests/behaviour/query/language/variables.rs
+FILE         cf059aa38c981e92d197806eac3e40e8f8b459c2952e91aa2169bf1948c1c668 tests/behaviour/query/main.rs
+RESULT       PASS files=32 failures=0

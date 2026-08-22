@@ -1,0 +1,8 @@
+STATIC-CHECK static:server/service/admin/proto/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         36a75d814fe02c3252f0e692a765661cb802f2b0e3e780161b166f8e5e7e99a4 server/service/admin/proto/BUILD
+FILE         ffb4563c5f0a0ff18ec82adc1307e79edd05c443e74e169516a238fd99c64e58 server/service/admin/proto/admin_service.proto
+FILE         58b0ba5408c17b796ec22178a8b85a46a41af310d6cc5962e18d32f85e3a735c server/service/admin/proto/build.rs
+FILE         9e2a685713f2d4061fc280f08fbb978627946ce3acd7535d37261a5f75a4e469 server/service/admin/proto/lib.rs
+RESULT       PASS files=4 failures=0

@@ -1,0 +1,5 @@
+STATIC-CHECK static:compiler/tests/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         323c36da5ca97c7640cf3f6f3e3e6c3471790d5c0cc1c9e18897700ef8b5ec16 compiler/tests/transformation.rs
+RESULT       PASS files=1 failures=0

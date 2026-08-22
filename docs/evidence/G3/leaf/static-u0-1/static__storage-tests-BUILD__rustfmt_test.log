@@ -1,0 +1,11 @@
+STATIC-CHECK static:storage/tests/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         98b2ba766070915a21e3d444f4a90175ea5094cb3be55fe5241f9ea082487fd5 storage/tests/test_isolation.rs
+FILE         858fcd051c6f146ca764acca3dc4d5996bbe69cf833eecf37ac423238d3cc86c storage/tests/test_mvcc.rs
+FILE         42095358e820a0f87cc59ded05429c8abc0d0acfe2c9d2c0da9fe1e5e14bb800 storage/tests/test_recovery.rs
+FILE         b2c279922d1315e1184bf6b76439378c14465c21a081aa9610e519f9f9989655 storage/tests/test_snapshot.rs
+FILE         e93948e75ce23f6dfb3db90967a86da6f5ba6869c857c982c12c5f14cc6fa0b0 storage/tests/test_storage.rs
+FILE         66662a400c13809aede150ff1fcb5741e1f2f9c87a2123b93016c96797384c08 storage/tests/test_utils_storage/lib.rs
+FILE         e27e64ffdbdf7dcc747c2209845d9b5d78305754ad7a69e2c1b1eb13a87f6b74 storage/tests/test_utils_storage/mock_snapshot.rs
+RESULT       PASS files=7 failures=0

@@ -1,0 +1,15 @@
+STATIC-CHECK static:query/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         bc3868a248a3c06ac5d82c58c96dad3bdb34b0d9503ec035fb424b3feddeb95b query/analyse.rs
+FILE         9be50352426ccc8038de961719cbc6cdc912221462d4e485772fca772c09340a query/definable_resolution.rs
+FILE         d37192bbb6d31c8e623119ad1640abd09f6a5da3bcc35267eb235c42767d7864 query/definable_status.rs
+FILE         e36042ac9b9ef7e7c8e3545e1bfc8f28af21f4ae3aa9ef52c402f6e206e3dcfb query/define.rs
+FILE         c134bee6f84d1ac9877c0330529a7db5e8a604aff8f1d11a0f875249772dc42e query/error.rs
+FILE         1cb604db68fce44608a66bde8061480ca2f921ecf918d41009752fb2f6b26b8b query/given_rows.rs
+FILE         5c5b47e9f7fa636eb8cec4d40ac324975f40f97c2c48c4d0022ea9d62d5a3649 query/lib.rs
+FILE         ceb7fa1da87a383d4388e722f0ae1b2e9da49334a9670f0a4b52975d34d83348 query/query_cache.rs
+FILE         6aabb6be13f6d07dd9341430c76655c4317159abefaf4528db0f949dd285ba95 query/query_manager.rs
+FILE         ac496afdb765c3d30b323a69c10fde52faea62e0ca1f7a051a89968cc8038c9a query/redefine.rs
+FILE         6a9d9d039e6054eb5bcd9e9b29fe00634709ecc8f1002c11644c2d8eb4d24bd5 query/undefine.rs
+RESULT       PASS files=11 failures=0

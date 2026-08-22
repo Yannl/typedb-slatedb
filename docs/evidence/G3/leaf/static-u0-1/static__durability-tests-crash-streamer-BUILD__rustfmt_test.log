@@ -1,0 +1,5 @@
+STATIC-CHECK static:durability/tests/crash/streamer/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         f75b265e938b1311cf69ec643f492d90bfddb763dbbf7a1ec1287e25ba1af535 durability/tests/crash/streamer/streamer.rs
+RESULT       PASS files=1 failures=0

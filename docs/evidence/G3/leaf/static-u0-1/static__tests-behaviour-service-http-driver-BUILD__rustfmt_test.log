@@ -1,0 +1,9 @@
+STATIC-CHECK static:tests/behaviour/service/http/driver/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         61787dbbff8a15cd0dc45013845b4779add5186e8ea4eaeb1a2cd540bdc1e02e tests/behaviour/service/http/driver/concept.rs
+FILE         e11269bd249d2529e45c79e4c454555ac892acb17c70adaf33ec1a05c200342f tests/behaviour/service/http/driver/connection.rs
+FILE         225c3e38878b97a653f040b047c03785ac608a50f8b93b4a1a394f55a9641182 tests/behaviour/service/http/driver/http.rs
+FILE         7e7d25dfe555df1a59953c22962b2cea1379cf0934a137da0d8ddcd888fb242c tests/behaviour/service/http/driver/query.rs
+FILE         cf31f02062921d0f58ae304e804b54677aead1b74358fbb89b46449b94207ec7 tests/behaviour/service/http/driver/user.rs
+RESULT       PASS files=5 failures=0

@@ -1,0 +1,8 @@
+STATIC-CHECK static:answer/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         720f6cfc6ed159f0af9780800d76b2690caea8fc1ca0c578be20f21282ebbffb answer/BUILD
+FILE         bcdc4e30c719cc9e4edc249857238f40f1810ef8faf22ae7038fcc3c36d72592 answer/lib.rs
+FILE         bc4739226ec038e26b585584ec5d720ee748d89ab87a5acad3a42781c477bf93 answer/variable.rs
+FILE         ae3c46632be2d010f7b0ba193294f68e7f9647122df61178d6f5dd3e06e7ceea answer/variable_value.rs
+RESULT       PASS files=4 failures=0

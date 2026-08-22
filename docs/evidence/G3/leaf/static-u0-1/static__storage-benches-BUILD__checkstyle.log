@@ -1,0 +1,9 @@
+STATIC-CHECK static:storage/benches/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         a70e34a677b113c689e4eda3721978a68c7951d9be62d2a9550482bce343e6c0 storage/benches/BUILD
+FILE         3e9fab7b550d5dd250bcdb89fd9f4522bb24b7af84c4d995f5df39131ed6f807 storage/benches/bench_mvcc_storage.rs
+FILE         3a136a44e7b3a06d30eb30f4fadb31d9eac37b64b1207cf528dc3907f255ed4f storage/benches/bench_rocks.rs
+FILE         63a4f47181b255decc365514dc635a860a4faee8a68d88bae5aa3d611f0e3f2e storage/benches/bench_rocks_impl/mod.rs
+FILE         e7ab8069ebc1185a53a9caa9667d477f32cedfd596513411daea8942013f1b4b storage/benches/bench_rocks_impl/rocks_database.rs
+RESULT       PASS files=5 failures=0

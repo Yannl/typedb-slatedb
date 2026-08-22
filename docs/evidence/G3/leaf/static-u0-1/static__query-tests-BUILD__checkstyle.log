@@ -1,0 +1,11 @@
+STATIC-CHECK static:query/tests/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         2654159baef9ae5b2177cbb49cd28ffba27a9688b929f4268cc51c430cb614e8 query/tests/BUILD
+FILE         f95387eb10eabc76bad1d9bb1d83fcd560a3a3059017d78ee4be664ea2d3c7ca query/tests/define.rs
+FILE         55172d9c8b723204d5542e6c3edae0b14f96a4588c15244b49bc9165b6f7014a query/tests/fetch.rs
+FILE         23ab402fdfd89976774a847267b2ecb1462f5a958b2c982b8358fb957d89d1bc query/tests/pipeline_stages_limit.rs
+FILE         30a9618ee14e8aea8a7a9cee9b00198a97f7c2d07e258de246543e78ad1e0fe3 query/tests/query_cache.rs
+FILE         3f5254d968c67584bda3def65a56119567bf6b9571aad21213d09b088c0c247e query/tests/query_profile.rs
+FILE         a64827036044fb3a9c0f8188e565ee121b94a6a0e74d6cfcd121bdab410393ff query/tests/unimplemented.rs
+RESULT       PASS files=7 failures=0

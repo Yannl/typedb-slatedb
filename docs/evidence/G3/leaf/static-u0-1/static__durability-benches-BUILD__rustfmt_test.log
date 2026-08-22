@@ -1,0 +1,5 @@
+STATIC-CHECK static:durability/benches/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         36b461587918ad65d19fbaaf2936fc8b874ec5e178d7bd672e0268209c96361b durability/benches/throughput.rs
+RESULT       PASS files=1 failures=0

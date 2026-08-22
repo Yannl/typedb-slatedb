@@ -1,0 +1,16 @@
+STATIC-CHECK static:executor/tests/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         073de6a1b245c18af75f138f8836f0a74cd76ae555045ac081f9f6bf0cd03ff0 executor/tests/compile_execute.rs
+FILE         d6e219d00985c364e9a54977ad3b31695755967823be6e0702df9c910b80b15e executor/tests/efficiency.rs
+FILE         98add64ea3aa66664c68f4e689aa5e49a3cf29bfc76787e472368fa96b99dfaf executor/tests/execute_comparison_check.rs
+FILE         aff6482345f5df7a744112a706e479e46aeb911913ea60c151e2317fba1277da executor/tests/execute_expression.rs
+FILE         b2269ae0336b4f019632cbb7032d9616196f48536c7afe5caf46a8ed6a2ff310 executor/tests/execute_function.rs
+FILE         e3365e984d7215405aff33e052cea9ba89f39a58f67fa8bbcf46e780e59809e0 executor/tests/execute_has.rs
+FILE         4b6df70a0dbe88bc660e58f11ed519aa6f9886018d8a85128540a113c9791043 executor/tests/execute_isa.rs
+FILE         f0e1bfbaa8987a558c4fd77c759610a47e82c653f6b3d66ca059a34bc1f87364 executor/tests/execute_links.rs
+FILE         c4641a54a6d77797e669fae1b7947824b118048f5a80f9c4fb7c5f2458c9f5d6 executor/tests/execute_relation_index.rs
+FILE         8461d4a407814e984361b807fb7a146ca0ce26f0178e24974909b78adba46273 executor/tests/execute_select.rs
+FILE         dc195f250510ee77461cb11d2f3e427f029ecd1d9d02eeb162690f039d51f814 executor/tests/pipelines.rs
+FILE         7aca6b8117de70cfde43534f553c84f4f30f462f280702bb58e81903b169682c executor/tests/writes.rs
+RESULT       PASS files=12 failures=0

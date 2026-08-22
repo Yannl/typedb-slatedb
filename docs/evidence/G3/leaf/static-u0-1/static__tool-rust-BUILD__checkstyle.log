@@ -1,0 +1,6 @@
+STATIC-CHECK static:tool/rust/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         ea9fa9f831e475012c17666e1a49e8ffa3fd1cda51a101188ce4b3e8de87121d tool/rust/BUILD
+FILE         0aa39fb71d51fc69b1b84ed2842b82a10d24f61a98c62cf0bac479e58b2aa0db tool/rust/sync.sh
+RESULT       PASS files=2 failures=0

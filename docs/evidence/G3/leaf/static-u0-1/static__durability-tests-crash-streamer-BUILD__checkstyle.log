@@ -1,0 +1,6 @@
+STATIC-CHECK static:durability/tests/crash/streamer/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         dba7438df06b6b073dd8dc86686a84b4b5371cbd7d8798ff41a3cceb604a214e durability/tests/crash/streamer/BUILD
+FILE         f75b265e938b1311cf69ec643f492d90bfddb763dbbf7a1ec1287e25ba1af535 durability/tests/crash/streamer/streamer.rs
+RESULT       PASS files=2 failures=0

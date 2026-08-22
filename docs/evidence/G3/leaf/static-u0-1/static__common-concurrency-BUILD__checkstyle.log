@@ -1,0 +1,8 @@
+STATIC-CHECK static:common/concurrency/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         35e7b7b71e81f93a89e4cca6e45b6d559e79a935984f165e2142e234d0a22e94 common/concurrency/BUILD
+FILE         7d7465b6f2afcf86afaa4928629eeb1e1abda3058d5f69147579fc2eb7b54695 common/concurrency/concurrency.rs
+FILE         28259a002bdf0e3ca1c65389902a7e9fc9f5bb53c94d740dc577ae921f497a73 common/concurrency/interval_runner.rs
+FILE         58df65ac91fce94840157693a092ed10f4920b4e9d482ee66efa93b2b3930b34 common/concurrency/tokio_task.rs
+RESULT       PASS files=4 failures=0

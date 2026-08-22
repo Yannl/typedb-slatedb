@@ -1,0 +1,7 @@
+STATIC-CHECK static:common/bytes/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         b3d72a00c56830e2b4617638b11a543a3c72ee0774bcbd71c44962f22ef12fe9 common/bytes/byte_array.rs
+FILE         5f45fd83dce25ba8144acb6dae48367e824c7c0f2cf83e8a3d002be7ebeeaddb common/bytes/bytes.rs
+FILE         0f94db5ed63e82f6d9b389088e653573ceae8a77a6729d0dc9be4bec5af47e2c common/bytes/util.rs
+RESULT       PASS files=3 failures=0

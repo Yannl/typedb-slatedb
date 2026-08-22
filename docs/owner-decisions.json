@@ -307,6 +307,45 @@
    "decision": "Option C. typeCheckingMode stays \"standard\", and the strict rules that CAN hide a defect are enabled individually on top of it. The ~201 findings that are annotation and idiom work (reportMissingTypeArgument, reportAttributeAccessIssue) stay off: `dict` instead of `dict[str, int]` cannot make a verifier accept a forgery.",
    "decided_by": "release owner, recorded 2026-08-22",
    "expected_yield": "The 69 findings fixed at \"standard\" produced 7 genuine defects — roughly one in ten, and of the kind that matters here (release.py hashing a None payload so an artifact digest could match an archive MISSING a file; leaf_diff.py reporting ‘0 regressions’ over an empty intersection). The rules enabled here are the same family. The rate will be lower on the marginal rules — the \"standard\" set is the one most correlated with runtime failure — so the yield is expected to be smaller than one in ten, not larger."
+  },
+  {
+   "id": "OD-021",
+   "status": "OPEN",
+   "title": "84 cucumber rows upstream's own runner never executes",
+   "question": "84 plan rows name scenarios that carry `@ignore` (69, native runner) or `@ignore-typedb-http` (15, http runner). Upstream's runners filter those out by their own `is_ignore` predicate, so they are never executed and have no outcome to record. Are they a declared exclusion, or do they stay in the denominator as permanently uncovered?",
+   "default_in_force": "They stay in the denominator and are reported UNCOVERED, with the reason naming the exact tag and the runner that filters it — leaf_coverage.py's `uncovered_reasons` already distinguishes them from 'no evidence' rows, so nothing is hidden today.",
+   "why_safe": "Counting them as covered would be a lie about 84 scenarios nobody ran. Reporting them as UNCOVERED-with-a-reason is true and visible. It is not CORRECT, though, in the sense that it leaves 84 rows permanently short of a ceiling nobody can reach: no amount of execution moves them while upstream's filter stands, so a coverage number that includes them understates by a fixed amount forever.",
+   "owner_decision_changes": "Declaring them out of scope the way OD-010 declared the cluster suites: they would be enumerated, reported as a declared exclusion with this rationale, and removed from the denominator rather than from the report. The alternative is to keep them and accept that the ceiling is 84 rows lower than it looks.",
+   "referenced_by": [
+    "tools/qualification/leaf_coverage.py",
+    "tools/catalog/plan_coverage.py"
+   ]
+  },
+  {
+   "id": "OD-022",
+   "status": "OPEN",
+   "title": "132 FAILPOINT rows at a granularity upstream does not emit",
+   "question": "The catalogue enumerates 44 FAILPOINT leaves per profile (132 across U0/U1/U2) from the `fail_points!` macro. Upstream tests them with TWO libtest cases — `test_fail_point_always` and `test_fail_point_chance` — each looping over every fail point internally. There is no per-fail-point outcome to record. Does the denominator keep the per-point granularity?",
+   "default_in_force": "The rows stay, reported PARTIAL for one profile (44) and UNCOVERED for the rest (88): target-granularity evidence exists and is recorded as such, and a leaf-granularity outcome does not, so no row is claimed covered.",
+   "why_safe": "PARTIAL is the honest status for evidence that a binary ran without a per-case outcome; it is the same treatment every zero-leaf cargo target gets. Both fail-point tests DO pass under the isolated runner (measured 2026-08-21: always 599 s, chance 965 s, both PASSED), so the property is exercised — what is missing is the per-point attribution, not the testing.",
+   "owner_decision_changes": "Either the denominator drops to 2 FAILPOINT leaves per profile, matching what upstream emits (the catalogue generator would enumerate the libtest cases rather than the macro's members), or an upstream change makes each fail point its own case. The first is a catalogue change and shrinks a denominator, which is exactly the move this project refuses to make without a recorded decision.",
+   "referenced_by": [
+    "tools/catalog/generate_catalog.py",
+    "docs/evidence/G1/upstream-test-catalog.json"
+   ]
+  },
+  {
+   "id": "OD-023",
+   "status": "OPEN",
+   "title": "The one SCRIPT row: a crash loop with no assertion, and no Bazel referent",
+   "question": "`shell:tool/test/simulate-crash.sh::crash-restart-loop` is the plan's only SCRIPT row. Should a lane execute it?",
+   "default_in_force": "It is UNCOVERED, and this round deliberately did NOT produce evidence for it while building the STATIC_CHECK lane beside it.",
+   "why_safe": "Executing it would produce a green that means nothing, which is worse than an honest gap. Read the script: it loops `docker run bazel:assemble-linux-x86_64`, sleeps, kills the container, and `exit 0`s on a 600-second timeout REGARDLESS of what happened. It asserts nothing and cannot fail. It also needs a Bazel-BUILT docker image (analysis alone is not enough) and a docker daemon, and `tools/bazel/bazel_parity.py` already records `//tool/test:simulate-crash` as a catalogue entry with NO Bazel referent at the pinned revision — a real catalogue defect, kept rather than deleted because deleting a plan row silently is how a denominator shrinks.",
+   "owner_decision_changes": "Either the row is a declared exclusion (the target does not exist upstream at the pin), or someone writes a crash-recovery test that actually asserts recovery — which is product work with a real specification behind it, not a port of this script.",
+   "referenced_by": [
+    "tools/bazel/bazel_parity.py",
+    "docs/evidence/G1/qualification-plan-v2.json"
+   ]
   }
  ]
 }

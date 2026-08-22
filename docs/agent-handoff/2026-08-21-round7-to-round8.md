@@ -1331,3 +1331,173 @@ leaf_diff u1-full-3 vs u2-full-3    ->  0 regressions over 455 leaf cases
 Both headline numbers reproduce EXACTLY. That is the check that matters for a
 change of this size: the tooling was rewritten in 38 files, and the evidence it
 derives did not move by one row.
+
+---
+
+## 16. Round 7g — SI-G0-1 is closed. Bazel's analysis phase runs here.
+
+G0 has been OPEN_RED since round 6 on one finding: Mode-Q Bazel `cquery`
+evidence is absent because the ANALYSIS phase cannot run in this environment.
+That is now false, and the reason it was ever true is narrower than the ledger
+said.
+
+### 16.1 The blocker was one fetch, and the fetch had another door
+
+`aspect_bazel_lib` REGISTERS `bats_toolchains`. A registered toolchain must
+load before Bazel resolves toolchains for ANY configured target, so four
+archives fetched from `github.com/bats-core/*/archive/<tag>.tar.gz` gated the
+whole analysis phase. This environment's egress denies those with 403 —
+still true, re-measured 2026-08-22 with curl on github.com and
+codeload.github.com alike.
+
+**But it serves anonymous git reads of the same repositories.** And a GitHub
+release tarball is not a bespoke artefact: it is `git archive` of the tag,
+gzipped. Measured, all four reproduce BYTE-FOR-BYTE:
+
+```
+git archive --format=tar --prefix=<repo>-<version>/ <tag> | gzip -n -6
+
+bats-core    v1.10.0  a1a9f787…   bats-support v0.3.0  7815237a…
+bats-assert  v2.1.0   98ca3b68…   bats-file    v0.4.0  9b690432…
+```
+
+Those are the digests `aspect_bazel_lib` itself pins, so **Bazel verifies this
+work independently** — a wrong byte and `--distdir` is ignored, the fetch is
+attempted, and the 403 comes back. The reconstruction cannot forge a pass.
+
+Both gzip flags are load-bearing. `-n` drops the filename and mtime from the
+header (with them the digest depends on when you ran it); `-6` is the level
+GitHub uses — `-9` gives a valid archive with a different digest
+(`1461ab68…`) that Bazel rejects.
+
+### 16.2 What landed
+
+  - `tools/bazel/vendor_bats.py` rebuilds the four archives from the locked
+    tags and refuses on any mismatch — wrong revision, wrong tree, wrong
+    digest. It writes nothing on failure: a half-populated distdir makes Bazel
+    fall through to the network for the rest and fail on the original 403,
+    which reads as "the vendoring did nothing" rather than "it is wrong".
+  - Four new `source-lock` nodes (`BATS_CORE`, `BATS_SUPPORT`, `BATS_ASSERT`,
+    `BATS_FILE`), materialisable like every other git node, so a fresh
+    container reproduces this without touching the blocked URL.
+  - `produce_modeq.py` gained `--distdir`, and a REAL crosswalk.
+
+### 16.3 The crosswalk was the actual work
+
+`catalog_by_label()` assumed the catalogue records a `//`-prefixed Bazel label
+for every target. It does not: 142 of 303 do, and the 114 CARGO targets carry
+none at all. So the producer had never mapped a single target — it had never
+run far enough to find out.
+
+Three kinds of target, three joins, all anchored on the catalogue:
+
+| kind | join |
+|---|---|
+| checkstyle / rustfmt / shell | the recorded label, normalised (`//.:x` in the catalogue, `//:x` from Bazel — `bazel_parity.norm` is the one place that is written down) |
+| `rust_test` with `srcs` | the source file itself: the catalogue's `source_files[].path` is the join |
+| `rust_test` with `crate` | the crate root's DIRECTORY. `//admin/client:client` is cargo package `typedb-admin` with Bazel crate name `client`; joining on either NAME misses it, joining on the directory cannot. |
+
+Two of the 228 enumerated rules (`//:Release_validate_deps_gen`,
+`//:release-validate-deps`) are release plumbing, already carried by
+`bazel_parity.py` as reviewed non-denominator targets. They are imported from
+there — not restated — dropped from the cquery set, and RECORDED in the bundle
+as a declared exclusion. Hence 226, not 228, with the bundle's targets, its
+cquery stdout and its crosswalk one single set.
+
+### 16.4 Result
+
+```
+tools/modeq/validate_modeq.py     MODEQ: VALID
+tools/modeq/modeq_mutants.py      all 11 killed — against a REAL bundle,
+                                  where before there was nothing to validate
+bundle root  522dc2ea831bea564192ad6fdede487546d115e63effd9d2732852416678514a
+             226 targets, bazel 8.5.1, one-to-one into the catalogue
+```
+
+**G0 moves OPEN_RED -> OPEN.** It is not closed: its second blocker, the raw
+artifact retrievability archive, is untouched by this work and no part of this
+touches it. G1's Mode-Q crosswalk blocker closes with it.
+
+The ledger's G1 entry was also corrected here: it had claimed "0 rows fully
+covered" and "the six official driver rows are NOT_IMPLEMENTED" long after both
+stopped being true. A ledger that describes a state its own evidence
+contradicts is the failure this plane exists to prevent.
+
+---
+
+## 17. Round 7h — the STATIC_CHECK lane, and what is genuinely left
+
+### 17.1 The lane
+
+`plan_coverage.py` had said the same thing for four rounds: *CUCUMBER /
+STATIC_CHECK / SCRIPT leaves have no leaf-level runner lanes producing archived
+evidence at all.* Cucumber got its lane; static did not — even though
+`run_static.py` had been running the checks all along. It writes a flat report,
+and a flat report is not evidence a coverage reporter can count: nothing binds
+it to a profile, a toolchain, a tree, or the catalogue's leaf ids.
+
+```
+run_static_leaf.py     141 targets, 0 refused, 141 leaves, 141 PASSED
+                       root 8e98c5db…
+verify_static_leaf.py  0 anomalies
+static_mutants.py      12/12 held, 0 survived
+plan coverage          13,582 -> 13,723 of 23,138
+```
+
+The log grammar is the design. Per target:
+
+```
+STATIC-CHECK <target_id>
+RULE         checkstyle | rustfmt
+TOOLCHAIN    <rustfmt toolchain, or none>
+FILE         <sha256> <tree-relative path>     (one per checked file)
+FAILURE      <finding>                         (zero or more)
+RESULT       <PASS|FAIL> files=<n> failures=<m>
+```
+
+The FILE lines are the point. **"PASS, 4 files" is unfalsifiable; "PASS over
+these four files at these four digests" is checkable**, and the verifier checks
+it against the pinned tree.
+
+### 17.2 Where the independence actually lives
+
+The verifier shares `run_static.py`'s file SELECTION deliberately — a second
+copy of Bazel's glob semantics is a copy that drifts, and the producer gains
+nothing from sharing it, because it still cannot name a file the rule does not
+resolve or omit one it does.
+
+It re-implements the two PREDICATES on purpose. That duplication is the
+independence, and control 11 is why: it puts a tab into a checked file in a
+shadow tree, updates the log's FILE digest to match *as a diligent forger
+would*, and leaves the verdict saying PASS. The seal is consistent, the file
+set is right, every digest matches. Only re-deriving the check itself catches
+it. rustfmt needs no re-implementation — the verifier just re-runs it.
+
+One tool install was needed: the pinned `nightly-2026-04-15` toolchain was
+present WITHOUT its `rustfmt` component, so `rustfmt +nightly-…` was trying to
+download it and dying mid-run. `rustup component add rustfmt --toolchain
+nightly-2026-04-15-x86_64-unknown-linux-gnu` fixes it, and a fresh container
+will need the same.
+
+### 17.3 What is left, and why none of it is execution
+
+Of the 13,942 rows reachable without new product code, **219 remain, and not
+one of them is a test somebody forgot to run**:
+
+| rows | what | recorded as |
+|---|---|---|
+| 132 | FAILPOINT, at a granularity upstream does not emit — 2 libtest cases loop over ~110 fail points internally. Both PASS under isolation (599 s / 965 s). | **OD-022** |
+| 84 | cucumber scenarios upstream's own runner filters by `@ignore` / `@ignore-typedb-http`. Never executed, so no outcome exists to record. | **OD-021** |
+| 1 | the SCRIPT row: a docker crash loop that asserts nothing and `exit 0`s on timeout regardless, whose Bazel target does not exist at the pin. Producing evidence for it would be producing a green that means nothing. | **OD-023** |
+| 2 | driver rows still PARTIAL | OD-010 |
+
+Each is now an OPEN owner decision with the safe default in force — they stay
+in the denominator, reported UNCOVERED with the reason, hiding nothing. What an
+owner decision would change is whether they are *declared exclusions* (the
+OD-010 pattern) rather than a permanent shortfall against a ceiling nobody can
+reach.
+
+**Everything beyond that is product code or credentials**: 9,196 rows are the
+U3/U4 profiles, the ContainerDO is advisory-only, and G2 needs an owner-signed
+envelope and real Cloudflare credentials. Coverage tops out at 13,942 of
+23,138 — 60.3 % — until TypeDB itself grows a remote-WAL/R2 durability path.

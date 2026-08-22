@@ -1,0 +1,6 @@
+STATIC-CHECK static:query/benches/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         6d7701f59291aef53f9bc11b0a01ada62ebe685f35018cfeef9a3f81ec09b6a6 query/benches/bench_insert_queries.rs
+FILE         ebbc074aafcc71cc4c4647581f90421a55f31d899f582d74ac7b596a9a50ab99 query/benches/bench_insert_queries_multithreaded.rs
+RESULT       PASS files=2 failures=0

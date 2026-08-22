@@ -1,0 +1,9 @@
+STATIC-CHECK static:ir/tests/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         129937ae4f16e6f4f71dda6f32f68ba705da04f39f19c6aa91df2dfa10ffe900 ir/tests/BUILD
+FILE         57674d9365ffd567002f66a8158350364890d1e7b48e24cb61986a7a0de6164a ir/tests/binding_modes.rs
+FILE         be72da2f9aa9840d8bc6e24c3abc1b2e071f137f9cb39305ac367858c00a0c54 ir/tests/pattern.rs
+FILE         93b7c3cbff01c98ef468e75d0d9785a058abfb5b502c3d086afc1e7b37c258bd ir/tests/pipeline.rs
+FILE         494a23aa3957a84e7f693e3931e5d53fc90c7b7a23fad46b32d3f161f319bde7 ir/tests/structural_equality.rs
+RESULT       PASS files=5 failures=0

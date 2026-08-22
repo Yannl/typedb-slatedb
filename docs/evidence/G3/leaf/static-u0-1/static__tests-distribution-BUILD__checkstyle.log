@@ -1,0 +1,5 @@
+STATIC-CHECK static:tests/distribution/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         771fddcc2736a34d825b5f1461b6cbe8e53d3793b4873f4be0b125272940080e tests/distribution/BUILD
+RESULT       PASS files=1 failures=0

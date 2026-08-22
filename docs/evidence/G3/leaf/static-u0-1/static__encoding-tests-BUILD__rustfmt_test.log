@@ -1,0 +1,8 @@
+STATIC-CHECK static:encoding/tests/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         060698ef969583795ef7cf80da9357645bc0f7f89dc7e8221c885bc4fc419832 encoding/tests/test_attribute_vertex.rs
+FILE         586a5f45a516ce3418b7397a371f2482af7e5f92109654bb227dee2be1ba9729 encoding/tests/test_definitions.rs
+FILE         3b6141ebc0f8732f025ed4b5d2d59cf8df0e1e5493ca80572d615411698859b7 encoding/tests/test_type_vertex.rs
+FILE         c05665de257bc3dd37f5ddfc628e30477eb63f289cfa41ec61392704b33fab6c encoding/tests/test_utils_encoding.rs
+RESULT       PASS files=4 failures=0

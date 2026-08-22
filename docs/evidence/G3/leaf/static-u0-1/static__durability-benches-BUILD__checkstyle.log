@@ -1,0 +1,6 @@
+STATIC-CHECK static:durability/benches/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         d210646fa61825120ed571b8b0b99431d3919a6c8cf6edd8e55df19c746b6a2e durability/benches/BUILD
+FILE         36b461587918ad65d19fbaaf2936fc8b874ec5e178d7bd672e0268209c96361b durability/benches/throughput.rs
+RESULT       PASS files=2 failures=0

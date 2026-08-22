@@ -1,0 +1,50 @@
+STATIC-CHECK static:encoding/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         9cf96e34eaa6701d334f49fd7b48d3fac0b1dd75524761f8819b56d24e8a9195 encoding/encoding.rs
+FILE         014bec6897bdfd7cb5679ab0a5af6669682471e51c4ae1304f76a509bb92f312 encoding/error.rs
+FILE         9596c63c2c7acbb01249e691f070cd9e703c4b0a0cf7259730dba4a7c1b79282 encoding/graph/common/mod.rs
+FILE         b1eeb410c2d254cbca11ebf6e0eba08b0f8e241042274f6341a29388084bd8ef encoding/graph/common/schema_id_allocator.rs
+FILE         796659ebb4fc759cb044c18571c29ad9ad5d5117ef6dc12095bab9420fe80307 encoding/graph/common/value_hasher.rs
+FILE         2ae46d15c56e88fb8edaab69ef753d0f9b7505cbae71172fc60035654ac13224 encoding/graph/definition/definition_generator.rs
+FILE         6c113e60f090ee42cac171d32640c6896a89173fa0ae270347f8a8c29ccb6629 encoding/graph/definition/definition_key.rs
+FILE         64eaf78719fae3c6b4304a993bba5a0b8fabeb22ef250a0eb0206190ede4d8bc encoding/graph/definition/definition_key_generator.rs
+FILE         c447532517132f7b1dc9e54730f6ad9970c6960dd4664e211eaec2144160230f encoding/graph/definition/function.rs
+FILE         3d53cbb676834be0aca7ea833c997234a4c0719930ee05a0be570d8b68ac2bca encoding/graph/definition/mod.rs
+FILE         bc5b44fb572cb8fb1395b3a791d2183d49695dcfebc86d07a5bf21a1573d91da encoding/graph/definition/struct.rs
+FILE         082984480149cdcc88b5eba4d8e7a2a34414e34758e7da245a3b5e55ceba32dd encoding/graph/mod.rs
+FILE         2b7d926b643fd13019a2ec892874e6d356e1f83e40bcae0f8468213953e5dcde encoding/graph/thing/edge.rs
+FILE         b5fa265c6ac595726225bd62339e4db4d2c8c1cd5577f13ba07d085f2b01b18f encoding/graph/thing/mod.rs
+FILE         9e758f9c47881be78385feaf83ebc85f2e15c6f495d9eb4e62c7f55399c48013 encoding/graph/thing/property.rs
+FILE         09882cfd62363dade278add0a0bb49ef7b2c4c0a0997efe0303060ec9f7e9ead encoding/graph/thing/vertex_attribute.rs
+FILE         c1dded1d3bfe08adca71c944c654d374b379e869a946ad7b0349ffece1322d37 encoding/graph/thing/vertex_generator.rs
+FILE         cb6c149745aeabf71ed033bb2f89cc73fe2610dd58793ece7619eb888456404f encoding/graph/thing/vertex_object.rs
+FILE         87dd7a48fe5c8712d24c8be8a0dcc0d3f8c08b8efbd899cc853c449aacf2dca3 encoding/graph/type_/edge.rs
+FILE         e8ff944a04cd8fe9b7bb42ac3db5fa17aa80c8bdf9a5571b8d420a54c22a0969 encoding/graph/type_/index.rs
+FILE         e9cb3732049e9ebcb849fc6f736d15001e754930c99dc57848d44ce2f5c4dc4b encoding/graph/type_/mod.rs
+FILE         2ccbc4a3c330a1867b9ade05b23bffe45665155adecd71c2e320ae9b374e6e79 encoding/graph/type_/property.rs
+FILE         873c63cd12e733390c45567a8bf5129f8ac8f446aae495bca49394f3983f066f encoding/graph/type_/vertex.rs
+FILE         9b3bbde0a648a43fed03df833a631adfe853bf8e684335d012086fce112952f8 encoding/graph/type_/vertex_generator.rs
+FILE         6fabec44d779501d72d4e0b3fd230be01d3b809eca768fd23ec38452bf64ac11 encoding/layout/infix.rs
+FILE         8c601b538a5f74818f82d21ec0166f2bdeb5ff3ff007a9f5b2b3116850d9ac78 encoding/layout/mod.rs
+FILE         b58cb7e404d214733c0bc94432b9a90194362223351a86dad03594ef52822bbc encoding/layout/prefix.rs
+FILE         2a25bac38b53b34f8d77a15107b985cf0e4b6d0af497afd8e795dcb2ca0348a5 encoding/value/boolean_bytes.rs
+FILE         8017f9191ae8e7abf465c4e34cf951c553185c5dcba56c9d43e04126f7b4acf6 encoding/value/date_bytes.rs
+FILE         30c74312beea27ff20e9dbbb4361e18e7f78acf3bc903b457d6f911a8115f7f2 encoding/value/date_time_bytes.rs
+FILE         3a6638835bcbdb2946cad3add4604300152fb8228d8346ec8b81595992b61c67 encoding/value/date_time_tz_bytes.rs
+FILE         0af2644d6e85ff51ee3dd837545d66058749962b80ca45f1c613e5ef5a431234 encoding/value/decimal_bytes.rs
+FILE         036c9208ecbff1986152ea0b40f9fce7aede70af4e42461132e3f60b9b5406a4 encoding/value/decimal_value.rs
+FILE         a68e99a707ef6ac558a8ecd50f9290f71ebbae2dfc668eef3102101b6e2634dc encoding/value/double_bytes.rs
+FILE         f78b81fea7922f7e3ec08dcfa894817e415054bacffd8453898270c5800c993c encoding/value/duration_bytes.rs
+FILE         8e99ce0588e73d975075e76a251ddbd7adecf59fa15a30887113f4c8a904dd4a encoding/value/duration_value.rs
+FILE         fead2829274496c074c6f4bac21b355418d2947f7f92e6cbbf5fcead86282f0c encoding/value/integer_bytes.rs
+FILE         6aa973b3478507cf83d5c56fe18f445395d2de85a78d0074c1317886cc674931 encoding/value/label.rs
+FILE         bbc5923b4d32ec7c3298e91778b2677a28408335938efe13f8919851be25c884 encoding/value/mod.rs
+FILE         d0b80b122d1ed6803e9e709a955017b0b3b0170d3b47dcf6bfe839982eaebd70 encoding/value/primitive_encoding.rs
+FILE         79807a4e0b4f83afc8c498cd47657f7a09f066d72f23439dd259eca3661c2193 encoding/value/string_bytes.rs
+FILE         18a7f65e2c25b7b392d8ec3a287ae16cb4a81fed733040762847dd7578fbaca0 encoding/value/struct_bytes.rs
+FILE         6e018b8ee89a10ab3ab9eea39db23708d517ac0526cc2f95b2e55471c7793952 encoding/value/timezone.rs
+FILE         4a7a01c85270e69785d3634e6e4854cf5feb7835f5b16ab98eb9ba7013b226c1 encoding/value/value.rs
+FILE         c6e6098c1eabe2d1e9792f3d8bc41b23e128100d270df326ab6a7c43952e8380 encoding/value/value_struct.rs
+FILE         5fb74668dfd684339adc7a84ee0db96bf35db850af05f4412e034c64d051b30a encoding/value/value_type.rs
+RESULT       PASS files=46 failures=0

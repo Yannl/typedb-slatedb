@@ -164,14 +164,17 @@ def run_checkstyle(target_id: str):
         ]
     header_regexes = load_header_regexes(attrs.get("license_type", "mpl-header"))
     failures = []
-    checked = 0
+    # The resolved file set, tree-relative. Recorded so a leaf bundle can bind
+    # its verdict to the exact inputs it read (tools/qualification/
+    # run_static_leaf.py) instead of asserting a count nobody can re-derive.
+    checked_files: list[str] = []
     for rel in files:
         if pathlib.Path(rel).parts and pathlib.Path(rel).parts[0] in NON_SOURCE_DIRS:
             continue
         path = package_dir / rel
         if not path.is_file():
             continue
-        checked += 1
+        checked_files.append(path.resolve().relative_to(TYPEDB.resolve()).as_posix())
         tab_issue = check_tabs(path)
         # FileTabCharacter applies to all checked files
         if tab_issue:
@@ -182,7 +185,8 @@ def run_checkstyle(target_id: str):
     return {
         "target_id": target_id,
         "status": "PASS" if not failures else "FAIL",
-        "files_checked": checked,
+        "files_checked": len(checked_files),
+        "files": sorted(checked_files),
         "failures": failures[:20],
     }
 
@@ -215,9 +219,16 @@ def run_rustfmt_batch(targets):
         _, build_rel, _rule_name = target_id.split(":", 2)
         package_dir = (TYPEDB / build_rel).parent
         files = package_rs_files(package_dir)
+        rels = sorted(f.resolve().relative_to(TYPEDB.resolve()).as_posix() for f in files)
         if not files:
             results.append(
-                {"target_id": target_id, "status": "PASS", "files_checked": 0, "failures": []}
+                {
+                    "target_id": target_id,
+                    "status": "PASS",
+                    "files_checked": 0,
+                    "files": [],
+                    "failures": [],
+                }
             )
             continue
         cmd = [
@@ -234,6 +245,7 @@ def run_rustfmt_batch(targets):
                     "target_id": target_id,
                     "status": "PASS",
                     "files_checked": len(files),
+                    "files": rels,
                     "failures": [],
                 }
             )
@@ -251,6 +263,7 @@ def run_rustfmt_batch(targets):
                     "target_id": target_id,
                     "status": "FAIL",
                     "files_checked": len(files),
+                    "files": rels,
                     "failures": [
                         str(pathlib.Path(b).relative_to(TYPEDB)) if b.startswith(str(TYPEDB)) else b
                         for b in detail

@@ -1,0 +1,6 @@
+STATIC-CHECK static:compiler/tests/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         8e6dbbbe71a9ec268acd0fdb54ef74d1ee3495bcb12eb36ce9826633eb08f1e8 compiler/tests/BUILD
+FILE         323c36da5ca97c7640cf3f6f3e3e6c3471790d5c0cc1c9e18897700ef8b5ec16 compiler/tests/transformation.rs
+RESULT       PASS files=2 failures=0

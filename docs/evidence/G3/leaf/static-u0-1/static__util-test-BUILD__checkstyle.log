@@ -1,0 +1,6 @@
+STATIC-CHECK static:util/test/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         0f0b27b069d37d8f66b23d4db95c4ae27ef9eafff5030f0f9c8a4ceee8f5f962 util/test/BUILD
+FILE         bf5b5b6ec3d14c3e5fd08e4d02ad7c5b3d558e429efe6eccf2cd49279706d7a3 util/test/test_utils.rs
+RESULT       PASS files=2 failures=0

@@ -1,0 +1,5 @@
+STATIC-CHECK static:tests/benchmarks/concurrent_ops/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         70659fe46d14cddfa69e3ac0d6dd6af504183d24b0ea7bbe415b7e3ad82de608 tests/benchmarks/concurrent_ops/bench_concurrency.rs
+RESULT       PASS files=1 failures=0

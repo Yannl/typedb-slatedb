@@ -1,0 +1,5 @@
+STATIC-CHECK static:tests/behaviour/service/http/debug/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         0a142775ef007604c300ef544a7d558d8d49a1ecc314b9614cd7a9600a7debb2 tests/behaviour/service/http/debug/debug.rs
+RESULT       PASS files=1 failures=0

@@ -1,0 +1,15 @@
+STATIC-CHECK static:admin/client/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         450d8a890d83bcd7450696cc0ad329d6cedbd78f64f20f30f669b2ce1381f0e3 admin/client/BUILD
+FILE         0987a004a461cabaa7aea6b1ab187ba01d34ec652931cf20268249c0703eb460 admin/client/command.rs
+FILE         6a796f8f46e72a92cbe013c445fc3caaffbfcfbe157094d54f61c97f21860493 admin/client/commands/mod.rs
+FILE         72714b5af5bb01185ae4f1e806904f2ad88785f27ef0eefe5d910855fe935e7e admin/client/commands/server.rs
+FILE         3c1f7572dabcd6303f55ef15189c085ce1a36f4e1eb8aa503081c57b600790c9 admin/client/commands/users.rs
+FILE         f65bfee2d180a4883fa4d5951096d99bf23e33f43aee3aba0693181a6fa6658a admin/client/error.rs
+FILE         b933cda2a926ee8e0b6f0c988d232cd8ddfaaf678320759703641bc13d6ec617 admin/client/lib.rs
+FILE         f3ab93f553e472e02feda2c13c197bdf0f80735f3ab1719b1bf739d2745c78b4 admin/client/repl.rs
+FILE         a5a548779a6d4cfd5a0c647c9ce46cbbd0de92ce301ae6df1c0c433103a77535 admin/client/transport.rs
+FILE         00016580b1e6971e9ce361f4ac8bc1d5d2645f5223fad973ac99ae86478317ee admin/client/transport/unix.rs
+FILE         2f0cfdb1fc5dcdeee5ca43aede46fd5b5004aab162477c99fe85191d147044ee admin/client/transport/windows.rs
+RESULT       PASS files=11 failures=0

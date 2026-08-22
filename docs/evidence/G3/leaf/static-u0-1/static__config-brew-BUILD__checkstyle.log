@@ -1,0 +1,7 @@
+STATIC-CHECK static:config/brew/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         d7da1dd69e60f940919993d26d21dd663d3e5f39ffe6d819d3204e5f210c7b15 config/brew/BUILD
+FILE         d1a882def6f76c47c9a09e70ba4a01f6f3b939fe149c7396bc2a3f4f094e521b config/brew/typedb-snapshot.rb
+FILE         33ba45a8af8909dff1d46c74d07d26756576a3c844a4b43c0136824b76b6445c config/brew/typedb.rb
+RESULT       PASS files=3 failures=0

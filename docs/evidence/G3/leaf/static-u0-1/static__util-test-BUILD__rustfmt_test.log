@@ -1,0 +1,5 @@
+STATIC-CHECK static:util/test/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         bf5b5b6ec3d14c3e5fd08e4d02ad7c5b3d558e429efe6eccf2cd49279706d7a3 util/test/test_utils.rs
+RESULT       PASS files=1 failures=0

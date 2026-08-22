@@ -1,0 +1,7 @@
+STATIC-CHECK static:query/benches/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         ece06f324d514ec5561fd103e9daa66d17b0ef34164c4292da19166d7bb4adc1 query/benches/BUILD
+FILE         6d7701f59291aef53f9bc11b0a01ada62ebe685f35018cfeef9a3f81ec09b6a6 query/benches/bench_insert_queries.rs
+FILE         ebbc074aafcc71cc4c4647581f90421a55f31d899f582d74ac7b596a9a50ab99 query/benches/bench_insert_queries_multithreaded.rs
+RESULT       PASS files=3 failures=0

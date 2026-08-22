@@ -1,0 +1,9 @@
+STATIC-CHECK static:concept/tests/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         1e2ed8a08b70993cc9c5bfd7cfdbccf4e4d7c88b9c62a77687b6a10219e5b640 concept/tests/BUILD
+FILE         ff124f9ecc1c746ddd34187c3dec5b99a3633c0c7b4a0c5de87a545bc47c7d67 concept/tests/test_statistics.rs
+FILE         752475ec6b88b2dc447796605666af4e70e83dbdb07563dec6811ddc6ac66c2a concept/tests/test_thing.rs
+FILE         dd08d8031a27a32b9f322aca251c897581edb6eb06f48bb5f83db3e175310992 concept/tests/test_type.rs
+FILE         d031b94fcd9e834ff50dfff5675d265a9068dbb1992fdaeabcd651ffe5eba7e2 concept/tests/test_utils_concept.rs
+RESULT       PASS files=5 failures=0

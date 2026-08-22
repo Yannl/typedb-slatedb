@@ -1,0 +1,6 @@
+STATIC-CHECK static:common/cache/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         f44859ca7bbbf9c12e50439c2afd8e5d0cb13cdecdf0a6fb8ac8b4202f38092c common/cache/BUILD
+FILE         9c3da8590da48eda01f9dbb6f48bbdc60d98e19755a63ad468c5599c7b136495 common/cache/cache.rs
+RESULT       PASS files=2 failures=0

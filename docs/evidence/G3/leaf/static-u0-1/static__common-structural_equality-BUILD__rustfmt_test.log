@@ -1,0 +1,6 @@
+STATIC-CHECK static:common/structural_equality/BUILD:rustfmt_test
+RULE         rustfmt
+TOOLCHAIN    nightly-2026-04-15
+FILE         791f65ed4f1c649f623abe57d9aff2f9f9f65ad4f76adc96d33fa5e421c3660a common/structural_equality/structural_equality.rs
+FILE         eaf3c159cb9ed92d61925128e96f4f337f5ed4ed9c0d7fda9acc8322e871a928 common/structural_equality/typeql_structural_equality.rs
+RESULT       PASS files=2 failures=0

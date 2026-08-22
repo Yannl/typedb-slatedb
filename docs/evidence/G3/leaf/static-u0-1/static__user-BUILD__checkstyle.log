@@ -1,0 +1,9 @@
+STATIC-CHECK static:user/BUILD:checkstyle
+RULE         checkstyle
+TOOLCHAIN    none
+FILE         a556fe39212e43800f0610e7e77a29aa55f3f0e2817be7055c9075474b1c3214 user/BUILD
+FILE         37f595deac13361aa8e3b499c4f5674b8dd7d714376fbff57123e57a42b48d9b user/errors.rs
+FILE         b336022c51792471139fd7d1d9d4495e982a50a2b8b516105513f066ca02589f user/lib.rs
+FILE         ce5387ecb6845d4e67abcd73813523f2a312dde7e1ced7af0b7d5657d2286155 user/permission_manager.rs
+FILE         6b7d3206c9d94fd889b12427eeb027a06c7359c5a069084f0fcf09cd13af3ff5 user/user_manager.rs
+RESULT       PASS files=5 failures=0
